@@ -19,6 +19,29 @@ import Foundation
 import CoreLocation
 import WeatherKit
 
+enum WeatherNumeric {
+    static let temperatureF = -200...250
+    static let windMph = 0...600
+    static let visibilityMi = 0...1_000
+    static let percent = 0...100
+    static let uvIndex = 0...100
+
+    /// Network weather feeds may legally decode `NaN`/infinity. Swift traps
+    /// when either is converted directly to `Int`, so every provider crosses
+    /// this boundary before a numeric value reaches the snapshot model.
+    static func roundedInt(
+        _ value: Double?,
+        allowed range: ClosedRange<Int>? = nil
+    ) -> Int? {
+        guard let value, value.isFinite else { return nil }
+        let rounded = value.rounded()
+        guard rounded >= Double(Int.min), rounded < Double(Int.max) else { return nil }
+        let result = Int(rounded)
+        guard range?.contains(result) ?? true else { return nil }
+        return result
+    }
+}
+
 @MainActor
 final class WeatherService: NSObject, ObservableObject {
 
@@ -262,7 +285,9 @@ final class WeatherService: NSObject, ObservableObject {
         let placemark = try? await reverseGeocode(location)
         do {
             let weather = try await weatherService.weather(for: location)
-            var snap = Self.compose(weather: weather, placemark: placemark)
+            guard var snap = Self.compose(weather: weather, placemark: placemark) else {
+                throw URLError(.cannotParseResponse)
+            }
             // Lane Impact rides EVERY provider path (adversarial-verify
             // 2026-07-09): it's an independent proc (weather.laneImpactActive),
             // best-effort, nil on failure — previously it was only fetched on
@@ -447,7 +472,9 @@ final class WeatherService: NSObject, ObservableObject {
         // shell that looks live.
         guard let cur = server.current,
               let tC = cur.tempC,
-              let windKph = cur.windKph else {
+              let windKph = cur.windKph,
+              tC.isFinite,
+              windKph.isFinite else {
             return nil
         }
         let code = cur.weatherCode ?? Self.serverWeatherCode(condition: cur.condition, icon: cur.icon)
@@ -455,7 +482,10 @@ final class WeatherService: NSObject, ObservableObject {
         func cToF(_ c: Double) -> Double { c * 9.0 / 5.0 + 32.0 }
         func kphToMph(_ k: Double) -> Double { k * 0.621371 }
         func kmToMi(_ k: Double) -> Double { k * 0.621371 }
-        let tF = cToF(tC)
+        guard
+            let tempF = WeatherNumeric.roundedInt(cToF(tC), allowed: WeatherNumeric.temperatureF),
+            let windMph = WeatherNumeric.roundedInt(kphToMph(windKph), allowed: WeatherNumeric.windMph)
+        else { return nil }
 
         let iso = ISO8601DateFormatter()
         iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -493,14 +523,25 @@ final class WeatherService: NSObject, ObservableObject {
         }()
 
         let hourly: [WeatherSnapshot.HourlyForecast] = (server.hourly ?? []).prefix(8).compactMap { h in
-            guard let date = parseDate(h.t), let t = h.tempC else { return nil }
+            guard
+                let date = parseDate(h.t),
+                let t = h.tempC,
+                let hourTempF = WeatherNumeric.roundedInt(
+                    cToF(t),
+                    allowed: WeatherNumeric.temperatureF
+                )
+            else { return nil }
             let hourCode = h.weatherCode ?? Self.serverWeatherCode(condition: h.condition, icon: nil)
             return WeatherSnapshot.HourlyForecast(
                 date: date,
-                tempF: Int(cToF(t).rounded()),
+                tempF: hourTempF,
                 symbol: Self.symbolForCode(for: hourCode),
-                precipChancePct: h.precipPct.map { Int($0.rounded()) },
-                windMph: h.windKph.map { Int(kphToMph($0).rounded()) },
+                precipChancePct: h.precipPct.flatMap {
+                    WeatherNumeric.roundedInt($0, allowed: WeatherNumeric.percent)
+                },
+                windMph: h.windKph.flatMap {
+                    WeatherNumeric.roundedInt(kphToMph($0), allowed: WeatherNumeric.windMph)
+                },
                 weatherCode: hourCode
             )
         }
@@ -511,7 +552,9 @@ final class WeatherService: NSObject, ObservableObject {
                 guard let date = parseDate(minute.t) else { return nil }
                 return WeatherSnapshot.NextHourPrecip.Minute(
                     date: date,
-                    precipChancePct: minute.precipPct.map { Int($0.rounded()) },
+                    precipChancePct: minute.precipPct.flatMap {
+                        WeatherNumeric.roundedInt($0, allowed: WeatherNumeric.percent)
+                    },
                     intensityMmPerHour: minute.precipIntensityMmPerHour
                 )
             }
@@ -520,7 +563,9 @@ final class WeatherService: NSObject, ObservableObject {
                 return WeatherSnapshot.NextHourPrecip.Summary(
                     start: start,
                     end: parseDate(summary.end),
-                    precipChancePct: summary.precipPct.map { Int($0.rounded()) },
+                    precipChancePct: summary.precipPct.flatMap {
+                        WeatherNumeric.roundedInt($0, allowed: WeatherNumeric.percent)
+                    },
                     intensityMmPerHour: summary.precipIntensityMmPerHour,
                     precipitationType: summary.precipitationType
                 )
@@ -540,14 +585,23 @@ final class WeatherService: NSObject, ObservableObject {
         let cal = Calendar.current
         let daily: [WeatherSnapshot.DailyForecast] = (server.daily ?? []).prefix(7).compactMap { d in
             guard let date = parseDate(d.d) ?? Self.dayOnly(d.d),
-                  let hi = d.hi, let lo = d.lo else { return nil }
+                  let hi = d.hi,
+                  let lo = d.lo,
+                  let highF = WeatherNumeric.roundedInt(
+                    cToF(hi),
+                    allowed: WeatherNumeric.temperatureF
+                  ),
+                  let lowF = WeatherNumeric.roundedInt(
+                    cToF(lo),
+                    allowed: WeatherNumeric.temperatureF
+                  ) else { return nil }
             let label = cal.isDateInToday(date) ? "Today" : weekdayFmt.string(from: date)
             let dayCode = d.weatherCode ?? Self.serverWeatherCode(condition: d.condition, icon: nil)
             return WeatherSnapshot.DailyForecast(
                 date: date,
                 weekdayLabel: label,
-                highF: Int(cToF(hi).rounded()),
-                lowF: Int(cToF(lo).rounded()),
+                highF: highF,
+                lowF: lowF,
                 symbol: Self.symbolForCode(for: dayCode),
                 condition: d.condition ?? Self.conditionForCode(for: dayCode),
                 precipChance: d.precipPct.map { $0 / 100.0 }
@@ -563,10 +617,11 @@ final class WeatherService: NSObject, ObservableObject {
             )
         }
 
-        let windMph = Int(kphToMph(windKph).rounded())
         // Honest visibility: nil when the server omitted it (em-dash
         // doctrine) — the old `?? 10` default could suppress LOW VIS.
-        let visMi: Int? = cur.visibilityKm.map { Int(kmToMi($0).rounded()) }
+        let visMi: Int? = cur.visibilityKm.flatMap {
+            WeatherNumeric.roundedInt(kmToMi($0), allowed: WeatherNumeric.visibilityMi)
+        }
 
         // Accent — real alert severity wins, else freight thresholds +
         // the code family, mirroring the other paths.
@@ -588,7 +643,9 @@ final class WeatherService: NSObject, ObservableObject {
         // value wins when it's already at/above the code's implied floor;
         // otherwise the floor is applied (honest minimum, not a fabricated
         // exact number). Benign codes pass through untouched (incl. nil).
-        let serverPrecip = cur.precipPct.map { Int($0.rounded()) }
+        let serverPrecip = cur.precipPct.flatMap {
+            WeatherNumeric.roundedInt($0, allowed: WeatherNumeric.percent)
+        }
         let resolvedPrecip: Int? = {
             guard let floor = Self.precipFloor(forCode: code) else { return serverPrecip }
             return max(serverPrecip ?? 0, floor)
@@ -596,7 +653,7 @@ final class WeatherService: NSObject, ObservableObject {
 
         var snap = WeatherSnapshot(
             city: city,
-            tempF: Int(tF.rounded()),
+            tempF: tempF,
             windMph: windMph,
             visibilityMi: visMi,
             condition: condition,
@@ -604,9 +661,15 @@ final class WeatherService: NSObject, ObservableObject {
             nextAlert: nextAlert,
             accent: accent,
             daily: daily,
-            feelsLikeF: cur.feelsC.map { Int(cToF($0).rounded()) },
-            humidityPct: cur.humidity.map { Int($0.rounded()) },
-            windGustMph: cur.windGustKph.map { Int(kphToMph($0).rounded()) },
+            feelsLikeF: cur.feelsC.flatMap {
+                WeatherNumeric.roundedInt(cToF($0), allowed: WeatherNumeric.temperatureF)
+            },
+            humidityPct: cur.humidity.flatMap {
+                WeatherNumeric.roundedInt($0, allowed: WeatherNumeric.percent)
+            },
+            windGustMph: cur.windGustKph.flatMap {
+                WeatherNumeric.roundedInt(kphToMph($0), allowed: WeatherNumeric.windMph)
+            },
             precipChancePct: resolvedPrecip
                 ?? nextHourPrecip?.peakMinute?.precipChancePct,
             nextHourPrecip: nextHourPrecip,
@@ -637,7 +700,9 @@ final class WeatherService: NSObject, ObservableObject {
         case "here":        snap.dataSource = .here
         default:            snap.dataSource = .unknown
         }
-        snap.uvIndex = cur.uv.map { Int($0.rounded()) }
+        snap.uvIndex = cur.uv.flatMap {
+            WeatherNumeric.roundedInt($0, allowed: WeatherNumeric.uvIndex)
+        }
         snap.alert = alert
         snap.observedAt = parseDate(server.fetchedAt) ?? Date()
 
@@ -1062,16 +1127,26 @@ final class WeatherService: NSObject, ObservableObject {
         // app launch in build 766. Treat an incomplete observation as an
         // unavailable provider response so the real Open-Meteo fallback
         // can run instead.
-        guard let tempC = p.temperature?.value, tempC.isFinite,
-              let windKmh = p.windSpeed?.value, windKmh.isFinite else {
+        guard
+            let tempC = p.temperature?.value,
+            let windKmh = p.windSpeed?.value,
+            let tempF = WeatherNumeric.roundedInt(
+                tempC * 9.0 / 5.0 + 32.0,
+                allowed: WeatherNumeric.temperatureF
+            ),
+            let windMph = WeatherNumeric.roundedInt(
+                windKmh * 0.621371,
+                allowed: WeatherNumeric.windMph
+            )
+        else {
             throw URLError(.cannotParseResponse)
         }
         // NWS gives temperature in C, wind in km/h, visibility in m.
-        let tempF = Int((tempC * 9.0 / 5.0 + 32.0).rounded())
-        let windMph = Int((windKmh * 0.621371).rounded())
         // Honest visibility: nil when the station omitted it — the old
         // `?? 0` default read as "0 mi" and falsely tripped LOW VIS.
-        let visMi: Int? = p.visibility?.value.map { Int(($0 / 1609.344).rounded()) }
+        let visMi: Int? = p.visibility?.value.flatMap {
+            WeatherNumeric.roundedInt($0 / 1609.344, allowed: WeatherNumeric.visibilityMi)
+        }
         let conditionText = p.textDescription ?? "Conditions unknown"
         let symbol = Self.nwsSymbol(for: conditionText, iconURL: p.icon)
 
@@ -1079,13 +1154,27 @@ final class WeatherService: NSObject, ObservableObject {
         // from heatIndex (warm) or windChill (cold) when the station
         // reports one; gust converted km/h → mph. All nil-safe: a station
         // that omits the field yields nil and the card renders "—".
-        let humidityPct: Int? = p.relativeHumidity?.value.map { Int($0.rounded()) }
+        let humidityPct: Int? = p.relativeHumidity?.value.flatMap {
+            WeatherNumeric.roundedInt($0, allowed: WeatherNumeric.percent)
+        }
         let feelsLikeF: Int? = {
-            if let hi = p.heatIndex?.value { return Int((hi * 9.0 / 5.0 + 32.0).rounded()) }
-            if let wc = p.windChill?.value { return Int((wc * 9.0 / 5.0 + 32.0).rounded()) }
+            if let hi = p.heatIndex?.value {
+                return WeatherNumeric.roundedInt(
+                    hi * 9.0 / 5.0 + 32.0,
+                    allowed: WeatherNumeric.temperatureF
+                )
+            }
+            if let wc = p.windChill?.value {
+                return WeatherNumeric.roundedInt(
+                    wc * 9.0 / 5.0 + 32.0,
+                    allowed: WeatherNumeric.temperatureF
+                )
+            }
             return nil
         }()
-        let windGustMph: Int? = p.windGust?.value.map { Int(($0 * 0.621371).rounded()) }
+        let windGustMph: Int? = p.windGust?.value.flatMap {
+            WeatherNumeric.roundedInt($0 * 0.621371, allowed: WeatherNumeric.windMph)
+        }
 
         // Hourly band + active CAP alerts — both real NWS feeds; each
         // degrades to empty on failure without sinking the snapshot.
@@ -1236,14 +1325,20 @@ final class WeatherService: NSObject, ObservableObject {
                 let wind: Int? = p.windSpeed
                     .flatMap { $0.split(separator: " ").first }
                     .flatMap { Int($0) }
-                let tempF = (p.temperatureUnit ?? "F").uppercased() == "C"
-                    ? Int((Double(t) * 9.0 / 5.0 + 32.0).rounded())
-                    : t
+                let convertedTemperature = (p.temperatureUnit ?? "F").uppercased() == "C"
+                    ? Double(t) * 9.0 / 5.0 + 32.0
+                    : Double(t)
+                guard let tempF = WeatherNumeric.roundedInt(
+                    convertedTemperature,
+                    allowed: WeatherNumeric.temperatureF
+                ) else { return nil }
                 return WeatherSnapshot.HourlyForecast(
                     date: date,
                     tempF: tempF,
                     symbol: nwsSymbol(for: p.shortForecast ?? "", iconURL: p.icon),
-                    precipChancePct: p.probabilityOfPrecipitation?.value.map { Int($0.rounded()) },
+                    precipChancePct: p.probabilityOfPrecipitation?.value.flatMap {
+                        WeatherNumeric.roundedInt($0, allowed: WeatherNumeric.percent)
+                    },
                     windMph: wind
                 )
             }
@@ -1480,8 +1575,16 @@ final class WeatherService: NSObject, ObservableObject {
             return "Current location"
         }()
 
-        let tempF = Int(payload.current.temperature_2m.rounded())
-        let windMph = Int(payload.current.wind_speed_10m.rounded())
+        guard
+            let tempF = WeatherNumeric.roundedInt(
+                payload.current.temperature_2m,
+                allowed: WeatherNumeric.temperatureF
+            ),
+            let windMph = WeatherNumeric.roundedInt(
+                payload.current.wind_speed_10m,
+                allowed: WeatherNumeric.windMph
+            )
+        else { throw URLError(.cannotParseResponse) }
 
         // Visibility — Open-Meteo ships this on hourly (meters). Prefer the
         // current hour if the timestamps align; otherwise first available.
@@ -1506,7 +1609,9 @@ final class WeatherService: NSObject, ObservableObject {
                 }
                 return values.first
             }()
-            return metersCandidate.map { Int(($0 / 1609.34).rounded()) }
+            return metersCandidate.flatMap {
+                WeatherNumeric.roundedInt($0 / 1609.34, allowed: WeatherNumeric.visibilityMi)
+            }
         }()
 
         // DATA-ACCURACY: Open-Meteo aggregates multiple models, so WMO 95
@@ -1531,9 +1636,11 @@ final class WeatherService: NSObject, ObservableObject {
         let nextAlert: String? = {
             guard
                 let hi = payload.daily.temperature_2m_max.first,
-                let lo = payload.daily.temperature_2m_min.first
+                let lo = payload.daily.temperature_2m_min.first,
+                let highF = WeatherNumeric.roundedInt(hi, allowed: WeatherNumeric.temperatureF),
+                let lowF = WeatherNumeric.roundedInt(lo, allowed: WeatherNumeric.temperatureF)
             else { return nil }
-            return "today · H \(Int(hi.rounded()))° / L \(Int(lo.rounded()))°"
+            return "today · H \(highF)° / L \(lowF)°"
         }()
 
         // Accent — map WMO code + wind/vis thresholds to our three-level scale.
@@ -1560,9 +1667,15 @@ final class WeatherService: NSObject, ObservableObject {
         // `current` block; hourly band from the parallel hourly arrays
         // starting at the slot nearest now. Open-Meteo ships no CAP
         // bulletins, so `alerts` stays honestly empty on this path.
-        let feelsLikeF: Int? = payload.current.apparent_temperature.map { Int($0.rounded()) }
-        let humidityPct: Int? = payload.current.relative_humidity_2m.map { Int($0.rounded()) }
-        let windGustMph: Int? = payload.current.wind_gusts_10m.map { Int($0.rounded()) }
+        let feelsLikeF: Int? = payload.current.apparent_temperature.flatMap {
+            WeatherNumeric.roundedInt($0, allowed: WeatherNumeric.temperatureF)
+        }
+        let humidityPct: Int? = payload.current.relative_humidity_2m.flatMap {
+            WeatherNumeric.roundedInt($0, allowed: WeatherNumeric.percent)
+        }
+        let windGustMph: Int? = payload.current.wind_gusts_10m.flatMap {
+            WeatherNumeric.roundedInt($0, allowed: WeatherNumeric.windMph)
+        }
         let hourly: [WeatherSnapshot.HourlyForecast] = Self.composeOpenMeteoHourly(payload: payload)
         let precipChancePct: Int? = hourly.first?.precipChancePct
 
@@ -1642,11 +1755,15 @@ final class WeatherService: NSObject, ObservableObject {
             let wind: Int? = {
                 guard let arr = payload.hourly?.wind_speed_10m,
                       arr.indices.contains(i) else { return nil }
-                return Int(arr[i].rounded())
+                return WeatherNumeric.roundedInt(arr[i], allowed: WeatherNumeric.windMph)
             }()
+            guard let tempF = WeatherNumeric.roundedInt(
+                temps[i],
+                allowed: WeatherNumeric.temperatureF
+            ) else { continue }
             out.append(WeatherSnapshot.HourlyForecast(
                 date: date,
-                tempF: Int(temps[i].rounded()),
+                tempF: tempF,
                 symbol: symbol,
                 precipChancePct: precip,
                 windMph: wind
@@ -1704,11 +1821,21 @@ final class WeatherService: NSObject, ObservableObject {
                       let v = arr[i] else { return nil }
                 return Double(v) / 100.0
             }()
+            guard
+                let highF = WeatherNumeric.roundedInt(
+                    daily.temperature_2m_max[i],
+                    allowed: WeatherNumeric.temperatureF
+                ),
+                let lowF = WeatherNumeric.roundedInt(
+                    daily.temperature_2m_min[i],
+                    allowed: WeatherNumeric.temperatureF
+                )
+            else { continue }
             out.append(WeatherSnapshot.DailyForecast(
                 date: date,
                 weekdayLabel: weekday,
-                highF: Int(daily.temperature_2m_max[i].rounded()),
-                lowF: Int(daily.temperature_2m_min[i].rounded()),
+                highF: highF,
+                lowF: lowF,
                 symbol: symbol,
                 condition: condition,
                 precipChance: precip
@@ -1823,7 +1950,7 @@ final class WeatherService: NSObject, ObservableObject {
     private static func compose(
         weather: Weather,
         placemark: CLPlacemark?
-    ) -> WeatherSnapshot {
+    ) -> WeatherSnapshot? {
         let current = weather.currentWeather
 
         // City string — prefer locality, fall back to subAdministrativeArea,
@@ -1839,14 +1966,20 @@ final class WeatherService: NSObject, ObservableObject {
             return "Current location"
         }()
 
-        // Temperature in Fahrenheit (rounded).
-        let tempF = Int(current.temperature.converted(to: .fahrenheit).value.rounded())
-
-        // Wind in mph.
-        let windMph = Int(current.wind.speed.converted(to: .milesPerHour).value.rounded())
-
-        // Visibility in whole miles.
-        let visibilityMi = Int(current.visibility.converted(to: .miles).value.rounded())
+        guard
+            let tempF = WeatherNumeric.roundedInt(
+                current.temperature.converted(to: .fahrenheit).value,
+                allowed: WeatherNumeric.temperatureF
+            ),
+            let windMph = WeatherNumeric.roundedInt(
+                current.wind.speed.converted(to: .milesPerHour).value,
+                allowed: WeatherNumeric.windMph
+            ),
+            let visibilityMi = WeatherNumeric.roundedInt(
+                current.visibility.converted(to: .miles).value,
+                allowed: WeatherNumeric.visibilityMi
+            )
+        else { return nil }
 
         // Condition line + matching SF Symbol.
         let condition = current.condition.description
@@ -1862,9 +1995,15 @@ final class WeatherService: NSObject, ObservableObject {
                 let offset = i + 1
                 return "\(offset)h · \(hour.condition.description.lowercased())"
             }
-            if let today = weather.dailyForecast.first {
-                let hi = Int(today.highTemperature.converted(to: .fahrenheit).value.rounded())
-                let lo = Int(today.lowTemperature.converted(to: .fahrenheit).value.rounded())
+            if let today = weather.dailyForecast.first,
+               let hi = WeatherNumeric.roundedInt(
+                    today.highTemperature.converted(to: .fahrenheit).value,
+                    allowed: WeatherNumeric.temperatureF
+               ),
+               let lo = WeatherNumeric.roundedInt(
+                    today.lowTemperature.converted(to: .fahrenheit).value,
+                    allowed: WeatherNumeric.temperatureF
+               ) {
                 return "today · H \(hi)° / L \(lo)°"
             }
             return nil as String? ?? ""
@@ -1913,9 +2052,17 @@ final class WeatherService: NSObject, ObservableObject {
             weekdayFmt.dateFormat = "EEE"
             let cal = Calendar.current
 
-            return weather.dailyForecast.forecast.prefix(6).enumerated().map { (i, day) in
-                let hi = Int(day.highTemperature.converted(to: .fahrenheit).value.rounded())
-                let lo = Int(day.lowTemperature.converted(to: .fahrenheit).value.rounded())
+            return weather.dailyForecast.forecast.prefix(6).enumerated().compactMap { (i, day) in
+                guard
+                    let hi = WeatherNumeric.roundedInt(
+                        day.highTemperature.converted(to: .fahrenheit).value,
+                        allowed: WeatherNumeric.temperatureF
+                    ),
+                    let lo = WeatherNumeric.roundedInt(
+                        day.lowTemperature.converted(to: .fahrenheit).value,
+                        allowed: WeatherNumeric.temperatureF
+                    )
+                else { return nil }
                 let label: String = {
                     if cal.isDateInToday(day.date) { return "Today" }
                     if i == 0 { return "Today" }
@@ -1936,22 +2083,45 @@ final class WeatherService: NSObject, ObservableObject {
         // Level-100 depth — feels-like / humidity / gust straight off
         // the WeatherKit current observation; hourly band from the next
         // 12 hours; alerts mapped onto the NWS CAP severity ladder.
-        let feelsLikeF = Int(current.apparentTemperature.converted(to: .fahrenheit).value.rounded())
-        let humidityPct = Int((current.humidity * 100).rounded())
-        let windGustMph: Int? = current.wind.gust.map {
-            Int($0.converted(to: .milesPerHour).value.rounded())
+        let feelsLikeF = WeatherNumeric.roundedInt(
+            current.apparentTemperature.converted(to: .fahrenheit).value,
+            allowed: WeatherNumeric.temperatureF
+        )
+        let humidityPct = WeatherNumeric.roundedInt(
+            current.humidity * 100,
+            allowed: WeatherNumeric.percent
+        )
+        let windGustMph: Int? = current.wind.gust.flatMap {
+            WeatherNumeric.roundedInt(
+                $0.converted(to: .milesPerHour).value,
+                allowed: WeatherNumeric.windMph
+            )
         }
         let now = Date()
         let hourly: [WeatherSnapshot.HourlyForecast] = weather.hourlyForecast.forecast
             .filter { $0.date >= now.addingTimeInterval(-1800) }
             .prefix(12)
-            .map { hour in
-                WeatherSnapshot.HourlyForecast(
+            .compactMap { hour in
+                guard
+                    let tempF = WeatherNumeric.roundedInt(
+                        hour.temperature.converted(to: .fahrenheit).value,
+                        allowed: WeatherNumeric.temperatureF
+                    ),
+                    let precipChancePct = WeatherNumeric.roundedInt(
+                        hour.precipitationChance * 100,
+                        allowed: WeatherNumeric.percent
+                    ),
+                    let windMph = WeatherNumeric.roundedInt(
+                        hour.wind.speed.converted(to: .milesPerHour).value,
+                        allowed: WeatherNumeric.windMph
+                    )
+                else { return nil }
+                return WeatherSnapshot.HourlyForecast(
                     date: hour.date,
-                    tempF: Int(hour.temperature.converted(to: .fahrenheit).value.rounded()),
+                    tempF: tempF,
                     symbol: hour.symbolName,
-                    precipChancePct: Int((hour.precipitationChance * 100).rounded()),
-                    windMph: Int(hour.wind.speed.converted(to: .milesPerHour).value.rounded()),
+                    precipChancePct: precipChancePct,
+                    windMph: windMph,
                     // Typed condition → canonical code (light/heavy variants
                     // preserved); the SF-symbol round-trip is the fallback.
                     weatherCode: Self.code(for: hour.condition, symbol: hour.symbolName)
@@ -1964,10 +2134,14 @@ final class WeatherService: NSObject, ObservableObject {
         let nextHourPrecip: WeatherSnapshot.NextHourPrecip? = {
             let mf: Forecast<MinuteWeather>? = weather.minuteForecast
             guard let mf else { return nil }
-            let minutes: [WeatherSnapshot.NextHourPrecip.Minute] = mf.forecast.prefix(60).map { m in
-                WeatherSnapshot.NextHourPrecip.Minute(
+            let minutes: [WeatherSnapshot.NextHourPrecip.Minute] = mf.forecast.prefix(60).compactMap { m in
+                guard let precipChancePct = WeatherNumeric.roundedInt(
+                    m.precipitationChance * 100,
+                    allowed: WeatherNumeric.percent
+                ) else { return nil }
+                return WeatherSnapshot.NextHourPrecip.Minute(
                     date: m.date,
-                    precipChancePct: Int((m.precipitationChance * 100).rounded()),
+                    precipChancePct: precipChancePct,
                     // UnitSpeed m/s → mm/hr (1 m/s = 3,600,000 mm/hr).
                     intensityMmPerHour: m.precipitationIntensity
                         .converted(to: .metersPerSecond).value * 3_600_000

@@ -1,7 +1,7 @@
 # TestFlight Feedback Ledger
 
-Generated: 2026-07-22T08:35:12.010Z
-Source: /tmp/asc/feedback-20260722/_summary.json
+Generated: 2026-07-29T18:18:02.492Z
+Source: /tmp/asc/feedback-20260729/_summary.json
 
 Total: 144
 Screenshots: 135

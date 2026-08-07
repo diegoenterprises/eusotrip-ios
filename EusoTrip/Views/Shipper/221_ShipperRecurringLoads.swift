@@ -87,7 +87,7 @@ final class ShipperRecurringLoadsStore: ObservableObject {
     @Published var search: String = ""
     @Published fileprivate var filter: TemplateFilter = .all
     @Published var posting: Set<Int> = []
-    @Published var lastAck: ShipperAPI.PostLoadAck? = nil
+    @Published var lastAck: LoadTemplatesAPI.MaterializeAck? = nil
     @Published var lastError: String? = nil
 
     private let api: EusoTripAPI
@@ -132,42 +132,14 @@ final class ShipperRecurringLoadsStore: ObservableObject {
     func post(template t: LoadTemplatesAPI.Template) async {
         posting.insert(t.id)
         defer { posting.remove(t.id) }
-        let originPair = Self.cityState(t.origin)
-        let destPair   = Self.cityState(t.destination)
-        guard !originPair.isEmpty, !destPair.isEmpty else {
-            lastError = "Template missing origin or destination."
-            return
-        }
-        let raw    = (t.cargoType ?? "general").lowercased()
-        let cargo  = ShipperAPI.CargoType(rawValue: raw) ?? .general
-        let rate: Double?   = t.rate.flatMap { Double($0) }
-        let weight: Double? = t.weight.flatMap { Double($0) }
         do {
-            let ack = try await api.shipper.create(
-                origin: originPair,
-                destination: destPair,
-                cargoType: cargo,
-                rate: rate,
-                weight: weight,
-                notes: t.description,
-                pickupDate: nil
-            )
+            let ack = try await api.loadTemplates.useTemplate(templateId: t.id)
             lastAck = ack
             lastError = nil
             await load()
         } catch {
-            lastError = "Couldn't post load. Try again."
+            lastError = error.eusoUserCopy
         }
-    }
-
-    private static func cityState(_ loc: LoadTemplatesAPI.Template.Location?) -> String {
-        guard let loc else { return "" }
-        let c = (loc.city ?? "").trimmingCharacters(in: .whitespaces)
-        let s = (loc.state ?? "").trimmingCharacters(in: .whitespaces)
-        if !c.isEmpty && !s.isEmpty { return "\(c), \(s)" }
-        if !c.isEmpty { return c }
-        if !s.isEmpty { return s }
-        return ""
     }
 }
 
@@ -219,7 +191,7 @@ struct ShipperRecurringLoads: View {
         }
         .task { await store.load() }
         .onChange(of: store.filter) { _, _ in Task { await store.load() } }
-        .onChange(of: store.lastAck?.id ?? -1) { _, v in if v != -1 { showAck = true } }
+        .onChange(of: store.lastAck?.loadId ?? -1) { _, v in if v != -1 { showAck = true } }
         .onChange(of: storeStateKey) { _, _ in updateUnfiltered() }
         // RealtimeService → recurring loads refresh when scheduled
         // dispatches fire or a recurring lane is amended upstream.
@@ -963,10 +935,19 @@ struct ShipperRecurringLoadDetail: View {
     private var actions: some View {
         VStack(spacing: 8) {
             Button {
-                Task {
-                    await store.post(template: template)
-                    // Sheet→push: pop the in-stack detail (no-op
-                    // `dismiss()` retained for any modal caller).
+                if (template.transportMode ?? "truck").lowercased() == "truck" {
+                    Task {
+                        await store.post(template: template)
+                        NotificationCenter.default.post(
+                            name: .eusoShipperNavBack, object: nil)
+                        dismiss()
+                    }
+                } else {
+                    NotificationCenter.default.post(
+                        name: .eusoShipperRecurringScheduleInline,
+                        object: template,
+                        userInfo: ["templateId": template.id]
+                    )
                     NotificationCenter.default.post(
                         name: .eusoShipperNavBack, object: nil)
                     dismiss()
@@ -978,7 +959,11 @@ struct ShipperRecurringLoadDetail: View {
                     } else {
                         Image(systemName: "paperplane.fill").font(.system(size: 13, weight: .heavy))
                     }
-                    Text(store.posting.contains(template.id) ? "Posting…" : "Post this lane now")
+                    Text(store.posting.contains(template.id)
+                         ? "Posting…"
+                         : ((template.transportMode ?? "truck").lowercased() == "truck"
+                            ? "Post this lane now"
+                            : "Review evidence + post"))
                         .font(.system(size: 14, weight: .heavy))
                 }
                 .frame(maxWidth: .infinity).padding(.vertical, 13)

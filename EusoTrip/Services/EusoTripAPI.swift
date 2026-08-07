@@ -4522,6 +4522,8 @@ struct PODAPI {
         let receiverName: String?
         let photoBase64: String?
         let signatureBase64: String?
+        let photoUrl: String?
+        let signatureUrl: String?
         let notes: String?
         let submittedAt: String?
         let status: String?
@@ -17134,14 +17136,19 @@ struct ShipperAPI {
         let physicalState: String?
         let unNumber: String?
         let hazmatClass: String?
+        let properShippingName: String?
+        let packingGroup: String?
         let rate: Double?
         let weight: Double?
         let weightUnit: String?
+        let quantity: Double?
+        let quantityUnit: String?
         let notes: String?
         /// ISO-8601 date string (no time) — backend coerces to
         /// `Date` via `new Date(input.pickupDate)` for the Drizzle
         /// insert. Empty strings are coalesced to nil before send.
         let pickupDate: String?
+        let deliveryDate: String?
         /// Captured from HERE autosuggest / "lat,lng" paste in
         /// `HereAddressField`. When present the backend skips
         /// re-geocoding and goes straight to truck-route distance.
@@ -17215,11 +17222,16 @@ struct ShipperAPI {
         physicalState: String? = nil,
         unNumber: String? = nil,
         hazmatClass: String? = nil,
+        properShippingName: String? = nil,
+        packingGroup: String? = nil,
         rate: Double? = nil,
         weight: Double? = nil,
         weightUnit: String? = nil,
+        quantity: Double? = nil,
+        quantityUnit: String? = nil,
         notes: String? = nil,
         pickupDate: String? = nil,
+        deliveryDate: String? = nil,
         originLat: Double? = nil,
         originLng: Double? = nil,
         destLat: Double? = nil,
@@ -17285,11 +17297,16 @@ struct ShipperAPI {
                 physicalState: physicalState,
                 unNumber: unNumber,
                 hazmatClass: hazmatClass,
+                properShippingName: properShippingName,
+                packingGroup: packingGroup,
                 rate: rate,
                 weight: weight,
                 weightUnit: weightUnit,
+                quantity: quantity,
+                quantityUnit: quantityUnit,
                 notes: notes,
                 pickupDate: pickupDate,
+                deliveryDate: deliveryDate,
                 originLat: originLat,
                 originLng: originLng,
                 destLat: destLat,
@@ -21679,15 +21696,29 @@ struct LoadTemplatesAPI {
         let destination: Location?
         let distance: String?
         let commodity: String?
+        let category: String?
+        let physicalState: String?
         let cargoType: String?
         let equipmentType: String?
         let trailerType: String?
+        let vertical: String?
         let weight: String?
         let weightUnit: String?
         let quantity: String?
         let quantityUnit: String?
         let hazmatClass: String?
         let unNumber: String?
+        let packingGroup: String?
+        let properShippingName: String?
+        let transportMode: String?
+        let originCountry: String?
+        let destinationCountry: String?
+        let vesselClass: String?
+        let permitType: String?
+        let originTerminalId: Int?
+        let destinationTerminalId: Int?
+        let specialInstructions: String?
+        let notes: String?
         let rate: String?
         let rateType: String?
         let isFavorite: Bool?
@@ -21703,6 +21734,9 @@ struct LoadTemplatesAPI {
             let zipCode: String?
             let address: String?
             let facilityName: String?
+            let countryCode: String?
+            let lat: Double?
+            let lng: Double?
         }
     }
 
@@ -21750,6 +21784,23 @@ struct LoadTemplatesAPI {
         let preferredDays: [String]?
         let preferredPickupTime: String?
         let specialInstructions: String?
+        var category: String? = nil
+        var physicalState: String? = nil
+        var trailerType: String? = nil
+        var vertical: String? = nil
+        var quantity: String? = nil
+        var quantityUnit: String? = nil
+        var hazmatClass: String? = nil
+        var unNumber: String? = nil
+        var packingGroup: String? = nil
+        var properShippingName: String? = nil
+        var transportMode: String = "truck"
+        var originCountry: String? = nil
+        var destinationCountry: String? = nil
+        var vesselClass: String? = nil
+        var permitType: String? = nil
+        var originTerminalId: Int? = nil
+        var destinationTerminalId: Int? = nil
     }
 
     /// Encodable Location used at create time. Server stores under
@@ -21762,6 +21813,9 @@ struct LoadTemplatesAPI {
         let zipCode: String?
         let address: String?
         let facilityName: String?
+        var countryCode: String? = nil
+        var lat: Double? = nil
+        var lng: Double? = nil
     }
 
     struct CreateAck: Decodable, Hashable {
@@ -21770,11 +21824,47 @@ struct LoadTemplatesAPI {
     }
 
     /// `loadTemplates.create` — save a recurring lane template.
-    /// Once saved, `loads.createFromTemplate(templateId, pickupDate,
+    /// Once saved, `loadTemplates.useTemplate(templateId, pickupDate,
     /// deliveryDate)` materializes a real load on the schedule.
     @discardableResult
     func create(_ input: CreateInput) async throws -> CreateAck {
         try await api.mutation("loadTemplates.create", input: input)
+    }
+
+    struct MaterializeAck: Decodable, Hashable {
+        let success: Bool
+        let loadId: Int
+        let loadNumber: String
+    }
+
+    @discardableResult
+    func useTemplate(
+        templateId: Int,
+        pickupDate: String? = nil,
+        deliveryDate: String? = nil,
+        rate: Double? = nil,
+        portIntelligenceAssessmentId: String? = nil,
+        portIntelligenceAcknowledged: Bool = false
+    ) async throws -> MaterializeAck {
+        struct Input: Encodable {
+            let templateId: Int
+            let pickupDate: String?
+            let deliveryDate: String?
+            let rate: Double?
+            let portIntelligenceAssessmentId: String?
+            let portIntelligenceAcknowledged: Bool
+        }
+        return try await api.mutation(
+            "loadTemplates.useTemplate",
+            input: Input(
+                templateId: templateId,
+                pickupDate: pickupDate,
+                deliveryDate: deliveryDate,
+                rate: rate,
+                portIntelligenceAssessmentId: portIntelligenceAssessmentId,
+                portIntelligenceAcknowledged: portIntelligenceAcknowledged
+            )
+        )
     }
 }
 

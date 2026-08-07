@@ -36,6 +36,7 @@ import SwiftUI
 struct ShipperHome: View {
     @Environment(\.palette) private var palette
     @Environment(\.openURL) private var openURL
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @EnvironmentObject private var session: EusoTripSession
 
     @StateObject private var dashboard = ShipperDashboardStore()
@@ -742,22 +743,42 @@ struct ShipperHome: View {
         // derivations (`getMyLoads` rate÷distance, `getCatalystPerformance`
         // weighted on-time). Dashboard value still wins if the server ever
         // starts emitting a non-zero figure.
-        HStack(spacing: Space.s2) {
-            statTile(label: "Active", value: "\(s.activeLoads)",
-                     trail: "in flight",
-                     trailColor: palette.textSecondary)
-            statTile(label: "Bids pending", value: "\(s.pendingBids)",
-                     trail: "awaiting award",
-                     trailColor: palette.textSecondary)
-            statTile(label: "Rate / mi", value: rateValue(resolvedRatePerMile(s)),
-                     trail: "avg",
-                     trailColor: palette.textSecondary,
-                     gradientNumeral: true, valueSize: 22)
-            statTile(label: "On-time", value: percentValue(resolvedOnTimeRate(s)),
-                     trail: "delivery rate",
-                     trailColor: palette.textSecondary,
-                     gradientNumeral: true)
+        Group {
+            if horizontalSizeClass == .regular {
+                HStack(spacing: Space.s2) {
+                    primaryStatTiles(s)
+                }
+            } else {
+                LazyVGrid(columns: compactMetricColumns, spacing: Space.s2) {
+                    primaryStatTiles(s)
+                }
+            }
         }
+    }
+
+    @ViewBuilder
+    private func primaryStatTiles(_ s: ShipperAPI.DashboardStats) -> some View {
+        statTile(label: "Active", value: "\(s.activeLoads)",
+                 trail: "in flight",
+                 trailColor: palette.textSecondary)
+        statTile(label: "Bids pending", value: "\(s.pendingBids)",
+                 trail: "awaiting award",
+                 trailColor: palette.textSecondary)
+        statTile(label: "Rate / mi", value: rateValue(resolvedRatePerMile(s)),
+                 trail: "avg",
+                 trailColor: palette.textSecondary,
+                 gradientNumeral: true, valueSize: 22)
+        statTile(label: "On-time", value: percentValue(resolvedOnTimeRate(s)),
+                 trail: "delivery rate",
+                 trailColor: palette.textSecondary,
+                 gradientNumeral: true)
+    }
+
+    private var compactMetricColumns: [GridItem] {
+        [
+            GridItem(.flexible(minimum: 0), spacing: Space.s2, alignment: .topLeading),
+            GridItem(.flexible(minimum: 0), spacing: Space.s2, alignment: .topLeading),
+        ]
     }
 
     /// Real rate/mi — prefer the dashboard envelope when the server emits a
@@ -778,14 +799,26 @@ struct ShipperHome: View {
     }
 
     private var statSkeleton: some View {
-        HStack(spacing: Space.s2) {
-            ForEach(0..<4, id: \.self) { _ in
-                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                    .fill(palette.bgCardSoft)
-                    .frame(height: 86)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                                .strokeBorder(palette.borderFaint))
+        Group {
+            if horizontalSizeClass == .regular {
+                HStack(spacing: Space.s2) {
+                    statSkeletonTiles
+                }
+            } else {
+                LazyVGrid(columns: compactMetricColumns, spacing: Space.s2) {
+                    statSkeletonTiles
+                }
             }
+        }
+    }
+
+    private var statSkeletonTiles: some View {
+        ForEach(0..<4, id: \.self) { _ in
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .fill(palette.bgCardSoft)
+                .frame(height: 104)
+                .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                            .strokeBorder(palette.borderFaint))
         }
     }
 
@@ -814,7 +847,7 @@ struct ShipperHome: View {
                 .minimumScaleFactor(0.65)
         }
         .padding(Space.s3)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 104, alignment: .leading)
         // Bespoke EusoCard surface — iridescent rim + glow per stat tile,
         // matching the SVG's lit stat strip and the DriverHome metric idiom.
         .eusoCard(radius: Radius.lg)
@@ -1347,17 +1380,37 @@ struct ShipperHome: View {
             .padding(Space.s3)
             .eusoCard(radius: Radius.lg)
         } else {
-            HStack(spacing: Space.s2) {
-                statTile(label: "This month",  value: dollars(s.totalSpendThisMonth),
-                         trail: "total spend",    trailColor: palette.textSecondary,
-                         gradientNumeral: true, valueSize: 18)
-                statTile(label: "Bids open",   value: "\(s.pendingBids)",
-                         trail: "awaiting award", trailColor: palette.textSecondary)
-                statTile(label: "On-time",     value: percentValue(resolvedOnTimeRate(s)),
-                         trail: "delivery rate",  trailColor: Brand.success,
-                         gradientNumeral: true)
+            if horizontalSizeClass == .regular {
+                HStack(spacing: Space.s2) {
+                    spendStatTiles(s)
+                }
+            } else {
+                VStack(spacing: Space.s2) {
+                    statTile(label: "This month", value: dollars(s.totalSpendThisMonth),
+                             trail: "total spend", trailColor: palette.textSecondary,
+                             gradientNumeral: true, valueSize: 22)
+                    HStack(spacing: Space.s2) {
+                        statTile(label: "Bids open", value: "\(s.pendingBids)",
+                                 trail: "awaiting award", trailColor: palette.textSecondary)
+                        statTile(label: "On-time", value: percentValue(resolvedOnTimeRate(s)),
+                                 trail: "delivery rate", trailColor: Brand.success,
+                                 gradientNumeral: true)
+                    }
+                }
             }
         }
+    }
+
+    @ViewBuilder
+    private func spendStatTiles(_ s: ShipperAPI.DashboardStats) -> some View {
+        statTile(label: "This month", value: dollars(s.totalSpendThisMonth),
+                 trail: "total spend", trailColor: palette.textSecondary,
+                 gradientNumeral: true, valueSize: 18)
+        statTile(label: "Bids open", value: "\(s.pendingBids)",
+                 trail: "awaiting award", trailColor: palette.textSecondary)
+        statTile(label: "On-time", value: percentValue(resolvedOnTimeRate(s)),
+                 trail: "delivery rate", trailColor: Brand.success,
+                 gradientNumeral: true)
     }
 
     /// Inline number+label used by the `.compact` spend strip.

@@ -164,6 +164,10 @@ struct EusoTripApp: App {
                 }
             }
             .task {
+                // Subscribe before session restoration or any signed-in home
+                // surface can start. MetricKit deliveries are persisted when
+                // auth is unavailable, then flushed on the signed-in edge.
+                AppCrashDiagnosticsReporter.shared.start()
                 #if DEBUG
                 // Debug-only regression fence. In release this is a no-op
                 // (the function is guarded internally) — ensures seeded
@@ -186,7 +190,6 @@ struct EusoTripApp: App {
                 // same-actor call (the prior `await` produced the
                 // "No 'async' operations occur within 'await'" warning).
                 WeatherService.shared.requestPermissionIfNeeded()
-                AppCrashDiagnosticsReporter.shared.start()
                 // Unified Outbox — start the reachability hub once so it
                 // can drain the offline action queue on the next
                 // .unsatisfied → .satisfied network edge. Idempotent;
@@ -213,6 +216,9 @@ struct EusoTripApp: App {
             .onChange(of: session.phase) { _, newPhase in
                 if newPhase == .signedIn {
                     Task { await push.bootstrap() }
+                    Task {
+                        await AppCrashDiagnosticsReporter.shared.flushAfterAuthentication()
+                    }
                     realtime.connect()
                     hos.start()
                     // Seed the top-bar chat glyph badge from the

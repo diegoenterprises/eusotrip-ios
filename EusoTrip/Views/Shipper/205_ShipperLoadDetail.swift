@@ -362,6 +362,44 @@ struct ShipperLoadDetail: View {
     }
 
     @ViewBuilder
+    private func podEvidenceImage(
+        base64: String?,
+        urlString: String?,
+        emptyText: String,
+        minHeight: CGFloat
+    ) -> some View {
+        if let image = decodeBase64Image(base64) {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFit()
+                .frame(maxWidth: .infinity, minHeight: minHeight)
+        } else if let urlString,
+                  let url = URL(string: urlString),
+                  url.scheme == "https" {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let image):
+                    image.resizable().scaledToFit()
+                case .failure:
+                    Text("Delivery evidence is temporarily unavailable")
+                        .font(EType.caption)
+                        .foregroundStyle(Brand.danger)
+                case .empty:
+                    ProgressView()
+                @unknown default:
+                    ProgressView()
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: minHeight)
+        } else {
+            Text(emptyText)
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+                .frame(maxWidth: .infinity, minHeight: minHeight)
+        }
+    }
+
+    @ViewBuilder
     private var podReviewSheet: some View {
         NavigationStack {
             ScrollView {
@@ -451,20 +489,15 @@ struct ShipperLoadDetail: View {
                 .font(.system(size: 9, weight: .heavy)).tracking(0.9)
                 .foregroundStyle(LinearGradient.diagonal)
                 .lineLimit(1).minimumScaleFactor(0.7)
-            if let img = decodeBase64Image(podPacket?.photoBase64) {
-                Image(uiImage: img)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxWidth: .infinity)
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            } else {
-                Text("No photo on file")
-                    .font(EType.caption)
-                    .foregroundStyle(palette.textSecondary)
-                    .frame(maxWidth: .infinity, minHeight: 120)
-                    .background(palette.bgCardSoft,
-                                in: RoundedRectangle(cornerRadius: Radius.md))
-            }
+            podEvidenceImage(
+                base64: podPacket?.photoBase64,
+                urlString: podPacket?.photoUrl,
+                emptyText: "No photo on file",
+                minHeight: 120
+            )
+            .background(palette.bgCardSoft,
+                        in: RoundedRectangle(cornerRadius: Radius.md))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
         .padding(Space.s4)
         .background(palette.bgCard)
@@ -478,22 +511,15 @@ struct ShipperLoadDetail: View {
             Text("RECEIVER SIGNATURE")
                 .font(.system(size: 9, weight: .heavy)).tracking(0.9)
                 .foregroundStyle(LinearGradient.diagonal)
-            if let img = decodeBase64Image(podPacket?.signatureBase64) {
-                Image(uiImage: img)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxWidth: .infinity, minHeight: 80)
-                    .background(palette.bgCardSoft,
-                                in: RoundedRectangle(cornerRadius: Radius.md))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            } else {
-                Text("No signature on file")
-                    .font(EType.caption)
-                    .foregroundStyle(palette.textSecondary)
-                    .frame(maxWidth: .infinity, minHeight: 60)
-                    .background(palette.bgCardSoft,
-                                in: RoundedRectangle(cornerRadius: Radius.md))
-            }
+            podEvidenceImage(
+                base64: podPacket?.signatureBase64,
+                urlString: podPacket?.signatureUrl,
+                emptyText: "No signature on file",
+                minHeight: 80
+            )
+            .background(palette.bgCardSoft,
+                        in: RoundedRectangle(cornerRadius: Radius.md))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
         .padding(Space.s4)
         .background(palette.bgCard)

@@ -373,10 +373,17 @@ public final class HereAddOnsModel: ObservableObject {
             guard let obs = place.observations?.current else { return out }
             let at = HereLatLng(coord.latitude, coord.longitude)
             let desc = obs.description ?? "Current conditions"
-            let chip: String = obs.temperatureFahrenheit.map { "\(Int($0.rounded()))°F · \(desc)" } ?? desc
+            // Destination Weather returns the selected unit in `temperature`
+            // and `windSpeed`; it does not duplicate those values into the
+            // Fahrenheit/MPH aliases in the live v3 payload. Prefer explicit
+            // aliases when present, then use the imperial values requested by
+            // HereWeatherClient so a healthy report never loses its numbers.
+            let temperatureF = obs.temperatureFahrenheit ?? obs.temperature
+            let windMph = obs.windSpeedMph ?? obs.windSpeed
+            let chip: String = temperatureF.map { "\(Int($0.rounded()))°F · \(desc)" } ?? desc
             var subs: [String] = [desc]
             if let h = obs.humidity { subs.append("\(Int(h))% humidity") }
-            if let w = obs.windSpeedMph { subs.append("wind \(Int(w)) mph") }
+            if let w = windMph { subs.append("wind \(Int(w)) mph") }
             let id = "wx:center"
             out.markers.append(HereMarker(at: at, kind: .weather, label: chip, id: id))
             out.details.append(HereAddOnDetail(

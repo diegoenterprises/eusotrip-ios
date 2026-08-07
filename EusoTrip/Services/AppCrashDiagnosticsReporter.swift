@@ -41,6 +41,11 @@ final class AppCrashDiagnosticsReporter: NSObject {
     }
 
     @MainActor
+    func flushAfterAuthentication() async {
+        await flushPendingReports()
+    }
+
+    @MainActor
     func recordSurface(_ surface: String) {
         let cleaned = surface
             .trimmingCharacters(in: .whitespacesAndNewlines)

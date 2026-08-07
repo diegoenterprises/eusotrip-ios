@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-07-22T08:35:12.010Z",
-  "source": "/tmp/asc/feedback-20260722/_summary.json",
+  "generatedAt": "2026-07-29T18:18:02.492Z",
+  "source": "/tmp/asc/feedback-20260729/_summary.json",
   "counts": {
     "screenshots": 135,
     "crashes": 9,
@@ -81,7 +81,7 @@
       "app": "EusoTrip Freight",
       "comment": "Not clean fix ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_ABQzz1vS1HxeP4QekQ2wmAk_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_ABQzz1vS1HxeP4QekQ2wmAk_1.png"
       ],
       "crashLogFile": null,
       "cluster": "unclassified-feedback",
@@ -103,7 +103,7 @@
       "app": "EusoTrip Freight",
       "comment": "Total spend needs appropriate commas ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AKkbjG9z5vSG4juH8_4zFcs_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AKkbjG9z5vSG4juH8_4zFcs_1.png"
       ],
       "crashLogFile": null,
       "cluster": "unclassified-feedback",
@@ -125,7 +125,7 @@
       "app": "EusoTrip Freight",
       "comment": "Keeps crashing on boot ",
       "screenshots": [],
-      "crashLogFile": "/tmp/asc/feedback-20260722/crashlog_AE6MJdjbc_wr1PLzzUZlvSM.txt",
+      "crashLogFile": "/tmp/asc/feedback-20260729/crashlog_AE6MJdjbc_wr1PLzzUZlvSM.txt",
       "cluster": "crash-or-freeze",
       "severity": "P0",
       "ownerArea": "ios-stability-navigation",
@@ -145,7 +145,7 @@
       "app": "EusoTrip Freight",
       "comment": "Keeps crashing on boot ",
       "screenshots": [],
-      "crashLogFile": "/tmp/asc/feedback-20260722/crashlog_ACR8W1zIsMyMYeb2nZNtBe0.txt",
+      "crashLogFile": "/tmp/asc/feedback-20260729/crashlog_ACR8W1zIsMyMYeb2nZNtBe0.txt",
       "cluster": "crash-or-freeze",
       "severity": "P0",
       "ownerArea": "ios-stability-navigation",
@@ -165,7 +165,7 @@
       "app": "EusoTrip Freight",
       "comment": "We must fix this. ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AOrONPG4DfUYHlooCjemMI4_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AOrONPG4DfUYHlooCjemMI4_1.png"
       ],
       "crashLogFile": null,
       "cluster": "unclassified-feedback",
@@ -187,7 +187,7 @@
       "app": "EusoTrip Freight",
       "comment": "This initially said no valid route and to choose another carrier. If that’s the case this shouldn’t have posted?",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_ALvZ-ACztb5ZseBVMapiQmU_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_ALvZ-ACztb5ZseBVMapiQmU_1.png"
       ],
       "crashLogFile": null,
       "cluster": "live-location-weather-here",
@@ -209,7 +209,7 @@
       "app": "EusoTrip Freight",
       "comment": "This is a vessel. Why is the route continental Instead of through the ocean ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AGrOyMlhvDCKQaOIIob4w64_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AGrOyMlhvDCKQaOIIob4w64_1.png"
       ],
       "crashLogFile": null,
       "cluster": "live-location-weather-here",
@@ -231,7 +231,7 @@
       "app": "EusoTrip Freight",
       "comment": "Can’t post message in haul",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AOD_VpqykkHuGV8gSCDYq7Q_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AOD_VpqykkHuGV8gSCDYq7Q_1.png"
       ],
       "crashLogFile": null,
       "cluster": "unclassified-feedback",
@@ -253,7 +253,7 @@
       "app": "EusoTrip Freight",
       "comment": "It’s 12:25p why does esang say good evening ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_API1qD1OZjqvKicyFBYMWuM_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_API1qD1OZjqvKicyFBYMWuM_1.png"
       ],
       "crashLogFile": null,
       "cluster": "esang-time-aware-briefs",
@@ -282,7 +282,7 @@
       "app": "EusoTrip Freight",
       "comment": "This the add remark box looks terrible this needs to be fixed ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AKdfvzJqMBWjMEiGfdMP8Vw_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AKdfvzJqMBWjMEiGfdMP8Vw_1.png"
       ],
       "crashLogFile": null,
       "cluster": "unclassified-feedback",
@@ -307,7 +307,7 @@
       "app": "EusoTrip Freight",
       "comment": "Please do not have my app looking like a basic Claude II design with this shit. My app is bespoke everything ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_ADQ2eDjsPJGO0u2MBUSx1bY_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_ADQ2eDjsPJGO0u2MBUSx1bY_1.png"
       ],
       "crashLogFile": null,
       "cluster": "design-polish-dev-copy",
@@ -332,8 +332,8 @@
       "app": "EusoTrip Freight",
       "comment": "You need to go to this web address at apples site. Look at all weatherkit capabilities. All of it needs to be in our weather widget on top of route weather information and real time en route weather information. It needs to be as powerful as the weatherkit provides ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AIfheoVUkY2jQBLiYSOp8LI_1.png",
-        "/tmp/asc/feedback-20260722/shot_6762589326_AIfheoVUkY2jQBLiYSOp8LI_2.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AIfheoVUkY2jQBLiYSOp8LI_1.png",
+        "/tmp/asc/feedback-20260729/shot_6762589326_AIfheoVUkY2jQBLiYSOp8LI_2.png"
       ],
       "crashLogFile": null,
       "cluster": "live-location-weather-here",
@@ -358,7 +358,7 @@
       "app": "EusoTrip Freight",
       "comment": "Is weather kit being used , my developer apple account says 0 api calls period. Furthermore my weather app has things  like “rain starting soon at so and so o clock” and so on and so on. I see so many things in my apple weather app that let’s be serious are essential for users to know when in progress of work or a job. We built our weather widget from the ground up to be useful. Please don’t hinder my apps greatness by being lazy ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AMJy85rcShm0abSwO_ExvKo_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AMJy85rcShm0abSwO_ExvKo_1.png"
       ],
       "crashLogFile": null,
       "cluster": "live-location-weather-here",
@@ -383,7 +383,7 @@
       "app": "EusoTrip Freight",
       "comment": "Profile picture is static and doesn’t work or go to profile or profile picture edit or profile edit. It does nothing. It needs to be consistent across all users. Fan out and fix this ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AInzwKFUy8n6_kNQ6jg4wok_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AInzwKFUy8n6_kNQ6jg4wok_1.png"
       ],
       "crashLogFile": null,
       "cluster": "profile-account-export",
@@ -409,8 +409,8 @@
       "app": "EusoTrip Freight",
       "comment": "Dispatcher first of all, it is Diego always. Diego is the one building this platform so Diego is who you see in the name everywhere. Number two, the line drivers 30 rolling is static when all screens need to be dynamic and real. So wire that correctly it should be clicked on and an action happens please fix this. It’s beautiful but it needs to be interactive and working and wired in. Esang is also static right there. Listen esang is meant to be wired into everything so it is useful to the user it isn’t a sticker it’s an interactive being for the user. Yes the text may be correct when it’s active but right now it’s static and nothing happens when clicked on as well. The logic on every screen is clear and that is how we have been building the wires frames. ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_ALYhzds8RNMhvGBTjATcU_k_1.png",
-        "/tmp/asc/feedback-20260722/shot_6762589326_ALYhzds8RNMhvGBTjATcU_k_2.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_ALYhzds8RNMhvGBTjATcU_k_1.png",
+        "/tmp/asc/feedback-20260729/shot_6762589326_ALYhzds8RNMhvGBTjATcU_k_2.png"
       ],
       "crashLogFile": null,
       "cluster": "esang-brief-chat-search",
@@ -435,7 +435,7 @@
       "app": "EusoTrip Freight",
       "comment": "Fix error  ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AIwgABFjr26yU9x-N4BMU2c_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AIwgABFjr26yU9x-N4BMU2c_1.png"
       ],
       "crashLogFile": null,
       "cluster": "unclassified-feedback",
@@ -461,7 +461,7 @@
       "app": "EusoTrip Freight",
       "comment": "Error",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AOt_rf3hg5uJanpx_aVUozY_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AOt_rf3hg5uJanpx_aVUozY_1.png"
       ],
       "crashLogFile": null,
       "cluster": "unclassified-feedback",
@@ -486,7 +486,7 @@
       "app": "EusoTrip Freight",
       "comment": "The whole escort user is bare and useless. Fix this. Send to the oath and all scheduled task that are building for truck to add this full on capability and routing to its build task plan. This is an essential user and will help us get a lot of users as the license and permits etc are less tasking and we have huge opportunity with the escort driver. Huge opportunity. We will be able to convert uber and Lyft drivers or any ride share driver for this user role type. ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AGinDOdU4006Gf7SCxJHfIw_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AGinDOdU4006Gf7SCxJHfIw_1.png"
       ],
       "crashLogFile": null,
       "cluster": "unclassified-feedback",
@@ -511,7 +511,7 @@
       "app": "EusoTrip Freight",
       "comment": "I’m seeing duplicates. Cmon fan out and fix this app wide. No useless buttons or duplicates ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_ALG5hEImCe9V32eKB-e3KuA_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_ALG5hEImCe9V32eKB-e3KuA_1.png"
       ],
       "crashLogFile": null,
       "cluster": "unclassified-feedback",
@@ -536,16 +536,16 @@
       "app": "EusoTrip Freight",
       "comment": "All these screens under these button are the same screen . Literally all are the same and reworded elements. Please tell me design authority has this on the schedule to fix. This cannot persist. ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AAtjc4HMGhw4GBFKyy1SVmI_1.png",
-        "/tmp/asc/feedback-20260722/shot_6762589326_AAtjc4HMGhw4GBFKyy1SVmI_2.png",
-        "/tmp/asc/feedback-20260722/shot_6762589326_AAtjc4HMGhw4GBFKyy1SVmI_3.png",
-        "/tmp/asc/feedback-20260722/shot_6762589326_AAtjc4HMGhw4GBFKyy1SVmI_4.png",
-        "/tmp/asc/feedback-20260722/shot_6762589326_AAtjc4HMGhw4GBFKyy1SVmI_5.png",
-        "/tmp/asc/feedback-20260722/shot_6762589326_AAtjc4HMGhw4GBFKyy1SVmI_6.png",
-        "/tmp/asc/feedback-20260722/shot_6762589326_AAtjc4HMGhw4GBFKyy1SVmI_7.png",
-        "/tmp/asc/feedback-20260722/shot_6762589326_AAtjc4HMGhw4GBFKyy1SVmI_8.png",
-        "/tmp/asc/feedback-20260722/shot_6762589326_AAtjc4HMGhw4GBFKyy1SVmI_9.png",
-        "/tmp/asc/feedback-20260722/shot_6762589326_AAtjc4HMGhw4GBFKyy1SVmI_10.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AAtjc4HMGhw4GBFKyy1SVmI_1.png",
+        "/tmp/asc/feedback-20260729/shot_6762589326_AAtjc4HMGhw4GBFKyy1SVmI_2.png",
+        "/tmp/asc/feedback-20260729/shot_6762589326_AAtjc4HMGhw4GBFKyy1SVmI_3.png",
+        "/tmp/asc/feedback-20260729/shot_6762589326_AAtjc4HMGhw4GBFKyy1SVmI_4.png",
+        "/tmp/asc/feedback-20260729/shot_6762589326_AAtjc4HMGhw4GBFKyy1SVmI_5.png",
+        "/tmp/asc/feedback-20260729/shot_6762589326_AAtjc4HMGhw4GBFKyy1SVmI_6.png",
+        "/tmp/asc/feedback-20260729/shot_6762589326_AAtjc4HMGhw4GBFKyy1SVmI_7.png",
+        "/tmp/asc/feedback-20260729/shot_6762589326_AAtjc4HMGhw4GBFKyy1SVmI_8.png",
+        "/tmp/asc/feedback-20260729/shot_6762589326_AAtjc4HMGhw4GBFKyy1SVmI_9.png",
+        "/tmp/asc/feedback-20260729/shot_6762589326_AAtjc4HMGhw4GBFKyy1SVmI_10.png"
       ],
       "crashLogFile": null,
       "cluster": "posting-loads-and-drafts",
@@ -569,7 +569,7 @@
       "app": "EusoTrip Freight",
       "comment": "I have seen the same screen 4 screen feedbacks in a row with different titles and names but same layout. Please tell me design authority fixed this self plagiarism in design to something bespoke and worthy of our apps code. Users are going to see what I see. Fan out. And per design authority scheduled tasks. NO MORE IDENTICAL SCREENS !!!!",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_ANL8Y2pzm1yqkbTsdxxsfhE_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_ANL8Y2pzm1yqkbTsdxxsfhE_1.png"
       ],
       "crashLogFile": null,
       "cluster": "dispatch-dq-compliance-design",
@@ -597,7 +597,7 @@
       "app": "EusoTrip Freight",
       "comment": "Looks like it is tied to nothing. This needs to be fixed full stop. Dan out app wide and look for these issues and fix. Each screen must have meaning ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AICaWfWMkqumZZErIQrbfJY_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AICaWfWMkqumZZErIQrbfJY_1.png"
       ],
       "crashLogFile": null,
       "cluster": "unclassified-feedback",
@@ -622,7 +622,7 @@
       "app": "EusoTrip Freight",
       "comment": "This screen seems to be wired to nothing. Fox this coherently. Fan out across the whole apps wide codebase wide base and fix any similar issues. ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AJnVJd7zDOON6foWMLTj1nI_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AJnVJd7zDOON6foWMLTj1nI_1.png"
       ],
       "crashLogFile": null,
       "cluster": "dispatch-dq-onboarding-cold-resolve",
@@ -649,7 +649,7 @@
       "app": "EusoTrip Freight",
       "comment": "We cover alot of verticals in this mode and a lot of products. This seems to only cater to hazmat ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AF37JjmFDT5Bp7HTCODs4dk_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AF37JjmFDT5Bp7HTCODs4dk_1.png"
       ],
       "crashLogFile": null,
       "cluster": "dispatch-driver-roster-actions",
@@ -671,7 +671,7 @@
       "app": "EusoTrip Freight",
       "comment": "Lack luster design. Please tell me design authority fixed this and made it bespoke. Because , wtf",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AE15PlXp8kzcHLFc1Xg7pTA_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AE15PlXp8kzcHLFc1Xg7pTA_1.png"
       ],
       "crashLogFile": null,
       "cluster": "dispatch-daily-kpi-design",
@@ -699,8 +699,8 @@
       "app": "EusoTrip Freight",
       "comment": "First of all what the fuck is this. What kind of messaging system is this?! Looks like a signature box / terminal prompt. Fix rhis. Look at the design authority and other scheduled tasks messaging system and do this right. We have more than enough for you to fix this. ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AE5-2ZFX_-5TET4YYoQW1VE_1.png",
-        "/tmp/asc/feedback-20260722/shot_6762589326_AE5-2ZFX_-5TET4YYoQW1VE_2.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AE5-2ZFX_-5TET4YYoQW1VE_1.png",
+        "/tmp/asc/feedback-20260729/shot_6762589326_AE5-2ZFX_-5TET4YYoQW1VE_2.png"
       ],
       "crashLogFile": null,
       "cluster": "ios-messaging",
@@ -730,7 +730,7 @@
       "app": "EusoTrip Freight",
       "comment": "Need a full bespoke revamp that meets the moment of what this screen is suppose to be. No more of these static screens that are useless. Dan out across the app and look at the design authority scheduled task to make sure you aren’t remaking what has already been remade. But these boring static bland pages got to go. This is eusotrip, the future. We served better than this laziness in design. ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AFBrxta0mHR-VnUqf8BHEnE_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AFBrxta0mHR-VnUqf8BHEnE_1.png"
       ],
       "crashLogFile": null,
       "cluster": "dispatch-fleet-positions-live-telemetry",
@@ -759,7 +759,7 @@
       "app": "EusoTrip Freight",
       "comment": "This screen is static it needs a full bespoke revamp. If we haven’t remade one already. You be able to click on the drivers name and message them or send an alert so they know if they haven’t been alerted already which 9 times out of ten they are but still as dispatch from\nThais screen there should be more to be able to do in regards to your fleet. I think you understand what I am saying. This screen is bland and blah. Fix this ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_APqReHrhYDY3Be_9Gr6lvqA_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_APqReHrhYDY3Be_9Gr6lvqA_1.png"
       ],
       "crashLogFile": null,
       "cluster": "dispatch-driver-roster-actions",
@@ -781,7 +781,7 @@
       "app": "EusoTrip Freight",
       "comment": "One back button works and one doesn’t. Get rid of the back arrow that doesn’t work. And fan out cords the whole apps wide codebase and find this issue and fix it. We don’t need double buttons. No redundancies ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_ANvTsMLK5CbotJf7tYl35OY_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_ANvTsMLK5CbotJf7tYl35OY_1.png"
       ],
       "crashLogFile": null,
       "cluster": "navigation-back-affordance",
@@ -811,7 +811,7 @@
       "app": "EusoTrip Freight",
       "comment": "“Ai assist” is within our “autopilot” system. Please fix accordingly. Branding is important. Look at web platform to fully understand this and make this fix so wide. Any auto handling done by ai is our autopilot system no matter what user. This is a brand feature and function that is vital and important to our user adoption rates. Press autopilot and the esang ai does the work with coherence and u deserving and understanding of the market or vertical. No matter what. ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AOzTXgSPo5tH8NdCQHeasO8_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AOzTXgSPo5tH8NdCQHeasO8_1.png"
       ],
       "crashLogFile": null,
       "cluster": "esang-brief-chat-search",
@@ -836,7 +836,7 @@
       "app": "EusoTrip Freight",
       "comment": "This screen is blank why is that? Fix this ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_ALDuqhRk3Z1vYXYCjR4V2Ls_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_ALDuqhRk3Z1vYXYCjR4V2Ls_1.png"
       ],
       "crashLogFile": null,
       "cluster": "dispatch-performance-blank-state",
@@ -865,7 +865,7 @@
       "app": "EusoTrip Freight",
       "comment": "This screen is error out. Fix ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AEVzctXY9bfFsn8AX3QXHdA_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AEVzctXY9bfFsn8AX3QXHdA_1.png"
       ],
       "crashLogFile": null,
       "cluster": "dispatch-command-center-decoder",
@@ -887,7 +887,7 @@
       "app": "EusoTrip Freight",
       "comment": "No bottom nav on this screen so there’s no way to get back to Home Screen or any other option. Luckily Theres a home screen button here but if not I wooden been stuck because you got rid of bottom nav ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AFrT7lK0O6kQjgh0HPj2Rts_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AFrT7lK0O6kQjgh0HPj2Rts_1.png"
       ],
       "crashLogFile": null,
       "cluster": "live-location-weather-here",
@@ -911,7 +911,7 @@
       "app": "EusoTrip Freight",
       "comment": "This is looking good but look at the board and how the tiles are cutoff. Fix this. Then look at the function there’s no press hold wiggle to show drag and drop feature to drop on a position like assigned or drag and drop back to unassigned like the web platform capabilities. Same here same function same result registers in the system full app and web platform parity ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AIttAhPYJRDaW0DIogJKqv4_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AIttAhPYJRDaW0DIogJKqv4_1.png"
       ],
       "crashLogFile": null,
       "cluster": "live-location-weather-here",
@@ -936,7 +936,7 @@
       "app": "EusoTrip Freight",
       "comment": "Fuel this month has an error. Fan out across the whole app code for every user role and make sure any authentication error is fixed ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AIkKQC5ua6eCVsmuQb-61Gc_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AIkKQC5ua6eCVsmuQb-61Gc_1.png"
       ],
       "crashLogFile": null,
       "cluster": "driver-home-performance-auth",
@@ -965,7 +965,7 @@
       "app": "EusoTrip Freight",
       "comment": "Tried to change my profile picture and it has the same issue shipper had. Fan out and fix this whole app wide for every user role type ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AEHftjW5b1slRobZuDFUXss_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AEHftjW5b1slRobZuDFUXss_1.png"
       ],
       "crashLogFile": null,
       "cluster": "profile-avatar-upload-contract",
@@ -996,7 +996,7 @@
       "app": "EusoTrip Freight",
       "comment": "Performance and mileage. Authentication required? Fan out across the whole app to where this type of error is and fix them all. This doesn’t look good in the user experience. ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AHi40sq7z7JQc6Qde4_rwus_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AHi40sq7z7JQc6Qde4_rwus_1.png"
       ],
       "crashLogFile": null,
       "cluster": "driver-home-performance-auth",
@@ -1025,7 +1025,7 @@
       "app": "EusoTrip Freight",
       "comment": "Scan with esang vision needs to work in full and this is a very powerful system so it absolutely must work. It needs to pull up our eusotrip camera system that is a smart camera. Well you know exactly what kind of camera system esang vision is. This must work. Currently it pulls up picture upload. That’s hardly esang vision",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AKfvCZFvUTVTchY5IrfCxl0_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AKfvCZFvUTVTchY5IrfCxl0_1.png"
       ],
       "crashLogFile": null,
       "cluster": "esang-brief-chat-search",
@@ -1051,9 +1051,9 @@
       "app": "EusoTrip Freight",
       "comment": "Something wrong with the ai response. Is Gemini wired correctly?",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_ACh-Ryvqm8eitMnVqb41rnY_1.png",
-        "/tmp/asc/feedback-20260722/shot_6762589326_ACh-Ryvqm8eitMnVqb41rnY_2.png",
-        "/tmp/asc/feedback-20260722/shot_6762589326_ACh-Ryvqm8eitMnVqb41rnY_3.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_ACh-Ryvqm8eitMnVqb41rnY_1.png",
+        "/tmp/asc/feedback-20260729/shot_6762589326_ACh-Ryvqm8eitMnVqb41rnY_2.png",
+        "/tmp/asc/feedback-20260729/shot_6762589326_ACh-Ryvqm8eitMnVqb41rnY_3.png"
       ],
       "crashLogFile": null,
       "cluster": "esang-brief-chat-search",
@@ -1078,7 +1078,7 @@
       "app": "EusoTrip Freight",
       "comment": "This whole system is broken. There is vast knowledge for this to be fixed . ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AGUzJgqGT91_jQJVCrLz_4c_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AGUzJgqGT91_jQJVCrLz_4c_1.png"
       ],
       "crashLogFile": null,
       "cluster": "equipment-recommender-canonicalization",
@@ -1100,15 +1100,15 @@
       "app": "EusoTrip Freight",
       "comment": "I selected crude oil in erg. But look at the animation. Now look at the details. The equipment etc. look at everything. Cross reference everything and solve this conundrum so my users don’t point it out. This systems logic needs to be figured out and finalized for all verticals, all products, and all modes and all countries. This needs to be solved seriously. It is incoherent and i thought we solved this already. ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AHoXBbvZme7-da3Zm_nnUrY_1.png",
-        "/tmp/asc/feedback-20260722/shot_6762589326_AHoXBbvZme7-da3Zm_nnUrY_2.png",
-        "/tmp/asc/feedback-20260722/shot_6762589326_AHoXBbvZme7-da3Zm_nnUrY_3.png",
-        "/tmp/asc/feedback-20260722/shot_6762589326_AHoXBbvZme7-da3Zm_nnUrY_4.png",
-        "/tmp/asc/feedback-20260722/shot_6762589326_AHoXBbvZme7-da3Zm_nnUrY_5.png",
-        "/tmp/asc/feedback-20260722/shot_6762589326_AHoXBbvZme7-da3Zm_nnUrY_6.png",
-        "/tmp/asc/feedback-20260722/shot_6762589326_AHoXBbvZme7-da3Zm_nnUrY_7.png",
-        "/tmp/asc/feedback-20260722/shot_6762589326_AHoXBbvZme7-da3Zm_nnUrY_8.png",
-        "/tmp/asc/feedback-20260722/shot_6762589326_AHoXBbvZme7-da3Zm_nnUrY_9.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AHoXBbvZme7-da3Zm_nnUrY_1.png",
+        "/tmp/asc/feedback-20260729/shot_6762589326_AHoXBbvZme7-da3Zm_nnUrY_2.png",
+        "/tmp/asc/feedback-20260729/shot_6762589326_AHoXBbvZme7-da3Zm_nnUrY_3.png",
+        "/tmp/asc/feedback-20260729/shot_6762589326_AHoXBbvZme7-da3Zm_nnUrY_4.png",
+        "/tmp/asc/feedback-20260729/shot_6762589326_AHoXBbvZme7-da3Zm_nnUrY_5.png",
+        "/tmp/asc/feedback-20260729/shot_6762589326_AHoXBbvZme7-da3Zm_nnUrY_6.png",
+        "/tmp/asc/feedback-20260729/shot_6762589326_AHoXBbvZme7-da3Zm_nnUrY_7.png",
+        "/tmp/asc/feedback-20260729/shot_6762589326_AHoXBbvZme7-da3Zm_nnUrY_8.png",
+        "/tmp/asc/feedback-20260729/shot_6762589326_AHoXBbvZme7-da3Zm_nnUrY_9.png"
       ],
       "crashLogFile": null,
       "cluster": "erg-equipment-animation-coherence",
@@ -1130,11 +1130,11 @@
       "app": "EusoTrip Freight",
       "comment": "I selected crude oil in erg. But look at the animation. Now look at the details. The equipment etc. look at everything. Cross reference everything and solve this conundrum so my users don’t point it out. This systems logic needs to be figured out and finalized for all verticals, all products, and all modes and all countries. This needs to be solved seriously. It is incoherent and i thought we solved this already. ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_ACu1BoV5CSt4xGVnzZ4hWN4_1.png",
-        "/tmp/asc/feedback-20260722/shot_6762589326_ACu1BoV5CSt4xGVnzZ4hWN4_2.png",
-        "/tmp/asc/feedback-20260722/shot_6762589326_ACu1BoV5CSt4xGVnzZ4hWN4_3.png",
-        "/tmp/asc/feedback-20260722/shot_6762589326_ACu1BoV5CSt4xGVnzZ4hWN4_4.png",
-        "/tmp/asc/feedback-20260722/shot_6762589326_ACu1BoV5CSt4xGVnzZ4hWN4_5.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_ACu1BoV5CSt4xGVnzZ4hWN4_1.png",
+        "/tmp/asc/feedback-20260729/shot_6762589326_ACu1BoV5CSt4xGVnzZ4hWN4_2.png",
+        "/tmp/asc/feedback-20260729/shot_6762589326_ACu1BoV5CSt4xGVnzZ4hWN4_3.png",
+        "/tmp/asc/feedback-20260729/shot_6762589326_ACu1BoV5CSt4xGVnzZ4hWN4_4.png",
+        "/tmp/asc/feedback-20260729/shot_6762589326_ACu1BoV5CSt4xGVnzZ4hWN4_5.png"
       ],
       "crashLogFile": null,
       "cluster": "erg-equipment-animation-coherence",
@@ -1156,7 +1156,7 @@
       "app": "EusoTrip Freight",
       "comment": "I thought we fixed the map system. To have state, cities, street names. How does this help anyone in our app to see two lines that don’t say anything else about their journey. Use common sense, please. ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AJWExEzKw4r3naKaJT8wBJE_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AJWExEzKw4r3naKaJT8wBJE_1.png"
       ],
       "crashLogFile": null,
       "cluster": "live-location-weather-here",
@@ -1182,7 +1182,7 @@
       "app": "EusoTrip Freight",
       "comment": "Read this article i found in the shipper intel. The link is https://tanktransport.com/2026/05/cargo-tank-compliance-mc-331/  . I think it is important to know , understand, and implement anything needed in our app that reflects this. And there needs to be some mechanism in our code that scans for this information in all countries and modes we cover. I need a self healing compliant system. Self healing error system. Self healing functions. I don’t know how we will build or implement this but i need 50 agents on the job to figure it out. But i think you understand what i am saying. ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AI3fcBh1w6MHsyeWJ8VrZFg_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AI3fcBh1w6MHsyeWJ8VrZFg_1.png"
       ],
       "crashLogFile": null,
       "cluster": "compliance-safety-eld-csa",
@@ -1207,7 +1207,7 @@
       "app": "EusoTrip Freight",
       "comment": "M Q Y , monthly, quarterly , yearly . When i click the yearly it gives that error you see at the bottom in red. I need a fan out and a fix for all issues and similar issues as well. ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AB1iXN7vkujtWjsobOrpSIM_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AB1iXN7vkujtWjsobOrpSIM_1.png"
       ],
       "crashLogFile": null,
       "cluster": "shipper-reports-period-analytics",
@@ -1238,7 +1238,7 @@
       "app": "EusoTrip Freight",
       "comment": "Look at how the tile has incorrect dimensions to the design. It’s so bad the button is hidden. Please fix this.",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AJ3Je-vtATs9KOMH52NxIEA_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AJ3Je-vtATs9KOMH52NxIEA_1.png"
       ],
       "crashLogFile": null,
       "cluster": "hot-zones-heat-tile-layout",
@@ -1267,7 +1267,7 @@
       "app": "EusoTrip Freight",
       "comment": "Message shipper direct button doesn’t work ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AHjHXsoLF0yvA_fqjs-DCYo_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AHjHXsoLF0yvA_fqjs-DCYo_1.png"
       ],
       "crashLogFile": null,
       "cluster": "messaging-load-thread",
@@ -1296,7 +1296,7 @@
       "app": "EusoTrip Freight",
       "comment": "Can’t add escort vehicle to the load ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AHXJIM1C1__-EQa7WxujfLU_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AHXJIM1C1__-EQa7WxujfLU_1.png"
       ],
       "crashLogFile": null,
       "cluster": "freight-operations-dispatch",
@@ -1322,7 +1322,7 @@
       "app": "EusoTrip Freight",
       "comment": "Run ticket is equally not functioning when you click pdf. So this system isn’t fixed ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AOozRTcUH5QxdW9jobZSejU_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AOozRTcUH5QxdW9jobZSejU_1.png"
       ],
       "crashLogFile": null,
       "cluster": "documents-bol-eusoticket",
@@ -1347,7 +1347,7 @@
       "app": "EusoTrip Freight",
       "comment": "PDF generation failed ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AELE0YiSXQvhOzVr_C0NxEk_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AELE0YiSXQvhOzVr_C0NxEk_1.png"
       ],
       "crashLogFile": null,
       "cluster": "documents-bol-eusoticket",
@@ -1372,7 +1372,7 @@
       "app": "EusoTrip Freight",
       "comment": "No way to add a vehicle or anything like that not equipment not anything. Fan out and fix this issue and the understanding ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AHqAuntqBcw3WEl6ROSF_r4_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AHqAuntqBcw3WEl6ROSF_r4_1.png"
       ],
       "crashLogFile": null,
       "cluster": "freight-operations-dispatch",
@@ -1398,7 +1398,7 @@
       "app": "EusoTrip Freight",
       "comment": "There’s no way to delete or add contacts (our invite system) on this page and I know this can’t be correct. You should be able to call or message in the app the user that the contact represents fan out in this system and the invite system and make sure everything is copacetic. And unparalleled ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AJbVz_S5vRtrywssha8GJuY_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AJbVz_S5vRtrywssha8GJuY_1.png"
       ],
       "crashLogFile": null,
       "cluster": "contacts-add-invite-remove",
@@ -1429,13 +1429,13 @@
       "app": "EusoTrip Freight",
       "comment": "I see multiple renditions of the loadboard (Eusoboard) and that doesn’t make sense. The current load board when clicking the bottom nav is the correct one. Get rid of the redundancies so my customers and users are not confused ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AKGQkGAQOr9BGR1UzFr-ZjE_1.png",
-        "/tmp/asc/feedback-20260722/shot_6762589326_AKGQkGAQOr9BGR1UzFr-ZjE_2.png",
-        "/tmp/asc/feedback-20260722/shot_6762589326_AKGQkGAQOr9BGR1UzFr-ZjE_3.png",
-        "/tmp/asc/feedback-20260722/shot_6762589326_AKGQkGAQOr9BGR1UzFr-ZjE_4.png",
-        "/tmp/asc/feedback-20260722/shot_6762589326_AKGQkGAQOr9BGR1UzFr-ZjE_5.png",
-        "/tmp/asc/feedback-20260722/shot_6762589326_AKGQkGAQOr9BGR1UzFr-ZjE_6.png",
-        "/tmp/asc/feedback-20260722/shot_6762589326_AKGQkGAQOr9BGR1UzFr-ZjE_7.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AKGQkGAQOr9BGR1UzFr-ZjE_1.png",
+        "/tmp/asc/feedback-20260729/shot_6762589326_AKGQkGAQOr9BGR1UzFr-ZjE_2.png",
+        "/tmp/asc/feedback-20260729/shot_6762589326_AKGQkGAQOr9BGR1UzFr-ZjE_3.png",
+        "/tmp/asc/feedback-20260729/shot_6762589326_AKGQkGAQOr9BGR1UzFr-ZjE_4.png",
+        "/tmp/asc/feedback-20260729/shot_6762589326_AKGQkGAQOr9BGR1UzFr-ZjE_5.png",
+        "/tmp/asc/feedback-20260729/shot_6762589326_AKGQkGAQOr9BGR1UzFr-ZjE_6.png",
+        "/tmp/asc/feedback-20260729/shot_6762589326_AKGQkGAQOr9BGR1UzFr-ZjE_7.png"
       ],
       "crashLogFile": null,
       "cluster": "driver-eusoboards-navigation",
@@ -1462,7 +1462,7 @@
       "app": "EusoTrip Freight",
       "comment": "I can’t get to the Home Screen from this screen. I click the Home Screen button and it doesn’t work. This needs to be fixed app wide. ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AD1g3euLXaV8EsiLe1C5tl4_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AD1g3euLXaV8EsiLe1C5tl4_1.png"
       ],
       "crashLogFile": null,
       "cluster": "driver-bottom-nav-home-routing",
@@ -1491,7 +1491,7 @@
       "app": "EusoTrip Freight",
       "comment": "When going to the “i” button for information it goes to a brown screen. The here api is broken and not working ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_ABxkOCxsDlBb09djOvZNMYM_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_ABxkOCxsDlBb09djOvZNMYM_1.png"
       ],
       "crashLogFile": null,
       "cluster": "live-location-weather-here",
@@ -1515,7 +1515,7 @@
       "app": "EusoTrip Freight",
       "comment": "How is the map not working here. How does this not work. Why ain’t the here API HERE SHOWING THE ROUTE ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AGJUloYjzgW9b25TzzcrHks_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AGJUloYjzgW9b25TzzcrHks_1.png"
       ],
       "crashLogFile": null,
       "cluster": "live-location-weather-here",
@@ -1539,7 +1539,7 @@
       "app": "EusoTrip Freight",
       "comment": "I can’t click on the my loads from this screen the bottom nav is dead. Please cannot and fix this issue everywhere you see a similar pattern which I gather is everywhere if it is here in the driver profile ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AI_Lr2-1DIDwqnMu0uXlnDQ_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AI_Lr2-1DIDwqnMu0uXlnDQ_1.png"
       ],
       "crashLogFile": null,
       "cluster": "live-location-weather-here",
@@ -1563,8 +1563,8 @@
       "app": "EusoTrip Freight",
       "comment": "Clicked on connect eld device and got this blank screen. We have a whole eld api system. A robust one at that. How is this not on this screen how is this system not functional or working?",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AAZrPf4NobSX7F1JNAelNqg_1.png",
-        "/tmp/asc/feedback-20260722/shot_6762589326_AAZrPf4NobSX7F1JNAelNqg_2.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AAZrPf4NobSX7F1JNAelNqg_1.png",
+        "/tmp/asc/feedback-20260729/shot_6762589326_AAZrPf4NobSX7F1JNAelNqg_2.png"
       ],
       "crashLogFile": null,
       "cluster": "compliance-safety-eld-csa",
@@ -1593,7 +1593,7 @@
       "app": "EusoTrip Freight",
       "comment": "Still having issues with this screen",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_ACeKKph7UCqHceatlCKc19M_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_ACeKKph7UCqHceatlCKc19M_1.png"
       ],
       "crashLogFile": null,
       "cluster": "csa-scorecard-decoder-contract",
@@ -1622,7 +1622,7 @@
       "app": "EusoTrip Freight",
       "comment": "Look what happens to the bottom nav when I am on hotzones. I’ve seen this happen on other screens for other user roles as well. I need a 40 agent fam out of this issues everywhere because what happens when the bottom nav changes to whatever this is you can’t get to important screen from the actual bottom nav. Like in this screen I tried to click on where you click to look for load postings and it does nothing it doesn’t work. I need this fixed across the whole app wide base. Fix this. And like I said fan out ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AM37myuNtFqBdHDzEwlIEwI_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AM37myuNtFqBdHDzEwlIEwI_1.png"
       ],
       "crashLogFile": null,
       "cluster": "market-hotzones-rate-intel",
@@ -1648,7 +1648,7 @@
       "app": "EusoTrip Freight",
       "comment": "",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AEuxcjFC6TqYZi_La_71nZE_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AEuxcjFC6TqYZi_La_71nZE_1.png"
       ],
       "crashLogFile": null,
       "cluster": "driver-counter-offer-submit-route",
@@ -1678,8 +1678,8 @@
       "app": "EusoTrip Freight",
       "comment": "The clicking of the other money options goes right back to the default $25 option and this page doesn’t work and I don’t think it is wired into our stripe or fintech system. And it is very important ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_ACZa9XadHGkzJXgwYB9UWWU_1.png",
-        "/tmp/asc/feedback-20260722/shot_6762589326_ACZa9XadHGkzJXgwYB9UWWU_2.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_ACZa9XadHGkzJXgwYB9UWWU_1.png",
+        "/tmp/asc/feedback-20260729/shot_6762589326_ACZa9XadHGkzJXgwYB9UWWU_2.png"
       ],
       "crashLogFile": null,
       "cluster": "wallet-money-apple-pay",
@@ -1710,7 +1710,7 @@
       "app": "EusoTrip Freight",
       "comment": "This needs to connect to location services to turn on or turn off if not registering location. So the here and weatherkit api works ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_APc763x00OLmmyh4YrGxyZw_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_APc763x00OLmmyh4YrGxyZw_1.png"
       ],
       "crashLogFile": null,
       "cluster": "live-location-weather-here",
@@ -1734,7 +1734,7 @@
       "app": "EusoTrip Freight",
       "comment": "Make sure this page is wired to precision. ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AH4MkyhhyX-bvAeAf3hSEHY_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AH4MkyhhyX-bvAeAf3hSEHY_1.png"
       ],
       "crashLogFile": null,
       "cluster": "truck-posting-assigned-vehicle-precision",
@@ -1756,7 +1756,7 @@
       "app": "EusoTrip Freight",
       "comment": "Make sure this screen is wired to precision make sure this page works and make sure the logic in this page is fully understood and working to the best of the abilities ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_ACoy-swbjRWZeTkpeMp20Zo_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_ACoy-swbjRWZeTkpeMp20Zo_1.png"
       ],
       "crashLogFile": null,
       "cluster": "driver-completed-trips-history-scope",
@@ -1778,7 +1778,7 @@
       "app": "EusoTrip Freight",
       "comment": "This is a very important feature I want to make sure 20 agents revisit to make essential to the user. Planning is important as driving ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_ACTs8KLoWn9kc5GUpajnEr0_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_ACTs8KLoWn9kc5GUpajnEr0_1.png"
       ],
       "crashLogFile": null,
       "cluster": "driver-weekly-plan-assignment-scope",
@@ -1800,7 +1800,7 @@
       "app": "EusoTrip Freight",
       "comment": "Make sure this system is wired to precision. This is apart of the autopilot system. ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AOC8PO9ZmX-TTHAzTOtwoY4_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AOC8PO9ZmX-TTHAzTOtwoY4_1.png"
       ],
       "crashLogFile": null,
       "cluster": "driver-auto-accept-rules-autopilot",
@@ -1825,7 +1825,7 @@
       "app": "EusoTrip Freight",
       "comment": "Make sure rate sheets are customizable. To the users criteria and make sure rate sheets stores just like in the web platform system ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_ANwjul5qfcmd6pVSJMtmo-Q_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_ANwjul5qfcmd6pVSJMtmo-Q_1.png"
       ],
       "crashLogFile": null,
       "cluster": "market-hotzones-rate-intel",
@@ -1850,7 +1850,7 @@
       "app": "EusoTrip Freight",
       "comment": "Nothing happens when pdf is clicked. Please fill the data of the documents that need to be in these run tickets based on the load. I want you to do the same for bill of lading. Meaning if there is no document data there create it. You are more than capable of generating and constructing the document that goes there. This whole page logic needs agents to fix what is broken ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_ABiKLzUuMX-Dn2cSZ9tzBok_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_ABiKLzUuMX-Dn2cSZ9tzBok_1.png"
       ],
       "crashLogFile": null,
       "cluster": "documents-bol-eusoticket",
@@ -1875,7 +1875,7 @@
       "app": "EusoTrip Freight",
       "comment": "How to delete expired documents ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_ALheJhoLQXpgIWB1LsvGcPA_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_ALheJhoLQXpgIWB1LsvGcPA_1.png"
       ],
       "crashLogFile": null,
       "cluster": "documents-bol-eusoticket",
@@ -1900,7 +1900,7 @@
       "app": "EusoTrip Freight",
       "comment": "EusoTrip Pulse should definitely play a role in this screen. And I need a 20 agent team doing heavy analysis on how. ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_ABucHJNlMSRvgT3a1HT6zJ0_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_ABucHJNlMSRvgT3a1HT6zJ0_1.png"
       ],
       "crashLogFile": null,
       "cluster": "compliance-safety-eld-csa",
@@ -1927,7 +1927,7 @@
       "app": "EusoTrip Freight",
       "comment": "Make sure this whole screen is wired correctly. And I want a 20 agent deep dive on this screen its purpose and how to make it actually useful to our users.interactive in a way that it actually helps.  ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AAi9jQJOjq6SmdVKJ9Tnu20_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AAi9jQJOjq6SmdVKJ9Tnu20_1.png"
       ],
       "crashLogFile": null,
       "cluster": "driver-wellness-fit-for-duty-live-scoring",
@@ -1952,7 +1952,7 @@
       "app": "EusoTrip Freight",
       "comment": "Please make sure this system is wired correctly ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_APNdV7Dt8wOOXYt1AFafbqM_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_APNdV7Dt8wOOXYt1AFafbqM_1.png"
       ],
       "crashLogFile": null,
       "cluster": "driver-violations-compliance-rbac-scope",
@@ -1980,7 +1980,7 @@
       "app": "EusoTrip Freight",
       "comment": "Please fix this safety score system once and for all. ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_ACqGSeTeiCQ_WtV3GROh8t4_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_ACqGSeTeiCQ_WtV3GROh8t4_1.png"
       ],
       "crashLogFile": null,
       "cluster": "compliance-safety-eld-csa",
@@ -2007,7 +2007,7 @@
       "app": "EusoTrip Freight",
       "comment": "Make sure all of these are wired into the system correctly make sure the logic and the API and connection system is wired properly into the app and the user. This is the engine that allows a driver to drive compliant on the road outside of documents and licenses ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AKF1MswHV5tFifVo6zLZVPg_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AKF1MswHV5tFifVo6zLZVPg_1.png"
       ],
       "crashLogFile": null,
       "cluster": "driver-compliance-safety-hos-eld-wiring",
@@ -2034,7 +2034,7 @@
       "app": "EusoTrip Freight",
       "comment": "There is no ELD connected. Why doesn’t say it is. Fix this ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AD6lcQayIrfadOxNyI2xvVc_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AD6lcQayIrfadOxNyI2xvVc_1.png"
       ],
       "crashLogFile": null,
       "cluster": "compliance-safety-eld-csa",
@@ -2063,7 +2063,7 @@
       "app": "EusoTrip Freight",
       "comment": "Look at this and you tell me what is wrong. And fix it",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_ANNWG6WnZaoKi-pgE4c5VkA_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_ANNWG6WnZaoKi-pgE4c5VkA_1.png"
       ],
       "crashLogFile": null,
       "cluster": "csa-scorecard-decoder-contract",
@@ -2090,7 +2090,7 @@
       "app": "EusoTrip Freight",
       "comment": "More server talk. Everything sale is fine. Maybe find a better way to say server that’s more customer and user friendly. But I like the explanation of how a streak is calculated ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AHRX2fp_yqaKer1rC22Cjj0_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AHRX2fp_yqaKer1rC22Cjj0_1.png"
       ],
       "crashLogFile": null,
       "cluster": "design-polish-dev-copy",
@@ -2115,7 +2115,7 @@
       "app": "EusoTrip Freight",
       "comment": "The text under the no crates yet heading is that necessary for a user to see? It looks like a message to me the creator of the app or the dev team. But what does a typical user know about “server side” please fix ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_ALduNnlrYJtvPtngnGdeXKI_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_ALduNnlrYJtvPtngnGdeXKI_1.png"
       ],
       "crashLogFile": null,
       "cluster": "design-polish-dev-copy",
@@ -2140,7 +2140,7 @@
       "app": "EusoTrip Freight",
       "comment": "Fix the two good afternoon redundancies ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AAWE7ZhqCLIcglMpzggJzzM_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AAWE7ZhqCLIcglMpzggJzzM_1.png"
       ],
       "crashLogFile": null,
       "cluster": "esang-brief-chat-search",
@@ -2165,7 +2165,7 @@
       "app": "EusoTrip Freight",
       "comment": "Esang isn’t connected to Gemini ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AMr_Z4PbdAShWMADzhnlc00_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AMr_Z4PbdAShWMADzhnlc00_1.png"
       ],
       "crashLogFile": null,
       "cluster": "esang-brief-chat-search",
@@ -2190,8 +2190,8 @@
       "app": "EusoTrip Freight",
       "comment": "See the discrepancy ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AEyqnraOZGm1va01HfBB85g_1.png",
-        "/tmp/asc/feedback-20260722/shot_6762589326_AEyqnraOZGm1va01HfBB85g_2.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AEyqnraOZGm1va01HfBB85g_1.png",
+        "/tmp/asc/feedback-20260729/shot_6762589326_AEyqnraOZGm1va01HfBB85g_2.png"
       ],
       "crashLogFile": null,
       "cluster": "wallet-pickup-credential-readiness",
@@ -2242,7 +2242,7 @@
       "app": "EusoTrip Freight",
       "comment": "Check every single link of each page and ensure accurate ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AETODhoGPUfIFZWuCYD2PGE_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AETODhoGPUfIFZWuCYD2PGE_1.png"
       ],
       "crashLogFile": null,
       "cluster": "integrations-provider-doc-links",
@@ -2268,7 +2268,7 @@
       "app": "EusoTrip Freight",
       "comment": "",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AN5IiDGtTHHoTL88EvD7jw0_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AN5IiDGtTHHoTL88EvD7jw0_1.png"
       ],
       "crashLogFile": null,
       "cluster": "posting-loads-schema-drift-route-review",
@@ -2295,7 +2295,7 @@
       "app": "EusoTrip Freight",
       "comment": "Esang’s rate suggestions aren’t loading  ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AElnJP7-7AyFNjQj-t2pnB8_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AElnJP7-7AyFNjQj-t2pnB8_1.png"
       ],
       "crashLogFile": null,
       "cluster": "bids-counteroffers-booking",
@@ -2320,7 +2320,7 @@
       "app": "EusoTrip Freight",
       "comment": "The spacing is strange. Please fix this. This shouldn’t be the tradeoff for making this customizable ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AIJBlAL66vVPN2VgR3NMyuA_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AIJBlAL66vVPN2VgR3NMyuA_1.png"
       ],
       "crashLogFile": null,
       "cluster": "market-hotzones-rate-intel",
@@ -2345,7 +2345,7 @@
       "app": "EusoTrip Freight",
       "comment": "When clicking to Apple wallet. I want it to switch to the Apple wallet and walk the user through the add to Apple wallet same as if you got a plane ticket ticket and clicked it and now it takes you to Apple wallet and inserts this information and shows a nicely designed card ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_ABev3bCF7rAAQ-cMZ4ueTuQ_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_ABev3bCF7rAAQ-cMZ4ueTuQ_1.png"
       ],
       "crashLogFile": null,
       "cluster": "wallet-money-apple-pay",
@@ -2376,9 +2376,9 @@
       "app": "EusoTrip Freight",
       "comment": "How about this, in hotzones when you click on the tiles and card they flip and show the information you take them to another screen currently to show. All this information in the second image can go on the flipped tiles and a better insight on the hotzones. That’s a great user experience and not wasting screens for no information. And naturally humans will click on the tiles anyways expecting this and it’s kind of a let down when it doesn’t operate like that. And also for market intelligence the tiles and cards should operate the same when clicking on a commodity or stock. Furthermore in market intelligence the user should be able to add or remove a market intelligence commodities tile or customize the screen with the commodities or stocks they want to see. Customizable. ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_ALAtmJuybhOKe5hY2MicSn0_1.png",
-        "/tmp/asc/feedback-20260722/shot_6762589326_ALAtmJuybhOKe5hY2MicSn0_2.png",
-        "/tmp/asc/feedback-20260722/shot_6762589326_ALAtmJuybhOKe5hY2MicSn0_3.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_ALAtmJuybhOKe5hY2MicSn0_1.png",
+        "/tmp/asc/feedback-20260729/shot_6762589326_ALAtmJuybhOKe5hY2MicSn0_2.png",
+        "/tmp/asc/feedback-20260729/shot_6762589326_ALAtmJuybhOKe5hY2MicSn0_3.png"
       ],
       "crashLogFile": null,
       "cluster": "market-hotzones-rate-intel",
@@ -2405,7 +2405,7 @@
       "app": "EusoTrip Freight",
       "comment": "Why does hotzones not automatically appear. It waits to load. And this blank screen some users may take issue with from a user experience point of view ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AL3VRIy6gcntvpP2LVSnAsA_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AL3VRIy6gcntvpP2LVSnAsA_1.png"
       ],
       "crashLogFile": null,
       "cluster": "market-hotzones-rate-intel",
@@ -2432,7 +2432,7 @@
       "app": "EusoTrip Freight",
       "comment": "See hotzones is blank",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AJJ0zGFLzjxy8lS0i6zg4VA_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AJJ0zGFLzjxy8lS0i6zg4VA_1.png"
       ],
       "crashLogFile": null,
       "cluster": "market-hotzones-rate-intel",
@@ -2458,7 +2458,7 @@
       "app": "EusoTrip Freight",
       "comment": "Market intelligence and hotzones still visible and when you click on hotzones it is blank ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AC7i2rOUuhKbpAhKysgPZbg_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AC7i2rOUuhKbpAhKysgPZbg_1.png"
       ],
       "crashLogFile": null,
       "cluster": "market-hotzones-rate-intel",
@@ -2484,7 +2484,7 @@
       "app": "EusoTrip Freight",
       "comment": "What’s going on with the overlapping address and coordinates how about it’s the address and when you tap it it shows the coordinates and tap and it switches back. ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AH1wyKeDdFDkO7l9uzr_-8I_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AH1wyKeDdFDkO7l9uzr_-8I_1.png"
       ],
       "crashLogFile": null,
       "cluster": "live-location-weather-here",
@@ -2509,7 +2509,7 @@
       "app": "EusoTrip Freight",
       "comment": "So make sure 50 agents fan out and seek research on each of these integrations per user role type and understand how it integrates into eusotrip to make the user journey for the user easier seamless and the feel of “oh, all my stuff is here , whew, thought I was going to start all over with organizing my business flow. THANK YOU EUSOTRIP!”",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AKCCVBXzfKcV9sXIvQi03_I_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AKCCVBXzfKcV9sXIvQi03_I_1.png"
       ],
       "crashLogFile": null,
       "cluster": "live-location-weather-here",
@@ -2545,7 +2545,7 @@
       "app": "EusoTrip Freight",
       "comment": "Every single provider api docs leads to a 404 error page. I don’t understand how that should be happening. And make sure this is all wired correctly to connect the users system for the api if they type in their api key to connect it. Make sure the system is intuitive to react as soon as they connect it to administer the population of the data that comes of their account and how it integrates into the users EusoTrip user journey ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AElgAlU9hjHpKiX9sDr1BbQ_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AElgAlU9hjHpKiX9sDr1BbQ_1.png"
       ],
       "crashLogFile": null,
       "cluster": "integrations-api-tokens",
@@ -2582,7 +2582,7 @@
       "app": "EusoTrip Freight",
       "comment": "Manage Apple Pay integration takes me to settings screen. Meaning it leads to an abyss. Fix this wiring. ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AGcIv-4qEO3_kz0eCxSgjbo_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AGcIv-4qEO3_kz0eCxSgjbo_1.png"
       ],
       "crashLogFile": null,
       "cluster": "wallet-money-apple-pay",
@@ -2613,7 +2613,7 @@
       "app": "EusoTrip Freight",
       "comment": "This layout and wallet is so ai coded and basic looking. I need this whole screen and every section redid and bespoke to the level our design authority in Claude co work rules insist designs should be. This is boring basic cliche and uninspiring. And every sub section I click on is equally basic and uninspiring. Redo this whole system’s screens and bring it to level. ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_APbK_KOttBQP-kUwuPkVQYI_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_APbK_KOttBQP-kUwuPkVQYI_1.png"
       ],
       "crashLogFile": null,
       "cluster": "wallet-money-apple-pay",
@@ -2644,7 +2644,7 @@
       "app": "EusoTrip Freight",
       "comment": "Clicked on the quick response buttons at the bottom and I got this error. Fix this intuitively ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_ALZhFTTO4sixg-s_6-lUMwQ_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_ALZhFTTO4sixg-s_6-lUMwQ_1.png"
       ],
       "crashLogFile": null,
       "cluster": "esang-brief-chat-search",
@@ -2669,7 +2669,7 @@
       "app": "EusoTrip Freight",
       "comment": "It’s afternoon and still says morning briefs. The briefs should change throughout the day and also give tips or advice and guidance like a true embodiment of the esang intelligence system. It shouldn’t be static it should be dynamic and always on so figure out a rationale system to implement what I just conveyed. ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AJiqI9_DPFTlV9_JGsmCaLA_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AJiqI9_DPFTlV9_JGsmCaLA_1.png"
       ],
       "crashLogFile": null,
       "cluster": "esang-brief-chat-search",
@@ -2694,7 +2694,7 @@
       "app": "EusoTrip Freight",
       "comment": "Why not fix the last slots gap and add one more so it is complete ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AIo0sWXDUD44s_tlT1vNdsw_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AIo0sWXDUD44s_tlT1vNdsw_1.png"
       ],
       "crashLogFile": null,
       "cluster": "weather-forecast-strip-six-day-provenance",
@@ -2722,7 +2722,7 @@
       "app": "EusoTrip Freight",
       "comment": "These type of errors are so tacky. And this is an error you need to fix",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_ABlC9GBGEpd3CmY5FiCcRdo_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_ABlC9GBGEpd3CmY5FiCcRdo_1.png"
       ],
       "crashLogFile": null,
       "cluster": "search-results-empty-query-error-copy",
@@ -2749,11 +2749,11 @@
       "app": "EusoTrip Freight",
       "comment": "Clicking on my bids send you on a perpetual loop of these pages when pressing back button from them. Perpetual loop. ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AJQF0lxpGKttgViCSJrkRr4_1.png",
-        "/tmp/asc/feedback-20260722/shot_6762589326_AJQF0lxpGKttgViCSJrkRr4_2.png",
-        "/tmp/asc/feedback-20260722/shot_6762589326_AJQF0lxpGKttgViCSJrkRr4_3.png",
-        "/tmp/asc/feedback-20260722/shot_6762589326_AJQF0lxpGKttgViCSJrkRr4_4.png",
-        "/tmp/asc/feedback-20260722/shot_6762589326_AJQF0lxpGKttgViCSJrkRr4_5.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AJQF0lxpGKttgViCSJrkRr4_1.png",
+        "/tmp/asc/feedback-20260729/shot_6762589326_AJQF0lxpGKttgViCSJrkRr4_2.png",
+        "/tmp/asc/feedback-20260729/shot_6762589326_AJQF0lxpGKttgViCSJrkRr4_3.png",
+        "/tmp/asc/feedback-20260729/shot_6762589326_AJQF0lxpGKttgViCSJrkRr4_4.png",
+        "/tmp/asc/feedback-20260729/shot_6762589326_AJQF0lxpGKttgViCSJrkRr4_5.png"
       ],
       "crashLogFile": null,
       "cluster": "crash-or-freeze",
@@ -2780,7 +2780,7 @@
       "app": "EusoTrip Freight",
       "comment": "Fix this ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AFFvrG5W3UNL5_hXVlY12yo_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AFFvrG5W3UNL5_hXVlY12yo_1.png"
       ],
       "crashLogFile": null,
       "cluster": "vendor-management-decoder-contract",
@@ -2802,7 +2802,7 @@
       "app": "EusoTrip Freight",
       "comment": "This design is sad and uninspiring. Please fix this and it just says morning brief when it should update and brief throughout the day. It is to constantly brief and keep user on point it just adapt in real time like a real esang brief. Think about what its purpose is. ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AOQIS6KK3cX2z0jWCpVvCsc_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AOQIS6KK3cX2z0jWCpVvCsc_1.png"
       ],
       "crashLogFile": null,
       "cluster": "esang-brief-chat-search",
@@ -2827,7 +2827,7 @@
       "app": "EusoTrip Freight",
       "comment": "I went “back” in draft posting load and the app froze. Took screenshot but image was not able to fully load/send feedback then entire phone froze ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AMJkeiSW0aJUon7H2ALI4KI_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AMJkeiSW0aJUon7H2ALI4KI_1.png"
       ],
       "crashLogFile": null,
       "cluster": "crash-or-freeze",
@@ -2854,7 +2854,7 @@
       "app": "EusoTrip Freight",
       "comment": "",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AFUf2RGvYCML_BwcMqGp5DE_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AFUf2RGvYCML_BwcMqGp5DE_1.png"
       ],
       "crashLogFile": null,
       "cluster": "esang-coach-local-product-intent-routing",
@@ -2876,7 +2876,7 @@
       "app": "EusoTrip Freight",
       "comment": "Weather unavailable, needed to restart ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_ABTdOA5Z2xFCYEP6IhG4wQ8_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_ABTdOA5Z2xFCYEP6IhG4wQ8_1.png"
       ],
       "crashLogFile": null,
       "cluster": "crash-or-freeze",
@@ -2952,7 +2952,7 @@
       "app": "EusoTrip Freight",
       "comment": "The animation says MC 306 and then equipment requirements says 407 as a choice. Which is cool but how about we match the equipment and animation to the actual equipment and animation. We have the coding resources to do so. I need a team of 50 agents on this to fix this. ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AIKOfW3tHoOVFUr6VZ29fdc_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AIKOfW3tHoOVFUr6VZ29fdc_1.png"
       ],
       "crashLogFile": null,
       "cluster": "post-load-hazmat-equipment-spec-sync",
@@ -2974,7 +2974,7 @@
       "app": "EusoTrip Freight",
       "comment": "What kind of shit design is this fix it. We have trucks for you to work from. Cmon man ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AEuLZ9tZHJnVvgDehXB_s_U_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AEuLZ9tZHJnVvgDehXB_s_U_1.png"
       ],
       "crashLogFile": null,
       "cluster": "equipment-agent-cargo-aware-fallback",
@@ -2996,7 +2996,7 @@
       "app": "EusoTrip Freight",
       "comment": "This page is so uninspiring , PLEASE FIX! ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AEkeMIx6Af8GdBSnOpw3XZY_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AEkeMIx6Af8GdBSnOpw3XZY_1.png"
       ],
       "crashLogFile": null,
       "cluster": "design-polish-dev-copy",
@@ -3020,8 +3020,8 @@
       "app": "EusoTrip Freight",
       "comment": "These pages are boring and uninspiring. Please fix this. Bespoke! And working! What do we need to make this perfect",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AG7QSqvTYVcd4J8bMXswrJE_1.png",
-        "/tmp/asc/feedback-20260722/shot_6762589326_AG7QSqvTYVcd4J8bMXswrJE_2.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AG7QSqvTYVcd4J8bMXswrJE_1.png",
+        "/tmp/asc/feedback-20260729/shot_6762589326_AG7QSqvTYVcd4J8bMXswrJE_2.png"
       ],
       "crashLogFile": null,
       "cluster": "design-polish-dev-copy",
@@ -3045,7 +3045,7 @@
       "app": "EusoTrip Freight",
       "comment": "Maybe add back button ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AGOthuxHXDQ-qVIRbsAQB7w_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AGOthuxHXDQ-qVIRbsAQB7w_1.png"
       ],
       "crashLogFile": null,
       "cluster": "unclassified-feedback",
@@ -3069,7 +3069,7 @@
       "app": "EusoTrip Freight",
       "comment": "Never mind disregard that is correct placement of text ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AIuN1V9ncjbKHsNmY7SypiQ_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AIuN1V9ncjbKHsNmY7SypiQ_1.png"
       ],
       "crashLogFile": null,
       "cluster": "disregarded-by-reporter",
@@ -3093,7 +3093,7 @@
       "app": "EusoTrip Freight",
       "comment": "See overlapping text in upper left/right corners   ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AOd5xzXVfU6CF6hyijTDwgk_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AOd5xzXVfU6CF6hyijTDwgk_1.png"
       ],
       "crashLogFile": null,
       "cluster": "design-polish-dev-copy",
@@ -3117,7 +3117,7 @@
       "app": "EusoTrip Freight",
       "comment": "When resuming posting this load, it freezes then crashes ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AJ8V2akdsVdJwqqf0M184SI_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AJ8V2akdsVdJwqqf0M184SI_1.png"
       ],
       "crashLogFile": null,
       "cluster": "posting-loads-and-drafts",
@@ -3144,7 +3144,7 @@
       "app": "EusoTrip Freight",
       "comment": "Cannot read writing ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AFDPcWVB-eAWOGGfBdGRvV0_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AFDPcWVB-eAWOGGfBdGRvV0_1.png"
       ],
       "crashLogFile": null,
       "cluster": "design-polish-dev-copy",
@@ -3168,7 +3168,7 @@
       "app": "EusoTrip Freight",
       "comment": "I don’t know if the email was sent ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AMNzdpJ3CRQ4mFgPGTzTgIU_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AMNzdpJ3CRQ4mFgPGTzTgIU_1.png"
       ],
       "crashLogFile": null,
       "cluster": "profile-account-export",
@@ -3192,7 +3192,7 @@
       "app": "EusoTrip Freight",
       "comment": "Make sure this actually works and can be opened via eusotrip for migration and saving etc ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AJNUfxcuZ5mO8uTE0GdvLGQ_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AJNUfxcuZ5mO8uTE0GdvLGQ_1.png"
       ],
       "crashLogFile": null,
       "cluster": "unclassified-feedback",
@@ -3216,7 +3216,7 @@
       "app": "EusoTrip Freight",
       "comment": "Why is this in shipper and why is the alignment so terrible. Wherever this belong it needs to be fixed and wired correctly. This does not belong in a shipper role. Fix this and any other role with this issue. ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AH66EcyAiRzGXLUl2FewFjs_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AH66EcyAiRzGXLUl2FewFjs_1.png"
       ],
       "crashLogFile": null,
       "cluster": "unclassified-feedback",
@@ -3240,7 +3240,7 @@
       "app": "EusoTrip Freight",
       "comment": "These don’t move don’t change they are static. I need you to connect these to data. Wire them correctly to the backend. Doesn’t make sense that they are non moving and stiff and em dash. Hell no. ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AMGLi0WOHqvw34GYSDu0_u0_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AMGLi0WOHqvw34GYSDu0_u0_1.png"
       ],
       "crashLogFile": null,
       "cluster": "design-polish-dev-copy",
@@ -3264,7 +3264,7 @@
       "app": "EusoTrip Freight",
       "comment": " I don’t like that it’s not graceful or presented. It looks like notes for a dev team as opposed to to production ready presentation. Backend appears to not be connected and I don’t need to see these dev notes. It needs to be production ready presentation. Anywhere it says “50 matrix” or something that looks like a dev team note from a prompt I have to design an element. Get rid of it. How is this screen different from live tracking ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AFWT4q4tD_6m8w2BpSQZJTY_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AFWT4q4tD_6m8w2BpSQZJTY_1.png"
       ],
       "crashLogFile": null,
       "cluster": "live-location-weather-here",
@@ -3289,7 +3289,7 @@
       "app": "EusoTrip Freight",
       "comment": "Fix the wallet signing so pressing add to apple wallet actually works and you don’t get this message. Theo full screen needs to be wired. The we code looks perfect. Please make sure it works. It’s design is so perfect ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AGPc6fG1sVtzS_QPnuQubxg_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AGPc6fG1sVtzS_QPnuQubxg_1.png"
       ],
       "crashLogFile": null,
       "cluster": "wallet-money-apple-pay",
@@ -3320,7 +3320,7 @@
       "app": "EusoTrip Freight",
       "comment": "Make sure this full system is fully wired ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AIy5HMsrAxymy5m0ofVeKlM_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AIy5HMsrAxymy5m0ofVeKlM_1.png"
       ],
       "crashLogFile": null,
       "cluster": "unclassified-feedback",
@@ -3344,7 +3344,7 @@
       "app": "EusoTrip Freight",
       "comment": "Make sure this screen is wired up in full. And serving its purpose make sure export file can be utilized for migrating information to a new account or other account with obvious approvals for the information in the file and a proper integrated system to support this feature. A robust system. ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_ADy49Qq_7bskECnWVXMj8S8_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_ADy49Qq_7bskECnWVXMj8S8_1.png"
       ],
       "crashLogFile": null,
       "cluster": "profile-account-export",
@@ -3368,7 +3368,7 @@
       "app": "EusoTrip Freight",
       "comment": "This screen seems lacking. Like more should be here. And make sure it is wired correctly ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_ACLJLccQKwXChyNe5TWYE3I_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_ACLJLccQKwXChyNe5TWYE3I_1.png"
       ],
       "crashLogFile": null,
       "cluster": "live-location-weather-here",
@@ -3393,7 +3393,7 @@
       "app": "EusoTrip Freight",
       "comment": "This screen needs to be fully wired ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_ADZLxP6DD2UoKKNqKLWNDo4_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_ADZLxP6DD2UoKKNqKLWNDo4_1.png"
       ],
       "crashLogFile": null,
       "cluster": "unclassified-feedback",
@@ -3417,7 +3417,7 @@
       "app": "EusoTrip Freight",
       "comment": "This is broken. Please fix this ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_APm83Tf9kK2HUm36r6gJJp4_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_APm83Tf9kK2HUm36r6gJJp4_1.png"
       ],
       "crashLogFile": null,
       "cluster": "unclassified-feedback",
@@ -3441,7 +3441,7 @@
       "app": "EusoTrip Freight",
       "comment": "We have a whole api connection system integration in our web platform that enhances the platform for the user. That goes for iOS as well. This screen needs to be wired to that system. Let the user based on role type connect to the api integration that applies to that role type or vertical etc. ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_ABWT9jv63WOvLSIwwAsSzc4_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_ABWT9jv63WOvLSIwwAsSzc4_1.png"
       ],
       "crashLogFile": null,
       "cluster": "integrations-api-tokens",
@@ -3478,7 +3478,7 @@
       "app": "EusoTrip Freight",
       "comment": " I don’t like that it’s not graceful or presented. It looks like notes for a dev team as opposed to to production ready presentation. Backend appears to not be connected and I don’t need to see these dev notes. It needs to be production ready presentation. Anywhere it says “50 matrix” or something that looks like a dev team note from a prompt I have to design an element. Get rid of it. ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AJRWc3vrZq3ckCjuIXJ5m0c_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AJRWc3vrZq3ckCjuIXJ5m0c_1.png"
       ],
       "crashLogFile": null,
       "cluster": "design-polish-dev-copy",
@@ -3503,7 +3503,7 @@
       "app": "EusoTrip Freight",
       "comment": " I don’t like that it’s not graceful or presented. It looks like notes for a dev team as opposed to to production ready presentation. Backend appears to not be connected and I don’t need to see these dev notes. It needs to be production ready presentation. ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AID6511fW_CBcUTmRTqmqfE_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AID6511fW_CBcUTmRTqmqfE_1.png"
       ],
       "crashLogFile": null,
       "cluster": "design-polish-dev-copy",
@@ -3528,7 +3528,7 @@
       "app": "EusoTrip Freight",
       "comment": "Tanker hazmat [tanker_hazmat] vertical=truck 1k . I don’t like that it’s not graceful or presented. It looks like notes for a dev team as opposed to to production ready presentation ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AH0Zqk0xs239g7MadcXGOvU_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AH0Zqk0xs239g7MadcXGOvU_1.png"
       ],
       "crashLogFile": null,
       "cluster": "design-polish-dev-copy",
@@ -3553,7 +3553,7 @@
       "app": "EusoTrip Freight",
       "comment": "Article crashed ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AAPfWygfRDTiSf0MO7kbrt4_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AAPfWygfRDTiSf0MO7kbrt4_1.png"
       ],
       "crashLogFile": null,
       "cluster": "crash-or-freeze",
@@ -3581,7 +3581,7 @@
       "app": "EusoTrip Freight",
       "comment": "Does shipper have market intelligence? Esang not responsive ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AFUauMZoednvuY3zGpHjXgs_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AFUauMZoednvuY3zGpHjXgs_1.png"
       ],
       "crashLogFile": null,
       "cluster": "market-hotzones-rate-intel",
@@ -3607,7 +3607,7 @@
       "app": "EusoTrip Freight",
       "comment": "“Find repair shop” is broken, sends you back to Home Screen ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_APizVumZ1xvh9jg_cRFo-pQ_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_APizVumZ1xvh9jg_cRFo-pQ_1.png"
       ],
       "crashLogFile": null,
       "cluster": "unclassified-feedback",
@@ -3632,7 +3632,7 @@
       "app": "EusoTrip Freight",
       "comment": "Messed up ",
       "screenshots": [],
-      "crashLogFile": "/tmp/asc/feedback-20260722/crashlog_ADuEx4hGE1lWqa9lT8A5Q-w.txt",
+      "crashLogFile": "/tmp/asc/feedback-20260729/crashlog_ADuEx4hGE1lWqa9lT8A5Q-w.txt",
       "cluster": "crash-or-freeze",
       "severity": "P0",
       "ownerArea": "ios-stability-navigation",
@@ -3688,7 +3688,7 @@
       "app": "EusoTrip Freight",
       "comment": "Can’t send counter offer ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_ANrM-rPrMp8qNus3VGzS5Ys_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_ANrM-rPrMp8qNus3VGzS5Ys_1.png"
       ],
       "crashLogFile": null,
       "cluster": "bids-counteroffers-booking",
@@ -3716,7 +3716,7 @@
       "app": "EusoTrip Freight",
       "comment": "I need this load and I can’t book (bottom of screen) 😩😩 need this load ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AJEPP90FE99BJqwMgcIyuUI_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AJEPP90FE99BJqwMgcIyuUI_1.png"
       ],
       "crashLogFile": null,
       "cluster": "bids-counteroffers-booking",
@@ -3743,7 +3743,7 @@
       "app": "EusoTrip Freight",
       "comment": "“Report breakdown” sends you back to the home page ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AF2RWSJkIDf1Qcj1mjvwDwg_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AF2RWSJkIDf1Qcj1mjvwDwg_1.png"
       ],
       "crashLogFile": null,
       "cluster": "unclassified-feedback",
@@ -3768,7 +3768,7 @@
       "app": "EusoTrip Freight",
       "comment": "It crashed ",
       "screenshots": [],
-      "crashLogFile": "/tmp/asc/feedback-20260722/crashlog_AJ0fN_LroRan7ipaXf-oBrA.txt",
+      "crashLogFile": "/tmp/asc/feedback-20260729/crashlog_AJ0fN_LroRan7ipaXf-oBrA.txt",
       "cluster": "crash-or-freeze",
       "severity": "P0",
       "ownerArea": "ios-stability-navigation",
@@ -3791,7 +3791,7 @@
       "app": "EusoTrip Freight",
       "comment": "It just crashed",
       "screenshots": [],
-      "crashLogFile": "/tmp/asc/feedback-20260722/crashlog_ABq2a-uDu4sQbCCKP54Hcyw.txt",
+      "crashLogFile": "/tmp/asc/feedback-20260729/crashlog_ABq2a-uDu4sQbCCKP54Hcyw.txt",
       "cluster": "crash-or-freeze",
       "severity": "P0",
       "ownerArea": "ios-stability-navigation",
@@ -3814,7 +3814,7 @@
       "app": "EusoTrip Freight",
       "comment": "Haul lobby conversation failure ",
       "screenshots": [
-        "/tmp/asc/feedback-20260722/shot_6762589326_AH73S5SV0wKnZ8xfYbU3C5o_1.png"
+        "/tmp/asc/feedback-20260729/shot_6762589326_AH73S5SV0wKnZ8xfYbU3C5o_1.png"
       ],
       "crashLogFile": null,
       "cluster": "ios-messaging",

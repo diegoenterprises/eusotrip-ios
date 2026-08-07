@@ -92,7 +92,11 @@ final class HereParkingClient {
                 truckOnly: true
             )
         )
-        return Array(rows.compactMap(\.raw).prefix(min(50, max(1, limit))))
+        let validItems = rows.compactMap(\.raw).filter { item in
+            guard let position = item.position else { return false }
+            return HereGeocodingClient.isSane(position.latitude, position.longitude)
+        }
+        return Array(validItems.prefix(min(50, max(1, limit))))
     }
 
     private struct BackendCoord: Encodable {
@@ -131,4 +135,40 @@ struct HereBrowseParkingItem: Decodable, Identifiable, Hashable {
     let openingHours: [HereBrowseOpeningHours]?
     let chains: [HereBrowseChain]?
     let parking: HereBrowseParking?
+
+    private enum CodingKeys: String, CodingKey {
+        case id, title, address, position, access, distance, categories
+        case contacts, openingHours, chains, parking
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        address = try c.decodeIfPresent(HereBrowseAddress.self, forKey: .address)
+        position = try c.decodeIfPresent(HerePosition.self, forKey: .position)
+        access = try c.decodeIfPresent([HerePosition].self, forKey: .access)
+        distance = try c.decodeIfPresent(Int.self, forKey: .distance)
+        categories = try c.decodeIfPresent([HereBrowseCategory].self, forKey: .categories)
+        contacts = try c.decodeIfPresent([HereBrowseContact].self, forKey: .contacts)
+        openingHours = try c.decodeIfPresent([HereBrowseOpeningHours].self, forKey: .openingHours)
+        chains = try c.decodeIfPresent([HereBrowseChain].self, forKey: .chains)
+        parking = try c.decodeIfPresent(HereBrowseParking.self, forKey: .parking)
+
+        let decodedID = try c.decodeIfPresent(String.self, forKey: .id)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if let decodedID, !decodedID.isEmpty {
+            id = decodedID
+        } else if let position {
+            id = "parking:\(position.latitude),\(position.longitude)"
+        } else {
+            id = "parking:unlocated"
+        }
+
+        let decodedTitle = try c.decodeIfPresent(String.self, forKey: .title)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if let decodedTitle, !decodedTitle.isEmpty {
+            title = decodedTitle
+        } else {
+            title = "Parking"
+        }
+    }
 }

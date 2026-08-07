@@ -55,6 +55,43 @@ struct HereBrowseItem: Decodable, Identifiable, Hashable {
     let extended: HereBrowseExtended?
 
     var chargingStation: HereBrowseChargingStation? { extended?.evStation }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, title, resultType, address, position, access, distance
+        case categories, contacts, openingHours, chains, extended
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        resultType = try c.decodeIfPresent(String.self, forKey: .resultType)
+        address = try c.decodeIfPresent(HereBrowseAddress.self, forKey: .address)
+        position = try c.decodeIfPresent(HerePosition.self, forKey: .position)
+        access = try c.decodeIfPresent([HerePosition].self, forKey: .access)
+        distance = try c.decodeIfPresent(Int.self, forKey: .distance)
+        categories = try c.decodeIfPresent([HereBrowseCategory].self, forKey: .categories)
+        contacts = try c.decodeIfPresent([HereBrowseContact].self, forKey: .contacts)
+        openingHours = try c.decodeIfPresent([HereBrowseOpeningHours].self, forKey: .openingHours)
+        chains = try c.decodeIfPresent([HereBrowseChain].self, forKey: .chains)
+        extended = try c.decodeIfPresent(HereBrowseExtended.self, forKey: .extended)
+
+        let decodedID = try c.decodeIfPresent(String.self, forKey: .id)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if let decodedID, !decodedID.isEmpty {
+            id = decodedID
+        } else if let position {
+            id = "ev:\(position.latitude),\(position.longitude)"
+        } else {
+            id = "ev:unlocated"
+        }
+
+        let decodedTitle = try c.decodeIfPresent(String.self, forKey: .title)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if let decodedTitle, !decodedTitle.isEmpty {
+            title = decodedTitle
+        } else {
+            title = "Charging station"
+        }
+    }
 }
 
 struct HereBrowseAddress: Decodable, Hashable {

@@ -5,7 +5,7 @@
 //  Closes the shipper-side half of Phase 19 (Recurring loads) of the
 //  8000-scenario shipper↔driver parity audit
 //  (docs/parity-2026/EXECUTIVE_VERDICT.md §4.6). Phase 19 was PARTIAL
-//  because backend `loadTemplates.create` + `loads.createFromTemplate`
+//  because backend `loadTemplates.create` + `loadTemplates.useTemplate`
 //  shipped, the iOS surface listed templates and tap-detail worked,
 //  but the "+ New recurring schedule" CTA still routed to a web
 //  Continuity hand-off (`MeAction.fire("shipper.recurring.schedule")`).
@@ -16,7 +16,7 @@
 //    3. Schedule block — first pickup date + first delivery date,
 //       optional preferred-days chips (Mon-Sun)
 //    4. Pricing block — flat rate (USD) + rate type
-//    5. Submit -> loadTemplates.create -> loads.createFromTemplate
+//    5. Submit -> loadTemplates.create -> loadTemplates.useTemplate
 //       fires for the first occurrence so the shipper sees an
 //       active load on the schedule immediately.
 //
@@ -37,7 +37,7 @@ struct ShipperRecurringComposer: View {
     /// can pass the existing template through). When provided the
     /// composer becomes an "add next occurrence" path that skips
     /// loadTemplates.create and goes straight to
-    /// loads.createFromTemplate.
+    /// loadTemplates.useTemplate.
     let prefilledTemplate: LoadTemplatesAPI.Template?
 
     init(prefilledTemplate: LoadTemplatesAPI.Template? = nil) {
@@ -68,6 +68,10 @@ struct ShipperRecurringComposer: View {
     @State private var inFlight: Bool = false
     @State private var error: String? = nil
     @State private var success: Bool = false
+    @State private var assessment: PortIntelAssessment? = nil
+    @State private var assessmentSignature: String? = nil
+    @State private var assessing: Bool = false
+    @State private var assessmentAcknowledged: Bool = false
 
     enum Weekday: String, CaseIterable, Identifiable, Hashable {
         case mon = "Mon", tue = "Tue", wed = "Wed", thu = "Thu", fri = "Fri", sat = "Sat", sun = "Sun"
@@ -85,6 +89,9 @@ struct ShipperRecurringComposer: View {
                     cargoCard
                     scheduleCard
                     pricingCard
+                    if requiresPortIntelligence {
+                        portIntelligenceCard
+                    }
                     if let err = error {
                         errorBanner(err)
                     }
@@ -137,7 +144,7 @@ struct ShipperRecurringComposer: View {
         if destState.isEmpty { destState = t.destination?.state ?? "" }
         if commodity.isEmpty { commodity = t.commodity ?? "" }
         if equipmentType.isEmpty { equipmentType = t.equipmentType ?? "" }
-        if weightLbs.isEmpty { weightLbs = t.weight ?? "" }
+        if weightLbs.isEmpty { weightLbs = t.quantity ?? t.weight ?? "" }
         if ratePerLoad.isEmpty, let r = t.rate { ratePerLoad = r }
     }
 
@@ -226,7 +233,7 @@ struct ShipperRecurringComposer: View {
                 fieldColumn(label: "Equipment", text: $equipmentType, placeholder: "e.g. tanker")
             }
             VStack(alignment: .leading, spacing: 4) {
-                Text("Weight (lbs)")
+                Text("Quantity (\(prefilledTemplate?.quantityUnit ?? prefilledTemplate?.weightUnit ?? "lbs"))")
                     .font(EType.caption).tracking(0.4)
                     .foregroundStyle(palette.textTertiary)
                 TextField("e.g. 45000", text: $weightLbs)
@@ -357,6 +364,88 @@ struct ShipperRecurringComposer: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
+    private var requiresPortIntelligence: Bool {
+        (prefilledTemplate?.transportMode ?? "truck").lowercased() != "truck"
+    }
+
+    private var currentAssessmentSignature: String {
+        let template = prefilledTemplate
+        let fields = [
+            template?.commodity ?? commodity,
+            template?.category ?? template?.cargoType ?? "general",
+            template?.physicalState ?? "",
+            template?.unNumber ?? "",
+            template?.hazmatClass ?? "",
+            template?.transportMode ?? "truck",
+            weightLbs,
+            template?.quantityUnit ?? template?.weightUnit ?? "lbs",
+            templateLocationLabel(template?.origin, fallbackCity: originCity, fallbackState: originState),
+            templateLocationLabel(template?.destination, fallbackCity: destCity, fallbackState: destState),
+            template?.originCountry ?? template?.origin?.countryCode ?? LoadAnimationContext.countryCode(forState: originState),
+            template?.destinationCountry ?? template?.destination?.countryCode ?? LoadAnimationContext.countryCode(forState: destState),
+            template?.equipmentType ?? template?.trailerType ?? equipmentType,
+            template?.vesselClass ?? "",
+            template?.permitType ?? "",
+            isoDay(pickupDate),
+        ]
+        return fields.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            .joined(separator: "|")
+    }
+
+    private var hasCurrentAssessment: Bool {
+        assessment != nil && assessmentSignature == currentAssessmentSignature
+    }
+
+    private var assessmentAllowsSubmit: Bool {
+        guard requiresPortIntelligence else { return true }
+        guard hasCurrentAssessment, let gate = assessment?.preflight.gate else { return false }
+        if gate == "ready" { return true }
+        return gate == "acknowledgement_required" && assessmentAcknowledged
+    }
+
+    private var portIntelligenceCard: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack {
+                Image(systemName: "checkmark.shield")
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("05 · PORT INTELLIGENCE")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.9)
+                    .foregroundStyle(LinearGradient.diagonal)
+                Spacer()
+                if hasCurrentAssessment, let gate = assessment?.preflight.gate {
+                    Text(gate.replacingOccurrences(of: "_", with: " ").uppercased())
+                        .font(EType.micro)
+                        .foregroundStyle(gate == "blocked" ? Brand.danger : Brand.success)
+                }
+            }
+            Text("Each rail, vessel, or barge occurrence needs current evidence for its exact cargo, quantity, lane, equipment, and pickup date.")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if hasCurrentAssessment,
+               assessment?.preflight.gate == "acknowledgement_required" {
+                Toggle("Acknowledge the documented evidence gaps", isOn: $assessmentAcknowledged)
+                    .font(EType.caption)
+            }
+            Button {
+                Task { await runPortIntelligence() }
+            } label: {
+                Label(assessing ? "Checking live evidence…" : (hasCurrentAssessment ? "Refresh evidence" : "Run Port Intelligence"),
+                      systemImage: "arrow.triangle.2.circlepath")
+                    .font(EType.bodyStrong)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Brand.blue)
+            .disabled(assessing)
+        }
+        .padding(Space.s4)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+            .strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+    }
+
     private var submitBar: some View {
         VStack(spacing: 0) {
             IridescentHairline()
@@ -391,11 +480,15 @@ struct ShipperRecurringComposer: View {
 
     private var canSubmit: Bool {
         guard !inFlight else { return false }
-        if prefilledTemplate != nil { return true }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let product = commodity.trimmingCharacters(in: .whitespacesAndNewlines)
+        let validWeight = Double(weightLbs).map { $0 > 0 } == true
         return !trimmed.isEmpty
             && !originCity.isEmpty && !originState.isEmpty
             && !destCity.isEmpty && !destState.isEmpty
+            && !product.isEmpty && validWeight
+            && deliveryDate > pickupDate
+            && assessmentAllowsSubmit
     }
 
     private func errorBanner(_ message: String) -> some View {
@@ -411,6 +504,87 @@ struct ShipperRecurringComposer: View {
         .padding(Space.s3)
         .background(Brand.danger.opacity(0.10),
                     in: RoundedRectangle(cornerRadius: Radius.md))
+    }
+
+    private func isoDay(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
+    }
+
+    private func templateLocationLabel(
+        _ location: LoadTemplatesAPI.Template.Location?,
+        fallbackCity: String,
+        fallbackState: String
+    ) -> String {
+        let city = location?.city?.trimmingCharacters(in: .whitespacesAndNewlines) ?? fallbackCity
+        let state = location?.state?.trimmingCharacters(in: .whitespacesAndNewlines) ?? fallbackState
+        let zip = location?.zipCode?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let locality = [city, state, zip].filter { !$0.isEmpty }.joined(separator: " ")
+        let address = location?.address?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return [address, locality].filter { !$0.isEmpty }.joined(separator: ", ")
+    }
+
+    private func runPortIntelligence() async {
+        guard let template = prefilledTemplate,
+              let quantity = Double(weightLbs), quantity > 0 else {
+            error = "A saved template with a positive cargo quantity is required before assessment."
+            return
+        }
+        let origin = templateLocationLabel(template.origin, fallbackCity: originCity, fallbackState: originState)
+        let destination = templateLocationLabel(template.destination, fallbackCity: destCity, fallbackState: destState)
+        let originCountry = (template.originCountry
+            ?? template.origin?.countryCode
+            ?? LoadAnimationContext.countryCode(forState: originState)).uppercased()
+        let destinationCountry = (template.destinationCountry
+            ?? template.destination?.countryCode
+            ?? LoadAnimationContext.countryCode(forState: destState)).uppercased()
+        guard !origin.isEmpty, !destination.isEmpty,
+              originCountry.count == 2, destinationCountry.count == 2 else {
+            error = "Verified lane and country details are required before assessment."
+            return
+        }
+        assessing = true
+        assessmentAcknowledged = false
+        error = nil
+        defer { assessing = false }
+        let request = PortIntelAssessmentInput(
+            requestKey: UUID().uuidString,
+            title: "\(template.commodity ?? commodity) · \(origin) to \(destination)",
+            draft: .init(
+                productName: template.commodity ?? commodity,
+                category: template.category ?? template.cargoType,
+                physicalState: template.physicalState,
+                unNumber: template.unNumber,
+                hazmatClass: template.hazmatClass,
+                transportMode: template.transportMode ?? "truck",
+                quantity: quantity,
+                quantityUnit: template.quantityUnit ?? template.weightUnit ?? "lbs",
+                origin: origin,
+                destination: destination,
+                originCountry: originCountry,
+                destinationCountry: destinationCountry,
+                equipment: template.equipmentType ?? template.trailerType,
+                vesselClass: template.vesselClass,
+                multiVehicleCount: nil,
+                pickupDate: isoDay(pickupDate),
+                specialPermit: template.permitType == "none" ? nil : template.permitType
+            )
+        )
+        do {
+            let result: PortIntelAssessment = try await EusoTripAPI.shared.mutation(
+                "portIntelligence.assessLoadDraft",
+                input: request
+            )
+            assessment = result
+            assessmentSignature = currentAssessmentSignature
+        } catch {
+            assessment = nil
+            assessmentSignature = nil
+            self.error = error.eusoUserCopy
+        }
     }
 
     // MARK: - Submit
@@ -434,16 +608,20 @@ struct ShipperRecurringComposer: View {
                 let preferred = preferredDays.isEmpty
                     ? nil
                     : Array(preferredDays.map(\.rawValue))
+                let originCountry = LoadAnimationContext.countryCode(forState: originState).uppercased()
+                let destinationCountry = LoadAnimationContext.countryCode(forState: destState).uppercased()
                 let createInput = LoadTemplatesAPI.CreateInput(
                     name: name.trimmingCharacters(in: .whitespacesAndNewlines),
                     description: nil,
                     origin: .init(
                         city: originCity, state: originState.uppercased(),
-                        zipCode: nil, address: nil, facilityName: nil
+                        zipCode: nil, address: nil, facilityName: nil,
+                        countryCode: originCountry
                     ),
                     destination: .init(
                         city: destCity, state: destState.uppercased(),
-                        zipCode: nil, address: nil, facilityName: nil
+                        zipCode: nil, address: nil, facilityName: nil,
+                        countryCode: destinationCountry
                     ),
                     distance: nil,
                     commodity: commodity.isEmpty ? nil : commodity,
@@ -455,7 +633,11 @@ struct ShipperRecurringComposer: View {
                     rateType: ratePerLoad.isEmpty ? nil : "flat",
                     preferredDays: preferred,
                     preferredPickupTime: nil,
-                    specialInstructions: nil
+                    specialInstructions: nil,
+                    quantity: weightLbs,
+                    quantityUnit: "lbs",
+                    originCountry: originCountry,
+                    destinationCountry: destinationCountry
                 )
                 let ack = try await EusoTripAPI.shared.loadTemplates.create(createInput)
                 guard let id = ack.id else {
@@ -467,17 +649,19 @@ struct ShipperRecurringComposer: View {
 
             // Materialize the first occurrence so the shipper sees a
             // live load on the schedule the moment the sheet dismisses.
-            _ = try await EusoTripAPI.shared.loads.createFromTemplate(
+            _ = try await EusoTripAPI.shared.loadTemplates.useTemplate(
                 templateId: templateId,
                 pickupDate: pickup,
-                deliveryDate: delivery
+                deliveryDate: delivery,
+                portIntelligenceAssessmentId: hasCurrentAssessment ? assessment?.publicId : nil,
+                portIntelligenceAcknowledged: assessmentAcknowledged
             )
 
             withAnimation { success = true }
             try? await Task.sleep(nanoseconds: 1_200_000_000)
             dismiss()
         } catch {
-            self.error = (error as NSError).localizedDescription
+            self.error = error.eusoUserCopy
         }
     }
 }

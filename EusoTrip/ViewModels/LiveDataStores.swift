@@ -4101,11 +4101,16 @@ final class ShipperPostLoadStore: ObservableObject {
         physicalState: String? = nil,
         unNumber: String? = nil,
         hazmatClass: String? = nil,
+        properShippingName: String? = nil,
+        packingGroup: String? = nil,
         rate: Double?,
         weight: Double?,
         weightUnit: String? = nil,
+        quantity: Double? = nil,
+        quantityUnit: String? = nil,
         notes: String?,
         pickupDate: String?,
+        deliveryDate: String? = nil,
         originLat: Double? = nil,
         originLng: Double? = nil,
         destLat: Double? = nil,
@@ -4148,13 +4153,20 @@ final class ShipperPostLoadStore: ObservableObject {
                 physicalState: physicalState,
                 unNumber: unNumber,
                 hazmatClass: hazmatClass,
+                properShippingName: properShippingName,
+                packingGroup: packingGroup,
                 rate: rate,
                 weight: weight,
                 weightUnit: weightUnit,
+                quantity: quantity,
+                quantityUnit: quantityUnit,
                 notes: (notes?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap {
                     $0.isEmpty ? nil : $0
                 },
                 pickupDate: (pickupDate?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap {
+                    $0.isEmpty ? nil : $0
+                },
+                deliveryDate: (deliveryDate?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap {
                     $0.isEmpty ? nil : $0
                 },
                 originLat: originLat,
@@ -4180,10 +4192,8 @@ final class ShipperPostLoadStore: ObservableObject {
                 portIntelligenceAcknowledged: portIntelligenceAcknowledged
             )
             self.phase = .success(ack)
-        } catch let api as EusoTripAPIError {
-            self.phase = .error(api.errorDescription ?? "Couldn't post that load.")
         } catch {
-            self.phase = .error(error.localizedDescription)
+            self.phase = .error(error.eusoUserCopy)
         }
     }
 

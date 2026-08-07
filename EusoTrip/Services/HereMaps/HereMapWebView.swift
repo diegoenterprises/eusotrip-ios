@@ -1,6 +1,6 @@
 //
 //  HereMapWebView.swift
-//  EusoTrip — the ONE canonical HERE Maps JS 3.1 renderer.
+//  EusoTrip — the ONE canonical HERE Maps JS 3.2 renderer.
 //
 //  2026-05-21: extracted + generalized from HotZonesWidget so EVERY map
 //  surface (Hot Zones, Live Tracking, Control Tower, Load Detail, driver
@@ -19,8 +19,27 @@
 //
 //   2. SUPPORTED BASE LAYERS. Uses `Platform.createDefaultLayers`, matching
 //      HERE's maintained JavaScript examples. Day uses the labeled vector
-//      layer; dark uses the labeled raster night layer at this account's
-//      verified `ppi=200`. No private style URL or hand-built OMV provider.
+//      layer; dark uses the labeled raster night layer at `ppi=200`.
+//      No private style URL or hand-built OMV provider.
+//
+//   3. SDK VERSION — this is load-bearing, do not "simplify" it back to 3.1.
+//      2026-07-28: every map surface in the app rendered "Map unavailable"
+//      because the page loaded **3.1** while `createDefaultLayers` was called
+//      with `ppi: 200`. Read straight out of the shipped SDK bytes:
+//
+//        3.1 mapsjs-service.js:
+//          if(0>[72,250,320,500].indexOf(+b)){ if(b!==A) throw new C(...); }
+//        3.2 mapsjs-service.js:
+//          h=[256,512].includes(f.tileSize)?f.tileSize:512,
+//          k=[100,200,400].includes(f.ppi)?f.ppi:2<=window.devicePixelRatio?200:100
+//
+//      So ppi 200 is INVALID in 3.1 (it throws, buildBase returns null, the
+//      map shows the error state) and VALID in 3.2 — and 3.2 clamps instead of
+//      throwing. The call was written against 3.2 semantics while the page
+//      loaded 3.1. tileSize 512 is legal in both. All six assets we load exist
+//      on 3.2 (verified 200). Production pins the full 3.2.8.0 release, as
+//      HERE recommends for high-load applications, so a rolling CDN patch
+//      cannot change this contract underneath us.
 //
 //  Layer model: a screen declares what it wants via `[HereMapLayer]`
 //  (heatmap / markers / route polyline / ad-zone polygons / mission pins /
@@ -434,19 +453,19 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
         }
         let dragFlags = interactive
             ? ""
-            : "behavior.disable(H.mapevents.Behavior.DRAGGING | H.mapevents.Behavior.WHEELZOOM | H.mapevents.Behavior.PINCHZOOM);"
+            : "behavior.disable(H.mapevents.Behavior.DRAGGING | H.mapevents.Behavior.WHEELZOOM | H.mapevents.Behavior.DBLTAPZOOM | H.mapevents.Behavior.FRACTIONALZOOM);"
 
         return """
         <!doctype html><html><head>
         <meta charset="utf-8"/>
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
-        <link rel="stylesheet" href="https://js.api.here.com/v3/3.1/mapsjs-ui.css"/>
+        <link rel="stylesheet" href="https://js.api.here.com/v3/3.2.8.0/mapsjs-ui.css"/>
         <style>html,body,#map{margin:0;padding:0;width:100%;height:100%;background:#0b0b0f;position:relative}</style>
-        <script src="https://js.api.here.com/v3/3.1/mapsjs-core.js"></script>
-        <script src="https://js.api.here.com/v3/3.1/mapsjs-service.js"></script>
-        <script src="https://js.api.here.com/v3/3.1/mapsjs-ui.js"></script>
-        <script src="https://js.api.here.com/v3/3.1/mapsjs-data.js"></script>
-        <script src="https://js.api.here.com/v3/3.1/mapsjs-mapevents.js"></script>
+        <script src="https://js.api.here.com/v3/3.2.8.0/mapsjs-core.js"></script>
+        <script src="https://js.api.here.com/v3/3.2.8.0/mapsjs-service.js"></script>
+        <script src="https://js.api.here.com/v3/3.2.8.0/mapsjs-ui.js"></script>
+        <script src="https://js.api.here.com/v3/3.2.8.0/mapsjs-data.js"></script>
+        <script src="https://js.api.here.com/v3/3.2.8.0/mapsjs-mapevents.js"></script>
         </head><body><div id="map"></div><script>
         (function(){
           function log(m){ try{ window.webkit.messageHandlers.hzLog.postMessage(String(m)); }catch(e){} }
@@ -478,16 +497,13 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
           // createDefaultLayers is called through a ladder of progressively
           // plainer option sets instead of once with a bespoke config.
           //
-          // The scripts above load from js.api.here.com/v3/3.1/ WITHOUT a patch
-          // pin, so HERE ships changes into "3.1" under us. A single call with
-          // {tileSize:512, ppi:200} therefore had two ways to take every map in
-          // the app down at once, with no change on our side: ppi 200 is not one
-          // of HERE's documented values (72/250/320/500) and only ever worked
-          // because this account tolerated it, and dl.raster.normal.mapnight has
-          // been reshaped across 3.1 releases. Either one throws or returns
-          // undefined, buildBase returned null, and every surface rendered
-          // "Map unavailable. Check your connection" — which blamed the network
-          // for a provider-contract change.
+          // The version bump to 3.2 (see header note 3) is the actual fix for
+          // the "Map unavailable" outage — under 3.2, ppi 200 is a legal value
+          // and an illegal one clamps rather than throws. This ladder stays as
+          // defence in depth: it costs nothing on the happy path, and if HERE
+          // reshapes the layer tree again (dl.raster.normal.mapnight and
+          // dl.vector.normal.map have both moved across releases) the map
+          // degrades to a working base layer instead of an error card.
           //
           // Each rung is tried in turn and the failure reason is logged, so the
           // hzLog handler names the real cause instead of the generic banner.
@@ -604,7 +620,7 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
                   var ls = new H.geo.LineString();
                   pts.forEach(function(p){ ls.pushPoint({lat:p.lat,lng:p.lng}); });
                   grp.addObject(new H.map.Polyline(ls, { style:{
-                    lineWidth:6, strokeColor:hexA(spec.c, spec.a), lineCap:"round", lineJoin:"round" } }));
+                    lineWidth:6, strokeColor:hexA(spec.c, spec.a), lineCap:"round" } }));
                 });
 
                 (L.polygons||[]).forEach(function(pg){
@@ -697,7 +713,7 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
                 var nx = b.w>0 ? (mid.lng-b.minLng)/b.w : 0.5;
                 var ny = b.h>0 ? (mid.lat-b.minLat)/b.h : 0.5;
                 var style = { lineWidth:width, strokeColor:sweepColor((nx+ny)/2, alpha),
-                              lineCap:"round", lineJoin:"round" };
+                              lineCap:"round" };
                 if(dash){ style.lineDash = dash; }
                 grp.addObject(new H.map.Polyline(ls, { style:style }));
               }
@@ -721,11 +737,14 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
               var ring = new H.map.Circle({lat:f.lat,lng:f.lng}, f.radius, { style:ringStyle });
               grp.addObject(ring);
               if(f.kind==="pilotGround"){
-                // 660: the pilot-boarding fence marches its dash.
+                // 660: SpatialStyle.lineDashOffset was removed in Maps JS
+                // 3.2. Keep the pilot fence alive with a supported opacity
+                // pulse instead of silently assigning a dead property.
                 fx.push(function(t){
+                  var pulse = 0.62 + 0.28 * ((Math.sin(t*2.4)+1)/2);
                   ring.setStyle(new H.map.SpatialStyle({ strokeColor:ringStyle.strokeColor,
-                    fillColor:ringStyle.fillColor, lineWidth:spec.w, lineDash:spec.dash,
-                    lineDashOffset: Math.round(t*10)%10 }));
+                    fillColor:hexA(spec.fillHex, pulse*0.18), lineWidth:spec.w,
+                    lineDash:spec.dash }));
                 });
               }
               if(f.kind==="railRamp"){

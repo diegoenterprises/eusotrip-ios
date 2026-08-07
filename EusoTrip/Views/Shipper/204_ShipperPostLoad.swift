@@ -1500,23 +1500,33 @@ struct ShipperPostLoad: View {
         defer { savingTemplate = false }
         do {
             let originLoc = LoadTemplatesAPI.TemplateLocation(
-                city: cityFromText(origin),
-                state: stateFromText(origin),
+                city: cityFromText(origin, countryCode: originCountryCode),
+                state: stateFromText(origin, countryCode: originCountryCode),
                 zipCode: nil,
                 address: origin.trimmingCharacters(in: .whitespaces),
-                facilityName: nil
+                facilityName: nil,
+                countryCode: originCountryCode.uppercased(),
+                lat: originLat,
+                lng: originLng
             )
             let destLoc = LoadTemplatesAPI.TemplateLocation(
-                city: cityFromText(destination),
-                state: stateFromText(destination),
+                city: cityFromText(destination, countryCode: destinationCountryCode),
+                state: stateFromText(destination, countryCode: destinationCountryCode),
                 zipCode: nil,
                 address: destination.trimmingCharacters(in: .whitespaces),
-                facilityName: nil
+                facilityName: nil,
+                countryCode: destinationCountryCode.uppercased(),
+                lat: destLat,
+                lng: destLng
             )
             // Build description with the equipment + subform spec so
             // the catalyst's view of the template carries the full
             // requirements at materialization time.
             let desc = composeSubmissionNotes()
+            let templateQuantity = parseDouble(weightText)
+            let isMassUnit = [MeasurementUnit.pounds, .kilograms, .shortTons, .metricTons]
+                .contains(weightUnit)
+            let templatePermit: String? = permitType == .none ? nil : permitType.rawValue
             let input = LoadTemplatesAPI.CreateInput(
                 name: name,
                 description: desc.isEmpty ? nil : desc,
@@ -1526,13 +1536,26 @@ struct ShipperPostLoad: View {
                 commodity: properShippingName.isEmpty ? nil : properShippingName,
                 cargoType: cargoType.rawValue,
                 equipmentType: equipmentType.rawValue,
-                weight: weightText.isEmpty ? nil : weightText,
-                weightUnit: weightText.isEmpty ? nil : weightUnit.rawValue,
+                weight: isMassUnit && templateQuantity != nil ? weightText : nil,
+                weightUnit: isMassUnit && templateQuantity != nil ? weightUnit.rawValue : nil,
                 rate: parseDouble(rateText),
                 rateType: rateText.isEmpty ? nil : "flat",
                 preferredDays: nil,
                 preferredPickupTime: nil,
-                specialInstructions: notes.isEmpty ? nil : notes
+                specialInstructions: notes.isEmpty ? nil : notes,
+                category: commodityMatch?.category ?? cargoType.rawValue,
+                physicalState: portIntelligencePhysicalState,
+                trailerType: equipmentType.rawValue,
+                quantity: templateQuantity == nil ? nil : weightText,
+                quantityUnit: templateQuantity == nil ? nil : weightUnit.rawValue,
+                hazmatClass: nonBlank(hazmatClass),
+                unNumber: nonBlank(unNumber),
+                packingGroup: nonBlank(packingGroup),
+                properShippingName: nonBlank(properShippingName),
+                transportMode: transportMode.rawValue,
+                originCountry: originCountryCode.uppercased(),
+                destinationCountry: destinationCountryCode.uppercased(),
+                permitType: templatePermit
             )
             let ack = try await EusoTripAPI.shared.loadTemplates.create(input)
             showSaveTemplateSheet = false
@@ -1542,19 +1565,33 @@ struct ShipperPostLoad: View {
         }
     }
 
-    /// Best-effort city extraction. Pulls the leading piece before
-    /// the first comma so "Houston, TX, United States" → "Houston".
-    private func cityFromText(_ raw: String) -> String {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.split(separator: ",").first.map { String($0).trimmingCharacters(in: .whitespaces) } ?? ""
+    private func localityParts(_ raw: String, countryCode: String) -> (city: String, state: String) {
+        var parts = raw.split(separator: ",")
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        let country = countryCode.uppercased()
+        var countryLabels = Set([country.lowercased()])
+        if let localized = Locale.current.localizedString(forRegionCode: country)?.lowercased() {
+            countryLabels.insert(localized)
+        }
+        if country == "US" {
+            countryLabels.formUnion(["usa", "united states", "united states of america"])
+        }
+        if let last = parts.last?.lowercased(), countryLabels.contains(last) {
+            parts.removeLast()
+        }
+        guard let statePart = parts.last else { return ("", "") }
+        let state = statePart.split(separator: " ").first.map(String.init) ?? statePart
+        let city = parts.count >= 2 ? parts[parts.count - 2] : parts[0]
+        return (city, state)
     }
 
-    /// Best-effort state extraction. Pulls the second comma-separated
-    /// piece so "Houston, TX, United States" → "TX".
-    private func stateFromText(_ raw: String) -> String {
-        let parts = raw.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: ",")
-        guard parts.count >= 2 else { return "" }
-        return String(parts[1]).trimmingCharacters(in: .whitespaces)
+    private func cityFromText(_ raw: String, countryCode: String) -> String {
+        localityParts(raw, countryCode: countryCode).city
+    }
+
+    private func stateFromText(_ raw: String, countryCode: String) -> String {
+        localityParts(raw, countryCode: countryCode).state
     }
 
     // MARK: - Draft autosave + iCloud KVS continuity
@@ -7005,7 +7042,11 @@ struct ShipperPostLoad: View {
             return
         }
         let pickupISO = hasPickupDate ? isoDate(pickupDate) : nil
-        let weight    = parseDouble(weightText)
+        let quantity  = parseDouble(weightText)
+        let isMassUnit = [MeasurementUnit.pounds, .kilograms, .shortTons, .metricTons]
+            .contains(weightUnit)
+        let weight = isMassUnit ? quantity : nil
+        let massUnit = isMassUnit ? weightUnit.rawValue : nil
         let rate      = parseDouble(rateText)
         // Pack equipment-type + subform spec into the `notes` field
         // so the catalyst's dispatcher / driver gets the full
@@ -7053,9 +7094,13 @@ struct ShipperPostLoad: View {
             physicalState: portIntelligencePhysicalState,
             unNumber: nonBlank(unNumber),
             hazmatClass: nonBlank(hazmatClass),
+            properShippingName: nonBlank(properShippingName),
+            packingGroup: nonBlank(packingGroup),
             rate: rateForWire,
             weight: weight,
-            weightUnit: weightUnit.rawValue,
+            weightUnit: massUnit,
+            quantity: quantity,
+            quantityUnit: weightUnit.rawValue,
             notes: composedNotes,
             pickupDate: pickupISO,
             originLat: originLat,
