@@ -424,7 +424,7 @@ struct ShipperLiveTracking: View {
         struct In: Encodable { let border: String }
         do {
             borderWaits = try await EusoTripAPI.shared.query(
-                "crossBorder.getBorderWaitTimes", input: In(border: "ALL"))
+                "crossBorderShipping.getBorderWaitTimes", input: In(border: "ALL"))
         } catch {
             borderWaits = nil   // honest: band collapses to the unavailable line
         }

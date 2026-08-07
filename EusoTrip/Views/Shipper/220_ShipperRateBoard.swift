@@ -245,7 +245,7 @@ struct ShipperRateBoard: View {
     private func loadFx() async {
         struct In: Encodable { let base: String }
         do {
-            fx = try await EusoTripAPI.shared.query("crossBorder.getExchangeRates", input: In(base: "USD"))
+            fx = try await EusoTripAPI.shared.query("crossBorderShipping.getExchangeRates", input: In(base: "USD"))
         } catch {
             fx = nil   // honest: rows read "FX unavailable"
         }
