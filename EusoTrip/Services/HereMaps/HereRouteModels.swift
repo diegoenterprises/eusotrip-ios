@@ -45,6 +45,39 @@ struct HereRouteSection: Decodable, Identifiable {
     /// for `return=polyline,summary,actions,tolls`. Each `offset` indexes into
     /// this section's DECODED polyline coords (via `HereFlexiblePolyline.decode`).
     let actions:   [HereRouteAction]?
+
+    // Declared explicitly: Swift only synthesises CodingKeys when it also
+    // synthesises the conformance, and this type supplies its own init(from:).
+    private enum CodingKeys: String, CodingKey {
+        case id, type, departure, arrival, summary, polyline
+        case notices, spans, tolls, actions
+    }
+
+    /// Split deliberately into ESSENTIAL and ANNOTATION fields.
+    ///
+    /// A HERE response decodes as one value, so before this a shape change in
+    /// any optional annotation threw away the whole route — twice now, and both
+    /// times the symptom was "nothing works" rather than "one field is wrong"
+    /// (2026-06-03 non-optional `id`; 2026-08-07 `truckAttributes` array).
+    ///
+    /// Essentials stay STRICT: without a polyline or endpoints there is no
+    /// route, and pretending otherwise would be the dishonest kind of fallback.
+    /// Annotations (summary, spans, tolls, actions, notices) degrade to nil, so
+    /// upstream drift costs a speed-limit overlay instead of navigation. The
+    /// drift itself is caught by the contract test, not hidden by this.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        type      = try c.decode(String.self, forKey: .type)
+        departure = try c.decode(HereSectionEndpoint.self, forKey: .departure)
+        arrival   = try c.decode(HereSectionEndpoint.self, forKey: .arrival)
+        polyline  = try c.decode(String.self, forKey: .polyline)
+        id        = try? c.decodeIfPresent(String.self, forKey: .id)
+        summary   = try? c.decodeIfPresent(HereSectionSummary.self, forKey: .summary)
+        notices   = try? c.decodeIfPresent([HereNotice].self, forKey: .notices)
+        spans     = try? c.decodeIfPresent([HereSpan].self, forKey: .spans)
+        tolls     = try? c.decodeIfPresent([HereToll].self, forKey: .tolls)
+        actions   = try? c.decodeIfPresent([HereRouteAction].self, forKey: .actions)
+    }
 }
 
 /// A single HERE-authored driving maneuver (L13-3 turn-by-turn).
@@ -114,13 +147,58 @@ struct HereSpan: Decodable {
         let language: String?
     }
 
+    /// HERE Routing v8 returns `truckAttributes` as an **ARRAY OF STRING FLAGS**
+    /// — live-verified 2026-08-07 against router.hereapi.com/v8:
+    ///
+    ///     "spans": [ { "offset": 0, "truckAttributes": ["open"], … } ]
+    ///
+    /// It was modelled here as a keyed object, so `JSONDecoder` threw
+    /// `typeMismatch` ("expected Dictionary, found array") on the first span
+    /// carrying the field. A response decodes as ONE value, so that single
+    /// mismatch discarded the entire route — and because the server sends
+    /// `spans=maxSpeed,functionalClass,truckAttributes,notices` whenever it
+    /// asks for a polyline (the default path), EVERY route calculation failed.
+    /// Same class as the 2026-06-03 non-optional `id` bug that took out every
+    /// map: one wrong field type in optional metadata, whole feature dead.
+    ///
+    /// Both shapes decode, so neither a rollback nor a future HERE change to
+    /// the object form can break routing again.
     struct TruckAttributes: Decodable {
+        /// The flags HERE actually sends today, e.g. ["open"], ["tunnelCategoryB"].
+        let flags: [String]
+
+        // Legacy/object form. HERE does not currently send these; they decode
+        // if it ever does, and are nil otherwise.
         let weightLimitKg: Int?
         let heightLimitCm: Int?
         let widthLimitCm: Int?
         let lengthLimitCm: Int?
         let axleCountLimit: Int?
         let truckRestrictions: [String]?    // e.g. ["hazardousGoodsProhibited"]
+
+        private enum CodingKeys: String, CodingKey {
+            case weightLimitKg, heightLimitCm, widthLimitCm, lengthLimitCm
+            case axleCountLimit, truckRestrictions
+        }
+
+        init(from decoder: Decoder) throws {
+            // Array form first — this is what HERE v8 actually returns.
+            if let unkeyed = try? decoder.singleValueContainer(),
+               let values = try? unkeyed.decode([String].self) {
+                flags = values
+                weightLimitKg = nil; heightLimitCm = nil; widthLimitCm = nil
+                lengthLimitCm = nil; axleCountLimit = nil; truckRestrictions = nil
+                return
+            }
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            flags = []
+            weightLimitKg   = try c.decodeIfPresent(Int.self, forKey: .weightLimitKg)
+            heightLimitCm   = try c.decodeIfPresent(Int.self, forKey: .heightLimitCm)
+            widthLimitCm    = try c.decodeIfPresent(Int.self, forKey: .widthLimitCm)
+            lengthLimitCm   = try c.decodeIfPresent(Int.self, forKey: .lengthLimitCm)
+            axleCountLimit  = try c.decodeIfPresent(Int.self, forKey: .axleCountLimit)
+            truckRestrictions = try c.decodeIfPresent([String].self, forKey: .truckRestrictions)
+        }
     }
 }
 
