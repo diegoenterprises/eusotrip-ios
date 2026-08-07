@@ -852,13 +852,11 @@ struct ShipperLoadsScreen: View {
 // Shipper bottom-nav doctrine — see 200_ShipperHome.swift comment.
 // Per parity mandate §1: NAV is out of scope.
 private func shipperNavLeading_201() -> [NavSlot] {
-    [NavSlot(label: "Home",        systemImage: "house",                          isCurrent: false),
-     NavSlot(label: "Create Load", systemImage: "plus.rectangle.on.rectangle",    isCurrent: false)]
+    RoleNav.shipperLeading(current: .none)
 }
 
 private func shipperNavTrailing_201() -> [NavSlot] {
-    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: true),
-     NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
+    RoleNav.shipperTrailing(current: .loads)
 }
 
 // MARK: - Previews

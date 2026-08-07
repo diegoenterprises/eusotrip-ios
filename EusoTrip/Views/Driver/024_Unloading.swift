@@ -940,12 +940,10 @@ struct UnloadingScreen: View {
 }
 
 private func driverNavLeading_024() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",   isCurrent: true)]
+    RoleNav.driverLeading(current: .trips)
 }
 private func driverNavTrailing_024() -> [NavSlot] {
-    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person", isCurrent: false)]
+    RoleNav.driverTrailing(current: .none)
 }
 
 #Preview("024 · Unloading · Dark") {

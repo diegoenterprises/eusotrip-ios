@@ -830,12 +830,10 @@ struct ConnectDropHoseScreen: View {
 }
 
 private func driverNavLeading_044() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",   isCurrent: true)]
+    RoleNav.driverLeading(current: .trips)
 }
 private func driverNavTrailing_044() -> [NavSlot] {
-    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
-     NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
+    RoleNav.driverTrailing(current: .none)
 }
 
 #Preview("044 · Connect Drop Hose · Dark") {

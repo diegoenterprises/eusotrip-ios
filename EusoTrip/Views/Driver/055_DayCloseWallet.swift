@@ -663,12 +663,10 @@ struct DayCloseWalletScreen: View {
 }
 
 private func driverNavLeading_055() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",   isCurrent: false)]
+    RoleNav.driverLeading(current: .none)
 }
 private func driverNavTrailing_055() -> [NavSlot] {
-    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
-     NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
+    RoleNav.driverTrailing(current: .none)
 }
 
 #Preview("055 · Day Close Wallet · Dark") {

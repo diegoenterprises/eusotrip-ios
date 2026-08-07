@@ -8048,13 +8048,11 @@ extension DateFormatter {
 
 // Shipper bottom-nav doctrine — out of scope per parity mandate §1.
 private func shipperNavLeading_204() -> [NavSlot] {
-    [NavSlot(label: "Home",        systemImage: "house",                              isCurrent: false),
-     NavSlot(label: "Create Load", systemImage: "plus.rectangle.on.rectangle.fill",   isCurrent: true)]
+    RoleNav.shipperLeading(current: .createLoad)
 }
 
 private func shipperNavTrailing_204() -> [NavSlot] {
-    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
-     NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
+    RoleNav.shipperTrailing(current: .none)
 }
 
 // MARK: - Previews

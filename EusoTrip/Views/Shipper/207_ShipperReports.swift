@@ -1045,13 +1045,11 @@ struct ShipperReportsScreen: View {
 
 // Out of scope per parity mandate §1 — reports live under Me.
 private func shipperNavLeading_207() -> [NavSlot] {
-    [NavSlot(label: "Home",        systemImage: "house",                          isCurrent: false),
-     NavSlot(label: "Create Load", systemImage: "plus.rectangle.on.rectangle",    isCurrent: false)]
+    RoleNav.shipperLeading(current: .none)
 }
 
 private func shipperNavTrailing_207() -> [NavSlot] {
-    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
-     NavSlot(label: "Me",    systemImage: "person.fill",      isCurrent: true)]
+    RoleNav.shipperTrailing(current: .me)
 }
 
 // MARK: - Previews

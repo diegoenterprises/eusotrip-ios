@@ -576,12 +576,10 @@ struct DvirSubmittedScreen: View {
 }
 
 private func driverNavLeading_012() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: true),
-     NavSlot(label: "Trips", systemImage: "truck.box",   isCurrent: false)]
+    RoleNav.driverLeading(current: .home)
 }
 private func driverNavTrailing_012() -> [NavSlot] {
-    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person", isCurrent: false)]
+    RoleNav.driverTrailing(current: .none)
 }
 
 // MARK: - Previews (doctrine §12.10 + §12.11: both themes, both rendered)

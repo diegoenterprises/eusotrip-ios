@@ -565,12 +565,10 @@ struct DriverProfileScreen: View {
 }
 
 private func driverNavLeading_056() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",       isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",   isCurrent: false)]
+    RoleNav.driverLeading(current: .none)
 }
 private func driverNavTrailing_056() -> [NavSlot] {
-    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
-     NavSlot(label: "Me",    systemImage: "person",           isCurrent: true)]
+    RoleNav.driverTrailing(current: .me)
 }
 
 #Preview("056 · Driver Profile · Dark") {

@@ -519,12 +519,10 @@ struct OffDutyScreen: View {
 }
 
 private func driverNavLeading_026() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",       isCurrent: true),
-     NavSlot(label: "Trips", systemImage: "truck.box",   isCurrent: false)]
+    RoleNav.driverLeading(current: .home)
 }
 private func driverNavTrailing_026() -> [NavSlot] {
-    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
-     NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
+    RoleNav.driverTrailing(current: .none)
 }
 
 #Preview("026 · Off Duty · Dark") {

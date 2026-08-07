@@ -676,12 +676,10 @@ struct LoadingInProgressScreen: View {
 }
 
 private func driverNavLeading_030() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",   isCurrent: true)]
+    RoleNav.driverLeading(current: .trips)
 }
 private func driverNavTrailing_030() -> [NavSlot] {
-    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
-     NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
+    RoleNav.driverTrailing(current: .none)
 }
 
 // MARK: - T-020 · LoadingMetricsViewBuilder (2026-05-20)

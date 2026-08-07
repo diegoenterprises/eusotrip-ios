@@ -466,12 +466,10 @@ struct TheHaulCratesScreen: View {
 }
 
 private func driverNavLeading_063() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
-     NavSlot(label: "Haul",  systemImage: "trophy", isCurrent: true)]
+    RoleNav.driverLeading(current: .trips)
 }
 private func driverNavTrailing_063() -> [NavSlot] {
-    [NavSlot(label: "My Loads", systemImage: "shippingbox.fill", isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person",      isCurrent: false)]
+    RoleNav.driverTrailing(current: .none)
 }
 
 // MARK: - Previews

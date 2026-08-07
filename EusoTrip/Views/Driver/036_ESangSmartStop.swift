@@ -535,12 +535,10 @@ struct eSangSmartStopScreen: View {
 }
 
 private func driverNavLeading_036() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",     isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box", isCurrent: true)]
+    RoleNav.driverLeading(current: .trips)
 }
 private func driverNavTrailing_036() -> [NavSlot] {
-    [NavSlot(label: DriverTab.wallet.label, systemImage: DriverTab.wallet.systemImage, isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person",     isCurrent: false)]
+    RoleNav.driverTrailing(current: .none)
 }
 
 // MARK: - Previews

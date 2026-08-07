@@ -830,12 +830,10 @@ struct VehicleAndEquipmentScreen: View {
 }
 
 private func driverNavLeading_059() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "clock",  isCurrent: false)]
+    RoleNav.driverLeading(current: .none)
 }
 private func driverNavTrailing_059() -> [NavSlot] {
-    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
-     NavSlot(label: "Me",    systemImage: "person",           isCurrent: true)]
+    RoleNav.driverTrailing(current: .me)
 }
 
 // MARK: - Previews

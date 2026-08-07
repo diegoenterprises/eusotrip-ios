@@ -1977,13 +1977,11 @@ struct ShipperHomeScreen: View {
 // all live under the Me sub-section, NOT promoted to the chrome.
 // Per parity mandate §1: NAV is out of scope.
 private func shipperNavLeading_200() -> [NavSlot] {
-    [NavSlot(label: "Home",        systemImage: "house.fill",                    isCurrent: true),
-     NavSlot(label: "Create Load", systemImage: "plus.rectangle.on.rectangle",   isCurrent: false)]
+    RoleNav.shipperLeading(current: .home)
 }
 
 private func shipperNavTrailing_200() -> [NavSlot] {
-    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
-     NavSlot(label: "Me",    systemImage: "person.fill",      isCurrent: false)]
+    RoleNav.shipperTrailing(current: .none)
 }
 
 // MARK: - Previews

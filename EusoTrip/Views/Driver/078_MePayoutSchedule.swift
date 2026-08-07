@@ -566,12 +566,10 @@ struct MePayoutScheduleScreen: View {
 }
 
 private func driverNavLeading_078() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
-     NavSlot(label: "Haul",  systemImage: "trophy", isCurrent: false)]
+    RoleNav.driverLeading(current: .none)
 }
 private func driverNavTrailing_078() -> [NavSlot] {
-    [NavSlot(label: "My Loads", systemImage: "shippingbox.fill", isCurrent: true),
-     NavSlot(label: "Me",     systemImage: "person",      isCurrent: false)]
+    RoleNav.driverTrailing(current: .loads)
 }
 
 // MARK: - Previews

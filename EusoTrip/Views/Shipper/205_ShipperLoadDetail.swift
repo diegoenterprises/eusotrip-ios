@@ -2552,13 +2552,11 @@ struct ShipperLoadDetailScreen: View {
 
 // Out of scope per parity mandate §1.
 private func shipperNavLeading_205() -> [NavSlot] {
-    [NavSlot(label: "Home",        systemImage: "house",                          isCurrent: false),
-     NavSlot(label: "Create Load", systemImage: "plus.rectangle.on.rectangle",    isCurrent: false)]
+    RoleNav.shipperLeading(current: .none)
 }
 
 private func shipperNavTrailing_205() -> [NavSlot] {
-    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: true),
-     NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
+    RoleNav.shipperTrailing(current: .loads)
 }
 
 // MARK: - Unresolved placeholder (Emergency Wave I1)

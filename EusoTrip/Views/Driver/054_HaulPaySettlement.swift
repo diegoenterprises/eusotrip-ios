@@ -522,12 +522,10 @@ struct HaulPaySettlementScreen: View {
 }
 
 private func driverNavLeading_054() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",   isCurrent: false)]
+    RoleNav.driverLeading(current: .none)
 }
 private func driverNavTrailing_054() -> [NavSlot] {
-    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
-     NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
+    RoleNav.driverTrailing(current: .none)
 }
 
 #Preview("054 · HaulPay Settlement · Dark") {

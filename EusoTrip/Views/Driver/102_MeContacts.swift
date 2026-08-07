@@ -590,12 +590,10 @@ struct MeContactsScreen: View {
 }
 
 private func driverNavLeading_102() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
-     NavSlot(label: "Haul",  systemImage: "trophy", isCurrent: false)]
+    RoleNav.driverLeading(current: .none)
 }
 private func driverNavTrailing_102() -> [NavSlot] {
-    [NavSlot(label: "My Loads", systemImage: "shippingbox.fill", isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person",      isCurrent: true)]
+    RoleNav.driverTrailing(current: .me)
 }
 
 // MARK: - Previews

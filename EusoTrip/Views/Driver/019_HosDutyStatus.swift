@@ -918,12 +918,10 @@ struct HosDutyStatusScreen: View {
 }
 
 private func driverNavLeading_019() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",   isCurrent: false)]
+    RoleNav.driverLeading(current: .none)
 }
 private func driverNavTrailing_019() -> [NavSlot] {
-    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: true),
-     NavSlot(label: "Me",     systemImage: "person", isCurrent: false)]
+    RoleNav.driverTrailing(current: .loads)
 }
 
 // MARK: - Previews

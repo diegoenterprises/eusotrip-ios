@@ -56,13 +56,11 @@ struct DriverEusoTicketRendererScreen: View {
 // driver layout: Home · Loads · ESANG · Pulse · Me with Loads (or the
 // nearest active anchor for the current flow) highlighted.
 private func driverNavLeading_106B() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",       isCurrent: false),
-     NavSlot(label: "Loads", systemImage: "shippingbox", isCurrent: true)]
+    RoleNav.driverLeading(current: .loads)
 }
 
 private func driverNavTrailing_106B() -> [NavSlot] {
-    [NavSlot(label: "Pulse", systemImage: "waveform.path.ecg", isCurrent: false),
-     NavSlot(label: "Me",    systemImage: "person",            isCurrent: false)]
+    RoleNav.driverTrailing(current: .none)
 }
 
 private struct DriverEusoTicketRendererBody: View {

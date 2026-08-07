@@ -861,12 +861,10 @@ struct DriverPaperworkScreen: View {
 }
 
 private func driverNavLeading_111() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",      isCurrent: false),
-     NavSlot(label: "Trips", systemImage: "truck.box",  isCurrent: true)]
+    RoleNav.driverLeading(current: .trips)
 }
 private func driverNavTrailing_111() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "creditcard.fill", isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person",          isCurrent: false)]
+    RoleNav.driverTrailing(current: .none)
 }
 
 #Preview("111 · Driver Paperwork · Dark") {

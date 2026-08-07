@@ -527,12 +527,10 @@ struct MeRatingsScreen: View {
 }
 
 private func driverNavLeading_097() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
-     NavSlot(label: "Haul",  systemImage: "trophy", isCurrent: false)]
+    RoleNav.driverLeading(current: .none)
 }
 private func driverNavTrailing_097() -> [NavSlot] {
-    [NavSlot(label: "My Loads", systemImage: "shippingbox.fill", isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person",      isCurrent: true)]
+    RoleNav.driverTrailing(current: .me)
 }
 
 // MARK: - Previews

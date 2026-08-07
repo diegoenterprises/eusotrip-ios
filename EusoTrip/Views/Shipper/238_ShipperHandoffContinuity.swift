@@ -820,16 +820,10 @@ extension Notification.Name {
 // MARK: - Shell wrapper + Shipper BottomNav (Me current)
 
 private func shipperNavLeading() -> [NavSlot] {
-    [
-        NavSlot(label: "Home",  systemImage: "house.fill",   isCurrent: false),
-        NavSlot(label: "Loads", systemImage: "shippingbox",  isCurrent: false),
-    ]
+    RoleNav.shipperLeading(current: .none)
 }
 private func shipperNavTrailing() -> [NavSlot] {
-    [
-        NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
-        NavSlot(label: "Me",     systemImage: "person.fill",  isCurrent: true),
-    ]
+    RoleNav.shipperTrailing(current: .me)
 }
 
 struct ShipperHandoffContinuityScreen: View {

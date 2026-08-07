@@ -1375,13 +1375,11 @@ struct ShipperBidsScreen: View {
 // from Loads / Load Detail; no chrome slot is highlighted. Out of
 // scope per parity mandate §1.
 private func shipperNavLeading_203() -> [NavSlot] {
-    [NavSlot(label: "Home",        systemImage: "house",                          isCurrent: false),
-     NavSlot(label: "Create Load", systemImage: "plus.rectangle.on.rectangle",    isCurrent: false)]
+    RoleNav.shipperLeading(current: .none)
 }
 
 private func shipperNavTrailing_203() -> [NavSlot] {
-    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
-     NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
+    RoleNav.shipperTrailing(current: .none)
 }
 
 // MARK: - Previews

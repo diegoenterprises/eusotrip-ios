@@ -658,6 +658,61 @@ struct NavSlot: Identifiable {
     var onTap: () -> Void = {}
 }
 
+/// THE bottom-nav definition for every role. One source of truth, on purpose.
+///
+/// WHY THIS EXISTS. Every screen used to hand-roll its own `NavSlot` pair in a
+/// private `xxxNavLeading_NNN()` helper. With ~120 screens doing that
+/// independently they drifted, and the drift was visible to the user as the bar
+/// changing under them as they navigated. Measured 2026-08-07:
+///
+///   Driver  — 7 different icon sets across ~102 screens. Slot 2 was "Trips"
+///             (truck.box) on 53 and "Haul" (trophy) on 48 — not two icons for
+///             one destination, TWO DIFFERENT DESTINATIONS — plus one-offs
+///             (road.lanes, clock, shippingbox). Two screens passed only ONE
+///             trailing slot where BottomNav requires exactly two.
+///   Shipper — 5 different sets, splitting "Create Load" vs "Loads" and
+///             house/house.fill, person/person.fill.
+///
+/// The `.fill` variants were an attempt to show selection in the icon name.
+/// That is what `isCurrent` is for — `NavSlotButton` draws the gradient pill —
+/// so the icon is CONSTANT here and only `isCurrent` moves. Anything else makes
+/// the bar look like it is changing when it is only changing state.
+///
+/// This does not touch the BottomNav design; it makes every screen agree on
+/// which four destinations that design is pointing at.
+enum RoleNav {
+
+    /// Driver: Home · Trips ┃ orb ┃ Loads · Me
+    enum DriverSlot { case home, trips, loads, me, none }
+
+    /// Shipper: Home · Create Load ┃ orb ┃ Loads · Me
+    enum ShipperSlot { case home, createLoad, loads, me, none }
+
+    // Canonical driver chrome. These exact values come from DriverTab, which
+    // the driver home screen has always used — the anchor the other screens
+    // drifted away from.
+    static func driverLeading(current: DriverSlot = .none) -> [NavSlot] {
+        [NavSlot(label: "Home",  systemImage: "house",     isCurrent: current == .home),
+         NavSlot(label: "Trips", systemImage: "truck.box", isCurrent: current == .trips)]
+    }
+
+    static func driverTrailing(current: DriverSlot = .none) -> [NavSlot] {
+        [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: current == .loads),
+         NavSlot(label: "Me",    systemImage: "person",           isCurrent: current == .me)]
+    }
+
+    // Canonical shipper chrome, anchored on 200_ShipperHome.
+    static func shipperLeading(current: ShipperSlot = .none) -> [NavSlot] {
+        [NavSlot(label: "Home",        systemImage: "house",                      isCurrent: current == .home),
+         NavSlot(label: "Create Load", systemImage: "plus.rectangle.on.rectangle", isCurrent: current == .createLoad)]
+    }
+
+    static func shipperTrailing(current: ShipperSlot = .none) -> [NavSlot] {
+        [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: current == .loads),
+         NavSlot(label: "Me",    systemImage: "person",           isCurrent: current == .me)]
+    }
+}
+
 struct BottomNav: View {
     let leading: [NavSlot]   // exactly 2
     let trailing: [NavSlot]  // exactly 2
