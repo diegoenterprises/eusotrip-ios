@@ -21,9 +21,11 @@
 //    7. "+ New recurring schedule" gradient pill CTA
 //
 //  Real wiring preserved: `loadTemplates.list(search, favoritesOnly,
-//  includeArchived)` + `shippers.create(...)` via
-//  `ShipperRecurringLoadsStore`. Detail sheet preserved with Post-now
-//  + Schedule-on-web actions.
+//  includeArchived)` via `ShipperRecurringLoadsStore`. Detail preserved
+//  with the attest-and-post + schedule-next-pickup actions, both of
+//  which open the inline composer (2026-08-07: a template cannot attest
+//  a cargo classification on the poster's behalf, so there is no
+//  one-tap materializer here any more).
 //
 //  Backend gaps surfaced (logged in audit log, no fake data):
 //    EUSO-2129 — `loadTemplates.list` doesn't ship `cadence` (rrule),
@@ -86,8 +88,6 @@ final class ShipperRecurringLoadsStore: ObservableObject {
     @Published private(set) var state: LoadState = .idle
     @Published var search: String = ""
     @Published fileprivate var filter: TemplateFilter = .all
-    @Published var posting: Set<Int> = []
-    @Published var lastAck: LoadTemplatesAPI.MaterializeAck? = nil
     @Published var lastError: String? = nil
 
     private let api: EusoTripAPI
@@ -129,18 +129,19 @@ final class ShipperRecurringLoadsStore: ObservableObject {
         }
     }
 
-    func post(template t: LoadTemplatesAPI.Template) async {
-        posting.insert(t.id)
-        defer { posting.remove(t.id) }
-        do {
-            let ack = try await api.loadTemplates.useTemplate(templateId: t.id)
-            lastAck = ack
-            lastError = nil
-            await load()
-        } catch {
-            lastError = error.eusoUserCopy
-        }
-    }
+    // 2026-08-07 — the one-tap "post this lane now" materializer was REMOVED.
+    //
+    // `loadTemplates.useTemplate` requires a cargo-classification attestation
+    // for the occurrence being posted, and the only two ways to satisfy a
+    // one-tap button would have been to invent a determination or to launder
+    // the template's stored hazard columns into one. A template carries no
+    // attestation, no evidence reference and no confirming user, so neither is
+    // legitimate — the server refuses both, and it is right to.
+    //
+    // The honest product answer: the tap opens the recurring composer seeded
+    // from this template, where the poster attests for THIS pickup and then
+    // posts. It is one extra screen and it is the screen where the legal claim
+    // is actually made. See `ShipperRecurringLoads.composerSeed`.
 }
 
 // MARK: - Screen root
@@ -153,7 +154,6 @@ struct ShipperRecurringLoads: View {
     @Environment(\.shipperPushDetail) private var pushDetail
     @StateObject private var store = ShipperRecurringLoadsStore()
     @State private var detail: LoadTemplatesAPI.Template? = nil
-    @State private var showAck: Bool = false
     @State private var unfiltered: [LoadTemplatesAPI.Template] = []
     /// Inline recurring composer (Phase 19 driver-shipper closure).
     /// `composerSeed == .new` opens a blank composer that creates a
@@ -191,7 +191,6 @@ struct ShipperRecurringLoads: View {
         }
         .task { await store.load() }
         .onChange(of: store.filter) { _, _ in Task { await store.load() } }
-        .onChange(of: store.lastAck?.loadId ?? -1) { _, v in if v != -1 { showAck = true } }
         .onChange(of: storeStateKey) { _, _ in updateUnfiltered() }
         // RealtimeService → recurring loads refresh when scheduled
         // dispatches fire or a recurring lane is amended upstream.
@@ -229,13 +228,6 @@ struct ShipperRecurringLoads: View {
                 composerSeed = .prefilled(t)
             }
         }
-        .alert("Posted", isPresented: $showAck, actions: {
-            Button("OK") { store.lastAck = nil }
-        }, message: {
-            if let ack = store.lastAck {
-                Text("Load \(ack.loadNumber) is live on the board.")
-            }
-        })
     }
 
     private var storeStateKey: String {
@@ -934,43 +926,36 @@ struct ShipperRecurringLoadDetail: View {
 
     private var actions: some View {
         VStack(spacing: 8) {
+            // 2026-08-07 — this used to be a one-tap "Post this lane now" for
+            // truck templates. It cannot be: every occurrence needs a fresh
+            // cargo-classification attestation from the poster, and a saved
+            // template cannot make one on their behalf. The tap now opens the
+            // composer seeded from this template so the attestation happens
+            // where it belongs — with the person posting.
+            Text("Each occurrence needs its own cargo-classification attestation. This template pre-fills the lane, cargo and rate; you attest and post.")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
             Button {
-                if (template.transportMode ?? "truck").lowercased() == "truck" {
-                    Task {
-                        await store.post(template: template)
-                        NotificationCenter.default.post(
-                            name: .eusoShipperNavBack, object: nil)
-                        dismiss()
-                    }
-                } else {
-                    NotificationCenter.default.post(
-                        name: .eusoShipperRecurringScheduleInline,
-                        object: template,
-                        userInfo: ["templateId": template.id]
-                    )
-                    NotificationCenter.default.post(
-                        name: .eusoShipperNavBack, object: nil)
-                    dismiss()
-                }
+                NotificationCenter.default.post(
+                    name: .eusoShipperRecurringScheduleInline,
+                    object: template,
+                    userInfo: ["templateId": template.id]
+                )
+                NotificationCenter.default.post(
+                    name: .eusoShipperNavBack, object: nil)
+                dismiss()
             } label: {
                 HStack(spacing: 8) {
-                    if store.posting.contains(template.id) {
-                        ProgressView().scaleEffect(0.6).tint(.white)
-                    } else {
-                        Image(systemName: "paperplane.fill").font(.system(size: 13, weight: .heavy))
-                    }
-                    Text(store.posting.contains(template.id)
-                         ? "Posting…"
-                         : ((template.transportMode ?? "truck").lowercased() == "truck"
-                            ? "Post this lane now"
-                            : "Review evidence + post"))
+                    Image(systemName: "checkmark.shield.fill").font(.system(size: 13, weight: .heavy))
+                    Text("Attest cargo + post this lane")
                         .font(.system(size: 14, weight: .heavy))
                 }
                 .frame(maxWidth: .infinity).padding(.vertical, 13)
                 .foregroundStyle(.white).background(LinearGradient.diagonal).clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
-            .disabled(store.posting.contains(template.id))
 
             Button {
                 // Phase 19 closure: post a notification the parent

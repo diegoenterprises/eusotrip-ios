@@ -775,6 +775,7 @@
 		EWAP2026051700000011A1 /* EusoWalletApplePayProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = EWAP2026051700000012A1 /* EusoWalletApplePayProvider.swift */; };
 		EWST2026051700000011A1 /* EusoWalletStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = EWST2026051700000012A1 /* EusoWalletStore.swift */; };
 		F11PT11E0000000000AE01 /* FlipTile.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11PT11E0000000000AE02 /* FlipTile.swift */; };
+		CARGOCLS00010CE0FF1AAAA01 /* CargoClassificationAttestation.swift in Sources */ = {isa = PBXBuildFile; fileRef = CARGOCLS00010CE0FF1AAAA02 /* CargoClassificationAttestation.swift */; };
 		F57AGE11E000000000AE01 /* StaggeredEntrance.swift in Sources */ = {isa = PBXBuildFile; fileRef = F57AGE11E000000000AE02 /* StaggeredEntrance.swift */; };
 		FAB000000000000000000000 /* 684_VesselSettlement.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAA000000000000000000000 /* 684_VesselSettlement.swift */; };
 		FAB010000000000000000000 /* 685_VesselBunkerFSCSchedule.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAA010000000000000000000 /* 685_VesselBunkerFSCSchedule.swift */; };
@@ -1840,6 +1841,7 @@
 		EWAP2026051700000012A1 /* EusoWalletApplePayProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EusoWalletApplePayProvider.swift; path = EusoTrip/Services/EusoWalletApplePayProvider.swift; sourceTree = SOURCE_ROOT; };
 		EWST2026051700000012A1 /* EusoWalletStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EusoWalletStore.swift; path = EusoTrip/ViewModels/EusoWalletStore.swift; sourceTree = SOURCE_ROOT; };
 		F11PT11E0000000000AE02 /* FlipTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlipTile.swift; sourceTree = "<group>"; };
+		CARGOCLS00010CE0FF1AAAA02 /* CargoClassificationAttestation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CargoClassificationAttestation.swift; sourceTree = "<group>"; };
 		F57AGE11E000000000AE02 /* StaggeredEntrance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StaggeredEntrance.swift; sourceTree = "<group>"; };
 		FA1F202605200001000100F1 /* Vertical.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Vertical.swift; sourceTree = "<group>"; };
 		FA1F202605200001000200F2 /* TrailerCode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrailerCode.swift; sourceTree = "<group>"; };
@@ -3154,6 +3156,7 @@
 				D1A11111111111111111AD02 /* LoadDetailSheet+Adapters.swift */,
 				D1A11111111111111111AE02 /* TileReveal.swift */,
 				F11PT11E0000000000AE02 /* FlipTile.swift */,
+				CARGOCLS00010CE0FF1AAAA02 /* CargoClassificationAttestation.swift */,
 				F57AGE11E000000000AE02 /* StaggeredEntrance.swift */,
 				EUSOWAL0000000000000AE02 /* EusoWalletComponents.swift */,
 				D2RATPV0000000000002 /* RatingPromptView.swift */,
@@ -4170,6 +4173,7 @@
 				D1A11111111111111111AD01 /* LoadDetailSheet+Adapters.swift in Sources */,
 				D1A11111111111111111AE01 /* TileReveal.swift in Sources */,
 				F11PT11E0000000000AE01 /* FlipTile.swift in Sources */,
+				CARGOCLS00010CE0FF1AAAA01 /* CargoClassificationAttestation.swift in Sources */,
 				F57AGE11E000000000AE01 /* StaggeredEntrance.swift in Sources */,
 				SHPINV43700000000000AB01 /* 437_ShipperInvoices.swift in Sources */,
 				CARTRK321C0000000000AB01 /* 321_CarrierTruckPosting.swift in Sources */,

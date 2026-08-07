@@ -13,10 +13,14 @@
 //  This sheet replaces that hand-off with an in-app composer:
 //    1. Lane block — origin city/state + destination city/state
 //    2. Cargo block — commodity, weight, equipment
-//    3. Schedule block — first pickup date + first delivery date,
+//    3. Cargo-classification block — the poster's dangerous-goods
+//       attestation for the FIRST OCCURRENCE (shared primitive,
+//       Views/Components/CargoClassificationAttestation). A template can
+//       suggest an identity; only a person can establish a classification.
+//    4. Schedule block — first pickup date + first delivery date,
 //       optional preferred-days chips (Mon-Sun)
-//    4. Pricing block — flat rate (USD) + rate type
-//    5. Submit -> loadTemplates.create -> loadTemplates.useTemplate
+//    5. Pricing block — flat rate (USD) + rate type
+//    6. Submit -> loadTemplates.create -> loadTemplates.useTemplate
 //       fires for the first occurrence so the shipper sees an
 //       active load on the schedule immediately.
 //
@@ -64,6 +68,16 @@ struct ShipperRecurringComposer: View {
     // Pricing
     @State private var ratePerLoad: String = ""
 
+    // ─── 2026-08-07 · cargo-classification attestation ────────────────
+    // This composer materializes the FIRST OCCURRENCE via
+    // `loadTemplates.useTemplate`, which requires a fresh attestation for
+    // that occurrence. The server deliberately does not forward the
+    // template's stored hazard columns: a template can SUGGEST an identity
+    // but never ESTABLISH one, because it carries no attestation, no
+    // evidence reference and no confirming user. So the poster attests here,
+    // for this pickup, every time.
+    @State private var classification = CargoClassificationAttestation()
+
     // Submit
     @State private var inFlight: Bool = false
     @State private var error: String? = nil
@@ -87,6 +101,7 @@ struct ShipperRecurringComposer: View {
                     headerCard
                     laneCard
                     cargoCard
+                    classificationCard
                     scheduleCard
                     pricingCard
                     if requiresPortIntelligence {
@@ -146,6 +161,16 @@ struct ShipperRecurringComposer: View {
         if equipmentType.isEmpty { equipmentType = t.equipmentType ?? "" }
         if weightLbs.isEmpty { weightLbs = t.quantity ?? t.weight ?? "" }
         if ratePerLoad.isEmpty, let r = t.rate { ratePerLoad = r }
+        // The template SUGGESTS the regulated identity so the poster does not
+        // retype it. It cannot suggest the determination, the evidence source
+        // or the evidence reference — those are attestations and only a
+        // person makes them, for this occurrence.
+        classification.seedRegulatedIdentity(
+            unNumber: t.unNumber,
+            hazmatClass: t.hazmatClass,
+            properShippingName: t.properShippingName,
+            packingGroup: t.packingGroup
+        )
     }
 
     // MARK: - Cards
@@ -254,6 +279,46 @@ struct ShipperRecurringComposer: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
+    /// The ONE shared attestation control. This composer captures none of the
+    /// regulated identity itself, so the control asks for all of it.
+    private var classificationCard: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            Text("03 · CARGO CLASSIFICATION")
+                .font(.system(size: 9, weight: .heavy)).tracking(0.9)
+                .foregroundStyle(LinearGradient.diagonal)
+            CargoClassificationAttestationCard(
+                attestation: $classification,
+                context: classificationContext,
+                titleSuffix: "· FIRST OCCURRENCE"
+            )
+        }
+    }
+
+    /// The load facts the server will classify this occurrence against —
+    /// resolved off the template when there is one, because that is what
+    /// `useTemplate` forwards, and off this screen's own fields when the
+    /// template is about to be created from them.
+    private var classificationContext: CargoClassificationAttestation.CargoContext {
+        guard let template = prefilledTemplate else {
+            let typedQuantity = Double(weightLbs).flatMap { $0 > 0 ? $0 : nil }
+            return CargoClassificationAttestation.CargoContext(
+                productName: commodity.trimmingCharacters(in: .whitespacesAndNewlines),
+                equipmentType: equipmentType.trimmingCharacters(in: .whitespacesAndNewlines),
+                transportMode: "truck",
+                quantity: typedQuantity,
+                quantityUnit: typedQuantity != nil ? "lbs" : ""
+            )
+        }
+        let quantity = templateQuantity(template)
+        return CargoClassificationAttestation.CargoContext(
+            productName: Self.nonBlank(template.commodity) ?? "",
+            equipmentType: templateEquipment(template) ?? "",
+            transportMode: template.transportMode ?? "truck",
+            quantity: quantity,
+            quantityUnit: quantity != nil ? (templateQuantityUnit(template) ?? "") : ""
+        )
+    }
+
     private func fieldColumn(label: String, text: Binding<String>, placeholder: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label)
@@ -273,7 +338,7 @@ struct ShipperRecurringComposer: View {
 
     private var scheduleCard: some View {
         VStack(alignment: .leading, spacing: Space.s3) {
-            Text("03 · SCHEDULE")
+            Text("04 · SCHEDULE")
                 .font(.system(size: 9, weight: .heavy)).tracking(0.9)
                 .foregroundStyle(LinearGradient.diagonal)
             DatePicker("First pickup", selection: $pickupDate, in: Date()..., displayedComponents: .date)
@@ -334,7 +399,7 @@ struct ShipperRecurringComposer: View {
 
     private var pricingCard: some View {
         VStack(alignment: .leading, spacing: Space.s3) {
-            Text("04 · PRICING")
+            Text("05 · PRICING")
                 .font(.system(size: 9, weight: .heavy)).tracking(0.9)
                 .foregroundStyle(LinearGradient.diagonal)
             VStack(alignment: .leading, spacing: 4) {
@@ -368,27 +433,35 @@ struct ShipperRecurringComposer: View {
         (prefilledTemplate?.transportMode ?? "truck").lowercased() != "truck"
     }
 
+    /// Every value that feeds the server's binding hash. When any of them
+    /// moves, the held assessment stops being an assessment OF THIS draft and
+    /// the screen must reassess rather than post a stale one.
     private var currentAssessmentSignature: String {
-        let template = prefilledTemplate
-        let fields = [
-            template?.commodity ?? commodity,
-            template?.category ?? template?.cargoType ?? "general",
-            template?.physicalState ?? "",
-            template?.unNumber ?? "",
-            template?.hazmatClass ?? "",
-            template?.transportMode ?? "truck",
-            weightLbs,
-            template?.quantityUnit ?? template?.weightUnit ?? "lbs",
-            templateLocationLabel(template?.origin, fallbackCity: originCity, fallbackState: originState),
-            templateLocationLabel(template?.destination, fallbackCity: destCity, fallbackState: destState),
-            template?.originCountry ?? template?.origin?.countryCode ?? LoadAnimationContext.countryCode(forState: originState),
-            template?.destinationCountry ?? template?.destination?.countryCode ?? LoadAnimationContext.countryCode(forState: destState),
-            template?.equipmentType ?? template?.trailerType ?? equipmentType,
-            template?.vesselClass ?? "",
-            template?.permitType ?? "",
+        guard let template = prefilledTemplate else { return "" }
+        let fields: [String?] = [
+            template.commodity,
+            template.category,
+            template.physicalState,
+            // The occurrence's regulated identity comes from the poster's
+            // attestation — the server deliberately does NOT forward the
+            // template's stored hazard columns — so the binding moves with the
+            // attestation, not with the template.
+            classification.wireUnNumber,
+            classification.wireHazmatClass,
+            template.transportMode ?? "truck",
+            templateQuantity(template).map { String($0) },
+            templateQuantityUnit(template),
+            templateLocationLabel(template.origin),
+            templateLocationLabel(template.destination),
+            templateCountry(explicit: template.originCountry, location: template.origin),
+            templateCountry(explicit: template.destinationCountry, location: template.destination),
+            templateEquipment(template),
+            template.vesselClass,
+            templateSpecialPermit(template),
             isoDay(pickupDate),
         ]
-        return fields.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+        return fields
+            .map { ($0 ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
             .joined(separator: "|")
     }
 
@@ -408,7 +481,7 @@ struct ShipperRecurringComposer: View {
             HStack {
                 Image(systemName: "checkmark.shield")
                     .foregroundStyle(LinearGradient.diagonal)
-                Text("05 · PORT INTELLIGENCE")
+                Text("06 · PORT INTELLIGENCE")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.9)
                     .foregroundStyle(LinearGradient.diagonal)
                 Spacer()
@@ -449,6 +522,15 @@ struct ShipperRecurringComposer: View {
     private var submitBar: some View {
         VStack(spacing: 0) {
             IridescentHairline()
+            if let reason = submitBlockReason {
+                Text(reason)
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, Space.s4)
+                    .padding(.top, Space.s2)
+            }
             HStack(spacing: Space.s3) {
                 Button { dismiss() } label: {
                     Text("Cancel")
@@ -489,6 +571,14 @@ struct ShipperRecurringComposer: View {
             && !product.isEmpty && validWeight
             && deliveryDate > pickupDate
             && assessmentAllowsSubmit
+            // 2026-08-07 — the first occurrence needs its own attestation.
+            && classification.blockReason(context: classificationContext) == nil
+    }
+
+    /// What is stopping the submit, in the poster's words. Rendered under the
+    /// submit bar so the disabled button is never unexplained.
+    private var submitBlockReason: String? {
+        classification.blockReason(context: classificationContext)
     }
 
     private func errorBanner(_ message: String) -> some View {
@@ -514,36 +604,134 @@ struct ShipperRecurringComposer: View {
         return formatter.string(from: date)
     }
 
-    private func templateLocationLabel(
-        _ location: LoadTemplatesAPI.Template.Location?,
-        fallbackCity: String,
-        fallbackState: String
-    ) -> String {
-        let city = location?.city?.trimmingCharacters(in: .whitespacesAndNewlines) ?? fallbackCity
-        let state = location?.state?.trimmingCharacters(in: .whitespacesAndNewlines) ?? fallbackState
-        let zip = location?.zipCode?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let locality = [city, state, zip].filter { !$0.isEmpty }.joined(separator: " ")
-        let address = location?.address?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return [address, locality].filter { !$0.isEmpty }.joined(separator: ", ")
+    // MARK: - Template facts, resolved the way the server resolves them
+    //
+    // `loadTemplates.useTemplate` re-derives every cargo and lane fact from
+    // the TEMPLATE ROW and hands them to `loads.create`, which recomputes the
+    // Port Intelligence binding hash over exactly those values
+    // (`loadDraftBindingHash`, sourceRequirements.ts). Anything this screen
+    // assesses against a different value produces an assessment the server
+    // rejects as stale. So each helper below mirrors one server expression
+    // verbatim — no fallbacks the server does not have.
+
+    private static func nonBlank(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else { return nil }
+        return trimmed
+    }
+
+    /// Server: `templateLocationLabel(tmpl.origin)` — address, then
+    /// "city state zip". It reads the template row only; there is no fallback
+    /// to anything typed on this screen, so there is none here either.
+    private func templateLocationLabel(_ location: LoadTemplatesAPI.Template.Location?) -> String {
+        guard let location else { return "" }
+        let locality = [location.city, location.state, location.zipCode]
+            .compactMap(Self.nonBlank)
+            .joined(separator: " ")
+        return [Self.nonBlank(location.address), Self.nonBlank(locality)]
+            .compactMap { $0 }
+            .joined(separator: ", ")
+    }
+
+    /// Server: `quantity ?? weight`, where a non-positive quantity is a hard
+    /// PRECONDITION_FAILED rather than a fall-through.
+    private func templateQuantity(_ template: LoadTemplatesAPI.Template) -> Double? {
+        if let raw = Self.nonBlank(template.quantity) {
+            guard let quantity = Double(raw), quantity > 0 else { return nil }
+            return quantity
+        }
+        if let raw = Self.nonBlank(template.weight) {
+            guard let weight = Double(raw), weight > 0 else { return nil }
+            return weight
+        }
+        return nil
+    }
+
+    /// Server: `quantityUnit ?? weightUnit`, where `quantityUnit` only exists
+    /// when the template carries a quantity and `weightUnit` falls back to
+    /// "lbs" only when the template carries a weight.
+    private func templateQuantityUnit(_ template: LoadTemplatesAPI.Template) -> String? {
+        if Self.nonBlank(template.quantity) != nil,
+           let unit = Self.nonBlank(template.quantityUnit) {
+            return unit
+        }
+        if Self.nonBlank(template.weight) != nil {
+            return Self.nonBlank(template.weightUnit) ?? "lbs"
+        }
+        return nil
+    }
+
+    /// The country the server will use: `tmpl.originCountry ||
+    /// tmpl.origin?.countryCode`, and nothing else.
+    ///
+    /// It is deliberately NOT derived from the state code. The server's own
+    /// `detectLoadCountryStrict` returns null rather than guessing, and
+    /// `loads.create` then cross-checks whatever it has against the
+    /// HERE-verified endpoint — so a synthesized country is either a hard
+    /// "Origin country US does not match the verified HERE endpoint country
+    /// MX" or a fabricated jurisdiction on the load row. The client-side state
+    /// table cannot resolve this either: it returns "us" for everything it does
+    /// not recognise and excludes CO/MI/MO/BC/NL from its Mexican set, so a
+    /// Saltillo → Monterrey lane came out as a US movement.
+    private func templateCountry(
+        explicit: String?,
+        location: LoadTemplatesAPI.Template.Location?
+    ) -> String? {
+        for candidate in [explicit, location?.countryCode] {
+            if let code = Self.nonBlank(candidate)?.uppercased(), code.count == 2 {
+                return code
+            }
+        }
+        return nil
+    }
+
+    /// Server: `useTemplate` forwards `permitType` only when it is one of the
+    /// six enum values, and `loads.create` drops "none" from the binding.
+    private static let materializablePermitTypes: Set<String> = [
+        "none", "trip_permit", "annual_oversize",
+        "superload", "overweight_only", "hazmat_route",
+    ]
+
+    private func templateSpecialPermit(_ template: LoadTemplatesAPI.Template) -> String? {
+        guard let raw = Self.nonBlank(template.permitType),
+              Self.materializablePermitTypes.contains(raw),
+              raw != "none" else { return nil }
+        return raw
+    }
+
+    private func templateEquipment(_ template: LoadTemplatesAPI.Template) -> String? {
+        Self.nonBlank(template.equipmentType) ?? Self.nonBlank(template.trailerType)
     }
 
     private func runPortIntelligence() async {
-        guard let template = prefilledTemplate,
-              let quantity = Double(weightLbs), quantity > 0 else {
-            error = "A saved template with a positive cargo quantity is required before assessment."
+        guard let template = prefilledTemplate else {
+            error = "A saved template is required before assessment."
             return
         }
-        let origin = templateLocationLabel(template.origin, fallbackCity: originCity, fallbackState: originState)
-        let destination = templateLocationLabel(template.destination, fallbackCity: destCity, fallbackState: destState)
-        let originCountry = (template.originCountry
-            ?? template.origin?.countryCode
-            ?? LoadAnimationContext.countryCode(forState: originState)).uppercased()
-        let destinationCountry = (template.destinationCountry
-            ?? template.destination?.countryCode
-            ?? LoadAnimationContext.countryCode(forState: destState)).uppercased()
-        guard !origin.isEmpty, !destination.isEmpty,
-              originCountry.count == 2, destinationCountry.count == 2 else {
-            error = "Verified lane and country details are required before assessment."
+        guard let productName = Self.nonBlank(template.commodity) else {
+            error = "Add the product or commodity to this template before assessment."
+            return
+        }
+        guard let quantity = templateQuantity(template),
+              let quantityUnit = templateQuantityUnit(template) else {
+            error = "This template needs a positive cargo quantity and its unit before assessment."
+            return
+        }
+        let origin = templateLocationLabel(template.origin)
+        let destination = templateLocationLabel(template.destination)
+        guard !origin.isEmpty, !destination.isEmpty else {
+            error = "This template needs a saved origin and destination before assessment."
+            return
+        }
+        // No country is derived from the state code. The server refuses to
+        // guess here and verifies whatever it is given against HERE, so an
+        // assessment bound to a guessed country is an assessment the post will
+        // reject — and the guess itself would be a fabricated jurisdiction.
+        guard let originCountry = templateCountry(explicit: template.originCountry,
+                                                  location: template.origin),
+              let destinationCountry = templateCountry(explicit: template.destinationCountry,
+                                                       location: template.destination) else {
+            error = "This template has no recorded origin and destination country. Re-save the lane with verified endpoints before scheduling a rail, vessel, or barge occurrence."
             return
         }
         assessing = true
@@ -552,25 +740,28 @@ struct ShipperRecurringComposer: View {
         defer { assessing = false }
         let request = PortIntelAssessmentInput(
             requestKey: UUID().uuidString,
-            title: "\(template.commodity ?? commodity) · \(origin) to \(destination)",
+            title: "\(productName) · \(origin) to \(destination)",
             draft: .init(
-                productName: template.commodity ?? commodity,
-                category: template.category ?? template.cargoType,
-                physicalState: template.physicalState,
-                unNumber: template.unNumber,
-                hazmatClass: template.hazmatClass,
+                productName: productName,
+                category: Self.nonBlank(template.category),
+                physicalState: Self.nonBlank(template.physicalState),
+                // The poster's attestation for THIS occurrence — the same
+                // values `useTemplate` forwards to `loads.create`, which is
+                // what the binding hash is recomputed over.
+                unNumber: classification.wireUnNumber,
+                hazmatClass: classification.wireHazmatClass,
                 transportMode: template.transportMode ?? "truck",
                 quantity: quantity,
-                quantityUnit: template.quantityUnit ?? template.weightUnit ?? "lbs",
+                quantityUnit: quantityUnit,
                 origin: origin,
                 destination: destination,
                 originCountry: originCountry,
                 destinationCountry: destinationCountry,
-                equipment: template.equipmentType ?? template.trailerType,
-                vesselClass: template.vesselClass,
+                equipment: templateEquipment(template),
+                vesselClass: Self.nonBlank(template.vesselClass),
                 multiVehicleCount: nil,
                 pickupDate: isoDay(pickupDate),
-                specialPermit: template.permitType == "none" ? nil : template.permitType
+                specialPermit: templateSpecialPermit(template)
             )
         )
         do {
@@ -591,6 +782,13 @@ struct ShipperRecurringComposer: View {
 
     private func submit() async {
         guard canSubmit else { return }
+        // 2026-08-07 — belt and braces: refuse here too, with the exact
+        // missing inputs, so no code path can materialize an occurrence
+        // without the poster's attestation.
+        if let reason = classification.blockReason(context: classificationContext) {
+            error = reason
+            return
+        }
         inFlight = true
         error = nil
         defer { inFlight = false }
@@ -600,6 +798,7 @@ struct ShipperRecurringComposer: View {
         let pickup = isoFmt.string(from: pickupDate)
         let delivery = isoFmt.string(from: deliveryDate)
 
+        var savedNewTemplate = false
         do {
             let templateId: Int
             if let existing = prefilledTemplate {
@@ -608,25 +807,36 @@ struct ShipperRecurringComposer: View {
                 let preferred = preferredDays.isEmpty
                     ? nil
                     : Array(preferredDays.map(\.rawValue))
-                let originCountry = LoadAnimationContext.countryCode(forState: originState).uppercased()
-                let destinationCountry = LoadAnimationContext.countryCode(forState: destState).uppercased()
+                // No country is minted from the state code. This screen
+                // collects a city and a state, which is not a jurisdiction —
+                // `LoadAnimationContext.countryCode(forState:)` answers "us"
+                // for everything it does not recognise and deliberately
+                // excludes CO/MI/MO/BC/NL from its Mexican table, so a
+                // Saltillo → Monterrey lane was being saved as a US lane. The
+                // server resolves and VERIFIES the country from the real
+                // endpoint (HERE) when the occurrence is posted; leaving these
+                // unset is what lets it.
                 let createInput = LoadTemplatesAPI.CreateInput(
                     name: name.trimmingCharacters(in: .whitespacesAndNewlines),
                     description: nil,
                     origin: .init(
                         city: originCity, state: originState.uppercased(),
                         zipCode: nil, address: nil, facilityName: nil,
-                        countryCode: originCountry
+                        countryCode: nil
                     ),
                     destination: .init(
                         city: destCity, state: destState.uppercased(),
                         zipCode: nil, address: nil, facilityName: nil,
-                        countryCode: destinationCountry
+                        countryCode: nil
                     ),
                     distance: nil,
                     commodity: commodity.isEmpty ? nil : commodity,
                     cargoType: nil,
                     equipmentType: equipmentType.isEmpty ? nil : equipmentType,
+                    // The figure this screen collects is a WEIGHT. It is not
+                    // also sent as `quantity`: the server writes a template's
+                    // quantityUnit into the load's VOLUME unit, and a mass is
+                    // the wrong fact for that column.
                     weight: weightLbs.isEmpty ? nil : weightLbs,
                     weightUnit: weightLbs.isEmpty ? nil : "lbs",
                     rate: Double(ratePerLoad),
@@ -634,10 +844,10 @@ struct ShipperRecurringComposer: View {
                     preferredDays: preferred,
                     preferredPickupTime: nil,
                     specialInstructions: nil,
-                    quantity: weightLbs,
-                    quantityUnit: "lbs",
-                    originCountry: originCountry,
-                    destinationCountry: destinationCountry
+                    quantity: nil,
+                    quantityUnit: nil,
+                    originCountry: nil,
+                    destinationCountry: nil
                 )
                 let ack = try await EusoTripAPI.shared.loadTemplates.create(createInput)
                 guard let id = ack.id else {
@@ -645,17 +855,38 @@ struct ShipperRecurringComposer: View {
                                   userInfo: [NSLocalizedDescriptionKey: "Server didn't return a template id."])
                 }
                 templateId = id
+                savedNewTemplate = true
             }
 
             // Materialize the first occurrence so the shipper sees a
             // live load on the schedule the moment the sheet dismisses.
-            _ = try await EusoTripAPI.shared.loadTemplates.useTemplate(
-                templateId: templateId,
-                pickupDate: pickup,
-                deliveryDate: delivery,
-                portIntelligenceAssessmentId: hasCurrentAssessment ? assessment?.publicId : nil,
-                portIntelligenceAcknowledged: assessmentAcknowledged
-            )
+            //
+            // `loads.create` — which `useTemplate` hands the occurrence to —
+            // requires an assessed industry workflow (its sector id and a
+            // one-use assessment id) for EVERY post. This composer has no
+            // industry-workflow surface, so it holds no assessment and cannot
+            // manufacture one: an assessment is bound to the draft it was made
+            // for, and a template can never carry it. The call therefore
+            // carries what the poster genuinely established and lets the server
+            // refuse in its own words if the evidence is short.
+            do {
+                _ = try await EusoTripAPI.shared.loadTemplates.useTemplate(
+                    templateId: templateId,
+                    classification: classification,
+                    pickupDate: pickup,
+                    deliveryDate: delivery,
+                    portIntelligenceAssessmentId: hasCurrentAssessment ? assessment?.publicId : nil,
+                    portIntelligenceAcknowledged: assessmentAcknowledged
+                )
+            } catch {
+                // The template is real and saved. Say exactly that, and say
+                // exactly what did not happen — never let a saved template read
+                // as a scheduled pickup.
+                self.error = savedNewTemplate
+                    ? "Recurring template saved, but the first pickup was not scheduled — \(error.eusoUserCopy)"
+                    : error.eusoUserCopy
+                return
+            }
 
             withAnimation { success = true }
             try? await Task.sleep(nanoseconds: 1_200_000_000)

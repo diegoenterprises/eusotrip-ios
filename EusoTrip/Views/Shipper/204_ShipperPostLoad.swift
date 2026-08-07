@@ -105,6 +105,16 @@ struct ShipperPostLoad: View {
     @State private var hazmatClass: String = ""
     @State private var packingGroup: String = ""
     @State private var properShippingName: String = ""
+
+    // ─── 2026-08-07 · cargo-classification attestation ────────────────
+    // The poster's determination + evidence, captured through the ONE
+    // shared primitive (Views/Components/CargoClassificationAttestation).
+    // `shippers.create` requires it on EVERY post — general freight
+    // included — and refuses with PRECONDITION_FAILED without it.
+    // Starts empty: no determination, no source, no evidence reference.
+    // Nothing on this screen (cargo chip, trailer, ERG match, vertical)
+    // is ever allowed to fill it in.
+    @State private var cargoAttestation = CargoClassificationAttestation()
     @State private var tankerHoseSpec: String = ""
     @State private var tankerFitting: String = ""
     // 2026-06-03 — data-driven equipment requirements (EquipmentRequirementsCatalog,
@@ -786,6 +796,11 @@ struct ShipperPostLoad: View {
         // ERG lookup fires off a separate UN-only debouncer so
         // typing in unrelated fields doesn't trigger a re-lookup.
         .onChange(of: unNumber) { _, _ in lookupERGIfReady() }
+        // One-way mirror of the host-owned regulated identity into the
+        // shared attestation. The attestation is what goes on the wire, so
+        // the shipper is never asked for the same field twice and the two
+        // can never disagree.
+        .onChange(of: cargoIdentityDigest) { _, _ in mirrorCargoIdentityIntoAttestation() }
         // Listen to remote iCloud KVS changes — when the user edits
         // the draft on another signed-in device, NSUbiquitousKVStore
         // posts a change notification; we re-hydrate so the in-flight
@@ -3945,6 +3960,73 @@ struct ShipperPostLoad: View {
         } else {
             commodityLookupCard
         }
+        // 2026-08-07 — the attestation itself, on EVERY cargo type. The
+        // cards above capture the cargo's IDENTITY; this captures the
+        // poster's legal DETERMINATION about it plus the evidence behind
+        // it. `shippers.create` requires it either way, and a hazmat chip
+        // is not a classification.
+        cargoClassificationCard
+    }
+
+    // MARK: - Cargo-classification attestation (shared primitive)
+
+    /// The one attestation control, shared with the 250-259 wizard and the
+    /// recurring composer. This screen already owns the regulated identity
+    /// fields (UN / class / PG / proper shipping name) on the Dangerous-goods
+    /// card, so it declares them as host-captured and the control does not
+    /// ask for them twice.
+    private var cargoClassificationCard: some View {
+        CargoClassificationAttestationCard(
+            attestation: $cargoAttestation,
+            context: cargoClassificationContext,
+            hostCaptures: [.unNumber, .hazmatClass, .properShippingName, .packingGroup]
+        )
+    }
+
+    /// The load facts the server's classification assessor needs that this
+    /// attestation does not own, so the missing-input list the shipper reads
+    /// is the same list the server would return.
+    private var cargoClassificationContext: CargoClassificationAttestation.CargoContext {
+        CargoClassificationAttestation.CargoContext(
+            productName: properShippingName.trimmingCharacters(in: .whitespacesAndNewlines),
+            equipmentType: equipmentType.rawValue,
+            transportMode: transportMode.rawValue,
+            quantity: parseDouble(weightText),
+            quantityUnit: weightUnit.rawValue
+        )
+    }
+
+    /// Digest of the host-owned regulated identity. Drives the one-way
+    /// mirror below.
+    private var cargoIdentityDigest: String {
+        [unNumber, hazmatClass, packingGroup, properShippingName,
+         cargoType.rawValue].joined(separator: "\u{1F}")
+    }
+
+    /// Mirror the identity the poster typed on THIS screen into the
+    /// attestation, so the attestation stays the single wire source of truth
+    /// and the shipper never types the same field twice.
+    ///
+    /// `properShippingName` is only mirrored for hazmat-flavored cargo. On a
+    /// general load that same text field holds the plain commodity name (it
+    /// is what feeds `productName`), and a commodity name is not a 49 CFR
+    /// 172.101 proper shipping name. Mirroring it would put a regulated
+    /// identifier on a not-regulated load and the server would — correctly —
+    /// refuse the post.
+    private func mirrorCargoIdentityIntoAttestation() {
+        cargoAttestation.unNumber = unNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+        cargoAttestation.hazmatClass = hazmatClass.trimmingCharacters(in: .whitespacesAndNewlines)
+        cargoAttestation.properShippingName = cargoType.isHazmatFlavored
+            ? properShippingName.trimmingCharacters(in: .whitespacesAndNewlines)
+            : ""
+        let pg = packingGroup.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        cargoAttestation.packingGroup = CargoClassificationAttestation.PackingGroup(rawValue: pg)
+    }
+
+    /// Honest, specific reason the Post button is dark. Nil when the
+    /// attestation is complete.
+    private var cargoClassificationBlockReason: String? {
+        cargoAttestation.blockReason(context: cargoClassificationContext)
     }
 
     // MARK: - Data-driven equipment requirements (all 33 equipment types)
@@ -6171,6 +6253,12 @@ struct ShipperPostLoad: View {
         VStack(alignment: .leading, spacing: Space.s5) {
             eusoTicketTypeBanner
             reviewSummaryCard
+            // 2026-08-07 — the attestation is bound to the same state as the
+            // copy on the equipment step, so it reads and edits identically.
+            // It is repeated here because this is the screen where the load
+            // actually posts, and the poster must be able to see and change
+            // what they are attesting to at the moment they commit.
+            cargoClassificationCard
             portIntelligenceReviewCard
             equipmentReviewCard
             esangMarketReviewCard
@@ -6934,7 +7022,16 @@ struct ShipperPostLoad: View {
     private var ctaText: String {
         if case .success = store.phase, step == .review { return "Post another" }
         if step == .review {
-            return isSubmitting ? "Posting…" : "Post this load"
+            if isSubmitting { return "Posting…" }
+            // Name the gate that is stopping the post instead of showing a
+            // dark button with no explanation.
+            if cargoAttestation.dangerousGoodsStatus == .undetermined {
+                return "Attest cargo classification"
+            }
+            if cargoClassificationBlockReason != nil {
+                return "Complete cargo classification"
+            }
+            return "Post this load"
         }
         guard let next = step.next else { return "Continue" }
         return "Continue · Step \(next.rawValue) of \(PostLoadStep.allCases.count) →"
@@ -6999,7 +7096,12 @@ struct ShipperPostLoad: View {
         case .pricing:
             return laneReadyForPosting
         case .review:
-            return laneReadyForPosting && portIntelligenceAllowsPosting
+            // 2026-08-07 — a load cannot post without the poster's cargo
+            // classification. The button stays dark and `ctaText` says
+            // exactly what is missing; it never posts a guess.
+            return laneReadyForPosting
+                && portIntelligenceAllowsPosting
+                && cargoClassificationBlockReason == nil
         }
     }
 
@@ -7039,6 +7141,14 @@ struct ShipperPostLoad: View {
             portIntelligenceError = portIntelligenceIsRequired
                 ? "Complete the current Port Intelligence gate before posting this load."
                 : "Resolve the current Port Intelligence result before posting this load."
+            return
+        }
+        // 2026-08-07 — final classification gate. Re-mirror first so a field
+        // edited in the same run loop as the tap is included, then refuse
+        // with the exact missing inputs rather than posting a guess.
+        mirrorCargoIdentityIntoAttestation()
+        if let reason = cargoClassificationBlockReason {
+            store.reportSubmissionRefusal(reason)
             return
         }
         let pickupISO = hasPickupDate ? isoDate(pickupDate) : nil
@@ -7092,10 +7202,11 @@ struct ShipperPostLoad: View {
             productName: nonBlank(properShippingName),
             category: commodityMatch?.category ?? cargoType.rawValue,
             physicalState: portIntelligencePhysicalState,
-            unNumber: nonBlank(unNumber),
-            hazmatClass: nonBlank(hazmatClass),
-            properShippingName: nonBlank(properShippingName),
-            packingGroup: nonBlank(packingGroup),
+            // The attestation carries the determination, the evidence and the
+            // regulated identity (mirrored from this screen's hazmat card
+            // above). It is the single wire source of truth for all of it.
+            classification: cargoAttestation,
+            classificationContext: cargoClassificationContext,
             rate: rateForWire,
             weight: weight,
             weightUnit: massUnit,
@@ -7279,6 +7390,9 @@ struct ShipperPostLoad: View {
         hazmatClass = ""
         packingGroup = ""
         properShippingName = ""
+        // A fresh post is a fresh attestation. Nothing carries over — the
+        // previous load's determination says nothing about the next one.
+        cargoAttestation = CargoClassificationAttestation()
         tankerHoseSpec = ""
         tankerFitting = ""
         reeferTempLowText = ""

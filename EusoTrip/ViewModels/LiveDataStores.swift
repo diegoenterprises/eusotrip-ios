@@ -4099,10 +4099,13 @@ final class ShipperPostLoadStore: ObservableObject {
         productName: String? = nil,
         category: String? = nil,
         physicalState: String? = nil,
-        unNumber: String? = nil,
-        hazmatClass: String? = nil,
-        properShippingName: String? = nil,
-        packingGroup: String? = nil,
+        // 2026-08-07 — the poster's cargo-classification attestation.
+        // REQUIRED with no default so no caller can post without one; the
+        // store re-checks completeness before it touches the network so an
+        // incomplete attestation fails locally with the same words the server
+        // would use, instead of burning a round trip on a 412.
+        classification: CargoClassificationAttestation,
+        classificationContext: CargoClassificationAttestation.CargoContext = .unknown,
         rate: Double?,
         weight: Double?,
         weightUnit: String? = nil,
@@ -4142,6 +4145,10 @@ final class ShipperPostLoadStore: ObservableObject {
             self.phase = .error("Origin and destination are both required.")
             return
         }
+        if let reason = classification.blockReason(context: classificationContext) {
+            self.phase = .error(reason)
+            return
+        }
         self.phase = .submitting
         do {
             let ack = try await EusoTripAPI.shared.shipper.create(
@@ -4151,10 +4158,7 @@ final class ShipperPostLoadStore: ObservableObject {
                 productName: productName,
                 category: category,
                 physicalState: physicalState,
-                unNumber: unNumber,
-                hazmatClass: hazmatClass,
-                properShippingName: properShippingName,
-                packingGroup: packingGroup,
+                classification: classification,
                 rate: rate,
                 weight: weight,
                 weightUnit: weightUnit,
@@ -4195,6 +4199,14 @@ final class ShipperPostLoadStore: ObservableObject {
         } catch {
             self.phase = .error(error.eusoUserCopy)
         }
+    }
+
+    /// Surface a client-side refusal in the same banner the server errors
+    /// use. Used for the cargo-classification gate: the screen refuses the
+    /// post with the exact missing inputs instead of firing a request that
+    /// can only come back PRECONDITION_FAILED.
+    func reportSubmissionRefusal(_ reason: String) {
+        self.phase = .error(reason)
     }
 
     /// Reset to idle so the form can be filled and posted again

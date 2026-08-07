@@ -29,6 +29,16 @@ private struct ReviewBody: View {
                 laneCard
                 equipmentCard
                 industryWorkflowCard
+                // 2026-08-07 — cargo-classification attestation. The ONE
+                // shared control (Views/Components). The wizard's hazmat
+                // sub-form may suggest the identity; only this establishes
+                // the determination, and `shippers.create` refuses the post
+                // without it.
+                CargoClassificationAttestationCard(
+                    attestation: $draft.classification,
+                    context: draft.classificationContext,
+                    hostCaptures: hostCapturedIdentity
+                )
                 documentsRequiredCard   // T-009 · 2026-05-20
                 ePodLockCard            // T-011 · 2026-05-20
                 pricingCard
@@ -65,6 +75,16 @@ private struct ReviewBody: View {
             },
             message: { Text(confirmMessage) }
         )
+    }
+
+    /// The wizard's own hazmat sub-form owns UN / class / proper shipping
+    /// name, so the attestation control does not ask for them twice — the
+    /// draft mirrors them across one-way. It owns nothing else, so packing
+    /// group and the rest stay with the control.
+    private var hostCapturedIdentity: CargoClassificationAttestationCard.IdentityFields {
+        draft.cargoType == .hazmat
+            ? [.unNumber, .hazmatClass, .properShippingName]
+            : []
     }
 
     private var confirmTitle: String {
@@ -564,6 +584,8 @@ private struct ReviewBody: View {
     }
 
     private var canSubmit: Bool {
+        // 2026-08-07 — no attestation, no post. The label below names it.
+        guard draft.classificationBlockReason == nil else { return false }
         guard draft.canPostMarketplace, !draft.isAssessingIndustry else { return false }
         guard draft.industrySectorId != nil else { return true }
         guard draft.industryAssessmentId != nil else { return false }
@@ -583,6 +605,12 @@ private struct ReviewBody: View {
     /// vertical not picked → ready.
     private var postButtonLabel: String {
         if draft.isPosting { return "Posting…" }
+        if draft.classification.dangerousGoodsStatus == .undetermined {
+            return "Attest cargo classification"
+        }
+        if draft.classificationBlockReason != nil {
+            return "Complete cargo classification"
+        }
         if draft.vertical == nil { return "Pick vertical on Step 2" }
         if draft.isAssessingIndustry { return "Checking workflow…" }
         if draft.industrySectorId != nil && draft.industryAssessmentId == nil {

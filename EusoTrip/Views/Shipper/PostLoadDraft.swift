@@ -25,6 +25,32 @@ import SwiftUI
 fileprivate typealias FeeCountry = Country
 fileprivate typealias FeeTransportMode = TransportMode
 
+/// One machine-evaluable operational fact for an industry workflow.
+///
+/// Mirrors the server's `IndustryOperationalFactRequirement.valueType`
+/// (`server/services/industryVerticalRegistry.ts`): a fact is a string, a
+/// positive number, or a boolean, and the server checks the TYPE, not just
+/// presence — a `"true"` string never satisfies a boolean determination.
+///
+/// The same value set travels on BOTH `industryVerticals.assessDraft`
+/// (`operationalFacts`) and `shippers.create` (`verticalData`), because
+/// `validateIndustryVerticalAssessmentForLoad` compares the two JSON objects
+/// and rejects the assessment as stale when they differ.
+enum IndustryOperationalFact: Encodable, Hashable {
+    case text(String)
+    case number(Double)
+    case flag(Bool)
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .text(let value):   try container.encode(value)
+        case .number(let value): try container.encode(value)
+        case .flag(let value):   try container.encode(value)
+        }
+    }
+}
+
 struct IndustryWorkflowHandoff {
     let sectorId: String
     let ruleSetId: Int
@@ -145,6 +171,20 @@ final class PostLoadDraft: ObservableObject {
     @Published var cargoType: CargoType = .general
     @Published var equipmentType: String = ""
     @Published var weight: Double? = nil
+    /// The unit `weight` is expressed in — the ONE value both the local
+    /// classification mirror and the wire read.
+    ///
+    /// 2026-08-07: this used to exist only as a hardcoded `"lbs"` inside the
+    /// mirror, while `shippers.create` received no unit at all. The server
+    /// requires a quantity unit for every dangerous-goods post
+    /// (`assessCargoClassification` → "regulated-material quantity unit"), so
+    /// the mirror said "ready", the button went green, and the post was then
+    /// refused. Both readers now resolve the same stored value.
+    ///
+    /// It is not an invented default: the wizard's Step-2 field is labelled
+    /// "WEIGHT (LB)" (251_PostLoadStep2Equipment), so pounds is what the
+    /// poster is entering. A surface that offers a unit picker sets this.
+    @Published var weightUnit: String = "lbs"
     @Published var commodity: String = ""
 
     // ── T-005 / T-006 (canonical lock-in, 2026-05-20) ──
@@ -165,6 +205,19 @@ final class PostLoadDraft: ObservableObject {
     @Published var industryAssessmentError: String? = nil
     @Published var isAssessingIndustry: Bool = false
     @Published var industryReviewAcknowledged: Bool = false
+    /// Operational facts the POSTER supplied for the selected workflow, keyed
+    /// by the server's fact key (`productType`, `vehicleCount`, `dscsaCovered`
+    /// …). Nine of the twelve canonical workflows — and five sectors — require
+    /// at least one, and the assessment returns `needs_input` until they are
+    /// present, which blocks the post.
+    ///
+    /// Facts the wizard already owns are derived in `derivedOperationalFacts`;
+    /// anything set here wins, because a poster's answer outranks a mapping.
+    /// Nothing is ever defaulted: a sector's boolean determinations
+    /// (`dscsaCovered`, `fsmaCovered`, `coveredInterstateMove`,
+    /// `veterinaryMovementDocumentRequired`) are legal calls only the poster
+    /// can make, so they are never derived.
+    @Published var operationalFacts: [String: IndustryOperationalFact] = [:]
     private var industryAssessmentRequestId = UUID()
     /// Selected trailer code. When set, `equipmentType` is kept synced
     /// to `trailer.rawValue` so legacy server-side parsers keep working.
@@ -216,6 +269,15 @@ final class PostLoadDraft: ObservableObject {
     @Published var properShippingName: String = ""
     @Published var ergGuide: Int? = nil
     @Published var chemtrecPhone: String = ""
+
+    // ─── 2026-08-07 · cargo-classification attestation ────────────────
+    // The poster's determination + evidence, on the ONE shared primitive
+    // (Views/Components/CargoClassificationAttestation). Required by
+    // `shippers.create` AND `industryVerticals.assessDraft`. Starts empty
+    // — no determination, no source, no evidence reference. The fields
+    // above may SUGGEST an identity to the control; they never establish
+    // one, and they are never submitted as the attestation.
+    @Published var classification = CargoClassificationAttestation()
 
     // Reefer sub-fields.
     @Published var reeferTempLow: Double? = nil
@@ -324,12 +386,13 @@ final class PostLoadDraft: ObservableObject {
         industryAssessmentId = nil; industryAssessmentStatus = nil
         industryAssessmentWarnings = []; industryAssessmentError = nil
         isAssessingIndustry = false; industryReviewAcknowledged = false
+        operationalFacts = [:]; submittedOperationalFacts = [:]
         industryAssessmentRequestId = UUID()
         attachedDocuments = []
         reportingMarks = ""; aarClass = ""
         bicCode = ""; isoCode = ""; imoNumber = ""; mmsi = ""
         ePodLockOverride = nil
-        weight = nil; commodity = ""
+        weight = nil; weightUnit = "lbs"; commodity = ""
         unNumber = ""; hazmatClass = ""; packingGroup = ""
         properShippingName = ""; ergGuide = nil; chemtrecPhone = ""
         reeferTempLow = nil; reeferTempHigh = nil
@@ -360,6 +423,10 @@ final class PostLoadDraft: ObservableObject {
         industryAssessmentWarnings = []
         industryAssessmentError = nil
         industryReviewAcknowledged = false
+        // Facts are keyed per workflow; a new workflow asks new questions, so
+        // the previous answers are dropped rather than carried into a
+        // requirement set they were never answers to.
+        operationalFacts = [:]; submittedOperationalFacts = [:]
         industryAssessmentRequestId = UUID()
 
         vertical = Vertical(rawValue: handoff.workflowId)
@@ -604,12 +671,36 @@ final class PostLoadDraft: ObservableObject {
         let destinationCountryCode: String
         let productName: String?
         let cargoType: String
+        // Same three attestation fields the create call carries — the
+        // assessor keys its regulatory workflow off the poster's
+        // determination, not off a derived guess.
         let dangerousGoodsStatus: String
+        let classificationSource: String?
+        let classificationEvidenceRef: String?
         let unNumber: String?
+        let properShippingName: String?
         let hazmatClass: String?
+        let packingGroupStatus: String?
+        let packingGroup: String?
+        let technicalName: String?
+        let emergencyPhone: String?
+        let subsidiaryHazards: [String]?
+        let packagingType: String?
+        let equipmentType: String?
+        // The classification quantity + unit the create call will resolve.
+        // `validateIndustryVerticalAssessmentForLoad` compares the assessed
+        // draft against the create payload field by field, so omitting these
+        // made EVERY assessed post fail with "the cargo details changed after
+        // industry assessment" the moment a weight was entered.
+        let quantity: Double?
+        let quantityUnit: String?
         let temperatureMin: Double?
         let temperatureMax: Double?
         let temperatureUnit: String?
+        /// Workflow + sector operational facts. Nine of the twelve canonical
+        /// workflows require at least one; without them the assessment is
+        /// permanently `needs_input`.
+        let operationalFacts: [String: IndustryOperationalFact]?
     }
 
     private struct IndustryAssessmentOutput: Decodable {
@@ -624,19 +715,125 @@ final class PostLoadDraft: ObservableObject {
         let result: Result
     }
 
-    /// The server's cargo-classification vocabulary
-    /// (`DANGEROUS_GOODS_STATUSES`). Only an explicit, fully-documented hazmat
-    /// declaration counts as `dangerous_goods`. Everything else is
-    /// `undetermined` — NEVER `not_dangerous_goods`, because that is a positive
-    /// claim requiring not-regulated documentation the shipper has not given
-    /// here, and never inferred from the trailer or the vertical: equipment
-    /// being hazmat-capable says nothing about what is actually loaded.
-    private var dangerousGoodsStatus: String {
-        let hasUN = !unNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let hasClass = !hazmatClass.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let hasName = !properShippingName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        if cargoType == .hazmat && hasUN && hasClass && hasName { return "dangerous_goods" }
-        return "undetermined"
+    // REMOVED 2026-08-07 — `suggestedDangerousGoodsStatus`, which derived a
+    // determination from `cargoType == .hazmat`.
+    //
+    // It had zero call sites, and its own comment described it as a value "the
+    // control may open on" — which is exactly what the attestation must never
+    // do. Nothing is pre-selected; the shipper attests and the app records. A
+    // live inference helper sitting one call away from the wire is a trap: the
+    // next person to wire it up reintroduces cargoType inference without ever
+    // touching a rule that says not to. The determination now comes only from
+    // `classification`, which only the poster can complete.
+
+    /// The equipment the server will classify against.
+    ///
+    /// `shippers.create` resolves it as `equipmentType ?? trailer`, so the
+    /// assessment has to be made against the same resolution — assessing
+    /// against a bare `equipmentType` while the create call falls through to
+    /// the trailer code is exactly the drift that makes the assessment stale.
+    var resolvedEquipmentType: String? {
+        let typed = equipmentType.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !typed.isEmpty { return typed }
+        return trailer?.rawValue
+    }
+
+    /// The load facts the server's classification assessor needs that the
+    /// attestation does not own.
+    var classificationContext: CargoClassificationAttestation.CargoContext {
+        CargoClassificationAttestation.CargoContext(
+            productName: commodity.trimmingCharacters(in: .whitespacesAndNewlines),
+            equipmentType: resolvedEquipmentType ?? "",
+            transportMode: mode.rawValue,
+            quantity: classificationQuantity,
+            // The unit the mirror reports is the unit the wire carries — read
+            // from the same stored value, never restated as a literal.
+            quantityUnit: classificationQuantity != nil ? weightUnit : ""
+        )
+    }
+
+    /// The quantity the server will classify against.
+    ///
+    /// `shippers.create` resolves it as `quantity ?? weight`; this wizard has
+    /// only `weight`, so that is the quantity — but only when it is a real
+    /// positive figure. A zero or absent weight is NOT a quantity, and saying
+    /// otherwise would make the local mirror disagree with the server.
+    var classificationQuantity: Double? {
+        guard let weight, weight.isFinite, weight > 0 else { return nil }
+        return weight
+    }
+
+    /// The unit that travels with `classificationQuantity`. Sent as
+    /// `weightUnit` on `shippers.create` and as `quantityUnit` on
+    /// `industryVerticals.assessDraft`, so the two payloads agree — the
+    /// assessment is rejected as stale when they do not.
+    var classificationQuantityUnit: String? {
+        guard classificationQuantity != nil else { return nil }
+        let trimmed = weightUnit.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    /// Operational facts this wizard genuinely owns, mapped onto the server's
+    /// fact keys for the selected workflow. Every value here is something the
+    /// poster typed on a wizard field that means exactly this — nothing is
+    /// inferred, and a workflow whose facts the wizard does not collect
+    /// contributes nothing, so the assessment says `needs_input` and names
+    /// them instead of the post failing for an unexplained reason.
+    private var derivedOperationalFacts: [String: IndustryOperationalFact] {
+        guard let workflow = vertical else { return [:] }
+        var facts: [String: IndustryOperationalFact] = [:]
+        let product = commodity.trimmingCharacters(in: .whitespacesAndNewlines)
+        let containerNumber = bicCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        let containerSize = isoCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch workflow {
+        case .refrigerated:
+            if !product.isEmpty { facts["productType"] = .text(product) }
+        case .dryBulkPneumatic:
+            if !product.isEmpty { facts["commodity"] = .text(product) }
+        case .heavyHaulSpecialized:
+            if let quantity = classificationQuantity { facts["grossWeight"] = .number(quantity) }
+        case .householdGoods:
+            if let quantity = classificationQuantity { facts["estimatedWeight"] = .number(quantity) }
+        case .intermodalContainer:
+            if !containerNumber.isEmpty { facts["containerNumber"] = .text(containerNumber) }
+            if !containerSize.isEmpty { facts["containerSize"] = .text(containerSize) }
+        case .generalFreight, .hazmat, .tankerLiquidBulk,
+             .flatbedOpenDeck, .autoTransport, .ltlPartial, .livestock:
+            break
+        }
+        return facts
+    }
+
+    /// The exact operational-fact object sent to BOTH `assessDraft` and
+    /// `shippers.create`. Poster-supplied answers override derived ones.
+    var resolvedOperationalFacts: [String: IndustryOperationalFact] {
+        var facts = derivedOperationalFacts
+        for (key, value) in operationalFacts { facts[key] = value }
+        return facts
+    }
+
+    /// The fact set the CURRENT assessment was actually made against. The post
+    /// sends this one, not a freshly-resolved set, so the two payloads cannot
+    /// diverge between the assessment and the create call.
+    private(set) var submittedOperationalFacts: [String: IndustryOperationalFact] = [:]
+
+    /// Honest reason the wizard cannot post yet, or nil when the poster has
+    /// completed the attestation.
+    var classificationBlockReason: String? {
+        classification.blockReason(context: classificationContext)
+    }
+
+    /// Mirror the regulated identity the poster typed on the wizard's hazmat
+    /// sub-form into the attestation (one way — the wizard owns those three
+    /// fields, the attestation owns the wire). `properShippingName` is only a
+    /// proper shipping name on hazmat cargo; on anything else it is the plain
+    /// commodity and must not travel as a regulated identifier.
+    func mirrorIdentityIntoClassification() {
+        classification.unNumber = unNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+        classification.hazmatClass = hazmatClass.trimmingCharacters(in: .whitespacesAndNewlines)
+        classification.properShippingName = cargoType == .hazmat
+            ? properShippingName.trimmingCharacters(in: .whitespacesAndNewlines)
+            : ""
     }
 
     private func exactCountryCode(_ country: Country) -> String? {
@@ -656,6 +853,7 @@ final class PostLoadDraft: ObservableObject {
             industryAssessmentId = nil
             industryAssessmentStatus = nil
             industryAssessmentWarnings = []
+            submittedOperationalFacts = [:]
             return
         }
         guard let originCode = exactCountryCode(originCountry),
@@ -671,6 +869,13 @@ final class PostLoadDraft: ObservableObject {
         }
 
         let product = commodity.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Keep the attestation's regulated identity in step with what the
+        // poster typed on the hazmat sub-form before it goes on the wire.
+        mirrorIdentityIntoClassification()
+        // Resolved ONCE, then sent on both calls, so the assessed draft and
+        // the create payload cannot drift within a single post.
+        let facts = resolvedOperationalFacts
+        submittedOperationalFacts = facts
         let response: IndustryAssessmentOutput = try await EusoTripAPI.shared.mutation(
             "industryVerticals.assessDraft",
             input: IndustryAssessmentInput(
@@ -683,12 +888,25 @@ final class PostLoadDraft: ObservableObject {
                 destinationCountryCode: destinationCode,
                 productName: product.isEmpty ? nil : product,
                 cargoType: cargoType.rawValue,
-                dangerousGoodsStatus: dangerousGoodsStatus,
-                unNumber: unNumber.isEmpty ? nil : unNumber,
-                hazmatClass: hazmatClass.isEmpty ? nil : hazmatClass,
+                dangerousGoodsStatus: classification.wireStatus,
+                classificationSource: classification.wireSource,
+                classificationEvidenceRef: classification.wireEvidenceRef,
+                unNumber: classification.wireUnNumber,
+                properShippingName: classification.wireProperShippingName,
+                hazmatClass: classification.wireHazmatClass,
+                packingGroupStatus: classification.wirePackingGroupStatus,
+                packingGroup: classification.wirePackingGroup,
+                technicalName: classification.wireTechnicalName,
+                emergencyPhone: classification.wireEmergencyPhone,
+                subsidiaryHazards: classification.wireSubsidiaryHazards,
+                packagingType: classification.wirePackagingType,
+                equipmentType: resolvedEquipmentType,
+                quantity: classificationQuantity,
+                quantityUnit: classificationQuantityUnit,
                 temperatureMin: reeferTempLow,
                 temperatureMax: reeferTempHigh,
-                temperatureUnit: (reeferTempLow != nil || reeferTempHigh != nil) ? "F" : nil
+                temperatureUnit: (reeferTempLow != nil || reeferTempHigh != nil) ? "F" : nil,
+                operationalFacts: facts.isEmpty ? nil : facts
             )
         )
 
@@ -749,6 +967,14 @@ final class PostLoadDraft: ObservableObject {
                      ?? error.localizedDescription
             return
         }
+        // 2026-08-07 — cargo classification. Mirror the identity the poster
+        // typed, then refuse with the exact missing inputs. No derived
+        // determination is ever submitted on the poster's behalf.
+        mirrorIdentityIntoClassification()
+        if let reason = classificationBlockReason {
+            postError = reason
+            return
+        }
         isPosting = true; postError = nil
         do {
             try await refreshIndustryAssessment()
@@ -771,10 +997,29 @@ final class PostLoadDraft: ObservableObject {
             struct In: Encodable {
                 let origin: String; let destination: String; let cargoType: String
                 let productName: String?; let category: String?
+                // Cargo-classification attestation — REQUIRED by
+                // `shippers.create`; the post is refused without it.
+                let dangerousGoodsStatus: String
+                let classificationSource: String?
+                let classificationEvidenceRef: String?
+                let properShippingName: String?
+                let packingGroupStatus: String?
+                let packingGroup: String?
+                let technicalName: String?
+                let emergencyPhone: String?
+                let packagingType: String?
+                let subsidiaryHazards: [String]?
                 let unNumber: String?; let hazmatClass: String?
                 let tempMin: Double?; let tempMax: Double?; let tempUnit: String?
                 let preCoolRequired: Bool?; let continuousMonitoring: Bool?
                 let rate: Double?; let weight: Double?; let notes: String?; let pickupDate: String?
+                // `shippers.create` classifies against `quantity ?? weight`
+                // with `quantityUnit ?? weightUnit`. This wizard's cargo
+                // figure is a WEIGHT, so it travels as weight + weightUnit —
+                // `quantity`/`quantityUnit` are deliberately not sent, because
+                // the server writes `quantityUnit` into the load's VOLUME unit
+                // column and a mass would be the wrong fact there.
+                let weightUnit: String?
                 let transportMode: String?
                 let originCountry: String?; let destinationCountry: String?
                 let isCrossBorder: Bool?
@@ -810,6 +1055,11 @@ final class PostLoadDraft: ObservableObject {
                 // every consumer migrates.
                 let trailer:              String?
                 let vertical:             String?
+                /// The operational facts the assessment was made against. The
+                /// server re-normalizes both objects and refuses the post when
+                /// they differ, so this must be byte-for-byte the same set
+                /// sent to `industryVerticals.assessDraft`.
+                let verticalData:         [String: IndustryOperationalFact]?
                 let industrySectorId:     String?
                 let industryVerticalAssessmentId: String?
                 let industryVerticalReviewAcknowledged: Bool?
@@ -839,12 +1089,18 @@ final class PostLoadDraft: ObservableObject {
                         ? nil
                         : commodity.trimmingCharacters(in: .whitespacesAndNewlines),
                     category: industrySectorId ?? vertical?.rawValue,
-                    unNumber: unNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                        ? nil
-                        : unNumber.trimmingCharacters(in: .whitespacesAndNewlines),
-                    hazmatClass: hazmatClass.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                        ? nil
-                        : hazmatClass.trimmingCharacters(in: .whitespacesAndNewlines),
+                    dangerousGoodsStatus: classification.wireStatus,
+                    classificationSource: classification.wireSource,
+                    classificationEvidenceRef: classification.wireEvidenceRef,
+                    properShippingName: classification.wireProperShippingName,
+                    packingGroupStatus: classification.wirePackingGroupStatus,
+                    packingGroup: classification.wirePackingGroup,
+                    technicalName: classification.wireTechnicalName,
+                    emergencyPhone: classification.wireEmergencyPhone,
+                    packagingType: classification.wirePackagingType,
+                    subsidiaryHazards: classification.wireSubsidiaryHazards,
+                    unNumber: classification.wireUnNumber,
+                    hazmatClass: classification.wireHazmatClass,
                     tempMin: reeferTempLow,
                     tempMax: reeferTempHigh,
                     tempUnit: (reeferTempLow != nil || reeferTempHigh != nil) ? "F" : nil,
@@ -854,6 +1110,7 @@ final class PostLoadDraft: ObservableObject {
                     weight: weight,
                     notes: composedNotes().isEmpty ? nil : composedNotes(),
                     pickupDate: pickupDate.map { iso.string(from: $0) },
+                    weightUnit: classificationQuantityUnit,
                     transportMode: mode.rawValue,
                     originCountry: exactCountryCode(originCountry),
                     destinationCountry: exactCountryCode(destinationCountry),
@@ -880,6 +1137,9 @@ final class PostLoadDraft: ObservableObject {
                     equipmentType:         equipmentType.isEmpty ? nil : equipmentType,
                     trailer:               trailer?.rawValue,
                     vertical:              vertical?.rawValue,
+                    verticalData:          submittedOperationalFacts.isEmpty
+                        ? nil
+                        : submittedOperationalFacts,
                     industrySectorId:      industrySectorId,
                     industryVerticalAssessmentId: industryAssessmentId,
                     industryVerticalReviewAcknowledged:

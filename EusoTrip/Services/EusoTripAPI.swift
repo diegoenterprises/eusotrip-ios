@@ -2754,23 +2754,71 @@ struct LoadsAPI {
     /// recurring composer's "Schedule next pickup" path — saves
     /// a template via `loadTemplates.create`, then immediately
     /// fires this to put the first occurrence on the schedule.
+    ///
+    /// Thin alias for `loadTemplates.useTemplate` on the server, so it carries
+    /// the identical contract: `classification` is REQUIRED with no default —
+    /// a template can suggest a cargo identity but never establish one, so the
+    /// poster attests afresh for this occurrence. The same is true of the
+    /// industry-vertical assessment and the Port Intelligence assessment: both
+    /// are one-use and bound to the draft being posted, so the template cannot
+    /// carry either and the caller supplies them for THIS occurrence.
     @discardableResult
     func createFromTemplate(
         templateId: Int,
+        classification: CargoClassificationAttestation,
         pickupDate: String? = nil,
-        deliveryDate: String? = nil
+        deliveryDate: String? = nil,
+        portIntelligenceAssessmentId: String? = nil,
+        portIntelligenceAcknowledged: Bool = false,
+        industrySectorId: String? = nil,
+        industryVerticalAssessmentId: String? = nil,
+        industryVerticalReviewAcknowledged: Bool = false
     ) async throws -> CreateFromTemplateAck {
         struct Input: Encodable {
             let templateId: Int
+            let dangerousGoodsStatus: String
+            let classificationSource: String?
+            let classificationEvidenceRef: String?
+            let hazmatClass: String?
+            let unNumber: String?
+            let properShippingName: String?
+            let technicalName: String?
+            let packingGroup: String?
+            let packingGroupStatus: String?
+            let packagingType: String?
+            let emergencyPhone: String?
+            let subsidiaryHazards: [String]?
             let pickupDate: String?
             let deliveryDate: String?
+            let portIntelligenceAssessmentId: String?
+            let portIntelligenceAcknowledged: Bool
+            let industrySectorId: String?
+            let industryVerticalAssessmentId: String?
+            let industryVerticalReviewAcknowledged: Bool
         }
         return try await api.mutation(
             "loads.createFromTemplate",
             input: Input(
                 templateId: templateId,
+                dangerousGoodsStatus: classification.wireStatus,
+                classificationSource: classification.wireSource,
+                classificationEvidenceRef: classification.wireEvidenceRef,
+                hazmatClass: classification.wireHazmatClass,
+                unNumber: classification.wireUnNumber,
+                properShippingName: classification.wireProperShippingName,
+                technicalName: classification.wireTechnicalName,
+                packingGroup: classification.wirePackingGroup,
+                packingGroupStatus: classification.wirePackingGroupStatus,
+                packagingType: classification.wirePackagingType,
+                emergencyPhone: classification.wireEmergencyPhone,
+                subsidiaryHazards: classification.wireSubsidiaryHazards,
                 pickupDate: pickupDate,
-                deliveryDate: deliveryDate
+                deliveryDate: deliveryDate,
+                portIntelligenceAssessmentId: portIntelligenceAssessmentId,
+                portIntelligenceAcknowledged: portIntelligenceAcknowledged,
+                industrySectorId: industrySectorId,
+                industryVerticalAssessmentId: industryVerticalAssessmentId,
+                industryVerticalReviewAcknowledged: industryVerticalReviewAcknowledged
             )
         )
     }
@@ -17143,10 +17191,26 @@ struct ShipperAPI {
         let productName: String?
         let category: String?
         let physicalState: String?
+        // ─── 2026-08-07 · cargo-classification attestation ───────────
+        // `dangerousGoodsStatus` is a FIRST-CLASS REQUIRED field on
+        // `shippers.create` (shippers.ts) — the server runs
+        // assessCargoClassification + cargoClassificationFailures and
+        // throws PRECONDITION_FAILED when anything is missing. Every
+        // field below comes from the poster's
+        // `CargoClassificationAttestation`; nothing here is derived from
+        // the trailer, the cargo chip, the vertical or an ERG lookup.
+        let dangerousGoodsStatus: String
+        let classificationSource: String?
+        let classificationEvidenceRef: String?
         let unNumber: String?
         let hazmatClass: String?
         let properShippingName: String?
         let packingGroup: String?
+        let packingGroupStatus: String?
+        let technicalName: String?
+        let emergencyPhone: String?
+        let packagingType: String?
+        let subsidiaryHazards: [String]?
         let rate: Double?
         let weight: Double?
         let weightUnit: String?
@@ -17229,10 +17293,13 @@ struct ShipperAPI {
         productName: String? = nil,
         category: String? = nil,
         physicalState: String? = nil,
-        unNumber: String? = nil,
-        hazmatClass: String? = nil,
-        properShippingName: String? = nil,
-        packingGroup: String? = nil,
+        // 2026-08-07 — REQUIRED, no default. The attestation is the single
+        // wire source of truth for the dangerous-goods determination AND the
+        // regulated identity (UN / class / PSN / PG / technical name /
+        // packaging / emergency phone / subsidiary hazards). It has no
+        // default value on purpose: a call site that has not collected an
+        // attestation must fail to compile rather than post a guess.
+        classification: CargoClassificationAttestation,
         rate: Double? = nil,
         weight: Double? = nil,
         weightUnit: String? = nil,
@@ -17304,10 +17371,18 @@ struct ShipperAPI {
                 productName: productName,
                 category: category,
                 physicalState: physicalState,
-                unNumber: unNumber,
-                hazmatClass: hazmatClass,
-                properShippingName: properShippingName,
-                packingGroup: packingGroup,
+                dangerousGoodsStatus: classification.wireStatus,
+                classificationSource: classification.wireSource,
+                classificationEvidenceRef: classification.wireEvidenceRef,
+                unNumber: classification.wireUnNumber,
+                hazmatClass: classification.wireHazmatClass,
+                properShippingName: classification.wireProperShippingName,
+                packingGroup: classification.wirePackingGroup,
+                packingGroupStatus: classification.wirePackingGroupStatus,
+                technicalName: classification.wireTechnicalName,
+                emergencyPhone: classification.wireEmergencyPhone,
+                packagingType: classification.wirePackagingType,
+                subsidiaryHazards: classification.wireSubsidiaryHazards,
                 rate: rate,
                 weight: weight,
                 weightUnit: weightUnit,
@@ -21846,32 +21921,101 @@ struct LoadTemplatesAPI {
         let loadNumber: String
     }
 
+    /// Server-side cargo classification vocabulary. A saved template may
+    /// SUGGEST a dangerous-goods identity but can never ESTABLISH one — it
+    /// carries no attestation, no evidence reference and no confirming user —
+    /// so `loadTemplates.useTemplate` requires a fresh determination from the
+    /// poster on every materialization. There is no default on the wire.
+    ///
+    /// The vocabulary itself now lives on the shared attestation primitive
+    /// (`CargoClassificationAttestation.DangerousGoodsStatus`); this alias is
+    /// kept so the existing name still resolves.
+    typealias DangerousGoodsStatus = CargoClassificationAttestation.DangerousGoodsStatus
+
+    /// Materialize one occurrence from a saved template.
+    ///
+    /// `classification` is REQUIRED and has no default: the server's
+    /// `useTemplate` deliberately does NOT forward the template's stored
+    /// hazard columns, so this attestation — made fresh by whoever is posting
+    /// THIS occurrence — is the only thing that establishes the load's cargo
+    /// classification. A template may pre-fill the identity fields as a
+    /// suggestion; it can never supply the determination, the evidence source
+    /// or the evidence reference.
+    ///
+    /// INDUSTRY-VERTICAL EVIDENCE (2026-08-07). `useTemplate` hands the
+    /// occurrence to `loads.create`, which now refuses UNCONDITIONALLY unless
+    /// it receives an assessed industry workflow — its sector id AND the
+    /// one-use assessment id (loads.ts:1053, "An assessed industry workflow,
+    /// its sector, and its assessment id are required before this load can be
+    /// posted."). A template records the workflow it belongs to; it can never
+    /// carry an assessment, because assessments are one-use and bound to the
+    /// draft being posted. So the caller supplies a fresh
+    /// `industryVerticals.assessDraft` result for THIS occurrence, exactly as
+    /// it supplies a fresh classification attestation.
+    ///
+    /// These stay optional on the Swift signature so the failure mode is the
+    /// server's own legible PRECONDITION_FAILED rather than a call site that
+    /// silently synthesizes an id it does not have.
     @discardableResult
     func useTemplate(
         templateId: Int,
+        classification: CargoClassificationAttestation,
         pickupDate: String? = nil,
         deliveryDate: String? = nil,
         rate: Double? = nil,
         portIntelligenceAssessmentId: String? = nil,
-        portIntelligenceAcknowledged: Bool = false
+        portIntelligenceAcknowledged: Bool = false,
+        industrySectorId: String? = nil,
+        industryVerticalAssessmentId: String? = nil,
+        industryVerticalReviewAcknowledged: Bool = false
     ) async throws -> MaterializeAck {
         struct Input: Encodable {
             let templateId: Int
+            let dangerousGoodsStatus: String
+            let classificationSource: String?
+            let classificationEvidenceRef: String?
+            let hazmatClass: String?
+            let unNumber: String?
+            let properShippingName: String?
+            let technicalName: String?
+            let packingGroup: String?
+            let packingGroupStatus: String?
+            let packagingType: String?
+            let emergencyPhone: String?
+            let subsidiaryHazards: [String]?
             let pickupDate: String?
             let deliveryDate: String?
             let rate: Double?
             let portIntelligenceAssessmentId: String?
             let portIntelligenceAcknowledged: Bool
+            let industrySectorId: String?
+            let industryVerticalAssessmentId: String?
+            let industryVerticalReviewAcknowledged: Bool
         }
         return try await api.mutation(
             "loadTemplates.useTemplate",
             input: Input(
                 templateId: templateId,
+                dangerousGoodsStatus: classification.wireStatus,
+                classificationSource: classification.wireSource,
+                classificationEvidenceRef: classification.wireEvidenceRef,
+                hazmatClass: classification.wireHazmatClass,
+                unNumber: classification.wireUnNumber,
+                properShippingName: classification.wireProperShippingName,
+                technicalName: classification.wireTechnicalName,
+                packingGroup: classification.wirePackingGroup,
+                packingGroupStatus: classification.wirePackingGroupStatus,
+                packagingType: classification.wirePackagingType,
+                emergencyPhone: classification.wireEmergencyPhone,
+                subsidiaryHazards: classification.wireSubsidiaryHazards,
                 pickupDate: pickupDate,
                 deliveryDate: deliveryDate,
                 rate: rate,
                 portIntelligenceAssessmentId: portIntelligenceAssessmentId,
-                portIntelligenceAcknowledged: portIntelligenceAcknowledged
+                portIntelligenceAcknowledged: portIntelligenceAcknowledged,
+                industrySectorId: industrySectorId,
+                industryVerticalAssessmentId: industryVerticalAssessmentId,
+                industryVerticalReviewAcknowledged: industryVerticalReviewAcknowledged
             )
         )
     }

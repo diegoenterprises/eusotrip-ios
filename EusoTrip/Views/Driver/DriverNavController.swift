@@ -882,19 +882,28 @@ enum TripPhase: String, CaseIterable, Codable {
         switch (self, next) {
         //   023 backing-in → 040 discharging (product flowing off the rig).
         //   Entry is primed to `unloading` first — see `tankerEntryPrimingId`.
+        //
+        //   REMAPPED 2026-08-07. The server collapsed TANKER_FSM onto the shared
+        //   canonical lifecycle and moved the tanker-specific steps into
+        //   tanker_sub_state. `discharging`, `vapor_purging` and `disconnecting`
+        //   no longer exist as top-level states, so every hop below was being
+        //   refused with BAD_REQUEST — and because the call site swallowed the
+        //   error, the driver's UI advanced through the whole discharge while the
+        //   server recorded nothing. The discharge now runs as sub-states of
+        //   `unloading`, closing out at `unloaded`.
         case (.backingIn, .dischargeInProgress):
-            return (LoadStatus.discharging.rawValue, "DISCHARGE_FLOWING")
-        //   040 discharging → 041 vapor_purging (meter hits zero remaining;
-        //   the DISCHARGE_COMPLETE chip is implied by this hop landing).
+            return (LoadStatus.unloading.rawValue, "DISCHARGE_FLOWING")
+        //   Meter hits zero remaining — discharge complete, still `unloading`.
         case (.dischargeInProgress, .dischargeComplete):
-            return (LoadStatus.vaporPurging.rawValue, nil)
-        //   041 vapor_purging → 042 disconnecting (purge proven, begin dry-disconnect)
+            return (LoadStatus.unloading.rawValue, "DISCHARGE_COMPLETE")
+        //   Purge proven, begin dry-disconnect — still `unloading`.
         case (.dischargeComplete, .disconnectAndVerify):
-            return (LoadStatus.disconnecting.rawValue, "DISCONNECT_VENTED")
-        //   042 disconnecting → 043 pod_pending (4-step ladder confirmed,
-        //   hose released, drop closed out into POD-pending)
+            return (LoadStatus.unloading.rawValue, "DISCONNECT_VENTED")
+        //   4-step ladder confirmed and hose released: the load is unloaded.
+        //   POD-pending is the POD flow's own hop (`unloaded → pod_pending`),
+        //   not this controller's.
         case (.disconnectAndVerify, .disconnectConfirmed):
-            return (LoadStatus.podPending.rawValue, nil)
+            return (LoadStatus.unloaded.rawValue, "DISCONNECT_WALKAROUND_DONE")
         //   044 connect-drop-hose is a multi-drop UI sub-state; mating the
         //   next drop hose runs the `connectHose` bayOps wizard, not a
         //   status flip — no tanker transition fires (load stays pod_pending).
@@ -1233,6 +1242,15 @@ final class DriverTripController: ObservableObject {
     /// SwiftUI re-renders the Home tab when it changes.
     @Published var phase: TripPhase = .idle
 
+    /// The server's reason when a tanker hop is refused.
+    ///
+    /// This exists because the discharge chain used to fire through
+    /// `try?`: every refusal was discarded, so when the server's tanker FSM
+    /// changed under the app the driver walked the entire 040→043 discharge
+    /// while the server recorded none of it. A refused transition means the
+    /// load did not move, and the driver has to know that.
+    @Published var tankerTransitionError: String? = nil
+
     /// The load the driver is currently assigned. Sourced from
     /// `DriverHomeViewModel.availableLoad` at Home-accept time; the
     /// controller holds onto it for the duration of the trip.
@@ -1366,11 +1384,21 @@ final class DriverTripController: ObservableObject {
                 )
             }
             // 2) Fire the tanker-FSM hop on its dedicated router.
-            _ = try? await api.loadLifecycleTanker.executeTankerTransition(
-                loadId: loadIdStr,
-                toState: hop.toState,
-                subState: hop.subState
-            )
+            //    NOT `try?`. Swallowing this is what let an entire dead
+            //    discharge chain look healthy: the server refused every hop and
+            //    the driver walked the wizard anyway. A refusal has to be
+            //    visible, because the load did not actually move.
+            do {
+                _ = try await api.loadLifecycleTanker.executeTankerTransition(
+                    loadId: loadIdStr,
+                    toState: hop.toState,
+                    subState: hop.subState
+                )
+            } catch {
+                await MainActor.run {
+                    self.tankerTransitionError = error.eusoUserCopy
+                }
+            }
         }
     }
 
