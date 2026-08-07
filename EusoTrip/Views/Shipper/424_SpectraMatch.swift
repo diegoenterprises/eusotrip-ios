@@ -33,6 +33,7 @@ struct SpectraMatchScreen: View {
 
 private struct SpectraMatchBody: View {
     @Environment(\.palette) private var palette
+    @State private var productLabel: String = ""
     @State private var apiGravity: Double? = nil
     @State private var bsw: Double? = nil
     @State private var sulfur: Double? = nil
@@ -80,10 +81,28 @@ private struct SpectraMatchBody: View {
     private var inputCard: some View {
         LifecycleCard {
             LifecycleSection(label: "SPEC SHEET", icon: "doc.text")
+            // Required: identification is evidence-backed against a resolved
+            // product profile, so the server matches the readings AGAINST this
+            // label. Without it `spectraMatch.identify` refuses the request.
+            labelField("Product / sample label", value: $productLabel)
             field("API gravity (°API)", value: $apiGravity)
             field("BS&W (% vol)", value: $bsw)
             field("Sulfur content (% wt)", value: $sulfur)
             field("Pour point (°F)", value: $pourPoint)
+        }
+    }
+
+    private func labelField(_ label: String, value: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label.uppercased()).font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
+            TextField("e.g. West Texas Intermediate", text: value)
+                .textInputAutocapitalization(.words)
+                .autocorrectionDisabled()
+                .textFieldStyle(.plain)
+                .padding(.horizontal, 10).padding(.vertical, 8)
+                .background(palette.bgCard.opacity(0.6))
+                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
     }
 
@@ -237,11 +256,17 @@ private struct SpectraMatchBody: View {
     }
 
     private func match() async {
+        let label = productLabel.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let api = apiGravity, let bswV = bsw else { return }
+        guard !label.isEmpty else {
+            actionError = "Enter the product or sample label — identification is matched against a real product profile, not guessed from the readings alone."
+            return
+        }
         loading = true; actionError = nil
         destinations = nil
         do {
             let r = try await EusoTripAPI.shared.spectraMatch.identify(
+                productName: label,
                 apiGravity: api,
                 bsw: bswV,
                 sulfur: sulfur,

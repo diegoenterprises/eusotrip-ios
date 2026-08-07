@@ -16112,6 +16112,13 @@ struct SpectraMatchAPI {
     /// zod fields are optional server-side and synthesized Encodable
     /// omits the nils from the wire.
     struct IdentifyInput: Encodable {
+        /// REQUIRED by the server despite being optional in the Zod object:
+        /// `spectraMatch.identify` throws PRECONDITION_FAILED "Product or
+        /// sample label is required for evidence-backed identification" when
+        /// this is absent or blank. Identification is evidence-backed against a
+        /// resolved product profile, so the label is what the readings are
+        /// matched *against* — it is not a display nicety.
+        let productName: String
         let apiGravity: Double
         let bsw: Double
         var sulfur: Double? = nil
@@ -16181,6 +16188,7 @@ struct SpectraMatchAPI {
     /// it MUST go through the POST helper — the previous raw-string
     /// GET call 405'd (`METHOD_NOT_SUPPORTED`) on every attempt.
     func identify(
+        productName: String,
         apiGravity: Double,
         bsw: Double,
         sulfur: Double? = nil,
@@ -16189,6 +16197,7 @@ struct SpectraMatchAPI {
         try await api.mutation(
             "spectraMatch.identify",
             input: IdentifyInput(
+                productName: productName,
                 apiGravity: apiGravity,
                 bsw: bsw,
                 sulfur: sulfur,

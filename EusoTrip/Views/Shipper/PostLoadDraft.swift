@@ -604,6 +604,7 @@ final class PostLoadDraft: ObservableObject {
         let destinationCountryCode: String
         let productName: String?
         let cargoType: String
+        let dangerousGoodsStatus: String
         let unNumber: String?
         let hazmatClass: String?
         let temperatureMin: Double?
@@ -621,6 +622,21 @@ final class PostLoadDraft: ObservableObject {
         let assessmentId: String
         let status: String
         let result: Result
+    }
+
+    /// The server's cargo-classification vocabulary
+    /// (`DANGEROUS_GOODS_STATUSES`). Only an explicit, fully-documented hazmat
+    /// declaration counts as `dangerous_goods`. Everything else is
+    /// `undetermined` — NEVER `not_dangerous_goods`, because that is a positive
+    /// claim requiring not-regulated documentation the shipper has not given
+    /// here, and never inferred from the trailer or the vertical: equipment
+    /// being hazmat-capable says nothing about what is actually loaded.
+    private var dangerousGoodsStatus: String {
+        let hasUN = !unNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasClass = !hazmatClass.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasName = !properShippingName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        if cargoType == .hazmat && hasUN && hasClass && hasName { return "dangerous_goods" }
+        return "undetermined"
     }
 
     private func exactCountryCode(_ country: Country) -> String? {
@@ -667,6 +683,7 @@ final class PostLoadDraft: ObservableObject {
                 destinationCountryCode: destinationCode,
                 productName: product.isEmpty ? nil : product,
                 cargoType: cargoType.rawValue,
+                dangerousGoodsStatus: dangerousGoodsStatus,
                 unNumber: unNumber.isEmpty ? nil : unNumber,
                 hazmatClass: hazmatClass.isEmpty ? nil : hazmatClass,
                 temperatureMin: reeferTempLow,
