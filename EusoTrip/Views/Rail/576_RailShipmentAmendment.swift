@@ -9,7 +9,8 @@
 //
 //  Data:
 //    railShipments.getRailShipmentDetail  (EXISTS :140)  → lifecycle + current fields
-//    railShipments.updateRailShipmentStatus (EXISTS :168) → submit amendment
+//    railShipments.reissueWaybill (EXISTS railShipments.ts:2972, MUTATION) → submit amendment (waybill revision commit)
+//    railShipments.submitAmendment → STUB · named-gap RAIL-S4-576-AMEND-WRITE (writer for eventType 'amended' — see submitAmendment())
 //    railShipments.createRailWaybill      (EXISTS :806)  → re-issue waybill after submit
 //
 
@@ -324,7 +325,7 @@ private struct RailShipmentAmendmentBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("updateRailShipmentStatus")
+                Text("reissueWaybill")  // D6 cure: chip names the procedure the CTA actually calls
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(palette.textTertiary)
             }
@@ -471,14 +472,42 @@ private struct RailShipmentAmendmentBody: View {
 
     private func submitAmendment() async {
         isSubmitting = true
-        struct SubmitIn: Encodable { let railId: String }
+        // S4 cure 2026-08-10 — this CTA was dead twice over: it GET-called a
+        // mutation (query() vs .mutation, PARITY_AND_CHAINS.md §2·S4) AND the
+        // procedure it named, railShipments.updateRailShipmentStatus
+        // (railShipments.ts:445), takes {id, newStatus} — a lifecycle
+        // transition this screen must never fabricate (the state machine has
+        // no 'amended' path; same→same is rejected).
+        // The real amendment-commit verb is railShipments.reissueWaybill
+        // (railShipments.ts:2972, MUTATION): inserts a superseding revision-
+        // tagged rail_waybills row, repoints the shipment pointer, writes the
+        // 'waybill_reissued' event + blockchainAuditTrail row, broadcasts
+        // RAIL_DOC_UPDATED, tenant-gated admin-or-shipper — which is exactly
+        // this screen's promise: "Waybill regenerates on amendment · shipper
+        // notified." It accepts shipmentId (number) or railId (shipmentNumber
+        // string); we send whichever this screen actually holds.
+        // NAMED GAP (not invented around): a writer for eventType 'amended'
+        // with metadata.amendment {fieldName, oldValue, newValue} — the rows
+        // getAmendmentChanges (railShipments.ts:2747) reads — does not exist
+        // server-side. Filed as RAIL-S4-576-AMEND-WRITE with a proposed shape;
+        // until it lands, the change-list above renders whatever history
+        // exists and this CTA commits the waybill revision, honestly.
+        struct SubmitIn: Encodable { let shipmentId: Int?; let railId: String? }
         struct SubmitOut: Decodable {
-            let success: Bool
-            let newStatus: String
+            let waybillNumber: String?
+            let revision: Int?
+            enum CodingKeys: String, CodingKey { case waybillNumber, revision }
+            init(from decoder: Decoder) throws {
+                let c = try? decoder.container(keyedBy: CodingKeys.self)
+                self.waybillNumber = try? c?.decode(String.self, forKey: .waybillNumber)
+                self.revision = try? c?.decode(Int.self, forKey: .revision)
+            }
         }
         do {
-            let _: SubmitOut = try await EusoTripAPI.shared.query(
-                "railShipments.updateRailShipmentStatus", input: SubmitIn(railId: railId))
+            let idNum = Int(railId)
+            let _: SubmitOut = try await EusoTripAPI.shared.mutation(
+                "railShipments.reissueWaybill",
+                input: SubmitIn(shipmentId: idNum, railId: idNum == nil ? railId : nil))
             submitted = true
         } catch { /* surface error in next load */ }
         isSubmitting = false

@@ -1615,7 +1615,7 @@ struct ShipperPostLoad: View {
     /// Bumped to `v: 2` when adding ERG/equipment fields beyond the
     /// original lane/cargo/rate set so older drafts in storage decode
     /// gracefully (missing fields become defaults).
-    private struct PostLoadDraftSnapshot: Codable {
+    private struct PostLoadDraftSnapshot: Codable, Sendable {
         var v: Int = 2
         var origin: String = ""
         var destination: String = ""
@@ -1773,9 +1773,8 @@ struct ShipperPostLoad: View {
         // (critically) the iCloud KVS .synchronize() — must NOT run on the
         // main thread; per-keystroke KVS sync on main froze the post-load
         // screen ("posting a load froze and crashed" — April, build 712).
-        // PostLoadDraftSnapshot is a value-type Codable struct (all String /
-        // Int / Double / Bool / optionals), so it is implicitly Sendable and
-        // safe to capture across the queue boundary.
+        // PostLoadDraftSnapshot is explicitly Sendable so Swift concurrency
+        // can verify that the value crossing this queue boundary is safe.
         let key = draftStorageKey
         DispatchQueue.global(qos: .utility).async {
             guard let data = try? JSONEncoder().encode(snap) else { return }
@@ -1876,7 +1875,6 @@ struct ShipperPostLoad: View {
     private func clearDraft() {
         UserDefaults.standard.removeObject(forKey: draftStorageKey)
         NSUbiquitousKeyValueStore.default.removeObject(forKey: draftStorageKey)
-        NSUbiquitousKeyValueStore.default.synchronize()
     }
 
     // MARK: - TopBar
@@ -7826,7 +7824,6 @@ struct ShipperPostLoadScreen: View {
                     onFresh: {
                         UserDefaults.standard.removeObject(forKey: draftStorageKey)
                         NSUbiquitousKeyValueStore.default.removeObject(forKey: draftStorageKey)
-                        NSUbiquitousKeyValueStore.default.synchronize()
                         entryChoice = .fresh
                     }
                 )

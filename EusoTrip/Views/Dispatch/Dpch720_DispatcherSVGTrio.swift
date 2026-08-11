@@ -40,6 +40,7 @@ private struct PendingTendersEnvelope: Decodable {
     var rows: [PendingTender] { tenders ?? items ?? [] }
 }
 
+// OFFLINE: queue reads READ_CACHED(2m) with staleness line; ACCEPT / COUNTER / batch-accept ONLINE_ONLY(bid-money commit) — buttons disable offline with online-required hint, timers keep counting; reconnect FULL.
 struct DispatcherTenderQueueScreen: View {
     let theme: Theme.Palette
     var body: some View {

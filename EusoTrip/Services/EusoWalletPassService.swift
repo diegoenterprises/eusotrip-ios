@@ -54,6 +54,9 @@ enum EusoWalletPassResult {
     /// model that distinction here because PassKit itself doesn't
     /// expose a clean signal for it.
     case presented
+    /// A pass with the same serial number was already installed, so Wallet
+    /// replaced it in place with the newly signed theme and current fields.
+    case updated
     /// The server returned a credential without a `.pkpass` bundle —
     /// usually because the signing pipeline is offline or the load
     /// hasn't been activated yet. Callers render the inline credential
@@ -95,6 +98,10 @@ final class EusoWalletPassService {
         let accessToken: String
         let shortCode: String
         let pkpassUrl: String?
+        let passkitStatus: String
+        let theme: EusoTripAPI.WalletThemeMetadata
+        let signedTheme: EusoTripAPI.WalletThemeMetadata?
+        let manifestDigest: String?
         let expiresAt: String
     }
 
@@ -158,21 +165,26 @@ final class EusoWalletPassService {
                 shortCode: credential.shortCode
             )
         }
+        guard credential.passkitStatus == "signed",
+              let signedTheme = credential.signedTheme,
+              signedTheme == credential.theme,
+              !(credential.manifestDigest ?? "").isEmpty else {
+            return .failure(message: "The signed pass did not match the selected Wallet design.")
+        }
 
-        // 3. Pull the .pkpass bytes. We use a fresh `URLSession` here
-        //    rather than `EusoTripAPI.session` because the bundle URL
-        //    is presigned (Azure Blob) and shouldn't carry our auth
-        //    cookies — those would just bloat the request and pin us
-        //    to a CORS-unfriendly path.
+        return await addPass(from: url, expectedTheme: signedTheme)
+    }
+
+    /// Download and install an already-minted pass URL. This is shared by the
+    /// wallet picker, BOL wallet screen, and document viewer so duplicate-pass
+    /// replacement and download security cannot drift between entry points.
+    func addPass(from url: URL,
+                 expectedTheme: EusoTripAPI.WalletThemeMetadata? = nil) async -> EusoWalletPassResult {
+        // Pull through the app's bounded, auth-aware transport. It adds the
+        // bearer only for EusoTrip hosts and leaves Azure SAS URLs untouched.
         let data: Data
         do {
-            var req = URLRequest(url: url)
-            req.timeoutInterval = 15  // app-wide no-lingering-load bound
-            let (bytes, resp) = try await URLSession.shared.data(for: req)
-            guard let http = resp as? HTTPURLResponse,
-                  (200..<300).contains(http.statusCode) else {
-                return .failure(message: "Wallet pass could not be downloaded.")
-            }
+            let (bytes, _) = try await EusoTripAPI.shared.fetchAuthenticatedData(url)
             data = bytes
         } catch {
             return .failure(message: "Couldn't download the wallet pass.")
@@ -187,8 +199,27 @@ final class EusoWalletPassService {
         } catch {
             return .failure(message: "This wallet pass is invalid or expired.")
         }
+        if let expectedTheme {
+            guard pkpass.userInfo["walletThemeId"] as? String == expectedTheme.id,
+                  pkpass.userInfo["walletThemeRevision"] as? String == expectedTheme.revision,
+                  pkpass.userInfo["walletThemeDigest"] as? String == expectedTheme.digest,
+                  pkpass.userInfo["walletThemeManifestVersion"] as? String == expectedTheme.manifestVersion,
+                  pkpass.userInfo["walletThemePassStyle"] as? String == expectedTheme.passStyle else {
+                return .failure(message: "The downloaded pass did not match the selected Wallet design.")
+            }
+        }
 
-        // 5. Present `PKAddPassesViewController` over the topmost view
+        // 5. A theme change keeps the same pass serial number. Apple Wallet
+        //    therefore needs an explicit replacement; presenting another add
+        //    sheet leaves the old design installed and may reject a duplicate.
+        let library = PKPassLibrary()
+        if library.containsPass(pkpass) {
+            return library.replacePass(with: pkpass)
+                ? .updated
+                : .failure(message: "Apple Wallet couldn't update the installed pass.")
+        }
+
+        // 6. Present `PKAddPassesViewController` over the topmost view
         //    controller. We resolve "topmost" through the active
         //    UIWindowScene — required since iOS 13 because there can
         //    be multiple windows in the foreground.

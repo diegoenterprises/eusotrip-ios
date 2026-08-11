@@ -49,21 +49,30 @@ extension EusoTripAPI {
         let accessCode: String        // the real 6-digit staffAccessTokens code
         let qrPayload: String         // canonical scannable payload (token-bearing)
         let pkpassUrl: String?        // nil → caller falls back to inline QR + code
+        let passkitStatus: String
+        let theme: WalletThemeMetadata
+        let signedTheme: WalletThemeMetadata?
+        let manifestDigest: String?
         let expiresAt: String?        // ISO-8601; the real 24h token expiry
         let staffName: String?
         let role: String?
 
         private enum CodingKeys: String, CodingKey {
-            case accessCode, qrPayload, pkpassUrl, expiresAt, staffName, role
+            case accessCode, qrPayload, pkpassUrl, passkitStatus, theme
+            case signedTheme, manifestDigest, expiresAt, staffName, role
         }
         init(from decoder: Decoder) throws {
-            let c = try? decoder.container(keyedBy: CodingKeys.self)
-            accessCode = (try? c?.decodeIfPresent(String.self, forKey: .accessCode)) ?? ""
-            qrPayload  = (try? c?.decodeIfPresent(String.self, forKey: .qrPayload)) ?? ""
-            pkpassUrl  = (try? c?.decodeIfPresent(String.self, forKey: .pkpassUrl)) ?? nil
-            expiresAt  = (try? c?.decodeIfPresent(String.self, forKey: .expiresAt)) ?? nil
-            staffName  = (try? c?.decodeIfPresent(String.self, forKey: .staffName)) ?? nil
-            role       = (try? c?.decodeIfPresent(String.self, forKey: .role)) ?? nil
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            accessCode = try c.decode(String.self, forKey: .accessCode)
+            qrPayload = try c.decode(String.self, forKey: .qrPayload)
+            pkpassUrl = try c.decodeIfPresent(String.self, forKey: .pkpassUrl)
+            passkitStatus = try c.decode(String.self, forKey: .passkitStatus)
+            theme = try c.decode(WalletThemeMetadata.self, forKey: .theme)
+            signedTheme = try c.decodeIfPresent(WalletThemeMetadata.self, forKey: .signedTheme)
+            manifestDigest = try c.decodeIfPresent(String.self, forKey: .manifestDigest)
+            expiresAt = try c.decodeIfPresent(String.self, forKey: .expiresAt)
+            staffName = try c.decodeIfPresent(String.self, forKey: .staffName)
+            role = try c.decodeIfPresent(String.self, forKey: .role)
         }
     }
 
@@ -105,10 +114,17 @@ extension EusoTripAPI {
     /// access code. `themeId` carries the picked wallet style so the access
     /// card matches the user's chosen look.
     func createStaffAccessCredential(themeId: String? = nil,
+                                     themeRevision: String? = nil,
                                      expiresInHours: Int = 24) async throws -> StaffAccessCredential {
-        struct In: Encodable { let themeId: String?; let expiresInHours: Int }
+        struct In: Encodable {
+            let themeId: String?
+            let themeRevision: String?
+            let expiresInHours: Int
+        }
         return try await mutation("terminals.createStaffAccessCredential",
-                                  input: In(themeId: themeId, expiresInHours: expiresInHours))
+                                  input: In(themeId: themeId,
+                                            themeRevision: themeRevision,
+                                            expiresInHours: expiresInHours))
     }
 
     // MARK: - Controller side — verify a scanned / typed credential

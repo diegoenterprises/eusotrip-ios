@@ -157,10 +157,7 @@ private struct LoadConsolBody: View {
                             .frame(maxWidth: 320)
                             .opacity(0.92)
                             .shadow(color: .black.opacity(0.25), radius: 10, x: 0, y: 4)
-                    }
-                    .onDrag {
-                        draggingGroupId = g.id
-                        return NSItemProvider(object: g.id as NSString)
+                            .onAppear { draggingGroupId = g.id }
                     }
             }
         }
@@ -215,9 +212,11 @@ private struct LoadConsolBody: View {
         } catch {
             await MainActor.run {
                 actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+                draggingGroupId = nil
+                dropHover = false
             }
         }
-        await MainActor.run { executing = nil }
+        await MainActor.run { executing = nil; dropHover = false }
     }
 }
 

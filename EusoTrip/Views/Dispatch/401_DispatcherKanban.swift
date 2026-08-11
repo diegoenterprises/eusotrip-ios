@@ -1,5 +1,6 @@
 //
 //  401_DispatcherKanban.swift
+// OFFLINE: board READ_CACHED(5m); stage-shift QUEUE(dispatch) — offline tap+confirm enqueues shiftStage, moved card wears a QUEUED badge until the socket drains; assign-driver same lane (idempotencyKey); queued vs cached visibly distinct; reconnect FULL.
 //  EusoTrip — Dispatcher · Board · Kanban (iOS-native vertical swim-lane refit).
 //
 //  Verbatim reconstruction of wireframe "401 Dispatcher Kanban · Dark"
@@ -77,6 +78,19 @@ private struct UnifiedLoadsResponse: Decodable, Hashable {
     let total: Int
     struct Summary: Decodable, Hashable { let unassigned: Int; let assigned: Int; let inTransit: Int; let delivered: Int }
     let summary: Summary
+}
+
+private struct DispatcherMutationResult: Decodable {
+    let success: Bool?
+    let message: String?
+    let error: String?
+
+    func failureMessage(fallback: String) -> String? {
+        guard success == false else { return nil }
+        return [message, error]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first(where: { !$0.isEmpty }) ?? fallback
+    }
 }
 
 // MARK: - Lane model (verbatim from wireframe — TENDER · ASSIGNED · PICKUP · IN TRANSIT · DELIVERED)
@@ -257,17 +271,12 @@ private struct DispatcherKanbanBody: View {
 
     private func laneView(_ lane: KanbanLane) -> some View {
         let cards = filtered(byLane[lane.id] ?? [])
-        let previewCards = Array(cards.prefix(4))
         return VStack(alignment: .leading, spacing: 10) {
-            // Lane header: "TENDER · 8"  ………………  "see all ›"
             HStack {
                 Text("\(lane.label) · \(cards.count)")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(lane.accent.color(palette))
                 Spacer(minLength: 0)
-                Text("see all ›")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(palette.textTertiary)
             }
             Rectangle().fill(palette.borderFaint).frame(height: 1)
 
@@ -285,8 +294,8 @@ private struct DispatcherKanbanBody: View {
                     alignment: .leading,
                     spacing: 10
                 ) {
-                    ForEach(previewCards) { l in
-                        Button { sheetLoad = l } label: { cardView(l, lane: lane) }
+                    ForEach(cards) { l in
+                        Button { handleCardTap(l, in: lane) } label: { cardView(l, lane: lane) }
                             .buttonStyle(.plain)
                             .draggable(String(l.id)) {
                                 dragPreview(l, lane: lane)
@@ -297,14 +306,6 @@ private struct DispatcherKanbanBody: View {
                                 }
                             )
                     }
-                }
-
-                if cards.count > previewCards.count {
-                    Text("\(cards.count - previewCards.count) more in \(lane.label.capitalized) · tap See all for the full lane")
-                        .font(EType.micro)
-                        .tracking(0.5)
-                        .foregroundStyle(palette.textTertiary)
-                        .padding(.top, 2)
                 }
             }
         }
@@ -323,6 +324,7 @@ private struct DispatcherKanbanBody: View {
         )
         .dropDestination(for: String.self) { ids, _ in
             guard let raw = ids.first, let loadId = Int(raw) else { return false }
+            guard shifting == nil else { return false }
             Task { await drop(loadId, into: lane) }
             return true
         } isTargeted: { targeted in
@@ -390,7 +392,7 @@ private struct DispatcherKanbanBody: View {
                 .padding(.leading, 9)
                 .padding(.trailing, 10)
             }
-            .frame(maxWidth: .infinity, minHeight: 88, maxHeight: 88, alignment: .topLeading)
+            .frame(maxWidth: .infinity, minHeight: 96, alignment: .topLeading)
             .background(palette.bgCard)
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
@@ -408,7 +410,8 @@ private struct DispatcherKanbanBody: View {
 
     private func dragPreview(_ l: KanbanLoad, lane: KanbanLane) -> some View {
         cardView(l, lane: lane)
-            .frame(width: 190, height: 92)
+            .frame(width: 190)
+            .frame(minHeight: 100)
             .onAppear { armDragFeedback(for: l.id) }
     }
 
@@ -468,6 +471,7 @@ private struct DispatcherKanbanBody: View {
 
     private func confirmSheet(_ l: KanbanLoad) -> some View {
         let lane = currentLane(for: l.status) ?? kanbanLanes[0]
+        let needsDriver = lane.id == "tender" && (l.driverName?.isEmpty != false)
         return VStack(alignment: .leading, spacing: 0) {
             // Grabber.
             Capsule().fill(palette.borderSoft)
@@ -506,11 +510,15 @@ private struct DispatcherKanbanBody: View {
             // Action row:  [Confirm shift →]   [Cancel]
             HStack(spacing: 12) {
                 Button {
-                    if let next = lane.nextStatus { Task { await shift(l, to: next) } }
+                    if needsDriver {
+                        openAssignDriver(l)
+                    } else if let next = lane.nextStatus {
+                        Task { await shift(l, to: next) }
+                    }
                 } label: {
                     HStack(spacing: 6) {
                         if shifting == l.id { ProgressView().tint(.white).controlSize(.small) }
-                        Text(lane.nextStatus == nil ? "Delivered" : "Confirm shift →")
+                        Text(needsDriver ? "Assign driver" : (lane.nextStatus == nil ? "Delivered" : "Confirm shift →"))
                             .font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
                     }
                     .frame(maxWidth: .infinity, minHeight: 36)
@@ -574,6 +582,27 @@ private struct DispatcherKanbanBody: View {
         )
     }
 
+    private func openAssignDriver(_ l: KanbanLoad) {
+        sheetLoad = nil
+        NotificationCenter.default.post(
+            name: .eusoDispatchNavSwap,
+            object: nil,
+            userInfo: [
+                "screenId": "532",
+                "loadId": String(l.id),
+                "loadNumber": l.loadNumber,
+            ]
+        )
+    }
+
+    private func handleCardTap(_ l: KanbanLoad, in lane: KanbanLane) {
+        if lane.id == "tender", l.driverName?.isEmpty != false {
+            openAssignDriver(l)
+        } else {
+            sheetLoad = l
+        }
+    }
+
     private func stagePill(_ text: String, color: Color) -> some View {
         Text(text)
             .font(.system(size: 9, weight: .heavy))
@@ -604,14 +633,21 @@ private struct DispatcherKanbanBody: View {
     }
 
     private func shift(_ l: KanbanLoad, to next: String) async {
+        guard shifting == nil else { return }
         shifting = l.id; actionError = nil
         struct In: Encodable { let loadId: String; let status: String }
-        struct Out: Decodable { let success: Bool? }
         do {
-            let _: Out = try await EusoTripAPI.shared.mutation(
+            let response: DispatcherMutationResult = try await EusoTripAPI.shared.mutation(
                 "dispatch.updateLoadStatus", input: In(loadId: String(l.id), status: next))
-            sheetLoad = nil
-            await load()
+            if let failure = response.failureMessage(
+                fallback: "The server rejected the stage change for \(l.loadNumber)."
+            ) {
+                actionError = failure
+                await load()
+            } else {
+                sheetLoad = nil
+                await load()
+            }
         } catch {
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
@@ -619,16 +655,63 @@ private struct DispatcherKanbanBody: View {
     }
 
     private func drop(_ loadId: Int, into lane: KanbanLane) async {
-        guard let load = allLoads.first(where: { $0.id == loadId }) else { return }
-        guard currentLane(for: load.status)?.id != lane.id else {
-            await MainActor.run {
-                dropLaneId = nil
-                draggingLoadId = nil
-            }
+        guard let load = allLoads.first(where: { $0.id == loadId }),
+              let source = currentLane(for: load.status),
+              let sourceIndex = kanbanLanes.firstIndex(where: { $0.id == source.id }),
+              let targetIndex = kanbanLanes.firstIndex(where: { $0.id == lane.id }) else {
+            await resetDragState()
             return
         }
-        guard let status = dropStatus(for: lane) else { return }
-        await shift(load, to: status)
+        guard source.id != lane.id else {
+            await resetDragState()
+            return
+        }
+
+        if source.id == "assigned", lane.id == "tender" {
+            await unassign(load)
+        } else if targetIndex == sourceIndex + 1 {
+            if lane.id == "assigned", load.driverName?.isEmpty != false {
+                await MainActor.run {
+                    actionError = "Assign a driver before moving \(load.loadNumber) into Assigned."
+                    openAssignDriver(load)
+                }
+            } else if let status = dropStatus(for: lane) {
+                await shift(load, to: status)
+            }
+        } else {
+            await MainActor.run {
+                actionError = "Move \(load.loadNumber) one operational stage at a time."
+            }
+        }
+        await resetDragState()
+    }
+
+    private func unassign(_ l: KanbanLoad) async {
+        guard shifting == nil else { return }
+        shifting = l.id
+        actionError = nil
+        struct In: Encodable { let loadId: String; let reason: String }
+        do {
+            let response: DispatcherMutationResult = try await EusoTripAPI.shared.mutation(
+                "dispatch.unassignDriver",
+                input: In(loadId: String(l.id), reason: "Dispatcher Kanban move to Tender")
+            )
+            if let failure = response.failureMessage(
+                fallback: "The server rejected the unassignment for \(l.loadNumber)."
+            ) {
+                actionError = failure
+                await load()
+            } else {
+                sheetLoad = nil
+                await load()
+            }
+        } catch {
+            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+        shifting = nil
+    }
+
+    private func resetDragState() async {
         await MainActor.run {
             dropLaneId = nil
             draggingLoadId = nil

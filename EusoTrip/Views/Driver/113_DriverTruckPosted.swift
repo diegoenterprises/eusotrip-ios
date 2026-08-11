@@ -20,40 +20,10 @@
 //        the load. Honest-empty when there are no offers yet — the truck
 //        is live and visible; we never fabricate an offer.
 //
-//  ─────────────────────────────────────────────────────────────────────
-//  SERVER CONTRACT — what's actually deployed vs. the idealized brief
-//  ─────────────────────────────────────────────────────────────────────
-//  The task brief describes a `truck_postings` / `truck_offers` model with
-//  `postTruck / listInboundOffers / acceptOffer / pauseTruck` — that lights
-//  up only once the founder applies migration 0339. The CURRENTLY DEPLOYED
-//  `frontend/server/routers/truckPosting.ts` (MCP-verified 2026-06-18)
-//  exposes the equivalent honest surface that exists TODAY:
-//
-//    • postTruck(vehicleId, currentLocation{lat,lng,city?,state?},
-//                availableDate, preferredDestinations?, maxDistance?,
-//                hazmatEndorsed, hazmatClasses?, notes?)
-//        → marks the assigned vehicle "available" (the posting). Equipment
-//          type is read SERVER-SIDE off the vehicle row, so the client only
-//          needs vehicleId + location + availableDate.
-//    • getMatchSuggestions(vehicleId) → the inbound OFFERS: real broker
-//        loads (`loads` rows in 'posted'/'bidding') scored against the
-//        posted truck's equipment + hazmat quals. This IS "loads come to
-//        you" using live data — no offer is invented.
-//    • getMyFleetAvailability() → resolves whether the truck is already
-//        posted (status == "available") so the surface restores state.
-//    • removeTruck(vehicleId) → pause/unpost.
-//    • getCapacityStats(state?) → the live load-to-truck ratio shown as the
-//        "market" pulse on the posted-state header.
-//
-//  The one-tap ACCEPT books via `loads.acceptLoad` (the same proc the
-//  Eusoboards "Accept" CTA uses — server runs identity + carrier-vetting
-//  gates). When the 0339 `acceptOffer(offerId)` path ships, swap the body
-//  of `TruckPostingViewModel.accept(_:)` — the call site is isolated.
-//
-//  Assumptions (noted per the brief): offer rows are modeled as match
-//  suggestions until `truck_offers` exists; accept routes through
-//  `loads.acceptLoad(loadId:)`. Both degrade to honest-empty / honest-error
-//  if the proc returns nothing.
+//  SERVER CONTRACT: durable truck_postings + truck_offers. The screen reads
+//  the authenticated driver's owner-scoped posting and pending offer rows;
+//  accept and decline mutate those same rows. Acceptance is atomic with the
+//  load, vehicle, and driver assignment and remains identity/vetting gated.
 //
 //  DESIGN — flip-card / inspiring-surface language (FlipTile, Hot Zones
 //  bespoke tiles, WeatherV3, HotZonePulseChart): zero SF Symbols on the
@@ -70,13 +40,13 @@ import CoreLocation
 
 // MARK: - Offer model (the inbound row)
 
-/// One inbound offer on the posted truck. Modeled on the deployed
-/// `truckPosting.getMatchSuggestions` row (a real broker load scored
-/// against the posted truck). When the 0339 `truck_offers` table ships,
-/// this same shape decodes `listInboundOffers` with `offeredRate`/`status`
-/// mapped onto `rate`/`statusRaw`.
-struct TruckInboundOffer: Identifiable, Decodable, Equatable {
-    let loadId: Int
+/// Driver-card projection of one durable `truck_offers` row. Missing joined
+/// load/provider fields remain nil and render as unavailable; no numeric value
+/// is synthesized to make an incomplete offer look whole.
+struct TruckInboundOffer: Identifiable, Equatable {
+    let offerId: Int
+    let postingId: Int
+    let loadId: Int?
     let loadNumber: String?
     let statusRaw: String?
     let cargoType: String?
@@ -85,42 +55,35 @@ struct TruckInboundOffer: Identifiable, Decodable, Equatable {
     let origin: String?
     let destination: String?
     /// The offered/load rate — the hero metric on the offer card.
-    let rate: Double
+    let rate: Double?
     let pickupDate: String?
-    /// 0…100 match confidence (server `matchScore`). Drives the ring.
-    let matchScore: Int
-    let hazmatMatch: Bool?
+    let brokerName: String?
 
-    var id: Int { loadId }
+    var id: Int { offerId }
 
-    /// Decoded leniently so BOTH the match-suggestion shape (loadId,
-    /// matchScore) and a future `truck_offers` shape (offerId→loadId,
-    /// offeredRate→rate, status→statusRaw) hydrate without a re-write.
-    enum CodingKeys: String, CodingKey {
-        case loadId, offerId, loadNumber, status, cargoType, hazmatClass
-        case commodityName, origin, destination, rate, offeredRate
-        case pickupDate, matchScore, hazmatMatch
+    init(_ row: CarrierTruckInboundOffer) {
+        offerId = row.offerId
+        postingId = row.postingId
+        loadId = row.load?.id
+        loadNumber = row.load?.loadNumber
+        statusRaw = row.status
+        cargoType = row.load?.cargoType
+        hazmatClass = row.load?.hazmatClass
+        commodityName = row.load?.commodityName
+        origin = Self.place(row.load?.origin)
+        destination = Self.place(row.load?.destination)
+        rate = row.offeredRate ?? row.load?.rate
+        pickupDate = row.load?.pickupDate
+        brokerName = row.broker?.name
     }
 
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        // loadId is canonical; fall back to offerId if a truck_offers row.
-        self.loadId = (try? c.decode(Int.self, forKey: .loadId))
-            ?? (try? c.decode(Int.self, forKey: .offerId))
-            ?? 0
-        self.loadNumber = try? c.decodeIfPresent(String.self, forKey: .loadNumber)
-        self.statusRaw = try? c.decodeIfPresent(String.self, forKey: .status)
-        self.cargoType = try? c.decodeIfPresent(String.self, forKey: .cargoType)
-        self.hazmatClass = try? c.decodeIfPresent(String.self, forKey: .hazmatClass)
-        self.commodityName = try? c.decodeIfPresent(String.self, forKey: .commodityName)
-        self.origin = try? c.decodeIfPresent(String.self, forKey: .origin)
-        self.destination = try? c.decodeIfPresent(String.self, forKey: .destination)
-        self.rate = (try? c.decode(Double.self, forKey: .rate))
-            ?? (try? c.decode(Double.self, forKey: .offeredRate))
-            ?? 0
-        self.pickupDate = try? c.decodeIfPresent(String.self, forKey: .pickupDate)
-        self.matchScore = (try? c.decodeIfPresent(Int.self, forKey: .matchScore)) ?? 0
-        self.hazmatMatch = try? c.decodeIfPresent(Bool.self, forKey: .hazmatMatch)
+    private static func place(_ value: CarrierTruckInboundOffer.OfferLoad.Place?) -> String? {
+        guard let value else { return nil }
+        let label = [value.city, value.state]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: ", ")
+        return label.isEmpty ? nil : label
     }
 
     /// "Atlanta, GA → Dallas, TX" — falls to an em-dash when the lane
@@ -134,7 +97,7 @@ struct TruckInboundOffer: Identifiable, Decodable, Equatable {
     /// "$3,250" — the offered rate as the card's hero numeral. Em-dash
     /// when the row carries no rate.
     var rateDisplay: String {
-        guard rate > 0 else { return "—" }
+        guard let rate, rate > 0 else { return "—" }
         let f = NumberFormatter()
         f.numberStyle = .currency
         f.maximumFractionDigits = 0
@@ -143,9 +106,10 @@ struct TruckInboundOffer: Identifiable, Decodable, Equatable {
     }
 
     var brokerDisplay: String {
+        if let n = brokerName, !n.isEmpty { return n }
         if let n = commodityName, !n.isEmpty { return n }
         if let n = loadNumber, !n.isEmpty { return "Load \(n)" }
-        return "Broker offer"
+        return "Inbound offer"
     }
 
     var isHazmat: Bool { (hazmatClass?.isEmpty == false) }
@@ -258,7 +222,8 @@ final class TruckPostingViewModel: ObservableObject {
             return
         }
 
-        // Is this vehicle already posted (status == available)?
+        // Read the durable posting row. `vehicles.status == available` is not
+        // proof of a posting: a newly claimed unit is also available.
         let alreadyPosted = await isAlreadyPosted(vehicleId: vid)
         if alreadyPosted {
             phase = .posted
@@ -365,15 +330,10 @@ final class TruckPostingViewModel: ObservableObject {
     }
 
     private func isAlreadyPosted(vehicleId: Int) async -> Bool {
-        struct In: Encodable { let status: String }
-        struct Row: Decodable { let id: Int; let status: String? }
         do {
-            let rows: [Row] = try await api.query(
-                "truckPosting.getMyFleetAvailability",
-                input: In(status: "available")
-            )
-            return rows.contains { $0.id == vehicleId && ($0.status ?? "") == "available" }
+            return try await api.truckPosting.getPosting(vehicleId: vehicleId) != nil
         } catch {
+            actionError = "Couldn't verify your current truck posting. \(humanError(error))"
             return false
         }
     }
@@ -394,28 +354,23 @@ final class TruckPostingViewModel: ObservableObject {
         actionError = nil
         defer { postingInFlight = false }
 
-        struct Loc: Encodable { let lat: Double; let lng: Double; let city: String?; let state: String? }
-        struct In: Encodable {
-            let vehicleId: Int
-            let currentLocation: Loc
-            let availableDate: String
-            let preferredDestinations: [String]?
-            let hazmatEndorsed: Bool
-        }
-        struct Out: Decodable { let success: Bool?; let status: String? }
-
         let iso = ISO8601DateFormatter()
-        let input = In(
-            vehicleId: vid,
-            currentLocation: Loc(lat: coord.latitude, lng: coord.longitude,
-                                 city: originCity, state: originState),
-            availableDate: iso.string(from: availableFrom),
-            preferredDestinations: preferredDest.flatMap { $0.isEmpty ? nil : [$0] },
-            hazmatEndorsed: false
-        )
         do {
-            let _: Out = try await api.mutation("truckPosting.postTruck", input: input)
+            let result = try await api.truckPosting.postTruck(
+                vehicleId: vid,
+                currentLocation: TruckPostLocation(
+                    lat: coord.latitude,
+                    lng: coord.longitude,
+                    city: originCity,
+                    state: originState
+                ),
+                availableDate: iso.string(from: availableFrom),
+                preferredDestinations: preferredDest.flatMap { $0.isEmpty ? nil : [$0] }
+            )
             phase = .posted
+            if result.matcherStatus == "degraded" {
+                actionError = "Your truck is posted, but new-offer matching is temporarily delayed. Existing offers remain available."
+            }
             await refreshOffers()
             await refreshMarket()
         } catch {
@@ -441,19 +396,23 @@ final class TruckPostingViewModel: ObservableObject {
 
     /// Refresh the inbound offers. Bounded; preserves last-good on failure.
     func refreshOffers() async {
-        guard let vid = vehicleId else { return }
+        guard vehicleId != nil else { return }
         offersLoading = true
         defer { offersLoading = false }
-        struct In: Encodable { let vehicleId: Int; let limit: Int }
         do {
-            let rows: [TruckInboundOffer] = try await api.query(
-                "truckPosting.getMatchSuggestions",
-                input: In(vehicleId: vid, limit: 25)
+            let envelope = try await api.truckPosting.listInboundOffers(
+                status: "pending",
+                runMatcher: true,
+                limit: 25
             )
-            offers = rows
+            offers = envelope.offers.map(TruckInboundOffer.init)
+            if envelope.matcherStatus == "degraded" {
+                actionError = "Existing offers are current, but matching new loads is temporarily delayed."
+            }
         } catch {
-            // Keep last-good offers; only surface error when we had none.
-            if offers.isEmpty { actionError = nil }
+            if offers.isEmpty {
+                actionError = "Couldn't refresh inbound offers. \(humanError(error))"
+            }
         }
     }
 
@@ -477,23 +436,35 @@ final class TruckPostingViewModel: ObservableObject {
 
     // MARK: Accept (one-tap booking)
 
-    /// ONE-TAP accept → books the load. Routes through the typed
-    /// `drivers.acceptLoad` wrapper (server runs the identity-at-booking +
-    /// carrier-vetting gates and the FSM tender guard) until the 0339
-    /// `acceptOffer(offerId)` proc ships — then swap this one body.
+    /// ONE-TAP accept books the durable offer. The server freezes the exact
+    /// posting vehicle and driver, runs identity/carrier-vetting gates, then
+    /// locks offer, posting, load, vehicle, and driver in one transaction.
     func accept(_ offer: TruckInboundOffer) async {
-        acceptingLoadId = offer.loadId
+        acceptingLoadId = offer.offerId
         actionError = nil
         defer { acceptingLoadId = nil }
         do {
-            _ = try await api.drivers.acceptLoad(loadId: String(offer.loadId))
-            bookedLoadId = offer.loadId
-            // Booked load leaves the inbound stack.
-            offers.removeAll { $0.loadId == offer.loadId }
-            // Tell the rest of the app a load just landed.
+            let result = try await api.truckPosting.acceptOffer(offerId: offer.offerId)
+            bookedLoadId = offer.offerId
+            offers.removeAll { $0.offerId == offer.offerId }
             NotificationCenter.default.post(name: .eusoLoadAssigned, object: nil)
+            if result.postingStatus == "matched" { phase = .posted }
+        } catch let gate as TruckPostingGateError {
+            actionError = gate.errorDescription
         } catch {
             actionError = "Couldn't book this load. \(humanError(error))"
+        }
+    }
+
+    func decline(_ offer: TruckInboundOffer) async {
+        acceptingLoadId = offer.offerId
+        actionError = nil
+        defer { acceptingLoadId = nil }
+        do {
+            _ = try await api.truckPosting.declineOffer(offerId: offer.offerId)
+            offers.removeAll { $0.offerId == offer.offerId }
+        } catch {
+            actionError = "Couldn't decline this offer. \(humanError(error))"
         }
     }
 
@@ -911,21 +882,21 @@ struct DriverTruckPosted: View {
         .eusoCard()
     }
 
-    /// One inbound offer as a flip card. FRONT: broker · lane · rate hero
-    /// metric · match ring. BACK: detail + one-tap ACCEPT.
+    /// One durable inbound offer as a flip card. FRONT: buyer · lane · offered
+    /// rate. BACK: detail plus accept/decline mutations on the same offer row.
     private func offerCard(_ offer: TruckInboundOffer) -> some View {
-        FlipTile(isFlipped: flipped.contains(offer.loadId)) {
+        FlipTile(isFlipped: flipped.contains(offer.id)) {
             offerFront(offer)
         } back: {
             offerBack(offer)
         }
         .onTapGesture {
             withAnimation(.spring(response: 0.5, dampingFraction: 0.78)) {
-                if flipped.contains(offer.loadId) { flipped.remove(offer.loadId) }
-                else { flipped.insert(offer.loadId) }
+                if flipped.contains(offer.id) { flipped.remove(offer.id) }
+                else { flipped.insert(offer.id) }
             }
         }
-        .sensoryFeedback(.selection, trigger: flipped.contains(offer.loadId))
+        .sensoryFeedback(.selection, trigger: flipped.contains(offer.id))
     }
 
     private func offerFront(_ offer: TruckInboundOffer) -> some View {
@@ -939,7 +910,10 @@ struct DriverTruckPosted: View {
                 if offer.isHazmat {
                     StatusPill(text: "Hazmat", kind: .hazmat)
                 }
-                MatchRing(score: offer.matchScore).frame(width: 30, height: 30)
+                StatusPill(
+                    text: (offer.statusRaw ?? "pending").replacingOccurrences(of: "_", with: " ").capitalized,
+                    kind: .info
+                )
             }
             Text(offer.rateDisplay)
                 .font(.system(size: 34, weight: .heavy))
@@ -973,33 +947,44 @@ struct DriverTruckPosted: View {
             detailLine("Lane", offer.laneDisplay)
             detailLine("Commodity", offer.commodityName ?? "—")
             detailLine("Rate", offer.rateDisplay)
-            detailLine("Match", offer.matchScore > 0 ? "\(offer.matchScore)%" : "—")
+            detailLine("Status", (offer.statusRaw ?? "—").replacingOccurrences(of: "_", with: " ").capitalized)
 
-            // The one-tap ACCEPT. Confirms the booking inline.
-            Button {
-                Task { await vm.accept(offer) }
-            } label: {
-                HStack(spacing: Space.s2) {
-                    if vm.acceptingLoadId == offer.loadId {
-                        ProgressView().tint(.white).controlSize(.small)
-                        Text("Booking…")
-                    } else {
-                        CheckGlyph().stroke(Color.white, lineWidth: 2.2)
-                            .frame(width: 16, height: 16)
-                        Text("Accept · book this load")
-                    }
+            HStack(spacing: Space.s2) {
+                Button("Decline") {
+                    Task { await vm.decline(offer) }
                 }
                 .font(EType.bodyStrong)
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity)
+                .foregroundStyle(palette.textSecondary)
+                .frame(minWidth: 88)
                 .padding(.vertical, 14)
-                .background(LinearGradient.diagonal)
+                .background(palette.bgCardSoft)
                 .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-                .opacity(vm.acceptingLoadId == offer.loadId ? 0.7 : 1)
+
+                Button {
+                    Task { await vm.accept(offer) }
+                } label: {
+                    HStack(spacing: Space.s2) {
+                        if vm.acceptingLoadId == offer.offerId {
+                            ProgressView().tint(.white).controlSize(.small)
+                            Text("Booking…")
+                        } else {
+                            CheckGlyph().stroke(Color.white, lineWidth: 2.2)
+                                .frame(width: 16, height: 16)
+                            Text("Accept")
+                        }
+                    }
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(LinearGradient.diagonal)
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                }
             }
             .buttonStyle(.plain)
             .disabled(vm.acceptingLoadId != nil)
-            .sensoryFeedback(.success, trigger: vm.bookedLoadId == offer.loadId)
+            .opacity(vm.acceptingLoadId == offer.offerId ? 0.7 : 1)
+            .sensoryFeedback(.success, trigger: vm.bookedLoadId == offer.offerId)
         }
         .padding(Space.s5)
         .frame(maxWidth: .infinity, minHeight: 168, alignment: .topLeading)

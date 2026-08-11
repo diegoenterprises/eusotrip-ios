@@ -19,19 +19,28 @@ import SwiftUI
 
 struct BiddingLiveFeedScreen: View {
     let theme: Theme.Palette
-    let loadId: String
+    let loadId: String?
 
     var body: some View {
-        Shell(theme: theme) {
-            LifecycleScaffold(
-                loadId: loadId,
-                eyebrow: "SHIPPER · BIDDING · LIVE · STAGE 2 OF 8",
-                cycleStatus: "bidding"
-            ) { live in
-                BiddingBody(live: live, loadId: loadId)
+        if let routedLoadId = ShipperLoadIdResolver.normalize(loadId) {
+            Shell(theme: theme) {
+                LifecycleScaffold(
+                    loadId: routedLoadId,
+                    eyebrow: "SHIPPER · BIDDING · LIVE · STAGE 2 OF 8",
+                    cycleStatus: "bidding"
+                ) { live in
+                    BiddingBody(live: live, loadId: routedLoadId)
+                }
+            } nav: {
+                shipperLifecycleNav()
             }
-        } nav: {
-            shipperLifecycleNav()
+        } else {
+            ShipperRecordContextUnavailableScreen(
+                theme: theme,
+                systemImage: "hand.raised.slash",
+                title: "Bidding unavailable",
+                subtitle: "Open a posted load with active bidding to view and award its offers."
+            )
         }
     }
 }
@@ -161,10 +170,7 @@ private struct BiddingBody: View {
                                     .frame(maxWidth: 320)
                                     .opacity(0.92)
                                     .shadow(color: .black.opacity(0.25), radius: 10, x: 0, y: 4)
-                            }
-                            .onDrag {
-                                draggingBidId = bid.id
-                                return NSItemProvider(object: bid.id as NSString)
+                                    .onAppear { draggingBidId = bid.id }
                             }
                     }
                 }
@@ -246,9 +252,11 @@ private struct BiddingBody: View {
         } catch {
             await MainActor.run {
                 actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+                draggingBidId = nil
+                dropHover = false
             }
         }
-        await MainActor.run { processingBidId = nil }
+        await MainActor.run { processingBidId = nil; dropHover = false }
     }
 
     private func initials(_ name: String) -> String {
@@ -258,11 +266,11 @@ private struct BiddingBody: View {
 }
 
 #Preview("261 · Bidding · Live feed · Night") {
-    BiddingLiveFeedScreen(theme: Theme.dark, loadId: "0")
+    BiddingLiveFeedScreen(theme: Theme.dark, loadId: "1")
         .environmentObject(EusoTripSession()).preferredColorScheme(.dark)
 }
 
 #Preview("261 · Bidding · Live feed · Afternoon") {
-    BiddingLiveFeedScreen(theme: Theme.light, loadId: "0")
+    BiddingLiveFeedScreen(theme: Theme.light, loadId: "1")
         .environmentObject(EusoTripSession()).preferredColorScheme(.light)
 }

@@ -11,15 +11,12 @@
 //  presented as a bespoke iridescent "credential card" (a drawn pass-mark
 //  on a matte chip + the readiness/expiry rail) instead of a plain row.
 //
-//  DATA + FUNCTION PRESERVED 1:1 — only the presentation changed:
-//    • `documents.signWalletPass` (input { loadId: Int }) → `PassUrl`
-//      { url, expiresAt }. Same proc, same input, same decode.
-//    • `openPass(url)` downloads the signed `.pkpass` over the BOUNDED
-//      session (15s, no-lingering-load rule), wraps it in `PKPass`, and
-//      presents `PKAddPassesViewController` from the key window — unchanged.
-//    • Honest degrade unchanged: a thrown sign → `pass = nil` → the honest
-//      "not yet on this deploy" state (PassKit pass-type ID + certs are a
-//      server prerequisite). Loading + error states preserved.
+//  DATA + FUNCTION:
+//    • `eusoWallet.createPickupCredential` is the canonical audited mutation.
+//    • The shared PassKit service downloads, validates, adds, or replaces the
+//      signed pass so a selected design updates an already-installed pass.
+//    • Signing-unavailable and network errors remain explicit; no `try?`
+//      collapse and no synthetic success state.
 //    • `humanISO(expiresAt)` for the expiry. ZERO fabricated values.
 //
 
@@ -37,6 +34,7 @@ struct WalletPassScreen: View {
 private struct PassUrl: Decodable, Hashable {
     let url: String
     let expiresAt: String?
+    let theme: EusoTripAPI.WalletThemeMetadata
 }
 
 private struct WalletPassBody: View {
@@ -46,6 +44,8 @@ private struct WalletPassBody: View {
     @State private var pass: PassUrl? = nil
     @State private var loading = true
     @State private var loadError: String? = nil
+    @State private var walletMessage: String? = nil
+    @State private var fallbackShortCode: String? = nil
 
     private var isDark: Bool { palette.bgPage == Theme.dark.bgPage }
 
@@ -62,6 +62,14 @@ private struct WalletPassBody: View {
                     passCard(p)
                 } else {
                     pendingState
+                }
+
+                if let walletMessage {
+                    LifecycleCard(accentDanger: walletMessage.hasPrefix("Wallet error")) {
+                        Text(walletMessage)
+                            .font(EType.caption)
+                            .foregroundStyle(walletMessage.hasPrefix("Wallet error") ? Brand.danger : palette.textSecondary)
+                    }
                 }
 
                 Color.clear.frame(height: 96)
@@ -178,7 +186,7 @@ private struct WalletPassBody: View {
 
             // ── ADD TO WALLET — the headline action (drawn wallet glyph) ──
             Button {
-                openPass(p.url)
+                Task { await openPass(p) }
             } label: {
                 HStack(spacing: 10) {
                     WalletGlyph(kind: .wallet, size: 17, tint: AnyShapeStyle(LinearGradient.diagonal), lineWidth: 1.7)
@@ -236,7 +244,7 @@ private struct WalletPassBody: View {
         .accessibilityHidden(true)
     }
 
-    // MARK: Honest pending state — signing not on this deploy
+    // MARK: Honest credential fallback
 
     private var pendingState: some View {
         VStack(alignment: .leading, spacing: Space.s3) {
@@ -250,9 +258,10 @@ private struct WalletPassBody: View {
             }
             .frame(width: 44, height: 44)
             VStack(alignment: .leading, spacing: 4) {
-                Text("Wallet pass not on this deploy yet")
+                Text("Apple Wallet pass unavailable")
                     .font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-                Text("Pass signing needs the iOS Wallet pass-type ID and certificates on the server. Once enabled, the signed pass appears here.")
+                Text(fallbackShortCode.map { "Use the in-app pickup credential or gate code \($0) for this load." }
+                     ?? "Use the in-app pickup credential and gate code for this load.")
                     .font(EType.caption).foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -262,36 +271,47 @@ private struct WalletPassBody: View {
         .eusoCard(radius: Radius.lg, intensity: .standard)
     }
 
-    // MARK: - Function — PRESERVED 1:1 (download + present the signed pass)
+    // MARK: - Signed pass handoff
 
-    private func openPass(_ url: String) {
-        guard let u = URL(string: url) else { return }
-        Task {
-            var req = URLRequest(url: u)
-            req.timeoutInterval = 15  // app-wide no-lingering-load bound
-            if let (data, _) = try? await URLSession.shared.data(for: req),
-               let pkPass = try? PKPass(data: data),
-               let vc = PKAddPassesViewController(pass: pkPass) {
-                await MainActor.run {
-                    UIApplication.shared.connectedScenes
-                        .compactMap { ($0 as? UIWindowScene)?.keyWindow?.rootViewController }
-                        .first?.present(vc, animated: true)
-                }
-            }
+    private func openPass(_ pass: PassUrl) async {
+        guard let passURL = URL(string: pass.url) else {
+            walletMessage = "Wallet error: the signed pass URL is invalid."
+            return
+        }
+        switch await EusoWalletPassService.shared.addPass(from: passURL, expectedTheme: pass.theme) {
+        case .presented:
+            walletMessage = "Apple Wallet is open with the signed pass."
+        case .updated:
+            walletMessage = "The installed Apple Wallet pass now uses your selected design."
+        case .signingUnavailable:
+            walletMessage = "Wallet error: pass signing is unavailable."
+        case .failure(let message):
+            walletMessage = "Wallet error: \(message)"
         }
     }
 
     private func load() async {
         loading = true; loadError = nil
-        struct In: Encodable { let loadId: Int }
-        let n = Int(loadId.replacingOccurrences(of: "load_", with: "")) ?? 0
+        fallbackShortCode = nil
         do {
-            let p: PassUrl = try await EusoTripAPI.shared.query("documents.signWalletPass", input: In(loadId: n))
-            pass = p
+            let credential = try await EusoTripAPI.shared.createPickupCredential(
+                loadId: EusoWalletPassService.numericLoadId(from: loadId),
+                expiresInHours: 24
+            )
+            if credential.passkitStatus == "signed",
+               let url = credential.pkpassUrl,
+               let signedTheme = credential.signedTheme,
+               signedTheme == credential.theme,
+               !(credential.manifestDigest ?? "").isEmpty {
+                pass = PassUrl(url: url, expiresAt: credential.expiresAt, theme: signedTheme)
+            } else {
+                pass = nil
+                fallbackShortCode = credential.shortCode
+                loadError = nil
+            }
         } catch {
-            // Pass signing requires the iOS Wallet pass-type ID and
-            // certificates on the server. Surface clean state.
             pass = nil
+            loadError = "Couldn't mint the pickup pass: \(error.localizedDescription)"
         }
         loading = false
     }

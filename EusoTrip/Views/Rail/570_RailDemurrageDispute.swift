@@ -769,17 +769,77 @@ private struct RailDemurrageDisputeBody: View {
         }
     }
 
+    /// The server's `createDispute` reason enum — `service_failure | weather |
+    /// customer_error | data_error | other` (railDemurrageAuto.ts:267). This
+    /// screen has no reason picker; it files against whatever dwell the
+    /// attribution list marks "contest", so we map the dwell-reason vocabulary
+    /// `reportByDwellReason` actually emits (consignee_not_ready · no_power ·
+    /// yard_congestion · weather — railDemurrageAuto.ts:503-508) onto that
+    /// enum. Anything unrecognised falls back to `service_failure`, the enum
+    /// member for the screen's own "carrier-attributable dwell" framing.
+    private var disputeReasonCode: String {
+        let contested = attributions.filter { contestDisp($0.disposition) }
+        let reasons = (contested.isEmpty ? attributions : contested).map { ($0.reason ?? "").lowercased() }
+        if reasons.contains(where: { $0.contains("weather") }) { return "weather" }
+        if reasons.contains(where: { $0.contains("consignee") || $0.contains("customer") }) { return "customer_error" }
+        return "service_failure"
+    }
+
+    /// Free-text body for the filing — the original "carrier-attributable
+    /// dwell" framing plus the draft the Review-draft sheet already renders,
+    /// so the adjudicator reads exactly what the filer saw. Clipped to the
+    /// server's `notes` ceiling (z.string().max(2000)).
+    private var disputeNotes: String {
+        let body = (["Carrier-attributable dwell"] + disputeDraftLines).joined(separator: "\n")
+        return String(body.prefix(2000))
+    }
+
     private func fileDispute() async {
         isFiling = true
-        struct DisputeIn: Encodable { let railId: String; let contestedUsd: Double; let reason: String }
+        defer { isFiling = false }
+        struct DisputeIn: Encodable {
+            let confirm: Bool
+            let demurrageId: Int
+            let reason: String
+            let notes: String?
+            let requestedWaiverAmount: Double?
+        }
         struct DisputeOut: Decodable {}
+
+        // createDispute files against a REAL rail_demurrage row id. The only
+        // honest source of one on this screen is the getRailDemurrage anchor —
+        // that proc returns the demurrage rows whole (railShipments.ts:1461),
+        // so `anchor.id` IS rail_demurrage.id. Resolve it lazily when the
+        // weather path hasn't already (it only runs for weather dwells).
+        if anchor == nil { await loadDemurrageAnchor() }
+        guard let demurrageId = anchor?.id else {
+            // No numeric shipment, or no accrued charge row on file → there is
+            // nothing real to dispute. Say so; never invent an id and never
+            // report a filing that did not happen.
+            loadError = "Can't file yet — this charge hasn't resolved to an accrued demurrage record. Pull to refresh, or reopen it from Shipments."
+            return
+        }
+
+        // Only send a waiver ask when the screen actually computed one — the
+        // server clamps it to 0…9_999_999 and treats it as optional.
+        let requestedWaiver: Double? = contestedAmount > 0 ? contestedAmount : nil
+
         do {
-            let _: DisputeOut = try await EusoTripAPI.shared.query(
+            let _: DisputeOut = try await EusoTripAPI.shared.mutation(
                 "railDemurrageAuto.createDispute",
-                input: DisputeIn(railId: railId, contestedUsd: contestedAmount, reason: "carrier-attributable dwell"))
+                input: DisputeIn(
+                    confirm: true,
+                    demurrageId: demurrageId,
+                    reason: disputeReasonCode,
+                    notes: disputeNotes,
+                    requestedWaiverAmount: requestedWaiver))
             await load()
-        } catch { /* keep current state */ }
-        isFiling = false
+        } catch {
+            // Real failure, surfaced through the screen's own error state
+            // (the `loadError` branch in `body`) instead of being swallowed —
+            // the user must never see a dispute that was never filed.
+            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
     }
 }
 

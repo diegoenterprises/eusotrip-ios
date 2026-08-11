@@ -225,10 +225,7 @@ private struct InboxBody: View {
                                 .frame(maxWidth: 320)
                                 .opacity(0.92)
                                 .shadow(color: .black.opacity(0.25), radius: 10, x: 0, y: 4)
-                        }
-                        .onDrag {
-                            draggingItemId = n.id
-                            return NSItemProvider(object: n.id as NSString)
+                                .onAppear { draggingItemId = n.id }
                         }
                 } else {
                     inboxCard(n)
@@ -323,9 +320,11 @@ private struct InboxBody: View {
         } catch {
             await MainActor.run {
                 actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+                draggingItemId = nil
+                dropHover = false
             }
         }
-        await MainActor.run { processing = nil }
+        await MainActor.run { processing = nil; dropHover = false }
     }
 }
 

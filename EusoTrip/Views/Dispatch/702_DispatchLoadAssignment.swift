@@ -181,10 +181,7 @@ private struct LoadAssignBody: View {
                                         .frame(maxWidth: 280)
                                         .opacity(0.92)
                                         .shadow(color: .black.opacity(0.25), radius: 10, x: 0, y: 4)
-                                }
-                                .onDrag {
-                                    draggingLoadId = l.id
-                                    return NSItemProvider(object: l.id as NSString)
+                                        .onAppear { draggingLoadId = l.id }
                                 }
                         }
                     }
@@ -391,11 +388,14 @@ private struct LoadAssignBody: View {
                 lastAssigned = "Assigned · driver \(driverId) → \(pickedLabel)"
                 pickFor = nil
                 draggingLoadId = nil
+                hoverDriverId = nil
             }
             await loadAll()
         } catch {
             await MainActor.run {
                 actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+                draggingLoadId = nil
+                hoverDriverId = nil
             }
         }
         await MainActor.run { assigning = nil }

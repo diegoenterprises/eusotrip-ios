@@ -237,6 +237,23 @@ private struct VesselOperatorAccountBody: View {
                 ("Vesl689", "bolt.horizontal.circle", "Network disruption", "Blank sailings & reroutes"),
                 ("Vesl730", "calendar.badge.exclamationmark", "Blank sailing watch", "Cancelled sailings triage"),
             ])
+            // 2026-08-11 vessel :04 fire §16 — the port & terminal ground-operations band.
+            // These nine were catalog-only until this fire (wireframe + Swift port existed,
+            // no Views/Vessel integration and therefore no way in). 699 Vessel Particulars
+            // is a fleet/statutory surface and lives under Customs & Compliance instead.
+            opsGroup("PORT CALL & QUAY", [
+                ("Vesl703", "ferry", "Port lineup", "Quay metres vs waiting hulls"),
+                ("Vesl690", "building.2", "Terminal status", "Congestion weighted by your boxes"),
+                ("Vesl692", "arrow.triangle.branch", "Transshipment connection", "Feeder → onward buffer"),
+                ("Vesl704", "square.grid.3x3", "Bay plan", "Stow placement + stack weight"),
+                ("Vesl691", "person.3", "Crew call board", "Muster state per hand"),
+            ])
+            opsGroup("TERMINAL GROUND OPS", [
+                ("Vesl707", "list.bullet.rectangle.portrait", "Container movement log", "Every move on a 24h raster"),
+                ("Vesl744", "arrow.left.arrow.right.square", "Terminal gate log", "Turn time against appointment"),
+                ("Vesl780", "arrow.up.arrow.down.square", "Terminal move queue", "Queue depth + when it drains"),
+                ("Vesl781", "dollarsign.square", "Drop yard operations", "Per-diem burn past free time"),
+            ])
         }
     }
 
@@ -263,6 +280,10 @@ private struct VesselOperatorAccountBody: View {
                 ("Vesl654", "checkmark.seal", "Crew certifications", "STCW cert status"),
                 ("Vesl711", "bed.double", "Crew rest hours", "MLC rest-hour compliance"),
                 ("Vesl681", "leaf", "Emissions CII", "Carbon intensity indicator"),
+            ])
+            // 2026-08-11 vessel :04 fire §16 — statutory ship's registry card.
+            opsGroup("SHIP & CERTIFICATES", [
+                ("Vesl699", "ruler", "Vessel particulars", "Dimensions vs port limits + cert horizon"),
             ])
         }
     }

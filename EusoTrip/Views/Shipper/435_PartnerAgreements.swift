@@ -26,9 +26,23 @@ import SwiftUI
 
 struct PartnerAgreementsScreen: View {
     let theme: Theme.Palette
-    let partnerId: String
+    let partnerId: String?
+
     var body: some View {
-        Shell(theme: theme) { PartnerAgreementsBody(partnerId: partnerId) } nav: { shipperLifecycleNav() }
+        if let routedPartnerId = ShipperRoutedRecordIdResolver.positiveNumeric(partnerId) {
+            Shell(theme: theme) {
+                PartnerAgreementsBody(partnerId: routedPartnerId)
+            } nav: {
+                shipperLifecycleNav()
+            }
+        } else {
+            ShipperRecordContextUnavailableScreen(
+                theme: theme,
+                systemImage: "doc.badge.ellipsis",
+                title: "Agreements unavailable",
+                subtitle: "Open a partner to review and sign that partner's agreements."
+            )
+        }
     }
 }
 
@@ -371,8 +385,11 @@ private struct PartnerAgreementsBody: View {
         // String agreementId and no signature, so it failed Zod validation
         // every time — drag-to-sign never actually signed. Send the drawn
         // signature via the typed accessor.
-        guard let idNum = Int(a.id) else {
-            await MainActor.run { actionError = "Couldn't resolve agreement id."; signing = nil }
+        guard let idNum = Int(a.id), idNum > 0 else {
+            await MainActor.run {
+                actionError = "This agreement is unavailable because its record identifier is missing."
+                signing = nil
+            }
             return
         }
         do {

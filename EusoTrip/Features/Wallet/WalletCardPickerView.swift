@@ -47,7 +47,8 @@ struct WalletCardPickerView: View {
                     kindLabel: previewKindLabel,
                     load: store.previewLoad
                 )
-                    .frame(width: 300, height: 440)
+                    .frame(maxWidth: 360)
+                    .aspectRatio(375.0 / 220.0, contentMode: .fit)
                     .padding(.top, 6)
 
                 HStack {
@@ -60,7 +61,8 @@ struct WalletCardPickerView: View {
                     ForEach(store.themes) { theme in
                         VStack(spacing: 5) {
                             WalletCardPreview(theme: theme, full: false)
-                                .frame(width: 104, height: 150)
+                                .frame(width: 104)
+                                .aspectRatio(375.0 / 220.0, contentMode: .fit)
                                 .clipShape(RoundedRectangle(cornerRadius: 13))
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 13)
@@ -72,9 +74,14 @@ struct WalletCardPickerView: View {
                                         Image(systemName: "checkmark.circle.fill")
                                             .foregroundStyle(.white, Color.accentColor)
                                             .padding(6)
+                                    } else if theme.id == store.pendingThemeId {
+                                        ProgressView()
+                                            .tint(.white)
+                                            .padding(6)
                                     }
                                 }
-                                .onTapGesture { store.select(theme.id) }   // ← the choose function
+                                .contentShape(Rectangle())
+                                .onTapGesture { store.select(theme.id) }
                             Text(theme.name).font(.caption2)
                                 .foregroundStyle(theme.id == store.selectedId ? .primary : .secondary)
                                 .lineLimit(1)
@@ -134,6 +141,7 @@ struct WalletCardPickerView: View {
             .frame(maxWidth: .infinity).frame(height: 50)
         }
         .buttonStyle(.borderedProminent).tint(.black)
+        .disabled(!store.canMintSelectedTheme)
         .padding(.horizontal, 18).padding(.bottom, 10)
         .background(.ultraThinMaterial)
     }
@@ -168,9 +176,9 @@ struct WalletCardPreview: View {
             // Apple Wallet uses background.png for art themes and applies a
             // crop + blur on non-poster event tickets. Mirror that behavior in
             // the full preview; solid boarding-pass themes stay color-only.
-            if theme.isArt, UIImage(named: theme.id) != nil {
+            if theme.isArt, let previewImage = theme.previewImage {
                 Color.clear.overlay {
-                    Image(theme.id)
+                    Image(uiImage: previewImage)
                         .resizable()
                         .scaledToFill()
                         .scaleEffect(full ? 1.08 : 1.02)
@@ -183,7 +191,13 @@ struct WalletCardPreview: View {
             VStack(alignment: .leading, spacing: full ? 10 : 4) {
                 HStack(alignment: .top) {
                     HStack(spacing: 6) {
-                        Image("EusoTripLogo").resizable().scaledToFit()
+                        Group {
+                            if let logoImage = theme.logoImage {
+                                Image(uiImage: logoImage).resizable().scaledToFit()
+                            } else {
+                                Image("EusoTripLogo").resizable().scaledToFit()
+                            }
+                        }
                             .frame(width: full ? 22 : 14, height: full ? 22 : 14)
                             .padding(full ? 5 : 3).background(Circle().fill(.white))
                         Text(isAccess ? "EusoTrip · Access" : "EusoTrip · Pickup")
@@ -207,10 +221,17 @@ struct WalletCardPreview: View {
                         Spacer()
                         HStack { field("FACILITY", "—"); Spacer(); field("GATE CODE", "—", trailing: true) }
                     } else {
-                        HStack(alignment: .bottom) {
-                            field("FROM", load?.origin ?? "—"); Spacer()
-                            Image(systemName: "arrow.right").foregroundStyle(theme.accent); Spacer()
-                            field("TO", load?.destination ?? "—", trailing: true)
+                        if theme.isArt {
+                            // Background-art passes mint as event tickets. Apple
+                            // gives that style one primary field, so preview the
+                            // exact combined lane Wallet will render.
+                            field("LANE", "\(load?.origin ?? "—") → \(load?.destination ?? "—")")
+                        } else {
+                            HStack(alignment: .bottom) {
+                                field("FROM", load?.origin ?? "—"); Spacer()
+                                Image(systemName: "arrow.right").foregroundStyle(theme.accent); Spacer()
+                                field("TO", load?.destination ?? "—", trailing: true)
+                            }
                         }
                         Spacer()
                         HStack {
@@ -361,7 +382,7 @@ struct AccessCardInlineFallbackView: View {
                         .foregroundStyle(LinearGradient.diagonal)
                     Text("Access card ready")
                         .font(.headline)
-                    Text("Apple Wallet signing isn't enabled yet — show this code or QR at the gate. It's the same temporary access grant.")
+                    Text("Show this active code or QR at the gate. It is the same verified temporary access grant.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)

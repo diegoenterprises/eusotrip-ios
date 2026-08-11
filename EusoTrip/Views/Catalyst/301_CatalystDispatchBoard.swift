@@ -73,6 +73,19 @@ private struct DispatchLoadsEnvelope: Decodable {
     var rows: [DispatchLoad] { loads ?? items ?? [] }
 }
 
+private struct CatalystMutationResult: Decodable {
+    let success: Bool?
+    let message: String?
+    let error: String?
+
+    func failureMessage(fallback: String) -> String? {
+        guard success == false else { return nil }
+        return [message, error]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first(where: { !$0.isEmpty }) ?? fallback
+    }
+}
+
 private struct CatalystKanbanColumn: Identifiable, Hashable {
     let id: String
     let label: String
@@ -82,7 +95,7 @@ private struct CatalystKanbanColumn: Identifiable, Hashable {
 }
 
 private let catalystKanbanColumns: [CatalystKanbanColumn] = [
-    .init(id: "pending",   label: "PENDING",    icon: "tray",                  status: "pending",     nextStatus: "assigned"),
+    .init(id: "pending",   label: "AWARDED",    icon: "tray",                  status: "accepted",    nextStatus: "assigned"),
     .init(id: "assigned",  label: "ASSIGNED",   icon: "person.fill.checkmark", status: "assigned",    nextStatus: "in_transit"),
     .init(id: "transit",   label: "IN TRANSIT", icon: "truck.box",             status: "in_transit",  nextStatus: "delivered"),
     .init(id: "delivered", label: "DELIVERED",  icon: "checkmark.seal.fill",   status: "delivered",   nextStatus: nil),
@@ -95,7 +108,7 @@ struct CatalystDispatchBoardScreen: View {
             BottomNav(
                 leading: [NavSlot(label: "Home",     systemImage: "house",         isCurrent: false),
                           NavSlot(label: "Dispatch", systemImage: "rectangle.split.3x1.fill", isCurrent: true)],
-                trailing: [NavSlot(label: "Wallet", systemImage: "creditcard.fill", isCurrent: false),
+                trailing: [NavSlot(label: "Fleet",  systemImage: "truck.box.fill", isCurrent: false),
                            NavSlot(label: "Me",     systemImage: "person",          isCurrent: false)],
                 orbState: .idle
             )
@@ -105,6 +118,7 @@ struct CatalystDispatchBoardScreen: View {
 
 private struct DispatchBoardBody: View {
     @Environment(\.palette) private var palette
+    @Environment(\.rolePushDetail) private var pushDetail
 
     @State private var byColumn: [String: [DispatchLoad]] = [:]
     @State private var loading: Bool = true
@@ -363,9 +377,20 @@ private struct DispatchBoardBody: View {
         )
         .dropDestination(for: String.self) { droppedIds, _ in
             guard let droppedId = droppedIds.first else { return false }
+            guard advancing == nil else { return false }
             guard let load = byColumn.values.flatMap({ $0 }).first(where: { $0.id == droppedId }) else { return false }
-            if (load.status ?? "") == col.status { return false }
-            Task { await advance(load: load, to: col.status) }
+            guard let sourceIndex = catalystKanbanColumns.firstIndex(where: { (byColumn[$0.id] ?? []).contains(load) }),
+                  let targetIndex = catalystKanbanColumns.firstIndex(where: { $0.id == col.id }) else { return false }
+            guard sourceIndex != targetIndex else { return false }
+            guard targetIndex == sourceIndex + 1 else {
+                actionError = "Move \(load.loadNumber ?? "LD-\(load.id)") one operational stage at a time."
+                return false
+            }
+            if col.id == "assigned" {
+                Task { await prepareDriverAssignment(for: load) }
+            } else {
+                Task { await advance(load: load, to: col.status) }
+            }
             return true
         } isTargeted: { hovering in
             dragHoverColumn = hovering ? col.id : (dragHoverColumn == col.id ? nil : dragHoverColumn)
@@ -444,6 +469,63 @@ private struct DispatchBoardBody: View {
                 }
             }
         }
+        .onTapGesture {
+            if col.id == "pending" {
+                Task { await prepareDriverAssignment(for: l) }
+            }
+        }
+    }
+
+    private func prepareDriverAssignment(for load: DispatchLoad) async {
+        if load.status == "awarded" {
+            let started = await MainActor.run { () -> Bool in
+                guard advancing == nil else { return false }
+                advancing = load.id
+                actionError = nil
+                lastAdvance = nil
+                return true
+            }
+            guard started else { return }
+            struct In: Encodable { let loadId: String }
+            do {
+                let response: CatalystMutationResult = try await EusoTripAPI.shared.mutation(
+                    "catalysts.acceptTender",
+                    input: In(loadId: load.id)
+                )
+                if let failure = response.failureMessage(
+                    fallback: "The server rejected tender acceptance for \(load.loadNumber ?? "LD-\(load.id)")."
+                ) {
+                    await MainActor.run { actionError = failure }
+                    await loadAll()
+                } else {
+                    await MainActor.run {
+                        lastAdvance = "\(load.loadNumber ?? "LD-\(load.id)") accepted · choose a driver"
+                    }
+                    await loadAll()
+                    await MainActor.run { openDriverAssignment(for: load) }
+                }
+            } catch {
+                await MainActor.run {
+                    actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+                }
+            }
+            await MainActor.run {
+                advancing = nil
+                dragHoverColumn = nil
+            }
+            return
+        }
+        await MainActor.run { openDriverAssignment(for: load) }
+    }
+
+    private func openDriverAssignment(for load: DispatchLoad) {
+        guard let pushDetail else {
+            actionError = "Driver assignment is unavailable from this navigation context."
+            return
+        }
+        pushDetail("Assign driver") {
+            AnyView(CarrierAssignDriverScreen(theme: palette, loadId: load.id))
+        }
     }
 
     private func stageTint(_ col: CatalystKanbanColumn) -> Color {
@@ -474,13 +556,14 @@ private struct DispatchBoardBody: View {
 
     private func loadAll() async {
         loading = true; loadError = nil
-        async let p:  [DispatchLoad] = fetch(status: "pending")
+        async let awarded: [DispatchLoad] = fetch(status: "awarded")
+        async let accepted: [DispatchLoad] = fetch(status: "accepted")
         async let a:  [DispatchLoad] = fetch(status: "assigned")
         async let t:  [DispatchLoad] = fetch(status: "in_transit")
         async let d:  [DispatchLoad] = fetch(status: "delivered")
-        let (pending, assigned, transit, delivered) = await (p, a, t, d)
+        let (awardedRows, acceptedRows, assigned, transit, delivered) = await (awarded, accepted, a, t, d)
         byColumn = [
-            "pending":   pending,
+            "pending":   awardedRows + acceptedRows,
             "assigned":  assigned,
             "transit":   transit,
             "delivered": delivered,
@@ -504,24 +587,40 @@ private struct DispatchBoardBody: View {
     }
 
     private func advance(load: DispatchLoad, to next: String) async {
-        await MainActor.run { advancing = load.id; actionError = nil }
+        let started = await MainActor.run { () -> Bool in
+            guard advancing == nil else { return false }
+            advancing = load.id
+            actionError = nil
+            lastAdvance = nil
+            return true
+        }
+        guard started else { return }
         struct In: Encodable { let loadId: String; let status: String }
-        struct Out: Decodable { let success: Bool? }
         do {
-            let _: Out = try await EusoTripAPI.shared.mutation(
+            let response: CatalystMutationResult = try await EusoTripAPI.shared.mutation(
                 "dispatch.updateLoadStatus",
                 input: In(loadId: load.id, status: next)
             )
-            await MainActor.run {
-                lastAdvance = "\(load.loadNumber ?? "LD-\(load.id)") → \(next.replacingOccurrences(of: "_", with: " ").uppercased())"
+            if let failure = response.failureMessage(
+                fallback: "The server rejected the stage change for \(load.loadNumber ?? "LD-\(load.id)")."
+            ) {
+                await MainActor.run { actionError = failure }
+                await loadAll()
+            } else {
+                await MainActor.run {
+                    lastAdvance = "\(load.loadNumber ?? "LD-\(load.id)") → \(next.replacingOccurrences(of: "_", with: " ").uppercased())"
+                }
+                await loadAll()
             }
-            await loadAll()
         } catch {
             await MainActor.run {
                 actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
             }
         }
-        await MainActor.run { advancing = nil }
+        await MainActor.run {
+            advancing = nil
+            dragHoverColumn = nil
+        }
     }
 }
 

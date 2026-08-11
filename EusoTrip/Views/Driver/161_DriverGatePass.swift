@@ -59,6 +59,9 @@
 //
 
 import SwiftUI
+import CoreImage
+import CoreImage.CIFilterBuiltins
+import UIKit
 
 // MARK: - Data shape (decoded from the REAL getGatePass payload)
 
@@ -365,19 +368,27 @@ struct DriverGatePass_161: View {
         .eusoCard(radius: Radius.xl, intensity: .standard)
     }
 
-    /// Stylized credential glyph — flat ink on a matte-white tile, NOT a real
-    /// scannable code (the qrCodeData payload is the source of truth at the
-    /// gate). Matches the SVG's 104×104 white block + "SCAN OR READ" caption.
+    /// Scannable QR generated directly from the persisted gate-pass payload.
+    /// When no credential has been issued, the tile says so instead of showing
+    /// a decorative QR that could be mistaken for a working credential.
     private var qrCredential: some View {
         VStack(spacing: 6) {
             ZStack {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(Color(hex: 0xF5F5F7))
-                Image(systemName: "qrcode")
-                    .resizable().scaledToFit()
-                    .frame(width: 84, height: 84)
-                    .foregroundStyle(Color.black)
-                    .opacity(pass?.qrCodeData == nil ? 0.18 : 1)
+                if let payload = pass?.qrCodeData,
+                   let image = GatePassQRCode.image(from: payload) {
+                    Image(uiImage: image)
+                        .interpolation(.none)
+                        .resizable()
+                        .scaledToFit()
+                        .padding(10)
+                } else {
+                    Text("NOT\nISSUED")
+                        .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(Color.black.opacity(0.45))
+                }
             }
             .frame(width: 104, height: 104)
             Text("SCAN OR READ")
@@ -593,6 +604,24 @@ struct DriverGatePass_161: View {
             actionError = "Check-in failed. " +
                 ((error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription)
         }
+    }
+}
+
+private enum GatePassQRCode {
+    private static let context = CIContext(options: [.useSoftwareRenderer: false])
+
+    static func image(from payload: String) -> UIImage? {
+        let value = payload.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty, let data = value.data(using: .utf8) else { return nil }
+
+        let filter = CIFilter.qrCodeGenerator()
+        filter.message = data
+        filter.correctionLevel = "M"
+        guard let output = filter.outputImage?.transformed(by: CGAffineTransform(scaleX: 10, y: 10)),
+              let cgImage = context.createCGImage(output, from: output.extent) else {
+            return nil
+        }
+        return UIImage(cgImage: cgImage)
     }
 }
 

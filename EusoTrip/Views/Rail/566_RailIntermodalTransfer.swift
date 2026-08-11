@@ -611,7 +611,11 @@ private struct RailIntermodalTransferBody: View {
             let newStatus: String
         }
         do {
-            let _: AdvanceSegmentResponse = try await EusoTripAPI.shared.query(
+            // S4 cure 2026-08-10: advanceSegment is a MUTATION server-side
+            // (intermodal.ts:561 .mutation). query() issues GET, the server
+            // has no method override, so this CTA was dead on iOS while the
+            // same verb worked on web — PARITY_AND_CHAINS.md §2·S4.
+            let _: AdvanceSegmentResponse = try await EusoTripAPI.shared.mutation(
                 "intermodal.advanceSegment",
                 input: AdvIn(intermodalShipmentId: shipmentId, fromSegmentId: t.fromSegmentId ?? 0, toSegmentId: t.toSegmentId ?? 0))
             await load()

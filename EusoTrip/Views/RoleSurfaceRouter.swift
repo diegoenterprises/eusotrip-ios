@@ -20,12 +20,10 @@
 //    • TERMINAL_MANAGER          → 700_TerminalHome
 //    • ADMIN / SUPER_ADMIN       → 800_AdminHome
 //
-//  Roles whose iOS surface ships in a later session (Dispatch, Compliance,
-//  Safety, Factoring, all Rail, all Vessel, Customs Broker) route to a
-//  real `WebContinuationView` — an SFSafariViewController loading
-//  `app.eusotrip.com/{role-slug}` over the same Bearer-cookie session
-//  the iOS app already holds. The web app is the production surface for
-//  those roles today; this is not a stub.
+//  Roles whose iOS surface ships in a later session route to a real
+//  `WebContinuationView` backed by an App.tsx route. Safari authentication
+//  is independent from the native bearer session, so web sign-in may be
+//  required. Vessel Shipper and Vessel Operator already have native homes.
 //
 //  RBAC: every cross-role nav request (notification, deep-link, sheet)
 //  passes through `RoleAccess.canRender(role:screenId:)` which short-
@@ -115,22 +113,22 @@ struct RoleSurfaceRouter: View {
             WebContinuationSurface(role: role, palette: palette,
                                    pathSlug: "rail/broker")
         case .vesselShipper:
-            WebContinuationSurface(role: role, palette: palette,
-                                   pathSlug: "vessel/shipper")
+            // Native equivalent of the web `/vessel/dashboard` route.
+            VesselShipperHomeScreen(theme: palette)
         case .vesselOperator:
             VesselOperatorSurface(palette: palette)
         case .portMaster:
             WebContinuationSurface(role: role, palette: palette,
-                                   pathSlug: "vessel/port-master")
+                                   pathSlug: "port/dashboard")
         case .shipCaptain:
             WebContinuationSurface(role: role, palette: palette,
-                                   pathSlug: "vessel/captain")
+                                   pathSlug: "vessel/captain/dashboard")
         case .vesselBroker:
             WebContinuationSurface(role: role, palette: palette,
-                                   pathSlug: "vessel/broker")
+                                   pathSlug: "vessel/broker/dashboard")
         case .customsBroker:
             WebContinuationSurface(role: role, palette: palette,
-                                   pathSlug: "customs-broker")
+                                   pathSlug: "customs/dashboard")
         }
     }
 }
@@ -164,6 +162,72 @@ struct DriverSurfaceHost: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } nav: { EmptyView() }
+    }
+}
+
+// MARK: - Shipper routed-record resolvers
+
+/// Normalizes opaque record identifiers arriving through NotificationCenter.
+/// Route payloads are normally strings, but push/deep-link bridges may carry
+/// integer primary keys. All actionable routed records reject empty and
+/// non-positive identifiers before a destination screen is constructed.
+enum ShipperRoutedRecordIdResolver {
+    static func string(from raw: Any?) -> String? {
+        let value: String
+        switch raw {
+        case let raw as String: value = raw
+        case let raw as Int: value = String(raw)
+        case let raw as Int64: value = String(raw)
+        case let raw as UInt: value = String(raw)
+        default: return nil
+        }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    static func positiveNumeric(_ raw: Any?) -> String? {
+        guard let id = string(from: raw), let numericId = Int(id), numericId > 0 else {
+            return nil
+        }
+        return id
+    }
+
+    /// RFP rows are emitted as `RFP-<positive id>` by rfpManager, while the
+    /// same procedures also accept the underlying positive numeric string.
+    static func rfp(_ raw: Any?) -> String? {
+        guard let id = string(from: raw) else { return nil }
+        if let numericId = Int(id), numericId > 0 { return id }
+
+        let uppercased = id.uppercased()
+        guard uppercased.hasPrefix("RFP-"),
+              let numericId = Int(uppercased.dropFirst("RFP-".count)),
+              numericId > 0 else {
+            return nil
+        }
+        return id
+    }
+}
+
+/// Honest terminal state for a routed detail that arrived without its record
+/// identifier. The actionable body is never constructed in this branch.
+struct ShipperRecordContextUnavailableScreen: View {
+    let theme: Theme.Palette
+    let systemImage: String
+    let title: String
+    let subtitle: String
+
+    var body: some View {
+        Shell(theme: theme) {
+            VStack {
+                Spacer(minLength: Space.s6)
+                EusoEmptyState(systemImage: systemImage, title: title, subtitle: subtitle)
+                    .padding(.horizontal, Space.s4)
+                Spacer(minLength: 96)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } nav: {
+            shipperLifecycleNav()
+        }
     }
 }
 
@@ -201,9 +265,8 @@ enum ShipperLoadIdResolver {
         "search", "new", "filter", "map", "create", "import", "bulk",
     ]
 
-    static func normalize(_ raw: String?) -> String? {
-        guard var id = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !id.isEmpty else { return nil }
+    static func normalize(_ raw: Any?) -> String? {
+        guard var id = ShipperRoutedRecordIdResolver.string(from: raw) else { return nil }
         // Reject reserved action keywords up front (case-insensitive),
         // before any prefix-stripping, so `/loads/search` etc. never
         // survive normalization.
@@ -264,10 +327,15 @@ struct ShipperSurface: View {
     private static let tabRoots: Set<String> = ["200", "201", "204", "320"]
     /// Captured from `.eusoShipperLoadOpen` / `.eusoShipperLoadOpenMap`
     /// / `.eusoShipperSettlementOpenLoad` notification userInfo. When
-    /// non-nil and the current screen is 205 / 222, we construct that
-    /// screen with the real loadId instead of the registry's `"0"`
-    /// sentinel.
+    /// non-nil and the current screen is 205 / 222 / 261, we construct
+    /// that screen with the real loadId instead of a registry sentinel.
     @State private var activeLoadId: String? = nil
+    /// Captured from the 380 RFP inbox when it routes to 381. A bare 381
+    /// navigation clears this value so an earlier RFP can never leak into it.
+    @State private var activeRfpId: String? = nil
+    /// Captured from 434 Partner Detail when it routes to 435. This is the
+    /// partner whose real agreement rows (and agreement ids) may be signed.
+    @State private var activeAgreementPartnerId: String? = nil
     /// Captured from the 424→425 handoff (`.eusoShipperNavSwap` with
     /// `userInfo["product"]`). When non-nil and the current screen is
     /// 425, we construct `PortIntelligenceScreen(product:)` so Port
@@ -310,6 +378,34 @@ struct ShipperSurface: View {
     @State private var pushedDetail: RoleDetailPush? = nil
 
     private var current: ProductionScreen {
+        // Record-context destinations always receive the payload captured for
+        // this route. Their screen wrappers independently fail closed when the
+        // value is nil or invalid, so the registry can never create an
+        // actionable surface with a sentinel id.
+        if currentScreenId == "261" {
+            let loadId = activeLoadId
+            return ProductionScreen(id: "261",
+                                    title: "Shipper · Bidding Live Feed",
+                                    role: .shipper) { p in
+                AnyView(BiddingLiveFeedScreen(theme: p, loadId: loadId))
+            }
+        }
+        if currentScreenId == "381" {
+            let rfpId = activeRfpId
+            return ProductionScreen(id: "381",
+                                    title: "Shipper · RFP Detail",
+                                    role: .shipper) { p in
+                AnyView(RfpDetailScreen(theme: p, rfpId: rfpId))
+            }
+        }
+        if currentScreenId == "435" {
+            let partnerId = activeAgreementPartnerId
+            return ProductionScreen(id: "435",
+                                    title: "Shipper · Partner Agreements",
+                                    role: .shipper) { p in
+                AnyView(PartnerAgreementsScreen(theme: p, partnerId: partnerId))
+            }
+        }
         // Detail screens with a captured loadId override the registry
         // sentinel so the screen renders the real load. This is how
         // load-row taps from 200/201/203 carry into 205.
@@ -407,6 +503,8 @@ struct ShipperSurface: View {
             .modifier(ShipperNotificationListeners(
                 screenStack: $screenStack,
                 activeLoadId: $activeLoadId,
+                activeRfpId: $activeRfpId,
+                activeAgreementPartnerId: $activeAgreementPartnerId,
                 activePortIntelProduct: $activePortIntelProduct,
                 activeSearchQuery: $activeSearchQuery,
                 activePostLoadDraftId: $activePostLoadDraftId,
@@ -469,10 +567,18 @@ struct ShipperSurface: View {
     }
 
     private var currentIdentity: String {
-        if currentScreenId == "393" {
+        switch currentScreenId {
+        case "261":
+            return "shipper-261-\(activeLoadId ?? "__missing")"
+        case "381":
+            return "shipper-381-\(activeRfpId ?? "__missing")"
+        case "435":
+            return "shipper-435-\(activeAgreementPartnerId ?? "__missing")"
+        case "393":
             return "shipper-393-\(activeSearchQuery ?? "__empty")"
+        default:
+            return "shipper-\(currentScreenId)"
         }
-        return "shipper-\(currentScreenId)"
     }
 
     /// Routes a `MeAction.fire(key)` from any Shipper screen to its
@@ -872,6 +978,8 @@ private struct ShipperEnvInjections: ViewModifier {
 private struct ShipperNotificationListeners: ViewModifier {
     @Binding var screenStack: [String]
     @Binding var activeLoadId: String?
+    @Binding var activeRfpId: String?
+    @Binding var activeAgreementPartnerId: String?
     @Binding var activePortIntelProduct: String?
     @Binding var activeSearchQuery: String?
     @Binding var activePostLoadDraftId: String?
@@ -890,6 +998,8 @@ private struct ShipperNotificationListeners: ViewModifier {
             .modifier(ShipperNavReceivers(
                 screenStack: $screenStack,
                 activeLoadId: $activeLoadId,
+                activeRfpId: $activeRfpId,
+                activeAgreementPartnerId: $activeAgreementPartnerId,
                 activePortIntelProduct: $activePortIntelProduct,
                 activeSearchQuery: $activeSearchQuery,
                 activePostLoadDraftId: $activePostLoadDraftId,
@@ -917,6 +1027,8 @@ private struct ShipperNotificationListeners: ViewModifier {
 private struct ShipperNavReceivers: ViewModifier {
     @Binding var screenStack: [String]
     @Binding var activeLoadId: String?
+    @Binding var activeRfpId: String?
+    @Binding var activeAgreementPartnerId: String?
     @Binding var activePortIntelProduct: String?
     @Binding var activeSearchQuery: String?
     @Binding var activePostLoadDraftId: String?
@@ -959,9 +1071,24 @@ private struct ShipperNavReceivers: ViewModifier {
                 // (strips `load_NNN`, rejects the `"0"` sentinel).
                 if id == "205" || id == "222" {
                     if let lid = ShipperLoadIdResolver.normalize(
-                        note.userInfo?["loadId"] as? String) {
+                        note.userInfo?["loadId"]) {
                         activeLoadId = lid
                     }
+                }
+                // 261/381/435 are actionable record details. Assign the
+                // normalized optional on every target swap (including nil)
+                // so a payload-less route fails closed instead of reusing the
+                // record from a previous visit.
+                if id == "261" {
+                    activeLoadId = ShipperLoadIdResolver.normalize(note.userInfo?["loadId"])
+                }
+                if id == "381" {
+                    activeRfpId = ShipperRoutedRecordIdResolver.rfp(note.userInfo?["rfpId"])
+                }
+                if id == "435" {
+                    activeAgreementPartnerId = ShipperRoutedRecordIdResolver.positiveNumeric(
+                        note.userInfo?["partnerId"]
+                    )
                 }
                 // Wave I2 — 424→425 grade handoff. Overwritten on
                 // every 425 swap (nil when absent) so a stale grade
@@ -1045,12 +1172,12 @@ private struct ShipperNavReceivers: ViewModifier {
     }
 
     /// Emergency Wave I1 — `activeLoadId` may only be cleared when no
-    /// load-context screen (205 load detail / 222 live tracking)
+    /// load-context screen (205 load detail / 222 live tracking / 261 bids)
     /// remains anywhere on the nav stack. Tab-root pushes collapse the
     /// stack so the clear proceeds; appending pushes keep the drilled
     /// detail alive underneath and the context with it.
     private func clearLoadContextIfUnreferenced() {
-        if !screenStack.contains(where: { $0 == "205" || $0 == "222" }) {
+        if !screenStack.contains(where: { $0 == "205" || $0 == "222" || $0 == "261" }) {
             activeLoadId = nil
         }
     }
@@ -2430,12 +2557,10 @@ private struct RoleNavBackOverlay: ViewModifier {
 
 // MARK: - Web continuation surface (roles without an iOS surface yet)
 
-/// Real production landing for the 14 backend roles that don't ship a
-/// native iOS surface in this session. Loads `app.eusotrip.com` in an
-/// SFSafariViewController on tap. The user is already authenticated via
-/// the same Bearer token cookie the iOS app uses against
-/// `eusotrip-app.azurewebsites.net`, so the web app honors the session
-/// without a re-login.
+/// Production landing for backend roles that do not yet ship a native iOS
+/// surface. Loads a verified `App.tsx` route in SFSafariViewController.
+/// Native bearer credentials are not transferred to Safari; the web app may
+/// require its own sign-in.
 struct WebContinuationSurface: View {
     let role: EusoRole
     let palette: Theme.Palette
@@ -2485,8 +2610,8 @@ struct WebContinuationSurface: View {
                           systemImage: "safari")
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
-                    Label("You stay signed in. Your session carries over.",
-                          systemImage: "checkmark.shield")
+                    Label("Web sign-in may be required.",
+                          systemImage: "person.badge.key")
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
                 }

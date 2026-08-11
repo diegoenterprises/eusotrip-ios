@@ -928,6 +928,9 @@ struct ShipperApplePayWallet: View {
         case .presented:
             passBannerKind = .success
             passBannerText = "Apple Wallet is open with the signed pass"
+        case .updated:
+            passBannerKind = .success
+            passBannerText = "The installed Apple Wallet pass now uses your selected design"
         case .signingUnavailable(let qrPayload, let shortCode):
             passBannerKind = .info
             passBannerText = "Apple Wallet signing is offline — present this in-app pass: scan the QR or enter code \(shortCode) at the gate."

@@ -1,5 +1,6 @@
 //
 //  402_DispatcherProfile.swift
+// OFFLINE: READ_CACHED(24h) pure read — hero/ladder/credentials/90D strip from cache with staleness line; no write verbs, nothing queues; reconnect FULL.
 //  EusoTrip — Dispatcher · Profile (dispatcher-self vantage).
 //
 //  Verbatim port of "402 Dispatcher Profile.svg" (Dark canonical · 440×956).

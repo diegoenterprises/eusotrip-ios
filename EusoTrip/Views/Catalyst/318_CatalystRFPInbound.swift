@@ -49,7 +49,7 @@ struct CatalystRFPInboundScreen: View {
             BottomNav(
                 leading: [NavSlot(label: "Home",     systemImage: "house",         isCurrent: false),
                           NavSlot(label: "Dispatch", systemImage: "rectangle.split.3x1.fill", isCurrent: true)],
-                trailing: [NavSlot(label: "Wallet", systemImage: "creditcard.fill", isCurrent: false),
+                trailing: [NavSlot(label: "Fleet",  systemImage: "truck.box.fill", isCurrent: false),
                            NavSlot(label: "Me",     systemImage: "person",          isCurrent: false)],
                 orbState: .idle
             )

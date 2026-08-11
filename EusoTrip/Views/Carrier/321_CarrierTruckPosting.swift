@@ -95,7 +95,7 @@ private struct CarrierTruckPostingBody: View {
 
     // ── Posting hero control ──
     @State private var selectedVehicleId: Int? = nil
-    @State private var activePostingId: Int? = nil        // set after a successful post
+    @State private var activePostingId: Int? = nil        // hydrated from the durable posting row
     @State private var postingStatus: String? = nil       // "active" / "paused" / nil
     @State private var posting = false                     // post/pause in flight
     @State private var heroBanner: String? = nil           // success line
@@ -571,7 +571,8 @@ private struct CarrierTruckPostingBody: View {
         async let a: Void = loadStats()
         async let b: Void = loadOffers()
         async let c: Void = loadFleet()
-        _ = await (a, b, c)
+        async let d: Void = loadPosting()
+        _ = await (a, b, c, d)
     }
 
     private func loadStats() async {
@@ -591,16 +592,24 @@ private struct CarrierTruckPostingBody: View {
         do {
             let env = try await EusoTripAPI.shared.truckPosting.listInboundOffers(status: "pending")
             offers = env.offers
-            offersError = nil
-            // Adopt an active posting context from the live offers so the
-            // hero shows pause/resume even on a cold open (the posting was
-            // minted in a prior session).
-            if activePostingId == nil, let firstPosting = env.offers.first?.postingId {
-                activePostingId = firstPosting
-                postingStatus = "active"
-            }
+            offersError = env.matcherStatus == "degraded"
+                ? "Existing offers are available, but matching new loads is temporarily delayed."
+                : nil
         } catch {
             offersError = humanError(error)
+        }
+    }
+
+    private func loadPosting() async {
+        do {
+            let posting = try await EusoTripAPI.shared.truckPosting.getPosting()
+            activePostingId = posting?.id
+            postingStatus = posting?.status
+            if let vehicleId = posting?.vehicleId {
+                selectedVehicleId = vehicleId
+            }
+        } catch {
+            heroError = "Couldn't load the current truck posting. \(humanError(error))"
         }
     }
 
@@ -640,9 +649,13 @@ private struct CarrierTruckPostingBody: View {
             activePostingId = result.postingId
             postingStatus = result.status
             let surfaced = result.offersSurfaced ?? 0
-            heroBanner = surfaced > 0
-                ? "\(vehicleTitle(v)) posted — \(surfaced) compatible open load\(surfaced == 1 ? "" : "s") surfaced as offer\(surfaced == 1 ? "" : "s")."
-                : "\(vehicleTitle(v)) posted. Compatible open loads will land in INBOUND OFFERS as they’re posted."
+            if result.matcherStatus == "degraded" {
+                heroBanner = "\(vehicleTitle(v)) posted. New-offer matching is temporarily delayed; the posting remains live."
+            } else {
+                heroBanner = surfaced > 0
+                    ? "\(vehicleTitle(v)) posted — \(surfaced) compatible open load\(surfaced == 1 ? "" : "s") surfaced as offer\(surfaced == 1 ? "" : "s")."
+                    : "\(vehicleTitle(v)) posted. Compatible open loads will land in INBOUND OFFERS as they’re posted."
+            }
             // Refresh offers + fleet (the vehicle is now flagged available/posted).
             await loadOffers()
             await loadFleet()
@@ -657,9 +670,13 @@ private struct CarrierTruckPostingBody: View {
         do {
             let result = try await EusoTripAPI.shared.truckPosting.pauseTruck(postingId: postingId)
             postingStatus = result.status
-            heroBanner = result.status == "paused"
-                ? "Posting paused — no new inbound offers until you resume."
-                : "Posting resumed."
+            if result.matcherStatus == "degraded" {
+                heroBanner = "Posting resumed, but new-offer matching is temporarily delayed."
+            } else {
+                heroBanner = result.status == "paused"
+                    ? "Posting paused — no new inbound offers until you resume."
+                    : "Posting resumed."
+            }
             await loadOffers()
         } catch {
             heroError = humanError(error)

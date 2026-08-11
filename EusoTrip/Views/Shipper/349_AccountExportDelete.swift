@@ -21,8 +21,11 @@ private struct ExportDeleteBody: View {
     @State private var exportUrl: String? = nil
     @State private var exportFilename: String? = nil
     @State private var exportQueued = false
-    @State private var deleteRequested = false
+    @State private var deletionLifecycleStatus: UsersAPI.AccountDeletionStatus.Status = .none
     @State private var deleteScheduledFor: String? = nil
+    @State private var deletionBlockedReason: String? = nil
+    @State private var loadingDeletionStatus = true
+    @State private var deletionStatusError: String? = nil
     @State private var cancellingDelete = false
     @State private var deleteCancelled = false
     @State private var actionError: String? = nil
@@ -46,6 +49,8 @@ private struct ExportDeleteBody: View {
     @State private var importError: String? = nil
     // ── Approvals state (users.pendingDataImports) ──
     @State private var transfers: UsersAPI.ImportTransferList? = nil
+    @State private var transfersLoading = true
+    @State private var transfersError: String? = nil
     @State private var decidingImportId: String? = nil
 
     var body: some View {
@@ -74,7 +79,10 @@ private struct ExportDeleteBody: View {
             case .failure(let err): importError = err.localizedDescription
             }
         }
-        .task { await loadTransfers() }
+        .task {
+            await loadDeletionStatus()
+            await loadTransfers()
+        }
     }
 
     private var header: some View {
@@ -124,7 +132,7 @@ private struct ExportDeleteBody: View {
     private func exportReadyCard(_ url: String) -> some View {
         LifecycleCard(accentGradient: true) {
             LifecycleSection(label: "EXPORT READY", icon: "checkmark.circle")
-            Text("Your archive is ready. Save it to Files, then pick it under Import / Migrate on a new account to move your contacts and documents over.")
+            Text("Your archive is ready. Save it to Files, then pick it under Import / Migrate on a new account to move your contacts and eligible personal documents over.")
                 .font(EType.caption).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
             Button { Task { await downloadExportArchive(urlString: url) } } label: {
                 HStack(spacing: 6) {
@@ -186,7 +194,7 @@ private struct ExportDeleteBody: View {
     private var importCard: some View {
         LifecycleCard {
             LifecycleSection(label: "IMPORT / MIGRATE", icon: "square.and.arrow.down.on.square")
-            Text("Moving to a new account? Pick the signed export archive you downloaded from the old account. The old account's owner approves the request, then contacts and documents move here. Loads, settlements and wallet history stay on the source account for the regulatory retention window.")
+            Text("Moving to a new account? Pick the signed export archive you downloaded from the old account. After the source owner approves, contacts and personal documents not bound to a load, shipment, agreement, compliance case or other operational record move here. Operational records, loads, settlements and wallet history stay on the source account for their retention periods.")
                 .font(EType.caption).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
             if let ack = importAck {
                 Text("PENDING APPROVAL · sent to account #\(ack.sourceUserId)")
@@ -242,11 +250,33 @@ private struct ExportDeleteBody: View {
 
     @ViewBuilder
     private var approvalsCard: some View {
+        if transfersLoading && transfers == nil {
+            LifecycleCard {
+                LifecycleSection(label: "MIGRATION APPROVALS", icon: "person.2.badge.gearshape")
+                HStack(spacing: 8) {
+                    ProgressView().tint(palette.textSecondary)
+                    Text("Loading migration status…")
+                        .font(EType.caption).foregroundStyle(palette.textSecondary)
+                }
+            }
+        }
+        if let err = transfersError {
+            LifecycleCard(accentDanger: true) {
+                LifecycleSection(label: "MIGRATION STATUS UNAVAILABLE", icon: "exclamationmark.triangle")
+                Text(err).font(EType.caption).foregroundStyle(Brand.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button { Task { await loadTransfers() } } label: {
+                    Text("Retry").font(.system(size: 11, weight: .heavy)).tracking(0.4).foregroundStyle(.white)
+                        .padding(.horizontal, 12).padding(.vertical, 7)
+                        .background(LinearGradient.diagonal).clipShape(Capsule())
+                }.buttonStyle(.plain).disabled(transfersLoading)
+            }
+        }
         if let t = transfers, !(t.incoming.isEmpty && t.outgoing.isEmpty) {
             LifecycleCard {
                 LifecycleSection(label: "MIGRATION APPROVALS", icon: "person.2.badge.gearshape")
                 if !t.incoming.isEmpty {
-                    Text("Requests to move data OUT of this account. Approving re-keys your contacts and documents to the requesting account.")
+                    Text("Requests to move data OUT of this account. Approval re-keys contacts and eligible personal documents that are not bound to operational records. Loads, shipments, agreements, compliance records, settlements and wallet history remain here.")
                         .font(EType.caption).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
                     ForEach(t.incoming) { row in incomingRow(row) }
                 }
@@ -286,7 +316,7 @@ private struct ExportDeleteBody: View {
                     }.buttonStyle(.plain).disabled(decidingImportId != nil)
                 }
             } else if let ex = row.executed {
-                Text("\(ex.contactsMoved ?? 0) contacts · \(ex.documentsMoved ?? 0) documents moved")
+                Text("\(ex.contactsMoved ?? 0) contacts · \(ex.documentsMoved ?? 0) eligible personal documents moved")
                     .font(EType.caption).foregroundStyle(palette.textSecondary)
             }
         }
@@ -301,7 +331,7 @@ private struct ExportDeleteBody: View {
                 statusBadge(row.status)
             }
             if let ex = row.executed, row.status.lowercased() == "approved" {
-                Text("\(ex.contactsMoved ?? 0) contacts · \(ex.documentsMoved ?? 0) documents now in this account")
+                Text("\(ex.contactsMoved ?? 0) contacts · \(ex.documentsMoved ?? 0) eligible personal documents now in this account")
                     .font(EType.caption).foregroundStyle(palette.textSecondary)
             }
         }
@@ -319,20 +349,27 @@ private struct ExportDeleteBody: View {
 
     @MainActor
     private func loadTransfers() async {
-        do { transfers = try await EusoTripAPI.shared.users.pendingDataImports() }
-        catch { /* approvals card stays hidden until the list loads */ }
+        transfersLoading = true
+        transfersError = nil
+        defer { transfersLoading = false }
+        do {
+            transfers = try await EusoTripAPI.shared.users.pendingDataImports()
+        } catch {
+            transfersError = apiErrorMessage(error)
+        }
     }
 
     @MainActor
     private func decide(_ importId: String, approve: Bool) async {
         decidingImportId = importId
+        transfersError = nil
         defer { decidingImportId = nil }
         do {
             if approve { _ = try await EusoTripAPI.shared.users.approveDataImport(importId: importId) }
             else { _ = try await EusoTripAPI.shared.users.rejectDataImport(importId: importId) }
             await loadTransfers()
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            transfersError = apiErrorMessage(error)
         }
     }
 
@@ -343,7 +380,47 @@ private struct ExportDeleteBody: View {
             LifecycleSection(label: "DELETE ACCOUNT", icon: "trash.fill")
             Text("Soft-delete your Eusorone account. 30-day window before purge. Active loads + settlements must be closed first.")
                 .font(EType.caption).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
-            if deleteRequested {
+            if loadingDeletionStatus {
+                HStack(spacing: 8) {
+                    ProgressView().tint(palette.textSecondary)
+                    Text("Checking account status…")
+                        .font(EType.caption).foregroundStyle(palette.textSecondary)
+                }
+            } else if let err = deletionStatusError {
+                Text(err).font(EType.caption).foregroundStyle(Brand.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button { Task { await loadDeletionStatus() } } label: {
+                    Text("Retry").font(.system(size: 11, weight: .heavy)).tracking(0.4).foregroundStyle(.white)
+                        .padding(.horizontal, 12).padding(.vertical, 7)
+                        .background(LinearGradient.diagonal).clipShape(Capsule())
+                }.buttonStyle(.plain).disabled(loadingDeletionStatus)
+            } else if deletionLifecycleStatus == .purging {
+                Text("PURGE IN PROGRESS")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(.white)
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(Brand.danger).clipShape(Capsule())
+                Text("The cancellation window has closed and the server is executing the account purge. This is not a new 30-day deletion request and it cannot be cancelled from this screen.")
+                    .font(EType.caption).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
+            } else if deletionLifecycleStatus == .executed {
+                Text("DELETION EXECUTED")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(.white)
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(Brand.danger).clipShape(Capsule())
+                Text("The server reports that the account deletion lifecycle has completed.")
+                    .font(EType.caption).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
+            } else if deletionLifecycleStatus == .blocked {
+                Text("DELETION BLOCKED")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(.white)
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(Brand.warning).clipShape(Capsule())
+                Text(deletionBlockMessage)
+                    .font(EType.caption).foregroundStyle(Brand.danger).fixedSize(horizontal: false, vertical: true)
+                Button { Task { await loadDeletionStatus() } } label: {
+                    Text("Check again").font(.system(size: 11, weight: .heavy)).tracking(0.4).foregroundStyle(.white)
+                        .padding(.horizontal, 12).padding(.vertical, 7)
+                        .background(LinearGradient.diagonal).clipShape(Capsule())
+                }.buttonStyle(.plain).disabled(loadingDeletionStatus)
+            } else if deletionLifecycleStatus == .pending {
                 Text("DELETION REQUESTED · 30-day window started.").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(.white)
                     .padding(.horizontal, 8).padding(.vertical, 4)
                     .background(Brand.danger).clipShape(Capsule())
@@ -400,38 +477,73 @@ private struct ExportDeleteBody: View {
 
     private func requestDelete() async {
         deleting = true; actionError = nil
-        struct Out: Decodable { let success: Bool; let scheduledFor: String? }
+        defer { deleting = false }
         do {
-            let r: Out = try await EusoTripAPI.shared.mutation("users.requestAccountDeletion", input: ["": ""] as [String: String])
+            let r = try await EusoTripAPI.shared.users.requestAccountDeletion()
+            guard r.success else {
+                actionError = "The server did not confirm the deletion request. Your account remains active."
+                return
+            }
             deleteScheduledFor = r.scheduledFor
-            deleteRequested = true
+            deletionLifecycleStatus = .pending
+            deletionBlockedReason = nil
             deleteCancelled = false
         } catch {
             actionError = friendlyDeletionError(error)
         }
-        deleting = false
     }
 
     private func cancelDelete() async {
         cancellingDelete = true; actionError = nil
-        struct Out: Decodable { let success: Bool }
+        defer { cancellingDelete = false }
         do {
-            let _ : Out = try await EusoTripAPI.shared.mutation("users.cancelAccountDeletion", input: ["": ""] as [String: String])
-            deleteRequested = false
+            let response = try await EusoTripAPI.shared.users.cancelAccountDeletion()
+            guard response.success else {
+                actionError = "The server did not confirm cancellation. Your deletion request may still be active."
+                return
+            }
+            deletionLifecycleStatus = .cancelled
             deleteScheduledFor = nil
+            deletionBlockedReason = nil
             confirmDelete = false
             confirmText = ""
             deleteCancelled = true
         } catch {
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
-        cancellingDelete = false
+    }
+
+    @MainActor
+    private func loadDeletionStatus() async {
+        loadingDeletionStatus = true
+        deletionStatusError = nil
+        defer { loadingDeletionStatus = false }
+        do {
+            let persisted = try await EusoTripAPI.shared.users.getAccountDeletionStatus()
+            deletionLifecycleStatus = persisted.status
+            deleteScheduledFor = persisted.status == .pending ? persisted.scheduledFor : nil
+            deletionBlockedReason = persisted.status == .blocked ? persisted.blockedReason : nil
+            if persisted.status != .cancelled { deleteCancelled = false }
+        } catch {
+            deletionStatusError = apiErrorMessage(error)
+        }
+    }
+
+    private var deletionBlockMessage: String {
+        let reason = deletionBlockedReason?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return reason.isEmpty
+            ? "The server marked this deletion as blocked but did not provide a reason. Check again or contact support before retrying."
+            : reason
+    }
+
+    private func apiErrorMessage(_ error: Error) -> String {
+        (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
     }
 
     /// Maps the server's active-loads rejection to a plain-language inline
     /// message; falls back to the raw API error for anything else.
     private func friendlyDeletionError(_ error: Error) -> String {
-        let raw = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        let raw = apiErrorMessage(error)
         let lowered = raw.lowercased()
         if lowered.contains("active load") || lowered.contains("active loads") {
             return "You can't delete your account while you have active loads. Close or cancel them first."

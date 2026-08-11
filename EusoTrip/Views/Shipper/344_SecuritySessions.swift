@@ -156,10 +156,7 @@ private struct SessionsBody: View {
                                 .frame(maxWidth: 320)
                                 .opacity(0.92)
                                 .shadow(color: .black.opacity(0.25), radius: 10, x: 0, y: 4)
-                        }
-                        .onDrag {
-                            draggingSessionId = s.id
-                            return NSItemProvider(object: s.id as NSString)
+                                .onAppear { draggingSessionId = s.id }
                         }
                 }
             }
@@ -217,11 +214,19 @@ private struct SessionsBody: View {
             }
             await load()
         } catch let apiErr as EusoTripAPIError {
-            await MainActor.run { revokeError = apiErr.errorDescription ?? "Couldn't revoke this session." }
+            await MainActor.run {
+                revokeError = apiErr.errorDescription ?? "Couldn't revoke this session."
+                draggingSessionId = nil
+                dropHover = false
+            }
         } catch {
-            await MainActor.run { revokeError = error.localizedDescription }
+            await MainActor.run {
+                revokeError = error.localizedDescription
+                draggingSessionId = nil
+                dropHover = false
+            }
         }
-        await MainActor.run { revoking = nil }
+        await MainActor.run { revoking = nil; dropHover = false }
     }
 }
 

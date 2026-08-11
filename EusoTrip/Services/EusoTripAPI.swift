@@ -19283,6 +19283,10 @@ struct TerminalAPI {
     /// directly to the on-screen layout.
     struct YardZone: Decodable, Identifiable, Hashable {
         let id: String
+        /// Stable backend yard location identifier used by move mutations.
+        /// This is intentionally separate from `id`, which also includes
+        /// the visual zone kind.
+        let locationId: String
         /// Display label, e.g. "ZONE A", "SPUR 3", "REEFER ROW".
         /// Server projects pre-uppercased; rendered as-is.
         let label: String
@@ -19304,6 +19308,12 @@ struct TerminalAPI {
     /// to em-dash sentinels.
     struct YardSlot: Decodable, Identifiable, Hashable {
         let id: String
+        /// Fleet vehicle id occupying this slot. Required for a real move;
+        /// nil for free slots.
+        let trailerId: String?
+        /// Physical coordinates in yard_spots, used for atomic moves.
+        let row: Int?
+        let col: Int?
         /// Slot identifier rendered on the tile, e.g. "A-3", "S3-12",
         /// "D-7", "RR-2". Server projects pre-formatted.
         let label: String
@@ -21339,6 +21349,112 @@ struct UsersAPI {
         try await api.queryNoInput("users.requestDataExport")
     }
 
+    struct AccountDeletionMutationAck: Decodable {
+        let success: Bool
+        let scheduledFor: String?
+    }
+
+    /// Persisted account-deletion state returned by
+    /// `users.getAccountDeletionStatus`. The custom decoder accepts the
+    /// current `pending` contract plus explicit status/timestamp aliases used
+    /// by older deployments, but refuses an empty or unrecognized response so
+    /// the client never mistakes a decoder drift for "no deletion pending".
+    struct AccountDeletionStatus: Decodable {
+        enum Status: String, Decodable {
+            case none
+            case pending
+            case cancelled
+            case purging
+            case executed
+            case blocked
+        }
+
+        let pending: Bool
+        let status: Status
+        let requestedAt: String?
+        let scheduledFor: String?
+        let blockedReason: String?
+
+        private enum CodingKeys: String, CodingKey {
+            case pending, isPending, deleteRequested, deletionRequested, status
+            case requestedAt, deletionRequestedAt
+            case scheduledFor, deletionScheduledFor
+            case blockedReason
+        }
+
+        init(from decoder: Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            let explicitPending = try values.decodeIfPresent(Bool.self, forKey: .pending)
+                ?? values.decodeIfPresent(Bool.self, forKey: .isPending)
+                ?? values.decodeIfPresent(Bool.self, forKey: .deleteRequested)
+                ?? values.decodeIfPresent(Bool.self, forKey: .deletionRequested)
+            let rawStatus = try values.decodeIfPresent(String.self, forKey: .status)
+            requestedAt = try values.decodeIfPresent(String.self, forKey: .requestedAt)
+                ?? values.decodeIfPresent(String.self, forKey: .deletionRequestedAt)
+            scheduledFor = try values.decodeIfPresent(String.self, forKey: .scheduledFor)
+                ?? values.decodeIfPresent(String.self, forKey: .deletionScheduledFor)
+            blockedReason = try values.decodeIfPresent(String.self, forKey: .blockedReason)
+
+            if let normalized = rawStatus?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased(), !normalized.isEmpty {
+                switch normalized {
+                case "none", "active", "inactive":
+                    status = .none
+                case "pending", "requested", "scheduled", "pending_deletion", "deletion_requested":
+                    status = .pending
+                case "cancelled", "canceled":
+                    status = .cancelled
+                case "purging":
+                    status = .purging
+                case "executed", "completed":
+                    status = .executed
+                case "blocked":
+                    status = .blocked
+                default:
+                    throw DecodingError.dataCorruptedError(
+                        forKey: .status,
+                        in: values,
+                        debugDescription: "Unknown account deletion status: \(normalized)"
+                    )
+                }
+                // Lifecycle status is authoritative. In particular, a stale
+                // `pending: true` or scheduled timestamp must not turn a
+                // purging/executed/blocked account into a fresh request.
+                pending = status == .pending
+                return
+            }
+
+            if let explicitPending {
+                pending = explicitPending
+                status = explicitPending ? .pending : .none
+                return
+            }
+            if requestedAt != nil || scheduledFor != nil {
+                pending = true
+                status = .pending
+                return
+            }
+            throw DecodingError.dataCorruptedError(
+                forKey: .status,
+                in: values,
+                debugDescription: "Account deletion status omitted lifecycle state"
+            )
+        }
+    }
+
+    func getAccountDeletionStatus() async throws -> AccountDeletionStatus {
+        try await api.queryNoInput("users.getAccountDeletionStatus")
+    }
+
+    func requestAccountDeletion() async throws -> AccountDeletionMutationAck {
+        try await api.mutationNoInput("users.requestAccountDeletion")
+    }
+
+    func cancelAccountDeletion() async throws -> AccountDeletionMutationAck {
+        try await api.mutationNoInput("users.cancelAccountDeletion")
+    }
+
     /// Signed manifest parsed out of a downloaded export archive. Field
     /// names mirror `exportData.manifest` emitted by
     /// server/services/compliance/data-lifecycle.ts.
@@ -21350,6 +21466,8 @@ struct UsersAPI {
         let sourceEmail: String?
         let entityCounts: [String: Int]?
         let contentSha256: String
+        /// Manifest schema v2 expiry. Nil keeps schema v1 archives decodable.
+        let expiresAt: String?
         let signature: String?
     }
 
@@ -21372,6 +21490,7 @@ struct UsersAPI {
             let sourceEmail: String?
             let entityCounts: [String: Int]?
             let contentSha256: String
+            let expiresAt: String?
         }
         struct In: Encodable {
             let manifest: ManifestBody
@@ -21384,7 +21503,8 @@ struct UsersAPI {
             sourceCompanyId: manifest.sourceCompanyId,
             sourceEmail: manifest.sourceEmail,
             entityCounts: manifest.entityCounts,
-            contentSha256: manifest.contentSha256
+            contentSha256: manifest.contentSha256,
+            expiresAt: manifest.expiresAt
         )
         return try await api.mutation("users.requestDataImport", input: In(manifest: body, signature: signature))
     }
@@ -21423,7 +21543,8 @@ struct UsersAPI {
         let documentsMoved: Int?
     }
     /// `users.approveDataImport` — source-owner only. Server re-keys
-    /// contacts + documents to the target account in one transaction.
+    /// contacts + eligible personal/unbound documents to the target account
+    /// in one transaction. Operational records remain on the source account.
     func approveDataImport(importId: String) async throws -> ImportDecisionAck {
         struct In: Encodable { let importId: String }
         return try await api.mutation("users.approveDataImport", input: In(importId: importId))
@@ -26592,6 +26713,7 @@ extension HotZonesAPI {
 //
 //   getCapacityStats   ({ state? })                  -> market capacity grid
 //   getMyFleetAvailability ({ status? })             -> [company vehicle rows]
+//   getPosting         ({ vehicleId? })               -> durable live posting
 //   postTruck          ({ vehicleId, currentLocation, availableDate, ... })
 //   pauseTruck         ({ postingId })   -> toggles active<->paused
 //   listInboundOffers  ({ postingId?, status, runMatcher?, limit? })
@@ -26623,22 +26745,21 @@ enum TruckPostingGateError: Error, LocalizedError {
 }
 
 /// `truckPosting.getCapacityStats` envelope - live market capacity. All
-/// counts are real DB aggregates; `market` is present only when the server
-/// could compute the ratio (absent on the no-db honest-empty path, where the
-/// view em-dashes the verdict).
+/// counts are real DB aggregates. A database failure is an error, not an
+/// all-zero market; `market` remains optional for contract compatibility.
 struct TruckCapacityStats: Decodable, Equatable {
     let availableTrucks: Int
     let postedLoads: Int
     let ratio: Double
-    let market: String?          // "tight" / "balanced" / "loose" (nil on no-db)
+    let market: String?          // "tight" / "balanced" / "loose"
     let hazmatTrucks: Int
     let hazmatLoads: Int
     let hazmatRatio: Double?
 }
 
 /// `truckPosting.getMyFleetAvailability` row - one company vehicle with its
-/// live operational status + next-service dates. Server emits "" for absent
-/// strings and 0 for absent capacity; the view em-dashes each.
+/// live operational status + next-service dates. Absent values stay nil; the
+/// view em-dashes them without manufacturing capacity or timestamps.
 struct TruckFleetVehicle: Decodable, Identifiable, Hashable {
     let id: Int
     let vehicleType: String?
@@ -26707,6 +26828,7 @@ struct CarrierTruckInboundOffer: Decodable, Identifiable, Hashable {
 struct TruckInboundOffersEnvelope: Decodable, Equatable {
     let offers: [CarrierTruckInboundOffer]
     let total: Int
+    let matcherStatus: String?
 }
 
 /// `truckPosting.postTruck` result - the minted posting + how many compatible
@@ -26718,7 +26840,31 @@ struct TruckPostResult: Decodable, Equatable {
     let status: String
     let equipmentType: String?
     let offersSurfaced: Int?
+    let matcherStatus: String?
     let postedAt: String?
+}
+
+/// One durable active/paused `truck_postings` row. Vehicle availability is a
+/// fleet state and is deliberately not used as a substitute for this record.
+struct TruckPostingSnapshot: Decodable, Equatable {
+    let id: Int
+    let vehicleId: Int?
+    let driverUserId: Int
+    let equipmentType: String
+    let originCity: String?
+    let originState: String?
+    let availableFrom: String?
+    let acceptsHazmat: Bool
+    let hazmatClasses: [String]?
+    let maxDistanceMiles: Double?
+    let notes: String?
+    let status: String
+    let expiresAt: String?
+    let createdAt: String
+}
+
+struct TruckPostingSnapshotEnvelope: Decodable, Equatable {
+    let posting: TruckPostingSnapshot?
 }
 
 /// `truckPosting.pauseTruck` result - the toggled status (active<->paused)
@@ -26728,6 +26874,7 @@ struct TruckPauseResult: Decodable, Equatable {
     let postingId: Int
     let status: String           // "active" or "paused"
     let offersSurfaced: Int?
+    let matcherStatus: String?
 }
 
 /// `truckPosting.acceptOffer` success result - the booked load + confirmation.
@@ -26766,7 +26913,7 @@ struct TruckPostingAPI {
 
     /// `truckPosting.getCapacityStats` - live market capacity (available
     /// trucks vs posted loads, hazmat split, tight/balanced/loose verdict).
-    /// Honest-empty (all-zero, nil market) on no-db; the view em-dashes.
+    /// Database failures throw and remain distinct from a real zero count.
     func getCapacityStats(state: String? = nil) async throws -> TruckCapacityStats {
         struct Input: Encodable { let state: String? }
         return try await api.query("truckPosting.getCapacityStats",
@@ -26779,6 +26926,18 @@ struct TruckPostingAPI {
         struct Input: Encodable { let status: String }
         return try await api.query("truckPosting.getMyFleetAvailability",
                                    input: Input(status: status))
+    }
+
+    /// `truckPosting.getPosting` - the latest active/paused posting in the
+    /// authenticated tenant, optionally constrained to one vehicle. Driver
+    /// callers are further owner-scoped by the server.
+    func getPosting(vehicleId: Int? = nil) async throws -> TruckPostingSnapshot? {
+        struct Input: Encodable { let vehicleId: Int? }
+        let envelope: TruckPostingSnapshotEnvelope = try await api.query(
+            "truckPosting.getPosting",
+            input: Input(vehicleId: vehicleId)
+        )
+        return envelope.posting
     }
 
     /// `truckPosting.listInboundOffers` - inbound offers on the carrier's
@@ -26819,7 +26978,7 @@ struct TruckPostingAPI {
         ratePerMile: Double? = nil,
         maxDistance: Double? = nil,
         expiresAt: String? = nil,
-        hazmatEndorsed: Bool = false,
+        acceptsHazmat: Bool = false,
         hazmatClasses: [String]? = nil,
         notes: String? = nil
     ) async throws -> TruckPostResult {
@@ -26834,7 +26993,7 @@ struct TruckPostingAPI {
             let ratePerMile: Double?
             let maxDistance: Double?
             let expiresAt: String?
-            let hazmatEndorsed: Bool
+            let acceptsHazmat: Bool
             let hazmatClasses: [String]?
             let notes: String?
         }
@@ -26847,7 +27006,7 @@ struct TruckPostingAPI {
                 preferredDestinations: preferredDestinations,
                 destPreference: destPreference, ratePerMile: ratePerMile,
                 maxDistance: maxDistance, expiresAt: expiresAt,
-                hazmatEndorsed: hazmatEndorsed, hazmatClasses: hazmatClasses,
+                acceptsHazmat: acceptsHazmat, hazmatClasses: hazmatClasses,
                 notes: notes))
     }
 

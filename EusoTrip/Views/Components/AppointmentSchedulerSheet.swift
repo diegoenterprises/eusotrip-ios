@@ -53,6 +53,19 @@ struct AppointmentList: Decodable, Hashable {
     let total: Int
 }
 
+private struct AppointmentMutationResult: Decodable {
+    let success: Bool?
+    let message: String?
+    let error: String?
+
+    func failureMessage(fallback: String) -> String? {
+        guard success == false else { return nil }
+        return [message, error]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first(where: { !$0.isEmpty }) ?? fallback
+    }
+}
+
 // MARK: - Kanban columns
 
 private struct AppointmentKanbanColumn: Identifiable, Hashable {
@@ -68,10 +81,10 @@ private struct AppointmentKanbanColumn: Identifiable, Hashable {
 }
 
 private let appointmentKanbanColumns: [AppointmentKanbanColumn] = [
-    .init(id: "scheduled",  label: "SCHEDULED",  icon: "calendar",                statuses: ["scheduled", "arrived"], nextStatus: "checked_in", action: "checkIn",      color: .scheduled),
-    .init(id: "checked_in", label: "CHECKED IN", icon: "person.crop.circle.badge.checkmark", statuses: ["checked_in"], nextStatus: "loading",    action: "startLoading", color: .checkedIn),
-    .init(id: "loading",    label: "LOADING",    icon: "shippingbox.fill",        statuses: ["loading"],              nextStatus: "completed",  action: "complete",     color: .loading),
-    .init(id: "completed",  label: "COMPLETED",  icon: "checkmark.seal.fill",     statuses: ["completed"],            nextStatus: nil,          action: nil,            color: .completed),
+    .init(id: "scheduled",  label: "SCHEDULED",  icon: "calendar",                statuses: ["scheduled", "confirmed"], nextStatus: "checked_in", action: nil,            color: .scheduled),
+    .init(id: "checked_in", label: "CHECKED IN", icon: "person.crop.circle.badge.checkmark", statuses: ["checked_in"], nextStatus: "loading",    action: "checkIn",      color: .checkedIn),
+    .init(id: "loading",    label: "LOADING",    icon: "shippingbox.fill",        statuses: ["loading", "unloading"], nextStatus: "completed",  action: "startLoading", color: .loading),
+    .init(id: "completed",  label: "COMPLETED",  icon: "checkmark.seal.fill",     statuses: ["completed"],            nextStatus: nil,          action: "complete",     color: .completed),
     .init(id: "cancelled",  label: "CANCELLED",  icon: "xmark.octagon.fill",      statuses: ["cancelled"],            nextStatus: nil,          action: nil,            color: .cancelled),
 ]
 
@@ -231,7 +244,7 @@ public struct AppointmentSchedulerSheet: View {
     private func column(_ col: AppointmentKanbanColumn) -> some View {
         let cards = byColumn[col.id] ?? []
         let isHover = dragHoverColumn == col.id && col.action != nil
-        let acceptsDrops = col.action != nil  // only forward-advance lanes accept
+        let acceptsDrops = col.action != nil
         return ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
@@ -256,7 +269,7 @@ public struct AppointmentSchedulerSheet: View {
                         .padding(.top, 18)
                 } else {
                     ForEach(cards) { a in
-                        let canDrag = (col.action != nil)
+                        let canDrag = (col.nextStatus != nil)
                         if canDrag {
                             appointmentRow(a)
                                 .draggable(a.id) {
@@ -285,6 +298,7 @@ public struct AppointmentSchedulerSheet: View {
         .dropDestination(for: String.self) { droppedIds, _ in
             guard acceptsDrops else { return false }
             guard let aid = droppedIds.first else { return false }
+            guard actingId == nil else { return false }
             guard let row = list.first(where: { $0.id == aid }) else { return false }
             // The destination column owns the advance action. Drag from
             // the immediately-prior lane only — out-of-order drops are
@@ -422,7 +436,8 @@ public struct AppointmentSchedulerSheet: View {
         guard let iso else { return "-" }
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        guard let d = f.date(from: iso) else { return iso }
+        let parsed = f.date(from: iso) ?? ISO8601DateFormatter().date(from: iso)
+        guard let d = parsed else { return iso }
         let out = DateFormatter(); out.dateStyle = .none; out.timeStyle = .short
         return out.string(from: d)
     }
@@ -471,31 +486,46 @@ public struct AppointmentSchedulerSheet: View {
     }
 
     private func fire(action: String, id: String, columnLabel: String) async {
-        await MainActor.run { actingId = id; actionAck = nil; actionError = nil }
+        let started = await MainActor.run { () -> Bool in
+            guard actingId == nil else { return false }
+            actingId = id
+            actionAck = nil
+            lastAdvance = nil
+            actionError = nil
+            return true
+        }
+        guard started else { return }
         struct In: Encodable { let appointmentId: String }
-        struct Out: Decodable { let success: Bool? }
         do {
-            let _: Out = try await EusoTripAPI.shared.mutation(
+            let response: AppointmentMutationResult = try await EusoTripAPI.shared.mutation(
                 "appointments.\(action)",
                 input: In(appointmentId: id)
             )
-            await MainActor.run {
-                actionAck = "Appointment \(id): \(action) ✓"
-                lastAdvance = "Appointment → \(columnLabel)"
-            }
-            await loadAll()
-            await MainActor.run {
-                let nextCol = appointmentKanbanColumns.first(where: { $0.label == columnLabel })?.id
-                if let nc = nextCol {
-                    withAnimation(.easeOut(duration: 0.18)) { selected = nc }
+            if let failure = response.failureMessage(
+                fallback: "The server rejected the appointment update for \(id)."
+            ) {
+                await MainActor.run { actionError = failure }
+                await loadAll()
+            } else {
+                await MainActor.run {
+                    actionAck = "Appointment \(id): \(action) ✓"
+                    lastAdvance = "Appointment → \(columnLabel)"
+                }
+                await loadAll()
+                await MainActor.run {
+                    let nextCol = appointmentKanbanColumns.first(where: { $0.label == columnLabel })?.id
+                    if let nc = nextCol {
+                        withAnimation(.easeOut(duration: 0.18)) { selected = nc }
+                    }
                 }
             }
         } catch let err {
             await MainActor.run {
-                error = (err as? LocalizedError)?.errorDescription ?? "\(err)"
+                actionError = (err as? LocalizedError)?.errorDescription ?? "\(err)"
+                dragHoverColumn = nil
             }
         }
-        await MainActor.run { actingId = nil }
+        await MainActor.run { actingId = nil; dragHoverColumn = nil }
     }
 }
 

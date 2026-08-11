@@ -1,5 +1,6 @@
 //
 //  400_DispatcherHome.swift
+// OFFLINE: READ_CACHED(5m) KPIs + board + ATTENTION tenders; staleness line "Offline · data as of 09:41" under the KPI strip; reads-only, nothing queues; reconnect FULL.
 //  EusoTrip — Dispatcher · Home (live desk).
 //
 //  Verbatim reconstruction of wireframe "400 Dispatcher Home · Dark"

@@ -61,20 +61,24 @@ struct RailTenderWorkflowScreen: View {
 // MARK: - Data shapes
 
 private struct ActiveTender569: Decodable {
-    // Server actually returns EDI submission metadata, not tender details.
-    // Keep stored properties as the server sends them.
+    // D5 cure 2026-08-10: no longer decoded from a GET of the submitTender
+    // MUTATION (dead read, 405 forever) — constructed from the newest
+    // undecided row of the real tenderHistory read. Stored props keep the
+    // server-row names; decode synthesis stays tolerant (all optional).
     let tenderId: String?
     let controlNumber: String?
     let ediDocument: String?
     let status: String?
     let submittedAt: String?
     let awaiting: String?
-    
-    // Computed accessors for tender details (nil, since server doesn't return them).
+    let shipmentId: Int?
+    let laneOrigin: String?
+    let laneDestination: String?
+
     var id: String? { tenderId }
-    var origin: String? { nil }
-    var destination: String? { nil }
-    var rateUsd: Double? { nil }
+    var origin: String? { laneOrigin }
+    var destination: String? { laneDestination }
+    var rateUsd: Double? { nil }        // no rate stored on a tender event (honest — railTenderWorkflow.ts:492)
     var ratePerMile: Double? { nil }
     var railroad: String? { nil }
     var equipmentType: String? { nil }
@@ -84,6 +88,8 @@ private struct ActiveTender569: Decodable {
 }
 
 private struct TenderStats569: Decodable {
+    // Derived client-side from real tenderHistory rows since the D5 cure —
+    // same arithmetic carrierAcceptanceRate applies server-side (:514).
     let pendingCount: Int?
     let acceptRatePct: Double?
     let avgReplyMinutes: Double?
@@ -97,6 +103,16 @@ private struct TenderHistoryItem569: Decodable, Identifiable {
     let outcome: String?        // "accepted" | "declined" | "counter"
     let outcomeNote: String?
     let rateUsd: Double?
+    // D5 cure 2026-08-10 — the server row (railTenderWorkflow.ts:470-495
+    // mapped shape) has always carried these; decoding them lets the screen
+    // derive its active tender + stats from the ONE real read instead of
+    // GET-calling the submitTender mutation (which returned 405 forever).
+    let tenderId: String?
+    let controlNumber: String?
+    let shipmentId: Int?
+    let submittedAt: String?
+    let timestamp: String?
+    let status: String?         // "pending" | "accepted" | "declined" | "cancelled"
 }
 
 // Envelope wrapper that tolerates server's {tenders:[], total:, note:} shape
@@ -414,18 +430,48 @@ private struct RailTenderWorkflowBody: View {
 
     private func load() async {
         loading = true; loadError = nil
-        struct EmptyIn: Encodable {}
+        // D5 cure 2026-08-10 (fresh-context evaluator finding, same class as
+        // the S4 respond() cure): the two removed reads GET-`query()`ed
+        // `railTenderWorkflow.submitTender` — a MUTATION (railTenderWorkflow
+        // .ts:85) — so they 405'd on every launch, activeTender stayed nil,
+        // and the Accept/Decline CTA (which guards on activeTender?.id) could
+        // never fire even after its own method-seam cure. The router has no
+        // active-tender or stats READ (named gap: `getActiveTender` —
+        // RAIL-S4-569-DEAD-READS carries the proposed shape). Until it lands,
+        // everything derives from the ONE real read, tenderHistory
+        // (railTenderWorkflow.ts:435 .query): active = newest pending row
+        // with no later decided event for the same tenderId; stats = the
+        // same arithmetic carrierAcceptanceRate (:514) applies server-side,
+        // computed over the fetched window. Real rows only — nothing invented.
+        struct HistIn: Encodable { let limit: Int }
         do {
-            async let tender: ActiveTender569 = EusoTripAPI.shared.query(
-                "railTenderWorkflow.submitTender", input: EmptyIn())
-            async let tStats: TenderStats569 = EusoTripAPI.shared.query(
-                "railTenderWorkflow.submitTender", input: EmptyIn())
-            async let hist: [TenderHistoryItem569] = EusoTripAPI.shared.query(
-                "railTenderWorkflow.tenderHistory", input: EmptyIn())
-            let (t, s, h) = try await (tender, tStats, hist)
-            self.activeTender = t
-            self.stats        = s
-            self.history      = h
+            let h: [TenderHistoryItem569] = try await EusoTripAPI.shared.query(
+                "railTenderWorkflow.tenderHistory", input: HistIn(limit: 50))
+            self.history = h
+
+            let decided = Set(["accepted", "declined", "cancelled"])
+            let decidedTenderIds = Set(h.filter { decided.contains(($0.status ?? $0.outcome ?? "").lowercased()) }
+                                        .compactMap { $0.tenderId })
+            let pending = h.filter {
+                let s = ($0.status ?? $0.outcome ?? "").lowercased()
+                guard s == "pending" || s == "submitted" else { return false }
+                guard let tid = $0.tenderId else { return true }
+                return !decidedTenderIds.contains(tid)
+            }
+            self.activeTender = pending.first.map { row in
+                ActiveTender569(tenderId: row.tenderId, controlNumber: row.controlNumber,
+                                ediDocument: nil, status: row.status ?? "pending",
+                                submittedAt: row.submittedAt ?? row.timestamp,
+                                awaiting: nil, shipmentId: row.shipmentId,
+                                laneOrigin: row.origin, laneDestination: row.destination)
+            }
+
+            let decidedRows = h.filter { decided.contains(($0.status ?? $0.outcome ?? "").lowercased()) }
+            let accepted = decidedRows.filter { (($0.status ?? $0.outcome ?? "").lowercased()) == "accepted" }.count
+            self.stats = TenderStats569(
+                pendingCount: pending.count,
+                acceptRatePct: decidedRows.isEmpty ? nil : (Double(accepted) / Double(decidedRows.count)) * 100.0,
+                avgReplyMinutes: nil)  // reply latency needs paired submit/decide stamps — nil renders "—", never a fabricated number
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
@@ -433,14 +479,23 @@ private struct RailTenderWorkflowBody: View {
     }
 
     private func respond(accept: Bool) async {
-        guard let tid = activeTender?.id else { return }
+        // tenderId is the primary correlation key; shipmentId is the server's
+        // sanctioned fallback (receiveTenderResponse input, railTenderWorkflow
+        // .ts:220-225). Either being present makes the reply routable.
+        guard activeTender?.id != nil || activeTender?.shipmentId != nil else { return }
+        let tid = activeTender?.id
         if accept { isAccepting = true } else { isDeclining = true }
-        struct RespondIn: Encodable { let tenderId: String; let response: String }
+        struct RespondIn: Encodable { let tenderId: String?; let response: String; let shipmentId: Int? }
         struct RespondOut: Decodable {}
         do {
-            let _: RespondOut = try await EusoTripAPI.shared.query(
+            // S4 cure 2026-08-10: receiveTenderResponse is a MUTATION
+            // (railTenderWorkflow.ts:220 .mutation — persists the EDI-990
+            // outcome). query() GET-called it, so Accept/Decline was dead on
+            // iOS while working on web — PARITY_AND_CHAINS.md §2·S4.
+            let _: RespondOut = try await EusoTripAPI.shared.mutation(
                 "railTenderWorkflow.receiveTenderResponse",
-                input: RespondIn(tenderId: tid, response: accept ? "accept" : "decline"))
+                input: RespondIn(tenderId: tid, response: accept ? "accept" : "decline",
+                                 shipmentId: activeTender?.shipmentId))
             await load()
         } catch { /* surface error silently; keep tender displayed */ }
         isAccepting = false; isDeclining = false

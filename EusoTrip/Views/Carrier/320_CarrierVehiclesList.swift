@@ -57,6 +57,19 @@ private struct CarrierVehicle: Decodable, Identifiable, Hashable {
     let inspectionExpires: String?
 }
 
+private struct VehicleMutationResult: Decodable {
+    let success: Bool?
+    let message: String?
+    let error: String?
+
+    func failureMessage(fallback: String) -> String? {
+        guard success == false else { return nil }
+        return [message, error]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first(where: { !$0.isEmpty }) ?? fallback
+    }
+}
+
 private struct VehicleKanbanColumn: Identifiable, Hashable {
     let id: String           // matches server status enum
     let label: String
@@ -280,6 +293,7 @@ private struct VehiclesBody: View {
         .dropDestination(for: String.self) { droppedIds, _ in
             guard col.acceptsDrops else { return false }
             guard let vehicleId = droppedIds.first else { return false }
+            guard flipping == nil else { return false }
             guard let v = vehicles.first(where: { $0.id == vehicleId }) else { return false }
             if v.status.lowercased() == col.id { return false }
             Task { await flip(v: v, to: col.id) }
@@ -350,27 +364,43 @@ private struct VehiclesBody: View {
     }
 
     private func flip(v: CarrierVehicle, to newStatus: String) async {
-        await MainActor.run { flipping = v.id; actionError = nil }
+        let started = await MainActor.run { () -> Bool in
+            guard flipping == nil else { return false }
+            flipping = v.id
+            actionError = nil
+            lastFlip = nil
+            return true
+        }
+        guard started else { return }
         struct In: Encodable { let id: String; let status: String }
-        struct Out: Decodable { let success: Bool? }
         do {
-            let _: Out = try await EusoTripAPI.shared.mutation(
+            let response: VehicleMutationResult = try await EusoTripAPI.shared.mutation(
                 "vehicles.updateStatus",
                 input: In(id: v.id, status: newStatus)
             )
-            await MainActor.run {
-                lastFlip = "\(v.vehicleNumber) → \(newStatus.uppercased().replacingOccurrences(of: "_", with: " "))"
-            }
-            await load()
-            await MainActor.run {
-                withAnimation(.easeOut(duration: 0.18)) { selected = newStatus }
+            if let failure = response.failureMessage(
+                fallback: "The server rejected the status change for \(v.vehicleNumber)."
+            ) {
+                await MainActor.run { actionError = failure }
+                await load()
+            } else {
+                await MainActor.run {
+                    lastFlip = "\(v.vehicleNumber) → \(newStatus.uppercased().replacingOccurrences(of: "_", with: " "))"
+                }
+                await load()
+                await MainActor.run {
+                    withAnimation(.easeOut(duration: 0.18)) { selected = newStatus }
+                }
             }
         } catch {
             await MainActor.run {
                 actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
             }
         }
-        await MainActor.run { flipping = nil }
+        await MainActor.run {
+            flipping = nil
+            dragHoverColumn = nil
+        }
     }
 }
 

@@ -54,6 +54,7 @@ private struct RailBidMeta627: Decodable {
     /// Carrier display name when the server enriches the metadata.
     let carrier: String?
     let bidderName: String?
+    let isMine: Bool?
 }
 
 /// One row from `railShipments.getRailBids`.
@@ -63,6 +64,37 @@ private struct RailBid627: Decodable, Identifiable {
     let timestamp: String?
 }
 
+private struct RailBidBoardContext627: Decodable {
+    struct Yard: Decodable {
+        let id: Int
+        let name: String
+        let city: String?
+        let state: String?
+        let country: String?
+    }
+    struct Carrier: Decodable {
+        let id: Int
+        let name: String
+        let reportingMark: String
+    }
+
+    let shipmentId: Int
+    let shipmentNumber: String
+    let status: String?
+    let commodity: String?
+    let carType: String?
+    let numberOfCars: Int?
+    let weight: Double?
+    let currency: String?
+    let hazmatClass: String?
+    let unNumber: String?
+    let origin: Yard?
+    let destination: Yard?
+    let shipperName: String?
+    let carrier: Carrier?
+    let isOwner: Bool
+}
+
 // MARK: - Body
 
 private struct RailBidBoardBody: View {
@@ -70,16 +102,26 @@ private struct RailBidBoardBody: View {
     let shipmentId: Int
 
     @State private var bids: [RailBid627] = []
+    @State private var context: RailBidBoardContext627? = nil
     @State private var loading = true
     @State private var loadError: String? = nil
     @State private var submitting = false
     @State private var submitNote: String? = nil
+    @State private var showingQuoteForm = false
+    @State private var quoteAmount = ""
+    @State private var quoteRateType = "per_car"
+    @State private var quoteTransitDays = ""
+    @State private var quoteRoute = ""
+    @State private var quoteNotes = ""
 
-    // Canonical context for the carrier-vantage board (shipper-of-record).
-    private let carrierName    = "BNSF INTERMODAL"
-    private let shipperOfRecord = "Eusorone Technologies (DU)"
-    private let railRef        = "RAIL-260524-9C20A7E15B"
-    private let lane           = "LB ICTF to Chicago"
+    private var carrierName: String { context?.carrier?.name ?? "Your rail carrier" }
+    private var shipperOfRecord: String { context?.shipperName ?? "Shipper of record" }
+    private var railRef: String { context?.shipmentNumber ?? "Rail shipment" }
+    private var lane: String {
+        let origin = context?.origin.map(yardLabel) ?? "Origin pending"
+        let destination = context?.destination.map(yardLabel) ?? "Destination pending"
+        return "\(origin) to \(destination)"
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -127,6 +169,7 @@ private struct RailBidBoardBody: View {
         }
         .task { await reload() }
         .refreshable { await reload() }
+        .sheet(isPresented: $showingQuoteForm) { quoteForm }
     }
 
     // MARK: - Derived (sorted bids → board figures)
@@ -142,9 +185,12 @@ private struct RailBidBoardBody: View {
         guard let lo = lowAmount, let hi = highAmount else { return nil }
         return hi - lo
     }
-    /// Your (the carrier's) leading quote — the lowest bid on the board.
-    private var yourQuote: RailBid627? { sortedBids.first }
-    private var isLeading: Bool { yourQuote != nil }
+    /// The authenticated carrier's quote, never inferred from rank.
+    private var yourQuote: RailBid627? { sortedBids.first { $0.metadata?.isMine == true } }
+    private var isLeading: Bool {
+        guard let mine = yourQuote?.metadata?.amount, let lowAmount else { return false }
+        return mine == lowAmount
+    }
 
     // MARK: - Eyebrow
 
@@ -489,7 +535,7 @@ private struct RailBidBoardBody: View {
     private var ctaPair: some View {
         HStack(spacing: Space.s2) {
             CTAButton(title: "Submit quote",
-                      action: { Task { await submitQuote() } },
+                      action: { openQuoteForm() },
                       isLoading: submitting)
                 .frame(maxWidth: .infinity)
             RailSecondaryActionButton(
@@ -501,6 +547,65 @@ private struct RailBidBoardBody: View {
         }
     }
 
+    private var quoteForm: some View {
+        NavigationStack {
+            Form {
+                Section("Shipment") {
+                    LabeledContent("Reference", value: railRef)
+                    LabeledContent("Lane", value: lane)
+                    if let commodity = context?.commodity, !commodity.isEmpty {
+                        LabeledContent("Commodity", value: commodity)
+                    }
+                    if let lowAmount {
+                        LabeledContent("Current low", value: money(lowAmount))
+                    }
+                }
+
+                Section("Your quote") {
+                    TextField("Amount", text: $quoteAmount)
+                        .keyboardType(.decimalPad)
+                    Picker("Rate basis", selection: $quoteRateType) {
+                        Text("Per car").tag("per_car")
+                        Text("Per ton").tag("per_ton")
+                        Text("Per mile").tag("per_mile")
+                        Text("Flat").tag("flat")
+                    }
+                    TextField("Transit days", text: $quoteTransitDays)
+                        .keyboardType(.numberPad)
+                    TextField("Proposed route", text: $quoteRoute, axis: .vertical)
+                        .lineLimit(2...4)
+                    TextField("Commercial notes (optional)", text: $quoteNotes, axis: .vertical)
+                        .lineLimit(2...5)
+                }
+            }
+            .navigationTitle("Submit rail quote")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { showingQuoteForm = false }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Submit") { Task { await submitQuote() } }
+                        .disabled(!quoteIsValid || submitting)
+                }
+            }
+        }
+    }
+
+    private var quoteIsValid: Bool {
+        guard let amount = Double(quoteAmount), amount > 0,
+              let days = Int(quoteTransitDays), (1...365).contains(days) else { return false }
+        return !quoteRoute.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func openQuoteForm() {
+        if quoteRoute.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           context?.origin != nil, context?.destination != nil {
+            quoteRoute = lane
+        }
+        showingQuoteForm = true
+    }
+
     // MARK: - Formatting helpers
 
     private func money(_ v: Double) -> String {
@@ -510,6 +615,12 @@ private struct RailBidBoardBody: View {
     }
     private func moneyK(_ v: Double) -> String {
         String(format: "$%.2fk", v / 1000.0)
+    }
+    private func yardLabel(_ yard: RailBidBoardContext627.Yard) -> String {
+        let place = [yard.city, yard.state].compactMap { value in
+            value?.trimmingCharacters(in: .whitespacesAndNewlines)
+        }.filter { !$0.isEmpty }.joined(separator: ", ")
+        return place.isEmpty ? yard.name : "\(yard.name) (\(place))"
     }
     private func carrierTitle(_ bid: RailBid627) -> String {
         if let c = bid.metadata?.carrier, !c.isEmpty { return c }
@@ -560,10 +671,18 @@ private struct RailBidBoardBody: View {
         loading = true; loadError = nil
         struct In: Encodable { let shipmentId: Int }
         do {
+            let boardContext: RailBidBoardContext627? = try await EusoTripAPI.shared.query(
+                "railShipments.getRailBidBoardContext", input: In(shipmentId: shipmentId))
+            guard let boardContext else {
+                throw EusoTripAPIError.trpcError("This rail bid board is unavailable for your account")
+            }
             let rows: [RailBid627] = try await EusoTripAPI.shared.query(
                 "railShipments.getRailBids", input: In(shipmentId: shipmentId))
+            self.context = boardContext
             self.bids = rows
         } catch {
+            context = nil
+            bids = []
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
         loading = false
@@ -578,21 +697,40 @@ private struct RailBidBoardBody: View {
             let rateType: String
             let transitDays: Int
             let route: String
+            let notes: String?
         }
         struct Ack: Decodable { let success: Bool?; let message: String? }
-        // Quote a touch below the current floor to take the lead — verbatim
-        // carrier-vantage "lowest first" intent ($4,180 leads in the wireframe).
-        let floor = lowAmount ?? 4_180
-        let bidAmount = max(0, floor - 1)
+        guard let bidAmount = Double(quoteAmount), bidAmount > 0,
+              let transitDays = Int(quoteTransitDays), (1...365).contains(transitDays) else {
+            submitNote = "Enter a valid amount and transit time"
+            submitting = false
+            return
+        }
+        let route = quoteRoute.trimmingCharacters(in: .whitespacesAndNewlines)
+        let notes = quoteNotes.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !route.isEmpty else {
+            submitNote = "Enter the route covered by this quote"
+            submitting = false
+            return
+        }
         do {
             let ack: Ack = try await EusoTripAPI.shared.mutation(
                 "railShipments.createRailBid",
                 input: In(shipmentId: shipmentId,
                           amount: bidAmount,
-                          rateType: "per_car",
-                          transitDays: 4,
-                          route: lane))
-            submitNote = ack.message ?? (ack.success == true ? "Bid submitted" : "Bid not submitted")
+                          rateType: quoteRateType,
+                          transitDays: transitDays,
+                          route: route,
+                          notes: notes.isEmpty ? nil : notes))
+            guard ack.success == true else {
+                submitNote = ack.message ?? "Bid not submitted"
+                submitting = false
+                return
+            }
+            showingQuoteForm = false
+            submitNote = ack.message ?? "Bid submitted"
+            quoteAmount = ""
+            quoteNotes = ""
             await reload()
         } catch {
             submitNote = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

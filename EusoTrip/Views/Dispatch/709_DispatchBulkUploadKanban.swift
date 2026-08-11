@@ -51,12 +51,47 @@ private struct BulkJob: Decodable, Identifiable, Hashable {
 
 private struct BulkHistoryResponse: Decodable, Hashable { let jobs: [BulkJob] }
 
+private struct BulkMutationResult: Decodable {
+    let success: Bool?
+    let message: String?
+    let error: String?
+    let jobId: Int?
+    let totalRows: Int?
+    let aiConfidence: Double?
+
+    var serverMessage: String? {
+        guard let value = message?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !value.isEmpty else { return nil }
+        return value
+    }
+
+    func failureMessage(fallback: String) -> String? {
+        guard success == false else { return nil }
+        return [message, error]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first(where: { !$0.isEmpty }) ?? fallback
+    }
+}
+
 private struct BulkColumn: Identifiable, Hashable {
     let id: String
     let label: String
     let icon: String
     let action: String?  // procedure to run on tap
     let actionLabel: String?
+}
+
+private struct BulkActionErrorCard: View {
+    @Binding var message: String?
+
+    @ViewBuilder
+    var body: some View {
+        if let message {
+            LifecycleCard(accentDanger: true) {
+                Text(message).font(EType.caption).foregroundStyle(Brand.danger)
+            }
+        }
+    }
 }
 
 private let bulkColumns: [BulkColumn] = [
@@ -244,16 +279,11 @@ private struct BulkBody: View {
                             pushDetail?(j.fileName) { AnyView(jobSheet(j)) }
                         } label: { cardView(j, col: col) }
                             .buttonStyle(.plain)
-                            // 2026-05-23 — Drag the job card to fire
-                            // the SOURCE column's action without
-                            // opening the sheet. Drop target = any
-                            // column body; the action that runs is
-                            // the source-column's action (validateJob
-                            // for UPLOADED, executeJob for VALIDATED,
-                            // retryFailedRows for FAILED). Transient
-                            // stages (VALIDATING / IMPORTING) have
-                            // no source action; dragging from those
-                            // is a no-op.
+                            // Drag follows the server state machine: uploaded
+                            // can validate, validated can execute, and failed
+                            // can return to uploaded for a retry. Other target
+                            // columns reject the drop instead of firing an
+                            // unrelated source action.
                             .draggable(String(j.id)) {
                                 cardView(j, col: col)
                                     .frame(maxWidth: 320)
@@ -277,14 +307,13 @@ private struct BulkBody: View {
         )
         .dropDestination(for: String.self) { droppedIds, _ in
             guard let idStr = droppedIds.first, let jobId = Int(idStr) else { return false }
+            guard workingId == nil else { return false }
             guard let job = jobs.first(where: { $0.id == jobId }) else { return false }
             guard let sourceCol = bulkColumns.first(where: { $0.id == (job.status ?? "") }) else { return false }
-            // Drop on the same column = no-op (the source action
-            // already runs from the sheet; drag is the shortcut).
-            if sourceCol.id == col.id { return false }
-            // Source column must have an action wired — transient
-            // VALIDATING / IMPORTING stages bail honestly.
-            guard let proc = sourceCol.action else { return false }
+            guard let proc = dropAction(from: sourceCol, to: col) else {
+                actionError = "\(sourceCol.label) jobs cannot move to \(col.label)."
+                return false
+            }
             Task { await runAction(proc: proc, on: job) }
             return true
         } isTargeted: { hovering in
@@ -319,6 +348,7 @@ private struct BulkBody: View {
                     LifecycleRow(label: "Created", value: humanISO(j.createdAt))
                     if let c = j.completedAt { LifecycleRow(label: "Done", value: humanISO(c)) }
                 }
+                BulkActionErrorCard(message: $actionError)
                 if let proc = col.action, let label = col.actionLabel {
                     Button { Task { await runAction(proc: proc, on: j) } } label: {
                         HStack(spacing: 6) {
@@ -342,6 +372,19 @@ private struct BulkBody: View {
             }
             .padding(14)
         }.background(palette.bgPage)
+    }
+
+    private func dropAction(from source: BulkColumn, to destination: BulkColumn) -> String? {
+        switch (source.id, destination.id) {
+        case ("uploaded", "validating"), ("uploaded", "validated"):
+            return "bulkUpload.validateJob"
+        case ("validated", "importing"), ("validated", "completed"):
+            return "bulkUpload.executeJob"
+        case ("failed", "uploaded"):
+            return "bulkUpload.retryFailedRows"
+        default:
+            return nil
+        }
     }
 
     // MARK: — File import → AI-parse upload
@@ -392,23 +435,31 @@ private struct BulkBody: View {
         uploading = true
         uploadProgressNote = "ESANG is parsing \(fileName)…"
         actionError = nil
+        lastAction = nil
         struct Options: Encodable { let aiMapping: Bool }
         struct In: Encodable { let entityType: String; let csvText: String; let fileName: String; let options: Options }
-        struct Out: Decodable { let jobId: Int?; let totalRows: Int?; let aiConfidence: Double? }
         do {
-            let r: Out = try await EusoTripAPI.shared.mutation(
+            let r: BulkMutationResult = try await EusoTripAPI.shared.mutation(
                 "bulkUpload.uploadAndProcess",
                 input: In(entityType: entityType, csvText: csvText, fileName: fileName, options: Options(aiMapping: true))
             )
-            let rows = r.totalRows ?? 0
-            if let conf = r.aiConfidence, conf > 0 {
-                lastAction = "Parsed \(fileName) → \(rows) row\(rows == 1 ? "" : "s") (\(Int((conf).rounded()))% map confidence). Now in UPLOADED, Validate to continue."
+            if let failure = r.failureMessage(
+                fallback: "The server rejected \(fileName) before creating an upload job."
+            ) {
+                uploadProgressNote = nil
+                actionError = failure
+                await load()
             } else {
-                lastAction = "Parsed \(fileName) → \(rows) row\(rows == 1 ? "" : "s"). Now in UPLOADED, Validate to continue."
+                let rows = r.totalRows ?? 0
+                if let conf = r.aiConfidence, conf > 0 {
+                    lastAction = "Parsed \(fileName) → \(rows) row\(rows == 1 ? "" : "s") (\(Int((conf).rounded()))% map confidence). Now in UPLOADED, Validate to continue."
+                } else {
+                    lastAction = "Parsed \(fileName) → \(rows) row\(rows == 1 ? "" : "s"). Now in UPLOADED, Validate to continue."
+                }
+                uploadProgressNote = nil
+                withAnimation(.easeOut(duration: 0.18)) { selected = "uploaded" }
+                await load()
             }
-            uploadProgressNote = nil
-            withAnimation(.easeOut(duration: 0.18)) { selected = "uploaded" }
-            await load()
         } catch {
             uploadProgressNote = nil
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
@@ -429,20 +480,29 @@ private struct BulkBody: View {
     }
 
     private func runAction(proc: String, on j: BulkJob) async {
-        workingId = j.id; actionError = nil
+        guard workingId == nil else { return }
+        workingId = j.id
+        actionError = nil
+        lastAction = nil
         struct In: Encodable { let jobId: Int }
-        struct Out: Decodable { let success: Bool? }
         do {
-            let _: Out = try await EusoTripAPI.shared.mutation(proc, input: In(jobId: j.id))
-            lastAction = "\(proc.split(separator: ".").last ?? "") · job \(j.id) queued."
-            // If the action came from the pushed job detail (sheetJob set),
-            // pop the in-stack layer back to the funnel. The drag path
-            // leaves sheetJob nil, so no spurious pop.
-            if sheetJob != nil {
-                NotificationCenter.default.post(name: .eusoRoleNavBack, object: nil)
+            let response: BulkMutationResult = try await EusoTripAPI.shared.mutation(proc, input: In(jobId: j.id))
+            if let failure = response.failureMessage(
+                fallback: "The server rejected \(proc.split(separator: ".").last ?? "this action") for job \(j.id)."
+            ) {
+                actionError = failure
+                await load()
+            } else {
+                lastAction = response.serverMessage ?? "\(proc.split(separator: ".").last ?? "") · job \(j.id) queued."
+                // If the action came from the pushed job detail (sheetJob set),
+                // pop the in-stack layer back to the funnel. The drag path
+                // leaves sheetJob nil, so no spurious pop.
+                if sheetJob != nil {
+                    NotificationCenter.default.post(name: .eusoRoleNavBack, object: nil)
+                }
+                sheetJob = nil
+                await load()
             }
-            sheetJob = nil
-            await load()
         } catch {
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
@@ -450,18 +510,30 @@ private struct BulkBody: View {
     }
 
     private func cancel(_ j: BulkJob) async {
-        workingId = j.id; actionError = nil
+        guard workingId == nil else { return }
+        workingId = j.id
+        actionError = nil
+        lastAction = nil
         struct In: Encodable { let jobId: Int }
-        struct Out: Decodable { let success: Bool? }
         do {
-            let _: Out = try await EusoTripAPI.shared.mutation("bulkUpload.cancelJob", input: In(jobId: j.id))
-            lastAction = "Cancelled job \(j.id)."
-            // Cancel only fires from the pushed job detail — pop it back.
-            if sheetJob != nil {
-                NotificationCenter.default.post(name: .eusoRoleNavBack, object: nil)
+            let response: BulkMutationResult = try await EusoTripAPI.shared.mutation(
+                "bulkUpload.cancelJob",
+                input: In(jobId: j.id)
+            )
+            if let failure = response.failureMessage(
+                fallback: "The server rejected cancellation for job \(j.id)."
+            ) {
+                actionError = failure
+                await load()
+            } else {
+                lastAction = response.serverMessage ?? "Cancelled job \(j.id)."
+                // Cancel only fires from the pushed job detail — pop it back.
+                if sheetJob != nil {
+                    NotificationCenter.default.post(name: .eusoRoleNavBack, object: nil)
+                }
+                sheetJob = nil
+                await load()
             }
-            sheetJob = nil
-            await load()
         } catch {
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
@@ -471,4 +543,3 @@ private struct BulkBody: View {
 
 #Preview("709 · Bulk kanban · Night") { DispatchBulkUploadKanbanScreen(theme: Theme.dark, entityType: "loads").environmentObject(EusoTripSession()).preferredColorScheme(.dark) }
 #Preview("709 · Bulk kanban · Afternoon") { DispatchBulkUploadKanbanScreen(theme: Theme.light, entityType: "loads").environmentObject(EusoTripSession()).preferredColorScheme(.light) }
-

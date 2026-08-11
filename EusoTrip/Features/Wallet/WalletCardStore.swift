@@ -41,6 +41,7 @@ final class WalletCardStore: ObservableObject {
 
     @Published private(set) var themes: [WalletCardTheme] = WalletCardTheme.fallback
     @Published private(set) var selectedId: String
+    @Published private(set) var pendingThemeId: String?
     @Published private(set) var previewLoad: PreviewLoad?
     @Published private(set) var isSyncing = false
     @Published private(set) var canRetryThemeSync = false
@@ -50,6 +51,8 @@ final class WalletCardStore: ObservableObject {
     private let defaults: UserDefaults
     private let key = "eusotrip.walletThemeId"
     private var syncTask: Task<Void, Never>?
+    private var failedThemeId: String?
+    private var liveCatalogLoaded = false
 
     init(api: EusoTripAPI = .shared, defaults: UserDefaults = .standard) {
         self.api = api
@@ -62,6 +65,10 @@ final class WalletCardStore: ObservableObject {
         themes.first { $0.id == selectedId } ?? themes[0]
     }
 
+    var canMintSelectedTheme: Bool {
+        liveCatalogLoaded && selected.isVersioned && !isSyncing
+    }
+
     // MARK: Load — server is the source of truth; cache/default cover offline + first launch.
     func load(loadId: String? = nil) async {
         do {
@@ -71,12 +78,19 @@ final class WalletCardStore: ObservableObject {
             }
             themes = serverThemes
             let ref = try await api.getWalletTheme()
-            guard themes.contains(where: { $0.id == ref.themeId }) else {
+            guard let selectedTheme = themes.first(where: { $0.id == ref.themeId }),
+                  selectedTheme.revision == ref.themeRevision,
+                  selectedTheme.digest == ref.themeDigest,
+                  selectedTheme.manifestVersion == ref.manifestVersion else {
                 throw EusoTripAPIError.empty
             }
             selectedId = ref.themeId
             persist(ref.themeId)
+            liveCatalogLoaded = true
+            canRetryThemeSync = false
+            errorMessage = nil
         } catch {
+            liveCatalogLoaded = false
             if !themes.contains(where: { $0.id == selectedId }) {
                 selectedId = themes.first?.id ?? WalletCardTheme.defaultId
                 persist(selectedId)
@@ -106,33 +120,41 @@ final class WalletCardStore: ObservableObject {
 
     // MARK: Select — the choose-your-card function.
     func select(_ id: String) {
-        guard themes.contains(where: { $0.id == id }) else { return }   // 1. validate
-        guard id != selectedId else { return }                         // 2. idempotent
-        let previous = selectedId
-        selectedId = id                                                // 3. optimistic
-        persist(id)                                                    //    cache instantly
+        guard !isSyncing,
+              let theme = themes.first(where: { $0.id == id }),
+              theme.isVersioned,
+              liveCatalogLoaded else { return }
+        guard id != selectedId else { return }
         canRetryThemeSync = false
         errorMessage = nil
-
-        startSync(id: id, rollbackTo: previous)
+        failedThemeId = nil
+        startSync(theme: theme)
     }
 
-    private func startSync(id: String, rollbackTo previous: String) {
-        syncTask?.cancel()                                             // 4. coalesce taps
+    private func startSync(theme: WalletCardTheme) {
+        guard let revision = theme.revision, let digest = theme.digest else { return }
+        pendingThemeId = theme.id
         syncTask = Task { [weak self] in
             guard let self else { return }
             self.isSyncing = true
-            defer { self.isSyncing = false }
+            defer {
+                self.isSyncing = false
+                self.pendingThemeId = nil
+            }
             do {
-                try Task.checkCancellation()
-                _ = try await self.api.setWalletTheme(id)              // 5. commit (source of truth)
+                let committed = try await self.api.setWalletTheme(theme.id, revision: revision)
+                guard committed.ok,
+                      committed.themeId == theme.id,
+                      committed.themeRevision == revision,
+                      committed.themeDigest == digest,
+                      committed.manifestVersion == theme.manifestVersion else {
+                    throw WalletPassValidationError.themeMismatch
+                }
+                self.selectedId = theme.id
+                self.persist(theme.id)
                 self.canRetryThemeSync = false
-            } catch is CancellationError {
-                // superseded by a newer tap — the newer task owns the final state
             } catch {
-                guard self.selectedId == id else { return }            // a newer tap already moved on
-                self.selectedId = previous                             // 6. roll back on failure
-                self.persist(previous)
+                self.failedThemeId = theme.id
                 self.canRetryThemeSync = true
                 self.errorMessage = "Couldn't save your card style. Check your connection and try again."
             }
@@ -143,7 +165,9 @@ final class WalletCardStore: ObservableObject {
     func retrySync() {
         canRetryThemeSync = false
         errorMessage = nil
-        startSync(id: selectedId, rollbackTo: selectedId)
+        guard let id = failedThemeId,
+              let theme = themes.first(where: { $0.id == id }) else { return }
+        startSync(theme: theme)
     }
 
     // MARK: Add to Apple Wallet — themed pass for a specific load.
@@ -151,11 +175,22 @@ final class WalletCardStore: ObservableObject {
         await syncTask?.value                                          // ensure the choice is committed
         canRetryThemeSync = false
         do {
+            let chosenTheme = selected
+            guard liveCatalogLoaded,
+                  let revision = chosenTheme.revision,
+                  let digest = chosenTheme.digest else {
+                throw WalletPassValidationError.catalogUnavailable
+            }
             // Server keys on a numeric load id (`parseInt(loadId)`); normalize a
             // display id ("LD-1039" / "load_1039") to its digits so the mint
             // doesn't throw "Invalid loadId".
             let numericLoadId = Self.numericLoadId(from: loadId)
-            let cred = try await api.createPickupCredential(loadId: numericLoadId, expiresInHours: 24)
+            let cred = try await api.createPickupCredential(
+                loadId: numericLoadId,
+                expiresInHours: 24,
+                themeId: chosenTheme.id,
+                themeRevision: revision
+            )
 
             guard let urlString = cred.pkpassUrl, let url = URL(string: urlString) else {
                 // PassKit not configured server-side → caller shows the inline QR + shortCode.
@@ -163,12 +198,33 @@ final class WalletCardStore: ObservableObject {
                                                 object: nil, userInfo: ["shortCode": cred.shortCode])
                 return
             }
+            guard cred.passkitStatus == "signed",
+                  let signedTheme = cred.signedTheme,
+                  signedTheme.id == chosenTheme.id,
+                  signedTheme.revision == revision,
+                  signedTheme.digest == digest,
+                  cred.theme == signedTheme,
+                  !(cred.manifestDigest ?? "").isEmpty else {
+                throw WalletPassValidationError.themeMismatch
+            }
             // BOUNDED, auth-aware download (no raw URLSession.shared default timeout).
             let (data, _) = try await api.fetchAuthenticatedData(url)
             let pass = try PKPass(data: data)
+            guard pass.userInfo["walletThemeId"] as? String == chosenTheme.id,
+                  pass.userInfo["walletThemeRevision"] as? String == revision,
+                  pass.userInfo["walletThemeDigest"] as? String == digest,
+                  pass.userInfo["walletThemeManifestVersion"] as? String == chosenTheme.manifestVersion,
+                  pass.userInfo["walletThemePassStyle"] as? String == chosenTheme.passStyle else {
+                throw WalletPassValidationError.themeMismatch
+            }
 
-            if PKPassLibrary().containsPass(pass) {
-                errorMessage = "This pickup pass is already in your Wallet."
+            let library = PKPassLibrary()
+            if library.containsPass(pass) {
+                guard library.replacePass(with: pass) else {
+                    errorMessage = "Couldn't update the pickup pass already in Wallet."
+                    return
+                }
+                errorMessage = "Your Wallet pass now uses \(selected.name)."
                 return
             }
             guard let vc = PKAddPassesViewController(pass: pass) else {
@@ -194,7 +250,17 @@ final class WalletCardStore: ObservableObject {
         await syncTask?.value                                          // ensure the choice is committed
         canRetryThemeSync = false
         do {
-            let cred = try await api.createStaffAccessCredential(themeId: selectedId, expiresInHours: 24)
+            let chosenTheme = selected
+            guard liveCatalogLoaded,
+                  let revision = chosenTheme.revision,
+                  let digest = chosenTheme.digest else {
+                throw WalletPassValidationError.catalogUnavailable
+            }
+            let cred = try await api.createStaffAccessCredential(
+                themeId: chosenTheme.id,
+                themeRevision: revision,
+                expiresInHours: 24
+            )
 
             guard let urlString = cred.pkpassUrl, let url = URL(string: urlString) else {
                 // PassKit not configured server-side → caller shows the inline
@@ -208,11 +274,32 @@ final class WalletCardStore: ObservableObject {
                     ])
                 return
             }
+            guard cred.passkitStatus == "signed",
+                  let signedTheme = cred.signedTheme,
+                  signedTheme.id == chosenTheme.id,
+                  signedTheme.revision == revision,
+                  signedTheme.digest == digest,
+                  cred.theme == signedTheme,
+                  !(cred.manifestDigest ?? "").isEmpty else {
+                throw WalletPassValidationError.themeMismatch
+            }
             let (data, _) = try await api.fetchAuthenticatedData(url)
             let pass = try PKPass(data: data)
+            guard pass.userInfo["walletThemeId"] as? String == chosenTheme.id,
+                  pass.userInfo["walletThemeRevision"] as? String == revision,
+                  pass.userInfo["walletThemeDigest"] as? String == digest,
+                  pass.userInfo["walletThemeManifestVersion"] as? String == chosenTheme.manifestVersion,
+                  pass.userInfo["walletThemePassStyle"] as? String == "eventTicket" else {
+                throw WalletPassValidationError.themeMismatch
+            }
 
-            if PKPassLibrary().containsPass(pass) {
-                errorMessage = "This access card is already in your Wallet."
+            let library = PKPassLibrary()
+            if library.containsPass(pass) {
+                guard library.replacePass(with: pass) else {
+                    errorMessage = "Couldn't update the access card already in Wallet."
+                    return
+                }
+                errorMessage = "Your Wallet access card now uses \(selected.name)."
                 return
             }
             guard let vc = PKAddPassesViewController(pass: pass) else {
@@ -257,6 +344,20 @@ final class WalletCardStore: ObservableObject {
     }
 
     private func persist(_ id: String) { defaults.set(id, forKey: key) }
+}
+
+private enum WalletPassValidationError: LocalizedError {
+    case catalogUnavailable
+    case themeMismatch
+
+    var errorDescription: String? {
+        switch self {
+        case .catalogUnavailable:
+            return "Refresh Wallet styles before adding this pass."
+        case .themeMismatch:
+            return "The signed Apple Wallet pass did not match the selected design."
+        }
+    }
 }
 
 private extension String {

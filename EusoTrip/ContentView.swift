@@ -793,9 +793,10 @@ enum ScreenRegistry {
 
         // Final pass — remaining shipper screens that have a Screen
         // struct + canonical chrome (Shell + shipperLifecycleNav) but
-        // were missing from the registry. Detail screens use sentinel
-        // ids/empty strings so the registry walker can paint them; live
-        // call sites override with the real value at navigation time.
+        // were missing from the registry. Context-required actionable
+        // screens use nil and fail closed; non-actionable preview-only
+        // details retain their historical registry values until their
+        // own routed-context contracts are migrated.
         // Skipped intentionally:
         //   • 324 (ComplianceDashboardScreen) — superseded by 216
         //     ("Shipper · Compliance"), which Me hub 320e routes to.
@@ -839,7 +840,7 @@ enum ScreenRegistry {
         list.append(.init(id: "432", title: "Shipper · Vendor Management",       role: .shipper) { p in AnyView(VendorManagementScreen(theme: p)) })
         list.append(.init(id: "433", title: "Shipper · Recurring Loads Composer", role: .shipper) { p in AnyView(RecurringLoadsComposerScreen(theme: p)) })
         list.append(.init(id: "434", title: "Shipper · Partner Detail",          role: .shipper) { p in AnyView(PartnerDetailScreen(theme: p, partnerId: "0")) })
-        list.append(.init(id: "435", title: "Shipper · Partner Agreements",      role: .shipper) { p in AnyView(PartnerAgreementsScreen(theme: p, partnerId: "0")) })
+        list.append(.init(id: "435", title: "Shipper · Partner Agreements",      role: .shipper) { p in AnyView(PartnerAgreementsScreen(theme: p, partnerId: nil)) })
         list.append(.init(id: "436", title: "Shipper · Hot Zone City Detail",    role: .shipper) { p in AnyView(HotZoneCityDetailScreen(theme: p, city: "")) })
         // 231-240 — Arc L iOS-platform integration preview surfaces.
         // These ARE NOT extension targets — they're in-app reference
@@ -890,10 +891,10 @@ enum ScreenRegistry {
         // for a freshly posted load (POSTED / awaiting-bids state).
         list.append(.init(id: "260", title: "Shipper · Posted · Awaiting Bids", role: .shipper) { p in AnyView(PostedAwaitingBidsScreen(theme: p, loadId: "0")) })
         // 261-269 lifecycle surfaces (load-context detail screens).
-        // Each takes a `loadId`; we hand `"0"` for registry-walker
-        // entry. Production reaches these via load detail or push
-        // notification deep-links with the real load ID.
-        list.append(.init(id: "261", title: "Shipper · Bidding Live Feed",  role: .shipper) { p in AnyView(BiddingLiveFeedScreen(theme: p, loadId: "0")) })
+        // 261 is actionable, so its registry entry carries no sentinel:
+        // ShipperSurface injects the routed load id, while a bare registry
+        // mount renders the screen's honest unavailable state.
+        list.append(.init(id: "261", title: "Shipper · Bidding Live Feed",  role: .shipper) { p in AnyView(BiddingLiveFeedScreen(theme: p, loadId: nil)) })
         list.append(.init(id: "262", title: "Shipper · Awarded · Pre-Pickup", role: .shipper) { p in AnyView(AwardedPrePickupScreen(theme: p, loadId: "0")) })
         list.append(.init(id: "263", title: "Shipper · Pickup · Approaching", role: .shipper) { p in AnyView(PickupApproachingScreen(theme: p, loadId: "0")) })
         list.append(.init(id: "264", title: "Shipper · Pickup · At Gate",     role: .shipper) { p in AnyView(PickupAtGateScreen(theme: p, loadId: "0")) })
@@ -913,9 +914,9 @@ enum ScreenRegistry {
         // 380-387 RFP / contract / claims composer (take rfpId /
         // contractId / loadId where required). 390-399 notifications
         // + search + quotes + role-pick + KYB / email-verify states.
-        // Every loadId/catalystId/settlementId/etc gets the `"0"`
-        // sentinel for registry-walker entry; production reaches
-        // these with real IDs via deep-link or push.
+        // 381 is routed through ShipperSurface and fails closed without
+        // a real RFP id. Other legacy detail entries retain their
+        // existing registry values pending their own context migration.
         list.append(.init(id: "270", title: "Shipper · Delivery · Approaching",  role: .shipper) { p in AnyView(DeliveryApproachingScreen(theme: p, loadId: "0")) })
         list.append(.init(id: "271", title: "Shipper · Delivery · At Receiver",  role: .shipper) { p in AnyView(DeliveryAtReceiverScreen(theme: p, loadId: "0")) })
         list.append(.init(id: "272", title: "Shipper · Delivery · POD Signed",   role: .shipper) { p in AnyView(DeliveryPodSignedScreen(theme: p, loadId: "0")) })
@@ -988,7 +989,7 @@ enum ScreenRegistry {
 
         // 380-387 — RFP / Contracts / Claims / Reconciliation
         list.append(.init(id: "380", title: "Shipper · RFP Inbox",               role: .shipper) { p in AnyView(RfpInboxScreen(theme: p)) })
-        list.append(.init(id: "381", title: "Shipper · RFP Detail",              role: .shipper) { p in AnyView(RfpDetailScreen(theme: p, rfpId: "0")) })
+        list.append(.init(id: "381", title: "Shipper · RFP Detail",              role: .shipper) { p in AnyView(RfpDetailScreen(theme: p, rfpId: nil)) })
         list.append(.init(id: "382", title: "Shipper · Contract List",           role: .shipper) { p in AnyView(ContractListScreen(theme: p)) })
         list.append(.init(id: "383", title: "Shipper · Contract Detail",         role: .shipper) { p in AnyView(ContractDetailScreen(theme: p, contractId: "0")) })
         list.append(.init(id: "384", title: "Shipper · Bulk Retender",           role: .shipper) { p in AnyView(BulkRetenderScreen(theme: p)) })
@@ -2262,6 +2263,47 @@ enum ScreenRegistry {
             .init(id: "Rail628", title: "Rail Engineer · Yard Map",             role: .railEngineer) { p in AnyView(RailYardMapScreen(theme: p)) },
             .init(id: "Rail629", title: "Rail Engineer · Trailer Pool Detail",  role: .railEngineer) { p in AnyView(RailTrailerPoolDetailScreen(theme: p)) },
             .init(id: "Rail630", title: "Rail Engineer · Cross-Dock Ops",       role: .railEngineer) { p in AnyView(RailCrossDockOperationsScreen(theme: p)) },
+
+            // 2026-08-11 — rail :02 fire §14. Fourteen catalog identities that carried a Light SVG,
+            // a Dark SVG and a catalog Swift but had never been integrated, re-ported for real and
+            // registered here. The catalog Swifts they replace were static mockups (zero
+            // EusoTripAPI references, literal data behind a load() shim, UIColor-derived cards on a
+            // UIColor-derived page — the 1.00:1 invisible-card class DA §12 failed RAIL-008 on), so
+            // this is a port, not a copy. Every screen below reads live tRPC and verb-matches the
+            // server's .query/.mutation exactly (fault class S4).
+            //
+            // Rail Shipper band — the WHOLE open band; 001-010 is complete at BUILT with these four.
+            // Shipper-family nav, mirroring Rail002: rail is mode-content of the ONE Shipper app.
+            .init(id: "Rail003", title: "Rail Shipper · Live Tracking",         role: .shipper)      { p in AnyView(RailLiveTracking_003(theme: p, shipmentId: 0)) },
+            .init(id: "Rail004", title: "Rail Shipper · Demurrage Detail",      role: .shipper)      { p in AnyView(RailDemurrageDetail_004(theme: p, shipmentId: 0)) },
+            .init(id: "Rail009", title: "Rail Shipper · Intermodal Journey",    role: .shipper)      { p in AnyView(RailIntermodalJourney_009(theme: p, intermodalShipmentId: 0)) },
+            .init(id: "Rail010", title: "Rail Shipper · Freight Bill Audit",    role: .shipper)      { p in AnyView(RailFreightBillAudit_010(theme: p, shipmentId: 0)) },
+            // id 0 is deliberate on all four: each screen resolves the signed-in shipper's own
+            // current record through a tenant-scoped read rather than carrying a hardcoded
+            // business id the way Rail002 does with 48217. A caller-supplied id always wins.
+            //
+            // Rail operational band. Three of these are the first client caller their procedure has
+            // ever had, which is what makes them worth more than their screen count:
+            //   663 -> railGate.recordGateEvent      (an AEI/seal-mismatch HOLD could not fire from any client)
+            //   695 -> railShipments.notifyConsigneeAtInterchange (richest fan-out in rail, no initiating surface)
+            //   662 -> railDemurrageAuto.resolveDispute (an open dispute blocks settled, so carrier money froze)
+            // 696 additionally gives railDemurrageAuto.billDetention + detentionAtJunction their
+            // first callers, and 688 does the same for createConsist + assignCarToTrack.
+            .init(id: "Rail614", title: "Rail Engineer · Intermodal Segment Board", role: .railEngineer) { p in AnyView(RailIntermodalSegmentBoard_614(theme: p)) },
+            .init(id: "Rail661", title: "Rail Engineer · Demurrage Charge Run",     role: .railEngineer) { p in AnyView(RailDemurrageChargeGeneration_661(theme: p)) },
+            .init(id: "Rail662", title: "Rail Engineer · Demurrage Charge Approval",role: .railEngineer) { p in AnyView(RailDemurrageChargeApproval_662(theme: p)) },
+            .init(id: "Rail663", title: "Rail Engineer · Gate Check-In",            role: .railEngineer) { p in AnyView(RailGateCheckIn_663(theme: p)) },
+            .init(id: "Rail665", title: "Rail Engineer · Yard Slot Inventory",      role: .railEngineer) { p in AnyView(RailYardSlotInventory_665(theme: p)) },
+            .init(id: "Rail684", title: "Rail Engineer · Tender History",           role: .railEngineer) { p in AnyView(RailTenderHistory_684(theme: p)) },
+            .init(id: "Rail685", title: "Rail · EDI 417 Waybill Receipt",           role: .railEngineer) { p in AnyView(RailWaybillReceipt417_685(theme: p, shipmentId: 0)) },
+            .init(id: "Rail688", title: "Rail Engineer · Consist Board · Cut",      role: .railEngineer) { p in AnyView(RailConsistBoard_688(theme: p)) },
+            .init(id: "Rail695", title: "Rail Engineer · At-Interchange Notify",    role: .railEngineer) { p in AnyView(RailAtInterchangeNotification_695(theme: p, shipmentId: 0)) },
+            .init(id: "Rail696", title: "Rail Engineer · Junction Detention Billing",role: .railEngineer) { p in AnyView(RailJunctionDetentionBilling_696(theme: p)) },
+            // 688 is NOT a second 555. 555 is the fleet kanban of consists ("where are my cuts?");
+            // 688 is one cut's head-to-rear switch list ("what is in it, is it legal to leave?").
+            // The two SVGs were read head-to-head before either was built, and 555's own
+            // "Build new consist" CTA is a no-op (555:168-171) — 688 is the screen that makes
+            // consist creation real. Symbol sets are disjoint.
         ])
 
         // Vessel Operator surface (Vesl650–652 tab roots; Vesl659 drill-in leaf).
@@ -2367,6 +2409,25 @@ enum ScreenRegistry {
             .init(id: "Vesl711", title: "Vessel Operator · Crew Rest Hours",  role: .vesselOperator) { p in AnyView(VesselCrewRestHoursScreen(theme: p)) },
             .init(id: "Vesl712", title: "Vessel Operator · Financial Summary",role: .vesselOperator) { p in AnyView(VesselFinancialSummaryScreen(theme: p)) },
             .init(id: "Vesl659", title: "Vessel Operator · Bunker FSC", role: .vesselOperator) { p in AnyView(VesselBunkerFSCScreen(theme: p)) },
+
+            // 2026-08-11 vessel :04 fire §16 — PORT & TERMINAL GROUND-OPERATIONS band.
+            // Ten catalog identities reconstructed to purpose-built archetypes and
+            // integrated here as the 4th artifact. Each is a distinct geometric family
+            // (proportional tape · muster peg-board · sankey ribbon · dimension nomogram ·
+            // to-scale quay plan · dual-projection bay pane · swimlane raster ·
+            // turn decomposition · queue-depth histogram · per-diem burn ladder) — the
+            // anti-monotony requirement of the band. All take zero-arg-defaulted inits so
+            // the registry can open them without threading an id.
+            .init(id: "Vesl690", title: "Vessel Operator · Terminal Status",        role: .vesselOperator) { p in AnyView(VesselTerminalStatusScreen(theme: p)) },
+            .init(id: "Vesl691", title: "Vessel Operator · Crew Call Board",        role: .vesselOperator) { p in AnyView(VesselCrewCallBoardScreen(theme: p)) },
+            .init(id: "Vesl692", title: "Vessel Operator · Transshipment Connection",role: .vesselOperator) { p in AnyView(VesselTransshipmentConnectionScreen(theme: p)) },
+            .init(id: "Vesl699", title: "Vessel Operator · Vessel Particulars",     role: .vesselOperator) { p in AnyView(VesselParticularsScreen(theme: p)) },
+            .init(id: "Vesl703", title: "Vessel Operator · Port Lineup",            role: .vesselOperator) { p in AnyView(VesselPortLineupScreen(theme: p)) },
+            .init(id: "Vesl704", title: "Vessel Operator · Bay Plan",               role: .vesselOperator) { p in AnyView(VesselBayPlanScreen(theme: p)) },
+            .init(id: "Vesl707", title: "Vessel Operator · Container Movement Log", role: .vesselOperator) { p in AnyView(VesselContainerMovementLogScreen(theme: p)) },
+            .init(id: "Vesl744", title: "Vessel Operator · Terminal Gate Log",      role: .vesselOperator) { p in AnyView(VesselTerminalGateLogScreen(theme: p)) },
+            .init(id: "Vesl780", title: "Vessel Operator · Terminal Move Queue",    role: .vesselOperator) { p in AnyView(VesselTerminalMoveQueueScreen(theme: p)) },
+            .init(id: "Vesl781", title: "Vessel Operator · Drop Yard Operations",   role: .vesselOperator) { p in AnyView(VesselDropYardOperationsScreen(theme: p)) },
         ])
 
         return list

@@ -1,0 +1,2807 @@
+{
+  "schemaVersion": 1,
+  "checkedAt": "2026-08-09",
+  "policy": {
+    "gatedIsValid": true,
+    "deadStatuses": [
+      404,
+      410
+    ],
+    "description": "Official subscription, login, bot, and rate-limited documentation is valid. Dead, retired, or unverifiable hosts may not be presented in the role catalog."
+  },
+  "priorSummary": {
+    "total": 55,
+    "verifiedLive": 43,
+    "verifiedGatedOrRateLimited": 9,
+    "verifiedLiveWithCurlTlsFallback": 1,
+    "replacedAfterDrift": 1,
+    "retiredWithoutSupportedProvider": 1
+  },
+  "priorUnadjudicated": [
+    {
+      "providerId": "argus_media",
+      "url": "https://www.argusmedia.com/en/solutions/products/argus-crude",
+      "httpStatus": 200,
+      "state": "verified_live"
+    },
+    {
+      "providerId": "daseke",
+      "url": "https://tfiintl.com/en/truckload/",
+      "httpStatus": 200,
+      "state": "verified_live"
+    },
+    {
+      "providerId": "flag_marshall",
+      "url": "https://www.register-iri.com/maritime/maritime-general-information/",
+      "httpStatus": 200,
+      "state": "verified_live_manual_tls",
+      "verificationMethod": "curl"
+    },
+    {
+      "providerId": "freightverify",
+      "url": "https://www.over-haul.com/migration",
+      "httpStatus": 200,
+      "state": "verified_live"
+    },
+    {
+      "providerId": "hapag_lloyd",
+      "oldUrl": "https://doc.api-portal.hlag.com/02.products/track-and-trace/",
+      "url": "https://www.hapag-lloyd.com/en/services-information/data-solutions/api-portal.html",
+      "httpStatus": 403,
+      "state": "replaced_after_drift"
+    },
+    {
+      "providerId": "inttra",
+      "url": "https://apidocs.inttra.com/",
+      "httpStatus": 200,
+      "state": "verified_live"
+    },
+    {
+      "providerId": "iridium",
+      "url": "https://www.iridium.com/developer-resources/",
+      "httpStatus": 403,
+      "state": "verified_auth_or_bot_gated"
+    },
+    {
+      "providerId": "kenworth",
+      "url": "https://www.kenworth.com/innovation/connected-trucks/",
+      "httpStatus": 403,
+      "state": "verified_auth_or_bot_gated"
+    },
+    {
+      "providerId": "macropoint",
+      "url": "https://www.descartes.com/solutions/transportation-management/real-time-visibility",
+      "httpStatus": 200,
+      "state": "verified_live"
+    },
+    {
+      "providerId": "napa_heavy_duty",
+      "url": "https://www.napaonline.com/en/napa-professional-services",
+      "httpStatus": 403,
+      "state": "verified_auth_or_bot_gated"
+    },
+    {
+      "providerId": "nfi_industries",
+      "url": "https://www.nfiindustries.com/solutions/transportation-management/",
+      "httpStatus": 200,
+      "state": "verified_live"
+    },
+    {
+      "providerId": "oocl",
+      "url": "https://www.oocl.com/eng/ourservices/eservices/edi/Pages/default.aspx",
+      "httpStatus": 403,
+      "state": "verified_auth_or_bot_gated"
+    },
+    {
+      "providerId": "orbcomm",
+      "url": "https://www.orbcomm.com/",
+      "httpStatus": 200,
+      "state": "verified_live"
+    },
+    {
+      "providerId": "paccar",
+      "url": "https://www.daf.com/en/products-and-services/daf-services/connected-services",
+      "httpStatus": 200,
+      "state": "verified_live"
+    },
+    {
+      "providerId": "port_baltimore",
+      "url": "https://mpa.maryland.gov/Pages/seagirt-marine-terminal.aspx",
+      "httpStatus": 200,
+      "state": "verified_live"
+    },
+    {
+      "providerId": "portbase",
+      "url": "https://developer.portbase.com/",
+      "httpStatus": 403,
+      "state": "verified_auth_or_bot_gated"
+    },
+    {
+      "providerId": "promex",
+      "url": null,
+      "httpStatus": null,
+      "state": "retired_no_supported_provider"
+    },
+    {
+      "providerId": "railcarrx",
+      "url": "https://kaleris.com/solutions/maintenance-repair-operations/railcar/",
+      "httpStatus": 200,
+      "state": "verified_live"
+    },
+    {
+      "providerId": "rolling_strong",
+      "url": "https://www.platformscience.com/marketplace/rolling-strong",
+      "httpStatus": 200,
+      "state": "verified_live"
+    },
+    {
+      "providerId": "rts_financial",
+      "url": "https://rtsinc.com/lp/factoring",
+      "httpStatus": 200,
+      "state": "verified_live"
+    },
+    {
+      "providerId": "sea_intelligence",
+      "url": "https://sea-intelligence.com/services",
+      "httpStatus": 200,
+      "state": "verified_live"
+    },
+    {
+      "providerId": "seko",
+      "url": "https://seko.atlassian.net/wiki/spaces/RSC/pages/2470118820/API%2BDocumentation",
+      "httpStatus": 200,
+      "state": "verified_live"
+    },
+    {
+      "providerId": "shipwell",
+      "url": "https://docs.shipwell.com/docs/get-connected/authentication/",
+      "httpStatus": 200,
+      "state": "verified_live"
+    },
+    {
+      "providerId": "skybitz",
+      "url": "https://www.skybitz.com/",
+      "httpStatus": 429,
+      "state": "verified_auth_or_bot_gated"
+    },
+    {
+      "providerId": "sps_commerce",
+      "url": "https://developercenter.spscommerce.com/",
+      "httpStatus": 200,
+      "state": "verified_live"
+    },
+    {
+      "providerId": "star_cool",
+      "url": "https://www.mcicontainers.com/products/sekstant/",
+      "httpStatus": 200,
+      "state": "verified_live"
+    },
+    {
+      "providerId": "stormgeo",
+      "url": "https://stormgeo.com/products/voyage-optimization",
+      "httpStatus": 403,
+      "state": "verified_auth_or_bot_gated"
+    },
+    {
+      "providerId": "sysco",
+      "url": "https://www.sysco.com/suppliers/supplier-partnerships/supplier-resources",
+      "httpStatus": 200,
+      "state": "verified_live"
+    },
+    {
+      "providerId": "trimble_tmw",
+      "url": "https://transportation.trimble.com/en/solutions/transportation-management/tmw-suite-tms",
+      "httpStatus": 200,
+      "state": "verified_live"
+    },
+    {
+      "providerId": "truck_paper",
+      "url": "https://www.truckpaper.com/",
+      "httpStatus": 403,
+      "state": "verified_auth_or_bot_gated"
+    },
+    {
+      "providerId": "truck_parking_club",
+      "url": "https://truckparkingclub.com/",
+      "httpStatus": 403,
+      "state": "verified_auth_or_bot_gated"
+    },
+    {
+      "providerId": "trucker_path",
+      "url": "https://docs.truckerpath.com/truckloads.html",
+      "httpStatus": 200,
+      "state": "verified_live"
+    },
+    {
+      "providerId": "tsa_twic",
+      "url": "https://www.tsa.gov/for-industry/twic-card-reader-technology",
+      "httpStatus": 200,
+      "state": "verified_live"
+    },
+    {
+      "providerId": "turvo",
+      "url": "https://app.turvo.com/lobby/documentation",
+      "httpStatus": 200,
+      "state": "verified_live"
+    },
+    {
+      "providerId": "txtag",
+      "url": "https://www.txdot.gov/discover/toll-roads-managed-lanes/paying-tolls/how-tags-work.html",
+      "httpStatus": 200,
+      "state": "verified_live"
+    },
+    {
+      "providerId": "up",
+      "url": "https://www.up.com/customers/all/api-developer/",
+      "httpStatus": 200,
+      "state": "verified_live"
+    },
+    {
+      "providerId": "us_foods",
+      "url": "https://www.usfoods.com/for-investors-media-and-suppliers/supplier-info",
+      "httpStatus": 200,
+      "state": "verified_live"
+    },
+    {
+      "providerId": "usace_locks",
+      "url": "https://ndc.ops.usace.army.mil/ords/r/lpms/corps-locks/home",
+      "httpStatus": 200,
+      "state": "verified_live"
+    },
+    {
+      "providerId": "verisk_3e",
+      "url": "https://www.3eco.com/3e-solutions/chemical-workplace-safety/3e-protect/",
+      "httpStatus": 200,
+      "state": "verified_live"
+    },
+    {
+      "providerId": "verizon_connect",
+      "url": "https://www.verizonconnect.com/services/api-integration/",
+      "httpStatus": 200,
+      "state": "verified_live"
+    },
+    {
+      "providerId": "veson_imos",
+      "url": "https://api.veslink.com/Help",
+      "httpStatus": 200,
+      "state": "verified_live"
+    },
+    {
+      "providerId": "vigillo",
+      "url": "https://sambasafety.com/customer-portal",
+      "httpStatus": 200,
+      "state": "verified_live"
+    },
+    {
+      "providerId": "volvo_trucks",
+      "url": "https://developer.volvotrucks.com/",
+      "httpStatus": 200,
+      "state": "verified_live"
+    },
+    {
+      "providerId": "wabash",
+      "url": "https://www.onewabash.com/products/trailerhawk",
+      "httpStatus": 200,
+      "state": "verified_live"
+    },
+    {
+      "providerId": "wabtec",
+      "url": "https://www.wabteccorp.com/digital-intelligence/energy-management/trip-optimizer",
+      "httpStatus": 200,
+      "state": "verified_live"
+    },
+    {
+      "providerId": "wartsila",
+      "url": "https://www.wartsila.com/marine/products/fleet-optimisation/voyage-and-ports/voyage-optimiser-tool",
+      "httpStatus": 200,
+      "state": "verified_live"
+    },
+    {
+      "providerId": "waymo_via",
+      "url": "https://waymo.com/blog/2023/07/doubling-down-on-waymo-one/",
+      "httpStatus": 200,
+      "state": "verified_live"
+    },
+    {
+      "providerId": "wco_hs",
+      "url": "https://www.wcotradetools.org/en/harmonized-system/text/2022/en",
+      "httpStatus": 200,
+      "state": "verified_live"
+    },
+    {
+      "providerId": "werner",
+      "url": "https://www.wernerbridge.com/",
+      "httpStatus": 200,
+      "state": "verified_live"
+    },
+    {
+      "providerId": "wex",
+      "url": "https://developer.wexinc.com/fleet-fabric-service/",
+      "httpStatus": 200,
+      "state": "verified_live"
+    },
+    {
+      "providerId": "worldwide_express",
+      "url": "https://www.wwex.com/shipping-resources/speedship-parcel-tms",
+      "httpStatus": 200,
+      "state": "verified_live"
+    },
+    {
+      "providerId": "xpo",
+      "url": "https://www.xpo.com/help-center/integration-with-customer-systems/api/",
+      "httpStatus": 200,
+      "state": "verified_live"
+    },
+    {
+      "providerId": "yang_ming",
+      "url": "https://www.yangming.com/en/esolution/digital_solution/api_introduction",
+      "httpStatus": 200,
+      "state": "verified_live"
+    },
+    {
+      "providerId": "yusen_logistics",
+      "url": "https://connect.yvf.yusen-logistics.com/login",
+      "httpStatus": 200,
+      "state": "verified_live"
+    },
+    {
+      "providerId": "zencargo",
+      "url": "https://www.zencargo.com/ai-platform/",
+      "httpStatus": 200,
+      "state": "verified_live"
+    }
+  ],
+  "catalogSummary": {
+    "declaredRows": 300,
+    "runtimeRows": 358,
+    "uniqueUrls": 208,
+    "stateCounts": {
+      "verified_live": 196,
+      "verified_auth_or_bot_gated": 12,
+      "verified_temporary_provider_error": 0,
+      "verified_live_manual_tls": 0,
+      "replaced_after_drift": 0,
+      "retired_no_supported_provider": 0
+    }
+  },
+  "catalogUrls": [
+    {
+      "url": "https://aar.org",
+      "rowIds": [
+        "RAIL_BROKER:aar",
+        "RAIL_CATALYST:aar",
+        "RAIL_SHIPPER:aar"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.aar.org/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://admiralty.co.uk",
+      "rowIds": [
+        "SHIP_CAPTAIN:ukho"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.admiralty.co.uk/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://adonishr.com",
+      "rowIds": [
+        "SHIP_CAPTAIN:adonis"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.adonishr.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://ansoniacreditdata.com",
+      "rowIds": [
+        "FACTORING:ansonia"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://ansoniacreditdata.com/index.html",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://apexcapitalcorp.com",
+      "rowIds": [
+        "FACTORING:apex"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.apexcapitalcorp.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://api-docs-acceptance.cargomatic.com",
+      "rowIds": [
+        "TERMINAL_MANAGER:cargomatic"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://api-docs-acceptance.cargomatic.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://api-portal.cma-cgm.com/products/transport-execution",
+      "rowIds": [
+        "VESSEL_SHIPPER:cmacgm"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://api-portal.cma-cgm.com/products/transport-execution",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://api.freightwaves.com/Help/",
+      "rowIds": [
+        "SHIPPER:freightwaves-sonar"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://api.freightwaves.com/Help/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://api.sap.com",
+      "rowIds": [
+        "CUSTOMS_BROKER:sap-gts",
+        "SHIPPER:sap-tm",
+        "TERMINAL_MANAGER:sap-ewm"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://api.sap.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://apidocs.inttra.com",
+      "rowIds": [
+        "CUSTOMS_BROKER:inttra-cs",
+        "PORT_MASTER:inttra",
+        "VESSEL_BROKER:inttra-spot",
+        "VESSEL_OPERATOR:inttra-sched",
+        "VESSEL_SHIPPER:inttra"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://apidocs.inttra.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://atbs.com",
+      "rowIds": [
+        "CATALYST:atbs"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.atbs.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://bentley.com",
+      "rowIds": [
+        "RAIL_CONDUCTOR:bentley-aw",
+        "RAIL_DISPATCHER:bentley-aw",
+        "RAIL_ENGINEER:bentley-aw"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.bentley.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://bimco.org",
+      "rowIds": [
+        "VESSEL_BROKER:bimco"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.bimco.org/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://bunker-ex.com",
+      "rowIds": [
+        "VESSEL_OPERATOR:bunkerex"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://medicoslaserena.cl/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://business.gasbuddy.com",
+      "rowIds": [
+        "DRIVER:gasbuddy"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.gasbuddy.com/go",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://cargowise.com",
+      "rowIds": [
+        "CUSTOMS_BROKER:cargowise"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://cargowise.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://carrierassure.com",
+      "rowIds": [
+        "BROKER:carrierassure"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.carrierassure.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://cbp.gov/ctpat",
+      "rowIds": [
+        "COMPLIANCE_OFFICER:ctpat",
+        "CUSTOMS_BROKER:ctpat"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.cbp.gov/border-security/ports-entry/cargo-security/ctpat",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://clearinghouse.fmcsa.dot.gov",
+      "rowIds": [
+        "COMPLIANCE_OFFICER:fmcsa-clearinghouse",
+        "DRIVER:fmcsa-clearinghouse"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://clearinghouse.fmcsa.dot.gov/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://compassfs.net",
+      "rowIds": [
+        "FACTORING:compass"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://compassfs.net/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://csa.fmcsa.dot.gov",
+      "rowIds": [
+        "COMPLIANCE_OFFICER:fmcsa-sms"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://csa.fmcsa.dot.gov/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://data.transportation.gov",
+      "rowIds": [
+        "SAFETY_MANAGER:ntsb-data"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://data.transportation.gov/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://datalastic.com",
+      "rowIds": [
+        "VESSEL_BROKER:datalastic"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://datalastic.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://dcsa.org",
+      "rowIds": [
+        "PORT_MASTER:dcsa",
+        "VESSEL_OPERATOR:dcsa"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://dcsa.org/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://dearmansystems.com",
+      "rowIds": [
+        "TERMINAL_MANAGER:dearman"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.dearmansystems.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://descartes.com",
+      "rowIds": [
+        "CUSTOMS_BROKER:descartes",
+        "VESSEL_SHIPPER:descartes-customs"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.descartes.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://developer-docs.amazon.com/sp-api",
+      "rowIds": [
+        "SHIPPER:amazon-spapi"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://developer-docs.amazon/sp-api",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://developer-link.blueyonder.com",
+      "rowIds": [
+        "SHIPPER:blue-yonder"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://developer-link.blueyonder.com/signin?returnUrl=%2F",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://developer.fleetio.com",
+      "rowIds": [
+        "CATALYST:fleetio"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://developer.fleetio.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://developer.fourkites.com",
+      "rowIds": [
+        "DISPATCH:fourkites",
+        "SHIPPER:fourkites",
+        "VESSEL_SHIPPER:fourkites-ocean"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://developer.fourkites.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://developer.garmin.com",
+      "rowIds": [
+        "ESCORT:garmin-inreach",
+        "RAIL_CONDUCTOR:garmin-inreach"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://developer.garmin.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://developer.gomotive.com",
+      "rowIds": [
+        "CATALYST:motive",
+        "DISPATCH:motive",
+        "DRIVER:motive-driver",
+        "SAFETY_MANAGER:motive-cam"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://developer.gomotive.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://developer.intuit.com",
+      "rowIds": [
+        "SHIPPER:quickbooks"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://developer.intuit.com/app/developer/homepage",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://developer.maersk.com",
+      "rowIds": [
+        "VESSEL_SHIPPER:maersk"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://integration.maersk.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://developer.manh.com",
+      "rowIds": [
+        "SHIPPER:manhattan-tms",
+        "TERMINAL_MANAGER:manhattan-wms"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://developer.manh.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://developer.portbase.com/",
+      "rowIds": [
+        "PORT_MASTER:portbase"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_auth_or_bot_gated",
+      "httpStatus": 403,
+      "finalUrl": "https://developer.portbase.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://developer.salesforce.com",
+      "rowIds": [
+        "BROKER:salesforce",
+        "RAIL_BROKER:salesforce",
+        "VESSEL_BROKER:salesforce"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://developer.salesforce.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://developer.sambasafety.com",
+      "rowIds": [
+        "SAFETY_MANAGER:sambasafety"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://developer.sambasafety.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://developer.trimblemaps.com",
+      "rowIds": [
+        "DISPATCH:pcmiler-ws",
+        "DISPATCH:trimble-weather",
+        "DRIVER:pcmiler",
+        "ESCORT:pcmiler-ow"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://developer.trimblemaps.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://developer.truckstop.com",
+      "rowIds": [
+        "BROKER:truckstop",
+        "DISPATCH:truckstop"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://developer.truckstop.com/reference/general-overview",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://developer.ukg.com",
+      "rowIds": [
+        "TERMINAL_MANAGER:ukg"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://developer.ukg.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://developer.wexinc.com/fleet-fabric-service/",
+      "rowIds": [
+        "CATALYST:wex"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://developer.wexinc.com/fleet-fabric-service/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://developer.what3words.com",
+      "rowIds": [
+        "ESCORT:what3words"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://developer.what3words.com/public-api",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://developers.adp.com",
+      "rowIds": [
+        "TERMINAL_MANAGER:adp"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://developers.adp.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://developers.docusign.com",
+      "rowIds": [
+        "CUSTOMS_BROKER:docusign",
+        "DISPATCH:docusign",
+        "ESCORT:docusign",
+        "FACTORING:docusign",
+        "SHIPPER:docusign",
+        "VESSEL_BROKER:docusign"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://developers.docusign.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://developers.dwolla.com",
+      "rowIds": [
+        "FACTORING:dwolla"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://developers.dwolla.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://developers.geotab.com",
+      "rowIds": [
+        "CATALYST:geotab",
+        "DISPATCH:geotab",
+        "DRIVER:geotab-drive"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://developers.geotab.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://developers.project44.com/api-reference",
+      "rowIds": [
+        "DISPATCH:project44",
+        "SHIPPER:project44",
+        "VESSEL_SHIPPER:project44"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://developers.project44.com/api-reference",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://developers.samsara.com",
+      "rowIds": [
+        "CATALYST:samsara",
+        "DISPATCH:samsara",
+        "DRIVER:samsara-driver",
+        "SAFETY_MANAGER:samsara-vision"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://developers.samsara.com/reference/overview",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://devportal.dtn.com",
+      "rowIds": [
+        "CATALYST:dtn-fuels",
+        "DRIVER:dtn-weather",
+        "ESCORT:dtn-weather",
+        "RAIL_CONDUCTOR:dtn-weather",
+        "RAIL_DISPATCHER:dtn-weather",
+        "RAIL_ENGINEER:dtn-weather",
+        "TERMINAL_MANAGER:dtn-fuels"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://devportal.dtn.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://docs.alloy.com",
+      "rowIds": [
+        "FACTORING:alloy"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://developer.alloy.com/public/docs/introduction",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://docs.macropoint.com",
+      "rowIds": [
+        "SHIPPER:macropoint"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://docs.macropoint.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://docs.moderntreasury.com",
+      "rowIds": [
+        "FACTORING:modern-treasury"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://docs.moderntreasury.com/payments/docs/overview",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://docs.onfleet.com",
+      "rowIds": [
+        "DISPATCH:onfleet"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://docs.onfleet.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://docs.oracle.com/en/cloud/saas/netsuite/ns-online-help/book_1559132836.html",
+      "rowIds": [
+        "SHIPPER:netsuite",
+        "VESSEL_BROKER:netsuite"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://docs.oracle.com/en/cloud/saas/netsuite/ns-online-help/book_1559132836.html",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://docs.oracle.com/en/cloud/saas/transportation/26c/apis.html",
+      "rowIds": [
+        "SHIPPER:oracle-otm"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://docs.oracle.com/en/cloud/saas/transportation/26c/apis.html",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://docs.routific.com",
+      "rowIds": [
+        "DISPATCH:routific"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://docs.routific.com/reference/api-reference",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://docs.stripe.com/api",
+      "rowIds": [
+        "SHIPPER:stripe"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://docs.stripe.com/api",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://driverscheck.com",
+      "rowIds": [
+        "SAFETY_MANAGER:driverscheck"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://driverscheck.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://dtn.com",
+      "rowIds": [
+        "PORT_MASTER:dtn-marine",
+        "SHIP_CAPTAIN:dtn-marine",
+        "VESSEL_OPERATOR:dtn-marine"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.dtn.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://e2open.com",
+      "rowIds": [
+        "CUSTOMS_BROKER:e2open"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.e2open.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://elines.coscoshipping.com",
+      "rowIds": [
+        "VESSEL_SHIPPER:cosco"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://elines.coscoshipping.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://epa.gov",
+      "rowIds": [
+        "RAIL_CONDUCTOR:epa-haz"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.epa.gov/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://epa.gov/cdx",
+      "rowIds": [
+        "TERMINAL_MANAGER:epa"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://cdx.epa.gov/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://epa.gov/smartway",
+      "rowIds": [
+        "COMPLIANCE_OFFICER:smartway"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.epa.gov/smartway",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://escreen.com",
+      "rowIds": [
+        "SAFETY_MANAGER:escreen"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.escreen.com/us/en/home.html",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://essdocs.com",
+      "rowIds": [
+        "CUSTOMS_BROKER:essdocs",
+        "VESSEL_SHIPPER:essdocs"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_auth_or_bot_gated",
+      "httpStatus": 403,
+      "finalUrl": "https://www.essdocs.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://factorcloud.com",
+      "rowIds": [
+        "FACTORING:factorcloud"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.factorcloud.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://fadv.com",
+      "rowIds": [
+        "SAFETY_MANAGER:first-advantage"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://fadv.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://gisis.imo.org",
+      "rowIds": [
+        "SHIP_CAPTAIN:imo-gisis",
+        "VESSEL_OPERATOR:imo-gisis"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://webaccounts.imo.org/Common/WebLogin.aspx?App=GISISPublic&ReturnUrl=https%3a%2f%2fgisis.imo.org%2fPublic%2fShared%2fPublic%2fLogin.aspx",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://greenscreens.ai",
+      "rowIds": [
+        "BROKER:greenscreens"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://triumph.io/solutions/rates/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://gwccnet.com",
+      "rowIds": [
+        "SAFETY_MANAGER:great-west"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://orgreatwest.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://hammer.app",
+      "rowIds": [
+        "DRIVER:hammer"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://hammer.app/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://haulpay.io",
+      "rowIds": [
+        "FACTORING:haulpay"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://haulpay.io/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://help.highway.com",
+      "rowIds": [
+        "BROKER:highway",
+        "DISPATCH:highway"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://help.highway.com/en/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://hireright.com/api",
+      "rowIds": [
+        "SAFETY_MANAGER:hireright"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.hireright.com/api",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://hyster-yale.com",
+      "rowIds": [
+        "PORT_MASTER:rbs"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.hyster-yale.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://iftach.org",
+      "rowIds": [
+        "COMPLIANCE_OFFICER:ifta"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.iftach.org/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://infinit-i.com",
+      "rowIds": [
+        "SAFETY_MANAGER:infinit-i"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://infinitifleetsafety.com/ppc/medical-card/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://infobridge.fhwa.dot.gov",
+      "rowIds": [
+        "ESCORT:fhwa-nbi"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://infobridge.fhwa.dot.gov/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://inmarsat.com",
+      "rowIds": [
+        "SHIP_CAPTAIN:inmarsat",
+        "VESSEL_OPERATOR:inmarsat"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.inmarsat.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://integr8fuels.com",
+      "rowIds": [
+        "SHIP_CAPTAIN:integr8",
+        "VESSEL_OPERATOR:integr8"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://integr8fuels.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://intermodal.org",
+      "rowIds": [
+        "RAIL_BROKER:iana",
+        "RAIL_CATALYST:iana",
+        "RAIL_SHIPPER:iana"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://intermodal.org/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://jjkeller.com",
+      "rowIds": [
+        "COMPLIANCE_OFFICER:jjkeller-ecfr",
+        "ESCORT:jjkeller-permits"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.jjkeller.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://jjkeller.com/training",
+      "rowIds": [
+        "SAFETY_MANAGER:jjkeller-tod"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.jjkeller.com/products/training?cm_mmc=Sales-_-Training-_-training-_-null",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://kaleris.com/navis",
+      "rowIds": [
+        "PORT_MASTER:navis-n4",
+        "TERMINAL_MANAGER:navis-n4"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://kaleris.com/news/navis-achieves-2021-great-place-to-work-certification/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://kaleris.com/solutions/maintenance-repair-operations/railcar/",
+      "rowIds": [
+        "RAIL_BROKER:railcarrx",
+        "RAIL_CATALYST:railcarrx",
+        "RAIL_SHIPPER:railcarrx"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://kaleris.com/solutions/maintenance-repair-operations/railcar/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://konecranes.com",
+      "rowIds": [
+        "PORT_MASTER:konecranes"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.konecranes.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://kpler.com",
+      "rowIds": [
+        "VESSEL_BROKER:kpler",
+        "VESSEL_OPERATOR:kpler"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.kpler.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://learn.microsoft.com/dynamics365",
+      "rowIds": [
+        "TERMINAL_MANAGER:ms-d365"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://learn.microsoft.com/en-us/dynamics365/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://livingstonintl.com",
+      "rowIds": [
+        "CUSTOMS_BROKER:livingston"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.livingstonintl.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://lloydslistintelligence.com",
+      "rowIds": [
+        "VESSEL_BROKER:lloyds",
+        "VESSEL_OPERATOR:lloyds"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.lloydslistintelligence.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://lumabrighterlearning.com/products/",
+      "rowIds": [
+        "SAFETY_MANAGER:luma"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://lumabrighterlearning.com/products/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://lytx.com",
+      "rowIds": [
+        "SAFETY_MANAGER:lytx"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.lytx.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://mcleodsoftware.com/integrations",
+      "rowIds": [
+        "BROKER:mcleod"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_auth_or_bot_gated",
+      "httpStatus": 403,
+      "finalUrl": "https://mcleodsoftware.com/integrations",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://mercurygate.com",
+      "rowIds": [
+        "BROKER:mercurygate"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.infios.com/en",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://msc.com/digital-solutions",
+      "rowIds": [
+        "VESSEL_SHIPPER:msc"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.msc.com/en/solutions/digital-solutions",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://mycarrierportal.com",
+      "rowIds": [
+        "BROKER:mycarrierportal"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.mycarrierportal.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://nauticalcharts.noaa.gov",
+      "rowIds": [
+        "SHIP_CAPTAIN:noaa-charts"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://nauticalcharts.noaa.gov/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://nextload.com",
+      "rowIds": [
+        "BROKER:nextload"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.nextload.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://opcfoundation.org",
+      "rowIds": [
+        "PORT_MASTER:opc-ua",
+        "TERMINAL_MANAGER:opc-ua"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://opcfoundation.org/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://opendock.com/api",
+      "rowIds": [
+        "TERMINAL_MANAGER:opendock"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://opendock.com/api/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://openweathermap.org/api",
+      "rowIds": [
+        "DRIVER:openweather",
+        "ESCORT:openweather"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://openweathermap.org/api",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://ops.fhwa.dot.gov/travelinfo/about/about511.htm",
+      "rowIds": [
+        "ESCORT:fed511",
+        "ESCORT:state-511"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://ops.fhwa.dot.gov/travelinfo/about/about511.htm",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://optimoroute.com/api",
+      "rowIds": [
+        "DISPATCH:optimoroute"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://optimoroute.com/api/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://osha.gov",
+      "rowIds": [
+        "COMPLIANCE_OFFICER:osha"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.osha.gov/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://otrcapital.com",
+      "rowIds": [
+        "FACTORING:otr-capital"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://otrsolutions.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://parade.ai",
+      "rowIds": [
+        "BROKER:parade"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.parade.ai/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://plaid.com/docs",
+      "rowIds": [
+        "DRIVER:plaid",
+        "FACTORING:plaid"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://plaid.com/docs/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://portpro.io",
+      "rowIds": [
+        "TERMINAL_MANAGER:portpro"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://portpro.io/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://prepass.com",
+      "rowIds": [
+        "CATALYST:prepass",
+        "ESCORT:prepass"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://prepass.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://progressivecommercial.com",
+      "rowIds": [
+        "SAFETY_MANAGER:progressive"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.progressivecommercial.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://promiles.com",
+      "rowIds": [
+        "DRIVER:promiles",
+        "ESCORT:promiles-hh"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.promiles.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://pstechnology.com/crewpro/",
+      "rowIds": [
+        "RAIL_CONDUCTOR:pscs",
+        "RAIL_DISPATCHER:pscs",
+        "RAIL_ENGINEER:pscs"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://pstechnology.com/crewpro/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://q88.com",
+      "rowIds": [
+        "VESSEL_BROKER:q88"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.q88.com/login.aspx?c=1",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://rail.trimble.com",
+      "rowIds": [
+        "RAIL_CATALYST:trimble-rail"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.trimble.com/en/industries/transportation/rail",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://railcomm.com",
+      "rowIds": [
+        "RAIL_CATALYST:railcomm",
+        "RAIL_CONDUCTOR:railcomm",
+        "RAIL_DISPATCHER:railcomm",
+        "RAIL_ENGINEER:railcomm"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://tracsis-us.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://railroads.dot.gov",
+      "rowIds": [
+        "RAIL_BROKER:fra",
+        "RAIL_CATALYST:fra",
+        "RAIL_CONDUCTOR:fra-incidents",
+        "RAIL_DISPATCHER:fra-incidents",
+        "RAIL_ENGINEER:fra-incidents",
+        "RAIL_SHIPPER:fra"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://railroads.dot.gov/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://rmis.com",
+      "rowIds": [
+        "BROKER:rmis"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://truckstop.com/product/carrier-onboarding/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://rtsinc.com/lp/factoring",
+      "rowIds": [
+        "FACTORING:rts-financial"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://rtsinc.com/lp/factoring",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://safer.fmcsa.dot.gov",
+      "rowIds": [
+        "COMPLIANCE_OFFICER:fmcsa-safer"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://safer.fmcsa.dot.gov/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://sea-intelligence.com/services",
+      "rowIds": [
+        "VESSEL_OPERATOR:sea-intel"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://sea-intelligence.com/services",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://sedna.com",
+      "rowIds": [
+        "VESSEL_BROKER:sedna"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://sedna.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://servicedocs.marinetraffic.com/",
+      "rowIds": [
+        "SHIP_CAPTAIN:marinetraffic",
+        "VESSEL_BROKER:marinetraffic",
+        "VESSEL_OPERATOR:marinetraffic"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://servicedocs.marinetraffic.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://shipcsx.com",
+      "rowIds": [
+        "RAIL_BROKER:csx",
+        "RAIL_CATALYST:csx",
+        "RAIL_SHIPPER:csx"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_auth_or_bot_gated",
+      "httpStatus": 403,
+      "finalUrl": "https://shipcsx.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://shopify.dev/docs/api",
+      "rowIds": [
+        "SHIPPER:shopify"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://shopify.dev/docs/api",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://stb.gov",
+      "rowIds": [
+        "RAIL_BROKER:stb",
+        "RAIL_CATALYST:stb",
+        "RAIL_CONDUCTOR:stb",
+        "RAIL_DISPATCHER:stb",
+        "RAIL_ENGINEER:stb",
+        "RAIL_SHIPPER:stb"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.stb.gov/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://steelroads.com",
+      "rowIds": [
+        "RAIL_BROKER:steelroads",
+        "RAIL_CATALYST:steelroads",
+        "RAIL_SHIPPER:steelroads"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://steelroads.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://stormgeo.com/products/voyage-optimization",
+      "rowIds": [
+        "SHIP_CAPTAIN:stormgeo-bv",
+        "VESSEL_BROKER:stormgeo",
+        "VESSEL_OPERATOR:stormgeo"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_auth_or_bot_gated",
+      "httpStatus": 403,
+      "finalUrl": "https://stormgeo.com/products/voyage-optimization",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://stripe.com",
+      "rowIds": [
+        "RAIL_BROKER:stripe",
+        "VESSEL_BROKER:stripe"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://stripe.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://stripe.com/docs/issuing",
+      "rowIds": [
+        "DRIVER:stripe-issuing"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://docs.stripe.com/issuing",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://stripe.com/docs/treasury",
+      "rowIds": [
+        "FACTORING:stripe-treasury"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://docs.stripe.com/treasury",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://taxation-customs.ec.europa.eu",
+      "rowIds": [
+        "CUSTOMS_BROKER:eaeo"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://taxation-customs.ec.europa.eu/select-language?destination=/node/1",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://tbsfactoring.com",
+      "rowIds": [
+        "FACTORING:tbs"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://tbsfactoring.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://thomsonreuters.com/onesource",
+      "rowIds": [
+        "CUSTOMS_BROKER:thomson-onesource"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://tax.thomsonreuters.com/en/onesource",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://tideworks.com",
+      "rowIds": [
+        "PORT_MASTER:tideworks",
+        "TERMINAL_MANAGER:tideworks"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://tideworks.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://transflo.com/api",
+      "rowIds": [
+        "BROKER:transflo"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.transflo.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://transportation.trimble.com/en/solutions/transportation-management/tmw-suite-tms",
+      "rowIds": [
+        "BROKER:trimble-tmw"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://transportation.trimble.com/en/solutions/transportation-management/tmw-suite-tms",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://treasury.gov/ofac",
+      "rowIds": [
+        "CUSTOMS_BROKER:ofac",
+        "FACTORING:ofac"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://ofac.treasury.gov/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://trimble.com",
+      "rowIds": [
+        "RAIL_CONDUCTOR:trimble-rail",
+        "RAIL_DISPATCHER:trimble-rail",
+        "RAIL_ENGINEER:trimble-rail"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.trimble.com/en",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://truckerpath.com",
+      "rowIds": [
+        "DRIVER:trucker-path"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://truckerpath.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://truckertools.com",
+      "rowIds": [
+        "SAFETY_MANAGER:trucker-tools"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://truckertools.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://truckstop.com",
+      "rowIds": [
+        "CATALYST:truckstop-ins"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://truckstop.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://tsdlogistics.com",
+      "rowIds": [
+        "DRIVER:tsd-fuel"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.tsdlogistics.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://twilio.com/docs",
+      "rowIds": [
+        "DISPATCH:twilio",
+        "DRIVER:twilio",
+        "ESCORT:twilio",
+        "SHIP_CAPTAIN:twilio-sat"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.twilio.com/docs",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://unece.org/adr",
+      "rowIds": [
+        "COMPLIANCE_OFFICER:adr"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_auth_or_bot_gated",
+      "httpStatus": 403,
+      "finalUrl": "https://unece.org/adr",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://veson.com",
+      "rowIds": [
+        "VESSEL_BROKER:veson"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://veson.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://vesselfinder.com",
+      "rowIds": [
+        "SHIP_CAPTAIN:vesselfinder"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.vesselfinder.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://weather.gov/marine",
+      "rowIds": [
+        "PORT_MASTER:noaa-marine",
+        "SHIP_CAPTAIN:noaa-marine",
+        "VESSEL_OPERATOR:noaa-marine"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.weather.gov/marine",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://withpersona.com/docs",
+      "rowIds": [
+        "FACTORING:persona"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://docs.withpersona.com/getting-started",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://withvector.com",
+      "rowIds": [
+        "DRIVER:vector-mobile"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.withvector.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.123loadboard.com/api",
+      "rowIds": [
+        "BROKER:123loadboard"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.123loadboard.com/api/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.accessns.com",
+      "rowIds": [
+        "RAIL_BROKER:ns",
+        "RAIL_CATALYST:ns",
+        "RAIL_SHIPPER:ns"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.accessns.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.balticexchange.com",
+      "rowIds": [
+        "VESSEL_BROKER:baltic"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.balticexchange.com/en/index.html",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.bestpass.com",
+      "rowIds": [
+        "CATALYST:bestpass",
+        "DISPATCH:bestpass",
+        "ESCORT:bestpass"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://bestpass.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.bnsf.com",
+      "rowIds": [
+        "RAIL_BROKER:bnsf",
+        "RAIL_CATALYST:bnsf",
+        "RAIL_SHIPPER:bnsf"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.bnsf.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.cargosmart.com",
+      "rowIds": [
+        "VESSEL_SHIPPER:cargosmart"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.cargosmart.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.carrier411.com/webservices.cfm",
+      "rowIds": [
+        "BROKER:carrier411"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_auth_or_bot_gated",
+      "httpStatus": 403,
+      "finalUrl": "https://www.carrier411.com/webservices.cfm",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.cbp.gov/trade/automated",
+      "rowIds": [
+        "COMPLIANCE_OFFICER:cbp-ace",
+        "CUSTOMS_BROKER:cbp-ace",
+        "PORT_MASTER:cbp-ace"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.cbp.gov/trade/automated",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.cbsa-asfc.gc.ca/services/carm-gcra/menu-eng.html",
+      "rowIds": [
+        "COMPLIANCE_OFFICER:cbsa-carm",
+        "CUSTOMS_BROKER:carm"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.canada.ca/en/border-services-agency/services/carm.html",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.census.gov/foreign-trade/aes/index.html",
+      "rowIds": [
+        "CUSTOMS_BROKER:ace-aes"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.census.gov/foreign-trade/aes/index.html",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.clarksons.com",
+      "rowIds": [
+        "VESSEL_BROKER:clarksons"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.clarksons.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.classnk.or.jp",
+      "rowIds": [
+        "SHIP_CAPTAIN:classnk",
+        "VESSEL_OPERATOR:classnk"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.classnk.or.jp/hp/en/index.html",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.cn.ca/ebusiness",
+      "rowIds": [
+        "RAIL_BROKER:cn",
+        "RAIL_CATALYST:cn",
+        "RAIL_SHIPPER:cn"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.cn.ca/ebusiness",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.comdata.com",
+      "rowIds": [
+        "CATALYST:comdata"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.comdata.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.cpkcr.com",
+      "rowIds": [
+        "RAIL_BROKER:cpkc",
+        "RAIL_CATALYST:cpkc",
+        "RAIL_SHIPPER:cpkc"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.cpkcr.com/en",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.cyberlogitec.com/en/sub/solution/port/opus_terminal.php",
+      "rowIds": [
+        "PORT_MASTER:opus",
+        "TERMINAL_MANAGER:opus-terminal"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.cyberlogitec.com/en/sub/solution/port/opus_terminal.php",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.dat.com/api-integration",
+      "rowIds": [
+        "BROKER:dat-power",
+        "DISPATCH:dat-power",
+        "SHIPPER:dat-rateview"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.dat.com/api-integration",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.decisiv.com",
+      "rowIds": [
+        "CATALYST:decisiv"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.decisiv.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.descartes.com/automated-denied-party-screening",
+      "rowIds": [
+        "CUSTOMS_BROKER:rps-descartes"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.descartes.com/automated-denied-party-screening",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.efsllc.com",
+      "rowIds": [
+        "CATALYST:efs"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.efsllc.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.eia.gov/opendata/",
+      "rowIds": [
+        "TERMINAL_MANAGER:eia"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.eia.gov/opendata/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.employersolutions.com",
+      "rowIds": [
+        "SAFETY_MANAGER:quest"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.questdiagnostics.com/business-solutions/employers/drug-screening",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.eroad.com",
+      "rowIds": [
+        "CATALYST:eroad"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.eroad.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.escreen.com",
+      "rowIds": [
+        "DRIVER:escreen"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.escreen.com/us/en/home.html",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.evergreen-line.com",
+      "rowIds": [
+        "VESSEL_SHIPPER:evergreen"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.evergreen-line.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.fda.gov/fsma",
+      "rowIds": [
+        "COMPLIANCE_OFFICER:fsma"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.fda.gov/food/guidance-regulation-food-and-dietary-supplements/food-safety-modernization-act-fsma",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.fleetone.com/api",
+      "rowIds": [
+        "CATALYST:fleetone"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.efsllc.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.fmcsa.dot.gov",
+      "rowIds": [
+        "COMPLIANCE_OFFICER:mcs-150"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.fmcsa.dot.gov/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.gatx.com",
+      "rowIds": [
+        "RAIL_BROKER:gatx",
+        "RAIL_CATALYST:gatx",
+        "RAIL_SHIPPER:gatx"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.gatx.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.gob.mx/se",
+      "rowIds": [
+        "COMPLIANCE_OFFICER:nom"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.gob.mx/se",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.hapag-lloyd.com/en/services-information/data-solutions/api-portal.html",
+      "rowIds": [
+        "VESSEL_SHIPPER:hapag"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_auth_or_bot_gated",
+      "httpStatus": 403,
+      "finalUrl": "https://www.hapag-lloyd.com/en/services-information/data-solutions/api-portal.html",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.hitachirail.com",
+      "rowIds": [
+        "RAIL_CONDUCTOR:hitachi-stms",
+        "RAIL_DISPATCHER:hitachi-stms",
+        "RAIL_ENGINEER:hitachi-stms"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.hitachirail.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.imo.org",
+      "rowIds": [
+        "COMPLIANCE_OFFICER:imdg",
+        "PORT_MASTER:imdg",
+        "RAIL_CONDUCTOR:imdg",
+        "SHIP_CAPTAIN:imdg",
+        "SHIP_CAPTAIN:marpol"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.imo.org/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.iridium.com/developer-resources/",
+      "rowIds": [
+        "SHIP_CAPTAIN:iridium"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_auth_or_bot_gated",
+      "httpStatus": 403,
+      "finalUrl": "https://www.iridium.com/developer-resources/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.kaleris.com/yard-management",
+      "rowIds": [
+        "PORT_MASTER:pinc",
+        "TERMINAL_MANAGER:pinc"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://kaleris.com/solutions/yard-management/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.omnitracs.com",
+      "rowIds": [
+        "CATALYST:omnitracs"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.omnitracs.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.one-line.com",
+      "rowIds": [
+        "VESSEL_SHIPPER:one"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.one-line.com/en",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.oocl.com/eng/ourservices/eservices/edi/Pages/default.aspx",
+      "rowIds": [
+        "VESSEL_SHIPPER:oocl"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_auth_or_bot_gated",
+      "httpStatus": 403,
+      "finalUrl": "https://www.oocl.com/eng/ourservices/eservices/edi/Pages/default.aspx",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.psp.fmcsa.dot.gov/psp",
+      "rowIds": [
+        "COMPLIANCE_OFFICER:fmcsa-psp"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.psp.fmcsa.dot.gov/psp",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.railinc.com",
+      "rowIds": [
+        "RAIL_BROKER:railinc",
+        "RAIL_CATALYST:railinc",
+        "RAIL_CONDUCTOR:railinc-umler",
+        "RAIL_DISPATCHER:railinc-umler",
+        "RAIL_ENGINEER:railinc-umler",
+        "RAIL_SHIPPER:railinc"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://public.railinc.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.spglobal.com/market-intelligence/en/solutions/ship-and-port-data",
+      "rowIds": [
+        "VESSEL_BROKER:ihs",
+        "VESSEL_OPERATOR:ihs"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_auth_or_bot_gated",
+      "httpStatus": 403,
+      "finalUrl": "https://www.spglobal.com/market-intelligence/en/solutions/ship-and-port-data",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.tba.group",
+      "rowIds": [
+        "PORT_MASTER:tba-spinosa"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://tba.group/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.triumph.io",
+      "rowIds": [
+        "CATALYST:triumph",
+        "FACTORING:triumph"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://triumph.io/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.ttx.com",
+      "rowIds": [
+        "RAIL_BROKER:ttx",
+        "RAIL_CATALYST:ttx",
+        "RAIL_CONDUCTOR:ttx",
+        "RAIL_DISPATCHER:ttx",
+        "RAIL_ENGINEER:ttx",
+        "RAIL_SHIPPER:ttx"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.ttx.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.uirr.com",
+      "rowIds": [
+        "RAIL_BROKER:uirr",
+        "RAIL_CATALYST:uirr",
+        "RAIL_SHIPPER:uirr"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.uirr.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.ukg.com/",
+      "rowIds": [
+        "PORT_MASTER:ukg-adp"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_auth_or_bot_gated",
+      "httpStatus": 403,
+      "finalUrl": "https://www.ukg.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.up.com/customers",
+      "rowIds": [
+        "RAIL_BROKER:up",
+        "RAIL_CATALYST:up",
+        "RAIL_SHIPPER:up"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.up.com/shipping",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.ventanillaunica.gob.mx",
+      "rowIds": [
+        "COMPLIANCE_OFFICER:vucem",
+        "CUSTOMS_BROKER:vucem"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.ventanillaunica.gob.mx/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.vesselfinder.com",
+      "rowIds": [
+        "VESSEL_OPERATOR:vesselfinder"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.vesselfinder.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.wabteccorp.com",
+      "rowIds": [
+        "RAIL_CATALYST:wabtec-ptc",
+        "RAIL_CONDUCTOR:wabtec-etms",
+        "RAIL_DISPATCHER:wabtec-etms",
+        "RAIL_ENGINEER:wabtec-etms"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.wabteccorp.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.wabteccorp.com/digital-intelligence/signaling-and-train-control/information-management/raildocs",
+      "rowIds": [
+        "RAIL_CONDUCTOR:raildocs",
+        "RAIL_DISPATCHER:raildocs",
+        "RAIL_ENGINEER:raildocs"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.wabteccorp.com/digital-intelligence/signaling-and-train-control/information-management/raildocs",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.wartsila.com/marine/products/fleet-optimisation/voyage-and-ports/voyage-optimiser-tool",
+      "rowIds": [
+        "VESSEL_OPERATOR:wartsila"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.wartsila.com/marine/products/fleet-optimisation/voyage-and-ports/voyage-optimiser-tool",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.wartsila.com/marine/products/marine-navigation-solutions",
+      "rowIds": [
+        "SHIP_CAPTAIN:wartsila-nacos"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.wartsila.com/marine/products/marine-navigation-solutions",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.weather.gov/documentation/services-web-api",
+      "rowIds": [
+        "RAIL_CONDUCTOR:nws-aviation",
+        "RAIL_DISPATCHER:nws-aviation",
+        "RAIL_ENGINEER:nws-aviation"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.weather.gov/documentation/services-web-api",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.withvector.com",
+      "rowIds": [
+        "BROKER:vector"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.withvector.com/",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.yangming.com/en/esolution/digital_solution/api_introduction",
+      "rowIds": [
+        "VESSEL_SHIPPER:yang-ming"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.yangming.com/en/esolution/digital_solution/api_introduction",
+      "verificationMethod": "live_fetch"
+    },
+    {
+      "url": "https://www.zim.com",
+      "rowIds": [
+        "VESSEL_SHIPPER:zim"
+      ],
+      "checkedAt": "2026-08-09",
+      "state": "verified_live",
+      "httpStatus": 200,
+      "finalUrl": "https://www.zim.com/",
+      "verificationMethod": "live_fetch"
+    }
+  ]
+}

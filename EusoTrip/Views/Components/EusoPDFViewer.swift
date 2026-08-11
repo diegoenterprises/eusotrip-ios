@@ -387,6 +387,8 @@ struct EusoPDFViewer: View {
             switch result {
             case .presented:
                 walletAck = "Apple Wallet sheet presented"
+            case .updated:
+                walletAck = "Installed Apple Wallet pass updated"
             case .signingUnavailable:
                 walletAck = "Wallet pass not yet available, try after dispatch"
             case .failure(let msg):

@@ -1,5 +1,13 @@
 //
 //  404_DispatcherDriverRoster.swift
+// OFFLINE: READ_CACHED(5m) roster — HOS clocks frozen-and-flagged when cached (tertiary text + dashed pebble ring + "HOS as of 09:46" staleness line); pebbles hold last-known ring color; no on-surface writes; reconnect FULL.
+// WIRING (KE14, measured 2026-08-10):
+//   roster read     EXISTS · dispatch.getDriverRoster dispatch.ts:613 (dispatchProcedure) · drivers.list drivers.ts:339 (auditedOperationsProcedure)
+//   HOS clocks      EXISTS · getHOSSummaryWithELD join dispatch.ts:655 · hos.getFleetHOS hos.ts:426 · drivers.getHOSStatusByDriver drivers.ts:545
+//   tap-to-message  EXISTS · messages.sendMessage messages.ts:337 + createConversation messages.ts:556; STUB · drivers.sendMessage drivers.ts:753 (hollow, persists nothing)
+//   location        EXISTS · location.getDriverLocation location.ts:659 + getFleetLocations location.ts:554
+//   fan-out         EXISTS · driver:status_changed ws-events:55 (websocket.ts:1007) · driver:hos_warning ws-events:62 (websocket.ts:741) · dispatch:board_update ws-events:205 (socketService.ts:824); STUB named gap · driver:location_update ws-events:68 (no emitter)
+//   web peer        client/src/components/dispatch/DriverRoster.tsx
 //  EusoTrip — Dispatcher · Driver Roster.
 //
 //  Verbatim SwiftUI port of:

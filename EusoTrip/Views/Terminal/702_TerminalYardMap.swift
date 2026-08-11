@@ -436,6 +436,10 @@ struct TerminalYardMap: View {
                       let sourceSlot = sourceZone.slots.first(where: { $0.id == sourceSlotId })
                 else { return false }
                 if sourceSlot.id == slot.id { return false }
+                guard sourceZone.locationId == zone.locationId else {
+                    moveError[slot.id] = "Use the gate-transfer workflow to move equipment between yard locations."
+                    return false
+                }
                 Task { await commitMove(from: sourceSlot, fromZone: sourceZone, to: slot, toZone: zone) }
                 return true
             },
@@ -467,6 +471,14 @@ struct TerminalYardMap: View {
         to dest: TerminalAPI.YardSlot,
         toZone destZone: TerminalAPI.YardZone
     ) async {
+        guard let trailerId = src.trailerId, !trailerId.isEmpty,
+              let srcRow = src.row, let srcCol = src.col,
+              let destRow = dest.row, let destCol = dest.col else {
+            await MainActor.run {
+                moveError[dest.id] = "This slot is missing its live trailer or yard-position identity. Refresh before moving it."
+            }
+            return
+        }
         moveInFlight.insert(src.id)
         moveError[dest.id] = nil
         defer { moveInFlight.remove(src.id) }
@@ -483,11 +495,11 @@ struct TerminalYardMap: View {
             let _: Out = try await EusoTripAPI.shared.mutation(
                 "yardManagement.moveTrailer",
                 input: In(
-                    trailerId: src.loadNumber.isEmpty ? src.id : src.loadNumber,
+                    trailerId: trailerId,
                     trailerNumber: src.loadNumber.isEmpty ? nil : src.loadNumber,
-                    fromSpot: src.label.isEmpty ? src.id : src.label,
-                    toSpot: dest.label.isEmpty ? dest.id : dest.label,
-                    locationId: destZone.id,
+                    fromSpot: "\(srcRow)-\(srcCol)",
+                    toSpot: "\(destRow)-\(destCol)",
+                    locationId: destZone.locationId,
                     reason: "reposition"
                 )
             )

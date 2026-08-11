@@ -23,6 +23,9 @@
 //      DISPATCH_MESSAGE    → `.esangOpenMeDetail` with object = "messages"
 //      HOS_WARNING         → `.esangOpenMeDetail` with object = "eld"
 //      message:new         → `.eusoMessageReceived`    (userInfo = payload)
+//      rail:* / intermodal:* → `.esangRefreshSurface` (+ `.eusoNotificationReceived`
+//                            on arrival/tender/demurrage/safety) — S2 closure,
+//                            see the RAIL + INTERMODAL block in dispatch(event:)
 //
 //  For the messaging surface the caller emits `conversation:join`/`leave`
 //  frames via `joinConversation(_:)` / `leaveConversation(_:)` so the
@@ -455,6 +458,18 @@ final class RealtimeService: ObservableObject {
              "ESCORT_JOB_COMPLETED":
             nc.post(name: .esangRefreshSurface, object: event, userInfo: info)
             forwardToWatch(event: event, info: info)
+        case "escort:convoy_alert",
+             "ESCORT_CONVOY_ALERT",
+             "CONVOY_ALERT":
+            // C1 chain closure (2026-08-10): a height-pole strike / LOW_CLEARANCE
+            // stop used to fall to `default:` here — the exact event the pole
+            // exists for never reached the phone. It now surfaces as a full-stop
+            // notification (driver behind the pole is warned without navigation),
+            // refreshes ES-02 / ES-16 / dispatch surfaces, and forwards to the
+            // wrist alongside the B4 envelope lane.
+            nc.post(name: .eusoNotificationReceived, object: nil, userInfo: info)
+            nc.post(name: .esangRefreshSurface, object: event, userInfo: info)
+            forwardToWatch(event: event, info: info)
         case "support:ticket_new",
              "SUPPORT_TICKET_NEW",
              "support:ticket_reply",
@@ -548,6 +563,87 @@ final class RealtimeService: ObservableObject {
             nc.post(name: .eusoNotificationReceived, object: nil, userInfo: info)
             forwardToWatch(event: event, info: info)
 
+        // ─── RAIL + INTERMODAL family (S2 closure · 2026-08-10) ───
+        // The entire RAIL_*/INTERMODAL_* emitter family was live server-side
+        // (services/socketService.ts:1033-1170 emitRail*, routers/railShipments.ts
+        // :258/:546/:715, _core/websocket.ts:1578-1651) with ZERO subscribers on
+        // any client — PARITY_AND_CHAINS.md §2·S2, "broadcasting into a vacuum."
+        // Role rooms (`role:rail_shipper`, `role:rail_dispatcher`, …) are
+        // auto-joined on connect (socket/index.ts:331), so these frames were
+        // already ARRIVING at this switch and dying in `default:`. Event strings
+        // below are the exact wire values from shared/websocket-events.ts —
+        // no ALL-CAPS variants exist for this family, so none are listed.
+        //
+        // Lifecycle / board flips — silent re-poll, same idiom as the truck
+        // LOAD_STATE_CHANGED branch at the top of this switch.
+        case "rail:shipment_created",
+             "rail:car_ordered",
+             "rail:car_placed",
+             "rail:loading_started",
+             "rail:loaded",
+             "rail:in_consist",
+             "rail:departed",
+             "rail:in_yard",
+             "rail:spotted",
+             "rail:unloading",
+             "rail:consist_update",
+             "rail:tracking_update",
+             "rail:doc_updated",
+             "rail:status_changed":
+            // `rail:status_changed` is the per-shipment room echo
+            // railShipments.ts:715 emits alongside the typed event.
+            nc.post(name: .esangRefreshSurface, object: event, userInfo: info)
+
+        // Arrival, delivery, tender desk — the counter-party must SEE it:
+        // refresh + notification. Interchange + delivery mirror to the wrist
+        // (the consignee fan-out in emitRailAtInterchange is the richest in
+        // rail and previously had no initiating listener anywhere).
+        case "rail:at_interchange",
+             "rail:delivered":
+            nc.post(name: .esangRefreshSurface, object: event, userInfo: info)
+            nc.post(name: .eusoNotificationReceived, object: nil, userInfo: info)
+            UnreadMessageStore.shared.refresh()
+            forwardToWatch(event: event, info: info)
+        case "rail:tender_submitted",
+             "rail:tender_response",
+             "rail:tender_cancelled":
+            // EDI 404 out / 990 back / cancel — the tender desk (569, 008)
+            // re-polls instead of waiting for the next manual refresh.
+            nc.post(name: .esangRefreshSurface, object: event, userInfo: info)
+            nc.post(name: .eusoNotificationReceived, object: nil, userInfo: info)
+            UnreadMessageStore.shared.refresh()
+
+        // Money-critical: demurrage clock started accruing against the payer.
+        // PARITY_AND_CHAINS.md §3 #10 — "the first the customer hears of it
+        // is the invoice." Now the phone and the wrist hear it at accrual start.
+        case "rail:demurrage_start":
+            nc.post(name: .esangRefreshSurface, object: event, userInfo: info)
+            nc.post(name: .eusoNotificationReceived, object: nil, userInfo: info)
+            UnreadMessageStore.shared.refresh()
+            forwardToWatch(event: event, info: info)
+
+        // Safety-critical rail alerts — derailment, hazmat, crew HOS.
+        case "rail:derailment_alert",
+             "rail:hazmat_alert",
+             "rail:crew_hos_warning":
+            nc.post(name: .esangRefreshSurface, object: event, userInfo: info)
+            nc.post(name: .eusoNotificationReceived, object: nil, userInfo: info)
+            forwardToWatch(event: event, info: info)
+
+        // Intermodal seam — rail↔truck↔vessel segment cursor + transfers
+        // (intermodal.ts advanceSegment/recordTransfer fan-out). 566/617 and
+        // the shipper journey detail re-poll on every seam flip.
+        case "intermodal:segment_started",
+             "intermodal:transfer_initiated",
+             "intermodal:transfer_completed",
+             "intermodal:mode_change",
+             "intermodal:delivered":
+            nc.post(name: .esangRefreshSurface, object: event, userInfo: info)
+        case "intermodal:delay_alert":
+            nc.post(name: .esangRefreshSurface, object: event, userInfo: info)
+            nc.post(name: .eusoNotificationReceived, object: nil, userInfo: info)
+            forwardToWatch(event: event, info: info)
+
         case "presence:online", "presence:offline":
             // Debug-only — too chatty to surface.
             #if DEBUG
@@ -566,12 +662,12 @@ final class RealtimeService: ObservableObject {
     /// when a load is assigned; manual calls are for screens that want
     /// extra granularity (e.g. convoy detail).
     func joinLoad(_ loadId: Int) {
-        let frame = "42[\"load:join\",{\"loadId\":\"\(loadId)\"}]"
+        let frame = "42[\"load:join\",\"\(loadId)\"]"
         Task { try? await task?.send(.string(frame)) }
     }
 
     func leaveLoad(_ loadId: Int) {
-        let frame = "42[\"load:leave\",{\"loadId\":\"\(loadId)\"}]"
+        let frame = "42[\"load:leave\",\"\(loadId)\"]"
         Task { try? await task?.send(.string(frame)) }
     }
 
@@ -592,6 +688,19 @@ final class RealtimeService: ObservableObject {
         let sanitized = conversationId
             .replacingOccurrences(of: "\"", with: "")
         let frame = "42[\"conversation:leave\",\"\(sanitized)\"]"
+        Task { try? await task?.send(.string(frame)) }
+    }
+
+    /// Join the shipment room after the server verifies shipper/carrier
+    /// company ownership. The server also accepts the legacy `rail:join`
+    /// event during rollout, but new clients use the canonical event name.
+    func joinRailShipment(_ shipmentId: Int) {
+        let frame = "42[\"rail:shipment:join\",\"\(shipmentId)\"]"
+        Task { try? await task?.send(.string(frame)) }
+    }
+
+    func leaveRailShipment(_ shipmentId: Int) {
+        let frame = "42[\"rail:shipment:leave\",\"\(shipmentId)\"]"
         Task { try? await task?.send(.string(frame)) }
     }
 

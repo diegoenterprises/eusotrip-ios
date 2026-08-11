@@ -168,7 +168,7 @@ struct CatalystOwnerOpHome: View {
             BottomNav(
                 leading: [NavSlot(label: "Home",     systemImage: "house",                 isCurrent: true),
                           NavSlot(label: "Dispatch", systemImage: "rectangle.stack.fill",  isCurrent: false)],
-                trailing: [NavSlot(label: "Wallet",  systemImage: "creditcard.fill",       isCurrent: false),
+                trailing: [NavSlot(label: "Fleet",  systemImage: "truck.box.fill",       isCurrent: false),
                            NavSlot(label: "Me",     systemImage: "person",                isCurrent: false)],
                 orbState: .idle
             )

@@ -36,6 +36,19 @@ private struct DemurrageRow: Decodable, Identifiable, Hashable {
     let createdAt: String?
 }
 
+private struct DemurrageMutationResult: Decodable {
+    let success: Bool?
+    let message: String?
+    let error: String?
+
+    func failureMessage(fallback: String) -> String? {
+        guard success == false else { return nil }
+        return [message, error]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first(where: { !$0.isEmpty }) ?? fallback
+    }
+}
+
 private struct DemurrageKanbanColumn: Identifiable, Hashable {
     let id: String
     let label: String
@@ -221,6 +234,7 @@ private struct DemurrageBody: View {
         )
         .dropDestination(for: String.self) { droppedIds, _ in
             guard let droppedId = droppedIds.first else { return false }
+            guard processing == nil else { return false }
             guard let src = rows.first(where: { $0.id == droppedId }) else { return false }
             // Two transitions are user-driven, both from PENDING:
             //   PENDING → APPROVED → demurrage.respond(approve: true)
@@ -343,24 +357,34 @@ private struct DemurrageBody: View {
     }
 
     private func respond(r: DemurrageRow, approve: Bool) async {
-        await MainActor.run {
+        let started = await MainActor.run { () -> Bool in
+            guard processing == nil else { return false }
             processing = r.id + (approve ? ":a" : ":d")
             actionError = nil
+            lastAction = nil
+            return true
         }
+        guard started else { return }
         struct In: Encodable { let id: String; let approve: Bool }
-        struct Out: Decodable { let success: Bool? }
         do {
-            let _: Out = try await EusoTripAPI.shared.mutation(
+            let response: DemurrageMutationResult = try await EusoTripAPI.shared.mutation(
                 "demurrage.respond",
                 input: In(id: r.id, approve: approve)
             )
-            await MainActor.run {
-                lastAction = "\(r.loadNumber ?? r.id) → \(approve ? "APPROVED" : "DISPUTED")"
-            }
-            await load()
-            await MainActor.run {
-                withAnimation(.easeOut(duration: 0.18)) {
-                    selected = approve ? "approved" : "disputed"
+            if let failure = response.failureMessage(
+                fallback: "The server rejected the demurrage \(approve ? "approval" : "dispute") for \(r.loadNumber ?? r.id)."
+            ) {
+                await MainActor.run { actionError = failure }
+                await load()
+            } else {
+                await MainActor.run {
+                    lastAction = "\(r.loadNumber ?? r.id) → \(approve ? "APPROVED" : "DISPUTED")"
+                }
+                await load()
+                await MainActor.run {
+                    withAnimation(.easeOut(duration: 0.18)) {
+                        selected = approve ? "approved" : "disputed"
+                    }
                 }
             }
         } catch {
@@ -368,7 +392,10 @@ private struct DemurrageBody: View {
                 actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
             }
         }
-        await MainActor.run { processing = nil }
+        await MainActor.run {
+            processing = nil
+            dragHoverColumn = nil
+        }
     }
 }
 
