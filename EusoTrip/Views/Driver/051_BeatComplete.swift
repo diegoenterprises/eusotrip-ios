@@ -425,6 +425,12 @@ struct BeatComplete: View {
     private func startPretrip() async {
         isStartingPrehaul = true
         defer { isStartingPrehaul = false }
+        // The driver is starting the pre-trip now, so the 10-minute nudge is
+        // about a thing that has already happened. Cancel it — a reminder that
+        // outlives its obligation is a lie with a timer on it. This is the
+        // cancellation that never existed: removePendingNotificationRequests
+        // had zero call sites anywhere in the app.
+        ReminderScheduler.cancel(kind: "pretrip", subject: String(lifecycle.loadId))
         let keys = ["pretrip", "approach", "assigned"]
         if let t = lifecycle.availableTransitions.first(where: { t in keys.contains(where: { t.to.lowercased().contains($0) }) })
             ?? lifecycle.availableTransitions.first {
@@ -443,29 +449,19 @@ struct BeatComplete: View {
     private func snooze10Min() {
         MeAction.fire("051.snooze-10min",
                       userInfo: ["loadId": lifecycle.loadId])
-        let center = UNUserNotificationCenter.current()
-        center.getNotificationSettings { settings in
-            // Skip the schedule call entirely if the driver hasn't
-            // granted notification permission — there's no graceful
-            // fallback besides "we asked but they said no", and we
-            // don't want to nudge the system permission UI from a
-            // mid-trip CTA. The audit trail still recorded the tap.
-            guard settings.authorizationStatus == .authorized
-                  || settings.authorizationStatus == .provisional else {
-                return
-            }
-            let content = UNMutableNotificationContent()
-            content.title = "Pre-trip nudge"
-            content.body  = "10-minute snooze is up. Ready to start your pre-trip?"
-            content.sound = .default
-            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 10 * 60, repeats: false)
-            let req = UNNotificationRequest(
-                identifier: "eusotrip.051.snooze.\(Int(Date().timeIntervalSince1970))",
-                content: content,
-                trigger: trigger
-            )
-            center.add(req) { _ in }
-        }
+        // Deterministic id keyed on the load: snoozing twice replaces rather
+        // than stacks, and starting the pre-trip can cancel it. The previous
+        // identifier embedded a timestamp, so the request could never be named
+        // again and the nudge fired even after the driver had already begun.
+        ReminderScheduler.schedule(
+            kind: "pretrip",
+            subject: String(lifecycle.loadId),
+            title: "Pre-trip nudge",
+            body: "10-minute snooze is up. Ready to start your pre-trip?",
+            after: 10 * 60,
+            category: "load_update",
+            userInfo: ["loadId": lifecycle.loadId, "route": "eld"]
+        )
         navBack?()
     }
 }

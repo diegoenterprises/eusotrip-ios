@@ -40,6 +40,11 @@ final class PushService: NSObject, ObservableObject,
         case unknown
         case requesting
         case authorized(deviceTokenHex: String?)
+        /// Granted, but QUIETLY. Provisional notifications never reach the lock
+        /// screen — no banner, no sound, no badge, Notification Center only.
+        /// Kept as a distinct phase so a Settings row can say so honestly
+        /// instead of showing "Push enabled ✓" over silent delivery.
+        case provisionalQuiet
         case denied
         case failed(String)
     }
@@ -51,6 +56,80 @@ final class PushService: NSObject, ObservableObject,
     /// delivers one (which only happens on real devices + TestFlight).
     @Published private(set) var deviceToken: String?
 
+    // MARK: Badge
+
+    /// Clear the app icon badge and drop delivered notifications that the user
+    /// has now acted on. The server stamps `badge: 1` on every push; without
+    /// this the icon shows a "1" forever, which is a count the app cannot
+    /// substantiate.
+    @MainActor
+    static func clearBadge() {
+        let center = UNUserNotificationCenter.current()
+        if #available(iOS 17.0, *) {
+            center.setBadgeCount(0) { err in
+                if let err { print("[PushService] setBadgeCount failed: \(err.localizedDescription)") }
+            }
+        } else {
+            UIApplication.shared.applicationIconBadgeNumber = 0
+        }
+    }
+
+    // MARK: Notification categories
+    //
+    // Registered before authorization is requested so the very first delivered
+    // notification already carries its buttons. `category` on the APNs payload
+    // (notificationService sets it from the notification type) selects one of
+    // these; an unrecognised category simply delivers with no buttons, which is
+    // why the default set stays small and every id here matches a real server
+    // notification type.
+
+    static let actionView    = "EUSO_VIEW"
+    static let actionSnooze  = "EUSO_SNOOZE_15"
+    static let actionDone    = "EUSO_ACK"
+
+    /// Categories whose notification is a REMINDER about a future obligation,
+    /// and so can legitimately be snoozed. An alert about something that already
+    /// happened cannot — snoozing it would imply the event is still pending.
+    static let snoozableCategories: Set<String> = [
+        "compliance_expiring", "maintenance_due", "invoice_dunning",
+    ]
+
+    static var categories: Set<UNNotificationCategory> {
+        let view = UNNotificationAction(
+            identifier: actionView, title: "View", options: [.foreground]
+        )
+        let snooze = UNNotificationAction(
+            identifier: actionSnooze, title: "Remind me in 15 min", options: []
+        )
+        let ack = UNNotificationAction(
+            identifier: actionDone, title: "Got it", options: []
+        )
+
+        // Reminders: view + snooze. Snooze reschedules the SAME content locally,
+        // which is honest — it re-states a deadline the server already proved,
+        // it does not invent a new one.
+        let reminder = snoozableCategories.map { id in
+            UNNotificationCategory(
+                identifier: id, actions: [view, snooze, ack],
+                intentIdentifiers: [], options: []
+            )
+        }
+
+        // Events that already happened: view only. Nothing to snooze.
+        let eventIds = [
+            "load_update", "bid_received", "payment_received", "message",
+            "geofence_alert", "weather_alert", "weather_threshold", "system",
+        ]
+        let events = eventIds.map { id in
+            UNNotificationCategory(
+                identifier: id, actions: [view],
+                intentIdentifiers: [], options: []
+            )
+        }
+
+        return Set(reminder + events)
+    }
+
     // MARK: Public API
 
     /// Call once after a successful sign-in. Idempotent — safe to call
@@ -59,14 +138,57 @@ final class PushService: NSObject, ObservableObject,
         phase = .requesting
         let center = UNUserNotificationCenter.current()
         center.delegate = self
+        // Register the actionable categories before asking, so the first
+        // delivered notification already carries its buttons.
+        center.setNotificationCategories(Self.categories)
+
         do {
-            let granted = try await center.requestAuthorization(
-                options: [.alert, .badge, .sound, .provisional]
-            )
-            guard granted else {
+            let settings = await center.notificationSettings()
+
+            switch settings.authorizationStatus {
+            case .denied:
+                // Asking again is a no-op once denied; only Settings can undo it.
                 phase = .denied
                 return
+
+            case .authorized, .ephemeral:
+                break
+
+            case .provisional:
+                // PROVISIONAL IS QUIET. iOS grants it with no prompt and then
+                // delivers every notification straight to Notification Center —
+                // no lock-screen banner, no sound, no badge. Requesting the full
+                // option set here is the documented way to promote it, and it
+                // does show the real prompt.
+                let promoted = try await center.requestAuthorization(options: [.alert, .badge, .sound])
+                if !promoted {
+                    // Still provisional: the token is valid and silent delivery
+                    // continues, so keep registering — but never report this as
+                    // working push.
+                    phase = .provisionalQuiet
+                    await MainActor.run { UIApplication.shared.registerForRemoteNotifications() }
+                    return
+                }
+
+            case .notDetermined:
+                // Full authorization ONLY. `.provisional` in this option set is
+                // what silenced every notification this app has ever sent: it
+                // suppresses the prompt, returns granted == true, and then
+                // delivers quietly forever.
+                let granted = try await center.requestAuthorization(options: [.alert, .badge, .sound])
+                guard granted else {
+                    phase = .denied
+                    return
+                }
+
+            @unknown default:
+                let granted = try await center.requestAuthorization(options: [.alert, .badge, .sound])
+                guard granted else {
+                    phase = .denied
+                    return
+                }
             }
+
             await MainActor.run {
                 UIApplication.shared.registerForRemoteNotifications()
             }
@@ -171,7 +293,49 @@ final class PushService: NSObject, ObservableObject,
     ) {
         let info = response.notification.request.content.userInfo
         let route = info["route"] as? String
+        let action = response.actionIdentifier
+        let content = response.notification.request.content
+
+        // "Remind me in 15 min" — reschedule the SAME content locally. This is
+        // honest: it restates a deadline the server already proved rather than
+        // inventing a new one, and it is only offered on categories that are
+        // genuinely about a future obligation (see snoozableCategories).
+        if action == PushService.actionSnooze {
+            let copy = UNMutableNotificationContent()
+            copy.title = content.title
+            copy.body = content.body
+            copy.sound = content.sound
+            copy.userInfo = content.userInfo
+            copy.categoryIdentifier = content.categoryIdentifier
+            copy.threadIdentifier = content.threadIdentifier
+            let req = UNNotificationRequest(
+                // Deterministic id keyed on the original request: snoozing the
+                // same reminder twice replaces it instead of stacking duplicates.
+                identifier: "snooze:\(response.notification.request.identifier)",
+                content: copy,
+                trigger: UNTimeIntervalNotificationTrigger(timeInterval: 15 * 60, repeats: false)
+            )
+            center.add(req) { err in
+                if let err { print("[PushService] snooze reschedule failed: \(err.localizedDescription)") }
+            }
+            completionHandler()
+            return
+        }
+
+        // "Got it" — acknowledge without navigating anywhere.
+        if action == PushService.actionDone {
+            Task { @MainActor in
+                PushService.clearBadge()
+                completionHandler()
+            }
+            return
+        }
+
         Task { @MainActor in
+            // A tap means the user has seen it. The server sets badge: 1 on every
+            // push and nothing on the device ever cleared it, so the icon carried
+            // a permanent, unprovable "1".
+            PushService.clearBadge()
             // Messaging deep-link — route through the top-bar chat glyph
             // so tapping the push lands the driver on the right thread.
             PushService.shared.handleIncomingPayload(info)

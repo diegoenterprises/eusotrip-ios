@@ -551,6 +551,9 @@ struct LoadLockedPrehaul: View {
     private func rollToPickup() async {
         isRolling = true
         defer { isRolling = false }
+        // Gate cleared — cancel every reminder about this load, not just the
+        // pre-haul one, since the driver has moved past the whole stage.
+        ReminderScheduler.cancelAll(subject: String(lifecycle.loadId))
         let forwardKeys = ["at_pickup", "pickup_arrival", "loading"]
         if let transition = lifecycle.availableTransitions.first(where: { t in
             let to = t.to.lowercased()
@@ -578,26 +581,19 @@ struct LoadLockedPrehaul: View {
                 }
                 return
             }
-            let content = UNMutableNotificationContent()
-            content.title = "Pre-haul gate waiting"
-            content.body = "\(snapshotLoadNum), clear your remaining checks and roll."
-            content.sound = .default
-            let trigger = UNTimeIntervalNotificationTrigger(
-                timeInterval: 5 * 60,
-                repeats: false
+            ReminderScheduler.schedule(
+                kind: "prehaul",
+                subject: String(snapshotLoadId),
+                title: "Pre-haul gate waiting",
+                body: "\(snapshotLoadNum), clear your remaining checks and roll.",
+                after: 5 * 60,
+                category: "load_update",
+                userInfo: ["loadId": snapshotLoadId, "route": "eld"]
             )
-            let id = "prehaul-remind-\(snapshotLoadId)-\(Int(Date().timeIntervalSince1970))"
-            let request = UNNotificationRequest(
-                identifier: id,
-                content: content,
-                trigger: trigger
-            )
-            center.add(request) { _ in
-                Task { @MainActor in
-                    reminderToast = "Reminder set for 5 min"
-                    try? await Task.sleep(nanoseconds: 1_400_000_000)
-                    reminderToast = nil
-                }
+            Task { @MainActor in
+                reminderToast = "Reminder set for 5 min"
+                try? await Task.sleep(nanoseconds: 1_400_000_000)
+                reminderToast = nil
             }
         }
     }
