@@ -5286,13 +5286,25 @@ struct NotificationsAPI {
             let messages: Bool?
             let system: Bool?
         }
-        let enabled: Bool
+        /// Nullable on purpose. The server returns null for enabled /
+        /// deviceToken / categories when it cannot read them, alongside a
+        /// `reason`, rather than fabricating a value — so the client can show
+        /// "unknown" instead of asserting a state it has not been told.
+        let enabled: Bool?
         let deviceToken: String?
         let categories: Categories?
+        let reason: String?
     }
 
+    /// Reads `notifications.getPushSettings`, NOT `push.getSettings`.
+    ///
+    /// This called push.getSettings, which returns an ARRAY of per-category
+    /// rows ({id, category, push, email, sms, inApp}), while PushSettings
+    /// decodes an OBJECT — so the decode could never succeed and this call has
+    /// always thrown. notifications.getPushSettings is the procedure that
+    /// actually returns this shape.
     func getPushSettings() async throws -> PushSettings {
-        try await api.queryNoInput("push.getSettings")
+        try await api.queryNoInput("notifications.getPushSettings")
     }
 }
 
