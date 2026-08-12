@@ -241,13 +241,12 @@ struct DisputeListView: View {
                         .padding(.top, Space.s4)
                 } else {
                     ForEach(cards) { r in
-                        Button {
-                            detail = r
-                        } label: {
-                            rowCard(r)
-                        }
-                        .buttonStyle(.plain)
-                        .draggable(r.id) {
+                        // NOT a Button: on iOS the Button's tap recognizer wins
+                        // the gesture race and `.draggable` never starts a drag.
+                        rowCard(r)
+                            .contentShape(Rectangle())
+                            .onTapGesture { detail = r }
+                            .draggable(r.id) {
                             rowCard(r)
                                 .frame(maxWidth: 320)
                                 .opacity(0.92)

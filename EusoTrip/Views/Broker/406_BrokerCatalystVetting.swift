@@ -273,18 +273,19 @@ private struct CatalystVettingBody: View {
             )
         } else {
             ForEach(items) { item in
-                Button {
-                    // Tap a row → drill into 407 (per-applicant details).
-                    NotificationCenter.default.post(
-                        name: .eusoBrokerNavSwap,
-                        object: nil,
-                        userInfo: ["screenId": "407", "catalystId": item.catalystId]
-                    )
-                } label: {
-                    vettingCard(item)
-                }
-                .buttonStyle(.plain)
-                .draggable(item.catalystId) {
+                // NOT a Button: on iOS the Button's tap recognizer wins the
+                // gesture race and `.draggable` never starts a drag.
+                vettingCard(item)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        // Tap a row → drill into 407 (per-applicant details).
+                        NotificationCenter.default.post(
+                            name: .eusoBrokerNavSwap,
+                            object: nil,
+                            userInfo: ["screenId": "407", "catalystId": item.catalystId]
+                        )
+                    }
+                    .draggable(item.catalystId) {
                     vettingCard(item)
                         .frame(maxWidth: 320)
                         .opacity(0.92)

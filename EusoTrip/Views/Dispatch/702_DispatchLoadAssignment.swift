@@ -171,11 +171,16 @@ private struct LoadAssignBody: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(alignment: .top, spacing: Space.s3) {
                         ForEach(loads) { l in
-                            Button {
-                                pickFor = l
-                                pushDetail?("Assign driver") { AnyView(driverPickerSheet(for: l)) }
-                            } label: { loadCard(l) }
-                                .buttonStyle(.plain)
+                            // NOT a Button: on iOS the Button's tap recognizer wins
+                            // the gesture race and `.draggable` never starts a drag.
+                            // Plain view + .onTapGesture keeps the tap and lets the
+                            // drag own the long-press.
+                            loadCard(l)
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    pickFor = l
+                                    pushDetail?("Assign driver") { AnyView(driverPickerSheet(for: l)) }
+                                }
                                 .draggable(l.id) {
                                     loadCard(l)
                                         .frame(maxWidth: 280)

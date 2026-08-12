@@ -187,8 +187,11 @@ private struct AssignDriverBody: View {
             )
         } else {
             ForEach(drivers) { d in
-                Button { selected = d.id } label: { driverCard(d) }
-                    .buttonStyle(.plain)
+                // NOT a Button: on iOS the Button's tap recognizer wins the
+                // gesture race and `.draggable` never starts a drag.
+                driverCard(d)
+                    .contentShape(Rectangle())
+                    .onTapGesture { selected = d.id }
                     .draggable(d.id) {
                         driverCard(d)
                             .frame(maxWidth: 320)

@@ -295,16 +295,27 @@ private struct DispatcherKanbanBody: View {
                     spacing: 10
                 ) {
                     ForEach(cards) { l in
-                        Button { handleCardTap(l, in: lane) } label: { cardView(l, lane: lane) }
-                            .buttonStyle(.plain)
+                        // NOT a Button.
+                        //
+                        // `.draggable` was applied to a Button, and on iOS the
+                        // Button's own tap recognizer wins the gesture race, so
+                        // the drag never begins — the card highlights and stays
+                        // put. The `.simultaneousGesture(LongPressGesture)`
+                        // below it was an attempt to force the long-press that
+                        // starts a drag, which cannot work while the Button
+                        // still owns the gesture.
+                        //
+                        // A plain view with `.onTapGesture` keeps the tap and
+                        // lets `.draggable` own the long-press, which is what
+                        // actually starts a drag. The drop path was never the
+                        // problem: it calls dispatch.updateLoadStatus /
+                        // dispatch.unassignDriver and surfaces a rejection.
+                        cardView(l, lane: lane)
+                            .contentShape(Rectangle())
+                            .onTapGesture { handleCardTap(l, in: lane) }
                             .draggable(String(l.id)) {
                                 dragPreview(l, lane: lane)
                             }
-                            .simultaneousGesture(
-                                LongPressGesture(minimumDuration: 0.22).onEnded { _ in
-                                    armDragFeedback(for: l.id)
-                                }
-                            )
                     }
                 }
             }

@@ -265,11 +265,14 @@ private struct ADBody: View {
             } else {
                 VStack(spacing: 6) {
                     ForEach(drivers) { d in
-                        Button { selectedDriverId = d.id } label: {
-                            driverRow(d, selected: d.id == selectedDriverId)
-                        }
-                        .buttonStyle(.plain)
-                        .draggable(String(d.id)) {
+                        // NOT a Button: on iOS the Button's tap recognizer wins the
+                        // gesture race and `.draggable` never starts a drag. Plain
+                        // view + .onTapGesture keeps the tap and lets the drag own
+                        // the long-press.
+                        driverRow(d, selected: d.id == selectedDriverId)
+                            .contentShape(Rectangle())
+                            .onTapGesture { selectedDriverId = d.id }
+                            .draggable(String(d.id)) {
                             driverRow(d, selected: false)
                                 .frame(maxWidth: 320)
                                 .opacity(0.92)
