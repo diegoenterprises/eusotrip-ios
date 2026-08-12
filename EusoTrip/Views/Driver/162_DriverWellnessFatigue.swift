@@ -211,6 +211,7 @@ private struct WeatherImpact162 {
 // MARK: - Screen
 
 struct DriverWellnessFatigue_162: View {
+    @Environment(\.openURL) private var openURL
     @Environment(\.palette) private var palette
     @Environment(\.dismiss) private var dismiss
 
@@ -1250,8 +1251,11 @@ struct DriverWellnessFatigue_162: View {
             if let snap, snap.hasAnyData { await submitHealthMetrics(snap) }
         case .sharingDenied:
             // Can't re-prompt once declined — send the driver to Settings.
+            // SwiftUI's openURL, not the raw UIKit opener. That UIKit call was
+            // driven to zero under Views/ on purpose, so its reappearance is by
+            // definition a regression — and it had crept back in here.
             if let url = URL(string: UIApplication.openSettingsURLString) {
-                await UIApplication.shared.open(url)
+                await MainActor.run { openURL(url) }
             }
         default:
             // Already authorized (or unavailable) — just refresh.

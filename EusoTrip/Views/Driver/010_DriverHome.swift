@@ -2423,7 +2423,11 @@ struct WeatherAlertsWidget: View {
 /// are the two enable-location cards' `Button` actions, which already run
 /// on the main actor, so isolating this helper is free and correct.
 @MainActor
-private func weatherWidgetHandleEnableTap(onResolved: @escaping () -> Void) {
+/// `openURL` is passed in because this is a free function, not a View, so it has
+/// no `@Environment` of its own. It used to reach for the raw UIKit opener
+/// instead — the call that was driven to zero under `Views/` on purpose, so its
+/// reappearance is by definition a regression. It had reappeared here.
+private func weatherWidgetHandleEnableTap(openURL: OpenURLAction, onResolved: @escaping () -> Void) {
     let status = WeatherService.shared.authorizationStatus
     if status == .notDetermined {
         WeatherService.shared.requestPermissionIfNeeded()
@@ -2437,7 +2441,7 @@ private func weatherWidgetHandleEnableTap(onResolved: @escaping () -> Void) {
             }
         }
     } else if let url = URL(string: UIApplication.openSettingsURLString) {
-        UIApplication.shared.open(url)
+        openURL(url)
     }
 }
 
@@ -2448,12 +2452,13 @@ private struct WeatherWidgetEnableLocationCard: View {
     var compact: Bool = false
     var onResolved: () -> Void
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
 
     private var denied: Bool { status == .denied || status == .restricted }
 
     var body: some View {
         Button {
-            weatherWidgetHandleEnableTap(onResolved: onResolved)
+            weatherWidgetHandleEnableTap(openURL: openURL, onResolved: onResolved)
         } label: {
             HStack(alignment: .center, spacing: Space.s3) {
                 ZStack {
@@ -2497,12 +2502,13 @@ private struct WeatherWidgetEnableRow: View {
     let status: CLAuthorizationStatus
     var onResolved: () -> Void
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
 
     private var denied: Bool { status == .denied || status == .restricted }
 
     var body: some View {
         Button {
-            weatherWidgetHandleEnableTap(onResolved: onResolved)
+            weatherWidgetHandleEnableTap(openURL: openURL, onResolved: onResolved)
         } label: {
             HStack(spacing: 8) {
                 ZStack {
