@@ -377,6 +377,13 @@ final class PushService: NSObject, ObservableObject,
     /// Inbox tab badge on Pulse Watch. Safe to call with any payload;
     /// non-message types short-circuit.
     func handleIncomingPayload(_ userInfo: [AnyHashable: Any]) {
+        // The server pushing anything is a decent hint that something moved,
+        // and this is the one funnel every arriving push passes through (tap
+        // handler + silent background wake). Throttled inside the service, a
+        // no-op while signed out, and — by the cancellation rule — incapable
+        // of removing a scheduled reminder unless the server proves it is gone.
+        ReminderSyncService.shared.handleRemotePush()
+
         let type = (userInfo["type"] as? String)?.lowercased() ?? ""
         let isMessage = type == "message_new"
             || type == "message:new"

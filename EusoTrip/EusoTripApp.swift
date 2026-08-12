@@ -245,12 +245,25 @@ struct EusoTripApp: App {
                     // calls into ConvoyPhoneBridge regardless of whether
                     // the realtime bridge has been started.
                     ConvoyPhoneBridge.shared.startRealtimeBridge()
+                    // Local reminders for the deadlines the server can PROVE
+                    // (credential expiries, cutoffs, free-time clocks). Fetches
+                    // `reminders.upcomingDeadlines` now, on every foreground,
+                    // on an inbound push, and on a slow 30-minute tick — no
+                    // background mode. It cancels a scheduled reminder only
+                    // when the server says that source is cancellable AND the
+                    // deadline is gone, so a failed request can never delete a
+                    // driver's compliance reminders.
+                    ReminderSyncService.shared.start()
                 } else {
                     realtime.disconnect()
                     hos.stop()
                     geo.clearAll()
                     WatchAuthBridge.shared.stopRealtimeBridge()
                     ConvoyPhoneBridge.shared.stop()
+                    // Stops fetching. Deliberately does NOT cancel reminders
+                    // already scheduled — signing out is not proof that a CDL
+                    // stopped expiring.
+                    ReminderSyncService.shared.stop()
                 }
             }
             // Deep link: eusotrip://reset?token=<uuid>

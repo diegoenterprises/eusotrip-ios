@@ -62,6 +62,7 @@
 		A1A11111111111111111API1 /* ShipperAppIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A11111111111111111API2 /* ShipperAppIntents.swift */; };
 		A1A11111111111111111F001 /* PushService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A11111111111111111F005 /* PushService.swift */; };
 		A1A11111111111111111F101 /* ReminderScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A11111111111111111F102 /* ReminderScheduler.swift */; };
+		RSYN2026081200000011A1 /* ReminderSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = RSYN2026081200000012A1 /* ReminderSyncService.swift */; };
 		A1A11111111111111111F002 /* RealtimeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A11111111111111111F006 /* RealtimeService.swift */; };
 		A1A11111111111111111F003 /* GeofenceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A11111111111111111F007 /* GeofenceService.swift */; };
 		A1A11111111111111111F004 /* HOSClockService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A11111111111111111F008 /* HOSClockService.swift */; };
@@ -1213,6 +1214,7 @@
 		A1A11111111111111111API2 /* ShipperAppIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShipperAppIntents.swift; sourceTree = "<group>"; };
 		A1A11111111111111111F005 /* PushService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushService.swift; sourceTree = "<group>"; };
 		A1A11111111111111111F102 /* ReminderScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderScheduler.swift; sourceTree = "<group>"; };
+		RSYN2026081200000012A1 /* ReminderSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderSyncService.swift; sourceTree = "<group>"; };
 		A1A11111111111111111F006 /* RealtimeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeService.swift; sourceTree = "<group>"; };
 		A1A11111111111111111F007 /* GeofenceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeofenceService.swift; sourceTree = "<group>"; };
 		A1A11111111111111111F008 /* HOSClockService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HOSClockService.swift; sourceTree = "<group>"; };
@@ -3102,6 +3104,7 @@
 				B1ACD2026062900000001AA02 /* AppCrashDiagnosticsReporter.swift */,
 				A1A11111111111111111F005 /* PushService.swift */,
 				A1A11111111111111111F102 /* ReminderScheduler.swift */,
+				RSYN2026081200000012A1 /* ReminderSyncService.swift */,
 				A1A11111111111111111API2 /* ShipperAppIntents.swift */,
 				A1A11111111111111111LAA2 /* ShipperLoadActivityAttributes.swift */,
 				A1A11111111111111111SHC2 /* ShipperHandoffContinuity.swift */,
@@ -4935,6 +4938,7 @@
 				FEEDB0000000000000053000 /* 780_VesselTerminalMoveQueue.swift in Sources */,
 				FEEDB0000000000000054000 /* 781_VesselDropYardOperations.swift in Sources */,
 				A1A11111111111111111F101 /* ReminderScheduler.swift in Sources */,
+				RSYN2026081200000011A1 /* ReminderSyncService.swift in Sources */,
 				A1A11111111111111111API1 /* ShipperAppIntents.swift in Sources */,
 				A1A11111111111111111LAA1 /* ShipperLoadActivityAttributes.swift in Sources */,
 				A1A11111111111111111SHC1 /* ShipperHandoffContinuity.swift in Sources */,
