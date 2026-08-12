@@ -201,7 +201,19 @@ final class PushService: NSObject, ObservableObject,
     func didRegister(deviceToken data: Data) {
         let hex = data.map { String(format: "%02x", $0) }.joined()
         self.deviceToken = hex
-        self.phase = .authorized(deviceTokenHex: hex)
+        // Do NOT promote provisionalQuiet to authorized just because a token
+        // arrived. A provisional grant still yields a perfectly valid APNs
+        // token — the difference is that iOS delivers QUIETLY, to Notification
+        // Center only, never the lock screen. Overwriting the phase here made
+        // the whole provisional-honesty state dead on arrival: bootstrap would
+        // correctly detect quiet delivery, then this line would report "Push
+        // enabled" moments later, and the four MeNotificationsView cases that
+        // exist to say "Quiet only" became unreachable.
+        if case .provisionalQuiet = self.phase {
+            // keep it — the token is recorded above, the honesty is preserved
+        } else {
+            self.phase = .authorized(deviceTokenHex: hex)
+        }
 
         // Wire the token into the shared API client so every
         // authenticated request includes the `x-push-token` header
