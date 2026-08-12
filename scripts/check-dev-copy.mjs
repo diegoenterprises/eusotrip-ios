@@ -38,7 +38,13 @@ const patterns = [
   ["hardcoded-company", /\bcompanyId\s*1\b/i],
   ["raw-vertical-token", /\bvertical\s*=/i],
   ["pending-dev-copy", /\bBACKEND PENDING\b/i],
-  ["todo-visible", /\bTODO\b/i]
+  ["todo-visible", /\bTODO\b/i],
+  // Raw ORM / query fragments. A dispatcher tapping HOLD was being shown
+  // `and(eq(yardMoves.id, id), eq(yardMoves.companyId, callerCompany))`.
+  ["orm-fragment", /\b(?:eq|and|or|inArray|desc|asc)\(\s*\w+\.\w+|\bdrizzle\b|\bsql`/],
+  // Internal programme codenames. "filed with the-oath" means nothing to a
+  // port master and appeared in eight separate vessel strings.
+  ["internal-codename", /\bthe-oath\b/i]
 ];
 
 // A raw tRPC router.procedure path leaking into visible copy
@@ -102,8 +108,44 @@ function visibleStrings(line) {
     let match;
     while ((match = re.exec(line))) out.push(match[1]);
   }
+
+  // Strings ASSIGNED to a user-facing state variable.
+  //
+  // The rules above only see a literal sitting directly inside Text(...) or a
+  // `title:`-style parameter. Screens routinely do
+  //     gapNotice = "…"                     // @State
+  //     …
+  //     gapCard(gapNotice)                  // -> Text(note)
+  // and that one extra hop through a function parameter made the string
+  // invisible here. It was not a small gap: the HOLD button on the terminal
+  // move queue was showing a dispatcher raw Drizzle ORM
+  // (`and(eq(yardMoves.id, id), …)`) through exactly this path, and ~37 such
+  // strings survived a pass that the gate reported as clean.
+  //
+  // Matching on the VARIABLE NAME keeps this precise: these suffixes are how
+  // this codebase names copy destined for a human.
+  const assigned = /\b\w*(?:Notice|Note|Message|Error|Warning|Banner|Hint|Subtitle|Caption|Detail|Copy|Reason|Status)\b\s*=\s*"((?:\\"|[^"])*)"/g;
+  let a;
+  while ((a = assigned.exec(line))) out.push(a[1]);
+
   return out;
 }
+
+/**
+ * Every procedure name the app actually calls, harvested from the API layer.
+ *
+ * The router-prefixed pattern below only fires on `router.procedure`. A bare
+ * procedure name — "getRailTracking failed on this pass" — sailed straight
+ * through, and those are just as much wire identifiers to a port master or a
+ * rail engineer. Reading the real names out of EusoTripAPI.swift means the list
+ * cannot drift from what the app calls, and cannot false-positive on ordinary
+ * English, because a token only counts if the app genuinely invokes it.
+ */
+const PROC_SHAPE = /\b(?:get|list|create|update|delete|approve|reject|calculate|submit|assign|record|fetch|send|cancel|resolve|acknowledge|register|revoke|issue|release|link|unlink|import|export|audit|verify|validate)[A-Z][a-zA-Z0-9]{2,}\b/;
+
+// Ordinary English that happens to fit the shape. Kept deliberately tiny — if
+// this list grows, the rule is being bent rather than the copy fixed.
+const PROC_SHAPE_ALLOW = /\b(?:getStarted|getHelp|getSupport|createAccount|updateAvailable|getDirections)\b/;
 
 // Drop Swift string interpolations (`\(store.loads.count)`) before running
 // copy heuristics — interpolation bodies are code, not copy, and would
@@ -175,6 +217,18 @@ for (const file of walk(root)) {
       const copy = stripInterpolations(text);
       if (trpcProcPattern.test(copy)) {
         findings.push({ rule: "bare-trpc-proc", file: rel, line: index + 1, text });
+      }
+      // A procedure name with no router prefix is still a wire identifier.
+      // The router-prefixed pattern above only fires on `router.procedure`, so
+      // "getRailTracking failed on this pass" sailed through — and to a rail
+      // engineer that is exactly as meaningless as the prefixed form. Matched by
+      // SHAPE (verb + CamelCase) rather than against a harvested list, because
+      // the copy frequently names server procedures the iOS layer never calls,
+      // so no list built from this repo could see them.
+      const procShape = copy.replace(PROC_SHAPE_ALLOW, "");
+      const bare = procShape.match(PROC_SHAPE);
+      if (bare) {
+        findings.push({ rule: "bare-proc-name", file: rel, line: index + 1, text: `${bare[0]} ← ${text}` });
       }
       for (const token of camelInternalTokens(copy)) {
         findings.push({ rule: "camel-internal", file: rel, line: index + 1, text: `${token} ← ${text}` });
