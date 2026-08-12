@@ -94,11 +94,11 @@ private struct VesselLetterOfCreditBody: View {
                     LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) }
                 } else {
                     hero
-                    sectionLabel("DOCUMENT PRESENTATION · UCP 600", ref: "STUB · lc.checkPresentation")
+                    sectionLabel("DOCUMENT PRESENTATION · UCP 600", ref: "presentation check not live")
                     presentationCard
-                    sectionLabel("BANK ENDORSEMENT CHAIN", ref: "EXISTS signatures.ts (EXISTS · line drifts, verify at claim)")
+                    sectionLabel("BANK ENDORSEMENT CHAIN", ref: "live endorsement records")
                     endorsementChain
-                    sectionLabel("LC GOVERNING LAW · presenting bank", ref: "lc.checkPresentation·country")
+                    sectionLabel("LC GOVERNING LAW · presenting bank", ref: "governing law · by country")
                     triCountryBand
                     if let note = gapNotice {
                         HStack(alignment: .top, spacing: 8) {
@@ -265,13 +265,13 @@ private struct VesselLetterOfCreditBody: View {
                 }
             }
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
     private func endorse() async {
         // STUB · named-gap lc.endorse({lcRef,bolId,confirm:true}) — money + irreversible, human-gated + audited.
-        gapNotice = "Endorse & release is money-irreversible and its endpoint (lc.endorse) is a named gap filed with the-oath. ONLINE_ONLY(money) - nothing was written."
+        gapNotice = "Endorse & release moves money and cannot be undone, so it needs a live connection and is never queued offline. It is not available yet — nothing was written and the credit is untouched."
         await load()
     }
 }

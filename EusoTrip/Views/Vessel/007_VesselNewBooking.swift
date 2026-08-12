@@ -380,7 +380,7 @@ private struct VesselNewBookingBody_007: View {
             applySchedule(s); applyRate(r)
             deriveEsang()
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
@@ -410,7 +410,7 @@ private struct VesselNewBookingBody_007: View {
             let c: Created = try await EusoTripAPI.shared.mutation("vesselShipments.createVesselBooking", input: input)
             bookedRef = c.bookingNumber ?? "confirmed"
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
     }
 

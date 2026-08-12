@@ -754,7 +754,7 @@ struct CatalystAtDeliveryFleetTrackCelM04View: View {
                   trailing: hosBacked ? hosDisplay : "—",
                   realBacked: hosBacked),
             .init(title: "Active board echo",
-                  detail: "at_delivery drops off catalysts.getActiveLoads (filter excludes it)",
+                  detail: "at delivery a load leaves the active board by design — missing there is expected, not a dropped load",
                   trailing: onActiveBoard ? "on board" : "off board",
                   realBacked: false)
         ]

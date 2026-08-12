@@ -597,7 +597,7 @@ private struct VesselETAPredictionBody770: View {
         do {
             self.data = try await EusoTripAPI.shared.query("containerTimeline.etaPrediction", input: ShipmentIdQuery770(shipmentId: shipmentId))
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         // Server-authoritative sea-state ETA driver (predictVesselEta). Independent of the
         // AIS prediction above: a failure here leaves the cone intact and simply hides the
@@ -620,7 +620,7 @@ private struct VesselETAPredictionBody770: View {
             )
             timelineRows = response.events
         } catch {
-            timelineError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            timelineError = error.eusoUserCopy
         }
         timelineLoading = false
     }

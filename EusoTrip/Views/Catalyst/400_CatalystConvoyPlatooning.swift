@@ -653,7 +653,7 @@ private struct ConvoyBody_400: View {
 
     private func selectMember(_ userId: String) {
         actionError = nil
-        actionMessage = "Selected convoy member \(userId). Live member detail is keyed by the truck puck's real userId."
+        actionMessage = "Convoy member selected. Full member detail opens from the truck's own live position marker."
     }
 
     private func openAlerts() async {
@@ -669,7 +669,7 @@ private struct ConvoyBody_400: View {
                 input: ConvoyIdInput_400(convoyId: convoyId))
             showAlerts = true
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = convoyFailureCopy_400(error, noun: "convoy alerts")
         }
     }
 
@@ -693,7 +693,7 @@ private struct ConvoyBody_400: View {
             let warning = out.warnings?.first.map { " · \($0)" } ?? ""
             actionMessage = "Spacing guidance: \(lead), \(rear), \(speed) · \(confidence)\(warning)"
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = convoyFailureCopy_400(error, noun: "spacing guidance")
         }
     }
 
@@ -717,7 +717,7 @@ private struct ConvoyBody_400: View {
             actionMessage = "Convoy paused and broadcast through the convoy status service."
             await reload()
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = convoyFailureCopy_400(error, noun: "convoy pause")
         }
     }
 
@@ -847,4 +847,45 @@ private struct CatalystConvoyPreview_400: View {
 #Preview("400 · Catalyst · Convoy · Afternoon") {
     CatalystConvoyPreview_400(theme: Theme.light)
         .preferredColorScheme(.light)
+}
+
+// MARK: - Operator-facing failure copy
+
+/// Operator-language reason a convoy action failed.
+///
+/// The caught error is still available for logging; the catalyst running
+/// the convoy sees a sentence they can act on, never a raw `NSError`
+/// description. `noun` names what failed ("convoy pause", "spacing
+/// guidance") so the line stays specific.
+fileprivate func convoyFailureCopy_400(_ error: Error, noun: String) -> String {
+    if let api = error as? EusoTripAPIError {
+        switch api {
+        case .unauthenticated:
+            return "Your session expired. Sign in again to keep running this convoy."
+        case .forbidden(let reason):
+            let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty
+                ? "This account isn't cleared to control this convoy."
+                : trimmed
+        case .trpcError(let reason):
+            let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty
+                ? "The \(noun) was rejected. Reload the convoy and try again."
+                : trimmed
+        case .httpStatus(let code, _):
+            return "The \(noun) didn't go through (code \(code)). Try again in a moment."
+        case .decodingFailed:
+            return "The \(noun) came back in a form this build can't read. Update the app, then retry."
+        case .empty:
+            return "Nothing came back for the \(noun). Reload the convoy and try again."
+        case .notConfigured, .badURL:
+            return "This device isn't set up for live convoy control yet. Restart the app and try again."
+        case .queuedForOfflineReplay:
+            return "You're offline — the \(noun) is queued and sends the moment you reconnect."
+        }
+    }
+    if (error as NSError).domain == NSURLErrorDomain {
+        return "No connection right now. The \(noun) didn't complete — hold the convoy and retry once you have signal."
+    }
+    return "The \(noun) didn't complete. Reload the convoy and try again."
 }

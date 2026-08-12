@@ -478,7 +478,7 @@ private struct RailDetentionDashboardBody: View {
         // ranking (gapped) there's no row to attach a dispute to — we surface
         // that honestly rather than inventing an id.
         guard !rankedCustomers.isEmpty else {
-            ack = "No ranked detention rows to dispute yet. Per-customer ranking endpoint is pending."
+            ack = "No ranked detention rows to dispute yet. Per-customer ranking is not available yet."
             return
         }
         disputeBusy = true; ack = nil
@@ -487,7 +487,7 @@ private struct RailDetentionDashboardBody: View {
             // The proposed detentionByCustomer row does not yet carry a
             // demurrageId, so we cannot fabricate one. Once the endpoint
             // returns row ids, pass the top offender's id here.
-            ack = "Dispute drafting needs a demurrageId from the ranking endpoint (not yet returned)."
+            ack = "Dispute drafting needs a demurrage reference from the per-customer ranking, which is not available yet."
             _ = CreateDisputeResult.self  // keep the wired shape referenced
         }
     }

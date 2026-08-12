@@ -451,7 +451,7 @@ private struct RailCarrierScorecardBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("getTopCarriers")
+                Text("carrier index")
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(palette.textTertiary)
             }

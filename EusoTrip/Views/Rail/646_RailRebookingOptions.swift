@@ -272,7 +272,7 @@ private struct RailRebookingOptionsBody: View {
             EusoEmptyState(
                 systemImage: "arrow.triangle.branch",
                 title: "No reroute options yet",
-                subtitle: "Generated alternatives appear here once the rebooking engine is wired (intermodal.rebookingOptions)."
+                subtitle: "Reroute alternatives are not built yet, so this list is empty because nothing generated them — not because every option was ruled out. Arrange the reroute with the railroad directly and note it on the shipment."
             )
         } else {
             VStack(spacing: Space.s3) {

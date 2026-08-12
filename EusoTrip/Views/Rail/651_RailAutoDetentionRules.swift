@@ -703,9 +703,42 @@ private struct RailAutoDetentionRulesBody: View {
             self.rules = resp.rules
             self.lastSyncedAt = Date()
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = ruleErrorCopy(error, attempt: "load your detention rules")
         }
         loading = false
+    }
+
+    /// Operator-language copy for a failed detention-rule request.
+    ///
+    /// A raw `NSError` string ("EusoTripAPIError error 5") tells a billing
+    /// clerk nothing they can act on, so every failure class is mapped to a
+    /// sentence that names what did not happen and what to do next. Refusal
+    /// reasons that already carry human copy are surfaced verbatim.
+    private func ruleErrorCopy(_ error: Error, attempt: String) -> String {
+        guard let api = error as? EusoTripAPIError else {
+            if (error as NSError).domain == NSURLErrorDomain {
+                return "No connection, so EusoTrip couldn't \(attempt). Check your signal, then try again."
+            }
+            return "Couldn't \(attempt). Try again in a moment."
+        }
+        switch api {
+        case .unauthenticated:
+            return "Your session expired before EusoTrip could \(attempt). Sign in again, then retry."
+        case .forbidden(let reason):
+            return reason
+        case .trpcError(let reason):
+            return reason
+        case .httpStatus(let code, _):
+            return "Detention rules are unavailable right now (\(code)), so EusoTrip couldn't \(attempt). Try again in a moment."
+        case .decodingFailed:
+            return "Detention rules came back in a form this app version can't read. Update the app, then retry."
+        case .empty:
+            return "Nothing came back, so EusoTrip couldn't \(attempt). Try again in a moment."
+        case .notConfigured, .badURL:
+            return "Detention rules aren't reachable from this build. Restart the app, then try again."
+        case .queuedForOfflineReplay:
+            return "You're offline — this change is not applied until you reconnect."
+        }
     }
 
     // MARK: - Toggle a rule (configureAutoDetention mutation)
@@ -741,7 +774,7 @@ private struct RailAutoDetentionRulesBody: View {
                 await loadHistory()
             }
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = ruleErrorCopy(error, attempt: "change that rule")
         }
         savingRuleId = nil
     }
@@ -774,7 +807,7 @@ private struct RailAutoDetentionRulesBody: View {
                 actionError = "Rule was not saved."
             }
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = ruleErrorCopy(error, attempt: "save that rule")
         }
         addRuleSaving = false
     }
@@ -789,7 +822,7 @@ private struct RailAutoDetentionRulesBody: View {
             )
             historyEvents = response.events
         } catch {
-            historyError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            historyError = ruleErrorCopy(error, attempt: "load the confirmed changes")
         }
         historyLoading = false
     }

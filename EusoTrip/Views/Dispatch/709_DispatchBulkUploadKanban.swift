@@ -137,6 +137,15 @@ private struct BulkBody: View {
     @State private var fileImporterPresented = false
     @State private var uploading = false
     @State private var uploadProgressNote: String? = nil
+    // 2026-08-12 — the handler below used to stop at "isn't
+    // text-decodable. Export the spreadsheet/PDF to CSV". That was
+    // honest but it was also a dead end: the server has read PDFs and
+    // photographs since `bulkUpload.processDocument` shipped, and this
+    // screen simply never sent it the bytes. Now it does. What comes
+    // back is parked here, scanned-and-unconfirmed, until a human
+    // accepts it — nothing is queued for import off a machine read.
+    @State private var scanning = false
+    @State private var pendingScan: ScannedIntakePayload? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -174,6 +183,34 @@ private struct BulkBody: View {
         ) { result in
             Task { await handleFileImport(result) }
         }
+        // Review gate. A scanned extraction is a proposal; it reaches
+        // the funnel only through this sheet's Accept.
+        .sheet(item: $pendingScan) { payload in
+            NavigationStack {
+                ScrollView {
+                    ScannedExtractionReviewCard(
+                        extraction: payload.extraction,
+                        fileName: payload.fileName,
+                        onAccept: {
+                            pendingScan = nil
+                            Task { await uploadAndProcess(csvText: payload.extraction.csvText, fileName: payload.fileName) }
+                        },
+                        onDiscard: { pendingScan = nil }
+                    )
+                    .padding(.horizontal, 14).padding(.top, 8)
+                }
+                .navigationTitle("Read from \(payload.fileName)")
+                .navigationBarTitleDisplayMode(.inline)
+            }
+            .presentationDetents([.large])
+        }
+    }
+
+    /// Identity wrapper so `.sheet(item:)` re-presents per scan.
+    struct ScannedIntakePayload: Identifiable {
+        let id = UUID()
+        let fileName: String
+        let extraction: BulkUploadAPI.BulkScannedExtraction
     }
 
     private var header: some View {
@@ -207,12 +244,12 @@ private struct BulkBody: View {
     private var uploadButton: some View {
         Button { fileImporterPresented = true } label: {
             HStack(spacing: 5) {
-                if uploading {
+                if uploading || scanning {
                     ProgressView().scaleEffect(0.6).tint(.white)
                 } else {
                     Image(systemName: "sparkles.tv.fill").font(.system(size: 10, weight: .heavy))
                 }
-                Text(uploading ? "Parsing…" : "AI parse")
+                Text(scanning ? "Reading…" : (uploading ? "Parsing…" : "AI parse"))
                     .font(.system(size: 11, weight: .heavy)).tracking(0.4)
             }
             .foregroundStyle(.white)
@@ -221,7 +258,7 @@ private struct BulkBody: View {
             .clipShape(Capsule())
         }
         .buttonStyle(.plain)
-        .disabled(uploading)
+        .disabled(uploading || scanning)
     }
 
     private var funnelChips: some View {
@@ -395,7 +432,7 @@ private struct BulkBody: View {
     /// instead of submitting empty/garbage rows.
     @MainActor
     private func handleFileImport(_ result: Result<[URL], Error>) async {
-        guard !uploading else { return }
+        guard !uploading, !scanning else { return }
         actionError = nil
         let url: URL
         do {
@@ -411,18 +448,41 @@ private struct BulkBody: View {
             actionError = "Couldn't open \(url.lastPathComponent). File was empty or unreadable."
             return
         }
-        guard let text = decodeText(data), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            actionError = "\(url.lastPathComponent) isn't text-decodable. Export the spreadsheet/PDF to CSV (or paste the data) and retry. AI parse maps the columns from there."
+        // Text export → straight through, the columns are already there.
+        if let text = ScannedDocumentIntake.decodeText(data),
+           !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            await uploadAndProcess(csvText: text, fileName: url.lastPathComponent)
             return
         }
-        await uploadAndProcess(csvText: text, fileName: url.lastPathComponent)
-    }
 
-    /// UTF-8 first, then Latin-1 — covers the CSV/JSON exports legacy
-    /// TMS systems emit. Returns nil for true binary (XLS/PDF), which
-    /// the caller reports rather than fabricating rows.
-    private func decodeText(_ data: Data) -> String? {
-        String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1)
+        // Binary — PDF, spreadsheet, photograph of a load list. iOS
+        // cannot read this and does not try; the BYTES go to the
+        // server's vision pass. No job is created from this call.
+        let mime = ScannedDocumentIntake.mimeType(url: url, data: data)
+        guard ScannedDocumentIntake.isServerReadable(mime) else {
+            actionError = "\(url.lastPathComponent) is a \(mime) file — the reader opens PDFs, photos and text exports, not this format. Nothing was uploaded. Export it to CSV or PDF and pick it again."
+            return
+        }
+
+        scanning = true
+        uploadProgressNote = "Reading \(url.lastPathComponent) — nothing is queued until you accept what it found."
+        defer { scanning = false; uploadProgressNote = nil }
+        do {
+            let out = try await EusoTripAPI.shared.bulkUpload.processDocument(
+                entityType: entityType,
+                fileBase64: data.base64EncodedString(),
+                mimeType: mime,
+                fileName: url.lastPathComponent
+            )
+            if out.isEmptyRead {
+                // Not "the document was empty" — "we could not read it".
+                actionError = "\(url.lastPathComponent) went to the reader and came back with no rows, which means it could not be read — not that it was blank. Nothing was uploaded. Try a sharper scan or a CSV export."
+            } else {
+                pendingScan = ScannedIntakePayload(fileName: url.lastPathComponent, extraction: out)
+            }
+        } catch {
+            actionError = "Couldn't read \(url.lastPathComponent): \((error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription) Nothing was uploaded."
+        }
     }
 
     /// Fires `bulkUpload.uploadAndProcess` with `options.aiMapping:
@@ -444,7 +504,7 @@ private struct BulkBody: View {
                 input: In(entityType: entityType, csvText: csvText, fileName: fileName, options: Options(aiMapping: true))
             )
             if let failure = r.failureMessage(
-                fallback: "The server rejected \(fileName) before creating an upload job."
+                fallback: "\(fileName) was rejected before any upload job was created. Nothing was imported."
             ) {
                 uploadProgressNote = nil
                 actionError = failure
@@ -488,12 +548,12 @@ private struct BulkBody: View {
         do {
             let response: BulkMutationResult = try await EusoTripAPI.shared.mutation(proc, input: In(jobId: j.id))
             if let failure = response.failureMessage(
-                fallback: "The server rejected \(proc.split(separator: ".").last ?? "this action") for job \(j.id)."
+                fallback: "That action was rejected for job \(j.id). The job is unchanged."
             ) {
                 actionError = failure
                 await load()
             } else {
-                lastAction = response.serverMessage ?? "\(proc.split(separator: ".").last ?? "") · job \(j.id) queued."
+                lastAction = response.serverMessage ?? "Job \(j.id) queued."
                 // If the action came from the pushed job detail (sheetJob set),
                 // pop the in-stack layer back to the funnel. The drag path
                 // leaves sheetJob nil, so no spurious pop.
@@ -521,7 +581,7 @@ private struct BulkBody: View {
                 input: In(jobId: j.id)
             )
             if let failure = response.failureMessage(
-                fallback: "The server rejected cancellation for job \(j.id)."
+                fallback: "Cancellation was rejected for job \(j.id). The job is still running."
             ) {
                 actionError = failure
                 await load()

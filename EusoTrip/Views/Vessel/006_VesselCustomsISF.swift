@@ -157,7 +157,7 @@ private struct VesselCustomsISFBody006: View {
                 } else {
                     EusoEmptyState(systemImage: "doc.text.magnifyingglass",
                                    title: "No ISF 10+2 elements to surface",
-                                   subtitle: "getISFRequirements returned an empty catalog, nothing to file.")
+                                   subtitle: "The ISF requirement catalog answered empty — there is nothing to file, and nothing is being held back from you.")
                 }
                 Color.clear.frame(height: 96)
             }
@@ -398,7 +398,7 @@ private struct VesselCustomsISFBody006: View {
                 )
             }
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }

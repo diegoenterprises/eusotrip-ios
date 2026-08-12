@@ -310,7 +310,7 @@ private struct VesselBookingDetailCarrierBody: View {
                 "vesselShipments.getVesselShipmentDetail", input: DetailIn(id: shipmentId))
             self.detail = d
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
@@ -325,7 +325,7 @@ private struct VesselBookingDetailCarrierBody: View {
                 input: StatusIn(id: shipmentId, newStatus: "arrived"))
             await load()
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         updating = false
     }

@@ -450,7 +450,7 @@ struct EscortMyJobs: View {
             .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                 .strokeBorder(palette.borderFaint, lineWidth: 1))
             .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
-            Text("Lifetime figure. A rolling-12-month window isn't enforced server-side yet, so this screen won't label it as one.")
+            Text("Lifetime figure. A rolling 12-month window isn't enforced on your record yet, so this screen won't label it as one.")
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -537,7 +537,7 @@ struct EscortMyJobs: View {
                     }
                 }
             }
-            Text("Middle three counted from your rows — the summary proc reports en route, on site and escorting as one number.")
+            Text("Middle three counted from your own assignments — the summary reports en route, on site and escorting as one number.")
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)

@@ -250,7 +250,7 @@ private struct RailSettlementSummaryBody: View {
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(palette.textSecondary)
                     }
-                    Text("getRailFinancialSummary")
+                    Text("financial summary")
                         .font(EType.caption)
                         .foregroundStyle(palette.textTertiary)
                 }
@@ -293,7 +293,7 @@ private struct RailSettlementSummaryBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("getRailSettlement")
+                Text("settlement ledger")
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(palette.textTertiary)
             }
@@ -393,7 +393,7 @@ private struct RailSettlementSummaryBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("getRailDashboardStats")
+                Text("period rollup")
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(palette.textTertiary)
             }

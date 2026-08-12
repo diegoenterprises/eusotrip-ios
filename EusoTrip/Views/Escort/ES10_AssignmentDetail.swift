@@ -266,7 +266,7 @@ struct EscortAssignmentDetailES10: View {
             VStack(alignment: .leading, spacing: Space.s3) {
                 Text("This assignment didn't load")
                     .font(EType.title).foregroundStyle(palette.textPrimary)
-                Text("No live read and no snapshot inside the 10-minute window. If the row belongs to another escort the server answers empty by design — that is not an error to work around.")
+                Text("Nothing came back live, and there is no saved copy from the last 10 minutes. If this move is assigned to another escort it will stay blank by design — that is not a fault to work around.")
                     .font(EType.caption).foregroundStyle(palette.textSecondary)
                 CTAButton(title: "Try again", action: { Task { await refresh() } })
             }
@@ -390,7 +390,7 @@ struct EscortAssignmentDetailES10: View {
                         .foregroundStyle(palette.textPrimary)
                 }
                 // CHAIN A3 · one-sided. Say it, don't imply a fan-out.
-                Text("Your row is written. Dispatch is NOT notified by this commit — the acceptance event doesn't exist on the server yet, so tell them on comms if they're waiting.")
+                Text("Your acceptance is saved. Dispatch is NOT notified automatically — there is no live acceptance alert on this board yet, so tell them on comms if they're waiting.")
                     .font(EType.caption)
                     .foregroundStyle(amberInk)
             }
@@ -399,7 +399,7 @@ struct EscortAssignmentDetailES10: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text("Dismissed on this device")
                     .font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-                Text("There is no decline on the server yet, so nothing was sent. The offer stays on the board until it expires or someone else takes it.")
+                Text("Declining is not reported anywhere yet, so nothing was sent. The offer stays on the board until it expires or someone else takes it.")
                     .font(EType.caption).foregroundStyle(palette.textSecondary)
             }
 
@@ -534,7 +534,7 @@ struct EscortAssignmentDetailES10: View {
                 statusPill(currentStationIndex == 2 ? "RELEASED" : "OPENS AT RELEASE")
             }
 
-            Text("Fills at release · composed from the assignment + settlement rows (no report proc)")
+            Text("Fills at release · built from the assignment and settlement records (no standalone report yet)")
                 .font(.system(size: 9))
                 .foregroundStyle(palette.textSecondary)
                 .lineLimit(2)
@@ -977,7 +977,7 @@ struct EscortAssignmentDetailES10: View {
             let result: ES10AcceptResult = try await EusoTripAPI.shared.mutation(
                 "escorts.acceptJob", input: ES10JobIdInput(jobId: jobId))
             guard result.success == true else {
-                await MainActor.run { accept = .failed("The server didn't confirm the seat. Nothing was written.") }
+                await MainActor.run { accept = .failed("The seat was not confirmed. Nothing was recorded — you do not have this job.") }
                 return
             }
             let assigned = result.assignmentId.map(String.init) ?? (result.jobId ?? jobId)
@@ -988,7 +988,7 @@ struct EscortAssignmentDetailES10: View {
             await refresh()
         } catch {
             await MainActor.run {
-                accept = .failed("Accept didn't reach the server — check signal and try again. Nothing is queued.")
+                accept = .failed("Accept did not go through — check signal and try again. Nothing is queued, so the job is still open.")
             }
         }
     }

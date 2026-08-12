@@ -762,7 +762,7 @@ private struct VesselAccessorialChargesBody: View {
             self.disputes = disputesResp
             self.catalog = catalogResp
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
@@ -801,7 +801,7 @@ private struct VesselAccessorialChargesBody: View {
                 }
             } catch {
                 if firstError == nil {
-                    firstError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+                    firstError = error.eusoUserCopy
                 }
             }
         }
@@ -850,7 +850,7 @@ private struct VesselAccessorialChargesBody: View {
                 applyError = "\(item.name) did not confirm. Try again."
             }
         } catch {
-            applyError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            applyError = error.eusoUserCopy
         }
         applying = false
     }

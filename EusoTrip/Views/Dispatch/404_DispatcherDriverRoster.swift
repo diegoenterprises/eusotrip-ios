@@ -385,7 +385,7 @@ private struct DispatcherDriverRosterBody: View {
                 input: AlertInput(driverId: d.id, message: body, priority: "urgent")
             )
             guard result.success != false else {
-                throw EusoTripAPIError.trpcError("Dispatch alert was not accepted by the server.")
+                throw EusoTripAPIError.trpcError("The dispatch alert was not accepted. The driver has not been alerted.")
             }
             actionConfirmation = "Urgent alert sent to \(d.name)."
         } catch {

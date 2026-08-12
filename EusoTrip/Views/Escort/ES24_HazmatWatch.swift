@@ -636,7 +636,7 @@ struct EscortHazmatWatch: View {
         LifecycleCard {
             Text("No hazmat escort assignment")
                 .font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-            Text("hazmatEscort.getStatus returned no active assignment. Nothing on this panel has anything to measure, so nothing is drawn.")
+            Text("You have no active hazmat escort assignment right now. Nothing on this panel has anything to measure, so nothing is drawn.")
                 .font(EType.caption).foregroundStyle(palette.textSecondary)
         }
     }
@@ -836,7 +836,7 @@ struct EscortHazmatWatch: View {
                 if rows.isEmpty {
                     Text("No check-in has been logged on this assignment.")
                         .font(EType.caption).foregroundStyle(palette.textSecondary)
-                    Text("There is no detector registry procedure and no telemetry feed, so this array is exactly the check-in log and nothing more.")
+                    Text("There is no detector registry and no telemetry feed, so this array is exactly the check-in log and nothing more.")
                         .font(.system(size: 9)).foregroundStyle(palette.textTertiary)
                 } else {
                     HStack(spacing: 0) {
@@ -1475,7 +1475,7 @@ struct EscortHazmatWatch: View {
         } catch {
             await MainActor.run {
                 checkInFlight = false
-                errorMessage = "Check-in did not reach the server. It was not queued — this role has no outbox. Try again when you have signal."
+                errorMessage = "Check-in did not go through. Nothing was recorded and nothing is waiting to send — there is no offline queue on this screen. Try again when you have signal, and call it in over the radio if you cannot."
             }
         }
     }

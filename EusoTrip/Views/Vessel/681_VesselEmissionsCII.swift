@@ -694,7 +694,7 @@ private struct VesselEmissionsCIIBody: View {
             voyages = built
             fleet = buildFleet(from: built)
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
             fleet = nil
             voyages = []
         }
@@ -719,7 +719,7 @@ private struct VesselEmissionsCIIBody: View {
             exportURL = url
             actionMessage = "Carbon CII report ready: \(filename)."
         } catch {
-            actionError = error.localizedDescription
+            actionError = error.eusoUserCopy
         }
     }
 

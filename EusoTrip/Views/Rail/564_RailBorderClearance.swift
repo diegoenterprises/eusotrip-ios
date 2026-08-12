@@ -316,7 +316,7 @@ private struct RailBorderClearanceBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("getCrossBorderRailDocs")
+                Text("border document rules")
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(palette.textTertiary)
             }

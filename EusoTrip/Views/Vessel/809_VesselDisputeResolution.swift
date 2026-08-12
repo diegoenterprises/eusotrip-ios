@@ -285,7 +285,7 @@ private struct VesselDisputeResolutionBody: View {
                 ? "counter midpoint \(money(midpoint)) or accept \(money(latest))"
                 : "wait for counterparty offer or submit a counter from the claim amount"
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
@@ -325,7 +325,7 @@ private struct VesselDisputeResolutionBody: View {
             await load()
         } catch {
             actionFailed = true
-            actionMessage = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionMessage = error.eusoUserCopy
         }
         actionBusy = false
     }
@@ -358,7 +358,7 @@ private struct VesselDisputeResolutionBody: View {
             await load()
         } catch {
             actionFailed = true
-            actionMessage = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionMessage = error.eusoUserCopy
         }
         actionBusy = false
     }

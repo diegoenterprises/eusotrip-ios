@@ -292,7 +292,7 @@ private struct RailAccessorialAnalyticsBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("getDashboardStats")
+                Text("accessorial rollup")
                     .font(EType.mono(.caption))
                     .foregroundStyle(palette.textSecondary)
             }

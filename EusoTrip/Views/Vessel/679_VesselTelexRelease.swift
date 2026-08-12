@@ -100,9 +100,9 @@ private struct VesselTelexReleaseBody: View {
                     LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) }
                 } else {
                     surrenderHero
-                    sectionLabel("RELEASE CHAIN · MASTER B/L", ref: "surrenderBOL · vesselShipments:986")
+                    sectionLabel("RELEASE CHAIN · MASTER B/L", ref: "master B/L surrender")
                     pipelineCard
-                    sectionLabel("RELEASE CONDITIONS · what gates pickup", ref: "getCBPEntryStatus:2885")
+                    sectionLabel("RELEASE CONDITIONS · what gates pickup", ref: "live CBP entry status")
                     conditionsCard
                     instrumentStrip
                     esangCard
@@ -334,7 +334,7 @@ private struct VesselTelexReleaseBody: View {
                 conds = conds.map { $0.title.hasPrefix("CBP") ? ReleaseCond679(title: $0.title, sub: "entry 3-7501 released · \(cbpEntry)", state: .clear) : $0 }
             }
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
@@ -351,7 +351,7 @@ private struct VesselTelexReleaseBody: View {
         } catch {
             // Surface the server guard verbatim — the draft→issued countersign gap (VSL-CHAIN rows) can
             // legitimately CONFLICT here; hiding it would fake a release. Honest failure over silent success.
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = error.eusoUserCopy
         }
         surrendering = false
     }

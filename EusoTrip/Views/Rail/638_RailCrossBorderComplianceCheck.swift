@@ -424,9 +424,9 @@ private struct RailCrossBorderComplianceCheckBody: View {
                             .font(.system(size: 18, weight: .semibold))
                             .foregroundStyle(palette.textTertiary)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("No prior runs")
+                            Text("No run history yet")
                                 .font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-                            Text("Past compliance runs will appear here once getCrossBorderCheckHistory is live.")
+                            Text("Past compliance runs will appear here once history is available — this is not a record that none were run.")
                                 .font(EType.caption).foregroundStyle(palette.textSecondary)
                         }
                         Spacer()

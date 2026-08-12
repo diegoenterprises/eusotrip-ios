@@ -608,7 +608,7 @@ private struct PortIntelligenceBody: View {
             )
             assessment = result
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = assessmentFailureCopy_425(error)
         }
     }
 }
@@ -624,4 +624,44 @@ private extension String {
     PortIntelligenceScreen(theme: Theme.dark, product: "LPG 30/70 C3/C4")
         .environmentObject(EusoTripSession())
         .preferredColorScheme(.dark)
+}
+
+// MARK: - Operator-facing failure copy
+
+/// Operator-language reason a cargo route-compatibility assessment failed.
+///
+/// The caught error is still available for logging; the shipper sees a
+/// sentence they can act on rather than a raw `NSError` description. No
+/// branch implies the route cleared — a failed assessment is never a pass.
+fileprivate func assessmentFailureCopy_425(_ error: Error) -> String {
+    if let api = error as? EusoTripAPIError {
+        switch api {
+        case .unauthenticated:
+            return "Your session expired, so nothing was assessed. Sign in again and rerun the assessment."
+        case .forbidden(let reason):
+            let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty
+                ? "This account isn't cleared to assess this lane. Nothing was assessed."
+                : trimmed
+        case .trpcError(let reason):
+            let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty
+                ? "The assessment was rejected. Check the product, lane, and quantity, then rerun it."
+                : trimmed
+        case .httpStatus(let code, _):
+            return "The assessment didn't complete (code \(code)). Nothing was assessed — rerun it in a moment."
+        case .decodingFailed:
+            return "The assessment came back in a form this build can't read, so none of it is verified. Update the app, then rerun it."
+        case .empty:
+            return "No assessment came back for this lane. Rerun it in a moment."
+        case .notConfigured, .badURL:
+            return "This device isn't set up for live port assessments yet. Restart the app and rerun it."
+        case .queuedForOfflineReplay:
+            return "You're offline, so nothing was assessed. Rerun this once you reconnect."
+        }
+    }
+    if (error as NSError).domain == NSURLErrorDomain {
+        return "No connection, so nothing was assessed. Rerun this once you're back online."
+    }
+    return "The assessment didn't complete. Nothing was assessed — rerun it in a moment."
 }

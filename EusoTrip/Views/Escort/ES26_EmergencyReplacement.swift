@@ -610,12 +610,12 @@ struct EscortEmergencyReplacementES26: View {
         case .empty:
             emptyState(
                 title: "No active move",
-                body: "The exception flow is scoped to an assignment that is under way. escorts.getActiveTrip answered with nothing, which is a real answer, not a failure.")
+                body: "This flow only opens on a move that is already under way. Nothing is active right now — that is a real answer, not a failure.")
         case .failed:
             VStack(alignment: .leading, spacing: Space.s3) {
                 emptyState(
-                    title: "Couldn't reach the server",
-                    body: "There is no cached snapshot inside the 15-minute window either, so nothing is painted. The protection protocol below does not need the network.")
+                    title: "This move didn't load",
+                    body: "Nothing came back live, and there is no saved copy from the last 15 minutes, so nothing is drawn. The protection protocol below does not need a connection.")
                 protocolCard
                 CTAButton(title: "Try again", action: { Task { await refresh() } })
             }
@@ -680,7 +680,7 @@ struct EscortEmergencyReplacementES26: View {
                                 .foregroundStyle(palette.borderSoft))
                     }
                     .buttonStyle(.plain)
-                    Text("device-local · no procedure records a placed device")
+                    Text("device-local · nothing off this phone records a placed device")
                         .font(.system(size: 9))
                         .foregroundStyle(palette.textTertiary)
                         .lineLimit(2)
@@ -911,7 +911,7 @@ struct EscortEmergencyReplacementES26: View {
     }
     private var legalityHeadline: String {
         guard let need = requiredEscorts else {
-            return "Escort count not computed — the server had no dimensions to judge on"
+            return "Escort count not computed — no load dimensions were available to judge on"
         }
         return "\(need) escort\(need == 1 ? "" : "s") required · \(slotsFilled) on scene"
     }
@@ -1002,7 +1002,7 @@ struct EscortEmergencyReplacementES26: View {
             .background(RoundedRectangle(cornerRadius: 16).fill(palette.bgCard)
                 .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(palette.borderFaint, lineWidth: 1)))
 
-            Text("✱ the server returns certifications only — no geo, no ETA, no response ledger. Anything the operator has beyond this arrived by radio, and this screen will not print it as if it were read.")
+            Text("✱ certifications are all that comes back — no location, no ETA, no record of who answered. Anything you know beyond this came over the radio, and this screen will not print it as if it were confirmed here.")
                 .font(.system(size: 9))
                 .foregroundStyle(palette.textTertiary)
                 .padding(.top, 6)
@@ -1057,7 +1057,7 @@ struct EscortEmergencyReplacementES26: View {
                             .foregroundStyle(palette.textTertiary)
                     }
                 }
-                Text("✱ no procedure and no table records a briefing handover, so nothing here can be ticked off. SPOKEN items exist only in a human mouth.")
+                Text("✱ nothing anywhere records a briefing handover, so nothing here can be ticked off. SPOKEN items exist only in a human mouth.")
                     .font(.system(size: 9))
                     .foregroundStyle(palette.textTertiary)
                     .padding(.top, 2)
@@ -1088,7 +1088,7 @@ struct EscortEmergencyReplacementES26: View {
     }
 
     private var envelopeLine: String {
-        guard let wt = snap.trip?.load?.weight, wt > 0 else { return "— (no dimension columns on loads)" }
+        guard let wt = snap.trip?.load?.weight, wt > 0 else { return "— (no dimensions on file)" }
         return "\(Int(wt).formatted()) lb · dimensions off the permit"
     }
 
@@ -1132,7 +1132,7 @@ struct EscortEmergencyReplacementES26: View {
                               action: { Task { await commitRestart() } })
                 }
 
-                Text("Every commit above is ONLINE_ONLY — the escort outbox is not ported (PLANNED per Encyclopedia v2). Nothing is queued and no badge is drawn: a failure here is reported as a failure. The restart itself is refused by the server, not by this screen, until a passed inspection exists for the assignment inside 24 hours.")
+                Text("Every action above needs a live connection — escort actions are not held offline yet. Nothing is queued and no badge is drawn: if one fails here, it failed. The restart is refused outright until a passed inspection exists for this assignment inside 24 hours — that rule is enforced on the record, not by this screen.")
                     .font(.system(size: 9))
                     .foregroundStyle(palette.textTertiary)
             }
@@ -1164,7 +1164,7 @@ struct EscortEmergencyReplacementES26: View {
                 .foregroundStyle(met ? greenInk : palette.textTertiary)
                 .lineLimit(2).minimumScaleFactor(0.7)
             if enforced {
-                Text("SERVER-ENFORCED")
+                Text("NOT WAIVABLE")
                     .font(.system(size: 6.5, weight: .heavy))
                     .foregroundStyle(dangerInk)
             }
@@ -1397,14 +1397,14 @@ struct EscortEmergencyReplacementES26: View {
                                              location: ES26LatLng(lat: coord.latitude, lng: coord.longitude),
                                              description: where_))
             guard res.success == true, let id = res.ticketId else {
-                await MainActor.run { repair = .failed("The server didn't confirm the ticket. Nothing was written.") }
+                await MainActor.run { repair = .failed("The ticket was not confirmed. Nothing was recorded.") }
                 return
             }
             await MainActor.run { repair = .done("Ticket #\(id) open.") }
             await refresh()
         } catch {
             await MainActor.run {
-                repair = .failed("Didn't reach the server — check signal and try again. Nothing is queued.")
+                repair = .failed("Did not go through — check signal and try again. Nothing is queued.")
             }
         }
     }
@@ -1426,15 +1426,15 @@ struct EscortEmergencyReplacementES26: View {
                                     notifiedAt: ISO8601DateFormatter().string(from: Date()),
                                     notes: "escort unit down · convoy short one · lane obstruction"))
             guard res.success == true else {
-                await MainActor.run { advisory = .failed("The server returned no confirmation. Treat the state as NOT told.") }
+                await MainActor.run { advisory = .failed("No confirmation came back. Treat the state as NOT told.") }
                 return
             }
             await MainActor.run {
-                advisory = .done("Logged locally to the alert ledger. No DOT endpoint was contacted — call it in by voice as well.")
+                advisory = .done("Logged locally to the alert ledger. No DOT system was contacted — call it in by voice as well.")
             }
         } catch {
             await MainActor.run {
-                advisory = .failed("Didn't reach the server. The state has NOT been told. Nothing is queued.")
+                advisory = .failed("Did not go through. The state has NOT been told. Nothing is queued.")
             }
         }
     }
@@ -1452,7 +1452,7 @@ struct EscortEmergencyReplacementES26: View {
                 "escorts.updateJobStatus",
                 input: ES26JobStatusInput(jobId: String(aid), status: "en_route"))
             guard res.success == true else {
-                await MainActor.run { restart = .failed("The server didn't confirm the restart. The move has not resumed.") }
+                await MainActor.run { restart = .failed("The restart was not confirmed. The move has not resumed.") }
                 return
             }
             await MainActor.run { restart = .done("Assignment is en route.") }
@@ -1461,7 +1461,7 @@ struct EscortEmergencyReplacementES26: View {
             // PRECONDITION_FAILED from escorts.ts:1196 lands here. We do
             // not paraphrase the rule — we name it and point at ES-06.
             await MainActor.run {
-                restart = .failed("The server refused the restart. A passed pre-trip vehicle check inside the last 24 hours is required for this assignment before it will go en route — open the vehicle check and sign it.")
+                restart = .failed("The restart was refused. A passed pre-trip vehicle check inside the last 24 hours is required for this assignment before it will go en route — open the vehicle check and sign it.")
             }
             NotificationCenter.default.post(name: .esES26OpenVehicleCheck, object: nil,
                                             userInfo: ["assignmentId": aid])

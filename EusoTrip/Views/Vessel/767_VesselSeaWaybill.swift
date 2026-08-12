@@ -89,11 +89,11 @@ private struct VesselSeaWaybillBody: View {
                     LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) }
                 } else {
                     hero
-                    sectionLabel("NAMED PARTIES", ref: "EXISTS createBOL:892 bolType=seaway")
+                    sectionLabel("NAMED PARTIES", ref: "live sea waybill record")
                     partiesCard
-                    sectionLabel("WAYBILL vs ORIGINAL B/L", ref: "bol.ts:326")
+                    sectionLabel("WAYBILL vs ORIGINAL B/L", ref: "release without originals")
                     contrastCard
-                    sectionLabel("RELEASE AUTHORITY · discharge port", ref: "createBOL·country")
+                    sectionLabel("RELEASE AUTHORITY · discharge port", ref: "release authority · by country")
                     triCountryBand
                     if let note = gapNotice {
                         HStack(alignment: .top, spacing: 8) {
@@ -245,13 +245,13 @@ private struct VesselSeaWaybillBody: View {
                 swbStatus = (b.bolType ?? "seaway") == "seaway" ? "NON-NEGOTIABLE" : (b.status ?? "issued").uppercased()
             }
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
     private func issue() async {
         // EXISTS createBOL({bolType:'seaway'}); release gate = STUB vessel.releaseSeaway({bolId,consigneeIdRef,confirm:true}).
-        gapNotice = "Issue maps to createBOL({bolType: seaway}) - EXISTS vesselShipments.ts:892 - but requires a booking (shipmentId) context this screen does not carry; the wired entry point is 007 New Booking. ID-verified release gate (vessel.releaseSeaway) is a named gap filed with the-oath."
+        gapNotice = "A sea waybill can only be issued against a booking, and this screen does not carry one — issue it from New Booking instead. The ID-verified release gate is not available yet. Nothing was issued."
         await load()
     }
 }

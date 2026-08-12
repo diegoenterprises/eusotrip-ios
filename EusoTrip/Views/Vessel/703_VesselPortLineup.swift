@@ -822,7 +822,7 @@ private struct VesselPortLineupBody703: View {
                         Text("No vessel is approaching this port")
                             .font(.system(size: 14, weight: .bold))
                             .foregroundStyle(palette.textPrimary)
-                        Text("multiModal.getVesselSchedules returned nothing with status approaching. Nothing is fabricated to fill the board.")
+                        Text("No voyage is showing an approaching status for this port. Nothing is invented to fill the board.")
                             .font(EType.caption).foregroundStyle(palette.textTertiary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -838,8 +838,8 @@ private struct VesselPortLineupBody703: View {
             .eusoCard(radius: Radius.lg)
 
             GapNotice703(
-                title: "This queue has no backing procedure",
-                body: "There is no vesselShipments.getPortLineup. The board is assembled client-side from getVesselSchedules × getVesselFleet × getBerthSchedule, and getVesselSchedules is ALL-TENANT (its where clause falls back to 1=1) with a 50-row limit. Proposed: getPortLineup({portId}) returning vessel, loaMeters, draftMeters, teu, etb, berthId, waitMinutes ordered by etb."
+                title: "This queue is not reported — it is assembled here",
+                body: "There is no port lineup read. This board is assembled on this device by crossing the vessel schedule, the fleet list and the berth schedule — and the schedule it starts from is not filtered to your company and stops at 50 rows. Treat it as a working picture: it can show vessels that are not yours, and it can be missing arrivals past that cap. Confirm the order with the port office before you commit a berth."
             )
         }
     }
@@ -913,13 +913,13 @@ private struct VesselPortLineupBody703: View {
 
     private var derivedMoveDetail: String {
         guard let run = longestOpenRun else {
-            return "Derived on device from the loaded rows — no coach procedure is called."
+            return "Worked out on this device from the rows above, not from a coaching feed."
         }
         guard let fit = firstFittingVessel, let loa = fit.loaMeters else {
             if let over = overhangMeters, over > 0, let n = nextVessel {
                 return "\(n.vesselName) is \(Self.m(over)) too long for the \(Self.m(run)) run. Derived on device."
             }
-            return "Derived on device from the loaded rows — no coach procedure is called."
+            return "Worked out on this device from the rows above, not from a coaching feed."
         }
         return "\(Self.m(loa)) fits the \(Self.m(run)) run. Derived on device from the loaded rows."
     }
@@ -928,7 +928,7 @@ private struct VesselPortLineupBody703: View {
 
     private var windowsPanel: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
-            Text("BERTH WINDOWS · getBerthSchedule")
+            Text("BERTH WINDOWS · SCHEDULED")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
             if windows.isEmpty {
@@ -959,7 +959,7 @@ private struct VesselPortLineupBody703: View {
             }
             if let c = conditions, c.available == true, c.pilotageHold == true {
                 GapNotice703(title: "Pilotage hold at this port",
-                             body: "getPortConditions reports a visibility pilotage hold — no window on this quay is workable until it clears.")
+                             body: "Port conditions report a visibility pilotage hold — no window on this quay is workable until it clears.")
             }
         }
         .padding(Space.s4)
@@ -1002,9 +1002,9 @@ private struct VesselPortLineupBody703: View {
                 title: assignTitle,
                 action: {
                     // CHAIN-OPEN, stated plainly. No mutation exists to fire.
-                    assignNotice = "vesselBerthAssignments has no writer anywhere in server/routers — the only reference is the SELECT inside getBerthSchedule (vesselShipments.ts:2019). WS_EVENTS.VESSEL_BERTH_ASSIGNED (shared/websocket-events.ts:437) is referenced only in the eventMap of emitVesselPortEvent (server/_core/websocket.ts:1767), which has zero callers. This assignment can neither be persisted nor reach the terminal, the pilot, or the shipper. Nothing was sent."
+                    assignNotice = "Berth assignment is not available yet — this platform can read a berth schedule but cannot write one. The assignment was not saved and it reached neither the terminal, the pilot, nor the shipper. Nothing was sent. Confirm the berth over the radio."
                 },
-                subtitle: "needs a berth-assign endpoint"
+                subtitle: "berth assignment is not available yet"
             )
             .frame(maxWidth: .infinity)
 
@@ -1192,7 +1192,7 @@ private struct VesselPortLineupBody703: View {
                 berths = p?.berths ?? []
                 if let code = p?.unlocode { resolvedCode = code }
             } catch {
-                loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+                loadError = error.eusoUserCopy
                 port = nil; berths = []
             }
         } else {

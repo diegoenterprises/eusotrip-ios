@@ -356,7 +356,7 @@ private struct VesselBayPlanBody704: View {
                     Text("NO STOW READ · \(placedCount) OF \(voyageBoxes.count) BOXES PLACED")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                         .foregroundStyle(Brand.danger)
-                    Text("Lattice is nominal. No procedure returns a bay, row or tier.")
+                    Text("Lattice is nominal. No bay, row or tier position is reported for these boxes.")
                         .font(.system(size: 10, weight: .regular))
                         .foregroundStyle(palette.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -777,7 +777,7 @@ private struct VesselBayPlanBody704: View {
         } catch {
             boxes = []
             total = 0
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
             loading = false
             return
         }
@@ -794,7 +794,7 @@ private struct VesselBayPlanBody704: View {
             esang = card
         } catch {
             esang = nil
-            esangGap = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            esangGap = error.eusoUserCopy
         }
     }
 

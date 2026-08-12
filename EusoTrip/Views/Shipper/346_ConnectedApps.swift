@@ -1175,7 +1175,7 @@ private struct ConnectedAppsBody: View {
                 await refreshConnections()
                 await refreshProfileAdaptation()
             } else {
-                actionError = "The server did not confirm the disconnect."
+                actionError = "The disconnect was not confirmed. Treat this integration as still connected and its credential still live — retry before assuming it is off."
             }
         } catch let e as EusoTripAPIError {
             actionError = e.errorDescription ?? "Couldn't disconnect."
@@ -1260,7 +1260,7 @@ private struct ConnectedAppsBody: View {
                 actionNotice = "API token revoked."
                 await refreshApiKeys()
             } else {
-                actionError = "The server did not confirm the token revocation."
+                actionError = "The revocation was not confirmed. Treat this API token as still live — retry, and rotate it if it still shows active."
             }
         } catch let e as EusoTripAPIError {
             actionError = e.errorDescription ?? "Couldn't revoke the token."

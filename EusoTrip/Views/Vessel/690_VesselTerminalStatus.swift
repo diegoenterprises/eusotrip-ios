@@ -393,7 +393,7 @@ private struct VesselTerminalStatusBody690: View {
             }
             .frame(height: 76 + 24)
 
-            Text("Aggregate spans all tenants (multiModal.ts:578 takes no ctx) — read it as port queue, not only your estate.")
+            Text("This total covers every operator at the port, not just your estate — read it as port-wide queue depth.")
                 .font(.system(size: 10, weight: .regular))
                 .foregroundStyle(palette.textTertiary)
         }
@@ -532,7 +532,7 @@ private struct VesselTerminalStatusBody690: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(Brand.warning)
                     .padding(.top, Space.s2)
-                Text("Rail plots queue depth · proposed portOps.getMarineTerminalStatus")
+                Text("Rail plots queue depth · a marine terminal equivalent is planned, not built")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .padding(.top, 2)
@@ -709,7 +709,7 @@ private struct VesselTerminalStatusBody690: View {
                 }
             }
             if loadingHours {
-                Text("Reading terminals.getOperatingHours…")
+                Text("Reading terminal operating hours…")
                     .font(EType.caption).foregroundStyle(palette.textSecondary)
                     .padding(Space.s4).frame(maxWidth: .infinity, alignment: .leading)
                     .eusoCard(radius: Radius.lg)
@@ -740,7 +740,7 @@ private struct VesselTerminalStatusBody690: View {
                     if let tz = h.timezone, !tz.isEmpty {
                         Text(tz).font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
                     }
-                    Text("Stored hours only. An hours change broadcasts nothing (terminals.ts:2987 writes without emitting), so treat this as a read, not a notification.")
+                    Text("Stored hours only. A change to these hours notifies no one, so treat this as a lookup, not an alert — confirm with the terminal before you plan against it.")
                         .font(.system(size: 10, weight: .regular))
                         .foregroundStyle(palette.textTertiary)
                 }
@@ -796,7 +796,7 @@ private struct VesselTerminalStatusBody690: View {
                 .foregroundStyle(palette.textTertiary)
             Text("No ports returned")
                 .font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-            Text("multiModal.getPortOperations came back with an empty ports list. Nothing is drawn — there is no congestion to compare.")
+            Text("The port operations read came back with no ports. Nothing is drawn — there is no congestion to compare.")
                 .font(EType.caption).foregroundStyle(palette.textSecondary)
         }
         .padding(Space.s5).frame(maxWidth: .infinity, alignment: .leading)
@@ -816,7 +816,7 @@ private struct VesselTerminalStatusBody690: View {
         } catch {
             ports = []
             conditions = [:]
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
             loading = false
             return
         }
@@ -849,7 +849,7 @@ private struct VesselTerminalStatusBody690: View {
                 "terminals.getOperatingHours", input: HoursIn690(terminalId: String(terminalId)))
         } catch {
             hours = nil
-            hoursGap = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            hoursGap = error.eusoUserCopy
         }
         loadingHours = false
     }

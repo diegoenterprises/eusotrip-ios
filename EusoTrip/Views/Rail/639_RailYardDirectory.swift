@@ -144,7 +144,7 @@ private struct RailYardDirectoryBody639: View {
             } else if filtered.isEmpty {
                 EusoEmptyState(systemImage: "magnifyingglass",
                                title: query.isEmpty ? "No yards in this filter" : "No yards match “\(query)”",
-                               subtitle: "Adjust the search or type filter. The directory hydrates live from getRailYards.")
+                               subtitle: "Adjust the search or type filter. The directory loads live from the rail yard registry.")
             } else {
                 indexSection
                 coverageBand

@@ -101,7 +101,7 @@ private struct VesselDemurrageCalculatorBody: View {
                 } else if selectedClaim == nil {
                     EusoEmptyState(systemImage: "shippingbox.and.arrow.backward",
                                    title: "No billable demurrage claim",
-                                   subtitle: "getDemurrageTracking returned no company-owned demurrage row with a live load and arrival time. Billing opens when a real claim exists.")
+                                   subtitle: "No demurrage claim of yours carries both a live load and an arrival time. Billing opens when a real claim exists.")
                 } else {
                     inputsCard
                     HStack(spacing: 8) {
@@ -113,7 +113,7 @@ private struct VesselDemurrageCalculatorBody: View {
                     if tiers.isEmpty {
                         EusoEmptyState(systemImage: "function",
                                        title: "Within free time",
-                                       subtitle: "calculateDetention returned no billable tiers, the box is still inside its \(freeTimeDisplay) free window. Nothing to escalate.")
+                                       subtitle: "No billable tiers came back — the box is still inside its \(freeTimeDisplay) free window. Nothing to escalate.")
                     } else {
                         ladderCard
                     }
@@ -268,7 +268,7 @@ private struct VesselDemurrageCalculatorBody: View {
                               tone: tones[min(i, tones.count - 1)])
             }
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
@@ -301,7 +301,7 @@ private struct VesselDemurrageCalculatorBody: View {
                 actionError = "Billing did not confirm. Reopen the claim and try again."
             }
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = error.eusoUserCopy
         }
         actionInFlight = false
     }

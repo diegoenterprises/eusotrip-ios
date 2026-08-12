@@ -502,7 +502,7 @@ private struct VesselCBPEntryDetailBody: View {
             self.entry = status
             self.alerts = alertList ?? []
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }

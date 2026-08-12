@@ -522,7 +522,7 @@ private struct VesselOperatorAccountBody: View {
             self.certificates = crew.certifications ?? []
             self.watch = crew.watch
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }

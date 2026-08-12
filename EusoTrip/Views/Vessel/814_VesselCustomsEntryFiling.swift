@@ -347,7 +347,7 @@ private struct VesselCustomsEntryFilingBody: View {
             // newest entry of any status so the operator sees the real filing state.
             entry = scoped.first { ($0.status ?? "").lowercased() == "draft" } ?? scoped.first
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
@@ -363,7 +363,7 @@ private struct VesselCustomsEntryFilingBody: View {
                 input: UpdateCustomsStatusInput814(id: e.id, newStatus: "filed"))
             fileDone = true
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         submitting = false
         await load()

@@ -464,7 +464,7 @@ private struct RailSettlementBatchBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("createBatch")
+                Text("batch guard check")
                     .font(EType.mono(.caption))
                     .foregroundStyle(palette.textSecondary)
             }

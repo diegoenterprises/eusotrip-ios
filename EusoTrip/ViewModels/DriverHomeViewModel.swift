@@ -455,10 +455,13 @@ final class DriverHomeViewModel: ObservableObject {
             self.isOffline = false
             self.phase = .loaded
         } catch EusoTripAPIError.unauthenticated {
-            // Dev bypass: live backend isn't wired or token expired. Populate
-            // a signed-out demo state for the backend-sourced cards only —
-            // weather is already live from WeatherKit above.
-            applyOfflineBackendState(reason: "Sign in required — backend preview")
+            // The session is not authenticated (token expired or never issued).
+            // applyOfflineBackendState nils every server-sourced card and flags
+            // isOffline — it does NOT populate anything. The comment here used
+            // to call it a "demo state", which described a behaviour this code
+            // does not have and is the opposite of what it actually does.
+            // Weather stays live: it comes from WeatherKit above, not the server.
+            applyOfflineBackendState(reason: "Sign in to see your loads, hours and wallet.")
         } catch {
             applyOfflineBackendState(reason: error.localizedDescription)
         }

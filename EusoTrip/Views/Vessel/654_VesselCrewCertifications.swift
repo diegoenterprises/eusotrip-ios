@@ -171,7 +171,7 @@ private struct VesselCrewCertificationsBody: View {
                 "vesselShipments.getVesselCrew", input: CrewIn(search: nil))
             self.response = result
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }

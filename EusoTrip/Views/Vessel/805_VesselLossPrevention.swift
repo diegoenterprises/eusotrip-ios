@@ -138,7 +138,7 @@ private struct VesselLossPreventionBody: View {
                     Text(atRisk).font(.system(size: 13, weight: .bold, design: .monospaced)).foregroundStyle(Brand.danger)
                 }
                 if causes.isEmpty {
-                    Text("No loss-by-cause data in range, getLossPreventionAnalysis returned an empty breakdown.")
+                    Text("No loss-by-cause data in range — the breakdown came back empty.")
                         .font(.system(size: 12)).foregroundStyle(palette.textTertiary)
                 } else {
                     GeometryReader { geo in
@@ -171,7 +171,7 @@ private struct VesselLossPreventionBody: View {
         if alerts.isEmpty {
             EusoEmptyState(systemImage: "bell.slash",
                            title: "No risk alerts in feed",
-                           subtitle: "getLossPreventionDashboard returned an empty alert stream, nothing flagged right now.")
+                           subtitle: "The alert stream came back empty — nothing is flagged right now.")
         } else {
             LifecycleCard {
                 VStack(alignment: .leading, spacing: 0) {
@@ -251,7 +251,7 @@ private struct VesselLossPreventionBody: View {
                 causes = []
             }
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }

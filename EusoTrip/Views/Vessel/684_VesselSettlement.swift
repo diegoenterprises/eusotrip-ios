@@ -388,7 +388,7 @@ private struct VesselSettlementBody: View {
                 }
                 .padding(.top, Space.s2)
                 // Platform fee
-                feeRow(title: "Platform fee", sub: "calculateFee",
+                feeRow(title: "Platform fee", sub: "calculated at settlement",
                        amount: platformFee == nil ? "-" : fmtUSD(platformDeduct, signed: true))
                     .padding(.top, Space.s2)
                 // Factoring advance
@@ -598,7 +598,7 @@ private struct VesselSettlementBody: View {
             await loadFees(gross: s.total
                 ?? ((s.freight ?? 0) + (s.demurrage ?? 0) + (s.portCharges ?? 0)))
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
@@ -648,7 +648,7 @@ private struct VesselSettlementBody: View {
                 : "Approval submitted."
             await load()
         } catch {
-            actionNote = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionNote = error.eusoUserCopy
         }
         releasing = false
     }
@@ -666,7 +666,7 @@ private struct VesselSettlementBody: View {
                 actionNote = "Statement generated."
             }
         } catch {
-            actionNote = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionNote = error.eusoUserCopy
         }
     }
 }

@@ -324,7 +324,7 @@ private struct RailDocumentIngestBody: View {
             }
             .frame(height: 6)
 
-            Text("\(fieldsNormalized) of \(totalFields) rail_shipments fields normalized")
+            Text("\(fieldsNormalized) of \(totalFields) shipment fields normalized")
                 .font(.system(size: 11, weight: .medium))
                 .kerning(0.2)
                 .foregroundColor(palette.textPrimary)

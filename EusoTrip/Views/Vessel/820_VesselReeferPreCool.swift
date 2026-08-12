@@ -364,7 +364,7 @@ private struct VesselReeferPreCoolBody820: View {
             HStack {
                 Text("PRE-COOL GATE · BY HOLD").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("verifyPreCool:380").font(EType.mono(.caption)).foregroundStyle(palette.textTertiary)
+                Text("VERIFIED READINGS").font(EType.mono(.caption)).foregroundStyle(palette.textTertiary)
             }
             VStack(spacing: 0) {
                 let rows = holdRows
@@ -489,7 +489,7 @@ private struct VesselReeferPreCoolBody820: View {
                 self.fsma = nil
             }
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         // Ambient (deck/port forecast) is a best-effort overlay — its feed is
         // enterprise-gated and may return available:false or be unreachable.
@@ -515,7 +515,7 @@ private struct VesselReeferPreCoolBody820: View {
             verifyDone = true
             await load()
         } catch {
-            verifyError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            verifyError = error.eusoUserCopy
         }
         verifying = false
     }

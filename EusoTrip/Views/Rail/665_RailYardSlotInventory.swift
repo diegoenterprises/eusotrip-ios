@@ -597,7 +597,7 @@ private struct RailYardSlotInventoryBody665: View {
     private var assignBlockedReason: String? {
         if selectedYardId == nil { return "Pick a yard first — the commit is scoped to one yard of record." }
         if !reach.isOnline {
-            return "Offline — a yard move cannot be queued on this device (no rail path is offline-eligible, EusoTripAPI.swift:1684). Reconnect to spot the car."
+            return "Offline — a yard move cannot be held on this device; no rail action is eligible for offline queuing. Reconnect to spot the car."
         }
         if isCached {
             return "This board is a cached snapshot, not a live read. Spotting against stale occupancy could put a car on a track that has since been filled — pull to refresh first."
@@ -840,7 +840,7 @@ private struct RailYardSlotInventoryBody665: View {
         let tracks = board?.tracks ?? []
         return Group {
             if tracks.isEmpty {
-                Text("This yard reports no tracks (rail_yards.totalTracks is 0 or unset), so there is no ladder to draw.")
+                Text("This yard reports no tracks on file, so there is no ladder to draw.")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1293,7 +1293,7 @@ private struct RailYardSlotInventoryBody665: View {
                     .font(.system(size: 22, weight: .heavy)).kerning(-0.3)
                     .foregroundStyle(palette.textPrimary)
 
-                Text("Sets the car's track of record for this yard. The server refuses a track outside 1…\(board?.totalTracks ?? 0) and refuses any car whose current yard is not this one.")
+                Text("Sets the car's track of record for this yard. A track outside 1…\(board?.totalTracks ?? 0) is refused, and so is any car whose current yard is not this one.")
                     .font(EType.caption).foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -1360,7 +1360,7 @@ private struct RailYardSlotInventoryBody665: View {
                 }
 
                 if !reach.isOnline {
-                    Text("Offline — this move cannot be queued. No rail path is offline-eligible (EusoTripAPI.swift:1684), so it would be lost rather than replayed.")
+                    Text("Offline — this move cannot be held for later. No rail action is eligible for offline queuing, so it would be lost rather than replayed.")
                         .font(EType.caption).foregroundStyle(Brand.warning)
                         .fixedSize(horizontal: false, vertical: true)
                 }

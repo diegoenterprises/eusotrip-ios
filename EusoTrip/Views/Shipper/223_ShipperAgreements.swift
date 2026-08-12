@@ -1726,7 +1726,7 @@ private struct ShipperAgreementPdfBridge: View {
                 input: In(agreementId: row.id)
             )
             guard let bytes = Data(base64Encoded: r.dataBase64), !bytes.isEmpty else {
-                fetchError = "Server returned an empty PDF."
+                fetchError = "The agreement PDF came back empty — there is nothing to open. The agreement itself is unchanged; try again."
                 return
             }
             pdfData = bytes

@@ -527,7 +527,7 @@ struct EscortEarningsWallet: View {
                 yearStat(currency(stats?.avgPerJob ?? 0), "AVG / MOVE")
             }
             Divider().overlay(palette.borderFaint)
-            Text("BEST MONTH — · TOP CORRIDOR — · HOURS — · NO SERIES OR ROLLUP PROC · GAP-086")
+            Text("BEST MONTH — · TOP CORRIDOR — · HOURS — · MONTHLY TOTALS NOT TRACKED YET")
                 .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }

@@ -77,7 +77,7 @@ private struct RailStatusUpdateBody: View {
                 Spacer()
                 StatusPill(text: currentStatus.replacingOccurrences(of: "_", with: " ").uppercased(), kind: .info)
             }
-            Text("Carrier mutation · advances the shared lifecycle stage").font(EType.caption).foregroundStyle(palette.textSecondary)
+            Text("Carrier update · advances the shared lifecycle stage").font(EType.caption).foregroundStyle(palette.textSecondary)
         }
     }
 
@@ -125,7 +125,7 @@ private struct RailStatusUpdateBody: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("EVENT STAMP").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
                 Text("Birmingham AL · 33.5207, -86.8025 · 05-23 04:48 CDT").font(EType.body).foregroundStyle(palette.textPrimary)
-                Text("Auto-recorded to getRailShipmentDetail.events on confirm").font(EType.caption).foregroundStyle(palette.textSecondary)
+                Text("Auto-recorded to the shipment event log on confirm").font(EType.caption).foregroundStyle(palette.textSecondary)
             }
         }
     }

@@ -690,11 +690,11 @@ struct EscortOnboardingRegistration: View {
                 Text(nextStepContext).font(.system(size: 8, weight: .bold).monospaced())
                     .foregroundStyle(palette.textSecondary).padding(.top, 6)
                     .lineLimit(1).minimumScaleFactor(0.65)
-                Text("COST · WITHDRAW IS A SOFT DELETE — deletedAt + AUDIT ROW STAMPED. NO UN-DELETE.")
+                Text("COST · WITHDRAWING IS PERMANENT — THE APPLICATION IS MARKED WITHDRAWN AND STAMPED IN THE AUDIT TRAIL. NO UNDO.")
                     .font(.system(size: 7, weight: .bold).monospaced())
                     .foregroundStyle(Brand.warning).padding(.top, 5)
                     .lineLimit(1).minimumScaleFactor(0.55)
-                Text("COST · COMPLETE STAGE IS APPEND-ONLY — NO INVERSE; ORDER ENFORCED SERVER-SIDE.")
+                Text("COST · CLOSING A STAGE CANNOT BE UNDONE — STAGES MUST BE COMPLETED IN ORDER.")
                     .font(.system(size: 7, weight: .bold).monospaced())
                     .foregroundStyle(Brand.warning).padding(.top, 5)
                     .lineLimit(1).minimumScaleFactor(0.55)
@@ -722,7 +722,7 @@ struct EscortOnboardingRegistration: View {
     private var nextStepContext: String {
         var tail = ""
         if let est = snap.progress?.estimatedTimeRemaining, !est.isEmpty {
-            tail = " · SERVER ESTIMATE \(est.uppercased())"
+            tail = " · ESTIMATE \(est.uppercased())"
         }
         guard let gate = gates.first(where: { $0.isBlocking }) else {
             return "NO BLOCKING GATE ON THE RAIL\(tail)"
@@ -805,13 +805,13 @@ struct EscortOnboardingRegistration: View {
                 Text("GATE 2 · MVR + BACKGROUND CHECK").font(.system(size: 8, weight: .heavy)).tracking(0.6)
                     .foregroundStyle(palette.textTertiary)
                 Spacer(minLength: 0)
-                Text("STUB · NO VENDOR SEAM").font(.system(size: 8, weight: .heavy)).tracking(0.4)
+                Text("NOT AVAILABLE · NO CHECK PROVIDER CONNECTED").font(.system(size: 8, weight: .heavy)).tracking(0.4)
                     .foregroundStyle(Brand.danger)
             }
-            Text("NOTHING PERSISTED · requestMVR RETURNS A SYNTHETIC ID AND WRITES NO ROW")
+            Text("NOTHING IS FILED · THIS REQUEST RETURNS A PLACEHOLDER REFERENCE AND ORDERS NOTHING")
                 .font(.system(size: 6.8, weight: .bold).monospaced())
                 .foregroundStyle(palette.textSecondary).lineLimit(1).minimumScaleFactor(0.6)
-            Text("PROPOSED escorts.requestRecordsCheck({consentAt,licenseState,last4}) → {checkId,status}")
+            Text("PLANNED · CONSENT + LICENSE STATE + LAST 4 → A REAL CHECK REFERENCE AND STATUS")
                 .font(.system(size: 6.5, weight: .bold).monospaced())
                 .foregroundStyle(palette.textTertiary).lineLimit(1).minimumScaleFactor(0.55)
         }
@@ -829,11 +829,11 @@ struct EscortOnboardingRegistration: View {
         HStack(spacing: 12) {
             handOffCard(title: "ES-08 CERT RECIPROCITY",
                         detail: "STATE APPLICATIONS · \(clearedStateCount) / 51",
-                        micro: "uploadCertification :2551 · WIRED",
+                        micro: "STATE CERTIFICATE UPLOAD · LIVE",
                         accent: Brand.blue, dashed: false)
             handOffCard(title: "ES-22 SUPERVISED RIDE",
                         detail: "0 OF 3 · MENTOR UNASSIGNED",
-                        micro: "NO PROCEDURE · NO TABLE · STUB",
+                        micro: "NOT AVAILABLE YET · NOTHING IS RECORDED",
                         accent: palette.textTertiary, dashed: true)
         }
     }
@@ -905,7 +905,7 @@ struct EscortOnboardingRegistration: View {
     }
     private var esangBody: String {
         guard uploadTarget != nil else {
-            return "Records has no vendor seam and supervised rides have no procedure."
+            return "Records has no vendor connection yet, and supervised rides cannot be filed from here at all."
         }
         return "File it and the gate ahead of you drops. Records still cannot clear here."
     }
@@ -983,7 +983,7 @@ struct EscortOnboardingRegistration: View {
                             x: xs[0]))
 
         // 2 · RECORDS — STUB. No read exists, so this can never be green.
-        out.append(ES20Gate(id: "records", name: "RECORDS", state: "STUB · NO SEAM",
+        out.append(ES20Gate(id: "records", name: "RECORDS", state: "NOT AVAILABLE · NO SOURCE",
                             kind: .blocking(hard: true, idle: false), x: xs[1]))
 
         // 3 · CREDENTIALS — P/EVO from escort_certifications + DOT medical from documents.
@@ -1015,7 +1015,7 @@ struct EscortOnboardingRegistration: View {
                             kind: .nonBlocking, x: xs[4]))
 
         // 6 · SUPERVISED — STUB. No procedure, no table, no mentor.
-        out.append(ES20Gate(id: "supervised", name: "SUPERVISED", state: "STUB · 0 LOGGED",
+        out.append(ES20Gate(id: "supervised", name: "SUPERVISED", state: "NOT AVAILABLE · 0 LOGGED",
                             kind: .blocking(hard: false, idle: true), x: xs[5]))
 
         // 7 · SOLO terminus.
@@ -1281,7 +1281,7 @@ struct EscortOnboardingRegistration: View {
         guard let target = uploadTarget else { return }
         switch result {
         case .failure(let err):
-            await MainActor.run { toast = "Pick failed: \(err.localizedDescription)" }
+            await MainActor.run { toast = "That file couldn't be opened. Pick it again, or choose another copy." }
         case .success(let urls):
             guard let url = urls.first else { return }
             let scoped = url.startAccessingSecurityScopedResource()
@@ -1328,7 +1328,7 @@ struct EscortOnboardingRegistration: View {
                 busy = false
                 // The server refuses out-of-order steps by throwing; a false
                 // success with an error string is surfaced verbatim, not swallowed.
-                toast = receipt.success == true ? "Stage \(stepId) closed · no inverse exists"
+                toast = receipt.success == true ? "Stage \(stepId) closed · this cannot be undone"
                                                 : (receipt.error ?? "Stage not closed")
             }
             await load(forceNetwork: true)
@@ -1347,7 +1347,7 @@ struct EscortOnboardingRegistration: View {
         do {
             let _: ES20DeleteReceipt = try await EusoTripAPI.shared.mutation(
                 "documents.delete", input: ES20DeleteInput(id: row.id))
-            await MainActor.run { busy = false; toast = "Withdrawn · audit row written, no un-delete" }
+            await MainActor.run { busy = false; toast = "Withdrawn · stamped in the audit trail, cannot be undone" }
             await load(forceNetwork: true)
         } catch {
             await MainActor.run {

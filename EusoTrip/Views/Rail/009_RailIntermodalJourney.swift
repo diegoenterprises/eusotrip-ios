@@ -1299,7 +1299,7 @@ private struct RailIntermodalJourneyBody009: View {
                     .foregroundStyle(LinearGradient.diagonal)
             }
             if currencyDisagrees {
-                Text("Cost roll-up is priced \(ledgerCurrency) (server-fixed) while the shipment row is billed \(journey?.currency?.uppercased() ?? "—"). No conversion has been applied.")
+                Text("Cost roll-up is priced \(ledgerCurrency) — the cost ledger fixes that currency — while the shipment row is billed \(journey?.currency?.uppercased() ?? "—"). No conversion has been applied.")
                     .font(EType.caption)
                     .foregroundStyle(Brand.warning)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1426,7 +1426,7 @@ private struct RailIntermodalJourneyBody009: View {
         out.append("Segments subtotal \(money(c.totalSegmentCost, ledgerCurrency))")
         out.append("Transfers subtotal \(money(c.totalTransferCost, ledgerCurrency))")
         out.append("Door-to-door \(money(c.grandTotal, ledgerCurrency))")
-        out.append("Priced in \(ledgerCurrency). This roll-up's currency is fixed server-side, not converted per shipment.")
+        out.append("Priced in \(ledgerCurrency). The cost ledger fixes this roll-up's currency; it is not converted per shipment.")
         if let row = journey?.currency?.uppercased(), row != ledgerCurrency {
             out.append("Shipment row is billed \(row) — the two disagree and nothing has been converted.")
         }

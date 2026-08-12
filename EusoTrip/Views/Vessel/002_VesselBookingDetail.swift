@@ -748,7 +748,7 @@ private struct VesselBookingDetailBody: View {
                                                    input: DetailIn(id: shipmentId))
             self.detail = d
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
@@ -774,7 +774,7 @@ private struct VesselBookingDetailBody: View {
                 "vesselShipments.liveTrackOceanShipment", input: TrackIn(referenceNumber: ref))
         } catch {
             actionError = "Tracking unavailable. "
-                + ((error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription)
+                + (error.eusoUserCopy)
         }
     }
 
@@ -800,7 +800,7 @@ private struct VesselBookingDetailBody: View {
             }
         } catch {
             actionError = "Couldn't open documents. "
-                + ((error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription)
+                + (error.eusoUserCopy)
         }
     }
 }

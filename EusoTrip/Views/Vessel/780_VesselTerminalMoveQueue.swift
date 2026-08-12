@@ -653,7 +653,7 @@ private struct VesselTerminalMoveQueueBody780: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundColor(palette.textTertiary)
                 Spacer(minLength: 8)
-                Text("\(ranked.count) waiting · getYardMoveQueue:1940")
+                Text("\(ranked.count) waiting · LIVE YARD QUEUE")
                     .font(EType.mono(.caption))
                     .foregroundColor(palette.textSecondary)
                     .lineLimit(1).minimumScaleFactor(0.8)
@@ -743,10 +743,10 @@ private struct VesselTerminalMoveQueueBody780: View {
             case .go:
                 Task { await assign(moveId: m.id) }
             case .hold:
-                gapNotice = "HOLD is a named gap. No hold mutation exists in yardManagement.ts — the only write in that router is assignYardMove (yardManagement.ts:2026). Proposed shape for the-oath: yardManagement.holdYardMove({moveId, reason, untilAt?}) -> {success, moveId, status, heldUntil}, scoped with the same and(eq(yardMoves.id, id), eq(yardMoves.companyId, callerCompany)) clause used at :2049. Nothing was changed on the server."
+                gapNotice = "HOLD is not available yet. Nothing was changed and the queue is unaffected — the hold you just tapped was not recorded anywhere. Hold the unit over the radio instead."
                 assignResult = nil; assignError = nil
             case .bump:
-                gapNotice = "BUMP is a named gap. No re-priority mutation exists in yardManagement.ts. Proposed shape for the-oath: yardManagement.reprioritizeYardMove({moveId, priority}) -> {success, moveId, priority}, scoped with the same company where clause used at :2049. The rank you see is computed on this device and was NOT written back."
+                gapNotice = "BUMP is not available yet. The rank you see was worked out on this device and was NOT saved — the queue everyone else works from is unchanged. Re-order with the yard over the radio."
                 assignResult = nil; assignError = nil
             }
         } label: {
@@ -814,7 +814,7 @@ private struct VesselTerminalMoveQueueBody780: View {
             }
             Text(text).font(EType.caption).foregroundColor(palette.textSecondary)
             // CHAIN-OPEN, stated on the face of the success banner. Never claim a notification.
-            Text("The row is committed. The hostler is NOT notified: assignYardMove (yardManagement.ts:2026) writes without a broadcast and without an audit row, and WS_EVENTS.TERMINAL_QUEUE_UPDATE (websocket-events.ts:225) has zero emitters. Tell the unit over the radio.")
+            Text("Move saved. The hostler is NOT notified — this yard has no live dispatch link yet, nothing was broadcast and no audit entry was written. Tell the unit over the radio.")
                 .font(.system(size: 10, weight: .regular))
                 .foregroundColor(palette.textTertiary)
         }
@@ -941,7 +941,7 @@ private struct VesselTerminalMoveQueueBody780: View {
         VStack(alignment: .leading, spacing: Space.s2) {
             StatusPill(text: "Queue unavailable", kind: .danger)
             Text(err).font(EType.caption).foregroundColor(palette.textSecondary)
-            Text("yardManagement.getYardMoveQueue (yardManagement.ts:1940) did not answer. Nothing below is shown from a cache and no number has been carried over from the previous read.")
+            Text("The yard move queue did not answer. Nothing below is coming from a cache and no count has been carried over from the last read — treat the board as unknown until it loads.")
                 .font(.system(size: 10, weight: .regular))
                 .foregroundColor(palette.textTertiary)
             Button("Retry") { Task { await load() } }
@@ -957,7 +957,7 @@ private struct VesselTerminalMoveQueueBody780: View {
             StatusPill(text: "Queue clear", kind: .success)
             Text("No move is queued for this company")
                 .font(EType.title).foregroundColor(palette.textPrimary)
-            Text("getYardMoveQueue returned an empty board. Every box is where it should be, or no move has been raised against \(locationId.isEmpty ? "any terminal" : locationId) yet. Nothing is being shown from a cache.")
+            Text("The move queue came back empty. Every box is where it should be, or no move has been raised against \(locationId.isEmpty ? "any terminal" : locationId) yet. Nothing here is being shown from a cache.")
                 .font(EType.caption).foregroundColor(palette.textSecondary)
         }
         .padding(Space.s5)
@@ -981,7 +981,7 @@ private struct VesselTerminalMoveQueueBody780: View {
             lastRead = Date()
             now = Date()
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
@@ -1013,7 +1013,7 @@ private struct VesselTerminalMoveQueueBody780: View {
             assignResult = "\(out.moveId ?? moveId) assigned to \(unit.name ?? unit.id)."
             await load()
         } catch {
-            assignError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            assignError = error.eusoUserCopy
         }
         assigning = false
     }
@@ -1094,7 +1094,7 @@ private struct HostlerRosterSheet780: View {
         NavigationStack {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: Space.s3) {
-                    Text("Roster is assembled from the hostlers[] block of getYardMoveQueue (yardManagement.ts:1940). There is no separate roster procedure, so a unit that has never touched a move will not appear here.")
+                    Text("This roster is built from the units already attached to moves on the queue. EusoTrip has no separate yard roster, so a unit that has never taken a move will not appear here.")
                         .font(EType.caption).foregroundColor(palette.textTertiary)
 
                     if hostlers.isEmpty {

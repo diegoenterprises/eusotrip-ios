@@ -658,7 +658,7 @@ private struct VesselDemurrageDetentionBody: View {
             self.detail = try await detailTask
             self.isf = (try? await isfTask) ?? nil
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
@@ -679,7 +679,7 @@ private struct VesselDemurrageDetentionBody: View {
             else { actionError = "Dispute could not be filed. Please try again." }
         } catch {
             actionError = "Couldn't file dispute. "
-                + ((error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription)
+                + (error.eusoUserCopy)
         }
         disputing = false
     }
@@ -697,7 +697,7 @@ private struct VesselDemurrageDetentionBody: View {
             else { actionError = "CES exam slot could not be requested. Please try again." }
         } catch {
             actionError = "Couldn't request CES exam. "
-                + ((error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription)
+                + (error.eusoUserCopy)
         }
         booking = false
     }

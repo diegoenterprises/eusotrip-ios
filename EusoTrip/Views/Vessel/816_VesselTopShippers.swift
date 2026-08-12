@@ -239,7 +239,7 @@ private struct VesselTopShippersBody: View {
                     rate: usd816(Double(s.avgRate ?? 0)))
             }
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }

@@ -320,7 +320,7 @@ private struct RailClaimsDashboardBody: View {
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("getClaimsDashboard:75")
+                Text("claims rollup")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
             }

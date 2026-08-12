@@ -306,7 +306,7 @@ private struct RailChainOfCustodyBody: View {
                     Text(integrityLabel)
                         .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(integrityColor)
-                    Text("verifyChain")
+                    Text("chain integrity check")
                         .font(EType.mono(.caption))
                         .foregroundStyle(palette.textSecondary)
                 }
@@ -342,7 +342,7 @@ private struct RailChainOfCustodyBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("getTrail")
+                Text("custody log")
                     .font(EType.mono(.caption))
                     .foregroundStyle(palette.textTertiary)
             }

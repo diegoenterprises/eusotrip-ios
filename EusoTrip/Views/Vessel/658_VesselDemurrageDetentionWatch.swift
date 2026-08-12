@@ -210,7 +210,7 @@ private struct VesselDemurrageDetentionWatchBody: View {
         do {
             self.watch = try await EusoTripAPI.shared.query("vesselShipments.getVesselDemurrage", input: Empty())
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }

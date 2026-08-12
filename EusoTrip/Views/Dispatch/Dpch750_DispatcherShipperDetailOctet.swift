@@ -334,7 +334,7 @@ private struct DispatcherShipperDetailBody: View {
             case .pullVolume:       return "Monthly volume reflects this shipper's pull cadence over the window. Watch for a falling trend."
             case .tenderWin:        return "Acceptance vs cancellation tells you how reliably this shipper's tenders convert. Investigate cancellations."
             case .paymentBehavior:  return "Delivered volume and average rate are live; days-to-pay surfaces once settlement cadence is wired."
-            case .laneWin:          return "Per-lane win mix is not yet exposed by the scorecard proc — shown as “—” until the lane breakdown ships."
+            case .laneWin:          return "Per-lane win mix is not measured yet — shown as “—” until the lane breakdown ships."
             case .accountHealth:    return "Completion, cancellation and volume-consistency are the live health signals for this account."
             case .onboarding:       return "The onboarding-step ladder is not yet exposed — shown as “—” until the step rollup ships."
             case .quarter:          return "Per-quarter rollups are not yet exposed; monthly volume over the trailing year is shown instead."

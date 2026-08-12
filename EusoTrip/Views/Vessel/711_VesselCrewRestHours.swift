@@ -294,7 +294,7 @@ private struct VesselCrewRestHoursBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("getVesselCrew :814")
+                Text("CREW ROSTER")
                     .font(EType.mono(.caption))
                     .foregroundStyle(palette.textSecondary)
             }
@@ -600,7 +600,7 @@ private struct VesselCrewRestHoursBody: View {
             self.crew = env.crew
             self.compliance = c
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }

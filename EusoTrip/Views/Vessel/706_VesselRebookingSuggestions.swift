@@ -374,7 +374,7 @@ private struct VesselRebookingSuggestionsBody: View {
                 emptyMessage = r.message
             }
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
@@ -408,7 +408,7 @@ private struct VesselRebookingSuggestionsBody: View {
             actionMessage = "Rebooked onto \(out.voyageNumber ?? first.voyage) · \(out.status ?? "confirmed")"
             await load()
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = error.eusoUserCopy
         }
     }
 
@@ -429,7 +429,7 @@ private struct VesselRebookingSuggestionsBody: View {
             actionMessage = "Watching \(out.voyageNumber ?? first.voyage) for rebooking changes."
             await load()
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = error.eusoUserCopy
         }
     }
 }

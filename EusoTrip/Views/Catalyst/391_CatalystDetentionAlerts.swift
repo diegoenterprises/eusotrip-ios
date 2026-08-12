@@ -130,7 +130,7 @@ private struct DetentionAlertsBody_391: View {
                     .font(.system(size: 22, weight: .bold))
                     .tracking(-0.3)
                     .foregroundStyle(palette.textPrimary)
-                Text("getDetentionDashboard")
+                Text("Free-time burn and accruing detention, by stop")
                     .font(.system(size: 11, design: .monospaced))
                     .tracking(0.6)
                     .foregroundStyle(palette.textSecondary)

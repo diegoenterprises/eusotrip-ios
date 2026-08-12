@@ -180,7 +180,7 @@ private struct RailNetworkDisruptionBody: View {
                     Text("embargo zone · 14-day window")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(palette.textSecondary)
-                    Text("weather.getImpactedLoads")
+                    Text("weather impact feed")
                         .font(EType.caption)
                         .foregroundStyle(palette.textTertiary)
                 }
@@ -223,7 +223,7 @@ private struct RailNetworkDisruptionBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("getFacilityStatus")
+                Text("facility status feed")
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(palette.textTertiary)
             }
@@ -303,7 +303,7 @@ private struct RailNetworkDisruptionBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("getRailYards")
+                Text("rail yard registry")
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(palette.textTertiary)
             }

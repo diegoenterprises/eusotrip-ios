@@ -275,7 +275,7 @@ private struct VesselClaimPaymentsBody: View {
             }
             (methods, segments) = Self.methodBreakdown(from: r.payments)
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
@@ -386,7 +386,7 @@ private struct VesselClaimPaymentsBody: View {
             )
             await load()
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
     }
 
@@ -411,7 +411,7 @@ private struct VesselClaimPaymentsBody: View {
                 UIPasteboard.general.string = content
             }
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
     }
 

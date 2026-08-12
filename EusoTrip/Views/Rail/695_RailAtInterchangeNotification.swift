@@ -742,7 +742,7 @@ private struct RailAtInterchangeNotificationBody695: View {
                 .strokeBorder(palette.borderFaint))
             .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
 
-            Text("Both fields are optional on the server. Left blank, the message reads “at the interchange” with no ETA line.")
+            Text("Both fields are optional. Left blank, the message reads “at the interchange” with no ETA line.")
                 .font(.system(size: 10))
                 .foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -875,16 +875,16 @@ private struct RailAtInterchangeNotificationBody695: View {
                 Spacer()
             }
             Text(serverSaysNoConsignee
-                 ? "The server checked the latest waybill for this shipment and found no consignee. Nothing was sent and nothing was faked — the notification never left."
-                 : "The latest waybill for this shipment resolves no consignee name. The send will return no_consignee_on_file until one is on the paper.")
+                 ? "The latest waybill for this shipment was checked and carries no consignee. Nothing was sent and nothing was faked — the notification never left."
+                 : "The latest waybill for this shipment resolves no consignee name. The send will refuse with “no consignee on file” until one is on the paper.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
-            Text("Fix it on the waybill: re-issue the AAR Rule 11 waybill with a consignee party. The consignee lives on rail_waybills.consigneeId — rail shipments carry no consignee column of their own, so nothing else on this shipment can supply one.")
+            Text("Fix it on the waybill: re-issue the AAR Rule 11 waybill with a consignee party. The consignee lives on the waybill alone — a rail shipment carries no consignee of its own, so nothing else on this shipment can supply one.")
                 .font(.system(size: 11))
                 .foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
-            Text("reason: no_consignee_on_file")
+            Text("reason: no consignee on file")
                 .font(.system(size: 10, design: .monospaced))
                 .foregroundStyle(Brand.warning)
         }
@@ -922,7 +922,7 @@ private struct RailAtInterchangeNotificationBody695: View {
                 .font(.system(size: 11))
                 .foregroundStyle(palette.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
-            Text("Composed by the server at send time · type load_update · priority high")
+            Text("Composed at send time · load update · high priority")
                 .font(.system(size: 10, design: .monospaced))
                 .foregroundStyle(palette.textTertiary)
                 .padding(.top, 2)
@@ -1131,7 +1131,7 @@ private struct RailAtInterchangeNotificationBody695: View {
         if let email = consigneeEmail { lines.append("Contact · \(email)") }
         lines.append("Gateway · \(pointName.isEmpty ? "not selected" : pointName)")
         if let office = selectedPoint?.customsOffice, !office.isEmpty { lines.append("Customs · \(office)") }
-        lines.append("Language · \(country.rawValue) · \(country.serverLanguage) (server-composed)")
+        lines.append("Language · \(country.rawValue) · \(country.serverLanguage) (composed at send)")
         lines.append("ETA to consignee · \(trimmedEta.isEmpty ? "not set" : trimmedEta)")
         if sendLog.isEmpty {
             lines.append("No send made from this device in this session.")
@@ -1156,7 +1156,7 @@ private struct RailAtInterchangeNotificationBody695: View {
         NavigationStack {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: Space.s2) {
-                    Text("Every gateway below comes from the server's cross-border interchange catalog. Picking one supplies the real interchangePointName the notification quotes.")
+                    Text("Every gateway below comes from EusoTrip's cross-border interchange catalog. Picking one puts that gateway's real name into the notification.")
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1166,7 +1166,7 @@ private struct RailAtInterchangeNotificationBody695: View {
                         EusoEmptyState(
                             systemImage: "mappin.slash",
                             title: "Gateway catalog unavailable",
-                            subtitle: "getCrossBorderInterchangePoints returned nothing. The notification can still send — it reads “at the interchange” with no point name."
+                            subtitle: "The gateway catalog answered with no interchange points. The notification can still send — it reads “at the interchange” with no point name."
                         )
                     } else {
                         ForEach(points) { point in
@@ -1289,7 +1289,7 @@ private struct RailAtInterchangeNotificationBody695: View {
             .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
 
             if readSaysNoConsignee {
-                Text("Heads up: the latest waybill resolves no consignee. This send will come back no_consignee_on_file and nothing will be delivered.")
+                Text("Heads up: the latest waybill resolves no consignee. This send will come back “no consignee on file” and nothing will be delivered.")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Brand.warning)
                     .fixedSize(horizontal: false, vertical: true)

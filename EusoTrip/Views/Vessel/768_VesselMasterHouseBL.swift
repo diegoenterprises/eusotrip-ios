@@ -81,9 +81,9 @@ private struct VesselMasterHouseBLBody: View {
                     LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) }
                 } else {
                     hero
-                    sectionLabel("CONSOLIDATION TREE", ref: "EXISTS listBOLs:973")
+                    sectionLabel("CONSOLIDATION TREE", ref: "live B/L list")
                     treeCard
-                    sectionLabel("MANIFEST AUTHORITY · house declarations", ref: "listBOLs·country")
+                    sectionLabel("MANIFEST AUTHORITY · house declarations", ref: "manifest authority · by country")
                     triCountryBand
                     if let note = gapNotice {
                         HStack(alignment: .top, spacing: 8) {
@@ -251,13 +251,13 @@ private struct VesselMasterHouseBLBody: View {
                 }
             }
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
     private func issue() async {
         // STUB · named-gap blConsolidation.linkHouse({masterBolId,houseBolId,weightKg,confirm:true}) — structural write, audited.
-        gapNotice = "House-B/L issuance is createBOL({bolType: house}) - EXISTS :892 - but the parent-child link (blConsolidation.linkHouse) is a named gap filed with the-oath; issuing unlinked houses would orphan the manifest. Held until the link lands."
+        gapNotice = "A house B/L can be created, but it cannot yet be linked to its master. Issuing it unlinked would orphan it from the manifest, so issuance is held until linking is available. Nothing was issued."
         await load()
     }
 }

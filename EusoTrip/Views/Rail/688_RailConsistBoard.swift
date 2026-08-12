@@ -773,7 +773,7 @@ private struct RailConsistBoardBody688: View {
                 EusoEmptyState(
                     systemImage: "train.side.front.car",
                     title: "No cars coupled yet",
-                    subtitle: "Pull standing cars off the yard below and they land here in head-to-rear order — the same order that is written to the server when you build the train."
+                    subtitle: "Pull standing cars off the yard below and they land here in head-to-rear order — the same order filed on the consist when you build the train."
                 )
             } else {
                 VStack(spacing: Space.s2) {
@@ -882,7 +882,7 @@ private struct RailConsistBoardBody688: View {
                     Text("COMMITTED ORDER NOT READABLE")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                         .foregroundStyle(palette.textTertiary)
-                    Text("\(c.consistNumber ?? "This cut") already carries \(c.totalCars ?? 0) car\((c.totalCars ?? 0) == 1 ? "" : "s")\(c.totalLengthFeet.map { " over \($0) ft" } ?? "") on the server. Their head-to-rear positions were written when the consist was built, but no procedure reads consist_cars back yet — so they are not drawn rather than guessed.")
+                    Text("\(c.consistNumber ?? "This cut") already carries \(c.totalCars ?? 0) car\((c.totalCars ?? 0) == 1 ? "" : "s")\(c.totalLengthFeet.map { " over \($0) ft" } ?? "") on file. Their head-to-rear positions were recorded when the consist was built, but that order cannot be read back yet — so they are left undrawn rather than guessed.")
                         .font(EType.caption).foregroundStyle(palette.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }

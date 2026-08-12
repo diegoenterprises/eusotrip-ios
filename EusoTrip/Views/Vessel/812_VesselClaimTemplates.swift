@@ -95,7 +95,7 @@ private struct VesselClaimTemplatesBody: View {
                 } else if templates.isEmpty {
                     EusoEmptyState(systemImage: "doc.on.doc",
                                    title: "No claim templates",
-                                   subtitle: "getClaimTemplates returned an empty library, nothing to file from yet.")
+                                   subtitle: "The template library came back empty — nothing to file from yet.")
                 } else {
                     libraryHero
                     Text("TOP TEMPLATES · BY USAGE")
@@ -262,7 +262,7 @@ private struct VesselClaimTemplatesBody: View {
                 templates = []
             }
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }

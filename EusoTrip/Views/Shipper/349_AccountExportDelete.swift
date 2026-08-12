@@ -171,7 +171,7 @@ private struct ExportDeleteBody: View {
         do {
             let (data, _) = try await EusoTripAPI.shared.fetchAuthenticatedData(url)
             guard !data.isEmpty else {
-                archiveError = "Server returned an empty file."
+                archiveError = "Your export downloaded as zero bytes — nothing was saved to this device. Request the export again."
                 return
             }
             let fallback = url.lastPathComponent.isEmpty ? "eusotrip-export.json" : url.lastPathComponent
@@ -399,14 +399,14 @@ private struct ExportDeleteBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(.white)
                     .padding(.horizontal, 8).padding(.vertical, 4)
                     .background(Brand.danger).clipShape(Capsule())
-                Text("The cancellation window has closed and the server is executing the account purge. This is not a new 30-day deletion request and it cannot be cancelled from this screen.")
+                Text("The 30-day cancellation window has closed and your account data is being erased now. This is not a new 30-day request, and it can no longer be cancelled from this screen.")
                     .font(EType.caption).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
             } else if deletionLifecycleStatus == .executed {
                 Text("DELETION EXECUTED")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(.white)
                     .padding(.horizontal, 8).padding(.vertical, 4)
                     .background(Brand.danger).clipShape(Capsule())
-                Text("The server reports that the account deletion lifecycle has completed.")
+                Text("Account deletion has completed. Nothing further is pending on this account.")
                     .font(EType.caption).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
             } else if deletionLifecycleStatus == .blocked {
                 Text("DELETION BLOCKED")
@@ -481,7 +481,7 @@ private struct ExportDeleteBody: View {
         do {
             let r = try await EusoTripAPI.shared.users.requestAccountDeletion()
             guard r.success else {
-                actionError = "The server did not confirm the deletion request. Your account remains active."
+                actionError = "Your deletion request was not confirmed. Your account remains active and nothing is scheduled — submit the request again."
                 return
             }
             deleteScheduledFor = r.scheduledFor
@@ -499,7 +499,7 @@ private struct ExportDeleteBody: View {
         do {
             let response = try await EusoTripAPI.shared.users.cancelAccountDeletion()
             guard response.success else {
-                actionError = "The server did not confirm cancellation. Your deletion request may still be active."
+                actionError = "The cancellation was not confirmed. Your deletion request may still be scheduled — retry, and check the date above before it runs."
                 return
             }
             deletionLifecycleStatus = .cancelled

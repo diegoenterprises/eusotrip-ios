@@ -790,7 +790,30 @@ private struct LabeledRow: View {
     }
 }
 
-// MARK: - Document upload sheet (metadata)
+// MARK: - Document upload sheet (metadata ONLY — see the note below)
+//
+// 2026-08-12 — honesty correction. "Scan to autofill" reads the real
+// document bytes (DocumentClassifierSheet → documentRouter.classifyAndRoute,
+// server-side Gemini vision), but the Save button calls
+// `driverQualification.uploadDocument`, whose input schema is
+// `{ driverId, type, name, expiresAt?, notes? }` — there is NO file
+// field on it, and the server writes the row with `fileUrl: ''`. The
+// scanned file is therefore NOT stored by this screen, and this is a
+// 49 CFR 391.51 driver-qualification file. Two consequences, both
+// enforced below:
+//
+//   1. The sheet says so, in the sheet, at the point of decision. It
+//      does not let a catalyst believe a CDL image was filed when only
+//      a line of text was.
+//   2. Every value the scan proposes is drawn as SCANNED · UNCONFIRMED
+//      until the catalyst has looked at it. The scan proposes; the
+//      human confirms — especially the expiration date, which is what
+//      the compliance engine will act on.
+//
+// Storing the bytes needs a driver-scoped, byte-accepting procedure;
+// no such procedure exists today (documentCenter.uploadDocument and
+// documents.upload both file against the CALLING user, not a target
+// driver). That is a server change, deliberately not faked here.
 
 private struct CatalystDocumentUploadSheet: View {
     @Environment(\.dismiss) private var dismiss
@@ -813,6 +836,20 @@ private struct CatalystDocumentUploadSheet: View {
     /// human just confirms and taps Save.
     @State private var showClassifier: Bool = false
     @State private var classifierAck: String? = nil
+    // Scan provenance. Deliberately stored as the PROPOSED VALUES
+    // rather than a flag set: a flag cleared by `.onChange` would be
+    // wiped by the very assignment that set it (applyClassified writes
+    // docType/docName/expiresAt in the same tick), so "unconfirmed" is
+    // derived — a field reads as unconfirmed exactly while it still
+    // holds what the reader proposed. Edit it and the badge goes; retype
+    // the same value and it stays, which errs toward "check this",
+    // which is the safe direction for a §391.51 record.
+    @State private var proposedType: DQUploadType? = nil
+    @State private var proposedName: String? = nil
+    @State private var proposedExpiry: Date? = nil
+    /// The reader's own warnings + confidence, surfaced verbatim.
+    @State private var scanWarnings: [String] = []
+    @State private var scanConfidence: Double? = nil
 
     enum DQUploadType: String, CaseIterable, Identifiable {
         case cdl, medical, mvr, drug, hazmat, twic, annualReview, other
@@ -871,7 +908,7 @@ private struct CatalystDocumentUploadSheet: View {
                                 Text("Scan to autofill")
                                     .font(.system(size: 14, weight: .heavy))
                                     .foregroundStyle(palette.textPrimary)
-                                Text("Gemini Vision detects type, identifier and expiration. Confirm and save.")
+                                Text("The document is read by EusoTrip, not on this phone. It proposes type, identifier and expiration — nothing is saved until you confirm.")
                                     .font(.system(size: 11, weight: .regular))
                                     .foregroundStyle(palette.textSecondary)
                                     .fixedSize(horizontal: false, vertical: true)
@@ -882,26 +919,41 @@ private struct CatalystDocumentUploadSheet: View {
                                 .foregroundStyle(palette.textTertiary)
                         }
                     }
-                    if let ack = classifierAck {
-                        Text("Pre-filled · \(ack)")
-                            .font(.system(size: 11, weight: .heavy))
-                            .foregroundStyle(LinearGradient.diagonal)
-                    }
+                    if classifierAck != nil { scannedUnconfirmedBanner }
+                } footer: {
+                    // Stated at the point of decision, not buried.
+                    Text("This record is text only. The scanned image is read but not stored against the driver — the §391.51 file still needs the document itself on record.")
+                        .font(.system(size: 10, weight: .regular))
+                        .foregroundStyle(Brand.warning)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                Section("Document type") {
+                Section {
                     Picker("Type", selection: $docType) {
                         ForEach(DQUploadType.allCases) { t in
                             Text(t.label).tag(t)
                         }
                     }
+                } header: {
+                    sectionHeader("Document type", unconfirmed: typeIsUnconfirmed)
                 }
-                Section("Name") {
+                Section {
                     TextField("e.g. CDL-A IA-D08-441-922", text: $docName)
+                } header: {
+                    sectionHeader("Name", unconfirmed: nameIsUnconfirmed)
                 }
-                Section("Expiry") {
+                Section {
                     Toggle("Has expiration date", isOn: $hasExpiry)
                     if hasExpiry {
                         DatePicker("Expires", selection: $expiresAt, displayedComponents: .date)
+                    }
+                } header: {
+                    sectionHeader("Expiry", unconfirmed: expiryIsUnconfirmed)
+                } footer: {
+                    if expiryIsUnconfirmed {
+                        Text("This date came off the scan and drives the compliance clock. Check it against the card before you save.")
+                            .font(.system(size: 10, weight: .regular))
+                            .foregroundStyle(Brand.warning)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 Section("Notes") {
@@ -948,10 +1000,79 @@ private struct CatalystDocumentUploadSheet: View {
         .presentationDetents([.large])
     }
 
+    /// True while the field still holds exactly the value the reader
+    /// proposed — i.e. no human has looked at it and decided.
+    private var typeIsUnconfirmed: Bool { proposedType.map { $0 == docType } ?? false }
+    private var nameIsUnconfirmed: Bool { proposedName.map { $0 == docName } ?? false }
+    private var expiryIsUnconfirmed: Bool {
+        guard hasExpiry, let p = proposedExpiry else { return false }
+        return abs(p.timeIntervalSince(expiresAt)) < 1
+    }
+    private var anyUnconfirmed: Bool { typeIsUnconfirmed || nameIsUnconfirmed || expiryIsUnconfirmed }
+
+    /// SCANNED · UNCONFIRMED marker for a section whose value is still
+    /// exactly what the reader proposed.
+    @ViewBuilder
+    private func sectionHeader(_ title: String, unconfirmed: Bool) -> some View {
+        HStack(spacing: 5) {
+            Text(title)
+            if unconfirmed {
+                Image(systemName: "text.viewfinder")
+                    .font(.system(size: 8, weight: .heavy))
+                    .foregroundStyle(Brand.warning)
+                Text("SCANNED · UNCONFIRMED")
+                    .font(.system(size: 8, weight: .heavy)).tracking(0.7)
+                    .foregroundStyle(Brand.warning)
+            }
+        }
+    }
+
+    /// Banner shown while any scanned value is still untouched. Carries
+    /// the reader's confidence and its own warnings verbatim — the
+    /// screen never editorialises about a document it did not read.
+    @ViewBuilder
+    private var scannedUnconfirmedBanner: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 5) {
+                Image(systemName: "text.viewfinder")
+                    .font(.system(size: 9, weight: .heavy))
+                    .foregroundStyle(Brand.warning)
+                Text(anyUnconfirmed ? "SCANNED · UNCONFIRMED" : "SCAN APPLIED · YOU EDITED IT")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(anyUnconfirmed ? Brand.warning : palette.textSecondary)
+                if let c = scanConfidence {
+                    Spacer(minLength: 0)
+                    Text("\(Int(c.rounded()))%")
+                        .font(.system(size: 9, weight: .heavy))
+                        .foregroundStyle(palette.textSecondary)
+                }
+            }
+            if let ack = classifierAck {
+                Text(anyUnconfirmed
+                     ? "Read as \(ack). The highlighted fields are still the reader's proposal — check them against the document."
+                     : "Read as \(ack). Every proposed field has been changed by hand.")
+                    .font(.system(size: 10, weight: .regular))
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            ForEach(Array(scanWarnings.prefix(4).enumerated()), id: \.offset) { _, w in
+                HStack(alignment: .top, spacing: 4) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 7, weight: .heavy))
+                        .foregroundStyle(Brand.warning).padding(.top, 2)
+                    Text(w).font(.system(size: 10, weight: .regular))
+                        .foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
     /// Map a documentRouter classification onto this form's @State.
-    /// Confidence is implicit — the user can override anything before
-    /// tapping Save, so we treat the scan as an aggressive pre-fill,
-    /// not a fait accompli.
+    /// Every value written here is also recorded as a PROPOSAL, so the
+    /// form can show it as unconfirmed for exactly as long as it still
+    /// holds the reader's answer. A field the reader did NOT return is
+    /// left alone — it is absent, and absent is not the same as blank.
     private func applyClassified(_ result: ClassifiedDocument) {
         let mapped: DQUploadType
         switch result.classifiedType {
@@ -966,24 +1087,39 @@ private struct CatalystDocumentUploadSheet: View {
         default:                                     mapped = .other
         }
         docType = mapped
+        proposedType = mapped
+        proposedName = nil
+        proposedExpiry = nil
 
         // Doc name → prefer extracted identifier (license number / TWIC #).
         if let ident = result.fields["identifier"] ?? result.fields["licenseNumber"] ?? result.fields["cardNumber"], !ident.isEmpty {
             docName = "\(mapped.label) \(ident)"
+            proposedName = docName
         } else if let holder = result.fields["holderName"] ?? result.fields["name"], !holder.isEmpty {
             docName = "\(mapped.label) · \(holder)"
+            proposedName = docName
         }
 
         // Expiration → parse common shapes (ISO, MM/DD/YYYY, YYYY-MM-DD).
+        // An unparseable date is left as-is and called out, never
+        // coerced into today's date or a blank one.
+        var expiryWarning: String? = nil
         if let raw = result.fields["expirationDate"] ?? result.fields["expiration"] ?? result.fields["expirationDateIso"], !raw.isEmpty {
             if let parsed = ISO8601DateFormatter().date(from: raw)
                 ?? Self.mdyFormatter.date(from: raw)
                 ?? Self.ymdFormatter.date(from: raw) {
                 expiresAt = parsed
                 hasExpiry = true
+                proposedExpiry = parsed
+            } else {
+                expiryWarning = "The reader saw an expiration of \"\(raw)\" but couldn't read it as a date. The date below is untouched — set it yourself."
             }
+        } else {
+            expiryWarning = "No expiration date was found on this document. The date below is untouched — set it yourself."
         }
 
+        scanConfidence = result.confidence
+        scanWarnings = result.warnings + (expiryWarning.map { [$0] } ?? [])
         classifierAck = mapped.label
     }
 
@@ -1006,6 +1142,10 @@ private struct CatalystDocumentUploadSheet: View {
         defer { uploading = false }
 
         let isoExpiry: String? = hasExpiry ? Self.iso8601Date(expiresAt) : nil
+        // Tapping Save IS the human confirmation the honesty rules
+        // require before a scanned value is committed. Drop the
+        // proposals so nothing re-reads as unconfirmed afterwards.
+        proposedType = nil; proposedName = nil; proposedExpiry = nil
         do {
             _ = try await EusoTripAPI.shared.dq.uploadDocument(
                 driverId: driverId,

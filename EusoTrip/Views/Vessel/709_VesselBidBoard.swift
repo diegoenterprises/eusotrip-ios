@@ -125,7 +125,7 @@ private struct VesselBidBoardBody: View {
                 } else if lanes.isEmpty {
                     EusoEmptyState(systemImage: "tray",
                                    title: "No open bids",
-                                   subtitle: "getReceivedBids returned no bids on your postings. Nothing to award yet. Post a lane to start receiving competitive bids.")
+                                   subtitle: "No bids have come in on your postings. Nothing to award yet — post a lane to start receiving competitive bids.")
                 } else {
                     summaryBand
                     sectionLabel
@@ -329,7 +329,7 @@ private struct VesselBidBoardBody: View {
             recomputeSummary(rows.compactMap { row -> (Double, String?)? in (Double(row.bidAmount ?? "0") ?? 0, row.expiresAt) })
         } catch {
             self.lanes = []
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }

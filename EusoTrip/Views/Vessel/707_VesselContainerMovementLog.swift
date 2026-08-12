@@ -699,7 +699,7 @@ private struct VesselContainerMovementLogBody707: View {
                           action: { Task { await stamp(containerId: cid, shipmentId: e.shipmentId ?? shipmentId) } },
                           isLoading: stamping)
             } else {
-                Text("Tap a move row first. recordContainerMovement requires a real containerId (vesselShipments.ts:1470) and this screen will not invent one.")
+                Text("Tap a move row first. Stamping a move has to be tied to a specific container, and this screen will not guess one for you.")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
             }
@@ -786,7 +786,7 @@ private struct VesselContainerMovementLogBody707: View {
             total = out.total ?? out.events.count
             lastSync = Date()
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
 
         // Best-effort: resolve the real ISO 6346 numbers for the visible rows. timeline hands back
@@ -839,7 +839,7 @@ private struct VesselContainerMovementLogBody707: View {
                 await load()
             } else {
                 stampFailed = true
-                stampNotice = "The server did not confirm the stamp. Nothing was recorded."
+                stampNotice = "The stamp was not confirmed. Nothing was recorded — stamp it again."
             }
         } catch {
             if OfflineQueue.isNetworkUnreachable(error) {
@@ -852,7 +852,7 @@ private struct VesselContainerMovementLogBody707: View {
                 stampNotice = "Network unreachable — the move is QUEUED and will be replayed on the next refresh. It is not stamped yet."
             } else {
                 stampFailed = true
-                stampNotice = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+                stampNotice = error.eusoUserCopy
             }
         }
         stamping = false

@@ -671,7 +671,7 @@ private struct CatalystPickupOnSiteEchoCelM04View: View {
                 hasOnSiteEcho = false
             }
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = pickupFailureCopy_374(error, noun: "pickup refresh")
         }
     }
 
@@ -699,7 +699,7 @@ private struct CatalystPickupOnSiteEchoCelM04View: View {
             actionMessage = "Dock confirmed · load status \(status)"
             await fetch()
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = pickupFailureCopy_374(error, noun: "dock confirmation")
         }
     }
 
@@ -727,7 +727,7 @@ private struct CatalystPickupOnSiteEchoCelM04View: View {
             )
             actionMessage = conversation.existing == true ? "Opened load conversation." : "Created load conversation."
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = pickupFailureCopy_374(error, noun: "load thread")
         }
     }
 
@@ -781,4 +781,45 @@ private struct CatalystPickupOnSiteEchoCelM04View: View {
     CatalystPickupOnSiteEchoCelM04Screen(theme: Theme.light)
         .environmentObject(previewSession_374())
         .preferredColorScheme(.light)
+}
+
+// MARK: - Operator-facing failure copy
+
+/// Turn a caught error into a line a catalyst working a pickup can act on.
+///
+/// The underlying error stays available to the caller for logging; what
+/// reaches the screen is an operational sentence, never a raw `NSError`
+/// description. `noun` names the thing that failed ("dock confirmation",
+/// "load thread") so the line stays specific.
+fileprivate func pickupFailureCopy_374(_ error: Error, noun: String) -> String {
+    if let api = error as? EusoTripAPIError {
+        switch api {
+        case .unauthenticated:
+            return "Your session expired. Sign in again to continue."
+        case .forbidden(let reason):
+            let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty
+                ? "This account isn't cleared to change this pickup."
+                : trimmed
+        case .trpcError(let reason):
+            let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty
+                ? "The \(noun) was rejected. Refresh the load and try again."
+                : trimmed
+        case .httpStatus(let code, _):
+            return "The \(noun) didn't go through (code \(code)). Try again in a moment."
+        case .decodingFailed:
+            return "This pickup came back in a form this build can't read. Update the app, then retry."
+        case .empty:
+            return "Nothing came back for the \(noun). Refresh the load and try again."
+        case .notConfigured, .badURL:
+            return "This device isn't set up for live pickups yet. Restart the app and try again."
+        case .queuedForOfflineReplay:
+            return "You're offline — the \(noun) is queued and sends the moment you reconnect."
+        }
+    }
+    if (error as NSError).domain == NSURLErrorDomain {
+        return "No connection right now. The \(noun) didn't complete — retry once you have signal."
+    }
+    return "The \(noun) didn't complete. Refresh the load and try again."
 }

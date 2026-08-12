@@ -313,7 +313,7 @@ private struct RailFuelSurchargeBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("calculateSteppedFsc")
+                Text("surcharge calculation")
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(palette.textTertiary)
             }

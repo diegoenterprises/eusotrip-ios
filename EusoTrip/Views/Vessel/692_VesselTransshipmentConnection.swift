@@ -309,7 +309,7 @@ private struct VesselTransshipmentConnectionBody692: View {
 
     private var sublineText: String {
         guard let hub = resolvedHubId else {
-            return "No hub port threaded — waiting on a voyage window from getVesselSchedules."
+            return "No hub port threaded — waiting on a voyage window from the vessel schedule."
         }
         let prefix = hubWasInferred ? "Hub \(hub) inferred on device (busiest arrival port in the window)"
                                     : "Hub port \(hub)"
@@ -320,13 +320,13 @@ private struct VesselTransshipmentConnectionBody692: View {
 
     private var gapBanner: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("DERIVED VIEW · NO TRANSSHIPMENT PROCEDURE EXISTS")
+            Text("DERIVED VIEW · TRANSSHIPMENT IS NOT RECORDED ANYWHERE")
                 .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                 .foregroundStyle(Brand.warning)
-            Text("Feeder-to-mother pairs are matched on this device from live scheduledArrival / scheduledDeparture. No join column links an inbound leg to an outbound leg.")
+            Text("Feeder-to-mother pairs are matched on this device from the live arrival and departure times. Nothing in the record links an inbound leg to an outbound leg.")
                 .font(.system(size: 10)).foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
-            Text("intermodal.recordTransfer has no vessel_to_vessel transferType — the hand-off cannot be logged.")
+            Text("Vessel to vessel is not a recordable transfer type — this hand-off cannot be logged here.")
                 .font(.system(size: 10)).foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -373,7 +373,7 @@ private struct VesselTransshipmentConnectionBody692: View {
     private var emptyState: some View {
         EusoEmptyState(systemImage: "point.3.connected.trianglepath.dotted",
                        title: "No voyages in the window",
-                       subtitle: "getVesselSchedules returned nothing for this hub. Feeder and onward sailings appear here the moment a voyage is scheduled against the port.")
+                       subtitle: "The voyage schedule came back empty for this hub. Feeder and onward sailings appear here the moment a voyage is scheduled against the port.")
             .padding(Space.s4)
             .frame(maxWidth: .infinity)
             .background(palette.bgCardSoft)
@@ -451,9 +451,9 @@ private struct VesselTransshipmentConnectionBody692: View {
             ? " Dashed red = buffer already negative."
             : ""
         if let boxes = boxCount, boxes > 0 {
-            return "Ribbon width uses the \(boxes) live containers on the threaded booking (containerTimeline.liveStatus:75). No procedure returns per-link box counts, so the other links draw at base width.\(dashed)"
+            return "Ribbon width uses the \(boxes) live containers on the threaded booking. Per-link box counts are not reported anywhere, so every other link draws at base width.\(dashed)"
         }
-        return "All links draw at equal width — no procedure returns per-link box counts, and no booking is threaded for containerTimeline.liveStatus.\(dashed)"
+        return "All links draw at equal width — per-link box counts are not reported anywhere, and no booking is threaded for a live container count.\(dashed)"
     }
 
     private func railBlock(_ v: Voyage692, inbound isIn: Bool) -> some View {
@@ -532,7 +532,7 @@ private struct VesselTransshipmentConnectionBody692: View {
                 Text(esangHeadline)
                     .font(.system(size: 14, weight: .bold)).foregroundStyle(palette.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("esangCoach.forScreen:264 is not called — its SCREEN_ENUM (:112-125) is driver-only, with no vessel member.")
+                Text("No ESANG coaching is published for vessel screens yet — the coach still only covers driver screens, so this line is worked out on this device from the voyages above.")
                     .font(.system(size: 11)).foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -568,7 +568,7 @@ private struct VesselTransshipmentConnectionBody692: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("getVesselSchedules:1350").font(EType.mono(.micro))
+                Text("VOYAGE SCHEDULE").font(EType.mono(.micro))
                     .foregroundStyle(palette.textTertiary)
             }
             VStack(spacing: 0) {
@@ -624,7 +624,7 @@ private struct VesselTransshipmentConnectionBody692: View {
 
     private var rebookResults: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
-            Text("REBOOKING CANDIDATES · blankSailing.rebookingSuggestions:105")
+            Text("REBOOKING CANDIDATES · BLANK-SAILING ALTERNATIVES")
                 .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                 .foregroundStyle(palette.textTertiary)
             VStack(spacing: 0) {
@@ -664,7 +664,7 @@ private struct VesselTransshipmentConnectionBody692: View {
                 // DELIBERATELY DOES NOT FIRE. intermodal.recordTransfer:637 has no vessel_to_vessel
                 // transferType (nor does the intermodal_transfers mysqlEnum), so a vessel-to-vessel
                 // hand-off cannot be expressed. Firing it with a wrong type would write a false record.
-                transferGapNote = "Cannot log this hand-off. intermodal.recordTransfer:637 accepts only truck_to_rail, rail_to_truck, truck_to_vessel, vessel_to_truck, rail_to_vessel and vessel_to_rail — there is no vessel_to_vessel member. Even if it were added, INTERMODAL_TRANSFER_INITIATED (websocket-events.ts:458) is mapped inside emitIntermodalEvent (_core/websocket.ts:1798) which has zero callers, so the onward carrier would never be notified."
+                transferGapNote = "This hand-off cannot be logged. Transfers can only be recorded between road, rail and sea — vessel to vessel is not a recordable type. Even once it is, no transfer notice reaches the onward carrier today. Nothing was recorded and nobody was notified: confirm the connection with the onward carrier directly."
             }) {
                 VStack(spacing: 2) {
                     Text("Record transfer").font(.system(size: 13, weight: .bold))
@@ -687,11 +687,11 @@ private struct VesselTransshipmentConnectionBody692: View {
     private var provenanceFooter: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(transfers.isEmpty
-                 ? "intermodal.getTransfers:943 returned no transfers on your shipments — none could be vessel_to_vessel anyway."
-                 : "\(transfers.count) transfer\(transfers.count == 1 ? "" : "s") on record (getTransfers:943, correctly tenant-scoped) — none of them vessel_to_vessel; the enum has no such member.")
+                 ? "No transfers are on record against your shipments, so none of them could be a vessel-to-vessel connection."
+                 : "\(transfers.count) transfer\(transfers.count == 1 ? "" : "s") on record against your shipments — none is a vessel-to-vessel connection. EusoTrip does not record that transfer type yet, so a ship-to-ship move will not appear here.")
                 .font(.system(size: 10)).foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
-            Text("P0-READ-TENANCY: getVesselSchedules:1350 and containerTimeline.liveStatus:75 both resolve with no ctx — vesselProcedure (_core/trpc.ts:268) is a mode gate only.")
+            Text("Sailing schedules and container status on this screen are not filtered to your company — the vessel gate checks mode only. Read them as port-wide and confirm ownership before you act on a row.")
                 .font(.system(size: 10)).foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -771,7 +771,7 @@ private struct VesselTransshipmentConnectionBody692: View {
                 onward = []
             }
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
             inbound = []
             onward = []
         }
@@ -796,7 +796,7 @@ private struct VesselTransshipmentConnectionBody692: View {
 
     private func rebook() async {
         guard shipmentId > 0 else {
-            rebookNote = "Thread a booking first — blankSailing.rebookingSuggestions:105 is keyed by shipmentId and there is no hub-wide variant."
+            rebookNote = "Thread a booking first — rebooking suggestions are keyed to one shipment, and there is no hub-wide version."
             return
         }
         rebooking = true; rebookNote = nil
@@ -809,7 +809,7 @@ private struct VesselTransshipmentConnectionBody692: View {
                 rebookNote = out.message ?? "No scheduled voyage on this port pair — nothing to rebook onto."
             }
         } catch {
-            rebookNote = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            rebookNote = error.eusoUserCopy
         }
         rebooking = false
     }

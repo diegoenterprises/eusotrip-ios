@@ -280,13 +280,13 @@ private struct DispatcherCommsBody: View {
         let copy: String = {
             switch kind {
             case .review:              return "\(threadCountText) threads, \(unreadText) unread, last activity \(lastActivityText). Per-axis grading has no live data source yet."
-            case .responseTime:        return "Last activity \(lastActivityText). Per-class response-time scoring is a backend gap — no live source yet."
-            case .slaCompliance:       return "SLA-compliance grading is a backend gap — no live source. \(threadCountText) threads in the inbox."
-            case .escalationFree:      return "Escalation tracking is a backend gap — no live source. \(threadCountText) threads in the inbox."
-            case .threadClosure:       return "Closure-rate grading is a backend gap — no live source. \(threadCountText) threads in the inbox."
+            case .responseTime:        return "Last activity \(lastActivityText). Per-class response-time scoring is not measured yet — no live source, so no score is shown."
+            case .slaCompliance:       return "SLA-compliance grading is not measured yet — no live source. \(threadCountText) threads in the inbox."
+            case .escalationFree:      return "Escalation tracking is not measured yet — no live source. \(threadCountText) threads in the inbox."
+            case .threadClosure:       return "Closure-rate grading is not measured yet — no live source. \(threadCountText) threads in the inbox."
             case .threadVolume:        return "\(threadCountText) threads, \(unreadText) unread. Per-week volume rollups have no live data source yet."
-            case .firstTouchResolution:return "First-touch-resolution grading is a backend gap — no live source. \(threadCountText) threads in the inbox."
-            case .quarter:             return "Per-quarter trajectory rollups are a backend gap — no live source. \(threadCountText) threads in the inbox."
+            case .firstTouchResolution:return "First-touch-resolution grading is not measured yet — no live source. \(threadCountText) threads in the inbox."
+            case .quarter:             return "Per-quarter trajectory rollups are not measured yet — no live source. \(threadCountText) threads in the inbox."
             }
         }()
         return LifecycleCard {

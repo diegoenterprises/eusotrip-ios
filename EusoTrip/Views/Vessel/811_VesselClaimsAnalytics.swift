@@ -285,7 +285,7 @@ private struct VesselClaimsAnalyticsBody: View {
                 perils = []
             }
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }

@@ -392,7 +392,7 @@ struct EscortIncidentsClaims: View {
                 packetStep("INSURER —", onFile: false)
             }
 
-            Text("STEPS 3–4 HAVE NO WRITE PROCEDURE ON FILE · GAP-085")
+            Text("STEPS 3–4 CANNOT BE FILED FROM THIS SCREEN · CARRIER AND INSURER GO IN VIA DISPATCH")
                 .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -473,7 +473,7 @@ struct EscortIncidentsClaims: View {
                 Text("REPORT AN INCIDENT")
                     .font(.system(size: 11, weight: .heavy)).tracking(0.3)
                     .foregroundStyle(palette.textTertiary)
-                Text("NO ESCORT INCIDENT-WRITE PROCEDURE EXISTS · FILE VIA DISPATCH")
+                Text("INCIDENTS CANNOT BE FILED FROM THIS SCREEN YET · NOTHING TYPED HERE IS RECORDED · FILE VIA DISPATCH")
                     .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -493,7 +493,7 @@ struct EscortIncidentsClaims: View {
                 .strokeBorder(palette.textTertiary.opacity(0.45),
                               style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
         )
-        .accessibilityLabel("Report an incident. Unavailable — no incident write procedure exists yet. File through dispatch.")
+        .accessibilityLabel("Report an incident. Unavailable — incidents cannot be filed from this screen yet, so nothing you enter would be recorded. File through dispatch.")
     }
 
     // MARK: ESANG
@@ -513,7 +513,7 @@ struct EscortIncidentsClaims: View {
                         .foregroundStyle(palette.textPrimary)
                         .lineLimit(1).minimumScaleFactor(0.8)
                 }
-                Text("Packet steps with no write path stay unfilled until GAP-085 lands.")
+                Text("Packet steps that cannot be filed here stay unfilled — dispatch has to enter them.")
                     .font(.system(size: 8.5, weight: .medium)).foregroundStyle(palette.textSecondary)
             }
             Spacer(minLength: 0)

@@ -181,7 +181,7 @@ struct LoadingInProgress: View {
                 DriverEquipmentMoment(
                     facts: activeLoad.map(LoadAnimationContext.DriverLoadFacts.init(load:)),
                     state: .loading,
-                    label: "LOADING PROCEDURE"
+                    label: "LOADING SEQUENCE"
                 )
                 metricRow
                 safetyRow

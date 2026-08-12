@@ -770,7 +770,7 @@ struct NewAllocationContractSheet: View {
             Text("Daily nomination + take-or-pay")
                 .font(EType.body.weight(.bold))
                 .foregroundStyle(palette.textPrimary)
-            Text("Petroleum + refined products. Posts to allocationTracker.createContract; the resulting contract id powers the daily fulfillment dashboard.")
+            Text("Petroleum + refined products. Filing this contract issues a contract number, and the daily fulfillment dashboard tracks nominations and take-or-pay against it.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
         }

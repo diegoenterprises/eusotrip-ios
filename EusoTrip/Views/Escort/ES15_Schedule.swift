@@ -541,7 +541,7 @@ struct EscortSchedule: View {
                 .foregroundStyle(palette.textTertiary)
         }
         .allowsHitTesting(false)
-        .accessibilityLabel("Block dates is unavailable: no server write path exists yet.")
+        .accessibilityLabel("Block dates is unavailable: blocked dates cannot be saved yet, so nothing you set here would be recorded.")
     }
 
     // MARK: Day density panel
@@ -727,10 +727,10 @@ struct EscortSchedule: View {
     /// The two server-side caps, stated on the surface rather than hidden.
     private var honestyFooter: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text("Counts union getUpcomingJobs (accepted only) with getSchedule (10-row cap).")
+            Text("Counts combine your accepted jobs with the schedule read, which returns at most 10 rows.")
                 .font(.system(size: 7.5, weight: .semibold).monospaced())
                 .foregroundStyle(palette.textTertiary)
-            Text("A day past those caps under-counts here. Range-aware read is owed.")
+            Text("A day busier than that under-counts here — treat a full day as at least what you see.")
                 .font(.system(size: 7.5, weight: .semibold).monospaced())
                 .foregroundStyle(palette.textTertiary)
         }

@@ -317,7 +317,7 @@ private struct RailClaimWorkflowBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("getClaimWorkflow:459")
+                Text("claim file")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
             }
@@ -590,7 +590,7 @@ private struct RailClaimWorkflowBody: View {
         if let inv = claim?.investigator?.name, inv != "-" {
             return "carrier-liability review · \(inv) assigned"
         }
-        return "carrier-liability review · assignClaimInvestigator pending"
+        return "carrier-liability review · no investigator assigned yet"
     }
     private var decisionLine2: String {
         "Carrier \(carrierLabel.capitalized) · \(shipperLabel) · \(fullClaimNumber)"

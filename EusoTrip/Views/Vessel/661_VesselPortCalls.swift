@@ -246,7 +246,7 @@ private final class RotationVM_661: ObservableObject {
                 portConditions = nil
             }
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
             hasCalls = false
         }
         loading = false
@@ -381,11 +381,11 @@ private struct VesselPortCallsBody: View {
                 } else if !vm.hasVessel {
                     EusoEmptyState(systemImage: "ferry",
                                    title: "No vessel resolved",
-                                   subtitle: "getVesselFleet returned no vessels for this operator and no IMO was threaded. Nothing to plot, no fabricated rotation.")
+                                   subtitle: "No vessel was resolved for this operator and no IMO was carried into this screen. There is nothing to plot, and no rotation is invented to fill the gap.")
                 } else if !vm.hasCalls {
                     EusoEmptyState(systemImage: "ferry",
                                    title: "No port calls in range",
-                                   subtitle: "getVesselPortCalls returned no AIS port-call history for this rotation. Nothing to plot, no fabricated calls.")
+                                   subtitle: "AIS returned no port-call history for this rotation. There is nothing to plot, and no calls are invented to fill the gap.")
                 } else {
                     rotationHero
                     rotationMap

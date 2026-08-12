@@ -142,7 +142,7 @@ private struct VesselStatusUpdateBody: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("EVENT STAMP").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
                 Text("31.95N, 79.10W · approaching Savannah · 05-23 14:10 EDT").font(EType.body).foregroundStyle(palette.textPrimary)
-                Text("Auto-recorded to getVesselShipmentDetail.events on confirm").font(EType.caption).foregroundStyle(palette.textSecondary)
+                Text("Auto-recorded to the shipment event log on confirm").font(EType.caption).foregroundStyle(palette.textSecondary)
             }
         }
     }
@@ -184,7 +184,7 @@ private struct VesselStatusUpdateBody: View {
             // updated status reloads there (no stale entry left on stack).
             NotificationCenter.default.post(name: .eusoRoleNavBack, object: nil)
         } catch {
-            errorText = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            errorText = error.eusoUserCopy
         }
         submitting = false
     }

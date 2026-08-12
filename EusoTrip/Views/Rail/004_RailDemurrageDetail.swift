@@ -1150,7 +1150,7 @@ private struct RailDemurrageDetailBody004: View {
         .allowsHitTesting(false)
         .accessibilityElement()
         .accessibilityLabel("Request early release")
-        .accessibilityValue("Unavailable — no backing procedure has shipped")
+        .accessibilityValue("Unavailable — early release is not built yet")
     }
 
     /// The only money-moving control on the screen. ONLINE_ONLY: it never
@@ -1205,7 +1205,7 @@ private struct RailDemurrageDetailBody004: View {
     }
 
     private var gapNoteText: String {
-        var lines = ["Early release is unavailable here: no backing procedure has shipped yet, so nothing was requested and nothing was queued."]
+        var lines = ["Early release is unavailable here: it is not built yet, so nothing was requested and nothing was held for later."]
         if !reach.isOnline {
             lines.append("Offline — a demurrage dispute moves money and never queues. Reconnect to file it live.")
         } else if !canDispute, let row = activeCharge {
@@ -1230,7 +1230,7 @@ private struct RailDemurrageDetailBody004: View {
         if let n = quoteNext24?.totalCharge { lines.append("Another 24h on the ground: \(money(n))") }
         if let h = quoteHold72?.totalCharge { lines.append("Held \(Int(hold72Hours / 24)) days: \(money(h))") }
         if tipMatchesThisShipment, let a = nonEmpty(tip?.action) { lines.append(a) }
-        lines.append("No requestEarlyRelease procedure exists on the server — this is logged as a named gap, not a silent failure.")
+        lines.append("Early release cannot be requested from EusoTrip yet — this is recorded as a named gap, not a silent failure.")
         return lines
     }
 

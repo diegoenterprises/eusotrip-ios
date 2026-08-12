@@ -927,7 +927,7 @@ private struct VesselBlankSailingWatchBody: View {
                 fleetResp.vessels.map { ($0.id, $0) },
                 uniquingKeysWith: { a, _ in a })
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
@@ -983,7 +983,7 @@ private struct VesselBlankSailingWatchBody: View {
             withAnimation(.easeOut(duration: 0.18)) { showReportPicker = false }
             await load()
         } catch {
-            reportError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            reportError = error.eusoUserCopy
         }
     }
 }

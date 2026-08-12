@@ -660,7 +660,7 @@ struct VehicleAndEquipment: View {
 
                 // "Book oil" — no booking mutation exists; disabled-with-reason.
                 Button {
-                    bookOilNotice = "Oil-service booking isn't available yet, no scheduling endpoint on the server."
+                    bookOilNotice = "Oil-service booking isn't available yet. Nothing was scheduled and no shop was contacted — call your maintenance desk to book it."
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "calendar.badge.exclamationmark")

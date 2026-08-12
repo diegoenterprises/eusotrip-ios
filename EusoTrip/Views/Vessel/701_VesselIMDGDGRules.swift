@@ -366,7 +366,7 @@ private struct VesselIMDGDGRulesBody: View {
             self.classes = classList
             self.crossBorder = xborder
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }

@@ -302,7 +302,7 @@ private struct VesselNetworkDisruptionBody: View {
                 hasDisruption = false
             }
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }

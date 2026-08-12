@@ -245,9 +245,9 @@ private struct VesselMarineWeatherRoutingBody: View {
 
     private var topSubtitle: String {
         if let o = originCoord, let d = destinationCoord, o.lat != 0 || d.lat != 0 {
-            return "getRouteWeather · \(originCode) → \(destCode) · live AIS track"
+            return "Route weather · \(originCode) → \(destCode) · live AIS track"
         }
-        return "getRouteWeather · per-voyage · live AIS track"
+        return "Route weather · per-voyage · live AIS track"
     }
 
     // MARK: - MapCanvas hero · ocean register on real port endpoints
@@ -746,7 +746,7 @@ private struct VesselMarineWeatherRoutingBody: View {
             }
             if seg.windSpeed == nil && seg.swellHeight == nil && seg.visibility == nil,
                (seg.riskFactors?.isEmpty ?? true) {
-                Text("getMarineWeather")
+                Text("no marine weather reported for this leg")
                     .font(.system(size: 11))
                     .foregroundStyle(palette.textSecondary)
             }
@@ -892,7 +892,7 @@ private struct VesselMarineWeatherRoutingBody: View {
                 self.feedUnavailable = true
             }
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }

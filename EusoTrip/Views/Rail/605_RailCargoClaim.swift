@@ -701,7 +701,7 @@ private struct RailCargoClaimBody: View {
         // (WIRE-GAP). Filing against an invented load id would fabricate a
         // legal record — refuse with the real reason instead.
         guard let loadNumber = real(load.loadNumber) else {
-            loadError = "No load is linked to this claim on the server — cannot file."
+            loadError = "No load is linked to this claim — it cannot be filed."
             return
         }
         filing = true; fileAck = nil
@@ -760,9 +760,42 @@ private struct RailCargoClaimBody: View {
             esangSessionId = out.sessionId
             esangReply = out.message ?? "ESang returned no guidance for this claim."
         } catch {
-            esangError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            esangError = esangFailureCopy(error)
         }
         esangLoading = false
+    }
+
+    /// Operator-language copy for a failed ESang request.
+    ///
+    /// A raw `NSError` string ("EusoTripAPIError error 5") tells a claims
+    /// handler nothing they can act on, so each failure class is mapped to
+    /// the sentence that says what happened and what to do next. Refusal
+    /// reasons that already carry human copy are surfaced verbatim.
+    private func esangFailureCopy(_ error: Error) -> String {
+        guard let api = error as? EusoTripAPIError else {
+            if (error as NSError).domain == NSURLErrorDomain {
+                return "No connection reached ESang. Check your signal, then ask again."
+            }
+            return "ESang couldn't answer that. Ask again in a moment."
+        }
+        switch api {
+        case .unauthenticated:
+            return "Your session expired before ESang could answer. Sign in again, then ask about this claim."
+        case .forbidden(let reason):
+            return reason
+        case .trpcError(let reason):
+            return reason
+        case .httpStatus(let code, _):
+            return "ESang is unavailable right now (\(code)). Ask again in a moment."
+        case .decodingFailed:
+            return "ESang replied in a form this app version can't read. Update the app, then ask again."
+        case .empty:
+            return "ESang returned nothing for this claim. Ask again in a moment."
+        case .notConfigured, .badURL:
+            return "ESang isn't reachable from this build. Restart the app, then try again."
+        case .queuedForOfflineReplay:
+            return "You're offline — ESang can't answer until you reconnect."
+        }
     }
 
     private func esangPrompt(for claim: RailClaimDetail) -> String {

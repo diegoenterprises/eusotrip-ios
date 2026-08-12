@@ -299,14 +299,14 @@ private struct CatalystShipperBody: View {
     private var nextStepCard: some View {
         let copy: String = {
             switch kind {
-            case .scorecard:    return "Composite grade and tender-acceptance are live from the scorecard proc. Use the grade to set tender priority and payment terms for this payor."
-            case .profile:      return "Delivered and cancelled counts are live. Shipper/company name is not returned by the scorecard proc — resolve via the user/company directory when needed."
-            case .documents:    return "Per-document status (MSA / W-9 / COI / rate-confirmations) is not exposed by the scorecard proc. Pull it from the compliance document vault."
-            case .analytics:    return "Tender-acceptance, average rate and volume-consistency are live. DSO-in-days and rate-per-mile are not returned by this proc."
-            case .settlements:  return "Delivered-load count and average rate are live. Per-invoice gross and AR are not returned by the scorecard proc — read the settlement ledger."
-            case .onboarding:   return "The 6-step onboarding ladder is not returned by the scorecard proc. Drive it from the onboarding workflow service."
-            case .compliance:   return "Cancellation and completion rates are live. §387 §388 document checks and dispute history are not returned by this proc."
-            case .quarter:      return "365-day load, delivered and average-rate aggregates are live. Per-quarter and 1099-NEC rollups are not returned by the scorecard proc."
+            case .scorecard:    return "Composite grade and tender-acceptance are live on this scorecard. Use the grade to set tender priority and payment terms for this payor."
+            case .profile:      return "Delivered and cancelled counts are live. The shipper/company name is not carried on this scorecard — look it up in the company directory when you need it."
+            case .documents:    return "Per-document status (MSA / W-9 / COI / rate-confirmations) is not carried on this scorecard. Pull it from the compliance document vault."
+            case .analytics:    return "Tender-acceptance, average rate and volume-consistency are live. DSO-in-days and rate-per-mile are not carried on this scorecard — blank there does not mean zero."
+            case .settlements:  return "Delivered-load count and average rate are live. Per-invoice gross and AR are not carried on this scorecard — read the settlement ledger."
+            case .onboarding:   return "The 6-step onboarding ladder is not carried on this scorecard. Drive it from the onboarding workflow service."
+            case .compliance:   return "Cancellation and completion rates are live. §387 §388 document checks and dispute history are not carried on this scorecard — check them before you clear this payor."
+            case .quarter:      return "365-day load, delivered and average-rate aggregates are live. Per-quarter and 1099-NEC rollups are not carried on this scorecard — do not file off this view."
             }
         }()
         return LifecycleCard {

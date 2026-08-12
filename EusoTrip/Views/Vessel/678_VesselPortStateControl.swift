@@ -512,7 +512,7 @@ private struct VesselPortStateControlBody: View {
             // 33 CFR 160 status is therefore derived from the PSC result
             // until a resolver ships. See StructuredOutput.portGaps.
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }

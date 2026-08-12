@@ -383,7 +383,7 @@ private struct BHCloseBody: View {
             switch kind {
             case .loadingTick2: return "Loading in progress on \(loadNumberDisplay). Forklift cadence steady; depart when the trailer seals."
             case .loadingTick3: return "Loading complete on \(loadNumberDisplay). BOL-PRE-SIGN armed, proceed to the dock plate to sign the draft."
-            case .bolPreSign:   return "BOL draft loaded for \(loadNumberDisplay). ME taps sign-acknowledge on the dock plate; the server mints the sig-hash on commit."
+            case .bolPreSign:   return "BOL draft loaded for \(loadNumberDisplay). ME taps sign-acknowledge on the dock plate; the tamper-evident signature is minted by EusoTrip on commit, not on this phone."
             case .bolSigned:    return "BOL signed for \(loadNumberDisplay). Roll the chain to paperwork; the packet-desk watch fires on filing."
             case .paperwork:    return "BOL filed at the packet desk for \(loadNumberDisplay). Submit the POD to advance the chain to closed and stage payout."
             case .closed:       return "Chain closed on \(loadNumberDisplay) · \(lane). POD audit-chained, BOL archived, payout NET-30 locked. Backhaul complete."

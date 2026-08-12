@@ -657,7 +657,7 @@ struct EscortMeProfile: View {
                 settingsRow(title: "Payout",
                             pill: "NET-7 QUICKPAY", pillTint: Brand.info,
                             value: lifetimeLabel, warning: false,
-                            sub: "Balance lives in Earnings — this proc returns a placeholder zero")
+                            sub: "Balance lives in Earnings — the figure here is a placeholder zero")
                 Rectangle().fill(palette.borderFaint).frame(height: 1).padding(.horizontal, 14)
                 settingsRow(title: "Alerts", pill: nil, pillTint: nil,
                             value: "in-app only", warning: true,
@@ -723,7 +723,7 @@ struct EscortMeProfile: View {
 
     private var provenanceFootnote: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Levels 1–3 are derived on device from the height-pole, night-ops and hazmat endorsement columns — the server stores no level.")
+            Text("Levels 1–3 are worked out on this device from your height-pole, night-ops and hazmat endorsements — no level is stored on your record.")
             Text("Capability edits save to your profile but do not yet notify dispatch or the job board; they are seen on their next refresh.")
         }
         .font(.system(size: 9, weight: .semibold))

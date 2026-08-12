@@ -442,7 +442,7 @@ private struct VesselCarrierTenderWorkflowBody: View {
             self.detail = det
             self.voyages = sch
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
@@ -469,12 +469,12 @@ private struct VesselCarrierTenderWorkflowBody: View {
                 "vesselShipments.createVesselBid",
                 input: BidIn(shipmentId: shipmentId, amount: amount, rateType: "per_teu"))
             if res.success == true {
-                actionAck = "Quote submitted · createVesselBid → bid_submitted"
+                actionAck = "Quote submitted · the shipper has it"
             } else {
-                actionError = "Quote was not accepted by the server."
+                actionError = "Your quote was rejected — it was not recorded and the shipper never received it."
             }
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = error.eusoUserCopy
         }
         submitting = false
     }
@@ -501,7 +501,7 @@ private struct VesselCarrierTenderWorkflowBody: View {
                 actionAck = res.eventId.map { "Tender declined · event #\($0)" } ?? "Tender declined."
                 await load()
             } else {
-                actionError = "Decline was not accepted by the server."
+                actionError = "Your decline was rejected — it was not recorded and this tender is still open to you."
             }
         } catch {
             actionError = error.eusoUserCopy

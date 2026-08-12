@@ -163,7 +163,7 @@ private struct VesselShippingInstructionsBody: View {
                 Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("VESSEL OPERATOR · SHIPPING INSTRUCTIONS").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
                 Spacer()
-                Text("DCSA eBL · SI").font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundStyle(Brand.vessel)
+                Text("DCSA ELECTRONIC B/L · SI").font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundStyle(Brand.vessel)
             }
             HStack(spacing: 6) {
                 Image(systemName: "chevron.left").font(.system(size: 13, weight: .semibold)).foregroundStyle(palette.textPrimary)
@@ -370,7 +370,7 @@ private struct VesselShippingInstructionsBody: View {
             }
             // Seeds (parties/cargo) stand until the detail decode maps them; SI submit is STUB.
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }

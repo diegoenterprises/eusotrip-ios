@@ -374,7 +374,7 @@ private struct VesselOverchargeRecoveryBody: View {
                 esangBestCase = nil
             }
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
@@ -408,7 +408,7 @@ private struct VesselOverchargeRecoveryBody: View {
             await load()
         } catch {
             actionFailed = true
-            actionMessage = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionMessage = error.eusoUserCopy
         }
         actionBusy = false
     }
@@ -430,7 +430,7 @@ private struct VesselOverchargeRecoveryBody: View {
             actionMessage = "Prepared \(export.rows) recovery row\(export.rows == 1 ? "" : "s") for export."
         } catch {
             actionFailed = true
-            actionMessage = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionMessage = error.eusoUserCopy
         }
         actionBusy = false
     }

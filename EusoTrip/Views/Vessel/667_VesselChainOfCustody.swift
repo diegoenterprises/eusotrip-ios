@@ -324,7 +324,7 @@ private struct VesselChainOfCustodyBody: View {
                     "blockchainAudit.getTrail", input: TrailIn(loadId: loadId))
                 self.report = nil
             } catch let err {
-                loadError = (err as? EusoTripAPIError)?.errorDescription ?? err.localizedDescription
+                loadError = err.eusoUserCopy
             }
         }
         loading = false
@@ -341,7 +341,7 @@ private struct VesselChainOfCustodyBody: View {
             exportNote = "Compliance report generated · \(n) block\(n == 1 ? "" : "s") · "
                 + ((r.chainValid ?? isChainValid) ? "chain verified" : "chain broken")
         } catch {
-            exportNote = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            exportNote = error.eusoUserCopy
         }
         isExporting = false
     }

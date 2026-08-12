@@ -265,8 +265,8 @@ private struct RailIntermodalDashboardBody: View {
             if seededJourneys.isEmpty {
                 // getIntermodalTracking does not yet return the per-journey leg/position shape (manifest STUB 3).
                 EusoEmptyState(systemImage: "shippingbox.fill",
-                               title: "Live leg spine not yet on the tick",
-                               subtitle: "Per-journey segments need getIntermodalTracking to return {activeLeg, positionPct, atTransfer}.")
+                               title: "Live leg positions not reported yet",
+                               subtitle: "Tracking is not yet reporting which leg is active or how far along it is, so no journey can be drawn. The journeys are not missing — their live position is.")
             } else {
                 VStack(spacing: 0) {
                     ForEach(Array(seededJourneys.enumerated()), id: \.element.id) { i, j in

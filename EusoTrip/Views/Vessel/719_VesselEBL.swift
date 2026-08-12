@@ -79,7 +79,7 @@ private struct VesselEBLBody: View {
         TitleBlock(n: "4", actor: "Holder · Eusorone Technologies", detail: "issued to order · 2m ago", hash: "0xA7C4…41E7", current: true),
         TitleBlock(n: "3", actor: "Endorsed · Issuing bank (LC)",   detail: "negotiated · 3h ago",      hash: "0x91DE…77B2", current: false),
         TitleBlock(n: "2", actor: "Endorsed · Shipper (blank)",     detail: "to order · 1d ago",        hash: "0x4F2A…C0E9", current: false),
-        TitleBlock(n: "1", actor: "Genesis · eBL issued by MSC",    detail: "carrier · 2d ago",         hash: "0x0000…GENS", current: false)
+        TitleBlock(n: "1", actor: "Genesis · original issued by MSC",    detail: "carrier · 2d ago",         hash: "0x0000…GENS", current: false)
     ]
     private let regimes: [EBLRegime] = [
         EBLRegime(code: "US", line: "US · UETA / E-SIGN 2000 · MLETR pending", active: true),
@@ -93,7 +93,7 @@ private struct VesselEBLBody: View {
                 header
                 Text("Electronic B/L").font(.system(size: 28, weight: .bold)).tracking(-0.4)
                     .foregroundStyle(palette.textPrimary)
-                Text("eBL \(bolNumber) · \(booking)")
+                Text("B/L \(bolNumber) · \(booking)")
                     .font(.system(size: 12, design: .monospaced)).foregroundStyle(palette.textSecondary)
                 IridescentHairline()
 
@@ -103,16 +103,16 @@ private struct VesselEBLBody: View {
                     LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) }
                 } else {
                     hero
-                    sectionLabel("DCSA eBL INTEROPERABILITY", ref: "STUB · dcsaEBL.transfer")
+                    sectionLabel("DCSA ELECTRONIC B/L INTEROPERABILITY", ref: "TRANSFER NOT LIVE YET")
                     interopRail
-                    sectionLabel("TRANSFER-OF-TITLE LEDGER · blockchainAuditTrail", ref: "EXISTS getBOL:956")
+                    sectionLabel("TRANSFER-OF-TITLE LEDGER · ANCHORED", ref: "LIVE")
                     ledgerCard
-                    sectionLabel("ISSUING-JURISDICTION · eBL legal recognition", ref: "transferTitle·country")
+                    sectionLabel("ISSUING JURISDICTION · LEGAL RECOGNITION", ref: "BY COUNTRY")
                     triCountryBand
                     conformanceStrip
                     HStack(spacing: 8) {
                         CTAButton(title: "Transfer title") { Task { await transferTitle() } }
-                        SecondaryButton(title: "View eBL") {}
+                        SecondaryButton(title: "View B/L") {}
                     }
                 }
                 Color.clear.frame(height: 96)
@@ -126,7 +126,7 @@ private struct VesselEBLBody: View {
     private var header: some View {
         HStack(spacing: 6) {
             Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
-            Text("VESSEL OPERATOR · DCSA eBL").font(.system(size: 9, weight: .heavy)).tracking(1.0)
+            Text("VESSEL OPERATOR · DCSA ELECTRONIC B/L").font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.diagonal)
             Spacer()
             Text("MSC · DCSA").font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundStyle(palette.textTertiary)
@@ -145,13 +145,13 @@ private struct VesselEBLBody: View {
         RimCard {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("eBL \(bolNumber) · DCSA 3.0")
+                    Text("B/L \(bolNumber) · DCSA 3.0")
                         .font(.system(size: 9.5, weight: .bold, design: .monospaced)).foregroundStyle(palette.textSecondary)
                     Spacer()
                     StatusPill(text: "ISSUED·ON-CHAIN", kind: .success)
                 }
                 Text(lane).font(.system(size: 16, weight: .heavy)).foregroundStyle(palette.textPrimary)
-                Text("Negotiable original eBL · transfer of title").font(.system(size: 11)).foregroundStyle(palette.textSecondary)
+                Text("Negotiable original electronic B/L · transfer of title").font(.system(size: 11)).foregroundStyle(palette.textSecondary)
                 HStack(spacing: 8) {
                     Circle().fill(Color(hex: 0x607D8B)).frame(width: 22, height: 22)
                         .overlay(Text("MSC").font(.system(size: 8, weight: .heavy)).foregroundStyle(.white))
@@ -259,7 +259,7 @@ private struct VesselEBLBody: View {
 
     private var conformanceStrip: some View {
         HStack(spacing: 8) {
-            ForEach(["DCSA eBL 3.0 ✓", "MLETR-aligned", "Group of Nine"], id: \.self) { c in
+            ForEach(["DCSA electronic B/L 3.0 ✓", "MLETR-aligned", "Group of Nine"], id: \.self) { c in
                 Text(c).font(.system(size: 9.5, weight: .bold)).foregroundStyle(palette.textPrimary)
                     .frame(maxWidth: .infinity, minHeight: 24)
                     .background(RoundedRectangle(cornerRadius: 12).fill(palette.bgCard))
@@ -283,7 +283,7 @@ private struct VesselEBLBody: View {
             if let o = b.originPort, let d = b.destinationPort { lane = "\(o) → \(d)" }
             // getTitleChain is a named gap → ledger seeds shown until the-oath builds the proc.
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }

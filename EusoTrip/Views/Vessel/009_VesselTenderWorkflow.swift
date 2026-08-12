@@ -483,7 +483,7 @@ private struct VesselTenderWorkflowBody: View {
                 "vesselShipments.getMyVesselTenderRequests", input: Empty())
             self.inbox = res
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
@@ -518,11 +518,11 @@ private struct VesselTenderWorkflowBody: View {
                 actionNote = "Re-request sent to the next-best carrier."
                 await load()
             } else {
-                actionError = "Re-request was not accepted by the server."
+                actionError = "Re-request was rejected — it was not recorded and the carrier was not notified. Try again."
             }
         } catch {
             actionError = "Couldn't re-request. "
-                + ((error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription)
+                + (error.eusoUserCopy)
         }
     }
 

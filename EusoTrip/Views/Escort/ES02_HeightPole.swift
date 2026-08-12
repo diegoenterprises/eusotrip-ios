@@ -989,7 +989,28 @@ struct EscortHeightPole: View {
             }
         } catch {
             poleSyncMessage = nil
-            poleSyncError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            poleSyncError = Self.poleSyncFailureCopy(for: error)
+        }
+    }
+
+    /// Operator-language copy for a failed pole sync. The underlying error is
+    /// kept intact for logging; the escort reads a sentence they can act on,
+    /// never a raw system error string.
+    private static func poleSyncFailureCopy(for error: Error) -> String {
+        guard let api = error as? EusoTripAPIError else {
+            return "Pole setup is saved on this device. It could not be synced to the assignment — check your signal and it will sync on the next reading."
+        }
+        switch api {
+        case .unauthenticated, .forbidden:
+            return "Pole setup is saved on this device. Your sign-in no longer covers this assignment, so it was not synced — sign in again, then reopen this move."
+        case .httpStatus, .badURL, .notConfigured, .empty:
+            return "Pole setup is saved on this device. The assignment record could not be reached, so it was not synced — try again in a moment."
+        case .decodingFailed:
+            return "Pole setup is saved on this device. The assignment record came back in a form this build can't read, so it was not synced — update the app, then reopen this move."
+        case .queuedForOfflineReplay:
+            return "Pole setup is saved on this device. You're offline — it will sync to the assignment when you reconnect."
+        case .trpcError(let reason):
+            return "Pole setup is saved on this device, but the assignment sync was refused: \(reason)"
         }
     }
 }

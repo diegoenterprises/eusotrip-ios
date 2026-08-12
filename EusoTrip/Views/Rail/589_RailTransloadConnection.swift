@@ -278,7 +278,7 @@ private struct RailTransloadConnectionBody: View {
                             Text("to dray cutoff")
                                 .font(.system(size: 11, weight: .semibold))
                                 .foregroundColor(palette.textSecondary)
-                            Text("getIntermodalTracking")
+                            Text("intermodal tracking feed")
                                 .font(.system(size: 11))
                                 .foregroundColor(palette.textTertiary)
                         }

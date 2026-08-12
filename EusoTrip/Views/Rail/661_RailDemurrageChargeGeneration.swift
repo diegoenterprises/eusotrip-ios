@@ -638,7 +638,7 @@ private struct RailDemurrageChargeRunBody661: View {
                 .strokeBorder(palette.borderFaint))
             .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
 
-            Text("The charge row carries no currency column — the code above is inferred from the free-time and rate regime the server applied.")
+            Text("The charge record carries no currency of its own — the code above is inferred from the free-time and rate regime that was applied.")
                 .font(.system(size: 10, weight: .regular))
                 .foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -801,9 +801,9 @@ private struct RailDemurrageChargeRunBody661: View {
 
     private var regimeFooter: String {
         if regimes.isEmpty {
-            return "Free time and rate are read off the server's own regime table — they are never typed into this screen. The table did not answer on this load."
+            return "Free time and rate are read off the published regime table — they are never typed into this screen. The table did not answer on this load."
         }
-        return "Free time and rate are read off the server's regime table, never typed here. The applied regime follows the destination yard's country; this screen highlights it only when every car on the board resolves to the same one."
+        return "Free time and rate are read off the published regime table, never typed here. The applied regime follows the destination yard's country; this screen highlights it only when every car on the board resolves to the same one."
     }
 
     // MARK: - CTA pair
@@ -860,7 +860,7 @@ private struct RailDemurrageChargeRunBody661: View {
     }
 
     private var bulkGapText: String {
-        "The server's bulk accrual pass writes nothing — it returns a zero result with no charge row, no audit entry and no broadcast. So this run commits one shipment at a time through the writer that actually posts the charge row and its immutable audit entry, and reports each car's result on its own."
+        "The bulk accrual pass records nothing — it comes back zero, with no charge, no audit entry and no notice to anyone. So this run commits one shipment at a time down the path that really does post the charge and its immutable audit entry, and reports each car's result on its own."
     }
 
     private func noteRow(icon: String, tint: Color, text: String) -> some View {
@@ -1005,7 +1005,7 @@ private struct RailDemurrageChargeRunBody661: View {
                         .font(.system(size: 14, weight: .bold)).monospacedDigit()
                         .foregroundStyle(palette.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
-                    Text("The board below re-reads after every run — there is no charge-generated broadcast on the server to listen for.")
+                    Text("The board below reloads after every run — there is no live charge-posted signal to listen for.")
                         .font(.system(size: 10, weight: .regular))
                         .foregroundStyle(palette.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1268,7 +1268,7 @@ private struct RailDemurrageChargeRunBody661: View {
                             VStack(alignment: .leading, spacing: 6) {
                                 Text("No cause split exists to show")
                                     .font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-                                Text("The charge row has no dwell-reason column, so every operational bucket comes back at zero by construction. Those zeros are printed below exactly as the server returned them — they are not a measurement, and nothing has been apportioned across them.")
+                                Text("Charges are not recorded against a dwell reason, so every operational bucket comes back at zero by construction. Those zeros are printed below exactly as they arrived — they are not a measurement, and nothing has been apportioned across them.")
                                     .font(EType.caption).foregroundStyle(palette.textSecondary)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
@@ -1330,7 +1330,7 @@ private struct RailDemurrageChargeRunBody661: View {
                         .font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
                     if let r = wh?.reason, !r.isEmpty {
-                        Text("Server reason · \(r)")
+                        Text("Recorded reason · \(r)")
                             .font(EType.mono(.caption))
                             .foregroundStyle(palette.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -1408,10 +1408,43 @@ private struct RailDemurrageChargeRunBody661: View {
             board = fresh
             lastSyncedAt = Date()
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = demurrageErrorCopy(error, attempt: "load the demurrage ledger")
         }
 
         loading = false
+    }
+
+    /// Operator-language copy for a failed demurrage request.
+    ///
+    /// A raw `NSError` string ("EusoTripAPIError error 5") tells a billing
+    /// clerk nothing they can act on, so every failure class is mapped to a
+    /// sentence that names what did not happen and what to do next. Refusal
+    /// reasons that already carry human copy are surfaced verbatim.
+    private func demurrageErrorCopy(_ error: Error, attempt: String) -> String {
+        guard let api = error as? EusoTripAPIError else {
+            if (error as NSError).domain == NSURLErrorDomain {
+                return "No connection, so EusoTrip couldn't \(attempt). Check your signal, then try again."
+            }
+            return "Couldn't \(attempt). Try again in a moment."
+        }
+        switch api {
+        case .unauthenticated:
+            return "Your session expired before EusoTrip could \(attempt). Sign in again, then retry."
+        case .forbidden(let reason):
+            return reason
+        case .trpcError(let reason):
+            return reason
+        case .httpStatus(let code, _):
+            return "Demurrage is unavailable right now (\(code)), so EusoTrip couldn't \(attempt). Try again in a moment."
+        case .decodingFailed:
+            return "The demurrage record came back in a form this app version can't read. Update the app, then retry."
+        case .empty:
+            return "Nothing came back, so EusoTrip couldn't \(attempt). Try again in a moment."
+        case .notConfigured, .badURL:
+            return "Demurrage isn't reachable from this build. Restart the app, then try again."
+        case .queuedForOfflineReplay:
+            return "You're offline — a billable charge is never held for later. Nothing was posted."
+        }
     }
 
     private func loadCandidates() async {
@@ -1424,7 +1457,7 @@ private struct RailDemurrageChargeRunBody661: View {
             candidates = rows
         } catch {
             candidates = []
-            candidatesError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            candidatesError = demurrageErrorCopy(error, attempt: "list your shipments")
         }
         loadingCandidates = false
     }
@@ -1438,7 +1471,7 @@ private struct RailDemurrageChargeRunBody661: View {
                 input: DwellReportIn661(periodDays: 30))
             report = r
         } catch {
-            reportError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            reportError = demurrageErrorCopy(error, attempt: "load the cause split")
         }
         loadingReport = false
     }
@@ -1492,7 +1525,7 @@ private struct RailDemurrageChargeRunBody661: View {
                     serverMessage: out.message,
                     failure: nil))
             } catch {
-                let msg = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+                let msg = demurrageErrorCopy(error, attempt: "post this charge")
                 commitLines.append(CommitLine661(
                     id: target.id,
                     label: target.label,

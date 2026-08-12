@@ -286,7 +286,7 @@ private struct VesselSettlementBatchBody696: View {
                 esangSubline = "ESANG · open a real batch to evaluate invoice matches"
             }
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
 
         // Fused ESang unmatched-invoice coach (best-effort — never blocks the ledger).
@@ -321,7 +321,7 @@ private struct VesselSettlementBatchBody696: View {
             await load()
             actionMessage = success
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = error.eusoUserCopy
         }
     }
 

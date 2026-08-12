@@ -929,7 +929,7 @@ private struct RailJunctionDetentionBillingBody696: View {
                             }
                             Spacer(minLength: 0)
                         }
-                        Text("Every bucket reads zero because rail_demurrage has no dwellReason column — the server never guesses a cause it cannot prove. A cause cannot be attached to this bill yet.")
+                        Text("Every bucket reads zero because detention is not recorded against a dwell reason — a cause that cannot be proved is never guessed. No cause can be attached to this bill yet.")
                             .font(.system(size: 10)).foregroundStyle(palette.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -974,7 +974,7 @@ private struct RailJunctionDetentionBillingBody696: View {
                     regimeCard(code)
                 }
             }
-            Text("Amounts are the accrual engine's stored totals; it carries them in USD (its own fields are amountUsd / usdToday). Local-currency settlement is not modelled server-side.")
+            Text("Amounts are the accrual engine's stored totals, and it holds them in USD only. Settlement in local currency is not modelled yet, so nothing here has been converted.")
                 .font(.system(size: 9.5)).foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }

@@ -682,7 +682,7 @@ private struct VesselTerminalGateLogBody744: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer(minLength: Space.s2)
-                Text("getDockSchedule:725")
+                Text("DOCK SCHEDULE")
                     .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
             }
 
@@ -756,7 +756,7 @@ private struct VesselTerminalGateLogBody744: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer(minLength: Space.s2)
-                Text("getGateLog:1812")
+                Text("GATE LOG")
                     .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
             }
 
@@ -781,7 +781,7 @@ private struct VesselTerminalGateLogBody744: View {
             .eusoCard(radius: Radius.lg)
 
             // The wire's gate name is derived from the array index, so it is withheld rather than shown.
-            Text("GATE LABEL WITHHELD · array-index derived (yardManagement.ts:1902), not data")
+            Text("GATE LABEL WITHHELD · POSITION IN THE LIST, NOT A RECORDED GATE")
                 .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
         }
     }
@@ -798,7 +798,7 @@ private struct VesselTerminalGateLogBody744: View {
                 Text("SCOPE NOT ENFORCED · THIS READ IS NOT COMPANY-FILTERED")
                     .font(.system(size: 8.5, weight: .heavy)).tracking(0.6)
                     .foregroundStyle(Brand.danger)
-                Text("companyId computed at yardManagement.ts:1825, never applied to the query")
+                Text("Rows are not narrowed to your company — read this as terminal-wide")
                     .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
             }
             Spacer(minLength: 0)
@@ -927,7 +927,7 @@ private struct VesselTerminalGateLogBody744: View {
                 Text(e).font(EType.caption).foregroundStyle(Brand.danger)
             }
             // The chain is open: the write lands, nobody is told.
-            Text("Dock writes the yard move; it does not notify the carrier — terminals.assignDock:3510 emits no event.")
+            Text("Assigning a dock records the yard move. The carrier is NOT notified automatically — tell them yourself.")
                 .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
         }
     }
@@ -988,7 +988,7 @@ private struct VesselTerminalGateLogBody744: View {
             gateEntries = out.entries          // UNCONDITIONAL overwrite
         } catch {
             anyFailed = true
-            if !hadRows { loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription }
+            if !hadRows { loadError = error.eusoUserCopy }
         }
 
         // 2 · resolve a REAL locationId (never invented) so getDockSchedule can be called at all
@@ -1010,7 +1010,7 @@ private struct VesselTerminalGateLogBody744: View {
             } catch {
                 anyFailed = true
                 if !hadRows && loadError == nil {
-                    loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+                    loadError = error.eusoUserCopy
                 }
             }
         } else {
@@ -1054,7 +1054,7 @@ private struct VesselTerminalGateLogBody744: View {
             assignResult = "Dock \(out.dockAssignment ?? dock.dockId) written to the yard move. No broadcast — the carrier is not notified."
             await load()
         } catch {
-            assignError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            assignError = error.eusoUserCopy
         }
         assigning = false
     }

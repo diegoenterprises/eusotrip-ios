@@ -587,7 +587,7 @@ private struct RequestCOISheet_392: View {
                 errorText = "Request did not complete. Please try again."
             }
         } catch {
-            errorText = error.localizedDescription
+            errorText = certificateFailureCopy_392(error)
         }
     }
 }
@@ -670,4 +670,43 @@ private struct Certificate_392: Decodable, Identifiable {
     CatalystCargoInsuranceScreen(theme: Theme.light)
         .environmentObject(EusoTripSession())
         .preferredColorScheme(.light)
+}
+
+// MARK: - Operator-facing failure copy
+
+/// Operator-language reason a certificate-of-insurance request failed.
+///
+/// The caught error is still available for logging; the requester sees a
+/// sentence that names what to do next instead of a raw `NSError` string.
+fileprivate func certificateFailureCopy_392(_ error: Error) -> String {
+    if let api = error as? EusoTripAPIError {
+        switch api {
+        case .unauthenticated:
+            return "Your session expired. Sign in again to request the certificate."
+        case .forbidden(let reason):
+            let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty
+                ? "This account isn't cleared to issue certificates on this policy."
+                : trimmed
+        case .trpcError(let reason):
+            let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty
+                ? "The certificate request was rejected. Check the holder details and try again."
+                : trimmed
+        case .httpStatus(let code, _):
+            return "The certificate request didn't go through (code \(code)). Try again in a moment."
+        case .decodingFailed:
+            return "The certificate came back in a form this build can't read. Update the app, then request it again."
+        case .empty:
+            return "No certificate came back. Request it again in a moment."
+        case .notConfigured, .badURL:
+            return "This device isn't set up to request certificates yet. Restart the app and try again."
+        case .queuedForOfflineReplay:
+            return "You're offline — the certificate request is queued and sends when you reconnect."
+        }
+    }
+    if (error as NSError).domain == NSURLErrorDomain {
+        return "No connection right now. The certificate wasn't requested — retry once you're back online."
+    }
+    return "The certificate request didn't complete. Try again in a moment."
 }

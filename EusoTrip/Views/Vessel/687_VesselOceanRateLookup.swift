@@ -629,7 +629,7 @@ private struct VesselOceanRateLookupBody: View {
             self.comparison = c
             self.trends = t
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
@@ -679,7 +679,7 @@ private struct VesselOceanRateLookupBody: View {
                 saveError = "Booking write returned no confirmation."
             }
         } catch {
-            saveError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            saveError = error.eusoUserCopy
         }
         saving = false
     }

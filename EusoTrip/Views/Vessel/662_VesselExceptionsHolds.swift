@@ -619,7 +619,7 @@ private struct VesselExceptionsHoldsBody: View {
             self.entry = entryStatus
             self.demurrage = dem
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }

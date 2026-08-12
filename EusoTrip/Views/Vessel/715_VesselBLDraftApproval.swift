@@ -148,7 +148,7 @@ private struct VesselBLDraftApprovalBody: View {
                 Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("VESSEL OPERATOR · B/L DRAFT").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
                 Spacer()
-                Text("DCSA eBL · DRAFT v2").font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundStyle(Brand.vessel)
+                Text("DCSA ELECTRONIC B/L · DRAFT v2").font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundStyle(Brand.vessel)
             }
             HStack(spacing: 6) {
                 Image(systemName: "chevron.left").font(.system(size: 13, weight: .semibold)).foregroundStyle(palette.textPrimary)
@@ -337,7 +337,7 @@ private struct VesselBLDraftApprovalBody: View {
                 }
             }
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }

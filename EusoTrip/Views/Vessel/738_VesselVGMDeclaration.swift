@@ -99,7 +99,7 @@ private enum WeighingMethod: Int, CaseIterable, Identifiable {
     var detail: String {
         switch self {
         case .method1: return "certified scale · ticket on file"
-        case .method2: return "calculated · requires registered weighing procedure"
+        case .method2: return "calculated · requires a certified weighing method"
         }
     }
     var shortLabel: String {
@@ -777,7 +777,7 @@ private struct VesselVGMDeclarationBody: View {
                     cutoffNote: status == .submitted ? "VGM on file at load" : "awaiting verified gross mass")
             }
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
@@ -829,7 +829,7 @@ private struct VesselVGMDeclarationBody: View {
                 )
             )
             guard out.success else {
-                submitError = "VGM was not accepted by the server."
+                submitError = "The VGM was rejected — it was not filed, and the terminal still has no verified weight for this box."
                 return
             }
             let filedKg = out.vgmKg ?? vgm

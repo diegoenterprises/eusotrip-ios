@@ -704,7 +704,7 @@ private struct VesselIntermodalJourneyBody: View {
             self.detail = dd
             self.cost = cc
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
@@ -728,7 +728,7 @@ private struct VesselIntermodalJourneyBody: View {
                 ])
         } catch {
             actionError = "Couldn't open live tracking. "
-                + ((error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription)
+                + (error.eusoUserCopy)
         }
     }
 }

@@ -442,7 +442,7 @@ private struct VesselContainerPositionsBody: View {
             self.containers = result.containers
             self.total = result.total
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }

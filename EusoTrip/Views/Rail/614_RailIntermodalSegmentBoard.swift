@@ -1015,7 +1015,7 @@ private struct RailIntermodalSegmentBoardBody614: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("getIntermodalShipments")
+                Text("intermodal segment feed")
                     .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
             }
             // Honesty law, second register: the rows themselves say when they
@@ -1179,21 +1179,21 @@ private struct RailIntermodalSegmentBoardBody614: View {
                 HStack(spacing: Space.s2) {
                     Image(systemName: "box.truck.badge.clock")
                         .font(.system(size: 12, weight: .heavy)).foregroundStyle(Brand.warning)
-                    Text("DRAY LEGS · NO DISPATCH VERB")
+                    Text("DRAY LEGS · NOT DISPATCHABLE")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                         .foregroundStyle(Brand.warning)
                     Spacer(minLength: 0)
                     Text("\(drayLegs) leg\(drayLegs == 1 ? "" : "s")")
                         .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
                 }
-                Text("The truck legs on this board are intermodal segments, not dispatched loads. No dray driver is assigned to any of them, because the server has no procedure that assigns one — multiModal.dispatchDrayage has never shipped. Dray orders created through multiModal.createDrayageOrder land on the loads table as a separate entity with no link back to these shipments, so they are deliberately not joined in here.")
+                Text("The truck legs on this board are intermodal segments, not dispatched loads. No dray driver is assigned to any of them — assigning one is not built yet, so nothing here hands a leg to a driver. Dray orders raised elsewhere are filed as separate loads with no link back to these shipments, so they are deliberately left off this board.")
                     .font(EType.caption).foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 6) {
                     Image(systemName: "nosign").font(.system(size: 10, weight: .heavy))
                     Text("Dispatch dray").font(.system(size: 12, weight: .heavy))
                     Spacer(minLength: 0)
-                    Text("procedure missing").font(EType.mono(.micro))
+                    Text("not built yet").font(EType.mono(.micro))
                 }
                 .foregroundStyle(palette.textTertiary)
                 .padding(.horizontal, 12).padding(.vertical, 9)
@@ -1202,7 +1202,7 @@ private struct RailIntermodalSegmentBoardBody614: View {
                     .fill(palette.textTertiary.opacity(0.08)))
                 .overlay(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
                     .strokeBorder(palette.borderFaint))
-                .accessibilityLabel("Dispatch dray is unavailable — no such procedure exists on the server")
+                .accessibilityLabel("Dispatch dray is unavailable — it is not built yet")
             }
         }
     }
@@ -1285,8 +1285,8 @@ private struct RailIntermodalSegmentBoardBody614: View {
 
     private var seamLogLines: [String] {
         guard !seams.isEmpty else {
-            return ["No intermodal_transfers rows are on file for this tenant yet.",
-                    "A seam row is written every time advanceSegment closes a leg, and by recordTransfer when a ramp lift is logged."]
+            return ["No seam transfers are on file for your company yet.",
+                    "A seam is recorded every time a leg is closed, and again whenever a ramp lift is logged."]
         }
         return seams.prefix(10).map { s in
             let facility = s.facilityName ?? facilityWord614(s.facilityType) ?? "facility not recorded"
@@ -1340,14 +1340,14 @@ private struct RailIntermodalSegmentBoardBody614: View {
                     rampLine
                 } else {
                     LifecycleCard(accentWarning: true) {
-                        Text("getIntermodalTracking returned no legs for this shipment, so there is no real segment id to close. Nothing is committed from a guess.")
+                        Text("No legs came back for this shipment, so there is no real segment to close. Nothing is committed from a guess.")
                             .font(EType.caption).foregroundStyle(palette.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
 
                 if let active {
-                    Text("Confirming closes leg \(active.legNumber ?? 0) (\(SeamMode614.parse(active.mode).word), segment #\(active.id)), promotes the next leg to booked, and writes an intermodal_transfers row for the new seam. The server derives the next leg itself. This router writes no audit-trail row and broadcasts nothing on the socket, so the board refreshes by re-reading.")
+                    Text("Confirming closes leg \(active.legNumber ?? 0) (\(SeamMode614.parse(active.mode).word), segment #\(active.id)), moves the next leg to booked, and records the transfer at the new seam. The next leg is chosen for you. No audit-trail entry is written and nothing is announced live, so the board refreshes by reloading.")
                         .font(EType.caption).foregroundStyle(palette.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -1364,7 +1364,7 @@ private struct RailIntermodalSegmentBoardBody614: View {
                 } else {
                     Text(reach.isOnline
                          ? "No active leg on this shipment — nothing to close."
-                         : "Offline · this commit is ONLINE_ONLY and cannot be queued.")
+                         : "Offline · this confirmation must go through live and cannot be held for later.")
                         .font(EType.caption).foregroundStyle(Brand.warning)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -1381,7 +1381,7 @@ private struct RailIntermodalSegmentBoardBody614: View {
     private func legTable(_ legsList: [IMLeg614], activeId: Int?) -> some View {
         let ordered = legsList.sorted { ($0.legNumber ?? 0) < ($1.legNumber ?? 0) }
         return VStack(alignment: .leading, spacing: Space.s2) {
-            Text("LEGS · getIntermodalTracking")
+            Text("LEGS · TRACKED SEGMENTS")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
             VStack(spacing: 0) {

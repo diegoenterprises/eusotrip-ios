@@ -239,7 +239,7 @@ private struct VesselFreightBillAuditBody: View {
                 .background(RoundedRectangle(cornerRadius: 12).fill(Brand.info.opacity(0.08)))
             }
             HStack(spacing: 8) {
-                CTAButton(title: "Draft dispute", action: { gapNotice = "Dispute filing is ONLINE_ONLY(money) and its vessel endpoint is a named gap (vesselFreightAudit.auditInvoice) — filed with the-oath. ESang keeps the draft locally until it lands." }, leadingIcon: "doc.text")
+                CTAButton(title: "Draft dispute", action: { gapNotice = "Filing a dispute moves money, so it needs a live connection and is never queued offline. Vessel dispute filing is not available yet — ESang holds your draft on this device until it can be filed. Nothing has reached the carrier." }, leadingIcon: "doc.text")
                 SecondaryButton(title: "Charge lines") { }
             }
         }
@@ -276,7 +276,7 @@ private struct VesselFreightBillAuditBody: View {
                 exceptions = []
             }
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }

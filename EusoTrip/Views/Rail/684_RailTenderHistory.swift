@@ -877,7 +877,7 @@ private struct RailTenderHistoryBody684: View {
                     cancelled: cancelledCount,
                     track: palette.tintNeutral
                 )
-                Text("accepted ÷ decided — the same arithmetic carrierAcceptanceRate runs server-side. Your company's book only.")
+                Text("accepted ÷ decided — the same arithmetic behind the network figure. Your company's book only.")
                     .font(.system(size: 9))
                     .foregroundStyle(palette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -960,7 +960,7 @@ private struct RailTenderHistoryBody684: View {
                     }
                     .padding(.vertical, 1)
                 }
-                Text("The big figure is YOUR accept rate with that road. \"network\" is carrierAcceptanceRate — the server counts that road across every shipper, not just yours, so the two are different populations and are never blended. Tap a road to filter the ledger to it.")
+                Text("The big figure is YOUR accept rate with that road. \"network\" counts that road across every shipper, not just yours, so the two are different populations and are never blended. Tap a road to filter the ledger to it.")
                     .font(.system(size: 9))
                     .foregroundStyle(palette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1062,7 +1062,7 @@ private struct RailTenderHistoryBody684: View {
                         .strokeBorder(palette.borderFaint)
                 )
 
-                Text("The rate column is blank on every line by design: tenderHistory returns rateUsd = null on a tender event (railTenderWorkflow.ts:492 — no rate is stored on the event). It fills the moment a settlement links a rate; it is never estimated here.")
+                Text("The rate column is blank on every line by design: no rate is recorded against a tender event. It fills the moment a settlement links a rate; it is never estimated here.")
                     .font(.system(size: 9))
                     .foregroundStyle(palette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1169,7 +1169,7 @@ private struct RailTenderHistoryBody684: View {
                     .buttonStyle(.plain)
                 }
             }
-            Text("\(regime.regulator) · rate column reads \(regime.currencyCode). Road → regulator is a jurisdiction registry over the server's carrier enum, not a server field.")
+            Text("\(regime.regulator) · rate column reads \(regime.currencyCode). Road → regulator is EusoTrip's own jurisdiction registry over the reporting marks — the tender itself never carries it.")
                 .font(.system(size: 9))
                 .foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1303,7 +1303,7 @@ private struct RailTenderHistoryBody684: View {
                             }
                         }
                     }
-                    Text("Sent to the server as tenderHistory's real `carrier` input — the list is filtered in the database, not on the device. The eight marks are the router's own carrier enum.")
+                    Text("The ledger itself is filtered, not this device — the history is narrowed before it reaches you. These eight reporting marks are the only ones rail tendering recognises.")
                         .font(.system(size: 10))
                         .foregroundStyle(palette.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1361,7 +1361,7 @@ private struct RailTenderHistoryBody684: View {
                 cancelFact("SENT", railTenderDayLabel684(line.submittedAt))
             }
 
-            Text("Withdraws the EDI 404 before the road answers. The server refuses this if a 990 already landed, and it is idempotent if the tender was already cancelled. A rail_shipment_events row, a blockchainAuditTrail entry and a RAIL_TENDER_CANCELLED broadcast are written by the server.")
+            Text("Withdraws the EDI 404 before the road answers. It is refused once a 990 has landed, and repeating it on an already-cancelled tender changes nothing. The withdrawal is written to the shipment's event history, sealed into the audit trail, and announced to everyone watching this tender.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1397,7 +1397,7 @@ private struct RailTenderHistoryBody684: View {
 
             Text(reach.isOnline
                  ? "Sent now, over the network — nothing is held on this device."
-                 : "No rail mutation is offline-eligible (Services/EusoTripAPI.swift:1684), and a queued cancel could contradict a 990 the road sends while you are dark. Nothing is queued. Reconnect to withdraw.")
+                 : "No rail action is eligible for offline queuing, and a held cancel could contradict a 990 the road sends while you are dark. Nothing is held. Reconnect to withdraw.")
                 .font(.system(size: 10))
                 .foregroundStyle(reach.isOnline ? palette.textTertiary : Brand.warning)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1524,7 +1524,7 @@ private struct RailTenderHistoryBody684: View {
     /// disabled offline; this guard is the second lock.
     private func cancelTender(_ line: TenderLine684) async {
         guard let tid = line.tenderId, !tid.isEmpty else {
-            cancelError = "This row carries no tender id, so the server cannot correlate a cancel to it."
+            cancelError = "This row carries no tender id, so a withdrawal cannot be matched to it."
             return
         }
         guard reach.isOnline else {

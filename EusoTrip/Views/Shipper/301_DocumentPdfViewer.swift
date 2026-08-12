@@ -219,7 +219,7 @@ private struct PdfViewerBody: View {
 
             let (data, _) = try await EusoTripAPI.shared.fetchAuthenticatedData(url)
             guard !data.isEmpty else {
-                loadError = "Server returned an empty file."
+                loadError = "The document downloaded as zero bytes — nothing came back. Nothing is cached, so retry; if it stays empty the file has to be uploaded again."
                 loading = false
                 return
             }

@@ -448,9 +448,42 @@ private struct RailLayoverTrackingBody672: View {
                 .first
                 .map { LayoverEvent672.usd($0) + " / car-day" }
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = layoverErrorCopy(error, attempt: "load your layovers")
         }
         loading = false
+    }
+
+    /// Operator-language copy for a failed layover request.
+    ///
+    /// A raw `NSError` string ("EusoTripAPIError error 5") tells a billing
+    /// clerk nothing they can act on, so every failure class is mapped to a
+    /// sentence that names what did not happen and what to do next. Refusal
+    /// reasons that already carry human copy are surfaced verbatim.
+    private func layoverErrorCopy(_ error: Error, attempt: String) -> String {
+        guard let api = error as? EusoTripAPIError else {
+            if (error as NSError).domain == NSURLErrorDomain {
+                return "No connection, so EusoTrip couldn't \(attempt). Check your signal, then try again."
+            }
+            return "Couldn't \(attempt). Try again in a moment."
+        }
+        switch api {
+        case .unauthenticated:
+            return "Your session expired before EusoTrip could \(attempt). Sign in again, then retry."
+        case .forbidden(let reason):
+            return reason
+        case .trpcError(let reason):
+            return reason
+        case .httpStatus(let code, _):
+            return "Layover billing is unavailable right now (\(code)), so EusoTrip couldn't \(attempt). Try again in a moment."
+        case .decodingFailed:
+            return "The layover record came back in a form this app version can't read. Update the app, then retry."
+        case .empty:
+            return "Nothing came back, so EusoTrip couldn't \(attempt). Try again in a moment."
+        case .notConfigured, .badURL:
+            return "Layover billing isn't reachable from this build. Restart the app, then try again."
+        case .queuedForOfflineReplay:
+            return "You're offline — a billable layover is never held for later. Nothing was sent."
+        }
     }
 
     private func billOpenLayover() async {
@@ -478,7 +511,7 @@ private struct RailLayoverTrackingBody672: View {
             await load()
             actionMessage = "\(target.facility) invoiced for \(amount)."
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = layoverErrorCopy(error, attempt: "invoice that layover")
         }
     }
 
@@ -507,7 +540,7 @@ private struct RailLayoverTrackingBody672: View {
             await load()
             actionMessage = out.message ?? "\(target.facility) moved to \(out.status ?? "disputed")."
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = layoverErrorCopy(error, attempt: "file that dispute")
         }
     }
 }

@@ -273,7 +273,7 @@ private struct RailCrossBorderDGRegsBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("getCrossBorderDGRailRegs:1018")
+                Text("published DG regulations")
                     .font(EType.mono(.caption))
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(1).minimumScaleFactor(0.7)

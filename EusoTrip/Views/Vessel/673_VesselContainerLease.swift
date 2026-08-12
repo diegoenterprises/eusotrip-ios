@@ -560,7 +560,7 @@ private struct VesselContainerLeaseBody: View {
             self.certs = certResult
             self.atRisk = riskResult
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }

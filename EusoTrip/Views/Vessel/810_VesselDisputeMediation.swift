@@ -318,7 +318,7 @@ private struct VesselDisputeMediationBody810: View {
                 ? (hasSession ? "Brief and session are recorded on the dispute thread." : "Brief is recorded; schedule the first session.")
                 : "Submit the mediation brief from the live dispute packet."
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
@@ -334,7 +334,7 @@ private struct VesselDisputeMediationBody810: View {
             actionMessage = "Brief submitted · \(out.status ?? "recorded")"
             await load()
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = error.eusoUserCopy
         }
     }
 
@@ -350,7 +350,7 @@ private struct VesselDisputeMediationBody810: View {
             actionMessage = "Session scheduled · \(shortDate(out.scheduledAt ?? scheduledAt))"
             await load()
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = error.eusoUserCopy
         }
     }
 

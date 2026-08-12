@@ -136,7 +136,7 @@ private struct RailDemurrageCalculatorBody: View {
                     EusoEmptyState(
                         systemImage: "shippingbox.and.arrow.backward",
                         title: "No accrual computed",
-                        subtitle: "Demurrage lines appear once calculateAccrual runs against this box."
+                        subtitle: "Demurrage lines appear once the accrual is calculated for this box."
                     )
                 }
                 Color.clear.frame(height: 96)
@@ -314,14 +314,14 @@ private struct RailDemurrageCalculatorBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("calculateAccrual:36")
+                Text("accrual calculation")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
             }
             let lines = a.lines ?? []
             if lines.isEmpty {
                 LifecycleCard {
-                    Text("No accrual lines - calculateAccrual returned an empty schedule for this box.")
+                    Text("No accrual lines — the calculation ran and returned an empty schedule for this box.")
                         .font(EType.caption).foregroundStyle(palette.textSecondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }

@@ -650,7 +650,7 @@ private struct VesselParticularsBody699: View {
                         Text("NO CERTIFICATE ROWS")
                             .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                             .foregroundColor(palette.textTertiary)
-                        Text("getVesselCertificates returned an empty union — vessel_isps_records and vessel_insurance carry no rows to plot.")
+                        Text("No certificates are on file for this hull — neither the ISPS record nor insurance carries a row to plot.")
                             .font(.system(size: 11)).foregroundColor(palette.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -880,7 +880,7 @@ private struct VesselParticularsBody699: View {
                     VStack(alignment: .leading, spacing: Space.s2) {
                         Text("NO PORT ROWS").font(.system(size: 9, weight: .heavy)).tracking(1.0)
                             .foregroundColor(palette.textTertiary)
-                        Text("getPorts returned no rows from the ports table, so there is no published limit to measure this hull against.")
+                        Text("No port records came back, so there is no published limit to measure this hull against.")
                             .font(EType.body).foregroundColor(palette.textSecondary)
                     }
                     .padding(Space.s4).frame(maxWidth: .infinity, alignment: .leading)
@@ -965,7 +965,7 @@ private struct VesselParticularsBody699: View {
                     VStack(alignment: .leading, spacing: Space.s2) {
                         Text("NO INSPECTION ROWS").font(.system(size: 9, weight: .heavy)).tracking(1.0)
                             .foregroundColor(palette.textTertiary)
-                        Text("getVesselInspections returned an empty vessel_inspections table.")
+                        Text("No inspections are on file for this hull.")
                             .font(EType.body).foregroundColor(palette.textSecondary)
                     }
                     .padding(Space.s4).frame(maxWidth: .infinity, alignment: .leading)
@@ -1042,7 +1042,7 @@ private struct VesselParticularsBody699: View {
             }
         } catch {
             vessel = nil
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
 
         // 2 · THE CERTIFICATE HORIZON. Unconditional overwrite.
@@ -1052,7 +1052,7 @@ private struct VesselParticularsBody699: View {
             certs = rows
         } catch {
             certs = []
-            certError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            certError = error.eusoUserCopy
         }
 
         // 3 · The real port list behind the caliper picker. Best-effort: its absence never
@@ -1084,7 +1084,7 @@ private struct VesselParticularsBody699: View {
             port = p   // unconditional: a null response clears the ticks rather than freezing them
         } catch {
             port = nil
-            portError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            portError = error.eusoUserCopy
         }
     }
 
@@ -1098,7 +1098,7 @@ private struct VesselParticularsBody699: View {
             certs = rows
             showBinder = true
         } catch {
-            certError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            certError = error.eusoUserCopy
         }
         binderLoading = false
     }
@@ -1113,7 +1113,7 @@ private struct VesselParticularsBody699: View {
             inspections = rows
             showPSC = true
         } catch {
-            pscError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            pscError = error.eusoUserCopy
             showPSC = true
         }
         pscLoading = false

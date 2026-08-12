@@ -208,7 +208,7 @@ private struct RailForwarderPortalBody: View {
                         Text("shared shipments")
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(palette.textSecondary)
-                        Text("listForwarderShipments")
+                        Text("shared with this forwarder")
                             .font(EType.mono(.micro))
                             .foregroundStyle(palette.textTertiary)
                     }
@@ -250,7 +250,7 @@ private struct RailForwarderPortalBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("listForwarderShipments")
+                Text("shared shipment feed")
                     .font(EType.mono(.caption))
                     .foregroundStyle(palette.textSecondary)
             }

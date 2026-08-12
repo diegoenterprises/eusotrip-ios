@@ -543,7 +543,7 @@ private struct VesselIMDGHazmatManifestBody: View {
             self.record = record
             self.classMappings = mappings
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
@@ -557,13 +557,13 @@ private struct VesselIMDGHazmatManifestBody: View {
             let res: SimpleSuccess = try await EusoTripAPI.shared.mutation(
                 "imdg.markVesselManifest", input: ManifestIn(loadId: loadId))
             if res.success == false {
-                markError = "Server declined to mark the box on the vessel manifest."
+                markError = "The box was not marked on the vessel manifest — the request was declined and nothing was recorded."
             } else {
                 marked = true
                 await load()
             }
         } catch {
-            markError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            markError = error.eusoUserCopy
         }
         marking = false
     }

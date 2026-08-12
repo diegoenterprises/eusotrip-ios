@@ -425,7 +425,7 @@ private struct VesselBunkerPricesBody: View {
                 esangLine = ""
             }
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
@@ -455,7 +455,7 @@ private struct VesselBunkerPricesBody: View {
             alertThreshold = ""
             await load()
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = error.eusoUserCopy
         }
         busyAction = nil
     }
@@ -477,7 +477,7 @@ private struct VesselBunkerPricesBody: View {
             exportDoc = ExportDoc670(url: url, filename: out.filename, rowCount: out.rowCount)
             actionBanner = "Export ready: \(out.filename)."
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = error.eusoUserCopy
         }
         busyAction = nil
     }

@@ -188,7 +188,7 @@ final class MarketWatchlistStore: ObservableObject {
                     input: In(symbols: snapshot)
                 )
                 if out.success == false {
-                    lastSyncError = "Market watchlist stayed saved on this device, but server sync was not accepted."
+                    lastSyncError = "Market watchlist stayed saved on this device, but the sync to your account was not accepted — it will not follow you to another device yet."
                 } else {
                     lastSyncError = nil
                 }

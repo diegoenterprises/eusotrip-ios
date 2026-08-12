@@ -264,7 +264,7 @@ private struct VesselBunkerFSCBody: View {
                 changePct = nil
             }
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }

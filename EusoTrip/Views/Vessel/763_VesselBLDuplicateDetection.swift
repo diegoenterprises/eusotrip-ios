@@ -91,11 +91,11 @@ private struct VesselBLDuplicateDetectionBody: View {
                     LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) }
                 } else {
                     hero
-                    sectionLabel("ORIGINAL vs DUPLICATE", ref: "EXISTS getBOL:956")
+                    sectionLabel("ORIGINAL vs DUPLICATE", ref: "live B/L record")
                     diffCard
-                    sectionLabel("DUPLICATE-FRAUD SIGNALS", ref: "STUB · blIntegrity.checkDup")
+                    sectionLabel("DUPLICATE-FRAUD SIGNALS", ref: "duplicate check not live")
                     signalList
-                    sectionLabel("B/L REGISTRY AUTHORITY", ref: "blIntegrity·country")
+                    sectionLabel("B/L REGISTRY AUTHORITY", ref: "registry · by country")
                     triCountryBand
                     if let note = gapNotice {
                         HStack(alignment: .top, spacing: 8) {
@@ -282,13 +282,13 @@ private struct VesselBLDuplicateDetectionBody: View {
                 ]
             }
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
     private func hold() async {
         // STUB · named-gap blIntegrity.holdRelease({bolId,confirm:true}) — blocks cargo release, audited.
-        gapNotice = "Hold-release is a named backend gap (blIntegrity.holdRelease) - filed with the-oath. The flag is recorded locally only; nothing was written server-side."
+        gapNotice = "Placing a hold on release is not available yet. The flag is kept on this device only — nothing was recorded and cargo release is not actually blocked. Stop the release with the terminal directly."
         await load()
     }
 }

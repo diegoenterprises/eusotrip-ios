@@ -996,11 +996,25 @@ struct EscortAssignmentDetail: View {
         return fmt.string(from: d)
     }
 
+    /// Operator-language copy for a failed read or commit. The error itself
+    /// stays intact for logging; the escort reads a sentence they can act on,
+    /// never a raw system error string.
     private func readableError(_ error: Error) -> String {
-        if let api = error as? EusoTripAPIError {
-            return api.errorDescription ?? "Request failed."
+        guard let api = error as? EusoTripAPIError else {
+            return "Something went wrong on this device. Try that again."
         }
-        return error.localizedDescription
+        switch api {
+        case .trpcError(let reason), .forbidden(let reason):
+            return reason
+        case .unauthenticated:
+            return "Your sign-in has expired. Sign in again, then reopen this move."
+        case .decodingFailed:
+            return "This came back in a form this build can't read. Update the app, then try again."
+        case .queuedForOfflineReplay:
+            return "You're offline — this will send when you reconnect."
+        case .httpStatus, .badURL, .notConfigured, .empty:
+            return "Couldn't reach the network. Check your signal and try again."
+        }
     }
 
     private func refreshAll() async {

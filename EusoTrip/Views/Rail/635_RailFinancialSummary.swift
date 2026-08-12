@@ -290,7 +290,7 @@ private struct RailFinancialSummaryBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("getRailFinancialSummary:872")
+                Text("revenue ledger")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
             }
@@ -425,7 +425,7 @@ private struct RailFinancialSummaryBody: View {
             "Active shipments: \(stats?.activeShipments.map(String.init) ?? "-")",
             "Cars in transit: \(stats?.carsInTransit.map(String.init) ?? "-")",
             "Average transit: \(stats?.avgTransitDays.map { String(format: "%.1f days", $0) } ?? "-")",
-            "P&L endpoint: \(summaryAvailable ? "served" : "not served")"
+            "P&L summary: \(summaryAvailable ? "available" : "unavailable")"
         ]
         if let summary {
             lines.append("Cycle: \(summary.cycle ?? "-")")
@@ -490,7 +490,7 @@ private struct RailFinancialSummaryBody: View {
                 "railShipments.approvePayout")
             await reload()
         } catch {
-            approveError = "Payout approval unavailable - railShipments.approvePayout is not yet served. "
+            approveError = "Payout approval is not available yet. Nothing was approved and no money moved. "
                 + ((error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription)
         }
         approving = false

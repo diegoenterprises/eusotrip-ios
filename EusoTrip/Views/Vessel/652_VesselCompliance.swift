@@ -448,7 +448,7 @@ private struct VesselComplianceBody: View {
             self.inspections = insp
             self.certificates = certList
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
 

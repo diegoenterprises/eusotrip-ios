@@ -659,7 +659,7 @@ private struct VesselShipperHomeBody: View {
             self.bookings = list
             self.attention = buildAttention(demurrage: dem, isf: isf)
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
@@ -731,7 +731,7 @@ private struct VesselShipperHomeBody: View {
                 "vesselShipments.liveTrackOceanShipment")
         } catch {
             actionError = "Tracking unavailable. "
-                + ((error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription)
+                + (error.eusoUserCopy)
         }
     }
 
@@ -744,7 +744,7 @@ private struct VesselShipperHomeBody: View {
                 input: DetailIn(bookingNumber: bookingNumber))
         } catch {
             actionError = "Couldn't open \(bookingNumber). "
-                + ((error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription)
+                + (error.eusoUserCopy)
         }
     }
 
@@ -758,7 +758,7 @@ private struct VesselShipperHomeBody: View {
                 "vesselShipments.getVesselDemurrage")
         } catch {
             actionError = "ESang couldn't refresh demurrage. "
-                + ((error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription)
+                + (error.eusoUserCopy)
         }
     }
 }
@@ -1303,7 +1303,7 @@ private struct VesselBookingCreateScreen: View {
         } catch {
             assessment = nil
             assessedDraftSignature = nil
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = error.eusoUserCopy
         }
     }
 
@@ -1337,7 +1337,7 @@ private struct VesselBookingCreateScreen: View {
             onCreated(result.bookingNumber)
             dismiss()
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = error.eusoUserCopy
         }
     }
 }
@@ -1431,7 +1431,7 @@ private struct VesselBookingPortSearchScreen: View {
             results = rows.filter(\.isSelectableVesselPort)
         } catch {
             results = []
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
     }
 }

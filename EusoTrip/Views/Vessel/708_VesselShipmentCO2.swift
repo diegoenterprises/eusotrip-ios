@@ -335,7 +335,7 @@ private struct VesselShipmentCO2Body: View {
             }
             legs = []   // no leg-telemetry source — honest empty state renders
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
@@ -361,7 +361,7 @@ private struct VesselShipmentCO2Body: View {
             exportURL = url
             actionMessage = "GHG statement ready: \(filename)."
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = error.eusoUserCopy
         }
     }
 
@@ -384,7 +384,7 @@ private struct VesselShipmentCO2Body: View {
             let provider = quote.provider ?? "offset marketplace"
             actionMessage = "Offset quote: \(total) through \(provider). Purchase is not completed here until live payment and registry retirement are connected."
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = error.eusoUserCopy
         }
     }
 }

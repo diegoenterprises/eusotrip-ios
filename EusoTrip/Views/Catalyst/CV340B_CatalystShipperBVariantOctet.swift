@@ -361,13 +361,13 @@ private struct CatalystShipperBBody: View {
         let copy: String = {
             switch kind {
             case .scoreAxis:   return "Composite axis is pinned to §9.5 shipper books. Refresh with the next QC cycle."
-            case .profileTier: return "Tier criteria (§13.5) are not exposed by getScorecard. Reconfirm on the source-of-record."
-            case .document:    return "Document cabinet (§387.7) is not exposed by getScorecard. Open the document service for COI runway."
-            case .analytic:    return "Tender acceptance and average rate are live. DSO / RPM are not exposed by this proc."
-            case .settlement:  return "Per-invoice settlement is a backend gap. Open settlements for the live ledger."
-            case .onboarding:  return "Onboarding-step ledger is not exposed by getScorecard. Open onboarding for step state."
-            case .compliance:  return "Per-compliance-row detail (§387 §388) is not exposed by getScorecard. Open the compliance service."
-            case .quarter:     return "Quarterly rollup is not exposed by getScorecard. Only the live period aggregate is shown here."
+            case .profileTier: return "Tier criteria (§13.5) are not carried on this scorecard. Reconfirm on the source-of-record before you price off the tier."
+            case .document:    return "The document cabinet (§387.7) is not carried on this scorecard. Open the document service for COI runway."
+            case .analytic:    return "Tender acceptance and average rate are live. DSO and RPM are not carried on this scorecard — read them off the settlement ledger."
+            case .settlement:  return "Per-invoice settlement is not available on this screen yet. Open settlements for the live ledger."
+            case .onboarding:  return "The onboarding-step ledger is not carried on this scorecard. Open onboarding for step state."
+            case .compliance:  return "Per-compliance-row detail (§387 §388) is not carried on this scorecard. Open the compliance service."
+            case .quarter:     return "Quarterly rollup is not carried on this scorecard. Only the live period aggregate is shown here — do not read it as a quarter close."
             }
         }()
         return LifecycleCard {

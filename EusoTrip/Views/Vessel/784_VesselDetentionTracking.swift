@@ -157,7 +157,7 @@ private struct VesselDetentionTrackingBody: View {
                 } else if records.isEmpty {
                     EusoEmptyState(systemImage: "clock.badge.checkmark",
                                    title: "No active detention",
-                                   subtitle: "getDetentionTracking returned no accruing boxes. Nothing past free time, no per-diem to track right now.")
+                                   subtitle: "No accruing boxes came back. Nothing is past free time, so there is no per-diem to track right now.")
                 } else {
                     heroCard
                     HStack(spacing: 8) {
@@ -426,7 +426,7 @@ private struct VesselDetentionTrackingBody: View {
         do {
             self.data = try await EusoTripAPI.shared.query("yardManagement.getDetentionTracking", input: OnlyActiveQuery784(onlyActive: onlyActive))
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
@@ -453,7 +453,7 @@ private struct VesselDetentionTrackingBody: View {
                 actionError = "Return did not confirm. Reopen the trailer row and try again."
             }
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = error.eusoUserCopy
         }
         actionInFlight = false
     }
@@ -482,7 +482,7 @@ private struct VesselDetentionTrackingBody: View {
                 actionError = "Dispute did not confirm. Reopen the charge and try again."
             }
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = error.eusoUserCopy
         }
         actionInFlight = false
     }

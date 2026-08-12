@@ -416,7 +416,7 @@ private struct DispatcherLaneRFPBody: View {
     private var nextStepCard: some View {
         let copy: String = {
             guard let s = board?.summary else {
-                return "Live board unreachable. Pull to refresh to retry dispatchRole.getDispatchBoard."
+                return "The live board did not answer on this pass. The board is blank because the read failed, not because there is nothing on it — pull to refresh."
             }
             let total = s.total ?? liveLoads.count
             switch kind {

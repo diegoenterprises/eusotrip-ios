@@ -256,7 +256,7 @@ private struct RailClaimsListBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("getClaims:172")
+                Text("claims register")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
             }

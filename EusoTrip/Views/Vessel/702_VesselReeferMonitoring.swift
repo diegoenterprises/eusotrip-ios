@@ -704,7 +704,7 @@ private struct VesselReeferMonitoringBody: View {
             self.alerts = alertRows
             self.fsma = fsmaRow
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         // Ambient (deck/port weather) is a best-effort overlay — its feed is
         // enterprise-gated and may return available:false or be unreachable.
@@ -729,7 +729,7 @@ private struct VesselReeferMonitoringBody: View {
             ackDone = true
             await load()
         } catch {
-            ackError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            ackError = error.eusoUserCopy
         }
         acking = false
     }

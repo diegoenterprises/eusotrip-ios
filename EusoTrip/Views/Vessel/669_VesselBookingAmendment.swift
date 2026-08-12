@@ -350,7 +350,7 @@ private struct VesselBookingAmendmentBody: View {
             _ = proposed
         } catch {
             rows = []; nChanges = 0; nApproved = 0; nRejected = 0; latestReason = nil
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }

@@ -420,7 +420,7 @@ private struct RailExceptionsHoldsBody: View {
                 Text("COMPOSED BOARD")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("getAssetHealth")
+                Text("asset health feed")
                     .font(.system(size: 11, design: .monospaced)).foregroundStyle(palette.textTertiary)
             }
             Text("Holds + FRA + demurrage merged into one board")

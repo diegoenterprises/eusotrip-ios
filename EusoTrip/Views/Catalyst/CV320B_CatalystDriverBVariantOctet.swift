@@ -319,18 +319,18 @@ private struct CatalystDriverBBody: View {
             switch kind {
             case .scoreAxis:
                 if let m {
-                    return "Composite grade \(grade) from getPerformanceMetrics — on-time \(String(format: "%.1f", m.onTimeDeliveryRate))%, HOS \(String(format: "%.0f", m.hosCompliance))%, \(m.totalLoads) loads. Refresh with the next cycle."
+                    return "Composite grade \(grade) from live performance metrics — on-time \(String(format: "%.1f", m.onTimeDeliveryRate))%, HOS \(String(format: "%.0f", m.hosCompliance))%, \(m.totalLoads) loads. Refresh with the next cycle."
                 }
-                return "Scorecard composite (§9.1) loads from getPerformanceMetrics. No metrics in this window yet."
+                return "Scorecard composite (§9.1) is built from live performance metrics. None have been recorded for this driver in this window yet."
             case .profileTier:
-                return "No driver-side tier proc is wired yet. Tier (§13) renders \(Self.dash) until a tier source ships."
+                return "Driver tier is not available yet. Tier (§13) stays \(Self.dash) — that is a missing source, not an untiered driver. Judge on the composite grade instead."
             case .document:
                 return "No per-document compliance source is wired yet. Document rows render \(Self.dash) until one ships."
             case .analytic:
                 if let m {
                     return "On-time \(String(format: "%.1f", m.onTimeDeliveryRate))%, inspection pass \(String(format: "%.0f", m.inspectionPassRate))% (§395.8 / §396). Hold the cadence."
                 }
-                return "Analytic pillars (§395.8) load from getPerformanceMetrics. No metrics in this window yet."
+                return "Analytic pillars (§395.8) are built from live performance metrics. None have been recorded for this driver in this window yet."
             case .settlement:
                 return "No per-allocation settlement line-item source is wired here. Amount / chain / book render \(Self.dash) until one ships."
             case .onboarding:

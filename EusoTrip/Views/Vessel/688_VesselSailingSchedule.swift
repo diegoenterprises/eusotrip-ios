@@ -806,7 +806,7 @@ private struct VesselSailingScheduleBody: View {
             self.blank = dash
             self.scheduleRows = mmResp.vessels ?? []
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }

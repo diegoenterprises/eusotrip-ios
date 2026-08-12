@@ -651,7 +651,7 @@ private struct DispatcherKanbanBody: View {
             let response: DispatcherMutationResult = try await EusoTripAPI.shared.mutation(
                 "dispatch.updateLoadStatus", input: In(loadId: String(l.id), status: next))
             if let failure = response.failureMessage(
-                fallback: "The server rejected the stage change for \(l.loadNumber)."
+                fallback: "The stage change for \(l.loadNumber) was rejected. The load has not moved."
             ) {
                 actionError = failure
                 await load()
@@ -708,7 +708,7 @@ private struct DispatcherKanbanBody: View {
                 input: In(loadId: String(l.id), reason: "Dispatcher Kanban move to Tender")
             )
             if let failure = response.failureMessage(
-                fallback: "The server rejected the unassignment for \(l.loadNumber)."
+                fallback: "The unassignment for \(l.loadNumber) was rejected. The driver is still assigned."
             ) {
                 actionError = failure
                 await load()

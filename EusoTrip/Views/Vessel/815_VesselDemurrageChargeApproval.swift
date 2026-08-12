@@ -299,7 +299,7 @@ private struct VesselDemurrageChargeApprovalBody: View {
                     selected: status == "pending" || status == "adjusted" || status.isEmpty)
             }
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
@@ -329,7 +329,7 @@ private struct VesselDemurrageChargeApprovalBody: View {
             actionMessage = "Approved \(charge.sub) · event \(out.eventId.map(String.init) ?? "recorded")"
             await load()
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = error.eusoUserCopy
         }
     }
 
@@ -346,7 +346,7 @@ private struct VesselDemurrageChargeApprovalBody: View {
             actionMessage = "Dispute filed for \(charge.sub) · event \(out.eventId.map(String.init) ?? "recorded")"
             await load()
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = error.eusoUserCopy
         }
     }
 
@@ -371,7 +371,7 @@ private struct VesselDemurrageChargeApprovalBody: View {
             }
             await load()
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = error.eusoUserCopy
         }
     }
 }

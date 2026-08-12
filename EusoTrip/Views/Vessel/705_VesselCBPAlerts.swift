@@ -517,7 +517,7 @@ private struct VesselCBPAlertsBody: View {
             // Detail-sheet routing is owned by the host nav controller; the
             // verbatim port surfaces the entry status fetch as the action.
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
     }
 
@@ -532,7 +532,7 @@ private struct VesselCBPAlertsBody: View {
                 "vesselShipments.getCBPAlerts", input: AlertsIn(importerId: importerId))
             self.alerts = rows ?? []
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }

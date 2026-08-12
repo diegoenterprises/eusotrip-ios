@@ -300,7 +300,7 @@ private struct RailFleetHealthBody: View {
                             Text("available")
                                 .font(.system(size: 11, weight: .semibold))
                                 .foregroundColor(palette.textSecondary)
-                            Text("getFleetSummary")
+                            Text("fleet roster")
                                 .font(.system(size: 11))
                                 .foregroundColor(palette.textTertiary)
                         }

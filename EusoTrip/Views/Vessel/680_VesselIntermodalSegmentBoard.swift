@@ -197,11 +197,11 @@ private struct VesselIntermodalSegmentBoardBody: View {
     }
 
     private var subtitle: String {
-        // "getIntermodalShipmentDetail · IM-50732 · 3 legs · 2 modes"
+        // "Intermodal detail · IM-50732 · 3 legs · 2 modes"
         let num = detail?.intermodalNumber ?? "IM-\(shipmentId)"
         let legs = detail?.numberOfSegments ?? detail?.segments.count ?? 0
         let modes = modeCount
-        return "getIntermodalShipmentDetail · \(num) · \(legs) legs · \(modes) modes"
+        return "Intermodal detail · \(num) · \(legs) legs · \(modes) modes"
     }
 
     private var modeCount: Int {
@@ -685,7 +685,7 @@ private struct VesselIntermodalSegmentBoardBody: View {
             self.detail = d
             self.tracking = t
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
@@ -709,7 +709,7 @@ private struct VesselIntermodalSegmentBoardBody: View {
             }
             await load()
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = error.eusoUserCopy
         }
         advancing = false
     }
@@ -742,11 +742,11 @@ private struct VesselIntermodalSegmentBoardBody: View {
             if ack.success == true {
                 actionDone = "Transfer recorded · \(transferModeArrow(pair.transferType)) at port terminal."
             } else {
-                actionError = "recordTransfer did not confirm."
+                actionError = "The transfer was not confirmed — nothing was recorded against this segment."
             }
             await load()
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = error.eusoUserCopy
         }
         recording = false
     }

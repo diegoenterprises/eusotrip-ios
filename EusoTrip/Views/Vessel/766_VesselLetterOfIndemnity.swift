@@ -283,13 +283,13 @@ private struct VesselLetterOfIndemnityBody: View {
                 }
             }
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
     private func submit() async {
         // STUB · named-gap loi.issue / loi.acceptRelease({loiId,confirm:true}) — irreversible release, audited.
-        gapNotice = "LOI submission is irreversible and its endpoint (loi.issue / loi.acceptRelease) is a named gap filed with the-oath. ONLINE_ONLY(money-legal) - nothing was written server-side."
+        gapNotice = "Issuing an LOI is irreversible and legally binding, so it needs a live connection and is never queued offline. Issue and release-acceptance are not available yet — nothing was recorded and no release was authorised."
         await load()
     }
 }

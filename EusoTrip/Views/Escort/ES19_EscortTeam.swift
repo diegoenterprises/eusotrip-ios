@@ -624,7 +624,7 @@ struct EscortTeam: View {
 
                 seatRibbon
 
-                Text("✱ getMyTeam reads the teammate rate and then drops it (escorts.ts:2112-2121) — only my own share is returned, and no procedure sums the pot. Unpriced seats are drawn as holes, not as numbers.")
+                Text("✱ Only your own share comes back priced — teammate rates are not released to this screen and nothing totals the pot. Unpriced seats are drawn as holes, never as guessed numbers.")
                     .font(.system(size: 7.5, weight: .semibold))
                     .foregroundStyle(palette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -696,7 +696,7 @@ struct EscortTeam: View {
 
             Text(routeStates.isEmpty
                  ? "✱ Cert verdicts need the route's states — pull to refresh while online."
-                 : "✱ Verdicts are live reads of verifyEscortCertifications against \(routeStates.joined(separator: "+")) (escorts.ts:3310). Seat labels are escortAssignments.position, which carries lead | chase | both only.")
+                 : "✱ Verdicts are live certification checks against \(routeStates.joined(separator: "+")). A seat is recorded as lead, chase or both — no other seat type exists.")
                 .font(.system(size: 7.5, weight: .semibold))
                 .foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -814,7 +814,7 @@ struct EscortTeam: View {
                         ForEach(shown.indices, id: \.self) { i in benchChip(shown[i]) }
                     }
                 }
-                Text("✱ The server returns no availability, distance or ETA for a bench escort (escorts.ts:3464-3475), so none is drawn — only the states they are certified for.")
+                Text("✱ No availability, distance or ETA comes back for a bench escort, so none is drawn — only the states they are certified for.")
                     .font(.system(size: 7, weight: .semibold))
                     .foregroundStyle(palette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -875,14 +875,14 @@ struct EscortTeam: View {
                                     .foregroundStyle(Brand.success)
                             }
                         }
-                        Text("server cap 20")
+                        Text("up to 20 counted")
                             .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
                     }
                     Rectangle().fill(palette.borderFaint).frame(width: 1, height: 46)
                     poolMatrix
                     Spacer(minLength: 0)
                 }
-                Text("✱ This is the certified corridor pool, not a company roster: there is no escort-company entity — escortCompany is a metadata string (escorts.ts:3142) and companies.getFleet returns vehicles scoped to a companyId an escort does not carry.")
+                Text("✱ This is the certified corridor pool, not a company roster. Escort companies are not tracked as organizations here — the company name is free text, and fleet rosters belong to carriers, which an escort account is not part of.")
                     .font(.system(size: 7, weight: .semibold))
                     .foregroundStyle(palette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -947,7 +947,7 @@ struct EscortTeam: View {
         VStack(alignment: .leading, spacing: Space.s2) {
             Text("No team on the board")
                 .font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-            Text("escorts.getMyTeam returns a crew only for moves you are assigned to. Take a job and the seats appear here.")
+            Text("A crew is listed only for moves you are assigned to. Take a job and the seats appear here.")
                 .font(EType.caption).foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -1012,13 +1012,13 @@ struct EscortTeam: View {
             .disabled(verifying || routeStates.isEmpty)
 
             Button {
-                toast = "No seat-swap procedure exists yet — applyForJob and acceptJob are both self-scoped, so a lead cannot move another escort onto a seat. Filed, not faked."
+                toast = "Seat swaps are not available yet — an escort can only take a job for themselves, so a lead cannot move another escort onto a seat. Filed as a gap, not faked."
             } label: {
                 VStack(spacing: 2) {
                     Text("REQUEST SWAP")
                         .font(.system(size: 10, weight: .heavy)).tracking(0.4)
                         .foregroundStyle(palette.textPrimary)
-                    Text("✱ no procedure yet")
+                    Text("✱ not available yet")
                         .font(.system(size: 8, weight: .semibold))
                         .foregroundStyle(palette.textTertiary)
                 }
@@ -1200,7 +1200,7 @@ struct EscortTeam: View {
             let bad = found.values.filter { $0.isBlocking }
             if bad.isEmpty {
                 toast = found.isEmpty
-                    ? "Verification didn't reach the server. Nothing on this crew is marked cleared."
+                    ? "Verification did not go through. Nothing on this crew is marked cleared — treat every seat as unverified."
                     : "Crew cleared for \(required.joined(separator: "+"))."
             } else if let first = bad.compactMap({ $0.errors.first }).first {
                 toast = first          // the server's own wording, verbatim

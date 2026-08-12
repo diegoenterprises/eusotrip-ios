@@ -254,7 +254,7 @@ private struct VesselClaimsListBody: View {
                 rows = []
             }
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }

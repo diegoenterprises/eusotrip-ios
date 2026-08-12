@@ -441,11 +441,11 @@ final class HOSLiveStore: ObservableObject {
         case EusoTripAPIError.forbidden(let message):
             return "Compliance role mismatch. \(cleanServerMessage(message))"
         case EusoTripAPIError.decodingFailed:
-            return "\(prefix). The server response changed; update the app or pull to retry."
+            return "\(prefix). The reply came back in a shape this app version cannot read — the log is not empty, the read failed. Update the app, then pull to retry."
         case EusoTripAPIError.notConfigured:
             return "Compliance service is not configured for this build."
         case EusoTripAPIError.httpStatus(let code, _):
-            return "\(prefix). Server returned HTTP \(code). Pull to retry."
+            return "\(prefix). EusoTrip returned HTTP \(code) — the read failed, so this is not an empty log. Pull to retry."
         case EusoTripAPIError.trpcError(let message):
             return "\(prefix): \(cleanServerMessage(message))"
         default:
@@ -461,11 +461,11 @@ final class HOSLiveStore: ObservableObject {
         case EusoTripAPIError.forbidden(let message):
             return "Permission mismatch: \(cleanServerMessage(message))"
         case EusoTripAPIError.decodingFailed:
-            return "Could not \(action). The server response changed; update the app or retry."
+            return "Could not \(action). The reply came back in a shape this app version cannot read, so it is not confirmed either way. Update the app, then retry."
         case EusoTripAPIError.trpcError(let message):
             return "Could not \(action): \(cleanServerMessage(message))"
         case EusoTripAPIError.httpStatus(let code, _):
-            return "Could not \(action). Server returned HTTP \(code)."
+            return "Could not \(action). EusoTrip returned HTTP \(code), so it was not confirmed."
         default:
             return "Could not \(action). Try again in a moment."
         }

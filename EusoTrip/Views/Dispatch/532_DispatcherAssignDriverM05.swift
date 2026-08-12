@@ -381,7 +381,7 @@ private struct ADBody: View {
             load = try await EusoTripAPI.shared.query("loads.getById", input: In(id: loadId))
         } catch {
             await MainActor.run {
-                err = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+                err = assignFailureCopy_532(error, noun: "load details")
             }
         }
     }
@@ -401,7 +401,7 @@ private struct ADBody: View {
             )
         } catch {
             await MainActor.run {
-                err = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+                err = assignFailureCopy_532(error, noun: "available drivers")
             }
         }
     }
@@ -427,23 +427,23 @@ private struct ADBody: View {
                 input: In(loadId: loadId, driverId: driverId)
             )
             if resp.success != false {
-                let name = drivers.first(where: { $0.id == driverId })?.name ?? "driver #\(driverId)"
+                let name = drivers.first(where: { $0.id == driverId })?.name ?? "the selected driver"
                 await MainActor.run {
-                    ack = "Assigned · \(name) committed · compliance gates passed · loadLifecycle fan-out fired."
+                    ack = "Assigned · \(name) is on this load · compliance gates passed · dispatch, driver and shipper all notified."
                     draggingDriverId = nil
                     dropHover = false
                 }
                 await loadCtx()
             } else {
                 await MainActor.run {
-                    err = resp.message ?? "Assignment returned no success flag."
+                    err = resp.message ?? "The assignment came back unconfirmed. Refresh this load before you tell the driver."
                     draggingDriverId = nil
                     dropHover = false
                 }
             }
         } catch let e {
             await MainActor.run {
-                err = (e as? LocalizedError)?.errorDescription ?? "Assign failed: \(e)"
+                err = assignFailureCopy_532(e, noun: "driver assignment")
                 draggingDriverId = nil
                 dropHover = false
             }
@@ -464,4 +464,45 @@ private struct ADBody: View {
     DispatcherM05AssignDriverScreen(theme: Theme.dark, loadId: "0")
         .environmentObject(EusoTripSession())
         .preferredColorScheme(.dark)
+}
+
+// MARK: - Operator-facing failure copy
+
+/// Operator-language reason a dispatch assignment step failed.
+///
+/// The caught error is still available for logging; the dispatcher sees a
+/// sentence they can act on rather than a raw `NSError` description.
+/// `noun` names what failed ("driver assignment", "available drivers") so
+/// the line stays specific.
+fileprivate func assignFailureCopy_532(_ error: Error, noun: String) -> String {
+    if let api = error as? EusoTripAPIError {
+        switch api {
+        case .unauthenticated:
+            return "Your session expired. Sign in again before you assign this load."
+        case .forbidden(let reason):
+            let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty
+                ? "This account isn't cleared to assign drivers on this load."
+                : trimmed
+        case .trpcError(let reason):
+            let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty
+                ? "The \(noun) was rejected. Refresh this load and try again."
+                : trimmed
+        case .httpStatus(let code, _):
+            return "The \(noun) didn't go through (code \(code)). Refresh before you tell the driver."
+        case .decodingFailed:
+            return "The \(noun) came back in a form this build can't read. Update the app, then retry."
+        case .empty:
+            return "Nothing came back for the \(noun). Refresh this load and try again."
+        case .notConfigured, .badURL:
+            return "This device isn't set up for live dispatch yet. Restart the app and try again."
+        case .queuedForOfflineReplay:
+            return "You're offline — the \(noun) is queued and sends when you reconnect. Don't tell the driver until it confirms."
+        }
+    }
+    if (error as NSError).domain == NSURLErrorDomain {
+        return "No connection right now. The \(noun) didn't complete — retry once you have signal."
+    }
+    return "The \(noun) didn't complete. Refresh this load and try again."
 }

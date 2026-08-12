@@ -480,7 +480,7 @@ private struct VesselPortDirectoryBody: View {
                 "vesselShipments.getPorts", input: input)
             self.ports = rows
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
@@ -510,7 +510,7 @@ private struct VesselPortDirectoryBody: View {
             }
         } catch {
             if portLookupId == port.id {
-                portLookupError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+                portLookupError = error.eusoUserCopy
             }
         }
         portLookupLoading = false

@@ -738,7 +738,7 @@ struct EscortConvoyFormationMap: View {
     /// The two named gaps a reader of this screen must not mistake for shipped truth.
     private var provenanceFootnote: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("\(Law.spacingFeet)-ft band and \(Law.integrityFeet.formatted())-ft integrity line are computed on device — no per-state spacing rule exists server-side yet.")
+            Text("\(Law.spacingFeet)-ft band and \(Law.integrityFeet.formatted())-ft integrity line are computed on this device — no state-by-state spacing rule is published to the app yet, so check the permit.")
             Text("Positions come from two stores: LEAD / LOAD / CHASE from tracking, STEER / HIGH-POLE from the convoy roster. Formation updates reach other units on their poll, not on a push.")
         }
         .font(.system(size: 9, weight: .semibold))

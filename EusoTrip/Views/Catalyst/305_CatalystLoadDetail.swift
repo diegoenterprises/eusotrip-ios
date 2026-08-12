@@ -1177,7 +1177,7 @@ private struct CatalystLoadDetail: View {
                     if rateConRows.isEmpty && !rateConLoading {
                         EusoEmptyState(systemImage: "checkmark.seal",
                                        title: "No rate confirmation on this load",
-                                       subtitle: "A signed or draft rate confirmation appears here once the backend has one for this load.")
+                                       subtitle: "A signed or draft rate confirmation appears here as soon as one is issued for this load.")
                             .padding(.vertical, Space.s4)
                     }
                     ForEach(rateConRows) { row in

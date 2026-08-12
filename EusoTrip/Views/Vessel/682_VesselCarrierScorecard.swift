@@ -610,7 +610,7 @@ private struct VesselCarrierScorecardBody: View {
             self.trends = trend
             self.hazmat = hazm
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
@@ -641,7 +641,7 @@ private struct VesselCarrierScorecardBody: View {
                 compareRows = rows
             }
         } catch {
-            compareError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            compareError = error.eusoUserCopy
         }
     }
 }

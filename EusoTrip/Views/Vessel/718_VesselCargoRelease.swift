@@ -304,7 +304,7 @@ private struct VesselCargoReleaseBody: View {
         HStack {
             VStack(alignment: .leading, spacing: 3) {
                 Text("ORIGINALS OUTSTANDING").font(.system(size: 11, weight: .heavy)).tracking(0.6).foregroundStyle(palette.textTertiary)
-                Text("surrenderBOL · vesselShipments:597 · requires status \"issued\"")
+                Text("Surrender of originals · available only once the B/L is issued")
                     .font(.system(size: 9, design: .monospaced)).foregroundStyle(palette.textSecondary)
             }
             Spacer()
@@ -397,7 +397,7 @@ private struct VesselCargoReleaseBody: View {
             if let o = b.originPort, let d = b.destinationPort { lane = "\(o) → \(d)" }
             if let s = b.status?.lowercased(), s == "surrendered" { originalsSurrendered = originalsIssued }
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }

@@ -135,7 +135,7 @@ private struct VesselDwellAnalysisBody: View {
                 } else {
                     EusoEmptyState(systemImage: "chart.bar.doc.horizontal",
                                    title: "No dwell exposure in range",
-                                   subtitle: "getDemurrageDetention returned no detention records, there is no demurrage accruing at \(locationId) to analyze. Nothing to root-cause.")
+                                   subtitle: "No detention records came back — there is no demurrage accruing at \(locationId) to analyze. Nothing to root-cause.")
                 }
                 Color.clear.frame(height: 96)
             }
@@ -220,7 +220,7 @@ private struct VesselDwellAnalysisBody: View {
 
     private func reasonsFooter(_ reasons: [DwellReason782]) -> String {
         let rest = reasons.dropFirst(3)
-        if rest.isEmpty { return "All reason buckets shown · root-cause rollup proc is a named backend gap" }
+        if rest.isEmpty { return "All reason buckets shown · root causes are not rolled up yet" }
         return rest.map { "\($0.label) \($0.events) × \(money($0.chargedAmountUsd))" }.joined(separator: "  ·  ")
     }
 
@@ -331,7 +331,7 @@ private struct VesselDwellAnalysisBody: View {
                 reasons: reasons
             )
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }

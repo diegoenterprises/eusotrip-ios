@@ -1082,7 +1082,7 @@ private struct RailGateCheckInBody663: View {
                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
                     .foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("Local preview of the gate rule — the server makes the ruling.")
+                Text("Preview of the gate rule on this device — the binding ruling is made when you submit.")
                     .font(EType.caption).foregroundStyle(palette.textTertiary)
             }
             Spacer(minLength: 0)

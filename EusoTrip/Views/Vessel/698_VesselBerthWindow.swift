@@ -147,7 +147,7 @@ private struct VesselBerthWindowBody: View {
                 } else if displayBerths.isEmpty {
                     EusoEmptyState(systemImage: "rectangle.split.3x1",
                                    title: "No berth schedule",
-                                   subtitle: "getBerthSchedule returned no assignments for \(portNameLabel == "—" ? "this terminal" : portNameLabel) in the next 24h.")
+                                   subtitle: "No berth assignments have been published for \(portNameLabel == "—" ? "this terminal" : portNameLabel) in the next 24h.")
                 } else {
                     headerBand
                     legend
@@ -872,7 +872,7 @@ private struct VesselBerthWindowBody: View {
             self.assignments = r
             self.port = p
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         // Marine conditions (crane wind-limit triad) load independently and
         // NEVER gate the berth Gantt — enterprise-gated → null / available:false

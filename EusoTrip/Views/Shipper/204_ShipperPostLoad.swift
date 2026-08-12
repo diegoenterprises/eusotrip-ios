@@ -272,10 +272,30 @@ struct ShipperPostLoad: View {
     // can apply.
     @State private var showDocClassifierSingle: Bool = false
     @State private var showDocClassifierBulk: Bool = false
-    /// Banner shown on the wizard after a successful pre-fill, so the
-    /// user knows what changed and can undo.
+    /// Provenance of a document pre-fill.
+    ///
+    /// 2026-08-12 — these two were WRITTEN by `applyClassifiedDocument`
+    /// and rendered by nothing: the comment promised a banner that did
+    /// not exist. So a scan silently overwrote the lane, the equipment,
+    /// the cargo type, the weight, the rate AND the hazmat identity
+    /// (UN number, hazard class, packing group, proper shipping name)
+    /// with no mark on the screen saying a machine had put them there.
+    /// Those are regulated fields; a machine reading of them must be a
+    /// proposal a human accepts, never a silent commit.
+    ///
+    /// The banner below now renders, names every field the scan wrote,
+    /// and stays until the shipper acknowledges it.
     @State private var prefillBannerType: String? = nil
     @State private var prefillBannerSummary: String? = nil
+    /// Human-readable names of the fields the last scan wrote, in the
+    /// order the form reads. A field the reader did not return is NOT
+    /// listed — it was never touched.
+    @State private var prefillFieldLabels: [String] = []
+    /// Field names that carry regulatory weight, tracked separately so
+    /// the banner can call them out first.
+    @State private var prefillRegulatedLabels: [String] = []
+    /// Flipped by the shipper tapping "I've checked these".
+    @State private var prefillAcknowledged: Bool = false
     /// Most recent batch result — when the user dismisses the bulk
     /// sheet with a "route N docs" tap we flip this on; ESANG then
     /// surfaces a routing summary on the wizard.
@@ -720,6 +740,7 @@ struct ShipperPostLoad: View {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: Space.s5) {
                     stepper
+                    if prefillBannerType != nil { prefillProvenanceBanner }
                     if let ack = lastSuccess {
                         successBanner(ack)
                     }
@@ -1298,6 +1319,84 @@ struct ShipperPostLoad: View {
 
     // MARK: - Doc-router classifier pre-fill
 
+    /// SCANNED · UNCONFIRMED banner. Names exactly which fields a
+    /// machine filled in and refuses to fade until the shipper says
+    /// they have looked. Regulated fields are listed first and in the
+    /// danger tone — an incorrect hazard class on a posted load is a
+    /// placarding and emergency-response failure, not a typo.
+    @ViewBuilder
+    private var prefillProvenanceBanner: some View {
+        let regulated = prefillRegulatedLabels
+        let ordinary = prefillFieldLabels.filter { !regulated.contains($0) }
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "text.viewfinder")
+                    .font(.system(size: 10, weight: .heavy))
+                    .foregroundStyle(prefillAcknowledged ? palette.textSecondary : Brand.warning)
+                Text(prefillAcknowledged ? "SCAN CHECKED BY YOU" : "SCANNED · UNCONFIRMED")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.9)
+                    .foregroundStyle(prefillAcknowledged ? palette.textSecondary : Brand.warning)
+                Spacer(minLength: 0)
+                if let t = prefillBannerType {
+                    Text(t.replacingOccurrences(of: "_", with: " ").uppercased())
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(palette.textSecondary)
+                }
+            }
+            if let summary = prefillBannerSummary, !summary.isEmpty {
+                Text(summary)
+                    .font(EType.caption).foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if prefillFieldLabels.isEmpty {
+                Text("The document was read but nothing in it matched a field on this form. Every value below is still yours.")
+                    .font(EType.caption).foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                if !regulated.isEmpty {
+                    Text("REGULATED FIELDS FILLED BY THE READER")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.7)
+                        .foregroundStyle(Brand.danger)
+                    Text(regulated.joined(separator: " · "))
+                        .font(EType.mono(.micro)).foregroundStyle(Brand.danger)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("Check each of these against the paper before you post. A wrong hazard class or UN number posts a load that cannot be placarded or responded to correctly.")
+                        .font(EType.caption).foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if !ordinary.isEmpty {
+                    Text("ALSO FILLED BY THE READER")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.7)
+                        .foregroundStyle(palette.textTertiary)
+                    Text(ordinary.joined(separator: " · "))
+                        .font(EType.mono(.micro)).foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            if !prefillAcknowledged {
+                Button {
+                    withAnimation(.easeOut(duration: 0.18)) { prefillAcknowledged = true }
+                } label: {
+                    Text("I've checked these")
+                        .font(.system(size: 11, weight: .heavy)).tracking(0.4)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 14).padding(.vertical, 7)
+                        .background(LinearGradient.diagonal).clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 2)
+            }
+        }
+        .padding(Space.s4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(prefillAcknowledged ? palette.borderFaint : Brand.warning.opacity(0.55), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
     /// Applies an `extractedFields` dictionary from
     /// `documentRouter.classifyAndRoute` onto the wizard's @State
     /// fields. Field keys come from the Gemini Vision master prompt
@@ -1308,6 +1407,11 @@ struct ShipperPostLoad: View {
     /// forward-compatible.
     private func applyClassifiedDocument(_ doc: ClassifiedDocument) {
         let fields = doc.fields
+        // Every assignment below appends its own label. The banner then
+        // reports what a machine actually wrote — not what it might
+        // have written — so the list can never overstate the scan.
+        var wrote: [String] = []
+        var wroteRegulated: [String] = []
 
         // — Lane —
         if let originCity = fields["originCity"] ?? fields["pickupCity"] ?? fields["shipperCity"] ?? fields["origin"] {
@@ -1315,12 +1419,14 @@ struct ShipperPostLoad: View {
             origin = [originCity, state].compactMap { $0?.isEmpty == false ? $0 : nil }
                         .joined(separator: ", ")
             originLat = nil; originLng = nil
+            wrote.append("Origin")
         }
         if let destCity = fields["destinationCity"] ?? fields["deliveryCity"] ?? fields["consigneeCity"] ?? fields["destination"] {
             let state = fields["destinationState"] ?? fields["deliveryState"] ?? fields["consigneeState"]
             destination = [destCity, state].compactMap { $0?.isEmpty == false ? $0 : nil }
                             .joined(separator: ", ")
             destLat = nil; destLng = nil
+            wrote.append("Destination")
         }
 
         // — Equipment —
@@ -1328,17 +1434,20 @@ struct ShipperPostLoad: View {
            let mapped = EquipmentChoice(rawValue: rawEq.lowercased().replacingOccurrences(of: " ", with: "_"))
                         ?? EquipmentChoice.allCases.first(where: { $0.rawValue == rawEq.lowercased() }) {
             equipmentType = mapped
+            wrote.append("Equipment")
         }
 
         // — Cargo type —
         if let rawCargo = fields["cargoType"] ?? fields["commodityType"] ?? fields["commodity"],
            let mapped = ShipperAPI.CargoType(rawValue: rawCargo.lowercased()) {
             cargoType = mapped
+            wrote.append("Cargo type")
         }
 
         // — Weight —
         if let w = fields["weight"] ?? fields["totalWeight"] ?? fields["weightLbs"], !w.isEmpty {
             weightText = w
+            wroteRegulated.append("Weight")
         }
         if let unit = fields["weightUnit"]?.lowercased() {
             switch unit {
@@ -1347,6 +1456,7 @@ struct ShipperPostLoad: View {
             case "mt", "metric_ton", "metric_tons", "tonne", "tonnes": weightUnit = .metricTons
             default: break
             }
+            if !wroteRegulated.contains("Weight") { wroteRegulated.append("Weight unit") }
         }
 
         // — Rate —
@@ -1355,6 +1465,7 @@ struct ShipperPostLoad: View {
             rateText = r.replacingOccurrences(of: "$", with: "")
                         .replacingOccurrences(of: ",", with: "")
                         .trimmingCharacters(in: .whitespacesAndNewlines)
+            wrote.append("Rate")
         }
 
         // — Pickup date —
@@ -1368,23 +1479,42 @@ struct ShipperPostLoad: View {
             // resume path).
             pickupDate = max(parsed, pickupLowerBound)
             hasPickupDate = true
+            wrote.append("Pickup date")
         }
 
         // — Hazmat (if doc carried it) —
-        if let un = fields["unNumber"] ?? fields["UN"], !un.isEmpty { unNumber = un }
-        if let cls = fields["hazmatClass"] ?? fields["hazardClass"], !cls.isEmpty { hazmatClass = cls }
-        if let pg = fields["packingGroup"], !pg.isEmpty { packingGroup = pg }
+        // 49 CFR identity. Written as a PROPOSAL and named in the
+        // banner; the shipper confirms before this load can post.
+        if let un = fields["unNumber"] ?? fields["UN"], !un.isEmpty {
+            unNumber = un
+            wroteRegulated.append("UN number")
+        }
+        if let cls = fields["hazmatClass"] ?? fields["hazardClass"], !cls.isEmpty {
+            hazmatClass = cls
+            wroteRegulated.append("Hazard class")
+        }
+        if let pg = fields["packingGroup"], !pg.isEmpty {
+            packingGroup = pg
+            wroteRegulated.append("Packing group")
+        }
         if let psn = fields["properShippingName"] ?? fields["shippingName"], !psn.isEmpty {
             properShippingName = psn
+            wroteRegulated.append("Proper shipping name")
         }
 
         // — Notes / description —
         if let desc = fields["description"] ?? fields["commodityDescription"] ?? fields["specialInstructions"], !desc.isEmpty {
             notes = notes.isEmpty ? desc : notes + "\n" + desc
+            wrote.append("Notes")
         }
 
         prefillBannerType = doc.classifiedType
         prefillBannerSummary = doc.summary
+        prefillRegulatedLabels = wroteRegulated
+        prefillFieldLabels = wroteRegulated + wrote
+        // A fresh scan is unconfirmed again, no matter what the
+        // shipper acknowledged about the previous one.
+        prefillAcknowledged = false
         step = .lane
     }
 
@@ -7260,6 +7390,12 @@ struct ShipperPostLoad: View {
         resetForm()
         store.reset()
         lastSuccess = nil
+        // The next load starts with no scan behind it.
+        prefillBannerType = nil
+        prefillBannerSummary = nil
+        prefillFieldLabels = []
+        prefillRegulatedLabels = []
+        prefillAcknowledged = false
         withAnimation(.spring(response: 0.4, dampingFraction: 0.9)) {
             showPostedCelebration = false
             step = .lane

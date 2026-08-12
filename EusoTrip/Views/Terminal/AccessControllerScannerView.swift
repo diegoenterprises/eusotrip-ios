@@ -314,8 +314,7 @@ struct AccessControllerScannerView: View {
             // The server is the sole arbiter — render its answer verbatim.
             state = result.valid ? .valid(result) : .denied(result)
         } catch {
-            let msg = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
-            state = .failed(msg)
+            state = .failed(accessCheckFailureCopy(error))
         }
     }
 }
@@ -418,4 +417,45 @@ private struct AccessQRScannerHostView: UIViewControllerRepresentable {
     AccessControllerScannerView()
         .environment(\.palette, Theme.light)
         .preferredColorScheme(.light)
+}
+
+// MARK: - Operator-facing failure copy
+
+/// Operator-language reason an access check couldn't be completed.
+///
+/// A failure here is never a denial — the gate operator must be able to
+/// tell "I couldn't check" from "this card is bad", so no branch reads as
+/// a verdict. The caught error stays available for logging; the operator
+/// never sees a raw `NSError` description.
+fileprivate func accessCheckFailureCopy(_ error: Error) -> String {
+    if let api = error as? EusoTripAPIError {
+        switch api {
+        case .unauthenticated:
+            return "Your gate session expired, so the card wasn't checked. Sign in again and rescan."
+        case .forbidden(let reason):
+            let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty
+                ? "This gate account isn't cleared to check access cards. The card wasn't checked."
+                : trimmed
+        case .trpcError(let reason):
+            let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty
+                ? "The check was rejected before it ran. Rescan the card."
+                : trimmed
+        case .httpStatus(let code, _):
+            return "The check didn't complete (code \(code)). The card wasn't checked — rescan it."
+        case .decodingFailed:
+            return "The answer came back in a form this build can't read, so the card wasn't checked. Update the app, then rescan."
+        case .empty:
+            return "No answer came back, so the card wasn't checked. Rescan it."
+        case .notConfigured, .badURL:
+            return "This scanner isn't set up for live access checks yet. Restart the app and rescan."
+        case .queuedForOfflineReplay:
+            return "You're offline, so the card wasn't checked. Rescan once you reconnect."
+        }
+    }
+    if (error as NSError).domain == NSURLErrorDomain {
+        return "No connection, so the card wasn't checked. Rescan once you have signal."
+    }
+    return "The card wasn't checked. Rescan it."
 }

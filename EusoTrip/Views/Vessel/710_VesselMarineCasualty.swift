@@ -318,7 +318,7 @@ private struct VesselMarineCasualtyBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("getUSCGCompliance")
+                Text("USCG RECORD")
                     .font(EType.mono(.caption))
                     .foregroundStyle(palette.textSecondary)
             }
@@ -399,7 +399,7 @@ private struct VesselMarineCasualtyBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("incidents.getById :81")
+                Text("INCIDENT FILE")
                     .font(EType.mono(.caption))
                     .foregroundStyle(palette.textSecondary)
             }
@@ -586,7 +586,7 @@ private struct VesselMarineCasualtyBody: View {
             self.casualty = c
             self.uscg = u
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
@@ -604,7 +604,7 @@ private struct VesselMarineCasualtyBody: View {
             filed = true
             await load()
         } catch {
-            fileError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            fileError = error.eusoUserCopy
         }
         filing = false
     }

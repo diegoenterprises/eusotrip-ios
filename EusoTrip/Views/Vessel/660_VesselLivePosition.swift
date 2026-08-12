@@ -500,7 +500,7 @@ private struct VesselLivePositionBody_660: View {
                 "tracking.getGeofenceEvents", input: FenceIn(limit: 10))
             applyFences(fences)
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }

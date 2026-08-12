@@ -739,7 +739,7 @@ private struct RailLiveTrackingBody003: View {
                     EusoEmptyState(
                         systemImage: "questionmark.circle",
                         title: "This shipment couldn't be loaded",
-                        subtitle: "The server returned no record for it. It may not exist, it may not be on your account, or the database may be unreachable — the response doesn't say which. Pull to retry."
+                        subtitle: "No record came back for it. It may not exist, it may not be on your account, or records may be temporarily unavailable — the reply doesn't say which. Pull to retry."
                     )
                 } else {
                     mapHero
@@ -1258,7 +1258,7 @@ private struct RailLiveTrackingBody003: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("getRailTracking")
+                Text("carrier tracking feed")
                     .font(EType.mono(.micro))
                     .foregroundStyle(palette.textTertiary)
             }
@@ -1268,7 +1268,7 @@ private struct RailLiveTrackingBody003: View {
                 EusoEmptyState(
                     systemImage: "wifi.exclamationmark",
                     title: "Event feed didn't load",
-                    subtitle: "getRailTracking failed on this pass, so this timeline is blank because the read did not answer — not because nothing has been reported. Pull to retry."
+                    subtitle: "Tracking did not answer on this pass, so the timeline is blank because the read failed — not because nothing has been reported. Pull to retry."
                 )
             } else if events.isEmpty {
                 EusoEmptyState(

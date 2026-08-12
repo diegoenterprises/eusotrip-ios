@@ -522,7 +522,7 @@ private struct RailDemurrageApprovalBody662: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Docket withheld")
                             .font(.system(size: 13, weight: .heavy)).foregroundStyle(palette.textPrimary)
-                        Text("Case files carry the filer, the reason and the amount at stake, so the server releases them only to an adjudicating role. Nothing is guessed here in their place.")
+                        Text("Case files carry the filer, the reason and the amount at stake, so they are released only to an adjudicating role. Nothing is guessed here in their place.")
                             .font(EType.caption).foregroundStyle(palette.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                         if openCount > 0 {
@@ -741,7 +741,7 @@ private struct RailDemurrageApprovalBody662: View {
 
     private var footnote: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Each verdict is recorded one dispute at a time — the server has no bulk-approve verb for rail demurrage, so nothing on this screen clears a batch.")
+            Text("Each verdict is recorded one dispute at a time — rail demurrage has no bulk approval, so nothing on this screen clears a batch.")
                 .font(.system(size: 11)).foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             if waiverTotal > 0 {

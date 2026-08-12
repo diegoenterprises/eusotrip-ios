@@ -94,7 +94,7 @@ private struct VesselClaimsDashboardBody: View {
                 } else if !hasData {
                     EusoEmptyState(systemImage: "doc.text.magnifyingglass",
                                    title: "No claims on file",
-                                   subtitle: "getClaimsDashboard returned an empty ledger, no incidents to triage. Nothing to age or escalate.")
+                                   subtitle: "The claims ledger came back empty — no incidents to triage, nothing to age or escalate.")
                 } else {
                     agingCard
                     kpiRow
@@ -261,7 +261,7 @@ private struct VesselClaimsDashboardBody: View {
             // Honest "has data": real claims OR any non-zero count/aging to show the board.
             hasData = !claims.isEmpty || counts.open + counts.pending + counts.resolved + counts.denied > 0
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }

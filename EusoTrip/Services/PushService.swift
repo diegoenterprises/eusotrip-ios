@@ -250,7 +250,7 @@ final class PushService: NSObject, ObservableObject,
                     )
                 )
                 guard ack.success != false, ack.registered != false else {
-                    self.backendRegistrationError = "Push permission is enabled, but the device token was not accepted by the server."
+                    self.backendRegistrationError = "Push permission is enabled, but this device was not registered for alerts — notifications will not reach your lock screen until it is. Reopen the app to retry."
                     return
                 }
                 _ = try await api.notifications.updatePreferences(

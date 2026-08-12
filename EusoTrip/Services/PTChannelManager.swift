@@ -314,7 +314,7 @@ final class PTChannelManager: NSObject, ObservableObject {
                 input: Input(loadChainGroupId: chainGroupId, ephemeralPushToken: hex)
             )
             if ack.success == false || ack.registered == false {
-                registrationError = "Push-to-Talk joined locally, but server wake-up registration was not accepted."
+                registrationError = "Push-to-Talk joined on this device, but the wake-up registration was not accepted. You can talk and hear while the app is open — the channel will not wake this phone when it is locked."
             } else {
                 registrationError = nil
             }

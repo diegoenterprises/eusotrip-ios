@@ -195,14 +195,14 @@ struct PickupBolSigning: View {
         } else if !lifecycle.loadId.isEmpty {
             bolNumber = lifecycle.loadId
         } else {
-            pdfError = "No load is hydrated yet, try again in a moment."
+            pdfError = "This load has not finished loading yet, try again in a moment."
             return
         }
         do {
             let result = try await EusoTripAPI.shared.eusoTicket
                 .generateBOLPDF(bolNumber: bolNumber)
             guard let url = URL(string: result.documentUrl) else {
-                pdfError = "Backend returned an invalid PDF URL."
+                pdfError = "The BOL came back with an unreadable document link, so it cannot open here. Nothing was signed and the load is unchanged — try again, and sign the paper BOL if it repeats."
                 return
             }
             bolPdfUrl = url

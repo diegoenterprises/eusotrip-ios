@@ -330,7 +330,7 @@ private struct VesselClaimWorkflowBody: View {
                 stages = []; stageOf = "—"; currentStepName = nil; nextStepName = nil
             }
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
@@ -353,7 +353,7 @@ private struct VesselClaimWorkflowBody: View {
                 "freightClaims.updateClaimStatus",
                 input: AdvanceIn808(id: cid, status: "investigating"))
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         await load()
     }

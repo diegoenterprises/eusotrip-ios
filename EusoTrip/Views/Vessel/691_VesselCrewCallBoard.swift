@@ -358,7 +358,7 @@ private struct VesselCrewCallBoardBody691: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Roster feed degraded").font(EType.bodyStrong).foregroundStyle(Brand.danger)
             Text(err).font(EType.caption).foregroundStyle(palette.textSecondary)
-            Text("No tile is drawn from a cached guess — the board stays empty until getVesselCrew answers.")
+            Text("No tile is drawn from a cached guess — the board stays empty until the crew roster answers.")
                 .font(.system(size: 11)).foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -375,7 +375,7 @@ private struct VesselCrewCallBoardBody691: View {
                 .foregroundStyle(palette.textTertiary)
             Text("Nobody to call")
                 .font(.system(size: 22, weight: .bold)).foregroundStyle(palette.textPrimary)
-            Text("getVesselCrew returned an empty roster for this tenant. That is the honest answer, not a loading state — no tiles are drawn.")
+            Text("The crew roster for this company came back empty. That is the real answer, not a loading state — no tiles are drawn.")
                 .font(EType.caption).foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -507,7 +507,7 @@ private struct VesselCrewCallBoardBody691: View {
                     }
                 }
 
-                Text("The hard tick marks the FULL ROSTER of the bucket, not a statutory minimum: there is no minimum-safe-manning table on this platform, so no legal floor is drawn. Buckets are the real role enum getVesselCrew filters on — Deck, Engine and Catering do not exist on this wire.")
+                Text("The hard tick marks the FULL ROSTER of the bucket, not a statutory minimum: this platform carries no minimum-safe-manning table, so no legal floor is drawn. Buckets are the crew roles this platform actually records — Deck, Engine and Catering are not among them.")
                     .font(.system(size: 10)).foregroundStyle(palette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -622,7 +622,7 @@ private struct VesselCrewCallBoardBody691: View {
 
     private func callGapNotice(_ m: CrewMember691, channel: String) -> String {
         let who = m.name?.isEmpty == false ? (m.name ?? "this hand") : "this roster row"
-        return "Nothing was written. There is no call-out mutation anywhere in server/routers — a grep for recordCallOut, musterCall and acknowledgeCall returns 0 hits, and vesselCrewManifests (drizzle/schema.ts:12077) has zero readers in server/. Proposed shape filed with the-oath: vesselCrew.recordCallOut({manifestId, channel: \"\(channel)\"}) inserting a call row, inserting blockchainAuditTrail eventType \"vessel.crew_call_out\", and broadcasting on WS_CHANNELS.VESSEL_BOOKING (shared/websocket-events.ts:628). Until it lands, \(who) cannot be marked called or acknowledged and this board will not pretend otherwise."
+        return "Nothing was written. \(who) was not marked called and no acknowledgement was recorded — call-out logging is not built yet, so the \(channel) button had nowhere to record it and sent no message. Raise the hand on the radio or by phone, and keep the muster on paper until call-out logging ships."
     }
 
     private func gapCard(_ note: String) -> some View {
@@ -711,7 +711,7 @@ private struct VesselCrewCallBoardBody691: View {
     private var ctaPair: some View {
         HStack(spacing: Space.s2) {
             CTAButton(title: "Start muster call", action: {
-                gapNotice = "Nothing was written. A muster call needs two writes this platform does not have: a read of vesselCrewManifests (drizzle/schema.ts:12077 — zero readers in server/) to know who is expected for THIS voyage, and a call-out row to record the attempt. getVesselCrew (vesselShipments.ts:2085) has no voyageId input at all, so it can only tell you who holds a vessel role. Proposed shapes filed with the-oath: vesselCrew.callBoard({voyageId}) and vesselCrew.recordCallOut({manifestId, channel})."
+                gapNotice = "Nothing was written. Muster calls are not available yet: this platform cannot tell who is expected on THIS voyage — only who holds a vessel role at all — and it has nowhere to record that you called. Nobody was paged. Muster over the radio and take attendance on paper."
             }, leadingIcon: "megaphone.fill")
             Button { showCerts = true } label: {
                 Text("Certificates")
@@ -775,7 +775,7 @@ private struct VesselCrewCallBoardBody691: View {
             serverExpiringCount = payload.expiringCount
             syncedAt = Date()
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
@@ -868,7 +868,7 @@ private struct CrewCertSheet691: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: Space.s3) {
-                    Text("Live rows from the certifications join at vesselShipments.ts:2112. This is the only certificate source on this wire — getVesselCertificates (vesselShipments.ts:3658) is a UNION of vessel_isps_records and vessel_insurance and carries no per-person STCW row.")
+                    Text("Live per-person certificate rows for this roster. This is the only per-crew source EusoTrip holds — the vessel certificate register covers ISPS and insurance at ship level and carries no individual STCW entry, so check the seafarer’s own book for anything missing here.")
                         .font(.system(size: 11)).foregroundStyle(palette.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
 

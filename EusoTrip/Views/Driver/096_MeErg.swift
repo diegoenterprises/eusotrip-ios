@@ -177,7 +177,7 @@ struct MeErg: View {
                     .padding(.top, Space.s1)
             } else if let error = store.lastError {
                 VStack(alignment: .leading, spacing: Space.s2) {
-                    Text(error.localizedDescription)
+                    Text(ergFailureCopy_096(error, noun: "emergency contact list"))
                         .font(EType.caption)
                         .foregroundStyle(Brand.danger)
                     Button {
@@ -587,7 +587,7 @@ private struct ErgDetailSheet: View {
             Text("ERG lookup unavailable")
                 .font(EType.bodyStrong)
                 .foregroundStyle(palette.textPrimary)
-            Text(error.localizedDescription)
+            Text(ergFailureCopy_096(error, noun: "ERG entry"))
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .multilineTextAlignment(.center)
@@ -1004,4 +1004,47 @@ private func driverNavTrailing_096() -> [NavSlot] {
 #Preview("096 · ERG · Afternoon") {
     MeErgScreen(theme: Theme.light)
         .preferredColorScheme(.light)
+}
+
+// MARK: - Operator-facing failure copy
+
+/// Operator-language reason an emergency-response lookup failed.
+///
+/// This screen is used at the roadside during a hazmat incident, so the
+/// copy never dead-ends: every branch names the fallback the driver
+/// should use right now. The caught error stays available for logging;
+/// the driver never sees a raw `NSError` description. `noun` names what
+/// failed ("ERG entry", "emergency contact list").
+fileprivate func ergFailureCopy_096(_ error: Error, noun: String) -> String {
+    let fallback = "If this is an active incident, call 911 first, then CHEMTREC at +1-800-424-9300."
+    if let api = error as? EusoTripAPIError {
+        switch api {
+        case .unauthenticated:
+            return "Your session expired, so the \(noun) couldn't load. Sign in again. \(fallback)"
+        case .forbidden(let reason):
+            let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty
+                ? "This account can't open the \(noun). \(fallback)"
+                : "\(trimmed) \(fallback)"
+        case .trpcError(let reason):
+            let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty
+                ? "The \(noun) couldn't be retrieved. Retry. \(fallback)"
+                : "\(trimmed) \(fallback)"
+        case .httpStatus(let code, _):
+            return "The \(noun) didn't load (code \(code)). Retry. \(fallback)"
+        case .decodingFailed:
+            return "The \(noun) came back in a form this build can't read, so nothing here is verified. Update the app. \(fallback)"
+        case .empty:
+            return "No \(noun) came back for this selection. Retry. \(fallback)"
+        case .notConfigured, .badURL:
+            return "This device isn't set up for live emergency references yet. Restart the app. \(fallback)"
+        case .queuedForOfflineReplay:
+            return "You're offline, so the \(noun) isn't verified right now. \(fallback)"
+        }
+    }
+    if (error as NSError).domain == NSURLErrorDomain {
+        return "No connection, so the \(noun) couldn't be verified. \(fallback)"
+    }
+    return "The \(noun) didn't load. Retry. \(fallback)"
 }

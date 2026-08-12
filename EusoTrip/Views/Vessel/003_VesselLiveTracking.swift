@@ -508,7 +508,7 @@ private struct VesselLiveTrackingBody: View {
                 input: BoardIn(bookingNumber: bookingNumber))
             self.board = b
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
@@ -524,7 +524,7 @@ private struct VesselLiveTrackingBody: View {
                 input: PosIn(limit: 100))
         } catch {
             actionError = "Per-container positions unavailable. "
-                + ((error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription)
+                + (error.eusoUserCopy)
         }
     }
 

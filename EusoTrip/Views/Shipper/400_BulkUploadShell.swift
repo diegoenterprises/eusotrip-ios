@@ -134,6 +134,29 @@ private struct BulkUploadShellBody: View {
     /// XLS/PDF inputs (deterministic CSV parsing is enough for
     /// straight CSV); user can override either way.
     @State private var aiParseEnabled: Bool = true
+    // MARK: — Scanned-document intake (PDF / XLSX / photo)
+    //
+    // 2026-08-12 (WIRE-GAP) — the picker below has advertised .pdf,
+    // .xls, .xlsx and .spreadsheet since 2026-05-07, but `handleFile`
+    // only ever did `String(data:encoding:.utf8)`. A PDF failed that
+    // guard and the closure returned: no error, no toast, no state
+    // change. The primary import path silently did nothing.
+    //
+    // The bytes now go to `bulkUpload.processDocument`, which reads
+    // the document server-side (Gemini vision) and returns the rows it
+    // actually found. Nothing lands in `rawCsv` — and Run upload stays
+    // disabled — until a human has looked at the extraction and
+    // accepted it. Extraction PROPOSES; the user confirms.
+    @State private var scanning: Bool = false
+    /// Non-nil while an extraction is awaiting the user's decision.
+    /// While this is set the submit button is blocked: unaccepted
+    /// scanned rows are never importable.
+    @State private var pendingScan: BulkUploadAPI.BulkScannedExtraction? = nil
+    @State private var pendingScanFileName: String? = nil
+    @State private var scanError: String? = nil
+    /// Provenance of whatever is currently in `rawCsv`, so the surface
+    /// can never present machine-read rows as if the user typed them.
+    @State private var acceptedScanNote: String? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -142,6 +165,16 @@ private struct BulkUploadShellBody: View {
                 if let err = actionError { LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) } }
                 roleStripCard
                 entityTypeCard
+                if scanning { scanningCard }
+                if let e = scanError { LifecycleCard(accentDanger: true) { Text(e).font(EType.caption).foregroundStyle(Brand.danger).fixedSize(horizontal: false, vertical: true) } }
+                if let scan = pendingScan {
+                    ScannedExtractionReviewCard(
+                        extraction: scan,
+                        fileName: pendingScanFileName ?? "the picked file",
+                        onAccept: { acceptPendingScan() },
+                        onDiscard: { discardPendingScan() }
+                    )
+                }
                 if selected != nil { dataSourceCard; submitRow }
                 if let job = lastJob { jobStatusCard(job) }
                 historyCard
@@ -196,7 +229,7 @@ private struct BulkUploadShellBody: View {
         do {
             let (data, _) = try await EusoTripAPI.shared.fetchAuthenticatedData(url)
             guard !data.isEmpty else {
-                templateFetchError = "Server returned an empty file."
+                templateFetchError = "The template downloaded as zero bytes — nothing was saved to this device. Try again."
                 return
             }
             let suggested = url.lastPathComponent.isEmpty
@@ -320,7 +353,7 @@ private struct BulkUploadShellBody: View {
                         .padding(.horizontal, 14).padding(.vertical, 8)
                         .background(palette.tintNeutral).clipShape(Capsule())
                 }.buttonStyle(.plain)
-                Button { rawCsv = "" } label: {
+                Button { rawCsv = ""; acceptedScanNote = nil } label: {
                     Text("Clear").font(.system(size: 11, weight: .heavy)).tracking(0.4).foregroundStyle(palette.textPrimary)
                         .padding(.horizontal, 14).padding(.vertical, 8)
                         .background(palette.tintNeutral).clipShape(Capsule())
@@ -335,6 +368,17 @@ private struct BulkUploadShellBody: View {
                 .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             Text("Rows detected: \(rowCount)").font(EType.caption).foregroundStyle(palette.textSecondary)
+            if let note = acceptedScanNote {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "text.viewfinder")
+                        .font(.system(size: 10, weight: .heavy))
+                        .foregroundStyle(Brand.warning)
+                    Text(note)
+                        .font(EType.caption).foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.top, 2)
+            }
         }
     }
 
@@ -347,7 +391,11 @@ private struct BulkUploadShellBody: View {
             .frame(maxWidth: .infinity).padding(.vertical, 12)
             .background(LinearGradient.diagonal)
             .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-        }.buttonStyle(.plain).disabled(uploading || rawCsv.isEmpty || selected == nil)
+        }
+        .buttonStyle(.plain)
+        // A scan awaiting review can never be imported. The user has
+        // to accept or discard it first.
+        .disabled(uploading || rawCsv.isEmpty || selected == nil || pendingScan != nil || scanning)
     }
 
     private func jobStatusCard(_ job: UploadJob) -> some View {
@@ -407,14 +455,103 @@ private struct BulkUploadShellBody: View {
         switch result {
         case .success(let urls):
             guard let url = urls.first else { return }
-            if url.startAccessingSecurityScopedResource() {
-                defer { url.stopAccessingSecurityScopedResource() }
-                if let data = try? Data(contentsOf: url), let s = String(data: data, encoding: .utf8) {
-                    rawCsv = s
-                }
-            }
+            Task { await ingestPickedFile(url) }
         case .failure(let err):
             actionError = err.localizedDescription
+        }
+    }
+
+    /// Read the picked file's bytes and get them where they can be
+    /// understood. Two honest outcomes, never a third silent one:
+    ///
+    ///   • text-decodable (CSV / JSON / TXT) → straight into the editor
+    ///     where the user can SEE every row before submitting.
+    ///   • anything else (PDF / XLSX / photograph) → the BYTES go to
+    ///     `bulkUpload.processDocument`. What comes back is parked in
+    ///     `pendingScan` as scanned-and-unconfirmed until accepted.
+    ///
+    /// Every failure path says what happened and leaves `rawCsv`
+    /// untouched. A file that could not be read is never allowed to
+    /// look like a file that contained nothing.
+    @MainActor
+    private func ingestPickedFile(_ url: URL) async {
+        actionError = nil
+        scanError = nil
+        pendingScan = nil
+        pendingScanFileName = nil
+
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+
+        guard let data = try? Data(contentsOf: url), !data.isEmpty else {
+            actionError = "Couldn't open \(url.lastPathComponent) — it read as zero bytes. Nothing was attached."
+            return
+        }
+
+        if let text = ScannedDocumentIntake.decodeText(data),
+           !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            rawCsv = text
+            acceptedScanNote = nil
+            return
+        }
+
+        // Binary. Only the server can read this.
+        guard let entity = selected else {
+            actionError = "Pick an entity type first — the reader needs to know what fields it is looking for in \(url.lastPathComponent)."
+            return
+        }
+        let mime = ScannedDocumentIntake.mimeType(url: url, data: data)
+        guard ScannedDocumentIntake.isServerReadable(mime) else {
+            actionError = "\(url.lastPathComponent) is a \(mime) file. The reader handles PDFs, photos and text exports — this format isn't one of them, so nothing was attached. Export it to CSV or PDF and pick it again."
+            return
+        }
+
+        scanning = true
+        pendingScanFileName = url.lastPathComponent
+        defer { scanning = false }
+        do {
+            let out = try await EusoTripAPI.shared.bulkUpload.processDocument(
+                entityType: entity.key,
+                fileBase64: data.base64EncodedString(),
+                mimeType: mime,
+                fileName: url.lastPathComponent
+            )
+            if out.isEmptyRead {
+                // Explicitly NOT "the document was empty".
+                pendingScanFileName = nil
+                scanError = "\(url.lastPathComponent) was sent to the reader and came back with no rows. That means it could not be read — not that it was blank. Nothing was attached. Try a sharper photo, an unlocked PDF, or a CSV export."
+            } else {
+                pendingScan = out
+            }
+        } catch {
+            pendingScanFileName = nil
+            scanError = "Couldn't read \(url.lastPathComponent): \((error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription) Nothing was attached."
+        }
+    }
+
+    /// The human said yes. Only now do the machine-read rows become
+    /// the payload — and the surface keeps saying where they came from.
+    private func acceptPendingScan() {
+        guard let scan = pendingScan else { return }
+        rawCsv = scan.csvText
+        acceptedScanNote = "These \(scan.recordCount) row\(scan.recordCount == 1 ? "" : "s") were read out of \(pendingScanFileName ?? "a scanned file") by the document reader and accepted by you. Edit anything below before running the upload."
+        pendingScan = nil
+    }
+
+    private func discardPendingScan() {
+        pendingScan = nil
+        pendingScanFileName = nil
+        acceptedScanNote = nil
+    }
+
+    private var scanningCard: some View {
+        LifecycleCard(accentGradient: true) {
+            HStack(spacing: 8) {
+                ProgressView().tint(Brand.blue)
+                Text("Reading \(pendingScanFileName ?? "the file") on the server — no data is imported from a scan until you accept it.")
+                    .font(EType.caption).foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
@@ -500,3 +637,276 @@ private struct BulkTemplateActivitySheet: UIViewControllerRepresentable {
 
 #Preview("400 · Bulk upload · Night") { BulkUploadShellScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }
 #Preview("400 · Bulk upload · Afternoon") { BulkUploadShellScreen(theme: Theme.light).environmentObject(EusoTripSession()).preferredColorScheme(.light) }
+
+// MARK: - Scanned-document intake (shared by every bulk-import surface)
+//
+// Lives in this file rather than a new one because the Xcode project
+// carries an explicit file list — an unregistered .swift is silently
+// skipped at build time (see the orphaned-screens note). These types
+// are `internal`, so 709 DispatchBulkUploadKanban and any future
+// import surface can use them without a project-file edit.
+//
+// The contract these enforce, in order:
+//   1. The BYTES go to the server. iOS does not read documents.
+//   2. What comes back is a PROPOSAL, rendered as such.
+//   3. A field the reader could not find is ABSENT and is shown as
+//      absent — never blanked, never zeroed, never guessed.
+//   4. Nothing is imported until a human accepts it.
+
+enum ScannedDocumentIntake {
+
+    /// UTF-8 first, then Latin-1 — covers the CSV/JSON exports legacy
+    /// TMS systems emit. Returns nil for true binary (PDF / XLS /
+    /// image), which the caller must send to the server rather than
+    /// dropping.
+    static func decodeText(_ data: Data) -> String? {
+        String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1)
+    }
+
+    /// Sniff the real type from the magic bytes and fall back to the
+    /// UTType for the extension. The extension is a claim; the header
+    /// is evidence, and the server's mime check runs on what we send.
+    static func mimeType(url: URL, data: Data) -> String {
+        let head = [UInt8](data.prefix(12))
+        func matches(_ sig: [UInt8], at offset: Int = 0) -> Bool {
+            guard head.count >= offset + sig.count else { return false }
+            for (i, b) in sig.enumerated() where head[offset + i] != b { return false }
+            return true
+        }
+        if matches([0x25, 0x50, 0x44, 0x46]) { return "application/pdf" }                 // %PDF
+        if matches([0xFF, 0xD8, 0xFF]) { return "image/jpeg" }
+        if matches([0x89, 0x50, 0x4E, 0x47]) { return "image/png" }
+        if matches([0x52, 0x49, 0x46, 0x46]), matches([0x57, 0x45, 0x42, 0x50], at: 8) { return "image/webp" }
+        if matches([0x00, 0x00, 0x00]), matches([0x66, 0x74, 0x79, 0x70], at: 4) { return "image/heic" }
+        if matches([0x50, 0x4B, 0x03, 0x04]) {                                             // ZIP container
+            let ext = url.pathExtension.lowercased()
+            if ext == "xlsx" { return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }
+            return "application/zip"
+        }
+        if matches([0xD0, 0xCF, 0x11, 0xE0]) { return "application/vnd.ms-excel" }         // legacy OLE .xls
+        return UTType(filenameExtension: url.pathExtension)?.preferredMIMEType ?? "application/octet-stream"
+    }
+
+    /// The mime types the server's vision pass can actually open.
+    /// Anything else is refused at the picker with a reason, instead
+    /// of being posted and failing opaquely on the wire.
+    static func isServerReadable(_ mime: String) -> Bool {
+        switch mime {
+        case "application/pdf", "image/jpeg", "image/png", "image/webp", "image/heic":
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Confidence phrasing that never overstates. The server reports a
+    /// 0-100 number; we say what it means for the person deciding.
+    static func confidenceLabel(_ confidence: Double) -> String {
+        switch confidence {
+        case ..<50:  return "LOW CONFIDENCE — CHECK EVERY FIELD"
+        case ..<80:  return "MEDIUM CONFIDENCE — CHECK THE FLAGGED ROWS"
+        default:     return "HIGH CONFIDENCE — STILL YOUR CALL"
+        }
+    }
+}
+
+/// Renders a `bulkUpload.processDocument` result as what it is: an
+/// unconfirmed machine reading of a document, with the server's own
+/// warnings on the face of it and two explicit exits.
+///
+/// Deliberate omissions:
+///   • no "looks good!" affirmation — the card never editorialises
+///     about a document it did not read itself;
+///   • missing required fields are listed by NAME, not filled with
+///     placeholders. An absent field stays absent all the way to the
+///     import job, where the server will reject the row honestly.
+struct ScannedExtractionReviewCard: View {
+    @Environment(\.palette) private var palette
+
+    let extraction: BulkUploadAPI.BulkScannedExtraction
+    let fileName: String
+    let onAccept: () -> Void
+    let onDiscard: () -> Void
+
+    private var invalidCount: Int { extraction.records.filter { !$0.isValid }.count }
+
+    var body: some View {
+        LifecycleCard(accentWarning: true) {
+            HStack(spacing: 6) {
+                Image(systemName: "text.viewfinder")
+                    .font(.system(size: 10, weight: .heavy))
+                    .foregroundStyle(Brand.warning)
+                Text("SCANNED · UNCONFIRMED")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(Brand.warning)
+                Spacer(minLength: 0)
+                Text("\(Int(extraction.confidence.rounded()))%")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(palette.textSecondary)
+            }
+            Text("The reader found \(extraction.recordCount) row\(extraction.recordCount == 1 ? "" : "s") in \(fileName). Nothing has been imported. Read them, then accept or discard.")
+                .font(EType.caption).foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            LifecycleRow(label: "Detected as", value: extraction.documentType.replacingOccurrences(of: "_", with: " ").uppercased())
+            if let label = extraction.entityLabel {
+                LifecycleRow(label: "Imports as", value: label)
+            }
+            LifecycleRow(label: "Confidence", value: ScannedDocumentIntake.confidenceLabel(extraction.confidence))
+            if invalidCount > 0 {
+                LifecycleRow(label: "Rows flagged", value: "\(invalidCount) of \(extraction.records.count)")
+            }
+
+            let missing = extraction.missingRequiredFields
+            if !missing.isEmpty {
+                Text("NOT FOUND IN THE DOCUMENT")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textTertiary).padding(.top, 4)
+                Text(missing.joined(separator: ", "))
+                    .font(EType.mono(.micro)).foregroundStyle(Brand.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("These are left empty on purpose. Fill them in yourself below — the reader did not see them.")
+                    .font(EType.caption).foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if !extraction.warnings.isEmpty {
+                Text("READER WARNINGS")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textTertiary).padding(.top, 4)
+                ForEach(Array(extraction.warnings.prefix(6).enumerated()), id: \.offset) { _, w in
+                    HStack(alignment: .top, spacing: 5) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 8, weight: .heavy))
+                            .foregroundStyle(Brand.warning).padding(.top, 2)
+                        Text(w).font(EType.caption).foregroundStyle(palette.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+
+            if let first = extraction.records.first, !first.data.isEmpty {
+                Text("FIRST ROW AS READ")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textTertiary).padding(.top, 4)
+                ForEach(first.data.keys.sorted().prefix(6), id: \.self) { k in
+                    LifecycleRow(label: k, value: first.data[k] ?? "-")
+                }
+            }
+
+            HStack(spacing: 8) {
+                Button(action: onAccept) {
+                    Text("Accept these rows")
+                        .font(.system(size: 11, weight: .heavy)).tracking(0.4).foregroundStyle(.white)
+                        .padding(.horizontal, 14).padding(.vertical, 8)
+                        .background(LinearGradient.diagonal).clipShape(Capsule())
+                }.buttonStyle(.plain)
+                Button(action: onDiscard) {
+                    Text("Discard")
+                        .font(.system(size: 11, weight: .heavy)).tracking(0.4).foregroundStyle(palette.textPrimary)
+                        .padding(.horizontal, 14).padding(.vertical, 8)
+                        .background(palette.tintNeutral).clipShape(Capsule())
+                }.buttonStyle(.plain)
+            }
+            .padding(.top, 4)
+        }
+    }
+}
+
+/// Generic review card for a single-document `documentRouter`
+/// classification, for surfaces that read ONE paper form rather than a
+/// table of rows (run tickets, credentials, COIs).
+///
+/// The rule it exists to hold: a value the reader proposed is drawn in
+/// the warning tone under a SCANNED · UNCONFIRMED header and is not the
+/// screen's state until Accept is tapped. It also states plainly which
+/// of the values will actually be written when the user accepts, so
+/// nobody is left believing a number was filed that was not.
+struct ScannedFieldsReviewCard: View {
+    @Environment(\.palette) private var palette
+
+    let title: String
+    let detectedType: String
+    let confidence: Double
+    let warnings: [String]
+    /// (label, value) pairs the reader FOUND. A field the reader could
+    /// not read must be absent from this array — never present with an
+    /// empty string or a zero.
+    let fields: [(label: String, value: String)]
+    /// Human-readable statement of what accepting actually commits.
+    /// Pass the plain truth, including "nothing else is stored".
+    let commitNote: String
+    let acceptTitle: String
+    let onAccept: () -> Void
+    let onDiscard: () -> Void
+
+    var body: some View {
+        LifecycleCard(accentWarning: true) {
+            HStack(spacing: 6) {
+                Image(systemName: "text.viewfinder")
+                    .font(.system(size: 10, weight: .heavy))
+                    .foregroundStyle(Brand.warning)
+                Text("SCANNED · UNCONFIRMED")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(Brand.warning)
+                Spacer(minLength: 0)
+                Text("\(Int(confidence.rounded()))%")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(palette.textSecondary)
+            }
+            Text(title)
+                .font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+            LifecycleRow(label: "Detected as", value: detectedType.replacingOccurrences(of: "_", with: " ").uppercased())
+            LifecycleRow(label: "Confidence", value: ScannedDocumentIntake.confidenceLabel(confidence))
+
+            if fields.isEmpty {
+                Text("The reader opened the document but could not pull a single field out of it. Nothing has been filled in. Type the values yourself, or scan again with better light.")
+                    .font(EType.caption).foregroundStyle(Brand.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("READ FROM THE DOCUMENT")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textTertiary).padding(.top, 4)
+                ForEach(Array(fields.enumerated()), id: \.offset) { _, f in
+                    LifecycleRow(label: f.label, value: f.value)
+                }
+            }
+
+            if !warnings.isEmpty {
+                Text("READER WARNINGS")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textTertiary).padding(.top, 4)
+                ForEach(Array(warnings.prefix(6).enumerated()), id: \.offset) { _, w in
+                    HStack(alignment: .top, spacing: 5) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 8, weight: .heavy))
+                            .foregroundStyle(Brand.warning).padding(.top, 2)
+                        Text(w).font(EType.caption).foregroundStyle(palette.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+
+            Text(commitNote)
+                .font(EType.caption).foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 4)
+
+            HStack(spacing: 8) {
+                Button(action: onAccept) {
+                    Text(acceptTitle)
+                        .font(.system(size: 11, weight: .heavy)).tracking(0.4).foregroundStyle(.white)
+                        .padding(.horizontal, 14).padding(.vertical, 8)
+                        .background(LinearGradient.diagonal).clipShape(Capsule())
+                }.buttonStyle(.plain).disabled(fields.isEmpty)
+                Button(action: onDiscard) {
+                    Text("Discard")
+                        .font(.system(size: 11, weight: .heavy)).tracking(0.4).foregroundStyle(palette.textPrimary)
+                        .padding(.horizontal, 14).padding(.vertical, 8)
+                        .background(palette.tintNeutral).clipShape(Capsule())
+                }.buttonStyle(.plain)
+            }
+            .padding(.top, 4)
+        }
+    }
+}

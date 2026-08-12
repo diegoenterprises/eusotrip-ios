@@ -519,7 +519,7 @@ private struct RailServiceLineupBody: View {
                     .font(.system(size: 9, weight: .black)).kerning(1.0)
                     .foregroundColor(palette.textTertiary)
                 Spacer()
-                Text("getServiceLineup")
+                Text("published service lineup")
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundColor(palette.textSecondary)
             }

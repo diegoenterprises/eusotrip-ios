@@ -44,7 +44,7 @@ final class VesselOceanTrackStore: ObservableObject {
             self.position = pos
             self.track = trk ?? []
         } catch {
-            self.loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            self.loadError = error.eusoUserCopy
         }
         self.loading = false
     }

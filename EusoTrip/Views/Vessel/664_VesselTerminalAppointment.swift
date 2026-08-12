@@ -404,7 +404,7 @@ private struct VesselTerminalAppointmentBody: View {
             }
         } catch {
             self.slots = []
-            errorText = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            errorText = error.eusoUserCopy
         }
         loading = false
     }
@@ -434,7 +434,7 @@ private struct VesselTerminalAppointmentBody: View {
             )
             confirmation = result
         } catch {
-            errorText = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            errorText = error.eusoUserCopy
         }
         submitting = false
     }

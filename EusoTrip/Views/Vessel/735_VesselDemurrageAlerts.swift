@@ -125,7 +125,7 @@ private struct WatchBox735: Identifiable {
             loading = false
             startTick()
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
             loading = false
         }
     }
@@ -231,7 +231,7 @@ private struct WatchBox735: Identifiable {
             } ?? (out.success ? "Pickup appointment booked." : "Pickup appointment submitted.")
             await load()
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = error.eusoUserCopy
         }
     }
 
@@ -258,7 +258,7 @@ private struct WatchBox735: Identifiable {
                 ?? (out.success ? "Demurrage dispute opened." : "Demurrage dispute submitted.")
             await load()
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = error.eusoUserCopy
         }
     }
 }

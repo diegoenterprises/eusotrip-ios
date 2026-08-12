@@ -907,7 +907,7 @@ private struct RailWaybillReceiptBody685: View {
         if commitMode == .issue {
             let commodity = (doc?.commodity ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             if commodity.isEmpty {
-                return "createRailWaybill requires a commodity and this shipment carries none — set it on the shipment first."
+                return "A waybill cannot be issued without a commodity, and this shipment carries none — set the commodity on the shipment first."
             }
             return nil
         }
@@ -939,7 +939,7 @@ private struct RailWaybillReceiptBody685: View {
                         VStack(alignment: .leading, spacing: 6) {
                             Text("No waybill in scope for shipment \(scopeId).")
                                 .font(EType.caption).foregroundStyle(palette.textPrimary)
-                            Text("getWaybill returns null when the shipment does not exist or is not yours — nothing is assumed on your behalf.")
+                            Text("A waybill shows as missing when the shipment does not exist or is not yours — nothing is assumed on your behalf.")
                                 .font(EType.caption).foregroundStyle(palette.textTertiary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -1458,7 +1458,7 @@ private struct RailWaybillReceiptBody685: View {
                     .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous)
                         .strokeBorder(palette.borderFaint))
                     .opacity(0.45)
-                    .accessibilityLabel("Accept as received — unavailable, no endpoint")
+                    .accessibilityLabel("Accept as received — unavailable, not built yet")
             }
 
             if let reason = commitBlockedReason {
@@ -1510,8 +1510,8 @@ private struct RailWaybillReceiptBody685: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 Text(commitMode == .issue
-                     ? "This writes the shipment's first rail_waybills row from the tendered commodity, weight and hazmat class. It is the shipping paper the car will move on."
-                     : "This inserts a superseding, revision-tagged rail_waybills row, repoints the shipment's waybill pointer, logs a waybill_reissued event, records rail.waybillReissued on the immutable audit trail, and broadcasts rail:doc_updated to the shipment room and the shipper's own room. A waybill revision is not undoable from the phone.")
+                     ? "This issues the shipment's first waybill from the tendered commodity, weight and hazmat class. It is the shipping paper the car will move on."
+                     : "This issues a superseding, revision-tagged waybill, points the shipment at it, records the re-issue on the shipment's event history and on the immutable audit trail, and tells everyone watching this shipment — the shipper included — that the paper changed. A waybill revision is not undoable from the phone.")
                     .font(EType.caption).foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -1519,8 +1519,8 @@ private struct RailWaybillReceiptBody685: View {
                     confirmRow("Shipment", shipmentNumber ?? "#\(scopeId)")
                     confirmRow("Current paper", issued ? (waybillNumber ?? "issued") : "none issued")
                     confirmRow("New number", commitMode == .issue
-                               ? "minted by the server"
-                               : "next revision, minted by the server")
+                               ? "issued on commit"
+                               : "next revision, issued on commit")
                     confirmRow("Consist state", statusWord)
                     confirmRow("Discrepancies", reviewForHero == 0 ? "none" : "\(reviewForHero) open")
                 }
@@ -1532,8 +1532,8 @@ private struct RailWaybillReceiptBody685: View {
                 .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
 
                 Text(commitMode == .issue
-                     ? "Only a party to this shipment may attach shipping paper — the server refuses anyone else."
-                     : "Only the shipment's shipper or an admin may re-issue, and only pre-departure. The server's refusal is shown here verbatim if it declines.")
+                     ? "Only a party to this shipment may attach shipping paper — anyone else is refused."
+                     : "Only the shipment's shipper or an admin may re-issue, and only pre-departure. If it is declined, the refusal is shown here verbatim.")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(palette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1659,7 +1659,7 @@ private struct RailWaybillReceiptBody685: View {
             // age in the header. We do not blank the document and we do not
             // pretend the read succeeded.
             if cached == nil {
-                loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+                loadError = waybillErrorCopy(error, attempt: "load this waybill")
             }
             servedFromCache = cached != nil
         }
@@ -1668,6 +1668,40 @@ private struct RailWaybillReceiptBody685: View {
 
         if doc != nil { persistCache() }
         loading = false
+    }
+
+    /// Operator-language copy for a failed waybill request.
+    ///
+    /// A raw `NSError` string ("EusoTripAPIError error 5") tells a rail clerk
+    /// nothing they can act on, so every failure class is mapped to a sentence
+    /// that names what did not happen and what to do next. Refusal reasons
+    /// that already carry human copy — the tenant gate above all — are
+    /// surfaced verbatim, because the reader needs to read them.
+    private func waybillErrorCopy(_ error: Error, attempt: String) -> String {
+        guard let api = error as? EusoTripAPIError else {
+            if (error as NSError).domain == NSURLErrorDomain {
+                return "No connection, so EusoTrip couldn't \(attempt). Check your signal, then try again."
+            }
+            return "Couldn't \(attempt). Try again in a moment."
+        }
+        switch api {
+        case .unauthenticated:
+            return "Your session expired before EusoTrip could \(attempt). Sign in again, then retry."
+        case .forbidden(let reason):
+            return reason
+        case .trpcError(let reason):
+            return reason
+        case .httpStatus(let code, _):
+            return "Shipping papers are unavailable right now (\(code)), so EusoTrip couldn't \(attempt). Try again in a moment."
+        case .decodingFailed:
+            return "The waybill came back in a form this app version can't read. Update the app, then retry."
+        case .empty:
+            return "Nothing came back, so EusoTrip couldn't \(attempt). Try again in a moment."
+        case .notConfigured, .badURL:
+            return "Shipping papers aren't reachable from this build. Restart the app, then try again."
+        case .queuedForOfflineReplay:
+            return "You're offline — a shipping paper is never held for later. Nothing was issued."
+        }
     }
 
     private func persistCache() {
@@ -1753,8 +1787,7 @@ private struct RailWaybillReceiptBody685: View {
         } catch {
             // Surfaced verbatim, never silent — a FORBIDDEN here is the server's
             // tenant gate speaking and the reader needs to read it.
-            refusal = (error as? EusoTripAPIError)?.errorDescription
-                ?? "Commit failed — \(error.localizedDescription)"
+            refusal = waybillErrorCopy(error, attempt: "commit this waybill")
             showConfirm = false
         }
         committing = false

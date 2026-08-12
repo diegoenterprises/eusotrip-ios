@@ -575,7 +575,7 @@ private struct VesselDropYardOperationsBody781: View {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 9, weight: .bold))
                         .foregroundStyle(Brand.warning)
-                    Text("POOL BURN-DOWN NOT MODELLED · no forecast procedure exists")
+                    Text("POOL BURN-DOWN NOT MODELLED · NOTHING FORECASTS THIS POOL")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                         .foregroundStyle(Brand.warning)
                 }
@@ -624,7 +624,7 @@ private struct VesselDropYardOperationsBody781: View {
             .padding(.vertical, Space.s2)
             .eusoCard(radius: Radius.lg)
 
-            Text("Drop-yard status, spot id and seal state are not instrumented server-side and are not shown. Spot ids above come from the containers table.")
+            Text("Drop-yard status and seal state are not tracked yet, so they are left blank rather than guessed. The spot shown above is the one on the container record, not a live yard assignment — verify it on the ground.")
                 .font(EType.mono(.micro))
                 .foregroundStyle(palette.textTertiary)
         }
@@ -791,7 +791,7 @@ private struct VesselDropYardOperationsBody781: View {
                     Text("PICKUP REQUEST IS NOT BUILT")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                         .foregroundStyle(Brand.warning)
-                    Text("No mutation on this read path is reachable from a container id. assignYardMove is keyed on a yard-move row, not a container. Nothing here would write an audit row or notify the drayage carrier — a drop-yard change reaches no counter-party today.")
+                    Text("A pickup cannot be requested from a container on this screen — moves are assigned against a queued yard move, not against a box. Nothing here would record an audit trail or notify the drayage carrier, so a drop-yard change reaches no counter-party today. Call the carrier.")
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
                     Button("Dismiss") { showPickupGap = false }
@@ -862,7 +862,7 @@ private struct VesselDropYardOperationsBody781: View {
             containers = res.containers
             loadedAt = Date()
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
             containers = []
         }
 

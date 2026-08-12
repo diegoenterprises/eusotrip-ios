@@ -402,7 +402,7 @@ private struct VesselOperatorHomeBody: View {
             self.compliance = comp
             self.crew = roster
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }

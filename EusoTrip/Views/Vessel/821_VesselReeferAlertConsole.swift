@@ -378,7 +378,7 @@ private struct VesselReeferAlertConsoleBody821: View {
                 Text("ALERT QUEUE · BY UNIT")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("getAlerts:231").font(EType.mono(.caption)).foregroundStyle(palette.textTertiary)
+                Text("LIVE ALERT FEED").font(EType.mono(.caption)).foregroundStyle(palette.textTertiary)
             }
             VStack(spacing: 0) {
                 let rows = displayRows
@@ -545,7 +545,7 @@ private struct VesselReeferAlertConsoleBody821: View {
             // UNCONDITIONAL overwrite: an honest zero-alert response clears the queue.
             alerts = rows
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         // Ambient (deck/port weather) is a best-effort overlay — its feed is
         // enterprise-gated and may return available:false or be unreachable.
@@ -571,7 +571,7 @@ private struct VesselReeferAlertConsoleBody821: View {
             ackDone = true
             await load()
         } catch {
-            ackError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            ackError = error.eusoUserCopy
         }
         acking = false
     }

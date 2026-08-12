@@ -602,7 +602,7 @@ private struct VesselBunkerFSCScheduleBody: View {
             historyRows = response.rows
             historyScheduleName = response.scheduleName ?? response.fuelType
         } catch {
-            historyError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            historyError = error.eusoUserCopy
         }
         historyLoading = false
     }

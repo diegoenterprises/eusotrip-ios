@@ -797,7 +797,7 @@ private struct VesselFleetHealthBody: View {
                     "vesselShipments.getVesselParticulars", input: ParticularsIn(imoNumber: bare))
             }
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
@@ -836,7 +836,7 @@ private struct VesselFleetHealthBody: View {
                 scheduleError = "Schedule did not confirm. Try again."
             }
         } catch {
-            scheduleError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            scheduleError = error.eusoUserCopy
         }
         scheduling = false
     }
@@ -857,7 +857,7 @@ private struct VesselFleetHealthBody: View {
             let rows: [WorkOrder683] = try await EusoTripAPI.shared.queryNoInput("zeun.getWorkOrdersForCarrier")
             workOrders = rows
         } catch {
-            workOrdersError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            workOrdersError = error.eusoUserCopy
         }
         loadingWorkOrders = false
     }

@@ -610,7 +610,7 @@ private struct CrewWellnessBody_401: View {
             historyRows = out.history
             showHistory = true
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = wellnessFailureCopy_401(error)
         }
     }
 
@@ -667,4 +667,43 @@ private struct CrewWellnessBody_401: View {
 #Preview("401 · Catalyst · Crew Wellness · Light") {
     CatalystCrewWellnessScreen(theme: Theme.light)
         .preferredColorScheme(.light)
+}
+
+// MARK: - Operator-facing failure copy
+
+/// Operator-language reason a crew-wellness lookup failed.
+///
+/// The caught error is still available for logging; the catalyst sees a
+/// sentence they can act on rather than a raw `NSError` description.
+fileprivate func wellnessFailureCopy_401(_ error: Error) -> String {
+    if let api = error as? EusoTripAPIError {
+        switch api {
+        case .unauthenticated:
+            return "Your session expired. Sign in again to open crew wellness history."
+        case .forbidden(let reason):
+            let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty
+                ? "This account isn't cleared to view this driver's wellness history."
+                : trimmed
+        case .trpcError(let reason):
+            let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty
+                ? "Wellness history was rejected for this driver. Refresh the crew list and try again."
+                : trimmed
+        case .httpStatus(let code, _):
+            return "Wellness history didn't load (code \(code)). Try again in a moment."
+        case .decodingFailed:
+            return "Wellness history came back in a form this build can't read. Update the app, then retry."
+        case .empty:
+            return "No wellness history came back for this driver yet."
+        case .notConfigured, .badURL:
+            return "This device isn't set up for live wellness data yet. Restart the app and try again."
+        case .queuedForOfflineReplay:
+            return "You're offline — wellness history loads once you reconnect."
+        }
+    }
+    if (error as NSError).domain == NSURLErrorDomain {
+        return "No connection right now. Wellness history will load once you have signal."
+    }
+    return "Wellness history didn't load. Refresh the crew list and try again."
 }

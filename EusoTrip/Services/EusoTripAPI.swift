@@ -87,15 +87,15 @@ enum EusoTripAPIError: Error, LocalizedError {
             if code == 401 || code == 403 {
                 return "This account isn't allowed to bid on this lane (HTTP \(code))."
             }
-            return "Server error \(code). Try again in a moment."
+            return "EusoTrip returned error \(code). Your \(noun) was not confirmed — try again in a moment."
         case .decodingFailed:
-            return "We couldn't read the server's response to your \(noun). Try again — if it persists, refresh from the load board."
+            return "EusoTrip answered your \(noun), but the app could not read the reply, so it is not confirmed either way. Try again — if it persists, refresh from the load board."
         case .notConfigured:
             return "The app isn't fully configured. Try restarting it."
         case .badURL:
             return "The \(noun) request URL was malformed. Refresh the load board and try again."
         case .empty:
-            return "The server returned an empty response to your \(noun). Try again."
+            return "EusoTrip sent back an empty reply to your \(noun), so it was not confirmed. Try again."
         case .queuedForOfflineReplay:
             return "You're offline — your \(noun) will be sent automatically when you reconnect."
         }
@@ -1220,6 +1220,14 @@ final class EusoTripAPI: ObservableObject {
     /// shipper / driver / catalyst drops a file into Templates /
     /// Bulk / Documents.
     lazy var documentRouter: DocumentRouterAPI = DocumentRouterAPI(api: self)
+
+    /// `bulkUpload` — the document-reading half of the bulk-import
+    /// funnel. `uploadAndProcess` only ever accepted `csvText`, so a
+    /// picked PDF / XLSX / photo of a load list had nowhere to go and
+    /// the iOS pickers dropped it. `processDocument` takes the raw
+    /// BYTES and returns the rows the server actually read, plus the
+    /// warnings it wants a human to see before anything is imported.
+    lazy var bulkUpload: BulkUploadAPI = BulkUploadAPI(api: self)
 
     /// `fleetRegistrationRouter` — NHTSA VIN decode + bulk vehicle
     /// + driver intake during carrier onboarding. Seeds Zeun
@@ -22692,17 +22700,31 @@ struct ShipperComplianceAPI {
     /// Upload a compliance document. `userType` defaults to "shipper"
     /// per the platform vocabulary; pass another role only if the
     /// caller is on a multi-capability account.
+    /// `fileData` is the document itself. The server stores it through the same
+    /// blob seam `documentCenter.uploadDocument` writes through and files the row
+    /// against the URL storage returns — pass `fileUrl` only when the caller has
+    /// already stored the file somewhere itself. Supplying neither is refused:
+    /// `documents.fileUrl` is NOT NULL, so a document with no stored file cannot
+    /// exist and will not be given a receipt.
     func uploadDocument(
         documentType: String,
         expirationDate: String? = nil,
         userType: String = "shipper",
-        fileUrl: String? = nil
+        fileUrl: String? = nil,
+        fileData: Data? = nil,
+        fileName: String? = nil,
+        mimeType: String? = nil,
+        name: String? = nil
     ) async throws -> UploadResult {
         struct Input: Encodable {
             let documentType: String
             let expirationDate: String?
             let userType: String
             let fileUrl: String?
+            let fileBase64: String?
+            let fileName: String?
+            let mimeType: String?
+            let name: String?
         }
         return try await api.mutation(
             "compliance.uploadDocument",
@@ -22710,7 +22732,11 @@ struct ShipperComplianceAPI {
                 documentType: documentType,
                 expirationDate: expirationDate,
                 userType: userType,
-                fileUrl: fileUrl
+                fileUrl: fileUrl,
+                fileBase64: fileData?.base64EncodedString(),
+                fileName: fileName,
+                mimeType: mimeType,
+                name: name
             )
         )
     }
@@ -25357,6 +25383,157 @@ struct DocumentRouterAPI {
     func listSupportedTypes() async throws -> SupportedTypesResponse {
         struct Empty: Encodable {}
         return try await api.query("documentRouter.listSupportedTypes", input: Empty())
+    }
+}
+
+// MARK: - bulkUpload (document intake · reads the BYTES)
+//
+// Mirrors `frontend/server/routers/bulkUpload.ts`. Two procedures
+// matter to the iOS import surfaces and they are NOT interchangeable:
+//
+//   • `uploadAndProcess(csvText:)` — text in, job out. Correct for a
+//     CSV/JSON export. It cannot see a PDF, a spreadsheet or a photo.
+//   • `processDocument(fileBase64:mimeType:)` — BYTES in. The server
+//     runs the document through Gemini vision, validates the extracted
+//     records against the entity's required fields, and hands back both
+//     the structured records AND a `csvText` rendering of them.
+//
+// The rule this seam exists to enforce: a document the server could not
+// read must come back as an ERROR, never as zero rows that a caller
+// could mistake for "the document was empty". The server already throws
+// on an unreadable/empty extraction; iOS must surface that verbatim
+// rather than swallowing it.
+//
+// Everything `processDocument` returns is SCANNED AND UNCONFIRMED. It
+// is a proposal. Nothing here may be imported until a human has looked
+// at it and said yes — see `BulkScannedExtraction.isEmptyRead`.
+struct BulkUploadAPI {
+    unowned let api: EusoTripAPI
+
+    /// One record the vision pass extracted, carried with the server's
+    /// own verdict on it. `missingRequired` is the entity's required
+    /// fields that the document did not contain — an ABSENT field, not
+    /// an empty one. Never fill these in on the client.
+    /// Deliberately NOT Identifiable: two extracted rows can legitimately
+    /// carry identical field values, and a synthesised id would collide
+    /// and make SwiftUI drop one. Enumerate with an index at the call
+    /// site instead.
+    struct ExtractedRecord: Decodable, Hashable {
+        let data: [String: String]
+        let isValid: Bool
+        let errors: [String]
+        let missingRequired: [String]
+
+        private enum CodingKeys: String, CodingKey { case data, isValid, errors, missingRequired }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            // `data` is a heterogenous JSON object server-side; the
+            // server stringifies every value before it returns, but
+            // decode tolerantly so one numeric field cannot discard
+            // the WHOLE record (the HERE-decode trap, same shape).
+            let raw = try c.decodeIfPresent([String: JSONAny].self, forKey: .data) ?? [:]
+            var flat: [String: String] = [:]
+            for (k, v) in raw {
+                if let s = v.stringValue, !s.isEmpty { flat[k] = s }
+            }
+            data = flat
+            isValid = (try? c.decode(Bool.self, forKey: .isValid)) ?? false
+            errors = (try? c.decode([String].self, forKey: .errors)) ?? []
+            missingRequired = (try? c.decode([String].self, forKey: .missingRequired)) ?? []
+        }
+    }
+
+    /// Minimal tolerant JSON scalar so a record whose field came back
+    /// as a number/bool does not fail the whole decode.
+    struct JSONAny: Decodable, Hashable {
+        let stringValue: String?
+        init(from decoder: Decoder) throws {
+            let c = try decoder.singleValueContainer()
+            if c.decodeNil() { stringValue = nil }
+            else if let s = try? c.decode(String.self) { stringValue = s }
+            else if let d = try? c.decode(Double.self) {
+                stringValue = d == d.rounded() ? String(Int(d)) : String(d)
+            }
+            else if let b = try? c.decode(Bool.self) { stringValue = b ? "true" : "false" }
+            else { stringValue = nil }
+        }
+    }
+
+    /// What the server read out of the document. NOTHING in here is
+    /// confirmed — it is what vision proposed, with the server's own
+    /// warnings attached.
+    struct BulkScannedExtraction: Decodable, Hashable {
+        let documentType: String
+        let confidence: Double
+        let recordCount: Int
+        let records: [ExtractedRecord]
+        /// CSV rendering of `records`, ready to hand to
+        /// `uploadAndProcess` — but ONLY after a human accepts it.
+        let csvText: String
+        let warnings: [String]
+        let entityType: String?
+        let entityLabel: String?
+        let processingTimeMs: Int?
+
+        private enum CodingKeys: String, CodingKey {
+            case documentType, confidence, recordCount, records, csvText,
+                 warnings, entityType, entityLabel, processingTimeMs
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            documentType = (try? c.decode(String.self, forKey: .documentType)) ?? "unknown"
+            confidence = (try? c.decode(Double.self, forKey: .confidence)) ?? 0
+            records = (try? c.decode([ExtractedRecord].self, forKey: .records)) ?? []
+            recordCount = (try? c.decode(Int.self, forKey: .recordCount)) ?? records.count
+            csvText = (try? c.decode(String.self, forKey: .csvText)) ?? ""
+            warnings = (try? c.decode([String].self, forKey: .warnings)) ?? []
+            entityType = try? c.decode(String.self, forKey: .entityType)
+            entityLabel = try? c.decode(String.self, forKey: .entityLabel)
+            processingTimeMs = try? c.decode(Int.self, forKey: .processingTimeMs)
+        }
+
+        /// True when the round-trip produced nothing importable. The
+        /// caller MUST say so out loud — an empty read is a failure to
+        /// read, never evidence that the document was blank.
+        var isEmptyRead: Bool {
+            records.isEmpty || csvText.split(separator: "\n").count < 2
+        }
+
+        /// The union of every required field the document did not
+        /// contain, across all records. Absent, not blank.
+        var missingRequiredFields: [String] {
+            var seen: [String] = []
+            for r in records where !r.missingRequired.isEmpty {
+                for f in r.missingRequired where !seen.contains(f) { seen.append(f) }
+            }
+            return seen
+        }
+    }
+
+    /// Send the picked file's BYTES to the server's vision pass.
+    ///
+    /// `mimeType` must be the file's real type (sniff the magic bytes;
+    /// do not trust the extension). Throws on an unreadable document —
+    /// let it throw, and show the message. Returning "0 rows" quietly
+    /// is the one outcome this seam exists to prevent.
+    func processDocument(
+        entityType: String,
+        fileBase64: String,
+        mimeType: String,
+        fileName: String
+    ) async throws -> BulkScannedExtraction {
+        struct Input: Encodable {
+            let entityType: String
+            let fileBase64: String
+            let mimeType: String
+            let fileName: String
+        }
+        return try await api.mutation(
+            "bulkUpload.processDocument",
+            input: Input(entityType: entityType, fileBase64: fileBase64, mimeType: mimeType, fileName: fileName)
+        )
     }
 }
 

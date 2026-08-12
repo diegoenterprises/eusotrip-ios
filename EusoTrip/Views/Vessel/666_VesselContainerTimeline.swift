@@ -399,7 +399,7 @@ private struct VesselContainerTimelineBody: View {
                 input: TrackingIn(containerNumber: liveContainerNumber.replacingOccurrences(of: " ", with: "")))
             self.tracking = res
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
@@ -431,7 +431,7 @@ private struct VesselContainerTimelineBody: View {
                 addAck = "Event recorded to the chain."
                 await load()
             } else {
-                addError = "The server rejected the event."
+                addError = "The event was rejected. Nothing was recorded and the timeline is unchanged."
             }
         } catch {
             addError = error.eusoUserCopy

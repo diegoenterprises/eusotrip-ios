@@ -76,21 +76,21 @@ private extension VehicleDetailKind {
                          citation: "DISPATCHER REVIEW · FLEET VEHICLES · LIVE",
                          title: "Vehicle review",
                          subhead: "FLEET VEHICLES · LIVE",
-                         pillCopy: "Live fleet utilization, maintenance status, and fuel economy from fleet.getFleetStats. Per-vehicle grading has no live source yet.",
-                         statusPill: "GRADE \(EM_DASH) · no scorecard proc")
+                         pillCopy: "Fleet-wide utilization, maintenance status, and fuel economy are live. This vehicle is not graded on its own yet, so no grade is shown.",
+                         statusPill: "GRADE \(EM_DASH) · not graded yet")
         case .utilization:
             return .init(eyebrow: "DISPATCHER · VEHICLE · UTILIZATION",
                          citation: "DISPATCHER UTILIZATION · FLEET VEHICLES · LIVE",
                          title: "Utilization",
                          subhead: "FLEET VEHICLES · LIVE",
-                         pillCopy: "Fleet utilization = in-use ÷ total vehicles, live from fleet.getFleetStats. Per-vehicle peak has no live source yet.",
+                         pillCopy: "Fleet utilization = in-use ÷ total vehicles, live fleet-wide. This vehicle's own peak has no live source yet.",
                          statusPill: "UTIL — see fleet metric")
         case .maintenance:
             return .init(eyebrow: "DISPATCHER · VEHICLE · MAINTENANCE",
                          citation: "DISPATCHER MAINTENANCE · FLEET VEHICLES · LIVE",
                          title: "Maintenance health",
                          subhead: "FLEET VEHICLES · LIVE",
-                         pillCopy: "Live in-maintenance and out-of-service counts from fleet.getFleetStats. Per-vehicle Zeun health score is not yet provisioned.",
+                         pillCopy: "In-maintenance and out-of-service counts are live fleet-wide. A Zeun health score for this vehicle is not measured yet.",
                          statusPill: "HEALTH \(EM_DASH) · no Zeun grade")
         case .onTime:
             return .init(eyebrow: "DISPATCHER · VEHICLE · ON-TIME",
@@ -104,7 +104,7 @@ private extension VehicleDetailKind {
                          citation: "DISPATCHER INSPECTION · FLEET VEHICLES · LIVE",
                          title: "Inspection pass",
                          subhead: "FLEET VEHICLES · LIVE",
-                         pillCopy: "Inspection-pass grading is not yet provisioned (zeun_maintenance returns records only). Open-maintenance count is live.",
+                         pillCopy: "Inspection-pass grading is not measured yet — maintenance records are kept, but nothing scores them. Open-maintenance count is live.",
                          statusPill: "PASS \(EM_DASH) · no live source")
         case .deadhead:
             return .init(eyebrow: "DISPATCHER · VEHICLE · DEADHEAD",
@@ -228,7 +228,7 @@ private struct DispatcherVehicleDetailBody: View {
             switch kind {
             case .review:
                 return [
-                    ("GRADE",       EM_DASH,                     "no scorecard proc",            neutral),
+                    ("GRADE",       EM_DASH,                     "not graded yet",            neutral),
                     ("UTILIZATION", utilStr(s),                  "in-use ÷ total · live",        .green),
                     ("HEALTH",      EM_DASH,                     "no Zeun grade",                neutral),
                     ("MPG",         fmtMpg(s?.avgMpg),           "fleet avg · live fuel",        .blue),
@@ -252,35 +252,35 @@ private struct DispatcherVehicleDetailBody: View {
                     ("ON-TIME",     EM_DASH,                     "no live source",               neutral),
                     ("IN-TRANSIT",  fmtInt(s?.inTransit),        "vehicles · live",              .blue),
                     ("PERFECT",     EM_DASH,                     "no per-unit source",           neutral),
-                    ("GRADE",       EM_DASH,                     "no scorecard proc",            neutral),
+                    ("GRADE",       EM_DASH,                     "not graded yet",            neutral),
                 ]
             case .inspection:
                 return [
                     ("PASS",        EM_DASH,                     "no live source",               neutral),
                     ("IN-MAINT",    fmtInt(s?.inMaintenance),    "open · live",                  .orange),
                     ("PERFECT",     EM_DASH,                     "no per-unit source",           neutral),
-                    ("GRADE",       EM_DASH,                     "no scorecard proc",            neutral),
+                    ("GRADE",       EM_DASH,                     "not graded yet",            neutral),
                 ]
             case .deadhead:
                 return [
                     ("DEADHEAD",    EM_DASH,                     "no live source",               neutral),
                     ("FLOOR",       EM_DASH,                     "no per-unit source",           neutral),
                     ("CORRIDORS",   EM_DASH,                     "no live source",               neutral),
-                    ("GRADE",       EM_DASH,                     "no scorecard proc",            neutral),
+                    ("GRADE",       EM_DASH,                     "not graded yet",            neutral),
                 ]
             case .onboarding:
                 return [
                     ("STEPS",       EM_DASH,                     "no live source",               neutral),
                     ("TERMINAL",    EM_DASH,                     "no per-unit source",           neutral),
                     ("ROSTER",      fmtInt(s?.totalVehicles),    "vehicles in fleet · live",     .blue),
-                    ("GRADE",       EM_DASH,                     "no scorecard proc",            neutral),
+                    ("GRADE",       EM_DASH,                     "not graded yet",            neutral),
                 ]
             case .quarter:
                 return [
                     ("YEAR-AVG",    EM_DASH,                     "no live source",               neutral),
                     ("CEILING",     EM_DASH,                     "no per-unit source",           neutral),
                     ("FLEET",       fmtInt(s?.totalVehicles),    "vehicles in fleet · live",     .blue),
-                    ("GRADE",       EM_DASH,                     "no scorecard proc",            neutral),
+                    ("GRADE",       EM_DASH,                     "not graded yet",            neutral),
                 ]
             }
         }()
@@ -303,14 +303,14 @@ private struct DispatcherVehicleDetailBody: View {
     private var nextStepCard: some View {
         let copy: String = {
             switch kind {
-            case .review:       return "Fleet utilization, maintenance status, and fuel economy are live from fleet.getFleetStats. A per-vehicle composite grade requires a scorecard procedure that does not exist yet."
+            case .review:       return "Fleet utilization, maintenance status, and fuel economy are live fleet-wide. A composite grade for a single vehicle is not computed yet, so none is shown — judge this unit on the live numbers."
             case .utilization:  return "Utilization is live (in-use ÷ total vehicles). Per-vehicle peak utilization needs a per-unit metrics source that is not provisioned yet."
-            case .maintenance:  return "In-maintenance and out-of-service counts are live. A per-vehicle Zeun health score is not provisioned (zeun_maintenance returns inspection records only)."
-            case .onTime:       return "In-transit count is live. On-time-pull grading has no backend source yet — wire a per-load pull-timing rollup to populate this."
-            case .inspection:   return "Open-maintenance count is live. Inspection-pass grading is not provisioned yet — wire the inspections feed to populate pass rate."
-            case .deadhead:     return "Deadhead-corridor grading has no backend source yet — wire empty-mile data to populate this lane."
-            case .onboarding:   return "Total fleet count is live. Per-step onboarding attainment has no backend source yet."
-            case .quarter:      return "Total fleet count is live. Per-quarter trajectory rollups have no backend source yet."
+            case .maintenance:  return "In-maintenance and out-of-service counts are live. A Zeun health score for a single vehicle is not computed yet — inspection records are kept, but nothing scores them."
+            case .onTime:       return "In-transit count is live. On-time-pull grading has no live source yet — pull timing is not measured, so no rate is shown."
+            case .inspection:   return "Open-maintenance count is live. Inspection-pass grading is not measured yet, so no pass rate is shown."
+            case .deadhead:     return "Deadhead-corridor grading has no live source yet — empty miles are not measured, so this lane stays blank."
+            case .onboarding:   return "Total fleet count is live. Per-step onboarding attainment has no live source yet."
+            case .quarter:      return "Total fleet count is live. Per-quarter trajectory rollups have no live source yet."
             }
         }()
         return LifecycleCard {

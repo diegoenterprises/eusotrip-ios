@@ -1913,15 +1913,15 @@ struct LoadDetailSheet: View {
                         if code == 401 || code == 403 {
                             return "This account isn't allowed to bid on this lane (HTTP \(code))."
                         }
-                        return "Server error \(code). Try again in a moment."
+                        return "EusoTrip returned error \(code). Your bid was not confirmed — try again in a moment."
                     case .decodingFailed:
-                        return "We couldn't read the server's response. Try again. If it persists, retry from the load board."
+                        return "EusoTrip answered, but the app could not read the reply, so your bid is not confirmed either way. Try again. If it persists, retry from the load board."
                     case .notConfigured:
                         return "API not configured. Try restarting the app."
                     case .badURL:
                         return "Bid URL was malformed. Refresh the load board and try again."
                     case .empty:
-                        return "Server returned an empty response. Try again."
+                        return "EusoTrip sent back an empty reply, so your bid was not confirmed. Try again."
                     case .queuedForOfflineReplay:
                         return "You're offline — this will be sent automatically when you reconnect."
                     }

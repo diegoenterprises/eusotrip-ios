@@ -308,7 +308,7 @@ private struct RailLossPreventionBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("getLossPreventionAnalysis:1051")
+                Text("loss analysis")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
             }

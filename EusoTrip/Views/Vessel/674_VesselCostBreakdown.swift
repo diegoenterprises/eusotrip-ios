@@ -114,7 +114,7 @@ private struct VesselCostBreakdownBody: View {
                 } else if lines.isEmpty {
                     EusoEmptyState(systemImage: "list.bullet.rectangle.portrait",
                                    title: "No charges accrued",
-                                   subtitle: "getLoadExpenses returned no expense rows for \(bookingRef ?? "this booking") yet — the ledger renders live rows only.")
+                                   subtitle: "No charges have been recorded against \(bookingRef ?? "this booking") yet — this ledger shows recorded charges only, nothing estimated.")
                 } else {
                     heroCard
                     actionStatus
@@ -409,7 +409,7 @@ private struct VesselCostBreakdownBody: View {
                 esangLine = nil
             }
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
@@ -435,7 +435,7 @@ private struct VesselCostBreakdownBody: View {
             exportDoc = ExportDoc674(url: url, filename: out.filename, rowCount: out.rowCount)
             actionBanner = "Cost sheet export ready."
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = error.eusoUserCopy
         }
         busyAction = nil
     }
@@ -469,7 +469,7 @@ private struct VesselCostBreakdownBody: View {
             disputeReason = ""
             await load()
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = error.eusoUserCopy
         }
         busyAction = nil
     }

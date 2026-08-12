@@ -547,7 +547,7 @@ private struct VesselEquipmentHealthBody: View {
             self.tracking = trackResult
             self.vessel = fleet.vessels.first
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }

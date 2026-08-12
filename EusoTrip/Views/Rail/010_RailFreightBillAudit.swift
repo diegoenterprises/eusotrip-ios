@@ -691,7 +691,7 @@ private struct RailFreightBillAuditBody010: View {
 
     private var runBlockReason: String? {
         if !reach.isOnline {
-            return "Offline - the reconciliation engine runs on the server and nothing is computed on this device."
+            return "Offline - the reconciliation engine runs live and nothing is computed on this device."
         }
         return captureBlockReason
     }
@@ -1080,7 +1080,7 @@ private struct RailFreightBillAuditBody010: View {
 
     private var selectedStripSub: String {
         let n = selectedFindings.count
-        return "Arithmetic sum of the positive variances the audit returned on the \(n) finding\(n == 1 ? "" : "s") you selected. Not a settled recovery figure - the server computes no recoverable total."
+        return "Arithmetic sum of the positive variances the audit returned on the \(n) finding\(n == 1 ? "" : "s") you selected. Not a settled recovery figure - no recoverable total is computed anywhere."
     }
 
     // MARK: - ESANG readout row (server verdict + the server's own top message)
@@ -1129,7 +1129,7 @@ private struct RailFreightBillAuditBody010: View {
             ?? exceptions.first, let msg = nonEmpty(top.message) {
             return msg
         }
-        return "Every figure above is the server's own: the engine writes no audit row and broadcasts nothing."
+        return "Every figure above comes from the audit engine itself: it files no audit entry and announces nothing."
     }
 
     // MARK: - Capture deck (the invoice side — user input, the only source)
@@ -1154,7 +1154,7 @@ private struct RailFreightBillAuditBody010: View {
 
             if showCapture {
                 VStack(alignment: .leading, spacing: Space.s4) {
-                    Text("There is no rail invoice storage on the server, so the billed side of this match is typed off the bill in front of you. The contracted side below is read from your own shipment.")
+                    Text("Rail invoices are not filed anywhere in EusoTrip yet, so the billed side of this match is typed off the paper bill in front of you. The contracted side below is read from your own shipment.")
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1240,26 +1240,26 @@ private struct RailFreightBillAuditBody010: View {
                 title: "Contracted linehaul",
                 value: contractLinehaul.map { money($0) } ?? (linkedShipmentId == nil ? "link a shipment" : "no contracted rate"),
                 source: contractLinehaulIsDerived
-                    ? "railTariff.lookup · ratePerCar x \(head?.numberOfCars ?? 0) cars"
-                    : "railShipments.getRailSettlement · rail_shipments.rate",
+                    ? "Tariff lookup · rate per car x \(head?.numberOfCars ?? 0) cars"
+                    : "Settlement of record · contracted rate",
                 live: contractLinehaul != nil
             )
             expectationRow(
                 title: "Accrued demurrage",
                 value: contractDemurrage.map { money($0) } ?? (linkedShipmentId == nil ? "link a shipment" : "none accrued"),
-                source: "railShipments.getRailSettlement · SUM(rail_demurrage.totalCharge)",
+                source: "Settlement of record · accrued demurrage total",
                 live: contractDemurrage != nil
             )
             expectationRow(
                 title: "Governing tariff rate",
                 value: tariffRateValue,
-                source: "railTariff.lookup · rail_tariffs.ratePerCar / ratePerTon",
+                source: "Tariff lookup · rate per car / rate per ton",
                 live: tariff?.baseRate != nil
             )
             expectationRow(
                 title: "Tariff fuel surcharge",
                 value: nonEmpty(tariff?.fscBasis) ?? (tariff == nil ? "not looked up" : "not on this tariff"),
-                source: "railTariff.lookup · rail_tariffs.fuelSurcharge",
+                source: "Tariff lookup · fuel surcharge",
                 live: serverFscPercent != nil
             )
 
@@ -1445,7 +1445,7 @@ private struct RailFreightBillAuditBody010: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
-    // MARK: - Audit history (the server's own note, verbatim)
+    // MARK: - Audit history (the note on record, verbatim)
 
     private var historyStrip: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
@@ -1454,7 +1454,7 @@ private struct RailFreightBillAuditBody010: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("recentAudits · total \(history?.total ?? 0)")
+                Text("Recent audits · total \(history?.total ?? 0)")
                     .font(EType.mono(.micro))
                     .foregroundStyle(palette.textTertiary)
             }
@@ -1541,12 +1541,12 @@ private struct RailFreightBillAuditBody010: View {
 
     private var regimeFootnote: String {
         if currencyIsAsserted {
-            return "getRailSettlement returns \(currencyCode) for every shipment (railShipments.ts:1487) even though this one's yard is in \(countryCode?.uppercased() ?? "-"). The figures above carry the code the server actually sent, not a derived one. The audit engine itself has no currency field at all."
+            return "Settlement reports \(currencyCode) on every shipment even though this one's yard is in \(countryCode?.uppercased() ?? "-"). The figures above carry the code that actually came back, never one derived here. The audit engine itself carries no currency at all."
         }
         if countryCode == nil {
-            return "Link a shipment to resolve the regime from its real yard country. Tax lines are regulatory reference - no tRPC procedure exposes a rate."
+            return "Link a shipment to resolve the regime from its real yard country. Tax lines are regulatory reference - no rate is published for them."
         }
-        return "Regime resolved from the shipment's real yard country. Tax lines are regulatory reference - no tRPC procedure exposes a rate, and the audit engine carries no currency field."
+        return "Regime resolved from the shipment's real yard country. Tax lines are regulatory reference - no rate is published for them, and the audit engine carries no currency of its own."
     }
 
     // MARK: - CTA pair
@@ -1644,7 +1644,7 @@ private struct RailFreightBillAuditBody010: View {
     private var historySheet: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
-                Text("RECENT AUDITS · railFreightAudit.recentAudits")
+                Text("RECENT AUDITS · FREIGHT BILL AUDIT")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Text("Audit history")
@@ -1667,10 +1667,10 @@ private struct RailFreightBillAuditBody010: View {
                 .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("SERVER NOTE · VERBATIM")
+                    Text("NOTE ON RECORD · VERBATIM")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                         .foregroundStyle(palette.textTertiary)
-                    Text(nonEmpty(history?.note) ?? "The server returned no note.")
+                    Text(nonEmpty(history?.note) ?? "No note was recorded.")
                         .font(EType.mono(.caption))
                         .foregroundStyle(palette.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1682,7 +1682,7 @@ private struct RailFreightBillAuditBody010: View {
                     .strokeBorder(palette.borderFaint))
                 .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
 
-                Text("The procedure returns a hardcoded empty list. Every audit you run here is computed and discarded - nothing is persisted, so no history can be shown. A fabricated list would be a lie about your own records.")
+                Text("Audit history is not kept yet. Every audit you run here is calculated and then discarded — nothing is filed, so there is no history to show. Showing an invented list would be a lie about your own records.")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1899,9 +1899,42 @@ private struct RailFreightBillAuditBody010: View {
             selectedFindings = Set(0..<(out.exceptions?.count ?? 0))
             withAnimation(.easeOut(duration: 0.18)) { showCapture = false }
         } catch {
-            auditError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            auditError = auditErrorCopy(error, attempt: "run this audit")
         }
         auditing = false
+    }
+
+    /// Operator-language copy for a failed freight-bill audit request.
+    ///
+    /// A raw `NSError` string ("EusoTripAPIError error 5") tells a billing
+    /// clerk nothing they can act on, so every failure class is mapped to a
+    /// sentence that names what did not happen and what to do next. Refusal
+    /// reasons that already carry human copy are surfaced verbatim.
+    private func auditErrorCopy(_ error: Error, attempt: String) -> String {
+        guard let api = error as? EusoTripAPIError else {
+            if (error as NSError).domain == NSURLErrorDomain {
+                return "No connection, so EusoTrip couldn't \(attempt). Check your signal, then try again."
+            }
+            return "Couldn't \(attempt). Try again in a moment."
+        }
+        switch api {
+        case .unauthenticated:
+            return "Your session expired before EusoTrip could \(attempt). Sign in again, then retry."
+        case .forbidden(let reason):
+            return reason
+        case .trpcError(let reason):
+            return reason
+        case .httpStatus(let code, _):
+            return "Freight-bill audit is unavailable right now (\(code)), so EusoTrip couldn't \(attempt). Try again in a moment."
+        case .decodingFailed:
+            return "The audit came back in a form this app version can't read. Update the app, then retry."
+        case .empty:
+            return "Nothing came back, so EusoTrip couldn't \(attempt). Try again in a moment."
+        case .notConfigured, .badURL:
+            return "Freight-bill audit isn't reachable from this build. Restart the app, then try again."
+        case .queuedForOfflineReplay:
+            return "You're offline — a recovery filing is never held for later. Nothing was filed."
+        }
     }
 
     // MARK: - File the recovery (MUTATION · railFreightAudit.ts:127 · ONLINE_ONLY)
@@ -1921,11 +1954,11 @@ private struct RailFreightBillAuditBody010: View {
             if let d = nonEmpty(out.disputeId) {
                 showToast("Recovery filed - dispute \(d) - \(n) finding\(n == 1 ? "" : "s")")
             } else {
-                showToast("Recovery filed - the server returned no dispute id")
+                showToast("Recovery filed - no dispute number came back")
             }
             await load()
         } catch {
-            recoveryError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            recoveryError = auditErrorCopy(error, attempt: "file this recovery")
         }
         filing = false
     }

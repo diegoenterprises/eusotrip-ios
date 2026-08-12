@@ -352,7 +352,7 @@ private struct VesselCustomsStatusUpdateBody: View {
                 }
             }
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
@@ -406,7 +406,7 @@ private struct VesselCustomsStatusUpdateBody: View {
                 "vesselShipments.updateCustomsStatus", input: In(id: id, newStatus: newStatus))
             await load()
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = error.eusoUserCopy
         }
         acting = false
     }

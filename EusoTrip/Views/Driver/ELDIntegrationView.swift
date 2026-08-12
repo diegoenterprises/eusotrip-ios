@@ -497,7 +497,7 @@ struct ELDIntegrationView: View {
         if store.isConnected {
             return "Duty-status clocks, 30-min break signals and violations are sourced directly from the ELD. Self-reporting is disabled."
         }
-        return "Your API key stays server-side. EusoTrip never stores it in the app. Select your provider below."
+        return "Your API key is held by EusoTrip and is never stored on this phone. Select your provider below."
     }
 
     private var apiKeyCardTitle: String {

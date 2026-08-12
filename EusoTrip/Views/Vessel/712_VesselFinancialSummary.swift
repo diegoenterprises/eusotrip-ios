@@ -508,7 +508,7 @@ private struct VesselFinancialSummaryBody: View {
                 .queryNoInput("vesselShipments.getVesselFinancialSummary")
             self.rollup = FinancialRollup.from(s)
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }

@@ -324,7 +324,7 @@ private struct VesselBillOfLadingBody_005: View {
         HStack(spacing: Space.s3) {
             Image(systemName: "qrcode").font(.system(size: 30)).foregroundStyle(palette.textPrimary)
             VStack(alignment: .leading, spacing: 3) {
-                Text("Verifiable eBL · blockchain anchored").font(.system(size: 13, weight: .bold)).foregroundStyle(palette.textPrimary)
+                Text("Verifiable electronic B/L · blockchain anchored").font(.system(size: 13, weight: .bold)).foregroundStyle(palette.textPrimary)
                 Text("Scan to validate originals · tamper-evident trail").font(.system(size: 11)).foregroundStyle(palette.textSecondary)
             }
             Spacer()
@@ -372,7 +372,7 @@ private struct VesselBillOfLadingBody_005: View {
             HStack(spacing: Space.s3) {
                 Button {
                     if canSurrender {
-                        gapNotice = "Telex release is ONLINE_ONLY(title): the shipper-side surrender path rides surrenderBOL (vesselShipments.ts:986) but draft->issued countersign has NO endpoint (ledger VSL-CHAIN-BL-COUNTERSIGN) - filed with the-oath. Nothing was written."
+                        gapNotice = "Telex release moves title, so it is never queued offline — it needs a live connection. Countersigning a draft into an issued original is not available yet: nothing was written and this B/L is still a draft. Countersign at the destination counter instead."
                     } else {
                         gapNotice = "Surrender is gated to issued originals - the B/L is not in issued state."
                     }
@@ -383,7 +383,7 @@ private struct VesselBillOfLadingBody_005: View {
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
-                Button { gapNotice = "Document render/download is client-side once getBOL returns the full row - no server write. Wire to the document viewer sheet at nav integration." } label: {
+                Button { gapNotice = "The document is drawn on this device from the B/L already loaded — downloading it records nothing and changes no status. The document viewer is not connected yet." } label: {
                     Text("Download").font(.system(size: 15, weight: .semibold)).foregroundStyle(palette.textPrimary)
                         .frame(width: 132, height: 48).background(palette.bgSecondary).clipShape(Capsule())
                         .overlay(Capsule().strokeBorder(palette.borderFaint))
@@ -408,7 +408,7 @@ private struct VesselBillOfLadingBody_005: View {
             applyBOL(b)
             deriveEsang(from: b)
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
@@ -438,7 +438,7 @@ private struct VesselBillOfLadingBody_005: View {
         switch st {
         case "draft":
             esangLine = "Draft B/L — verify parties and cargo before requesting issue"
-            esangDetail = "countersign path is a named gap · filed with the-oath"
+            esangDetail = "countersign is not available yet · issue at the counter"
         case "issued":
             esangLine = "Issued — originals control cargo release"
             esangDetail = "surrender at destination counter or set telex"

@@ -176,7 +176,7 @@ private struct VesselCargoClaimBody_732: View {
                 } else {
                     EusoEmptyState(systemImage: "shippingbox.and.arrow.backward",
                                    title: "No cargo claim on file",
-                                   subtitle: "getClaimById returned no dossier for this container, nothing to recover yet. File a claim from the shipment to open one.")
+                                   subtitle: "No claim dossier exists for this container yet, so there is nothing to recover. File a claim from the shipment to open one.")
                 }
                 Color.clear.frame(height: 96)
             }
@@ -610,7 +610,7 @@ private struct VesselCargoClaimBody_732: View {
                 esangAdvisory: advisory
             )
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
@@ -631,7 +631,7 @@ private struct VesselCargoClaimBody_732: View {
             actionMessage = "Claim \(claim.claimRef) filed · \(out.newStatus ?? "filed")."
             await load()
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = error.eusoUserCopy
         }
     }
 
@@ -671,7 +671,7 @@ private struct VesselCargoClaimBody_732: View {
             showEvidenceSheet = false
             await load()
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = error.eusoUserCopy
         }
     }
 }

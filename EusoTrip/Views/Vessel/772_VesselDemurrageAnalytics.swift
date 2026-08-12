@@ -131,7 +131,7 @@ private struct VesselDemurrageAnalyticsBody: View {
                 } else if rows.isEmpty {
                     EusoEmptyState(systemImage: "chart.bar.xaxis",
                                    title: "No demurrage to analyze",
-                                   subtitle: "getVesselFinancialSummary returned no demurrage charges. Nothing has accrued in range, no trend to chart, nothing to dispute.")
+                                   subtitle: "No demurrage charges came back for this range. Nothing has accrued, so there is no trend to chart and nothing to dispute.")
                 } else {
                     actionBanners
                     summaryBand
@@ -364,7 +364,7 @@ private struct VesselDemurrageAnalyticsBody: View {
             let fs: FinancialSummary772 = try await EusoTripAPI.shared.query("vesselShipments.getVesselFinancialSummary", input: EmptyInput772())
             self.rows = fs.demurrage
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
@@ -396,7 +396,7 @@ private struct VesselDemurrageAnalyticsBody: View {
             showDisputeQueue = false
             await load()
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = error.eusoUserCopy
         }
     }
 
@@ -409,7 +409,7 @@ private struct VesselDemurrageAnalyticsBody: View {
             )
             actionMessage = "Export ready · \(out.rowCount ?? 0) rows · \(out.exportedAt.map(shortDateTime) ?? "recorded")"
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = error.eusoUserCopy
         }
     }
 

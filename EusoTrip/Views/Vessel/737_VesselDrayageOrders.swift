@@ -392,7 +392,7 @@ private struct VesselDrayageOrdersBody: View {
     private var filterSheet: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 16) {
-                sheetHeader(title: "Filter drayage", subtitle: "Filters run through multiModal.getDrayageManagement.")
+                sheetHeader(title: "Filter drayage", subtitle: "Filters are applied to the live drayage board.")
 
                 Picker("Move type", selection: $filterType) {
                     Text("All types").tag("all")
@@ -576,7 +576,7 @@ private struct VesselDrayageOrdersBody: View {
 
             hasOrders = true
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
@@ -629,7 +629,7 @@ private struct VesselDrayageOrdersBody: View {
             resetDraft()
             await load()
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = error.eusoUserCopy
         }
         busyAction = nil
     }

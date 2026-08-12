@@ -1007,7 +1007,7 @@ private struct VesselPortOperationsBody: View {
                 self.conditions = nil
             }
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
