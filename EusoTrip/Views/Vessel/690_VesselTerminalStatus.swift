@@ -681,7 +681,7 @@ private struct VesselTerminalStatusBody690: View {
                 Text("Re-read")
                     .font(EType.title)
                     .foregroundStyle(palette.textPrimary)
-                    .frame(width: 132, minHeight: 52)
+                    .frame(width: 132).frame(minHeight: 52)
             }
             .background(
                 RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCard)

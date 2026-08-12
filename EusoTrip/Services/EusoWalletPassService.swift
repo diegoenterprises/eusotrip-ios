@@ -200,11 +200,11 @@ final class EusoWalletPassService {
             return .failure(message: "This wallet pass is invalid or expired.")
         }
         if let expectedTheme {
-            guard pkpass.userInfo["walletThemeId"] as? String == expectedTheme.id,
-                  pkpass.userInfo["walletThemeRevision"] as? String == expectedTheme.revision,
-                  pkpass.userInfo["walletThemeDigest"] as? String == expectedTheme.digest,
-                  pkpass.userInfo["walletThemeManifestVersion"] as? String == expectedTheme.manifestVersion,
-                  pkpass.userInfo["walletThemePassStyle"] as? String == expectedTheme.passStyle else {
+            guard pkpass.userInfo?["walletThemeId"] as? String == expectedTheme.id,
+                  pkpass.userInfo?["walletThemeRevision"] as? String == expectedTheme.revision,
+                  pkpass.userInfo?["walletThemeDigest"] as? String == expectedTheme.digest,
+                  pkpass.userInfo?["walletThemeManifestVersion"] as? String == expectedTheme.manifestVersion,
+                  pkpass.userInfo?["walletThemePassStyle"] as? String == expectedTheme.passStyle else {
                 return .failure(message: "The downloaded pass did not match the selected Wallet design.")
             }
         }

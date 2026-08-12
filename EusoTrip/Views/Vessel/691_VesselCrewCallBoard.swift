@@ -710,13 +710,13 @@ private struct VesselCrewCallBoardBody691: View {
 
     private var ctaPair: some View {
         HStack(spacing: Space.s2) {
-            CTAButton(title: "Start muster call", leadingIcon: "megaphone.fill") {
+            CTAButton(title: "Start muster call", action: {
                 gapNotice = "Nothing was written. A muster call needs two writes this platform does not have: a read of vesselCrewManifests (drizzle/schema.ts:12077 — zero readers in server/) to know who is expected for THIS voyage, and a call-out row to record the attempt. getVesselCrew (vesselShipments.ts:2085) has no voyageId input at all, so it can only tell you who holds a vessel role. Proposed shapes filed with the-oath: vesselCrew.callBoard({voyageId}) and vesselCrew.recordCallOut({manifestId, channel})."
-            }
+            }, leadingIcon: "megaphone.fill")
             Button { showCerts = true } label: {
                 Text("Certificates")
                     .font(EType.title).foregroundStyle(palette.textPrimary)
-                    .frame(width: 148, minHeight: 52)
+                    .frame(width: 148).frame(minHeight: 52)
                     .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                         .strokeBorder(palette.borderSoft))
             }

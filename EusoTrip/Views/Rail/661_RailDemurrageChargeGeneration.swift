@@ -837,7 +837,7 @@ private struct RailDemurrageChargeRunBody661: View {
                 Text("Analytics")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)
-                    .frame(width: 132, minHeight: 52)
+                    .frame(width: 132).frame(minHeight: 52)
                     .background(palette.bgCard)
                     .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                         .strokeBorder(palette.borderFaint))

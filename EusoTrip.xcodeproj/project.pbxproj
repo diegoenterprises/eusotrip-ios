@@ -1053,6 +1053,61 @@
 		WALCRD0000000000000ST01 /* WalletCardStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = WALCRD0000000000000ST02 /* WalletCardStore.swift */; };
 		WALCRD0000000000000TH01 /* WalletCardTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = WALCRD0000000000000TH02 /* WalletCardTheme.swift */; };
 		XRRH20260521000001 /* XRReeferStatusHUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = XRRH20260521000002 /* XRReeferStatusHUD.swift */; };
+		FEEDB0000000000000000000 /* 404_CatalystAssetProcurement.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000000000 /* 404_CatalystAssetProcurement.swift */; };
+		FEEDB0000000000000001000 /* 405_CatalystAssetFinancials.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000001000 /* 405_CatalystAssetFinancials.swift */; };
+		FEEDB0000000000000002000 /* 406_CatalystRegistrationPermitRenewals.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000002000 /* 406_CatalystRegistrationPermitRenewals.swift */; };
+		FEEDB0000000000000003000 /* ES09_EscortHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000003000 /* ES09_EscortHome.swift */; };
+		FEEDB0000000000000004000 /* ES10_AssignmentDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000004000 /* ES10_AssignmentDetail.swift */; };
+		FEEDB0000000000000005000 /* ES11_ConvoyFormationMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000005000 /* ES11_ConvoyFormationMap.swift */; };
+		FEEDB0000000000000006000 /* ES12_MeProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000006000 /* ES12_MeProfile.swift */; };
+		FEEDB0000000000000007000 /* ES13_JobMarketplace.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000007000 /* ES13_JobMarketplace.swift */; };
+		FEEDB0000000000000008000 /* ES14_MyJobs.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000008000 /* ES14_MyJobs.swift */; };
+		FEEDB0000000000000009000 /* ES15_Schedule.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000009000 /* ES15_Schedule.swift */; };
+		FEEDB0000000000000010000 /* ES16_ActiveTripConsole.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000010000 /* ES16_ActiveTripConsole.swift */; };
+		FEEDB0000000000000011000 /* ES17_IncidentsClaims.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000011000 /* ES17_IncidentsClaims.swift */; };
+		FEEDB0000000000000012000 /* ES18_EarningsWallet.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000012000 /* ES18_EarningsWallet.swift */; };
+		FEEDB0000000000000013000 /* ES19_EscortTeam.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000013000 /* ES19_EscortTeam.swift */; };
+		FEEDB0000000000000014000 /* ES20_OnboardingRegistration.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000014000 /* ES20_OnboardingRegistration.swift */; };
+		FEEDB0000000000000015000 /* ES24_HazmatWatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000015000 /* ES24_HazmatWatch.swift */; };
+		FEEDB0000000000000016000 /* ES26_EmergencyReplacement.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000016000 /* ES26_EmergencyReplacement.swift */; };
+		FEEDB0000000000000017000 /* EscortOfflineCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000017000 /* EscortOfflineCache.swift */; };
+		FEEDB0000000000000018000 /* 003_RailLiveTracking.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000018000 /* 003_RailLiveTracking.swift */; };
+		FEEDB0000000000000019000 /* 004_RailDemurrageDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000019000 /* 004_RailDemurrageDetail.swift */; };
+		FEEDB0000000000000020000 /* 009_RailIntermodalJourney.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000020000 /* 009_RailIntermodalJourney.swift */; };
+		FEEDB0000000000000021000 /* 010_RailFreightBillAudit.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000021000 /* 010_RailFreightBillAudit.swift */; };
+		FEEDB0000000000000022000 /* 614_RailIntermodalSegmentBoard.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000022000 /* 614_RailIntermodalSegmentBoard.swift */; };
+		FEEDB0000000000000023000 /* 661_RailDemurrageChargeGeneration.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000023000 /* 661_RailDemurrageChargeGeneration.swift */; };
+		FEEDB0000000000000024000 /* 662_RailDemurrageChargeApproval.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000024000 /* 662_RailDemurrageChargeApproval.swift */; };
+		FEEDB0000000000000025000 /* 663_RailGateCheckIn.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000025000 /* 663_RailGateCheckIn.swift */; };
+		FEEDB0000000000000026000 /* 665_RailYardSlotInventory.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000026000 /* 665_RailYardSlotInventory.swift */; };
+		FEEDB0000000000000027000 /* 684_RailTenderHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000027000 /* 684_RailTenderHistory.swift */; };
+		FEEDB0000000000000028000 /* 685_RailEDI417WaybillReceipt.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000028000 /* 685_RailEDI417WaybillReceipt.swift */; };
+		FEEDB0000000000000029000 /* 688_RailConsistBoard.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000029000 /* 688_RailConsistBoard.swift */; };
+		FEEDB0000000000000030000 /* 695_RailAtInterchangeNotification.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000030000 /* 695_RailAtInterchangeNotification.swift */; };
+		FEEDB0000000000000031000 /* 696_RailJunctionDetentionBilling.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000031000 /* 696_RailJunctionDetentionBilling.swift */; };
+		FEEDB0000000000000032000 /* 005_VesselBillOfLading.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000032000 /* 005_VesselBillOfLading.swift */; };
+		FEEDB0000000000000033000 /* 007_VesselNewBooking.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000033000 /* 007_VesselNewBooking.swift */; };
+		FEEDB0000000000000034000 /* 010_VesselFreightBillAudit.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000034000 /* 010_VesselFreightBillAudit.swift */; };
+		FEEDB0000000000000035000 /* 679_VesselTelexRelease.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000035000 /* 679_VesselTelexRelease.swift */; };
+		FEEDB0000000000000036000 /* 690_VesselTerminalStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000036000 /* 690_VesselTerminalStatus.swift */; };
+		FEEDB0000000000000037000 /* 691_VesselCrewCallBoard.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000037000 /* 691_VesselCrewCallBoard.swift */; };
+		FEEDB0000000000000038000 /* 692_VesselTransshipmentConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000038000 /* 692_VesselTransshipmentConnection.swift */; };
+		FEEDB0000000000000039000 /* 699_VesselParticulars.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000039000 /* 699_VesselParticulars.swift */; };
+		FEEDB0000000000000040000 /* 703_VesselPortLineup.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000040000 /* 703_VesselPortLineup.swift */; };
+		FEEDB0000000000000041000 /* 704_VesselBayPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000041000 /* 704_VesselBayPlan.swift */; };
+		FEEDB0000000000000042000 /* 707_VesselContainerMovementLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000042000 /* 707_VesselContainerMovementLog.swift */; };
+		FEEDB0000000000000043000 /* 714_VesselShippingInstructions.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000043000 /* 714_VesselShippingInstructions.swift */; };
+		FEEDB0000000000000044000 /* 715_VesselBLDraftApproval.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000044000 /* 715_VesselBLDraftApproval.swift */; };
+		FEEDB0000000000000045000 /* 718_VesselCargoRelease.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000045000 /* 718_VesselCargoRelease.swift */; };
+		FEEDB0000000000000046000 /* 719_VesselEBL.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000046000 /* 719_VesselEBL.swift */; };
+		FEEDB0000000000000047000 /* 744_VesselTerminalGateLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000047000 /* 744_VesselTerminalGateLog.swift */; };
+		FEEDB0000000000000048000 /* 763_VesselBLDuplicateDetection.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000048000 /* 763_VesselBLDuplicateDetection.swift */; };
+		FEEDB0000000000000049000 /* 765_VesselLetterOfCredit.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000049000 /* 765_VesselLetterOfCredit.swift */; };
+		FEEDB0000000000000050000 /* 766_VesselLetterOfIndemnity.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000050000 /* 766_VesselLetterOfIndemnity.swift */; };
+		FEEDB0000000000000051000 /* 767_VesselSeaWaybill.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000051000 /* 767_VesselSeaWaybill.swift */; };
+		FEEDB0000000000000052000 /* 768_VesselMasterHouseBL.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000052000 /* 768_VesselMasterHouseBL.swift */; };
+		FEEDB0000000000000053000 /* 780_VesselTerminalMoveQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000053000 /* 780_VesselTerminalMoveQueue.swift */; };
+		FEEDB0000000000000054000 /* 781_VesselDropYardOperations.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEDF0000000000000054000 /* 781_VesselDropYardOperations.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -2163,6 +2218,61 @@
 		WALCRD0000000000000ST02 /* WalletCardStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalletCardStore.swift; sourceTree = "<group>"; };
 		WALCRD0000000000000TH02 /* WalletCardTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalletCardTheme.swift; sourceTree = "<group>"; };
 		XRRH20260521000002 /* XRReeferStatusHUD.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = XRReeferStatusHUD.swift; path = EusoTrip/Views/Components/XRReeferStatusHUD.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000000000 /* 404_CatalystAssetProcurement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 404_CatalystAssetProcurement.swift; path = EusoTrip/Views/Catalyst/404_CatalystAssetProcurement.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000001000 /* 405_CatalystAssetFinancials.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 405_CatalystAssetFinancials.swift; path = EusoTrip/Views/Catalyst/405_CatalystAssetFinancials.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000002000 /* 406_CatalystRegistrationPermitRenewals.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 406_CatalystRegistrationPermitRenewals.swift; path = EusoTrip/Views/Catalyst/406_CatalystRegistrationPermitRenewals.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000003000 /* ES09_EscortHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ES09_EscortHome.swift; path = EusoTrip/Views/Escort/ES09_EscortHome.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000004000 /* ES10_AssignmentDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ES10_AssignmentDetail.swift; path = EusoTrip/Views/Escort/ES10_AssignmentDetail.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000005000 /* ES11_ConvoyFormationMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ES11_ConvoyFormationMap.swift; path = EusoTrip/Views/Escort/ES11_ConvoyFormationMap.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000006000 /* ES12_MeProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ES12_MeProfile.swift; path = EusoTrip/Views/Escort/ES12_MeProfile.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000007000 /* ES13_JobMarketplace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ES13_JobMarketplace.swift; path = EusoTrip/Views/Escort/ES13_JobMarketplace.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000008000 /* ES14_MyJobs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ES14_MyJobs.swift; path = EusoTrip/Views/Escort/ES14_MyJobs.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000009000 /* ES15_Schedule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ES15_Schedule.swift; path = EusoTrip/Views/Escort/ES15_Schedule.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000010000 /* ES16_ActiveTripConsole.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ES16_ActiveTripConsole.swift; path = EusoTrip/Views/Escort/ES16_ActiveTripConsole.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000011000 /* ES17_IncidentsClaims.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ES17_IncidentsClaims.swift; path = EusoTrip/Views/Escort/ES17_IncidentsClaims.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000012000 /* ES18_EarningsWallet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ES18_EarningsWallet.swift; path = EusoTrip/Views/Escort/ES18_EarningsWallet.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000013000 /* ES19_EscortTeam.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ES19_EscortTeam.swift; path = EusoTrip/Views/Escort/ES19_EscortTeam.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000014000 /* ES20_OnboardingRegistration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ES20_OnboardingRegistration.swift; path = EusoTrip/Views/Escort/ES20_OnboardingRegistration.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000015000 /* ES24_HazmatWatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ES24_HazmatWatch.swift; path = EusoTrip/Views/Escort/ES24_HazmatWatch.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000016000 /* ES26_EmergencyReplacement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ES26_EmergencyReplacement.swift; path = EusoTrip/Views/Escort/ES26_EmergencyReplacement.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000017000 /* EscortOfflineCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EscortOfflineCache.swift; path = EusoTrip/Views/Escort/EscortOfflineCache.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000018000 /* 003_RailLiveTracking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 003_RailLiveTracking.swift; path = EusoTrip/Views/Rail/003_RailLiveTracking.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000019000 /* 004_RailDemurrageDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 004_RailDemurrageDetail.swift; path = EusoTrip/Views/Rail/004_RailDemurrageDetail.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000020000 /* 009_RailIntermodalJourney.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 009_RailIntermodalJourney.swift; path = EusoTrip/Views/Rail/009_RailIntermodalJourney.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000021000 /* 010_RailFreightBillAudit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 010_RailFreightBillAudit.swift; path = EusoTrip/Views/Rail/010_RailFreightBillAudit.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000022000 /* 614_RailIntermodalSegmentBoard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 614_RailIntermodalSegmentBoard.swift; path = EusoTrip/Views/Rail/614_RailIntermodalSegmentBoard.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000023000 /* 661_RailDemurrageChargeGeneration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 661_RailDemurrageChargeGeneration.swift; path = EusoTrip/Views/Rail/661_RailDemurrageChargeGeneration.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000024000 /* 662_RailDemurrageChargeApproval.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 662_RailDemurrageChargeApproval.swift; path = EusoTrip/Views/Rail/662_RailDemurrageChargeApproval.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000025000 /* 663_RailGateCheckIn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 663_RailGateCheckIn.swift; path = EusoTrip/Views/Rail/663_RailGateCheckIn.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000026000 /* 665_RailYardSlotInventory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 665_RailYardSlotInventory.swift; path = EusoTrip/Views/Rail/665_RailYardSlotInventory.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000027000 /* 684_RailTenderHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 684_RailTenderHistory.swift; path = EusoTrip/Views/Rail/684_RailTenderHistory.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000028000 /* 685_RailEDI417WaybillReceipt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 685_RailEDI417WaybillReceipt.swift; path = EusoTrip/Views/Rail/685_RailEDI417WaybillReceipt.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000029000 /* 688_RailConsistBoard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 688_RailConsistBoard.swift; path = EusoTrip/Views/Rail/688_RailConsistBoard.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000030000 /* 695_RailAtInterchangeNotification.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 695_RailAtInterchangeNotification.swift; path = EusoTrip/Views/Rail/695_RailAtInterchangeNotification.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000031000 /* 696_RailJunctionDetentionBilling.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 696_RailJunctionDetentionBilling.swift; path = EusoTrip/Views/Rail/696_RailJunctionDetentionBilling.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000032000 /* 005_VesselBillOfLading.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 005_VesselBillOfLading.swift; path = EusoTrip/Views/Vessel/005_VesselBillOfLading.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000033000 /* 007_VesselNewBooking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 007_VesselNewBooking.swift; path = EusoTrip/Views/Vessel/007_VesselNewBooking.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000034000 /* 010_VesselFreightBillAudit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 010_VesselFreightBillAudit.swift; path = EusoTrip/Views/Vessel/010_VesselFreightBillAudit.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000035000 /* 679_VesselTelexRelease.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 679_VesselTelexRelease.swift; path = EusoTrip/Views/Vessel/679_VesselTelexRelease.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000036000 /* 690_VesselTerminalStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 690_VesselTerminalStatus.swift; path = EusoTrip/Views/Vessel/690_VesselTerminalStatus.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000037000 /* 691_VesselCrewCallBoard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 691_VesselCrewCallBoard.swift; path = EusoTrip/Views/Vessel/691_VesselCrewCallBoard.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000038000 /* 692_VesselTransshipmentConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 692_VesselTransshipmentConnection.swift; path = EusoTrip/Views/Vessel/692_VesselTransshipmentConnection.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000039000 /* 699_VesselParticulars.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 699_VesselParticulars.swift; path = EusoTrip/Views/Vessel/699_VesselParticulars.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000040000 /* 703_VesselPortLineup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 703_VesselPortLineup.swift; path = EusoTrip/Views/Vessel/703_VesselPortLineup.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000041000 /* 704_VesselBayPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 704_VesselBayPlan.swift; path = EusoTrip/Views/Vessel/704_VesselBayPlan.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000042000 /* 707_VesselContainerMovementLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 707_VesselContainerMovementLog.swift; path = EusoTrip/Views/Vessel/707_VesselContainerMovementLog.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000043000 /* 714_VesselShippingInstructions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 714_VesselShippingInstructions.swift; path = EusoTrip/Views/Vessel/714_VesselShippingInstructions.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000044000 /* 715_VesselBLDraftApproval.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 715_VesselBLDraftApproval.swift; path = EusoTrip/Views/Vessel/715_VesselBLDraftApproval.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000045000 /* 718_VesselCargoRelease.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 718_VesselCargoRelease.swift; path = EusoTrip/Views/Vessel/718_VesselCargoRelease.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000046000 /* 719_VesselEBL.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 719_VesselEBL.swift; path = EusoTrip/Views/Vessel/719_VesselEBL.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000047000 /* 744_VesselTerminalGateLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 744_VesselTerminalGateLog.swift; path = EusoTrip/Views/Vessel/744_VesselTerminalGateLog.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000048000 /* 763_VesselBLDuplicateDetection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 763_VesselBLDuplicateDetection.swift; path = EusoTrip/Views/Vessel/763_VesselBLDuplicateDetection.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000049000 /* 765_VesselLetterOfCredit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 765_VesselLetterOfCredit.swift; path = EusoTrip/Views/Vessel/765_VesselLetterOfCredit.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000050000 /* 766_VesselLetterOfIndemnity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 766_VesselLetterOfIndemnity.swift; path = EusoTrip/Views/Vessel/766_VesselLetterOfIndemnity.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000051000 /* 767_VesselSeaWaybill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 767_VesselSeaWaybill.swift; path = EusoTrip/Views/Vessel/767_VesselSeaWaybill.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000052000 /* 768_VesselMasterHouseBL.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 768_VesselMasterHouseBL.swift; path = EusoTrip/Views/Vessel/768_VesselMasterHouseBL.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000053000 /* 780_VesselTerminalMoveQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 780_VesselTerminalMoveQueue.swift; path = EusoTrip/Views/Vessel/780_VesselTerminalMoveQueue.swift; sourceTree = SOURCE_ROOT; };
+		FEEDF0000000000000054000 /* 781_VesselDropYardOperations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 781_VesselDropYardOperations.swift; path = EusoTrip/Views/Vessel/781_VesselDropYardOperations.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -2304,6 +2414,61 @@
 		A1000000000000000000AAC0 /* Driver */ = {
 			isa = PBXGroup;
 			children = (
+				FEEDF0000000000000000000 /* 404_CatalystAssetProcurement.swift */,
+				FEEDF0000000000000001000 /* 405_CatalystAssetFinancials.swift */,
+				FEEDF0000000000000002000 /* 406_CatalystRegistrationPermitRenewals.swift */,
+				FEEDF0000000000000003000 /* ES09_EscortHome.swift */,
+				FEEDF0000000000000004000 /* ES10_AssignmentDetail.swift */,
+				FEEDF0000000000000005000 /* ES11_ConvoyFormationMap.swift */,
+				FEEDF0000000000000006000 /* ES12_MeProfile.swift */,
+				FEEDF0000000000000007000 /* ES13_JobMarketplace.swift */,
+				FEEDF0000000000000008000 /* ES14_MyJobs.swift */,
+				FEEDF0000000000000009000 /* ES15_Schedule.swift */,
+				FEEDF0000000000000010000 /* ES16_ActiveTripConsole.swift */,
+				FEEDF0000000000000011000 /* ES17_IncidentsClaims.swift */,
+				FEEDF0000000000000012000 /* ES18_EarningsWallet.swift */,
+				FEEDF0000000000000013000 /* ES19_EscortTeam.swift */,
+				FEEDF0000000000000014000 /* ES20_OnboardingRegistration.swift */,
+				FEEDF0000000000000015000 /* ES24_HazmatWatch.swift */,
+				FEEDF0000000000000016000 /* ES26_EmergencyReplacement.swift */,
+				FEEDF0000000000000017000 /* EscortOfflineCache.swift */,
+				FEEDF0000000000000018000 /* 003_RailLiveTracking.swift */,
+				FEEDF0000000000000019000 /* 004_RailDemurrageDetail.swift */,
+				FEEDF0000000000000020000 /* 009_RailIntermodalJourney.swift */,
+				FEEDF0000000000000021000 /* 010_RailFreightBillAudit.swift */,
+				FEEDF0000000000000022000 /* 614_RailIntermodalSegmentBoard.swift */,
+				FEEDF0000000000000023000 /* 661_RailDemurrageChargeGeneration.swift */,
+				FEEDF0000000000000024000 /* 662_RailDemurrageChargeApproval.swift */,
+				FEEDF0000000000000025000 /* 663_RailGateCheckIn.swift */,
+				FEEDF0000000000000026000 /* 665_RailYardSlotInventory.swift */,
+				FEEDF0000000000000027000 /* 684_RailTenderHistory.swift */,
+				FEEDF0000000000000028000 /* 685_RailEDI417WaybillReceipt.swift */,
+				FEEDF0000000000000029000 /* 688_RailConsistBoard.swift */,
+				FEEDF0000000000000030000 /* 695_RailAtInterchangeNotification.swift */,
+				FEEDF0000000000000031000 /* 696_RailJunctionDetentionBilling.swift */,
+				FEEDF0000000000000032000 /* 005_VesselBillOfLading.swift */,
+				FEEDF0000000000000033000 /* 007_VesselNewBooking.swift */,
+				FEEDF0000000000000034000 /* 010_VesselFreightBillAudit.swift */,
+				FEEDF0000000000000035000 /* 679_VesselTelexRelease.swift */,
+				FEEDF0000000000000036000 /* 690_VesselTerminalStatus.swift */,
+				FEEDF0000000000000037000 /* 691_VesselCrewCallBoard.swift */,
+				FEEDF0000000000000038000 /* 692_VesselTransshipmentConnection.swift */,
+				FEEDF0000000000000039000 /* 699_VesselParticulars.swift */,
+				FEEDF0000000000000040000 /* 703_VesselPortLineup.swift */,
+				FEEDF0000000000000041000 /* 704_VesselBayPlan.swift */,
+				FEEDF0000000000000042000 /* 707_VesselContainerMovementLog.swift */,
+				FEEDF0000000000000043000 /* 714_VesselShippingInstructions.swift */,
+				FEEDF0000000000000044000 /* 715_VesselBLDraftApproval.swift */,
+				FEEDF0000000000000045000 /* 718_VesselCargoRelease.swift */,
+				FEEDF0000000000000046000 /* 719_VesselEBL.swift */,
+				FEEDF0000000000000047000 /* 744_VesselTerminalGateLog.swift */,
+				FEEDF0000000000000048000 /* 763_VesselBLDuplicateDetection.swift */,
+				FEEDF0000000000000049000 /* 765_VesselLetterOfCredit.swift */,
+				FEEDF0000000000000050000 /* 766_VesselLetterOfIndemnity.swift */,
+				FEEDF0000000000000051000 /* 767_VesselSeaWaybill.swift */,
+				FEEDF0000000000000052000 /* 768_VesselMasterHouseBL.swift */,
+				FEEDF0000000000000053000 /* 780_VesselTerminalMoveQueue.swift */,
+				FEEDF0000000000000054000 /* 781_VesselDropYardOperations.swift */,
 				A12AE74E2A03406ADC0DD5AD /* 010_DriverHome.swift */,
 				A1A34909AFFDFF756FF363F3 /* 011_PretripDVIR.swift */,
 				A192A329AC526EED829942B1 /* 012_DvirSubmitted.swift */,
@@ -4714,6 +4879,61 @@
 				D1A11111111111111111ATD1 /* 803_AdminTenantDetail.swift in Sources */,
 				D1A11111111111111111LP01 /* LifecycleProductContext.swift in Sources */,
 				A1A11111111111111111F001 /* PushService.swift in Sources */,
+				FEEDB0000000000000000000 /* 404_CatalystAssetProcurement.swift in Sources */,
+				FEEDB0000000000000001000 /* 405_CatalystAssetFinancials.swift in Sources */,
+				FEEDB0000000000000002000 /* 406_CatalystRegistrationPermitRenewals.swift in Sources */,
+				FEEDB0000000000000003000 /* ES09_EscortHome.swift in Sources */,
+				FEEDB0000000000000004000 /* ES10_AssignmentDetail.swift in Sources */,
+				FEEDB0000000000000005000 /* ES11_ConvoyFormationMap.swift in Sources */,
+				FEEDB0000000000000006000 /* ES12_MeProfile.swift in Sources */,
+				FEEDB0000000000000007000 /* ES13_JobMarketplace.swift in Sources */,
+				FEEDB0000000000000008000 /* ES14_MyJobs.swift in Sources */,
+				FEEDB0000000000000009000 /* ES15_Schedule.swift in Sources */,
+				FEEDB0000000000000010000 /* ES16_ActiveTripConsole.swift in Sources */,
+				FEEDB0000000000000011000 /* ES17_IncidentsClaims.swift in Sources */,
+				FEEDB0000000000000012000 /* ES18_EarningsWallet.swift in Sources */,
+				FEEDB0000000000000013000 /* ES19_EscortTeam.swift in Sources */,
+				FEEDB0000000000000014000 /* ES20_OnboardingRegistration.swift in Sources */,
+				FEEDB0000000000000015000 /* ES24_HazmatWatch.swift in Sources */,
+				FEEDB0000000000000016000 /* ES26_EmergencyReplacement.swift in Sources */,
+				FEEDB0000000000000017000 /* EscortOfflineCache.swift in Sources */,
+				FEEDB0000000000000018000 /* 003_RailLiveTracking.swift in Sources */,
+				FEEDB0000000000000019000 /* 004_RailDemurrageDetail.swift in Sources */,
+				FEEDB0000000000000020000 /* 009_RailIntermodalJourney.swift in Sources */,
+				FEEDB0000000000000021000 /* 010_RailFreightBillAudit.swift in Sources */,
+				FEEDB0000000000000022000 /* 614_RailIntermodalSegmentBoard.swift in Sources */,
+				FEEDB0000000000000023000 /* 661_RailDemurrageChargeGeneration.swift in Sources */,
+				FEEDB0000000000000024000 /* 662_RailDemurrageChargeApproval.swift in Sources */,
+				FEEDB0000000000000025000 /* 663_RailGateCheckIn.swift in Sources */,
+				FEEDB0000000000000026000 /* 665_RailYardSlotInventory.swift in Sources */,
+				FEEDB0000000000000027000 /* 684_RailTenderHistory.swift in Sources */,
+				FEEDB0000000000000028000 /* 685_RailEDI417WaybillReceipt.swift in Sources */,
+				FEEDB0000000000000029000 /* 688_RailConsistBoard.swift in Sources */,
+				FEEDB0000000000000030000 /* 695_RailAtInterchangeNotification.swift in Sources */,
+				FEEDB0000000000000031000 /* 696_RailJunctionDetentionBilling.swift in Sources */,
+				FEEDB0000000000000032000 /* 005_VesselBillOfLading.swift in Sources */,
+				FEEDB0000000000000033000 /* 007_VesselNewBooking.swift in Sources */,
+				FEEDB0000000000000034000 /* 010_VesselFreightBillAudit.swift in Sources */,
+				FEEDB0000000000000035000 /* 679_VesselTelexRelease.swift in Sources */,
+				FEEDB0000000000000036000 /* 690_VesselTerminalStatus.swift in Sources */,
+				FEEDB0000000000000037000 /* 691_VesselCrewCallBoard.swift in Sources */,
+				FEEDB0000000000000038000 /* 692_VesselTransshipmentConnection.swift in Sources */,
+				FEEDB0000000000000039000 /* 699_VesselParticulars.swift in Sources */,
+				FEEDB0000000000000040000 /* 703_VesselPortLineup.swift in Sources */,
+				FEEDB0000000000000041000 /* 704_VesselBayPlan.swift in Sources */,
+				FEEDB0000000000000042000 /* 707_VesselContainerMovementLog.swift in Sources */,
+				FEEDB0000000000000043000 /* 714_VesselShippingInstructions.swift in Sources */,
+				FEEDB0000000000000044000 /* 715_VesselBLDraftApproval.swift in Sources */,
+				FEEDB0000000000000045000 /* 718_VesselCargoRelease.swift in Sources */,
+				FEEDB0000000000000046000 /* 719_VesselEBL.swift in Sources */,
+				FEEDB0000000000000047000 /* 744_VesselTerminalGateLog.swift in Sources */,
+				FEEDB0000000000000048000 /* 763_VesselBLDuplicateDetection.swift in Sources */,
+				FEEDB0000000000000049000 /* 765_VesselLetterOfCredit.swift in Sources */,
+				FEEDB0000000000000050000 /* 766_VesselLetterOfIndemnity.swift in Sources */,
+				FEEDB0000000000000051000 /* 767_VesselSeaWaybill.swift in Sources */,
+				FEEDB0000000000000052000 /* 768_VesselMasterHouseBL.swift in Sources */,
+				FEEDB0000000000000053000 /* 780_VesselTerminalMoveQueue.swift in Sources */,
+				FEEDB0000000000000054000 /* 781_VesselDropYardOperations.swift in Sources */,
 				A1A11111111111111111F101 /* ReminderScheduler.swift in Sources */,
 				A1A11111111111111111API1 /* ShipperAppIntents.swift in Sources */,
 				A1A11111111111111111LAA1 /* ShipperLoadActivityAttributes.swift in Sources */,

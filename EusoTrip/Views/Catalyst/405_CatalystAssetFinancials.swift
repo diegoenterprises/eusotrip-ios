@@ -602,7 +602,7 @@ private struct AssetFinancialsBody_405: View {
                 Text("Payments")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(reach.isOnline ? palette.textPrimary : palette.textTertiary)
-                    .frame(width: 132, minHeight: 48)
+                    .frame(width: 132).frame(minHeight: 48)
                     .background(Capsule().fill(palette.bgCard))
                     .overlay(Capsule().strokeBorder(palette.borderFaint))
             }

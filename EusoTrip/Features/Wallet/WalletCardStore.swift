@@ -210,11 +210,11 @@ final class WalletCardStore: ObservableObject {
             // BOUNDED, auth-aware download (no raw URLSession.shared default timeout).
             let (data, _) = try await api.fetchAuthenticatedData(url)
             let pass = try PKPass(data: data)
-            guard pass.userInfo["walletThemeId"] as? String == chosenTheme.id,
-                  pass.userInfo["walletThemeRevision"] as? String == revision,
-                  pass.userInfo["walletThemeDigest"] as? String == digest,
-                  pass.userInfo["walletThemeManifestVersion"] as? String == chosenTheme.manifestVersion,
-                  pass.userInfo["walletThemePassStyle"] as? String == chosenTheme.passStyle else {
+            guard pass.userInfo?["walletThemeId"] as? String == chosenTheme.id,
+                  pass.userInfo?["walletThemeRevision"] as? String == revision,
+                  pass.userInfo?["walletThemeDigest"] as? String == digest,
+                  pass.userInfo?["walletThemeManifestVersion"] as? String == chosenTheme.manifestVersion,
+                  pass.userInfo?["walletThemePassStyle"] as? String == chosenTheme.passStyle else {
                 throw WalletPassValidationError.themeMismatch
             }
 
@@ -285,11 +285,11 @@ final class WalletCardStore: ObservableObject {
             }
             let (data, _) = try await api.fetchAuthenticatedData(url)
             let pass = try PKPass(data: data)
-            guard pass.userInfo["walletThemeId"] as? String == chosenTheme.id,
-                  pass.userInfo["walletThemeRevision"] as? String == revision,
-                  pass.userInfo["walletThemeDigest"] as? String == digest,
-                  pass.userInfo["walletThemeManifestVersion"] as? String == chosenTheme.manifestVersion,
-                  pass.userInfo["walletThemePassStyle"] as? String == "eventTicket" else {
+            guard pass.userInfo?["walletThemeId"] as? String == chosenTheme.id,
+                  pass.userInfo?["walletThemeRevision"] as? String == revision,
+                  pass.userInfo?["walletThemeDigest"] as? String == digest,
+                  pass.userInfo?["walletThemeManifestVersion"] as? String == chosenTheme.manifestVersion,
+                  pass.userInfo?["walletThemePassStyle"] as? String == "eventTicket" else {
                 throw WalletPassValidationError.themeMismatch
             }
 

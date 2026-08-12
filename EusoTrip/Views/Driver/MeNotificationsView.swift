@@ -204,6 +204,10 @@ struct MeNotificationsView: View {
     private var pushStatusText: String {
         switch push.phase {
         case .authorized: return "Enabled"
+        // Granted, but QUIETLY — Notification Center only, never the lock
+        // screen. Reporting this as "Enabled" is what let silent delivery look
+        // like working push for so long.
+        case .provisionalQuiet: return "Quiet only"
         case .denied:     return "Off"
         case .requesting: return "Requesting…"
         case .failed:     return "Error"
@@ -213,6 +217,7 @@ struct MeNotificationsView: View {
     private var pushStatusKind: StatusPill.Kind {
         switch push.phase {
         case .authorized: return .success
+        case .provisionalQuiet: return .warning
         case .denied, .failed: return .warning
         case .requesting: return .info
         case .unknown:    return .neutral
@@ -221,6 +226,7 @@ struct MeNotificationsView: View {
     private var pushHeadline: String {
         switch push.phase {
         case .authorized: return "You're all set"
+        case .provisionalQuiet: return "Alerts arrive silently"
         case .denied:     return "Push is turned off"
         case .requesting: return "Checking…"
         case .failed:     return "Couldn't register"
@@ -231,6 +237,8 @@ struct MeNotificationsView: View {
         switch push.phase {
         case .authorized:
             return "Load offers, safety alerts and compliance warnings are delivered to this device."
+        case .provisionalQuiet:
+            return "iOS is delivering quietly: alerts reach Notification Center but not the lock screen, with no banner or sound. Allow notifications in iOS Settings to get them on the lock screen."
         case .denied:
             return "Push is disabled in iOS Settings. You'll still see alerts in the app, but not on the lock screen."
         case .requesting: return "Asking iOS for permission."

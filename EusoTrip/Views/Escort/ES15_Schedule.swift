@@ -67,7 +67,7 @@ private struct ES15JobIdInput: Encodable { let jobId: String }
 private struct ES15AvailabilityInput: Encodable { let dayOfWeek: Int; let available: Bool }
 
 /// One row off `escorts.getUpcomingJobs` (escorts.ts:738).
-private struct ES15UpcomingJob: Decodable, Identifiable, Codable {
+private struct ES15UpcomingJob: Identifiable, Codable {
     let id: String
     let loadNumber: String?
     let position: String?
@@ -80,7 +80,7 @@ private struct ES15UpcomingJob: Decodable, Identifiable, Codable {
 
 /// One row off `escorts.getSchedule` (escorts.ts:2265). `endTime` comes back as
 /// "" from the server projection, so it is treated as absent.
-private struct ES15ScheduleRow: Decodable, Identifiable, Codable {
+private struct ES15ScheduleRow: Identifiable, Codable {
     let id: String
     let convoyName: String?
     let status: String?
@@ -93,7 +93,7 @@ private struct ES15ScheduleRow: Decodable, Identifiable, Codable {
 }
 
 /// One row off `escorts.getAvailability` (escorts.ts:2298).
-private struct ES15AvailabilityDay: Decodable, Identifiable, Codable {
+private struct ES15AvailabilityDay: Identifiable, Codable {
     let dayOfWeek: Int
     let dayName: String
     let available: Bool
@@ -108,17 +108,17 @@ private struct ES15AvailabilityReceipt: Decodable {
 
 /// Cert wallet off `escorts.getCertificationStatus` (escorts.ts:924) — only the
 /// nearest expiration is consumed, to DERIVE the renewal-window band.
-private struct ES15Cert: Decodable, Codable {
+private struct ES15Cert: Codable {
     let certType: String?
     let issuingState: String?
     let expirationDate: String?
 }
-private struct ES15CertStatus: Decodable, Codable {
+private struct ES15CertStatus: Codable {
     let certifications: [ES15Cert]?
 }
 
 /// `escorts.getJobDetails` (escorts.ts:1979) — one field is wanted here.
-private struct ES15JobSpan: Decodable, Codable {
+private struct ES15JobSpan: Codable {
     let id: String
     let loadNumber: String?
     let pickupDate: String?

@@ -139,7 +139,7 @@ private struct VesselShippingInstructionsBody: View {
                     filingStrip
                     esangAdvisory
                     HStack(spacing: 8) {
-                        CTAButton(title: "Submit SI", leadingIcon: "paperplane") { Task { await submit() } }
+                        CTAButton(title: "Submit SI", action: { Task { await submit() } }, leadingIcon: "paperplane")
                             .opacity(vgmVerified ? 1 : 0.55)
                         SecondaryButton(title: "Save draft") {}
                     }

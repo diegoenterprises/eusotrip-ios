@@ -239,7 +239,7 @@ private struct VesselFreightBillAuditBody: View {
                 .background(RoundedRectangle(cornerRadius: 12).fill(Brand.info.opacity(0.08)))
             }
             HStack(spacing: 8) {
-                CTAButton(title: "Draft dispute", leadingIcon: "doc.text") { gapNotice = "Dispute filing is ONLINE_ONLY(money) and its vessel endpoint is a named gap (vesselFreightAudit.auditInvoice) — filed with the-oath. ESang keeps the draft locally until it lands." }
+                CTAButton(title: "Draft dispute", action: { gapNotice = "Dispute filing is ONLINE_ONLY(money) and its vessel endpoint is a named gap (vesselFreightAudit.auditInvoice) — filed with the-oath. ESang keeps the draft locally until it lands." }, leadingIcon: "doc.text")
                 SecondaryButton(title: "Charge lines") { }
             }
         }

@@ -128,7 +128,7 @@ private struct VesselBLDraftApprovalBody: View {
                     govLawStrip
                     esangAdvisory
                     HStack(spacing: 8) {
-                        CTAButton(title: approved ? "Approved" : "Approve B/L", leadingIcon: approved ? "checkmark.seal.fill" : "checkmark.seal") { Task { await approve() } }
+                        CTAButton(title: approved ? "Approved" : "Approve B/L", action: { Task { await approve() } }, leadingIcon: approved ? "checkmark.seal.fill" : "checkmark.seal")
                         SecondaryButton(title: "Request correction") {}
                     }
                 }

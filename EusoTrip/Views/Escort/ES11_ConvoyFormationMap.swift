@@ -347,7 +347,9 @@ struct EscortConvoyFormationMap: View {
             GeometryReader { geo in
                 let full: CGFloat = 1_600
                 let w = geo.size.width
-                func x(_ feet: CGFloat) -> CGFloat { min(w, (feet / full) * w) }
+                // A `func` declaration is not allowed inside a @ViewBuilder
+                // closure; a `let` holding a closure is. Same behaviour.
+                let x: (CGFloat) -> CGFloat = { feet in min(w, (feet / full) * w) }
                 let lawX = x(CGFloat(Law.spacingFeet))
                 let limX = x(CGFloat(Law.integrityFeet))
                 ZStack(alignment: .topLeading) {

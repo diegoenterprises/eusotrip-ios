@@ -136,6 +136,23 @@ private enum ES17Band: String, CaseIterable, Identifiable {
     case critical, major, moderate, minor
     var id: String { rawValue }
     var label: String { rawValue.uppercased() }
+
+    /// Severity colour for this band.
+    ///
+    /// The screen called a free function `bandTint(_:)` that does not exist in
+    /// this file — the only `bandTint` in the tree is a PRIVATE method on the
+    /// Catalyst permit-renewals view and takes a CredentialGate, so it was
+    /// never reachable from here. Defined on the band itself so the mapping
+    /// lives with the thing it describes, using the same Brand severity ramp
+    /// the rest of the app uses.
+    var tint: Color {
+        switch self {
+        case .critical: return Brand.danger
+        case .major:    return Brand.warning
+        case .moderate: return Brand.info
+        case .minor:    return Brand.success
+        }
+    }
 }
 
 // MARK: - Screen
@@ -295,7 +312,7 @@ struct EscortIncidentsClaims: View {
                         Circle().fill(palette.bgCard)
                             .overlay(Circle().strokeBorder(palette.textTertiary, lineWidth: 1.5))
                     } else {
-                        Circle().fill(bandTint(band))
+                        Circle().fill(band.tint)
                     }
                 }
                 .frame(width: 14, height: 14)
@@ -303,7 +320,7 @@ struct EscortIncidentsClaims: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(band.label)
                         .font(.system(size: 9, weight: .heavy)).tracking(0.7)
-                        .foregroundStyle(rows.isEmpty ? palette.textTertiary : bandTint(band))
+                        .foregroundStyle(rows.isEmpty ? palette.textTertiary : band.tint)
                     if rows.isEmpty {
                         // An empty band says so instead of vanishing.
                         Text("0 ON FILE · BAND CLEAR")

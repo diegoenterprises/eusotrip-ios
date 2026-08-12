@@ -956,7 +956,7 @@ struct CatalystRegistrationPermitRenewals: View {
                 Text("Fee schedule")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)
-                    .frame(width: 132, minHeight: 48)
+                    .frame(width: 132).frame(minHeight: 48)
                     .background(Capsule().fill(palette.bgSecondary))
                     .overlay(Capsule().strokeBorder(palette.borderFaint))
             }
@@ -1128,15 +1128,15 @@ extension Notification.Name {
 private func catalystNav406() -> ([NavSlot], [NavSlot]) {
     let leading = [
         NavSlot(label: "Home",     systemImage: "house.fill", isCurrent: false,
-                onTap: { CarrierNavDispatcher.handle("home") }),
+                onTap: { Task { @MainActor in CarrierNavDispatcher.handle("home") } }),
         NavSlot(label: "Dispatch", systemImage: "tray.full",  isCurrent: false,
-                onTap: { CarrierNavDispatcher.handle("dispatch") }),
+                onTap: { Task { @MainActor in CarrierNavDispatcher.handle("dispatch") } }),
     ]
     let trailing = [
         NavSlot(label: "Fleet", systemImage: "truck.box",   isCurrent: true,
-                onTap: { CarrierNavDispatcher.handle("fleet") }),
+                onTap: { Task { @MainActor in CarrierNavDispatcher.handle("fleet") } }),
         NavSlot(label: "Me",    systemImage: "person.fill", isCurrent: false,
-                onTap: { CarrierNavDispatcher.handle("me") }),
+                onTap: { Task { @MainActor in CarrierNavDispatcher.handle("me") } }),
     ]
     return (leading, trailing)
 }

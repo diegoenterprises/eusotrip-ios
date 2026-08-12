@@ -815,7 +815,7 @@ private struct VesselParticularsBody699: View {
                         Text("PSC record").font(EType.title).foregroundColor(palette.textPrimary)
                     }
                 }
-                .frame(width: 152, minHeight: 52)
+                .frame(width: 152).frame(minHeight: 52)
                 .background(
                     RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCard)
                 )

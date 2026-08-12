@@ -102,7 +102,7 @@ private struct ES16ProximityInput: Encodable {
 /// `escorts.getCorridor.legs[].wind` — LegWindGate (escorts.ts:318-330).
 /// Every optional is optional ON THE SERVER for a reason: nil gust means
 /// WeatherKit produced nothing, and that must read as UNKNOWN, never as calm.
-private struct ES16WindGate: Decodable, Codable, Equatable {
+private struct ES16WindGate: Codable, Equatable {
     let gust: Double?
     let status: String?
     let band: String?
@@ -113,7 +113,7 @@ private struct ES16WindGate: Decodable, Codable, Equatable {
     let available: Bool?
 }
 
-private struct ES16WindEnvelope: Decodable, Codable, Equatable {
+private struct ES16WindEnvelope: Codable, Equatable {
     let gated: Bool?
     let available: Bool?
     let overallStatus: String?
@@ -125,7 +125,7 @@ private struct ES16WindEnvelope: Decodable, Codable, Equatable {
     let fetchedAt: String?
 }
 
-private struct ES16Leg: Decodable, Codable, Identifiable, Equatable {
+private struct ES16Leg: Codable, Identifiable, Equatable {
     let id: String
     let label: String?
     let origin: String?
@@ -137,7 +137,7 @@ private struct ES16Leg: Decodable, Codable, Identifiable, Equatable {
     let wind: ES16WindGate?
 }
 
-private struct ES16Corridor: Decodable, Codable, Equatable {
+private struct ES16Corridor: Codable, Equatable {
     let id: String
     let loadNumber: String?
     let origin: String?
@@ -151,12 +151,12 @@ private struct ES16Corridor: Decodable, Codable, Equatable {
     let windGate: ES16WindEnvelope?
 }
 
-private struct ES16Place: Decodable, Codable, Equatable {
+private struct ES16Place: Codable, Equatable {
     let city: String?
     let state: String?
     var label: String { [city, state].compactMap { $0 }.joined(separator: ", ") }
 }
-private struct ES16Load: Decodable, Codable, Equatable {
+private struct ES16Load: Codable, Equatable {
     let id: Int?
     let loadNumber: String?
     let cargoType: String?
@@ -166,13 +166,13 @@ private struct ES16Load: Decodable, Codable, Equatable {
     let origin: ES16Place?
     let destination: ES16Place?
 }
-private struct ES16Convoy: Decodable, Codable, Equatable {
+private struct ES16Convoy: Codable, Equatable {
     let id: Int?
     let status: String?
     let maxSpeedMph: Int?
     let currentRearDistance: Int?
 }
-private struct ES16Trip: Decodable, Codable, Equatable {
+private struct ES16Trip: Codable, Equatable {
     let assignmentId: Int
     let assignmentStatus: String?
     let position: String?
@@ -181,13 +181,13 @@ private struct ES16Trip: Decodable, Codable, Equatable {
     let convoy: ES16Convoy?
 }
 
-private struct ES16Restriction: Decodable, Codable, Identifiable, Equatable {
+private struct ES16Restriction: Codable, Identifiable, Equatable {
     let type: String
     let severity: String
     let title: String
     var id: String { type }
 }
-private struct ES16Restrictions: Decodable, Codable, Equatable {
+private struct ES16Restrictions: Codable, Equatable {
     let weight: Double?
     let isOversize: Bool?
     let isHazmat: Bool?
@@ -195,14 +195,14 @@ private struct ES16Restrictions: Decodable, Codable, Equatable {
     let restrictions: [ES16Restriction]
 }
 
-private struct ES16Proximity: Decodable, Codable, Equatable {
+private struct ES16Proximity: Codable, Equatable {
     let distanceMeters: Double?
     let warningThresholdMeters: Double?
     let status: String?
     let convoyMaxSpeed: Int?
 }
 
-private struct ES16ClearanceEvent: Decodable, Codable, Identifiable, Equatable {
+private struct ES16ClearanceEvent: Codable, Identifiable, Equatable {
     let id: Int
     let eventType: String
     let structureName: String?
@@ -213,7 +213,7 @@ private struct ES16ClearanceEvent: Decodable, Codable, Identifiable, Equatable {
 
 /// `getLowClearanceProximity` — bridgesChecked == 0 is the discriminator this
 /// screen exists to respect.
-private struct ES16BridgeCoverage: Decodable, Codable, Equatable {
+private struct ES16BridgeCoverage: Codable, Equatable {
     let bridgesChecked: Int
     let datasetRows: Int
     let coverageRadiusMi: Double

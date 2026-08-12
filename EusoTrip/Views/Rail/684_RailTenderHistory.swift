@@ -1196,7 +1196,7 @@ private struct RailTenderHistoryBody684: View {
                 Text("Filter")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)
-                    .frame(width: 148, minHeight: 52)
+                    .frame(width: 148).frame(minHeight: 52)
                     .background(palette.bgCard)
                     .overlay(
                         RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
