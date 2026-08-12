@@ -31,7 +31,7 @@ const allow = new Set(
 const patterns = [
   ["raw-backend-copy", /\bbackend\b/i],
   ["raw-server-copy", /\bservers?\b/i],
-  ["raw-proc-copy", /\bproc\b/i],
+  ["raw-proc-copy", /\bproc(?:edure)?\b/i],
   ["source-file-copy", /\b[\w./-]+\.(?:ts|tsx|swift|mjs|js):\d+\b/i],
   ["ticket-placeholder", /\bEUSO-\d{3,}\b/i],
   ["matrix-placeholder", /\bMATRIX-\d+\b/i],
@@ -50,7 +50,13 @@ const patterns = [
 // A raw tRPC router.procedure path leaking into visible copy
 // ("Posts to freightClaims.fileDispute" / "loads.getById · …").
 // Users get domain language, never wire identifiers.
-const trpcProcPattern = /\b(?:loads|loadBidding|dispatch|wallet|eusoWallet|esang|documents|compliance|shippers|drivers|freightClaims|railShipments|vesselShipments|gamification|insurance|referrals|users|contacts|messaging|truckPosting|hotZones|marketPricing|eusoTicket|safety|hos|eld|csaScores|yardManagement|terminals|telemetry|geofencing|notifications|profile|news)\.[a-z][a-zA-Z]+\b/;
+// A router.procedure path in visible copy. This was a hardcoded list of router
+// names, so every router added since — esangCoach, portOps, vesselStowage,
+// blankSailing, containerTimeline, imdg, multiModal, intermodal — sailed
+// through. Matched structurally instead: `something.verbCamelCase` is a wire
+// path regardless of which router it names, and the router list can no longer
+// drift behind the codebase.
+const trpcProcPattern = /\b[a-z][a-zA-Z0-9]*\.(?:get|list|create|update|delete|approve|reject|calculate|submit|assign|record|fetch|send|cancel|resolve|acknowledge|register|revoke|issue|release|link|unlink|import|export|audit|verify|validate|lock|unlock|rebooking|for)[A-Z][a-zA-Z0-9]*\b/;
 
 // camelCase internal identifier heuristic for eyebrow/mono strings:
 // only applies to strings that use " · " separators (the eyebrow style),
@@ -102,7 +108,7 @@ function visibleStrings(line) {
     /\bSecureField\(\s*"((?:\\"|[^"])*)"/g,
     /\bAlert\(\s*title:\s*Text\(\s*"((?:\\"|[^"])*)"/g,
     /\b(?:title|subtitle|text|label|detail|message):\s*"((?:\\"|[^"])*)"/g,
-    /\b(?:pillCopy|sub|meta|cta|caption|hint|eyebrow|footnote|binding|bindingAndCount):\s*"((?:\\"|[^"])*)"/g
+    /\b(?:pillCopy|sub|meta|cta|caption|hint|eyebrow|footnote|binding|bindingAndCount|ref|body|note|notice|reason|blurb|copy|summary|helpText):\s*"((?:\\"|[^"])*)"/g
   ];
   for (const re of calls) {
     let match;
@@ -127,6 +133,17 @@ function visibleStrings(line) {
   const assigned = /\b\w*(?:Notice|Note|Message|Error|Warning|Banner|Hint|Subtitle|Caption|Detail|Copy|Reason|Status)\b\s*=\s*"((?:\\"|[^"])*)"/g;
   let a;
   while ((a = assigned.exec(line))) out.push(a[1]);
+
+  // Copy RETURNED from a String-returning helper. `callGapNotice()` renders
+  // under a "HONEST GAP" header and returns its prose with `return "…"`, so
+  // none of the collectors above ever saw it — the single worst string in the
+  // vessel area survived two cleanup passes that way. Only long returns are
+  // taken: `return "OFF ROSTER"` is a label, not prose.
+  const returned = /\breturn\s+"((?:\\"|[^"])*)"/g;
+  let r;
+  while ((r = returned.exec(line))) {
+    if (r[1].length >= 40) out.push(r[1]);
+  }
 
   return out;
 }
