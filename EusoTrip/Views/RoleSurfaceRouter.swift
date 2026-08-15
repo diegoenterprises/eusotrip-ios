@@ -32,7 +32,6 @@
 //
 
 import SwiftUI
-import PhotosUI
 import SafariServices
 
 // MARK: - Role surface router
@@ -353,19 +352,6 @@ struct ShipperSurface: View {
     /// Cleared when the sheet dismisses.
     @State private var webContinuationURL: URL? = nil
 
-    /// Photos picker visibility — toggled by the avatar tap from the
-    /// Me hero. The picked `PhotosPickerItem` resolves to JPEG `Data`
-    /// in `.onChange`, gets uploaded as a base64 data URL via
-    /// `profile.updateAvatar`, and the new URL is mirrored into the
-    /// session user so the Me hero re-renders with the new image
-    /// without a manual refresh.
-    @State private var avatarPickerItem: PhotosPickerItem? = nil
-    @State private var avatarPickerOpen: Bool = false
-    /// Surfaces a failed avatar upload to the user. Was previously a
-    /// silent `try?`/`if let` — on failure nothing happened and the
-    /// user re-picked the photo forever. (the-oath §6 FIX 6.)
-    @State private var avatarUploadError: String? = nil
-
     /// The single generic detail layer pushed in-stack via the shared
     /// `\.rolePushDetail` (aliased to `\.shipperPushDetail` for the four
     /// converted Shipper screens). Sheet→push, NAV remediation
@@ -508,7 +494,6 @@ struct ShipperSurface: View {
                 activePortIntelProduct: $activePortIntelProduct,
                 activeSearchQuery: $activeSearchQuery,
                 activePostLoadDraftId: $activePostLoadDraftId,
-                avatarPickerOpen: $avatarPickerOpen,
                 showeSang: $showeSang,
                 webContinuationURL: $webContinuationURL,
                 pushedDetail: $pushedDetail,
@@ -518,21 +503,6 @@ struct ShipperSurface: View {
                 applyIndustryWorkflow: { postLoadDraft.applyIndustryWorkflow($0) },
                 handleMeAction: handleShipperMeAction
             ))
-            .photosPicker(isPresented: $avatarPickerOpen,
-                          selection: $avatarPickerItem,
-                          matching: .images)
-            .onChange(of: avatarPickerItem) { _, newItem in
-                guard let newItem else { return }
-                Task {
-                    await uploadShipperAvatar(item: newItem)
-                    avatarPickerItem = nil
-                }
-            }
-            .alert("Profile photo", isPresented: Binding(
-                get: { avatarUploadError != nil },
-                set: { if !$0 { avatarUploadError = nil } })) {
-                Button("OK", role: .cancel) { avatarUploadError = nil }
-            } message: { Text(avatarUploadError ?? "") }
             .sheet(item: Binding<ShipperWebContinuationItem?>(
                 get: { webContinuationURL.map(ShipperWebContinuationItem.init) },
                 set: { webContinuationURL = $0?.url }
@@ -652,80 +622,6 @@ struct ShipperSurface: View {
             // surfaces — silent default; the post is still valid
             // for any other listener subscribed in parallel.
             break
-        }
-    }
-
-    // MARK: - Avatar upload
-
-    /// Convert the picked photo to a JPEG data URL and ship it through
-    /// `profile.updateAvatar`. The mutation persists `profilePicture`
-    /// on the `users` row so web + iPad read the new image on next
-    /// `profile.getMyProfile`. Best-effort — silent failure leaves
-    /// the previous avatar in place.
-    @MainActor
-    private func uploadShipperAvatar(item: PhotosPickerItem) async {
-        guard let data = try? await item.loadTransferable(type: Data.self),
-              !data.isEmpty else { return }
-        // Compress so the base64 data-URL stays well under the 64KB
-        // `users.profilePicture` TEXT column (max 65535 bytes). A detailed
-        // 512px@0.8 JPEG could base64-inflate past 64KB, and the server
-        // UPDATE then throws "Data too long for column" — surfaced to the
-        // user as "your photo didn't upload". Resize to ~320px, then
-        // iteratively drop quality (and dimension as a backstop) until the
-        // JPEG is < 37KB binary (~49KB base64), with a hard floor so it
-        // ALWAYS terminates and ALWAYS fits.
-        let bytes: Data = {
-            #if canImport(UIKit)
-            guard let img = UIImage(data: data) else { return data }
-            let maxBinary = 37_000   // -> base64 < ~49KB, safely under the 64KB column
-            func encode(at dimension: CGFloat, quality: CGFloat) -> Data? {
-                let scale = min(dimension / max(img.size.width, 1), dimension / max(img.size.height, 1), 1)
-                let size = CGSize(width: max(img.size.width * scale, 1), height: max(img.size.height * scale, 1))
-                let renderer = UIGraphicsImageRenderer(size: size)
-                let resized = renderer.image { _ in img.draw(in: CGRect(origin: .zero, size: size)) }
-                return resized.jpegData(compressionQuality: quality)
-            }
-            var dimension: CGFloat = 320
-            for _ in 0..<4 {                 // dimension backstop: 320 -> ~88
-                var quality: CGFloat = 0.7
-                while quality >= 0.2 {       // quality floor 0.2
-                    if let jpeg = encode(at: dimension, quality: quality), jpeg.count < maxBinary {
-                        return jpeg
-                    }
-                    quality -= 0.15
-                }
-                dimension *= 0.65
-            }
-            // Hard floor — a 96px @0.3 JPEG is a few KB, guaranteed to fit.
-            return encode(at: 96, quality: 0.3) ?? encode(at: 64, quality: 0.3) ?? data
-            #else
-            return data
-            #endif
-        }()
-        let dataURL = "data:image/jpeg;base64,\(bytes.base64EncodedString())"
-
-        struct In: Encodable { let avatarUrl: String }
-        struct Out: Decodable { let success: Bool; let avatarUrl: String }
-        do {
-            let out: Out = try await EusoTripAPI.shared.mutation(
-                "profile.updateAvatar",
-                input: In(avatarUrl: dataURL)
-            )
-            if out.success {
-                // Post the LIVE profile-updated event so avatar-rendering
-                // surfaces re-fetch and pick up the new picture. Was
-                // `.eusoProfileAvatarUpdated`, which had ZERO observers anywhere
-                // (a dead post); `.eusoProfileUpdated` is the event the
-                // real-time profile-refresh path actually listens on.
-                NotificationCenter.default.post(name: .eusoProfileUpdated, object: nil)
-            } else {
-                avatarUploadError = "Your photo didn't upload. Please try again."
-            }
-        } catch {
-            // Was `try?` — a failed upload silently did nothing and the
-            // user re-picked the photo forever. Surface the real error.
-            avatarUploadError = (error as? EusoTripAPIError)?.errorDescription
-                ?? "Your photo didn't upload. Please try again."
         }
     }
 
@@ -983,7 +879,6 @@ private struct ShipperNotificationListeners: ViewModifier {
     @Binding var activePortIntelProduct: String?
     @Binding var activeSearchQuery: String?
     @Binding var activePostLoadDraftId: String?
-    @Binding var avatarPickerOpen: Bool
     @Binding var showeSang: Bool
     @Binding var webContinuationURL: URL?
     @Binding var pushedDetail: RoleDetailPush?
@@ -1003,7 +898,6 @@ private struct ShipperNotificationListeners: ViewModifier {
                 activePortIntelProduct: $activePortIntelProduct,
                 activeSearchQuery: $activeSearchQuery,
                 activePostLoadDraftId: $activePostLoadDraftId,
-                avatarPickerOpen: $avatarPickerOpen,
                 showeSang: $showeSang,
                 pushedDetail: $pushedDetail,
                 pushOrTab: pushOrTab,
@@ -1032,7 +926,6 @@ private struct ShipperNavReceivers: ViewModifier {
     @Binding var activePortIntelProduct: String?
     @Binding var activeSearchQuery: String?
     @Binding var activePostLoadDraftId: String?
-    @Binding var avatarPickerOpen: Bool
     @Binding var showeSang: Bool
     @Binding var pushedDetail: RoleDetailPush?
     let pushOrTab: (String) -> Void
@@ -1139,9 +1032,6 @@ private struct ShipperNavReceivers: ViewModifier {
                 } else {
                     withAnimation(.easeInOut(duration: 0.22)) { popOne() }
                 }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .eusoShipperAvatarPickRequested)) { _ in
-                avatarPickerOpen = true
             }
             .onReceive(NotificationCenter.default.publisher(for: .eusoShippereSangTapped)) { _ in
                 showeSang = true

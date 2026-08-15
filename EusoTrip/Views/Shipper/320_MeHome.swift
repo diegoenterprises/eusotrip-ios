@@ -259,10 +259,6 @@ private struct MeHomeBody: View {
     @EnvironmentObject private var session: EusoTripSession
     @State private var profile: ShipperAPI.Profile? = nil
     @State private var stats: ShipperAPI.Stats? = nil
-    /// The signed-in user's avatar photo (users.profilePicture, stored as a
-    /// base64 data URL by profile.updateAvatar). Decoded for the hero circle;
-    /// nil falls back to the initials monogram. Mirrors 200_ShipperHome.
-    @State private var avatarImage: UIImage? = nil
     @State private var loading = true
     /// Inline load-error surface. Was a `/* tolerate */` no-op that
     /// left the profile screen blank on network failure with no hint.
@@ -343,83 +339,12 @@ private struct MeHomeBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await load() }
-        .task { await loadAvatar() }
-        .onReceive(NotificationCenter.default.publisher(for: .eusoProfileUpdated)) { _ in
-            Task { await loadAvatar() }
-        }
-    }
-
-    /// Fetch the signed-in user's avatar (users.profilePicture, a base64 data
-    /// URL written by profile.updateAvatar) via profile.getMyProfile and decode
-    /// it for the hero. Cosmetic — any failure silently keeps the initials.
-    private func loadAvatar() async {
-        struct Out: Decodable { let avatar: String? }
-        do {
-            let out: Out = try await EusoTripAPI.shared.queryNoInput("profile.getMyProfile")
-            let img = Self.decodeAvatarDataURL(out.avatar)
-            await MainActor.run { avatarImage = img }
-        } catch { /* cosmetic — keep initials */ }
-    }
-
-    private static func decodeAvatarDataURL(_ s: String?) -> UIImage? {
-        guard let s, !s.isEmpty else { return nil }
-        let b64 = s.contains(",") ? String(s.split(separator: ",").last ?? "") : s
-        guard let data = Data(base64Encoded: b64), let img = UIImage(data: data) else { return nil }
-        return img
     }
 
     private func hero(_ p: ShipperAPI.Profile) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 10) {
-                // Avatar — tappable to present the photo picker so
-                // shippers can change their company/personal photo.
-                // Founder reported 2026-05-04: "profile picture on me
-                // screen at the top circled cant change anything
-                // picture wise". The previous bare ZStack had no tap
-                // gesture at all; now wraps a Button that posts the
-                // canonical `eusoShipperAvatarPickRequested`
-                // notification — `ShipperSurface` listens and
-                // presents `PhotosPicker`.
-                Button {
-                    NotificationCenter.default.post(
-                        name: .eusoShipperAvatarPickRequested,
-                        object: nil
-                    )
-                } label: {
-                    // 56pt avatar — shows the user's uploaded photo (decoded
-                    // from users.profilePicture's base64 data URL) when present,
-                    // otherwise the initials monogram. (64 was visually
-                    // overpowering the company-name lockup.)
-                    ZStack {
-                        if let avatarImage {
-                            Image(uiImage: avatarImage)
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: 56, height: 56)
-                                .clipShape(Circle())
-                                .overlay(Circle().strokeBorder(LinearGradient.diagonal, lineWidth: 1.5))
-                        } else {
-                            Text(initials(p.companyName.isEmpty ? p.contactName : p.companyName))
-                                .font(.system(size: 18, weight: .heavy))
-                                .foregroundStyle(.white)
-                                .frame(width: 56, height: 56)
-                                .background(LinearGradient.diagonal)
-                                .clipShape(Circle())
-                        }
-                    }
-                    .overlay(alignment: .bottomTrailing) {
-                        // Camera affordance — visual cue that the avatar is interactive.
-                        Image(systemName: "camera.fill")
-                            .font(.system(size: 9, weight: .heavy))
-                            .foregroundStyle(.white)
-                            .padding(5)
-                            .background(Circle().fill(palette.bgCard))
-                            .overlay(Circle().strokeBorder(palette.borderFaint))
-                            .offset(x: 2, y: 2)
-                    }
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Change profile photo")
+                EditableProfileAvatar(size: 56)
 
                 VStack(alignment: .leading, spacing: 2) {
                     // Long company names ("EUSORONE TECHNOLOGIES, INC.")

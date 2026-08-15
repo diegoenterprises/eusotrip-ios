@@ -113,10 +113,6 @@ private struct DispatcherHomeBody: View {
         return first.isEmpty ? "Diego" : first
     }
 
-    private var dispatcherInitials: String {
-        initials(dispatcherDisplayName)
-    }
-
     private var dispatchSummaryLine: String {
         let active = kpi?.activeLoads ?? 0
         let label = drivers.count == 1 ? "driver" : "drivers"
@@ -191,24 +187,8 @@ private struct DispatcherHomeBody: View {
                     .font(EType.caption).foregroundStyle(palette.textSecondary)
             }
             Spacer(minLength: 0)
-            avatarDisc(dispatcherInitials)
+            EditableProfileAvatar(size: 56)
         }
-    }
-
-    private func avatarDisc(_ initials: String) -> some View {
-        ZStack {
-            Circle().fill(LinearGradient.diagonal)
-            Circle()
-                .fill(RadialGradient(colors: [.white.opacity(0.75), .white.opacity(0)],
-                                     center: .init(x: 0.35, y: 0.30),
-                                     startRadius: 0, endRadius: 30))
-                .frame(width: 28, height: 28)
-                .offset(x: -6, y: -6)
-            Text(initials)
-                .font(.system(size: 14, weight: .heavy)).tracking(0.6)
-                .foregroundStyle(.white)
-        }
-        .frame(width: 56, height: 56)
     }
 
     // MARK: ATTENTION row (gradient-rimmed feature card)

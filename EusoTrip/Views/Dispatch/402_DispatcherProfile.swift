@@ -202,13 +202,9 @@ private struct DispatcherProfileBody: View {
     private func identityCard(_ p: DispatchProfile402) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 18) {
-                // Gold-ringed initials avatar
                 ZStack {
                     Circle().stroke(goldRing, lineWidth: 3).frame(width: 96, height: 96)
-                    Circle().fill(LinearGradient.diagonal).frame(width: 88, height: 88)
-                    Text(p.initials)
-                        .font(.system(size: 30, weight: .heavy)).tracking(1.0)
-                        .foregroundStyle(.white)
+                    EditableProfileAvatar(size: 88)
                 }
                 VStack(alignment: .leading, spacing: 4) {
                     Text(p.name).font(EType.h2).foregroundStyle(palette.textPrimary)

@@ -139,10 +139,7 @@ private struct VesselOperatorAccountBody: View {
     private var identityCard: some View {
         LifecycleCard(accentGradient: true) {
             HStack(spacing: 14) {
-                ZStack {
-                    Circle().fill(palette.bgCardSoft).frame(width: 68, height: 68)
-                    Image(systemName: "person.fill").font(.system(size: 26)).foregroundStyle(palette.textTertiary)
-                }
+                EditableProfileAvatar(size: 68)
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 8) {
                         Text(displayName).font(.system(size: 20, weight: .heavy)).foregroundStyle(palette.textPrimary)

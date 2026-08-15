@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		EDAV20260813000000000001 /* EditableProfileAvatar.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDAV20260813000000000002 /* EditableProfileAvatar.swift */; };
 		5CB000000000000000000000 /* SVGCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CR000000000000000000000 /* SVGCore.swift */; };
 		5CB010000000000000000000 /* SVGPathParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CR010000000000000000000 /* SVGPathParser.swift */; };
 		5CB020000000000000000000 /* SVGModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CR020000000000000000000 /* SVGModel.swift */; };
@@ -1888,6 +1889,7 @@
 		EE0000000000000000000F05 /* EusoTripiOSWidgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = EusoTripiOSWidgets.entitlements; sourceTree = "<group>"; };
 		EE0000000000000000000F06 /* EusoTripiOSWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = EusoTripiOSWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		EQAN0002ANIMATIONFILE002 /* EquipmentAnimation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EquipmentAnimation.swift; path = EusoTrip/Views/Components/EquipmentAnimation.swift; sourceTree = SOURCE_ROOT; };
+		EDAV20260813000000000002 /* EditableProfileAvatar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EditableProfileAvatar.swift; path = EusoTrip/Views/Components/EditableProfileAvatar.swift; sourceTree = SOURCE_ROOT; };
 		EQPR20260521000002 /* EquipmentRecommenderWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EquipmentRecommenderWidget.swift; path = EusoTrip/Views/Components/EquipmentRecommenderWidget.swift; sourceTree = SOURCE_ROOT; };
 		EQRC2026060300000012A1 /* EquipmentRequirementsCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EquipmentRequirementsCatalog.swift; path = EusoTrip/Models/EquipmentRequirementsCatalog.swift; sourceTree = SOURCE_ROOT; };
 		ES03ROUTESRV002 /* ES03_RouteSurvey.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ES03_RouteSurvey.swift; path = EusoTrip/Views/Escort/ES03_RouteSurvey.swift; sourceTree = SOURCE_ROOT; };
@@ -3193,6 +3195,7 @@
 		A12E1A1C0010CE0FF1000014 /* Components */ = {
 			isa = PBXGroup;
 			children = (
+				EDAV20260813000000000002 /* EditableProfileAvatar.swift */,
 				A12E1A1C0010CE0FF1000012 /* HereMapView.swift */,
 				KITRADGFREF1 /* Charts/RadialFillGauge.swift */,
 				KITSCRDFREF1 /* Charts/ScorecardRadar.swift */,
@@ -3873,6 +3876,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				EDAV20260813000000000001 /* EditableProfileAvatar.swift in Sources */,
 				A18C84C77B3CF73706D41A64 /* ContentView.swift in Sources */,
 				FE410000000000000000005B /* 005_RailWaybill.swift in Sources */,
 				FE410000000000000000006B /* 006_RailCrossBorderCustoms.swift in Sources */,

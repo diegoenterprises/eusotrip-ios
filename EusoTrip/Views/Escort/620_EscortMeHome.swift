@@ -109,15 +109,9 @@ struct EscortMeHomeScreen: View {
     private var identityHero: some View {
         let user = session.user
         let displayName = user?.name ?? "Escort user"
-        let monogram = monogramFor(displayName)
         return LifecycleCard(accentGradient: true) {
             HStack(alignment: .center, spacing: 10) {
-                Text(monogram)
-                    .font(.system(size: 18, weight: .heavy))
-                    .foregroundStyle(.white)
-                    .frame(width: 56, height: 56)
-                    .background(LinearGradient.diagonal)
-                    .clipShape(Circle())
+                EditableProfileAvatar(size: 56)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(displayName)
                         .font(.system(size: 18, weight: .heavy))
@@ -141,12 +135,6 @@ struct EscortMeHomeScreen: View {
                 Spacer(minLength: 0)
             }
         }
-    }
-
-    private func monogramFor(_ s: String) -> String {
-        let parts = s.split(separator: " ").prefix(2)
-        let initials = parts.compactMap { $0.first.map(String.init) }.joined().uppercased()
-        return initials.isEmpty ? "?" : String(initials.prefix(2))
     }
 
     // MARK: - Sections (LifecycleCard chrome — visual parity with 350)
