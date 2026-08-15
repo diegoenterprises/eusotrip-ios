@@ -135,16 +135,16 @@ private struct VesselCBPAlertsBody: View {
             .padding(.top, Space.s4)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - DETAIL header (back-chevron + eyebrow + title + right-rail)
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Eyebrow row — sparkle gradient eyebrow + mono CFR caption.
+            // Eyebrow row — EusoTrip mark + mono CFR caption.
             HStack(alignment: .firstTextBaseline) {
-                Text("✦ VESSEL OPERATOR · CBP ALERTS")
+                EusoTripEyebrow(verbatim: "VESSEL OPERATOR · CBP ALERTS")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

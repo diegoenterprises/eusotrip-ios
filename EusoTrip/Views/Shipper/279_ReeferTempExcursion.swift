@@ -166,7 +166,7 @@ private struct ReeferBody: View {
             tempCard
             ctaRow
         }
-        .task { await loadReadings() }
+        .eusoRefreshTask { await loadReadings() }
     }
 
     /// Group the live readings by zone → chart traces. Mirrors the 652

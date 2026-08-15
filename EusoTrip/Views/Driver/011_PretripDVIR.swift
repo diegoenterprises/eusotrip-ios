@@ -69,6 +69,7 @@ struct PretripDVIR: View {
         .task {
             if case .idle = vm.phase { await vm.load() }
         }
+        .eusoRefreshHandler { await vm.load() }
         // 2026-05-20 · IO 2026 P0-6 — Astra camera capture sheet.
         .sheet(item: Binding(
             get: { astraCaptureForItemId.map { AstraCapturePresentation(itemId: $0) } },

@@ -10,10 +10,8 @@ struct DispatchDailyKPIScreen: View {
     var body: some View {
         Shell(theme: theme) { DailyKPIBody() } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home", systemImage: "house", isCurrent: false),
-                          NavSlot(label: "Drivers", systemImage: "person.3.fill", isCurrent: false)],
-                trailing: [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
-                           NavSlot(label: "Me", systemImage: "person", isCurrent: true)],
+                leading: DispatchNavRoute.leading(current: .home),
+                trailing: DispatchNavRoute.trailing(current: .home),
                 orbState: .idle
             )
         }
@@ -63,7 +61,7 @@ private struct DailyKPIBody: View {
             .padding(.top, 58)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     private var header: some View {

@@ -158,7 +158,7 @@ private struct CommandCenterBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await loadAll() }
-        .refreshable { await loadAll() }
+        .eusoRefreshable { await loadAll() }
     }
 
     private var header: some View {
@@ -344,7 +344,7 @@ private struct FleetMapBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await loadAll() }
-        .refreshable { await loadAll() }
+        .eusoRefreshable { await loadAll() }
     }
 
     // MARK: Live fleet map (in-house HERE basemap · real driver GPS pucks)
@@ -681,7 +681,7 @@ private struct PerformanceBody: View {
             .padding(.top, 58)
         }
         .task { await loadAll() }
-        .refreshable { await loadAll() }
+        .eusoRefreshable { await loadAll() }
     }
 
     private var header: some View {

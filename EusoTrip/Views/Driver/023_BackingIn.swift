@@ -121,7 +121,7 @@ struct BackingIn: View {
             .padding(.horizontal, 14)
             .padding(.top, 8)
         }
-        .task { await hydrateLiveTrip() }
+        .eusoRefreshTask { await hydrateLiveTrip() }
         .onChange(of: uwb.lostLineOfSight) { _, lost in
             // ARKit fallback fires automatically when UWB loses LOS
             // AND the active terminal has a door marker registered

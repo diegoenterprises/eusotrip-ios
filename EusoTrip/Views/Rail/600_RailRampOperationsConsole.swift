@@ -201,14 +201,14 @@ private struct RailRampOperationsConsoleBody: View {
             }
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - Eyebrow
 
     private var eyebrow: some View {
         HStack {
-            Text("✦  RAIL ENGINEER · RAMP OPS")
+            EusoTripEyebrow(verbatim: "RAIL ENGINEER · RAMP OPS")
                 .font(EType.micro).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer()

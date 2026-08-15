@@ -114,7 +114,7 @@ struct ShipperAnalyticsDeepDive: View {
             }
         }
         .task { await refreshAll() }
-        .refreshable { await refreshAll() }
+        .eusoRefreshable { await refreshAll() }
     }
 
     private func refreshAll() async {
@@ -239,7 +239,7 @@ struct ShipperAnalyticsDeepDive: View {
 
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("✦ SHIPPER · ANALYTICS · DEEP DIVE")
+            EusoTripEyebrow(verbatim: "SHIPPER · ANALYTICS · DEEP DIVE")
                 .font(EType.micro).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
                 .lineLimit(1).minimumScaleFactor(0.78)

@@ -100,14 +100,14 @@ private struct RailCrossBorderCrewCertsBody: View {
             .padding(.top, Space.s4)
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
     }
 
     // MARK: - Eyebrow  (SVG translate(20,72))
 
     private var eyebrow: some View {
         HStack(spacing: 4) {
-            Text("✦ RAIL ENGINEER · X-BORDER CREW")
+            EusoTripEyebrow(verbatim: "RAIL ENGINEER · X-BORDER CREW")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer()

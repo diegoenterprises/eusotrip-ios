@@ -159,7 +159,7 @@ struct PickupLoading: View {
             .padding(.horizontal, 14)
             .padding(.top, 8)
         }
-        .task { await hydrateLiveTrip() }
+        .eusoRefreshTask { await hydrateLiveTrip() }
         .screenTileRoot()
         .alert("Stop load transfer?", isPresented: $showEStopConfirm) {
             Button("E-Stop now", role: .destructive) {

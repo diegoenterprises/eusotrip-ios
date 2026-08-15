@@ -46,6 +46,7 @@ extension EusoTripAPI {
     /// PickupCredential shape but for the staff access grant. `pkpassUrl` is
     /// nil until PassKit signing is configured (→ inline QR fallback).
     struct StaffAccessCredential: Decodable {
+        let staffId: String
         let accessCode: String        // the real 6-digit staffAccessTokens code
         let qrPayload: String         // canonical scannable payload (token-bearing)
         let pkpassUrl: String?        // nil → caller falls back to inline QR + code
@@ -53,16 +54,20 @@ extension EusoTripAPI {
         let theme: WalletThemeMetadata
         let signedTheme: WalletThemeMetadata?
         let manifestDigest: String?
+        let passTypeIdentifier: String?
+        let passSerialNumber: String?
         let expiresAt: String?        // ISO-8601; the real 24h token expiry
         let staffName: String?
         let role: String?
 
         private enum CodingKeys: String, CodingKey {
-            case accessCode, qrPayload, pkpassUrl, passkitStatus, theme
-            case signedTheme, manifestDigest, expiresAt, staffName, role
+            case staffId, accessCode, qrPayload, pkpassUrl, passkitStatus, theme
+            case signedTheme, manifestDigest, passTypeIdentifier, passSerialNumber
+            case expiresAt, staffName, role
         }
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
+            staffId = try c.decode(String.self, forKey: .staffId)
             accessCode = try c.decode(String.self, forKey: .accessCode)
             qrPayload = try c.decode(String.self, forKey: .qrPayload)
             pkpassUrl = try c.decodeIfPresent(String.self, forKey: .pkpassUrl)
@@ -70,6 +75,8 @@ extension EusoTripAPI {
             theme = try c.decode(WalletThemeMetadata.self, forKey: .theme)
             signedTheme = try c.decodeIfPresent(WalletThemeMetadata.self, forKey: .signedTheme)
             manifestDigest = try c.decodeIfPresent(String.self, forKey: .manifestDigest)
+            passTypeIdentifier = try c.decodeIfPresent(String.self, forKey: .passTypeIdentifier)
+            passSerialNumber = try c.decodeIfPresent(String.self, forKey: .passSerialNumber)
             expiresAt = try c.decodeIfPresent(String.self, forKey: .expiresAt)
             staffName = try c.decodeIfPresent(String.self, forKey: .staffName)
             role = try c.decodeIfPresent(String.self, forKey: .role)

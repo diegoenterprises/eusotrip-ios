@@ -60,73 +60,100 @@ private struct WatchRest: Decodable {
     let nextWatch: String?
 }
 
+private struct VesselSettingsPayload: Decodable {
+    struct OperationalPreferences: Decodable {
+        let distanceUnit: String
+        let esangVoiceEnabled: Bool
+    }
+    let operationalPreferences: OperationalPreferences
+}
+
+private struct VesselNotificationPreferences: Decodable {
+    let pushNotifications: Bool
+}
+
+private struct VesselSettingsMutationAck: Decodable {
+    let success: Bool?
+}
+
 // MARK: - Body
 
 private struct VesselOperatorAccountBody: View {
     @Environment(\.palette) private var palette
+    @EnvironmentObject private var session: EusoTripSession
     @State private var me: VesselAccountProfile? = nil
     @State private var certificates: [VesselCertificate] = []
     @State private var watch: WatchRest? = nil
-    @State private var notificationsOn = true
+    @State private var watchError: String? = nil
+    @State private var notificationsOn = false
     @State private var voiceOn = true
+    @State private var distanceUnit = "nautical_miles"
+    @State private var preferencesLoaded = false
+    @State private var preferencesError: String? = nil
     @State private var loading = true
     @State private var loadError: String? = nil
     @State private var saveError: String? = nil
+    @State private var showSignOutConfirm = false
 
     /// Which hub cards are expanded. Consolidation: the Me tab rendered 17
     /// always-open ops groups (~74 rows) in one scroll. Rebuilt into 5 bespoke
     /// collapsible hubs by canonical taxonomy — every destination preserved.
     /// Bookings & Tenders starts expanded; the rest collapse.
-    @State private var expandedHubs: Set<String> = ["bookings"]
+    @SceneStorage("vessel.operator.me.expandedHub") private var expandedHubId: String = "bookings"
+    @SceneStorage("vessel.operator.me.returnAnchor") private var returnAnchor: String = ""
 
     private var displayName: String {
         let n = me?.name?.trimmingCharacters(in: .whitespaces) ?? ""
-        return n.isEmpty ? "___" : n
-    }
-    private var personaPending: Bool {
-        (me?.name?.trimmingCharacters(in: .whitespaces) ?? "").isEmpty
+        return n.isEmpty ? "Vessel Operator" : n
     }
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: Space.s4) {
-                header
-                if loading {
-                    LifecycleCard { Text("Loading account…").font(EType.caption).foregroundStyle(palette.textSecondary) }
-                } else if let err = loadError {
-                    LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) }
-	                } else {
-	                    identityCard
-	                    EusoCardIssuePanel(
-	                        title: "EusoCard",
-	                        subtitle: "Vessel spend card backed by EusoWallet Treasury"
-	                    )
-	                    bookingsHub
-	                    trackingTerminalHub
-	                    customsComplianceHub
-	                    claimsRecoveryHub
-	                    financeFleetHub
-                    certificatesCard
-                    watchCard
-                    preferencesCard
-                    signOut
+        ScrollViewReader { proxy in
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Space.s4) {
+                    header
+                    if loading {
+                        LifecycleCard { Text("Loading account…").font(EType.caption).foregroundStyle(palette.textSecondary) }
+                    } else if let err = loadError {
+                        LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) }
+                    } else {
+                        identityCard
+                        EusoCardIssuePanel(
+                            title: "EusoCard",
+                            subtitle: "Vessel spend card backed by EusoWallet Treasury"
+                        )
+                        bookingsHub
+                        trackingTerminalHub
+                        customsComplianceHub
+                        claimsRecoveryHub
+                        financeFleetHub
+                        crewPreferencesHub
+                        signOut
+                    }
+                    Color.clear.frame(height: 96)
                 }
-                Color.clear.frame(height: 96)
+                .padding(.horizontal, 14).padding(.top, 8)
             }
-            .padding(.horizontal, 14).padding(.top, 8)
+            .task {
+                await load()
+                restorePosition(using: proxy)
+            }
+            .eusoRefreshable { await load() }
         }
-        .task { await load() }
-        .refreshable { await load() }
         .alert("Settings", isPresented: Binding(
             get: { saveError != nil }, set: { if !$0 { saveError = nil } })) {
             Button("OK", role: .cancel) { saveError = nil }
         } message: { Text(saveError ?? "") }
+        .confirmationDialog("Sign out?", isPresented: $showSignOutConfirm, titleVisibility: .visible) {
+            Button("Sign out", role: .destructive) { Task { await session.signOut() } }
+            Button("Cancel", role: .cancel) {}
+        }
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("VESSEL OPERATOR · MY ACCOUNT")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
@@ -139,24 +166,18 @@ private struct VesselOperatorAccountBody: View {
     private var identityCard: some View {
         LifecycleCard(accentGradient: true) {
             HStack(spacing: 14) {
-                ZStack {
-                    Circle().fill(palette.bgCardSoft).frame(width: 68, height: 68)
-                    Image(systemName: "person.fill").font(.system(size: 26)).foregroundStyle(palette.textTertiary)
-                }
+                EditableProfileAvatar(size: 68)
                 VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 8) {
-                        Text(displayName).font(.system(size: 20, weight: .heavy)).foregroundStyle(palette.textPrimary)
-                        if personaPending {
-                            Text("PROPOSED").font(.system(size: 9, weight: .heavy)).tracking(0.4)
-                                .foregroundStyle(Brand.warning)
-                                .padding(.horizontal, 8).padding(.vertical, 3)
-                                .background(Capsule().fill(Brand.warning.opacity(0.16)))
-                        }
-                    }
-                    Text("VESSEL OPERATOR · \(me?.companyName ?? "___ OPERATOR (PROPOSED)")")
+                    Text(displayName).font(.system(size: 20, weight: .heavy)).foregroundStyle(palette.textPrimary)
+                    Text(["VESSEL OPERATOR", me?.companyName]
+                        .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                        .filter { !$0.isEmpty }
+                        .joined(separator: " · "))
                         .font(EType.caption).foregroundStyle(palette.textSecondary)
-                    Text("crew id \(me?.crewId ?? "-") · STCW II/1 active")
-                        .font(.system(size: 11)).monospaced().foregroundStyle(palette.textTertiary)
+                    if let crewId = me?.crewId?.trimmingCharacters(in: .whitespacesAndNewlines), !crewId.isEmpty {
+                        Text("Crew ID \(crewId)")
+                            .font(.system(size: 11)).monospaced().foregroundStyle(palette.textTertiary)
+                    }
                 }
                 Spacer(minLength: 0)
             }
@@ -177,7 +198,10 @@ private struct VesselOperatorAccountBody: View {
     private var bookingsHub: some View {
         hubCard(id: "bookings", icon: "shippingbox.fill",
                 title: "Bookings & Tenders",
-                summary: "Bids · Bookings · Shipments · Intermodal", rowCount: 11) {
+                summary: "Bids · Bookings · Shipments · Intermodal", rowCount: 12) {
+            opsGroup("CREATE & REGISTER", [
+                ("Vesl822", "plus.rectangle.on.folder", "Operations ledger", "Rates · voyages · manifests · bunker · containers"),
+            ])
             opsGroup("BIDS & TENDERS", [
                 ("Vesl709", "sailboat.fill", "Bid board", "Award open lanes by rate"),
             ])
@@ -355,11 +379,12 @@ private struct VesselOperatorAccountBody: View {
                                         summary: String,
                                         rowCount: Int,
                                         @ViewBuilder content: () -> Content) -> some View {
-        let isOpen = expandedHubs.contains(id)
+        let isOpen = expandedHubId == id
         LifecycleCard {
             Button {
                 withAnimation(.easeOut(duration: 0.22)) {
-                    if isOpen { expandedHubs.remove(id) } else { expandedHubs.insert(id) }
+                    expandedHubId = isOpen ? "" : id
+                    returnAnchor = "hub-\(id)"
                 }
             } label: {
                 HStack(spacing: 12) {
@@ -403,6 +428,7 @@ private struct VesselOperatorAccountBody: View {
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
+        .id("hub-\(id)")
     }
 
     @ViewBuilder
@@ -412,8 +438,12 @@ private struct VesselOperatorAccountBody: View {
             LifecycleCard {
                 VStack(spacing: 0) {
                     ForEach(Array(rows.enumerated()), id: \.offset) { idx, r in
-                        Button { openOps(r.id) } label: { opsRow(icon: r.icon, title: r.title, subtitle: r.sub) }
+                        Button {
+                            returnAnchor = "row-\(r.id)"
+                            openOps(r.id)
+                        } label: { opsRow(icon: r.icon, title: r.title, subtitle: r.sub) }
                             .buttonStyle(.plain)
+                            .id("row-\(r.id)")
                         if idx < rows.count - 1 {
                             Rectangle().fill(palette.borderFaint).frame(height: 1).padding(.leading, 44)
                         }
@@ -448,104 +478,242 @@ private struct VesselOperatorAccountBody: View {
         NotificationCenter.default.post(name: .eusoVesselNavSwap, object: nil, userInfo: ["screenId": screenId])
     }
 
-    private var certificatesCard: some View {
+    private var crewPreferencesHub: some View {
+        hubCard(
+            id: "account",
+            icon: "person.crop.circle",
+            title: "Crew & Preferences",
+            summary: "Certificates · Watch telemetry · Notifications · Units · Voice",
+            rowCount: 3
+        ) {
+            certificatesContent
+            sectionDivider
+            watchContent
+            sectionDivider
+            preferencesContent
+        }
+    }
+
+    private var certificatesContent: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
-            Text("CERTIFICATES · on file").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
-            LifecycleCard {
-                VStack(spacing: Space.s2) {
-                    ForEach(certificates) { c in
-                        HStack {
-                            Text(c.title).font(EType.body).foregroundStyle(palette.textPrimary)
-                            Spacer()
-                            Text(c.statusLabel ?? "-").font(.system(size: 11, weight: .bold))
-                                .foregroundStyle((c.expiring ?? false) ? Brand.warning : Brand.success)
-                        }
+            Text("CERTIFICATES · ON FILE")
+                .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                .foregroundStyle(palette.textTertiary)
+            if certificates.isEmpty {
+                Text("No certificate records were returned.")
+                    .font(EType.caption).foregroundStyle(palette.textSecondary)
+            } else {
+                ForEach(certificates) { certificate in
+                    HStack {
+                        Text(certificate.title).font(EType.body).foregroundStyle(palette.textPrimary)
+                        Spacer()
+                        Text(certificate.statusLabel ?? "Status unavailable")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(
+                                certificate.expiring == true
+                                    ? Brand.warning
+                                    : (certificate.statusLabel == nil ? palette.textTertiary : Brand.success)
+                            )
                     }
                 }
             }
         }
     }
 
-    private var watchCard: some View {
-        let rest = watch?.restHours ?? 11.0
-        let window = watch?.windowHours ?? 24.0
-        let minH = watch?.minHours ?? 10.0
-        return VStack(alignment: .leading, spacing: Space.s2) {
-            Text("WATCH · REST HOURS · MLC 2006 / STCW").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
-            LifecycleCard {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text("Rest \(rest, specifier: "%.1f")h / \(Int(window))h · min \(Int(minH))h")
-                            .font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-                        Spacer()
-                        Text(rest >= minH ? "compliant" : "short rest")
-                            .font(EType.bodyStrong).foregroundStyle(rest >= minH ? Brand.success : Brand.danger)
-                    }
-                    ProgressView(value: rest, total: max(window, 1)).tint(LinearGradient.primary)
-                    Text("Next watch \(watch?.nextWatch ?? "20:00–24:00") · 4-on / 8-off rotation")
+    @ViewBuilder
+    private var watchContent: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            Text("WATCH · REST HOURS · MLC 2006 / STCW")
+                .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                .foregroundStyle(palette.textTertiary)
+            if let watch,
+               let rest = watch.restHours,
+               let window = watch.windowHours,
+               let minimum = watch.minHours {
+                HStack {
+                    Text("Rest \(rest, specifier: "%.1f")h / \(window, specifier: "%.1f")h · minimum \(minimum, specifier: "%.1f")h")
+                        .font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+                    Spacer()
+                    Text(rest >= minimum ? "minimum met" : "below minimum")
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(rest >= minimum ? Brand.success : Brand.danger)
+                }
+                ProgressView(value: rest, total: max(window, 1)).tint(LinearGradient.primary)
+                if let nextWatch = watch.nextWatch?.trimmingCharacters(in: .whitespacesAndNewlines), !nextWatch.isEmpty {
+                    Text("Next recorded watch · \(nextWatch)")
                         .font(EType.caption).foregroundStyle(palette.textSecondary)
                 }
+            } else {
+                Text(watchError ?? "No current watch or rest-hour telemetry was returned.")
+                    .font(EType.caption).foregroundStyle(watchError == nil ? palette.textSecondary : Brand.warning)
             }
         }
     }
 
-    private var preferencesCard: some View {
-        VStack(alignment: .leading, spacing: Space.s2) {
-            Text("PREFERENCES · saved to your profile").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
-            LifecycleCard {
-                VStack(spacing: Space.s3) {
-                    Toggle(isOn: $notificationsOn) {
-                        Text("Push notifications").font(EType.body).foregroundStyle(palette.textPrimary)
-                    }
-                    .tint(Brand.info)
-                    .onChange(of: notificationsOn) { _, v in Task { await savePref("notifications", v) } }
-                    HStack { Text("Distance units").font(EType.body).foregroundStyle(palette.textPrimary); Spacer(); Text("nautical mi ›").font(.system(size: 12, weight: .bold)).foregroundStyle(palette.textSecondary) }
-                    HStack { Text("ESANG AI voice").font(EType.body).foregroundStyle(palette.textPrimary); Spacer(); Text(voiceOn ? "on ›" : "off ›").font(.system(size: 12, weight: .bold)).foregroundStyle(Brand.info) }
-                }
+    private var preferencesContent: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            Text("PREFERENCES · SAVED TO YOUR ACCOUNT")
+                .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                .foregroundStyle(palette.textTertiary)
+            if let preferencesError {
+                Text(preferencesError).font(EType.caption).foregroundStyle(Brand.warning)
             }
+            Toggle(isOn: Binding(
+                get: { notificationsOn },
+                set: { value in
+                    guard preferencesLoaded else { return }
+                    let previous = notificationsOn
+                    notificationsOn = value
+                    Task { await saveNotifications(value, previous: previous) }
+                }
+            )) {
+                Text("Push notifications").font(EType.body).foregroundStyle(palette.textPrimary)
+            }
+            .tint(Brand.info)
+            .disabled(!preferencesLoaded)
+
+            Picker("Distance units", selection: Binding(
+                get: { distanceUnit },
+                set: { value in
+                    guard preferencesLoaded else { return }
+                    let previous = distanceUnit
+                    distanceUnit = value
+                    Task { await saveOperationalPreference(distanceUnit: value, previousDistanceUnit: previous) }
+                }
+            )) {
+                Text("Miles").tag("miles")
+                Text("Kilometers").tag("kilometers")
+                Text("Nautical miles").tag("nautical_miles")
+            }
+            .pickerStyle(.menu)
+            .disabled(!preferencesLoaded)
+
+            Toggle(isOn: Binding(
+                get: { voiceOn },
+                set: { value in
+                    guard preferencesLoaded else { return }
+                    let previous = voiceOn
+                    voiceOn = value
+                    Task { await saveOperationalPreference(esangVoiceEnabled: value, previousVoice: previous) }
+                }
+            )) {
+                Text("ESANG AI voice").font(EType.body).foregroundStyle(palette.textPrimary)
+            }
+            .tint(Brand.info)
+            .disabled(!preferencesLoaded)
         }
+    }
+
+    private var sectionDivider: some View {
+        Rectangle().fill(palette.borderFaint.opacity(0.5)).frame(height: 1).padding(.vertical, 4)
     }
 
     private var signOut: some View {
-        CTAButton(title: "Sign out", leadingIcon: "rectangle.portrait.and.arrow.right")
+        CTAButton(
+            title: "Sign out",
+            action: { showSignOutConfirm = true },
+            leadingIcon: "rectangle.portrait.and.arrow.right"
+        )
     }
 
     // MARK: - Load + mutate
 
     private func load() async {
-        loading = true; loadError = nil
+        loading = true
+        loadError = nil
+        watchError = nil
         struct Empty: Encodable {}
         struct ProfileOut: Decodable { let certifications: [VesselCertificate]?; let watch: WatchRest? }
         do {
             self.me = try await EusoTripAPI.shared.query("users.me", input: Empty())
-            let crew: ProfileOut = try await EusoTripAPI.shared.query("vesselShipments.getVesselCrew", input: Empty())
-            self.certificates = crew.certifications ?? []
-            self.watch = crew.watch
         } catch {
             loadError = error.eusoUserCopy
         }
+        if loadError == nil {
+            do {
+                let crew: ProfileOut = try await EusoTripAPI.shared.query(
+                    "vesselShipments.getVesselCrew", input: Empty()
+                )
+                self.certificates = crew.certifications ?? []
+                self.watch = crew.watch
+            } catch {
+                self.certificates = []
+                self.watch = nil
+                self.watchError = error.eusoUserCopy
+            }
+        }
+        await loadPreferences()
         loading = false
     }
 
-    private func savePref(_ key: String, _ value: Bool) async {
-        // See §6 FIX 3 — re-pointed from users.updateProfile (which silently
-        // dropped {key,value}) to the real users.updateNotificationPreferences.
-        struct PrefIn: Encodable { let pushNotifications: Bool }
-        struct Out: Decodable { let success: Bool? }
-        guard key == "notifications" else { return }
+    private func loadPreferences() async {
+        struct Empty: Encodable {}
+        preferencesLoaded = false
+        preferencesError = nil
         do {
-            let out: Out = try await EusoTripAPI.shared.mutation(
+            async let settingsRequest: VesselSettingsPayload = EusoTripAPI.shared.query(
+                "settings.getSettings", input: Empty()
+            )
+            async let notificationsRequest: VesselNotificationPreferences = EusoTripAPI.shared.query(
+                "users.getNotificationPreferences", input: Empty()
+            )
+            let (settings, notifications) = try await (settingsRequest, notificationsRequest)
+            distanceUnit = settings.operationalPreferences.distanceUnit
+            voiceOn = settings.operationalPreferences.esangVoiceEnabled
+            notificationsOn = notifications.pushNotifications
+            preferencesLoaded = true
+        } catch {
+            preferencesError = error.eusoUserCopy
+        }
+    }
+
+    private func saveNotifications(_ value: Bool, previous: Bool) async {
+        struct PrefIn: Encodable { let pushNotifications: Bool }
+        do {
+            let out: VesselSettingsMutationAck = try await EusoTripAPI.shared.mutation(
                 "users.updateNotificationPreferences",
                 input: PrefIn(pushNotifications: value))
             if out.success != true {
-                notificationsOn = !value
+                notificationsOn = previous
                 saveError = "Couldn't save notification preference."
             }
         } catch {
-            notificationsOn = !value
-            saveError = (error as? EusoTripAPIError)?.errorDescription
-                ?? "Couldn't save notification preference."
+            notificationsOn = previous
+            saveError = error.eusoUserCopy
         }
+    }
+
+    private func saveOperationalPreference(
+        distanceUnit newDistanceUnit: String? = nil,
+        esangVoiceEnabled: Bool? = nil,
+        previousDistanceUnit: String? = nil,
+        previousVoice: Bool? = nil
+    ) async {
+        struct Input: Encodable {
+            let distanceUnit: String?
+            let esangVoiceEnabled: Bool?
+        }
+        do {
+            let out: VesselSettingsMutationAck = try await EusoTripAPI.shared.mutation(
+                "settings.updateOperationalPreferences",
+                input: Input(distanceUnit: newDistanceUnit, esangVoiceEnabled: esangVoiceEnabled)
+            )
+            guard out.success == true else {
+                throw EusoTripAPIError.trpcError("The preference was not saved.")
+            }
+        } catch {
+            if let previousDistanceUnit { distanceUnit = previousDistanceUnit }
+            if let previousVoice { voiceOn = previousVoice }
+            saveError = error.eusoUserCopy
+        }
+    }
+
+    private func restorePosition(using proxy: ScrollViewProxy) {
+        eusoRestoreScrollPosition(
+            using: proxy,
+            anchor: returnAnchor,
+            fallback: "hub-\(expandedHubId.isEmpty ? "bookings" : expandedHubId)"
+        )
     }
 }
 

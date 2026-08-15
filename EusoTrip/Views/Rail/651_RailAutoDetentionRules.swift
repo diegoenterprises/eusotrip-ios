@@ -187,7 +187,7 @@ private struct RailAutoDetentionRulesBody: View {
             .padding(.top, 8)
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
         .sheet(isPresented: $showingAddRule) {
             addRuleSheet
         }
@@ -197,7 +197,7 @@ private struct RailAutoDetentionRulesBody: View {
 
     private var eyebrow: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("✦ RAIL ENGINEER · AUTOMATION")
+            EusoTripEyebrow(verbatim: "RAIL ENGINEER · AUTOMATION")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer()

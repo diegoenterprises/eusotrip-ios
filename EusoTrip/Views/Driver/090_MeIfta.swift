@@ -70,7 +70,7 @@ struct MeIfta: View {
             mpgText = String(format: "%.1f", store.fleetMpg)
             await store.refresh()
         }
-        .refreshable { await store.refresh() }
+        .eusoRefreshable { await store.refresh() }
         // RealtimeService → IFTA fuel/mileage data refreshes when
         // load events fire (new mileage logged, fuel purchase added).
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in

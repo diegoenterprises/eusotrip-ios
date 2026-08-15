@@ -312,7 +312,7 @@ struct ShipperAgreements: View {
 
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("✦ SHIPPER · AGREEMENTS")
+            EusoTripEyebrow(verbatim: "SHIPPER · AGREEMENTS")
                 .font(EType.micro)
                 .tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)

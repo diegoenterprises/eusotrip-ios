@@ -768,7 +768,7 @@ private struct RailFreightBillAuditBody010: View {
             if shipmentIdText.isEmpty, shipmentId > 0 { shipmentIdText = String(shipmentId) }
             await load(forcedShipmentId: shipmentId > 0 ? shipmentId : nil)
         }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
         .overlay(alignment: .bottom) { toastView }
         .sheet(isPresented: $showRecoveryGate) { recoveryGateSheet }
         .sheet(isPresented: $showHistorySheet) { historySheet }
@@ -778,7 +778,7 @@ private struct RailFreightBillAuditBody010: View {
 
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("✦ SHIPPER · RAIL · FREIGHT AUDIT")
+            EusoTripEyebrow(verbatim: "SHIPPER · RAIL · FREIGHT AUDIT")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer(minLength: Space.s2)

@@ -135,7 +135,7 @@ private struct RailInterlineRoutePlanBody: View {
             if shipmentIdText.isEmpty && initialShipmentId > 0 { shipmentIdText = "\(initialShipmentId)" }
             await load()
         }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
         .overlay(alignment: .bottom) { toastView }
     }
 

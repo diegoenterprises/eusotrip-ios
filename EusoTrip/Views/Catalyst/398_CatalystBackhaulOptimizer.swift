@@ -82,13 +82,11 @@ struct CatalystBackhaulOptimizerScreen: View {
 }
 
 private func catalystNavLeading_398() -> [NavSlot] {
-    [NavSlot(label: "Home",     systemImage: "house",                          isCurrent: false),
-     NavSlot(label: "Dispatch", systemImage: "shippingbox.and.arrow.backward", isCurrent: true)]
+    CarrierNavRoute.leading(current: .loads)
 }
 
 private func catalystNavTrailing_398() -> [NavSlot] {
-    [NavSlot(label: "Fleet",  systemImage: "truck.box.fill", isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person",     isCurrent: false)]
+    CarrierNavRoute.trailing(current: .loads)
 }
 
 // MARK: - View model (built from the LIVE getBackhaulOptimizer envelope only)
@@ -198,6 +196,7 @@ private struct BackhaulBody_398: View {
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
             Task { await reload() }
         }
+        .eusoRefreshHandler { await reload() }
         .sheet(item: $selectedTender) { item in
             CatalystBackhaulTenderScreen(theme: palette, loadId: item.id)
         }
@@ -209,7 +208,7 @@ private struct BackhaulBody_398: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 HStack(spacing: 4) {
-                    Image(systemName: "sparkles")
+                    EusoTripBrandMark(size: 12)
                         .font(.system(size: 9, weight: .heavy))
                         .foregroundStyle(LinearGradient.primary)
                     Text("CATALYST · BACKHAUL · EMPTY-MILE KILLER")

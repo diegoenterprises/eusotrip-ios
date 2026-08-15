@@ -1543,7 +1543,7 @@ struct HotZonesListSheet: View {
                 }
                 .padding(Space.s5)
             }
-            .refreshable { await store.refresh() }
+            .eusoRefreshable { await store.refresh() }
         }
         .background(palette.bgPage.ignoresSafeArea())
         .sheet(item: $selectedZone) { zone in

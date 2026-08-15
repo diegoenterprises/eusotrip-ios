@@ -146,16 +146,16 @@ private struct VesselCBPEntryDetailBody: View {
             .padding(.top, Space.s2)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - Header (canonical DETAIL header)
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
-            // Eyebrow row: sparkle eyebrow + mono caption ("19 CFR · ACE").
+            // Eyebrow row: EusoTrip mark + mono caption ("19 CFR · ACE").
             HStack(spacing: 6) {
-                Text("✦ VESSEL OPERATOR · CBP ENTRY")
+                EusoTripEyebrow(verbatim: "VESSEL OPERATOR · CBP ENTRY")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

@@ -140,7 +140,7 @@ struct CatalystMatches: View {
             matches.limit = 50
             await matches.refresh()
         }
-        .refreshable {
+        .eusoRefreshable {
             matches.limit = 50
             await matches.refresh()
         }
@@ -186,7 +186,7 @@ struct CatalystMatches: View {
                 .clipShape(Circle())
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Image(systemName: "sparkles")
+                    EusoTripBrandMark(size: 12)
                         .font(.system(size: 9, weight: .heavy))
                         .foregroundStyle(LinearGradient.diagonal)
                     Text("CATALYST · MATCHES")
@@ -561,13 +561,11 @@ struct CatalystMatchesScreen: View {
 }
 
 private func catalystNavLeading_501() -> [NavSlot] {
-    [NavSlot(label: "Home",    systemImage: "house",        isCurrent: false),
-     NavSlot(label: "Matches", systemImage: "scope",        isCurrent: true)]
+    CarrierNavRoute.leading(current: .loads)
 }
 
 private func catalystNavTrailing_501() -> [NavSlot] {
-    [NavSlot(label: "Network", systemImage: "person.2",     isCurrent: false),
-     NavSlot(label: "Me",      systemImage: "person",       isCurrent: false)]
+    CarrierNavRoute.trailing(current: .loads)
 }
 
 // MARK: - Previews

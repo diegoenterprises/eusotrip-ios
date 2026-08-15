@@ -38,10 +38,8 @@ struct InsuranceCOIViewer: View {
             InsuranceCOIBody(injectedCompanyId: companyId)
         } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home",    systemImage: "house",                        isCurrent: false),
-                          NavSlot(label: "Drivers", systemImage: "person.3.fill",                isCurrent: false)],
-                trailing: [NavSlot(label: "Audits", systemImage: "doc.text.magnifyingglass",     isCurrent: true),
-                           NavSlot(label: "Me",     systemImage: "person",                       isCurrent: false)],
+                leading: ComplianceNavRoute.leading(current: .audits),
+                trailing: ComplianceNavRoute.trailing(current: .audits),
                 orbState: .idle
             )
         }

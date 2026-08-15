@@ -113,7 +113,7 @@ struct MeEarnings068: View {
                     .padding(.bottom, Space.s8)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .refreshable { await store.refresh() }
+                .eusoRefreshable { await store.refresh() }
             }
         }
         .task { await store.refresh() }

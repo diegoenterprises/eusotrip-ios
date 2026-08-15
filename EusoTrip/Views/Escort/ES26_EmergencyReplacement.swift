@@ -501,14 +501,14 @@ struct EscortEmergencyReplacementES26: View {
         .padding(.horizontal, Space.s5)
         .padding(.top, Space.s2)
         .task { await refresh() }
-        .refreshable { await refresh() }
+        .eusoRefreshable { await refresh() }
     }
 
     // MARK: Header
 
     private var eyebrowRow: some View {
         HStack {
-            Text("✦ ESCORT · EMERGENCY & REPLACEMENT")
+            EusoTripEyebrow(verbatim: "ESCORT · EMERGENCY & REPLACEMENT")
                 .font(EType.micro).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer(minLength: Space.s2)
@@ -1501,13 +1501,11 @@ struct EscortEmergencyReplacementES26Screen: View {
 }
 
 private func es26NavLeading() -> [NavSlot] {
-    [NavSlot(label: "Home",        systemImage: "house",                  isCurrent: false),
-     NavSlot(label: "Assignments", systemImage: "shield.lefthalf.filled", isCurrent: true)]
+    EscortNavRoute.leading(current: .assignments)
 }
 
 private func es26NavTrailing() -> [NavSlot] {
-    [NavSlot(label: "Corridor", systemImage: "map",    isCurrent: false),
-     NavSlot(label: "Me",       systemImage: "person", isCurrent: false)]
+    EscortNavRoute.trailing(current: .assignments)
 }
 
 // MARK: - Previews

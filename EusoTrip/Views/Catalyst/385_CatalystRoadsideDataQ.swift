@@ -10,7 +10,7 @@
 //  file mirrors).
 //
 //  Layout (section-by-section against the SVG):
-//    • Header — eyebrow "✦ CATALYST · ROADSIDE" (gradient) + "INSPECTIONS"
+//    • Header — EusoTrip mark + "CATALYST · ROADSIDE" + "INSPECTIONS"
 //      (mono); back-chevron orb; title "Roadside" (22/700); subtitle
 //      "carrier inspections · DataQ"; right rail "{carrier} · USDOT {dot}" +
 //      "synced …"; IridescentHairline.
@@ -218,7 +218,7 @@ struct CatalystRoadsideDataQ: View {
             .padding(.bottom, Space.s8)
         }
         .task { await store.refresh() }
-        .refreshable { await store.refresh() }
+        .eusoRefreshable { await store.refresh() }
         .sheet(isPresented: $fileSheet) {
             FileDataQSheet(
                 carrier: store.state.value?.carrier,
@@ -255,7 +255,7 @@ struct CatalystRoadsideDataQ: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack {
-                Text("✦ CATALYST · ROADSIDE")
+                EusoTripEyebrow(verbatim: "CATALYST · ROADSIDE")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.diagonal)
                 Spacer()
@@ -885,7 +885,7 @@ private struct CarrierPolicySheet: View {
             .padding(Space.s4)
         }
         .background(palette.bgPrimary)
-        .task { await store.refresh() }
+        .eusoRefreshTask { await store.refresh() }
     }
 
     private var coverageUnknown: some View {

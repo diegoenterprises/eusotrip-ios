@@ -204,7 +204,7 @@ struct ShipperDispatchControl: View {
             }
         }
         .task { await store.refresh() }
-        .refreshable { await store.refresh() }
+        .eusoRefreshable { await store.refresh() }
         // RealtimeService → driver/carrier dispatch updates refresh
         // the dispatch control surface live.
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
@@ -226,7 +226,7 @@ struct ShipperDispatchControl: View {
 
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("✦ SHIPPER · DISPATCH CONTROL")
+            EusoTripEyebrow(verbatim: "SHIPPER · DISPATCH CONTROL")
                 .font(EType.micro)
                 .tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)

@@ -191,7 +191,7 @@ private struct VesselLivePositionBody_660: View {
         }
         .task { await load() }
         .task { await streamTrack() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: Eyebrow / title
@@ -199,7 +199,7 @@ private struct VesselLivePositionBody_660: View {
     private var eyebrow: some View {
         HStack {
             HStack(spacing: 5) {
-                Text("✦").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.primary)
+                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.primary)
                 Text("VESSEL OPERATOR · LIVE POSITION")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.primary)
             }

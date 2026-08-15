@@ -126,7 +126,7 @@ struct ShipperWatchComplication: View {
                 content(watch)
             }
         }
-        .task { await load() }
+        .eusoRefreshTask { await load() }
         .sheet(item: $inAppLink) { link in
             EusoInAppSafari(url: link.url).ignoresSafeArea()
         }
@@ -259,7 +259,7 @@ struct ShipperWatchComplication: View {
 
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("✦ SHIPPER · WATCH")
+            EusoTripEyebrow(verbatim: "SHIPPER · WATCH")
                 .font(EType.micro)
                 .tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
@@ -412,7 +412,7 @@ struct ShipperWatchComplication: View {
                         .font(EType.mono(.micro))
                         .tracking(0.3)
                         .foregroundStyle(palette.textTertiary)
-                    Text("Carrier grade \"A\" inline next to eyebrow ✦ tier-letter primitive · 213 recipe")
+                    Text("Carrier grade \"A\" inline next to the EusoTrip mark · tier-letter primitive · 213 recipe")
                         .font(.system(size: 9))
                         .foregroundStyle(palette.textTertiary)
                         .lineLimit(2)

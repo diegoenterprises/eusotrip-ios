@@ -102,7 +102,7 @@ struct ShipperBids: View {
             }
         }
         .task { await refreshAll() }
-        .refreshable { await refreshAll() }
+        .eusoRefreshable { await refreshAll() }
         // RealtimeService → carrier-side bid placements / counters /
         // withdrawals refresh the shipper bids board live.
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
@@ -190,7 +190,7 @@ struct ShipperBids: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("✦ SHIPPER · BIDS")
+                EusoTripEyebrow(verbatim: "SHIPPER · BIDS")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

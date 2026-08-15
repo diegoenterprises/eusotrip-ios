@@ -498,7 +498,7 @@ struct EscortHazmatWatch: View {
         }
         .safeAreaInset(edge: .bottom) { ctaBar }
         .task { await load() }
-        .refreshable { await load(forceNetwork: true) }
+        .eusoRefreshable { await load(forceNetwork: true) }
         .onReceive(Timer.publish(every: 15, on: .main, in: .common).autoconnect()) { t in
             // Ages must keep counting even when nothing refetches, otherwise a
             // reading would appear to freeze at the age it had when it landed.
@@ -511,7 +511,7 @@ struct EscortHazmatWatch: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 4) {
-                Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy))
+                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
                 Text("ESCORT · HAZMAT WATCH")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
@@ -1682,14 +1682,8 @@ struct EscortHazmatWatchScreen: View {
             // touch EscortNavController.swift — the needed entry is listed in the
             // build manifest instead.
             BottomNav(
-                leading: [
-                    NavSlot(label: "Trip",  systemImage: "house",       isCurrent: true),
-                    NavSlot(label: "Comms", systemImage: "bubble.left", isCurrent: false),
-                ],
-                trailing: [
-                    NavSlot(label: "Permit", systemImage: "doc.text", isCurrent: false),
-                    NavSlot(label: "Me",     systemImage: "person",   isCurrent: false),
-                ],
+                leading: EscortNavRoute.leading(current: .assignments),
+                trailing: EscortNavRoute.trailing(current: .assignments),
                 orbState: .idle
             )
         }

@@ -237,7 +237,7 @@ struct ShipperDocumentCenter: View {
             }
         }
         .task { await store.load() }
-        .refreshable { await store.load() }
+        .eusoRefreshable { await store.load() }
         // RealtimeService → live updates refresh the document center
         // when a new doc lands (POD upload, signed contract, etc).
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
@@ -486,7 +486,7 @@ struct ShipperDocumentCenter: View {
 
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("✦ SHIPPER · DOCUMENT CENTER")
+            EusoTripEyebrow(verbatim: "SHIPPER · DOCUMENT CENTER")
                 .font(EType.micro)
                 .tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)

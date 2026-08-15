@@ -174,10 +174,8 @@ struct CatalystFleetVehiclesScreen: View {
     var body: some View {
         Shell(theme: theme) { FleetVehiclesBody() } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home",     systemImage: "house",           isCurrent: false),
-                          NavSlot(label: "Dispatch", systemImage: "rectangle.split.3x1.fill", isCurrent: true)],
-                trailing: [NavSlot(label: "Fleet",  systemImage: "truck.box.fill",  isCurrent: false),
-                           NavSlot(label: "Me",     systemImage: "person",           isCurrent: false)],
+                leading: CarrierNavRoute.leading(current: .drivers),
+                trailing: CarrierNavRoute.trailing(current: .drivers),
                 orbState: .idle
             )
         }
@@ -248,7 +246,7 @@ private struct FleetVehiclesBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await loadAll() }
-        .refreshable { await loadAll() }
+        .eusoRefreshable { await loadAll() }
         .sheet(isPresented: $showAddVehicle) { addVehicleSheet }
         .sheet(isPresented: $showSchedulePM) { schedulePMSheet }
     }
@@ -258,7 +256,7 @@ private struct FleetVehiclesBody: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "sparkle")
+                EusoTripBrandMark(size: 12)
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
                 Text("CATALYST · FLEET · VEHICLES")

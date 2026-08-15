@@ -28,74 +28,7 @@ struct RailDocumentIngestScreen: View {
 
 // MARK: - Data shapes
 
-private struct ParsedDocument590: Decodable {
-    let confidence: Double?
-    let parseStatus: String?
-    let documentType: String?
-    let fieldsNormalized: Int?
-    let totalFields: Int?
-    let missingField: String?
-    let parseTimeSeconds: Double?
-    let parsedAgoLabel: String?
-}
-
-private struct ExtractedFields590: Decodable {
-    let waybillNumber: String?
-    let carrierName: String?
-    let trainSymbol: String?
-    let lane: String?
-    let etdLabel: String?
-    let etaLabel: String?
-    let containerDesc: String?
-    let commodity: String?
-    let terms: String?
-
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        
-        // Try to decode as flat structure first (direct field access)
-        var wb = try? c.decodeIfPresent(String.self, forKey: .waybillNumber)
-        var cn = try? c.decodeIfPresent(String.self, forKey: .carrierName)
-        var ts = try? c.decodeIfPresent(String.self, forKey: .trainSymbol)
-        var ln = try? c.decodeIfPresent(String.self, forKey: .lane)
-        var etd = try? c.decodeIfPresent(String.self, forKey: .etdLabel)
-        var eta = try? c.decodeIfPresent(String.self, forKey: .etaLabel)
-        var cd = try? c.decodeIfPresent(String.self, forKey: .containerDesc)
-        var cm = try? c.decodeIfPresent(String.self, forKey: .commodity)
-        var tm = try? c.decodeIfPresent(String.self, forKey: .terms)
-
-        // If the flat fields are empty, fall back to the server envelope (extractedData)
-        if wb == nil && cn == nil && ts == nil,
-           let ext = try? c.decodeIfPresent([String: AnyCodable].self, forKey: .extractedData) {
-            wb = ext["waybillNumber"]?.value as? String
-            cn = ext["carrierName"]?.value as? String
-            ts = ext["trainSymbol"]?.value as? String
-            ln = ext["lane"]?.value as? String
-            etd = ext["etdLabel"]?.value as? String
-            eta = ext["etaLabel"]?.value as? String
-            cd = ext["containerDesc"]?.value as? String
-            cm = ext["commodity"]?.value as? String
-            tm = ext["terms"]?.value as? String
-        }
-
-        waybillNumber = wb
-        carrierName = cn
-        trainSymbol = ts
-        lane = ln
-        etdLabel = etd
-        etaLabel = eta
-        containerDesc = cd
-        commodity = cm
-        terms = tm
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case waybillNumber, carrierName, trainSymbol, lane, etdLabel, etaLabel, containerDesc, commodity, terms
-        case extractedData
-    }
-}
-
-private struct AnyCodable: Codable {
+private struct AnyCodable: Decodable {
     let value: Any
 
     init(from decoder: Decoder) throws {
@@ -113,24 +46,16 @@ private struct AnyCodable: Codable {
         }
     }
 
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.singleValueContainer()
-        if let int = value as? Int {
-            try container.encode(int)
-        } else if let string = value as? String {
-            try container.encode(string)
-        } else if let bool = value as? Bool {
-            try container.encode(bool)
-        } else if let double = value as? Double {
-            try container.encode(double)
+    var displayValue: String {
+        switch value {
+        case let string as String: return string
+        case let int as Int: return String(int)
+        case let double as Double: return String(format: "%g", double)
+        case let bool as Bool: return bool ? "Yes" : "No"
+        default: return ""
         }
     }
-}
 
-private struct DraftShipment590: Decodable {
-    let railId: String?
-    let companyName: String?
-    let status: String?
 }
 
 private struct DocDashboard590: Decodable {
@@ -158,53 +83,75 @@ private struct DocDashboard590: Decodable {
 
 private struct DocIdIn590: Encodable { let documentId: String }
 
+private struct DocumentExtractionWire590: Decodable {
+    struct Classification: Decodable {
+        let type: String
+        let confidence: Double
+    }
+
+    let success: Bool
+    let status: String
+    let extractedData: [String: AnyCodable]?
+    let fieldsExtracted: Int
+    let confidence: Double
+    let classification: Classification
+    let regulatedFields: [String]
+    let grounded: Bool
+    let requiresHumanConfirmation: Bool
+    let warnings: [String]
+    let error: String?
+}
+
 // MARK: - Body
 
 private struct RailDocumentIngestBody: View {
     @Environment(\.palette) private var palette
     let documentId: String
 
-    @State private var parsed: ParsedDocument590? = nil
-    @State private var fields: ExtractedFields590? = nil
-    @State private var draft: DraftShipment590? = nil
+    @State private var extraction: DocumentExtractionWire590? = nil
     @State private var dashboard: DocDashboard590? = nil
     @State private var isCreating = false
+    @State private var loadError: String? = nil
+    @State private var actionMessage: String? = nil
 
     // MARK: Derived
 
-    private var confidence: Double   { parsed?.confidence ?? 0 }
-    private var confidencePct: Double { min(max(confidence, 0), 100) }
-    private var confidenceLabel: String { "\(Int(confidencePct))%" }
+    private var confidencePct: Double { min(max((extraction?.confidence ?? 0) * 100, 0), 100) }
+    private var confidenceLabel: String { extraction == nil ? "—" : "\(Int(confidencePct.rounded()))%" }
     private var parseStatusLabel: String {
-        switch (parsed?.parseStatus ?? "parsed").lowercased() {
-        case "parsed": return "PARSED"
-        case "failed": return "FAILED"
-        default:       return "REVIEWING"
+        switch extraction?.status.lowercased() {
+        case "read": return "READ"
+        case "pending": return "READING"
+        case "nothing_read": return "NOTHING READ"
+        case "unreadable_type": return "UNREADABLE TYPE"
+        case "scanner_unavailable": return "SCANNER OFFLINE"
+        default: return "NOT READ"
         }
     }
     private var parseStatusOk: Bool {
-        (parsed?.parseStatus ?? "parsed").lowercased() == "parsed"
+        extraction?.status.lowercased() == "read"
     }
     private var docTypeLabel: String {
-        switch (parsed?.documentType ?? "rail_waybill").lowercased() {
+        switch extraction?.classification.type.lowercased() {
         case "bill_of_lading": return "BILL OF LADING"
         case "booking":        return "BOOKING"
-        default:               return "RAIL WAYBILL"
+        case "rail_waybill", "waybill": return "RAIL WAYBILL"
+        case let value?: return value.replacingOccurrences(of: "_", with: " ").uppercased()
+        default: return "UNCLASSIFIED DOCUMENT"
         }
     }
-    private var fieldsNormalized: Int { parsed?.fieldsNormalized ?? 0 }
-    private var totalFields: Int      { parsed?.totalFields      ?? 14 }
-    private var missingField: String  { parsed?.missingField     ?? "-" }
-    private var parsedAgoLabel: String { parsed?.parsedAgoLabel  ?? "-" }
-    private var parseTimeLabel: String {
-        guard let t = parsed?.parseTimeSeconds else { return "" }
-        return " · \(Int(t))s parse"
-    }
+    private var fieldsNormalized: Int { extraction?.fieldsExtracted ?? 0 }
     private var docsToday: Int        { dashboard?.docsToday      ?? 0 }
     private var docsStatusLabel: String { dashboard?.docsStatusLabel ?? "-" }
-    private var draftRailId: String   { draft?.railId     ?? "-" }
-    private var draftCompany: String  { draft?.companyName ?? "Eusorone Technologies" }
-    private var missingCount: Int     { totalFields - fieldsNormalized }
+    private var regulatedCount: Int { extraction?.regulatedFields.count ?? 0 }
+    private var extractedRows: [(String, String)] {
+        (extraction?.extractedData ?? [:])
+            .compactMap { key, value in
+                let rendered = value.displayValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                return rendered.isEmpty ? nil : (key, rendered)
+            }
+            .sorted { $0.0.localizedCaseInsensitiveCompare($1.0) == .orderedAscending }
+    }
 
     // MARK: View
 
@@ -216,7 +163,8 @@ private struct RailDocumentIngestBody: View {
                 IridescentHairline()
                 heroParseCard
                 extractedFieldsCard
-                activeDraftCard
+                if let loadError { statusBanner(loadError, color: Brand.danger) }
+                if let actionMessage { statusBanner(actionMessage, color: Brand.success) }
                 kpiStrip
                 ctaPair
                 Color.clear.frame(height: 96)
@@ -224,14 +172,14 @@ private struct RailDocumentIngestBody: View {
             .padding(.horizontal, Space.s4)
             .padding(.top, Space.s3)
         }
-        .task { await loadAll() }
+        .eusoRefreshTask { await loadAll() }
     }
 
     // MARK: Eyebrow
 
     private var eyebrow: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("✦ RAIL ENGINEER · DOC INTAKE")
+            EusoTripEyebrow(verbatim: "RAIL ENGINEER · DOC INTAKE")
                 .font(.system(size: 9, weight: .black))
                 .kerning(1.0)
                 .foregroundStyle(LinearGradient.primary)
@@ -260,7 +208,7 @@ private struct RailDocumentIngestBody: View {
                     .font(.system(size: 22, weight: .bold))
                     .kerning(-0.3)
                     .foregroundColor(palette.textPrimary)
-                Text("Extraction · parse ok")
+                Text("Extraction proposal · human review required")
                     .font(.system(size: 11).monospaced())
                     .kerning(0.4)
                     .foregroundColor(palette.textSecondary)
@@ -271,7 +219,7 @@ private struct RailDocumentIngestBody: View {
                     .font(.system(size: 9, weight: .black))
                     .kerning(0.6)
                     .foregroundColor(palette.textTertiary)
-                Text("parsed \(parsedAgoLabel)")
+                Text(parseStatusLabel)
                     .font(.system(size: 11).monospaced())
                     .kerning(0.4)
                     .foregroundColor(palette.textSecondary)
@@ -284,12 +232,12 @@ private struct RailDocumentIngestBody: View {
     private var heroParseCard: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack {
-                Text("LAST PARSE · \(docTypeLabel)")
+                Text("LATEST READ · \(docTypeLabel)")
                     .font(.system(size: 9, weight: .black))
                     .kerning(0.6)
                     .foregroundColor(palette.textTertiary)
                 Spacer()
-                Text("CLASSIFIED")
+                Text("PROPOSAL")
                     .font(.system(size: 9, weight: .black))
                     .kerning(0.6)
                     .foregroundColor(palette.textTertiary)
@@ -324,12 +272,14 @@ private struct RailDocumentIngestBody: View {
             }
             .frame(height: 6)
 
-            Text("\(fieldsNormalized) of \(totalFields) shipment fields normalized")
+            Text("\(fieldsNormalized) field\(fieldsNormalized == 1 ? "" : "s") read from the stored document")
                 .font(.system(size: 11, weight: .medium))
                 .kerning(0.2)
                 .foregroundColor(palette.textPrimary)
 
-            Text("\(missingCount) missing · \(missingField) · ESANG AI\(parseTimeLabel)")
+            Text(extraction?.grounded == true
+                 ? "Spatial grounding recorded · confirmation still required"
+                 : "No spatial grounding recorded · confirmation required")
                 .font(.system(size: 9).monospaced())
                 .kerning(0.3)
                 .foregroundColor(palette.textTertiary)
@@ -355,24 +305,34 @@ private struct RailDocumentIngestBody: View {
     private var extractedFieldsCard: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("EXTRACTED FIELDS · auto-classified")
+                Text("EXTRACTED FIELDS · REVIEW REQUIRED")
                     .font(.system(size: 9, weight: .black))
                     .kerning(0.6)
                     .foregroundColor(palette.textTertiary)
                 Spacer()
-                Text("\(fieldsNormalized) / \(totalFields)")
+                Text("\(fieldsNormalized)")
                     .font(.system(size: 9, weight: .black))
                     .kerning(0.6)
                     .foregroundColor(palette.textTertiary)
             }
             .padding(.bottom, Space.s3)
 
-            fieldRow(label: "Waybill",         value: fields?.waybillNumber  ?? "-", mono: true)
-            fieldRow(label: "Carrier · Train",  value: [fields?.carrierName, fields?.trainSymbol].compactMap { $0 }.joined(separator: " · "), mono: true)
-            fieldRow(label: "Lane",             value: fields?.lane           ?? "-", mono: false)
-            fieldRow(label: "ETD · ETA",        value: [fields?.etdLabel, fields?.etaLabel].compactMap { $0 }.joined(separator: " → "), mono: false)
-            fieldRow(label: "Containers",       value: fields?.containerDesc  ?? "-", mono: true)
-            fieldRow(label: "Commodity · Terms", value: [fields?.commodity, fields?.terms].compactMap { $0 }.joined(separator: " · "), mono: false, isLast: true)
+            if extractedRows.isEmpty {
+                Text(extraction?.error ?? extraction?.warnings.first ?? "No fields have been read from this document.")
+                    .font(.system(size: 11))
+                    .foregroundColor(palette.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 10)
+            } else {
+                ForEach(Array(extractedRows.enumerated()), id: \.offset) { index, row in
+                    fieldRow(
+                        label: row.0.replacingOccurrences(of: "_", with: " ").capitalized,
+                        value: row.1,
+                        mono: true,
+                        isLast: index == extractedRows.count - 1
+                    )
+                }
+            }
         }
         .padding(Space.s4)
         .background(
@@ -411,48 +371,6 @@ private struct RailDocumentIngestBody: View {
         }
     }
 
-    // MARK: Active draft card
-
-    private var activeDraftCard: some View {
-        HStack(spacing: Space.s3) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Brand.blue.opacity(0.10))
-                    .frame(width: 40, height: 40)
-                Image(systemName: "doc.fill")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(Brand.blue)
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                Text("New draft · awaiting confirm")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundColor(palette.textPrimary)
-                Text("\(draftRailId) · DU · \(draftCompany)")
-                    .font(.system(size: 10).monospaced())
-                    .kerning(0.3)
-                    .foregroundColor(palette.textSecondary)
-            }
-            Spacer()
-            Text("DRAFT")
-                .font(.system(size: 10, weight: .black))
-                .kerning(0.4)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(Capsule().fill(Brand.blue.opacity(0.12)))
-                .foregroundColor(Brand.blue)
-        }
-        .padding(.horizontal, Space.s4)
-        .padding(.vertical, 13)
-        .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(palette.bgCard)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14)
-                        .stroke(Color.black.opacity(0.08), lineWidth: 1)
-                )
-        )
-    }
-
     // MARK: KPI strip (custom — first tile is gradient)
 
     private var kpiStrip: some View {
@@ -461,7 +379,7 @@ private struct RailDocumentIngestBody: View {
             ZStack(alignment: .topLeading) {
                 RoundedRectangle(cornerRadius: 12).fill(LinearGradient.diagonal)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("DOCS TODAY")
+                    Text("DOCUMENTS")
                         .font(.system(size: 9, weight: .black))
                         .kerning(0.6)
                         .foregroundColor(.white.opacity(0.85))
@@ -479,35 +397,35 @@ private struct RailDocumentIngestBody: View {
             .frame(height: 66)
 
             MetricTile(label: "FIELDS",  value: "\(fieldsNormalized)")
-            MetricTile(label: "MISSING", value: "\(missingCount)",
-                       accent: missingCount > 0 ? Brand.warning : Brand.success)
+            MetricTile(label: "REGULATED", value: "\(regulatedCount)",
+                       accent: regulatedCount > 0 ? Brand.warning : Brand.success)
         }
     }
 
     // MARK: CTA pair
 
     private var rawDocumentLines: [String] {
-        [
+        var lines = [
             "Document: \(documentId)",
-            "Type: \(parsed?.documentType ?? "-")",
-            "Status: \(parsed?.parseStatus ?? "-")",
-            "Confidence: \(parsed?.confidence.map { String(format: "%.0f%%", $0 * 100) } ?? "-")",
-            "Fields: \(parsed?.fieldsNormalized ?? 0) of \(parsed?.totalFields ?? 0)",
-            "Missing: \(parsed?.missingField ?? "-")",
-            "Waybill: \(fields?.waybillNumber ?? "-")",
-            "Carrier: \(fields?.carrierName ?? "-")",
-            "Lane: \(fields?.lane ?? "-")"
+            "Type proposal: \(docTypeLabel)",
+            "Status: \(parseStatusLabel)",
+            "Confidence: \(confidenceLabel)",
+            "Grounded: \(extraction?.grounded == true ? "yes" : "no")",
+            "Human confirmation required: \(extraction?.requiresHumanConfirmation == true ? "yes" : "no")",
         ]
+        lines.append(contentsOf: extractedRows.map { "\($0.0): \($0.1)" })
+        lines.append(contentsOf: (extraction?.warnings ?? []).map { "Warning: \($0)" })
+        return lines
     }
 
     private var ctaPair: some View {
         HStack(spacing: Space.s3) {
-            Button(action: { isCreating = true; Task { await createShipment() } }) {
+            Button(action: { isCreating = true; Task { await rereadStoredDocument() } }) {
                 HStack {
                     if isCreating {
                         ProgressView().tint(.white).scaleEffect(0.8)
                     }
-                    Text("Create shipment from extract")
+                    Text("Re-read stored document")
                         .font(.system(size: 14, weight: .bold))
                         .foregroundColor(.white)
                 }
@@ -529,33 +447,61 @@ private struct RailDocumentIngestBody: View {
     // MARK: Data loading
 
     private func loadAll() async {
-        async let parseTask: ParsedDocument590 = EusoTripAPI.shared.query(
-            "documentManagement.classifyDocument",
-            input: DocIdIn590(documentId: documentId)
-        )
-        async let fieldsTask: ExtractedFields590 = EusoTripAPI.shared.query(
-            "documentManagement.extractDocumentData",
-            input: DocIdIn590(documentId: documentId)
-        )
-        async let draftTask: DraftShipment590 = EusoTripAPI.shared.query(
-            "documentManagement.extractDocumentData",
-            input: DocIdIn590(documentId: documentId)
-        )
-        async let dashTask: DocDashboard590 = EusoTripAPI.shared.queryNoInput(
-            "documentManagement.getDocumentDashboard"
-        )
-
-        parsed    = try? await parseTask
-        fields    = try? await fieldsTask
-        draft     = try? await draftTask
-        dashboard = try? await dashTask
+        loadError = nil
+        do {
+            extraction = try await EusoTripAPI.shared.mutation(
+                "documentManagement.extractDocumentData",
+                input: DocIdIn590(documentId: documentId)
+            )
+        } catch {
+            extraction = nil
+            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+        do {
+            dashboard = try await EusoTripAPI.shared.queryNoInput(
+                "documentManagement.getDocumentDashboard"
+            )
+        } catch {
+            dashboard = nil
+            if loadError == nil {
+                loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            }
+        }
     }
 
-    private func createShipment() async {
+    private func rereadStoredDocument() async {
         defer { isCreating = false }
-        let _: ParsedDocument590? = try? await EusoTripAPI.shared.query(
-            "documentManagement.classifyDocument",
-            input: DocIdIn590(documentId: documentId)
-        )
+        loadError = nil
+        actionMessage = nil
+        do {
+            struct ReReadResult: Decodable {
+                let success: Bool
+                let status: String
+                let error: String?
+            }
+            let result: ReReadResult = try await EusoTripAPI.shared.mutation(
+                "documentManagement.classifyDocument",
+                input: DocIdIn590(documentId: documentId)
+            )
+            await loadAll()
+            if result.success {
+                actionMessage = "Stored document re-read. Review every proposed value before filing."
+            } else {
+                loadError = result.error ?? "The scanner did not classify this document."
+            }
+        } catch {
+            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    private func statusBanner(_ message: String, color: Color) -> some View {
+        Text(message)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundColor(color)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(color.opacity(0.10))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(color.opacity(0.35), lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 }

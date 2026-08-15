@@ -111,7 +111,7 @@ private struct DriverEusoTicketRendererBody: View {
             await fetch()
             joinLoadRoom()
         }
-        .refreshable { await fetch() }
+        .eusoRefreshable { await fetch() }
         .onDisappear { leaveLoadRoom() }
         // RealtimeService → re-fetch the EusoTicket the moment the
         // load record changes (status, carrier accept, accessorials,
@@ -145,7 +145,7 @@ private struct DriverEusoTicketRendererBody: View {
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
             HStack(spacing: 4) {
-                Image(systemName: "sparkles").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("DRIVER · EUSOTICKET")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }

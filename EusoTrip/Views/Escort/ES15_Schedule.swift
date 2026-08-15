@@ -265,7 +265,7 @@ struct EscortSchedule: View {
         }
         .safeAreaInset(edge: .bottom) { saveBar }
         .task { await load() }
-        .refreshable { await load(forceNetwork: true) }
+        .eusoRefreshable { await load(forceNetwork: true) }
     }
 
     // MARK: Header
@@ -273,7 +273,7 @@ struct EscortSchedule: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 4) {
-                Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy))
+                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
                 Text("ESCORT · SCHEDULE").font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.diagonal)
@@ -996,14 +996,8 @@ struct EscortScheduleScreen: View {
             // Escort role enum TRIP·COMMS·PERMIT·ME — schedule is pushed under
             // ME, matching the ES-08 precedent.
             BottomNav(
-                leading: [
-                    NavSlot(label: "Trip",  systemImage: "house",       isCurrent: false),
-                    NavSlot(label: "Comms", systemImage: "bubble.left", isCurrent: false),
-                ],
-                trailing: [
-                    NavSlot(label: "Permit", systemImage: "doc.text", isCurrent: false),
-                    NavSlot(label: "Me",     systemImage: "person",   isCurrent: true),
-                ],
+                leading: EscortNavRoute.leading(current: .me),
+                trailing: EscortNavRoute.trailing(current: .me),
                 orbState: .idle
             )
         }

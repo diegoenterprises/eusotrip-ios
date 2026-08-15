@@ -40,10 +40,9 @@ import SwiftUI
 
 struct VesselBookingDetailScreen: View {
     var theme: Theme.Palette = Theme.dark
-    /// Shipment row id the detail endpoint keys on. Defaults to the wireframe
-    /// hero booking so the View is default-initializable for previews / router
-    /// fallbacks.
-    var shipmentId: Int = 48217
+    /// Shipment row id the detail endpoint keys on. Zero means no route context
+    /// was supplied and renders an honest error without issuing a request.
+    var shipmentId: Int
 
     var body: some View {
         Shell(theme: theme) { VesselBookingDetailBody(shipmentId: shipmentId) } nav: {
@@ -234,7 +233,7 @@ private struct VesselBookingDetailBody: View {
             .padding(.horizontal, Space.s5)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - Top bar  (SVG: back chevron · y=72 eyebrow · y=116 booking# + status pill · y=138 subline)
@@ -242,7 +241,7 @@ private struct VesselBookingDetailBody: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .center, spacing: Space.s3) {
-                Text("✦ VESSEL SHIPPER · BOOKING DETAIL")
+                EusoTripEyebrow(verbatim: "VESSEL SHIPPER · BOOKING DETAIL")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer(minLength: 8)
@@ -735,6 +734,16 @@ private struct VesselBookingDetailBody: View {
 
     private func load() async {
         loading = true; loadError = nil
+        guard shipmentId > 0 else {
+            detail = nil
+            loading = false
+            NotificationCenter.default.post(
+                name: .eusoVesselShipperNavSwap,
+                object: nil,
+                userInfo: ["screenId": "Vesl011"]
+            )
+            return
+        }
         struct DetailIn: Encodable { let id: Int }
         do {
             // getVesselShipmentDetail (EXISTS :234) returns the row + bols +
@@ -746,6 +755,16 @@ private struct VesselBookingDetailBody: View {
             let d: VesselShipmentDetail002? =
                 try await EusoTripAPI.shared.query("vesselShipments.getVesselShipmentDetail",
                                                    input: DetailIn(id: shipmentId))
+            guard let d else {
+                self.detail = nil
+                loading = false
+                NotificationCenter.default.post(
+                    name: .eusoVesselShipperNavSwap,
+                    object: nil,
+                    userInfo: ["screenId": "Vesl011"]
+                )
+                return
+            }
             self.detail = d
         } catch {
             loadError = error.eusoUserCopy
@@ -806,12 +825,12 @@ private struct VesselBookingDetailBody: View {
 }
 
 #Preview("002 · Vessel Booking Detail · Night") {
-    VesselBookingDetailScreen(theme: Theme.dark)
+    VesselBookingDetailScreen(theme: Theme.dark, shipmentId: 1)
         .environmentObject(EusoTripSession())
         .preferredColorScheme(.dark)
 }
 #Preview("002 · Vessel Booking Detail · Light") {
-    VesselBookingDetailScreen(theme: Theme.light)
+    VesselBookingDetailScreen(theme: Theme.light, shipmentId: 1)
         .environmentObject(EusoTripSession())
         .preferredColorScheme(.light)
 }

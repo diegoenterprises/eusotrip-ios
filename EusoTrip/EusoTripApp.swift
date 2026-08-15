@@ -68,6 +68,15 @@ struct EusoTripApp: App {
     @StateObject private var hos = HOSClockService.shared
     /// Gates AppRoot behind the branded Lottie intro on cold launch.
     @State private var introFinished = false
+    /// Rotates on every auth edge, including returning to the same account, so
+    /// pre-signout weather work can never join the new session.
+    @State private var weatherSessionEpoch = UUID()
+    /// Local-calendar marker used to detect a midnight boundary that happened
+    /// while the process was suspended, including after a time-zone change.
+    @State private var weatherCalendarDay = Calendar.autoupdatingCurrent.startOfDay(for: Date())
+    /// Calendar/day/time notifications can arrive as a burst for one system
+    /// clock change. Keep the provider reload single-flight at the app edge.
+    @State private var lastWeatherClockRefreshAt: Date?
     /// True while the app is in `.inactive` / `.background` so the
     /// app-switcher snapshot iOS captures shows the brand splash
     /// instead of the live driver session (PII, payment forms,
@@ -87,6 +96,21 @@ struct EusoTripApp: App {
                         .environmentObject(realtime)
                         .environmentObject(geo)
                         .environmentObject(hos)
+                        .environment(
+                            \.weatherRequestContext,
+                            session.user.map {
+                                WeatherRequestContext(
+                                    identity: WeatherRequestIdentity(user: $0),
+                                    sessionEpoch: weatherSessionEpoch
+                                )
+                            }
+                        )
+                        .environment(\.eusoRefresh, EusoRefreshAction { surfaceID, reason in
+                            await EusoRefreshCoordinator.shared.requestRefresh(
+                                surfaceID: surfaceID,
+                                reason: reason
+                            )
+                        })
                         .withEusoTripWatchBridge()
                         .transition(.opacity)
                 } else {
@@ -139,6 +163,20 @@ struct EusoTripApp: App {
                     .transition(.opacity)
                 }
             }
+            .onChange(of: session.user) { _, user in
+                let nextEpoch = UUID()
+                weatherSessionEpoch = nextEpoch
+                if let user {
+                    WeatherService.shared.activateContext(
+                        WeatherRequestContext(
+                            identity: WeatherRequestIdentity(user: user),
+                            sessionEpoch: nextEpoch
+                        )
+                    )
+                } else {
+                    WeatherService.shared.deactivateContext()
+                }
+            }
             .onChange(of: scenePhase) { oldPhase, newPhase in
                 AppCrashDiagnosticsReporter.shared.recordSurface("scene.\(newPhase)")
                 // Show the brand veil before iOS snapshots us.
@@ -146,23 +184,55 @@ struct EusoTripApp: App {
                 withAnimation(.easeInOut(duration: 0.10)) {
                     isResigning = resigning
                 }
-                // FOREGROUND SELF-HEAL — the fix for "I have to log out and
-                // back in to fix things." Returning from the background
-                // re-validates the live session (a token that went stale
-                // while we were away recovers gracefully → re-login, instead
-                // of leaving every screen 401ing) AND broadcasts a refresh so
-                // live surfaces repaint. The session validation otherwise ran
-                // ONLY on cold launch, so mid-session staleness stranded the
-                // whole app until a manual logout. Gated to a true
-                // background→active transition so it never double-fires with
-                // the cold-launch boot().
-                if newPhase == .active && oldPhase == .background {
+                // APP-WIDE FRESHNESS — remember the first inactive edge, then
+                // refresh the visible routed screen when the user returns
+                // after the one-minute staleness ceiling. This covers both a
+                // true background return and a long inactive interruption;
+                // quick Control Center / notification glances do not churn
+                // every operational API.
+                if newPhase != .active {
+                    EusoRefreshCoordinator.shared.appBecameInactive()
+                }
+
+                if newPhase == .active && oldPhase != .active {
+                    let now = Date()
+                    let currentDay = Calendar.autoupdatingCurrent.startOfDay(for: now)
+                    let crossedCalendarDay = currentDay != weatherCalendarDay
+                    weatherCalendarDay = currentDay
+                    NotificationCenter.default.post(
+                        name: .eusoWeatherDisplayClockChanged,
+                        object: nil
+                    )
+                    let needsFreshData = EusoRefreshCoordinator.shared.consumeStaleActivation()
+                        || crossedCalendarDay
+
+                    // Preserve the existing session self-heal on every real
+                    // background return. A long inactive interval receives the
+                    // same protection before its data refresh starts.
+                    guard oldPhase == .background || needsFreshData else { return }
                     Task {
                         await session.revalidate()
-                        NotificationCenter.default.post(name: .esangRefreshSurface, object: nil)
+                        if needsFreshData {
+                            await EusoRefreshCoordinator.shared.requestRefresh(
+                                reason: .staleForeground
+                            )
+                        }
                     }
                 }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in
+                refreshWeatherForClockTransition()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .NSSystemTimeZoneDidChange)) { _ in
+                refreshWeatherForClockTransition()
+            }
+            #if canImport(UIKit)
+            .onReceive(NotificationCenter.default.publisher(
+                for: UIApplication.significantTimeChangeNotification
+            )) { _ in
+                refreshWeatherForClockTransition()
+            }
+            #endif
             .task {
                 // Subscribe before session restoration or any signed-in home
                 // surface can start. MetricKit deliveries are persisted when
@@ -288,11 +358,31 @@ struct EusoTripApp: App {
             userInfo: ["token": token]
         )
     }
+
+    private func refreshWeatherForClockTransition(at now: Date = Date()) {
+        weatherCalendarDay = Calendar.autoupdatingCurrent.startOfDay(for: now)
+        NotificationCenter.default.post(
+            name: .eusoWeatherDisplayClockChanged,
+            object: nil
+        )
+
+        if let lastWeatherClockRefreshAt,
+           now.timeIntervalSince(lastWeatherClockRefreshAt) < 1 {
+            return
+        }
+        lastWeatherClockRefreshAt = now
+        Task {
+            await EusoRefreshCoordinator.shared.invalidateVisibleDomain(.weather)
+        }
+    }
 }
 
 extension Notification.Name {
     static let eusoResetPasswordDeepLink = Notification.Name("eusoResetPasswordDeepLink")
     static let eusoWeatherAuthorizationChanged = Notification.Name("eusoWeatherAuthorizationChanged")
+    /// Advances weather presentation astronomy on pull/foreground even when a
+    /// provider correctly returns the same cached observation payload.
+    static let eusoWeatherDisplayClockChanged = Notification.Name("eusoWeatherDisplayClockChanged")
     /// Fired by the ESANG autopilot when the assistant reply contains a
     /// `<<<ACTION:refresh>>>` token. Any visible surface can observe this
     /// and re-run its loader (pull-to-refresh parity for voice).

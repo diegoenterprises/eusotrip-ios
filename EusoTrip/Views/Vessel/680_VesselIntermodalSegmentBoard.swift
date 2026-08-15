@@ -165,7 +165,7 @@ private struct VesselIntermodalSegmentBoardBody: View {
             .padding(.top, Space.s4)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - Top bar (back + eyebrow + title + subtitle)
@@ -176,7 +176,7 @@ private struct VesselIntermodalSegmentBoardBody: View {
                 Spacer()
             }
             HStack(spacing: 5) {
-                Text("✦ VESSEL OPERATOR · SEGMENT OPS BOARD")
+                EusoTripEyebrow(verbatim: "VESSEL OPERATOR · SEGMENT OPS BOARD")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

@@ -68,14 +68,14 @@ struct DriverComplianceDashboard: View {
         }
         .background(palette.bgPrimary.ignoresSafeArea())
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - Cards
 
     private var titleBlock: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("✦ DRIVER · COMPLIANCE")
+            EusoTripEyebrow(verbatim: "DRIVER · COMPLIANCE")
                 .font(EType.micro).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Text("Compliance posture")

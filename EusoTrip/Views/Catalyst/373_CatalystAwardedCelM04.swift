@@ -150,13 +150,11 @@ struct CatalystAwardedCelM04Screen: View {
 }
 
 private func catalystNavLeading_373() -> [NavSlot] {
-    [NavSlot(label: "Home",     systemImage: "house",                          isCurrent: false),
-     NavSlot(label: "Dispatch", systemImage: "shippingbox.and.arrow.backward", isCurrent: true)]
+    CarrierNavRoute.leading(current: .loads)
 }
 
 private func catalystNavTrailing_373() -> [NavSlot] {
-    [NavSlot(label: "My Loads", systemImage: "shippingbox.fill", isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person",      isCurrent: false)]
+    CarrierNavRoute.trailing(current: .loads)
 }
 
 // MARK: - Body
@@ -385,7 +383,7 @@ private struct CatalystAwardedCelM04Body: View {
             .padding(.top, 56)
         }
         .task { await fetch() }
-        .refreshable { await fetch() }
+        .eusoRefreshable { await fetch() }
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
             Task { await fetch() }
         }
@@ -400,7 +398,7 @@ private struct CatalystAwardedCelM04Body: View {
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
             HStack(spacing: 4) {
-                Image(systemName: "sparkles")
+                EusoTripBrandMark(size: 12)
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
                 Text("CATALYST · DISPATCH · AWARDED · CEL ACK")

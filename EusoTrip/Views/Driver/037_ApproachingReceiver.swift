@@ -208,7 +208,7 @@ struct ApproachingReceiver: View {
             .padding(.horizontal, 14)
             .padding(.top, 8)
         }
-        .task {
+        .eusoRefreshTask {
             await hydrateLiveTrip()
         }
         .screenTileRoot()

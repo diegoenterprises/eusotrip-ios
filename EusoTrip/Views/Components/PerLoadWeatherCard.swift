@@ -59,6 +59,10 @@ struct PerLoadWeatherCard: View {
 
     /// v3 two-state: collapsed dashboard tile ↔ expanded full view.
     @State private var expanded: Bool
+    /// Presentation-only astronomy clock. It advances independently of the
+    /// provider observation so a retained card crosses sunrise/sunset without
+    /// mutating the real weather values or remounting the view.
+    @State private var displayDate = Date()
 
     init(loadId: String, isActive: Bool = false, startExpanded: Bool? = nil) {
         self.loadId = loadId
@@ -77,23 +81,46 @@ struct PerLoadWeatherCard: View {
     /// numbers.
     private func heroSkySnapshot(_ card: WeatherForLoad) -> WeatherSnapshot? {
         let rt = card.origin?.realtime
-        guard let temperature = rt?.temperature,
-              let windSpeed = rt?.windSpeedMph else { return nil }
+        guard
+            let temperature = WeatherNumeric.roundedInt(
+                rt?.temperature,
+                allowed: WeatherNumeric.temperatureF
+            ),
+            let windSpeed = WeatherNumeric.roundedInt(
+                rt?.windSpeedMph,
+                allowed: WeatherNumeric.windMph
+            )
+        else { return nil }
         var snap = WeatherSnapshot(
             city: card.origin?.name ?? "",
-            tempF: Int(temperature.rounded()),
-            windMph: Int(windSpeed.rounded()),
+            tempF: temperature,
+            windMph: windSpeed,
             // Honest nil when the realtime block omitted visibility —
             // the sky engine treats nil as no choke (em-dash doctrine).
-            visibilityMi: rt?.visibilityMi.map { Int($0.rounded()) },
+            visibilityMi: WeatherNumeric.roundedInt(
+                rt?.visibilityMi,
+                allowed: WeatherNumeric.visibilityMi
+            ),
             condition: rt?.condition ?? "",
             symbol: "cloud.fill",
             nextAlert: nil,
             accent: .calm
         )
         snap.weatherCode = card.heroWeatherCode
-        if let p = rt?.precipitationProbability { snap.precipChancePct = Int(p.rounded()) }
+        snap.precipChancePct = WeatherNumeric.roundedInt(
+            rt?.precipitationProbability,
+            allowed: WeatherNumeric.percent
+        )
         snap.latitude = card.origin?.lat
+        snap.longitude = card.origin?.lon
+        let normalizedSource = (card.source ?? "").lowercased()
+        if normalizedSource.contains("here") {
+            snap.dataSource = .here
+        } else if normalizedSource.contains("weatherkit") || normalizedSource.contains("apple weather") {
+            snap.dataSource = .weatherKit
+        } else if normalizedSource.contains("openweather") {
+            snap.dataSource = .openWeather
+        }
         if let iso = rt?.observedAt {
             snap.observedAt = ISO8601DateFormatter().date(from: iso)
         }
@@ -137,6 +164,19 @@ struct PerLoadWeatherCard: View {
                     if Task.isCancelled { break }
                     await store.load(loadId: loadId)
                 }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoWeatherDisplayClockChanged)) { _ in
+            displayDate = Date()
+        }
+        .task {
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(nanoseconds: 60_000_000_000)
+                } catch {
+                    break
+                }
+                displayDate = Date()
             }
         }
         .onDisappear { store.stop() }
@@ -230,7 +270,9 @@ struct PerLoadWeatherCard: View {
             // per-load hero, driven by this lane's live origin weather.
             if let snapshot = heroSkySnapshot(card) {
                 SkyStageHeroLive(snapshot: snapshot,
-                                 animated: !reduceMotion, compact: true)
+                                 animated: !reduceMotion,
+                                 compact: true,
+                                 displayDate: displayDate)
                     .frame(height: 150)
                     .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             }
@@ -238,7 +280,11 @@ struct PerLoadWeatherCard: View {
             VStack(alignment: .leading, spacing: 0) {
                 Spacer(minLength: 0)
                 HStack(alignment: .center, spacing: 13) {
-                    WeatherIcons.symbolView(for: card.heroWeatherCode, size: 46)
+                    WeatherIcons.symbolView(
+                        for: card.heroWeatherCode,
+                        isDaylight: heroSkySnapshot(card)?.displaySolarState(at: displayDate).isDaylight,
+                        size: 46
+                    )
                     VStack(alignment: .leading, spacing: 3) {
                         locationLine(card, size: 12)
                         Text(collapsedConditionLine(card))
@@ -290,7 +336,8 @@ struct PerLoadWeatherCard: View {
                 // the expanded per-load hero, driven by live origin weather.
                 if let snapshot = heroSkySnapshot(card) {
                     SkyStageHeroLive(snapshot: snapshot,
-                                     animated: !reduceMotion)
+                                     animated: !reduceMotion,
+                                     displayDate: displayDate)
                         .frame(height: 220)
                         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                 }
@@ -328,7 +375,11 @@ struct PerLoadWeatherCard: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Collapse lane weather")
-                        WeatherIcons.symbolView(for: card.heroWeatherCode, size: 66)
+                        WeatherIcons.symbolView(
+                            for: card.heroWeatherCode,
+                            isDaylight: heroSkySnapshot(card)?.displaySolarState(at: displayDate).isDaylight,
+                            size: 66
+                        )
                     }
                 }
                 .padding(16)
@@ -397,7 +448,19 @@ struct PerLoadWeatherCard: View {
 
     // MARK: Alert bar
 
+    @ViewBuilder
     private func alertBar(_ alert: AlertBar) -> some View {
+        if let detailsURL = alert.detailsURL {
+            Link(destination: detailsURL) {
+                alertBarContent(alert, showsLink: true)
+            }
+            .buttonStyle(.plain)
+        } else {
+            alertBarContent(alert, showsLink: false)
+        }
+    }
+
+    private func alertBarContent(_ alert: AlertBar, showsLink: Bool) -> some View {
         HStack(spacing: 9) {
             WeatherIcons.utility(.alert, size: 18, tint: .white)
             Text(alert.title)
@@ -409,6 +472,11 @@ struct PerLoadWeatherCard: View {
                 .font(.system(size: 11, weight: .heavy)).tracking(0.3)
                 .foregroundStyle(.white.opacity(0.92))
                 .lineLimit(1)
+            if showsLink {
+                Image(systemName: "arrow.up.right.square")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.92))
+            }
         }
         .padding(.horizontal, 12).padding(.vertical, 10)
         .background(
@@ -422,7 +490,7 @@ struct PerLoadWeatherCard: View {
     }
 
     private func alertMetaLine(_ alert: AlertBar) -> String {
-        [alert.severity.uppercased(), alert.untilDisplay]
+        [alert.severity.uppercased(), alert.untilDisplay, alert.issuingSource]
             .compactMap { $0?.isEmpty == false ? $0 : nil }
             .joined(separator: " · ")
     }
@@ -477,22 +545,24 @@ struct PerLoadWeatherCard: View {
 
     private var ribbonSection: some View {
         let series = bridgedHours
-        return HourlyRibbon(hours: series, peakIndex: bridgedPeakIndex(series))
+        return HourlyRibbon(
+            hours: series,
+            peakIndex: bridgedPeakIndex(series),
+            solarSnapshot: store.card.flatMap { heroSkySnapshot($0) }
+        )
             .padding(.top, 2)
     }
 
     /// Map each `HourPoint` (the store's tolerant ribbon VM) onto the
     /// Wave-1 `WeatherSnapshot.HourlyForecast` the component expects. A
-    /// missing time falls back to `.distantPast` (the component plots by
-    /// index, not by absolute time, and the label row reads `hourLabel`);
-    /// a missing temp degrades to 0 only for the polyline geometry — the
-    /// honest "—" path is governed upstream (an empty `hourly` collapses
-    /// the whole section).
+    /// A point without a real timestamp or temperature is omitted rather than
+    /// plotted at a fabricated zero or `.distantPast` position.
     private var bridgedHours: [WeatherSnapshot.HourlyForecast] {
-        store.hourly.map { hp in
-            WeatherSnapshot.HourlyForecast(
-                date: hp.time ?? .distantPast,
-                tempF: hp.tempF ?? 0,
+        store.hourly.compactMap { hp in
+            guard let time = hp.time, let tempF = hp.tempF else { return nil }
+            return WeatherSnapshot.HourlyForecast(
+                date: time,
+                tempF: tempF,
                 symbol: "",
                 precipChancePct: hp.precipPct,
                 windMph: nil,
@@ -568,9 +638,16 @@ struct PerLoadWeatherCard: View {
                 driverTiles(seg).padding(.top, 11)
             }
 
-            // §3 recommendation — ESang orb line
+            Text(seg.routeWeatherAttribution)
+                .font(.system(size: 9.5, weight: .bold))
+                .tracking(0.4)
+                .foregroundStyle(.white.opacity(0.48))
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .padding(.top, 8)
+
+            // Deterministic policy guidance; no AI branding without a model call.
             if let rec = seg.recommendation {
-                esangRecommendation(rec).padding(.top, 12)
+                operationalRecommendation(rec).padding(.top, 12)
             }
         }
         .padding(15)
@@ -610,10 +687,15 @@ struct PerLoadWeatherCard: View {
             }
         }()
         let peak: WeatherSnapshot.PeakLeg? = li.peakLeg.map {
-            WeatherSnapshot.PeakLeg(label: $0.label, time: $0.time)
+            WeatherSnapshot.PeakLeg(label: $0.label, time: laneClockLabel($0.time))
         }
         let drivers: [WeatherSnapshot.Driver] = (li.drivers ?? []).map {
-            WeatherSnapshot.Driver(field: $0.field, value: $0.value)
+            WeatherSnapshot.Driver(
+                field: $0.field,
+                value: $0.value,
+                available: $0.isAvailable,
+                unavailableReason: $0.unavailableReason
+            )
         }
         let rec: WeatherSnapshot.Recommendation? = li.recommendation.map {
             WeatherSnapshot.Recommendation(text: $0.text, action: $0.action, protects: $0.protects)
@@ -634,11 +716,25 @@ struct PerLoadWeatherCard: View {
             drivers: drivers,
             recommendation: rec,
             computedAt: li.computedAt.flatMap { ISO8601DateFormatter().date(from: $0) },
+            source: li.source,
             route: route,
             pickupTime: nil,
             etaDelayMin: nil,
             esangSuggestion: nil
         )
+    }
+
+    private func laneClockLabel(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let plain = ISO8601DateFormatter()
+        plain.formatOptions = [.withInternetDateTime]
+        guard let date = fractional.date(from: trimmed) ?? plain.date(from: trimmed) else {
+            return trimmed
+        }
+        return date.formatted(date: .omitted, time: .shortened)
     }
 
     private func laneHeaderTitle(_ mode: WeatherMode) -> String {
@@ -709,10 +805,10 @@ struct PerLoadWeatherCard: View {
             ForEach(seg.drivers) { d in
                 VStack(spacing: 3) {
                     WeatherIcons.utility(driverGlyph(d.field), size: 17, tint: driverTint(d.field))
-                    Text(d.value)
+                    Text(d.displayValue)
                         .font(.system(size: 13, weight: .heavy))
                         .monospacedDigit()
-                        .foregroundStyle(.white)
+                        .foregroundStyle(d.available ? Color.white : Color.white.opacity(0.68))
                         .lineLimit(1).minimumScaleFactor(0.7)
                     Text(d.field.uppercased())
                         .font(.system(size: 9)).tracking(0.2)
@@ -727,6 +823,12 @@ struct PerLoadWeatherCard: View {
                 .overlay(
                     RoundedRectangle(cornerRadius: 13, style: .continuous)
                         .strokeBorder(Color.white.opacity(0.16), lineWidth: 0.5))
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(d.field)
+                .accessibilityValue(d.displayValue)
+                .accessibilityHint(d.available
+                    ? "Live route-weather reading"
+                    : (d.unavailableReason ?? "This measurement was not reported"))
             }
         }
     }
@@ -747,11 +849,12 @@ struct PerLoadWeatherCard: View {
         return WeatherIcons.hatch
     }
 
-    // §3 ESang recommendation — conic orb + framed text/action/protects.
-    private func esangRecommendation(_ rec: WeatherSnapshot.Recommendation) -> some View {
+    // §3 operational recommendation — framed policy text/action/protects.
+    private func operationalRecommendation(_ rec: WeatherSnapshot.Recommendation) -> some View {
         HStack(alignment: .top, spacing: 11) {
-            esangOrb
-            esangText(rec).font(.system(size: 13))
+            WeatherIcons.utility(.route, size: 17, tint: WeatherV3.nodeOrigin)
+                .frame(width: 26, height: 26)
+            operationalText(rec).font(.system(size: 13))
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, 12).padding(.vertical, 11)
@@ -764,8 +867,8 @@ struct PerLoadWeatherCard: View {
                 .strokeBorder(WeatherV3.auroraB.opacity(0.34), lineWidth: 1))
     }
 
-    private func esangText(_ rec: WeatherSnapshot.Recommendation) -> Text {
-        var t = Text("ESang").bold().foregroundColor(.white)
+    private func operationalText(_ rec: WeatherSnapshot.Recommendation) -> Text {
+        var t = Text("Weather guidance").bold().foregroundColor(.white)
         let framing = rec.text.trimmingCharacters(in: .whitespaces)
         if !framing.isEmpty {
             t = t + Text(" — \(framing). ").foregroundColor(Color(red: 0.93, green: 0.92, blue: 0.96))
@@ -778,16 +881,6 @@ struct PerLoadWeatherCard: View {
             t = t + Text(" — protects \(protects).").foregroundColor(Color(red: 0.93, green: 0.92, blue: 0.96))
         }
         return t
-    }
-
-    private var esangOrb: some View {
-        Circle()
-            .fill(AngularGradient(
-                gradient: Gradient(colors: [WeatherV3.auroraA, WeatherV3.auroraB,
-                                            WeatherV3.auroraC, WeatherV3.auroraA]),
-                center: .center, angle: .degrees(200)))
-            .frame(width: 26, height: 26)
-            .shadow(color: WeatherV3.auroraB.opacity(0.6), radius: 8)
     }
 
     private func modeGlyph(_ mode: WeatherSnapshot.LaneMode) -> WeatherIcons.Utility {
@@ -844,7 +937,7 @@ struct PerLoadWeatherCard: View {
             Text(isToday ? "Today" : day.dayLabel)
                 .font(.system(size: 11, weight: .heavy))
                 .foregroundStyle(.white.opacity(0.84))
-            WeatherIcons.symbolView(for: day.weatherCode, size: 20)
+            WeatherIcons.symbolView(for: day.weatherCode, isDaylight: true, size: 20)
                 .padding(.vertical, 1)
             // The hi→lo range bar — only when BOTH ends are present
             // (honest: a missing high/low collapses the bar, not a guess).
@@ -888,10 +981,17 @@ struct PerLoadWeatherCard: View {
     /// "Conditions · {source} · updated Nm ago" — honest provenance +
     /// freshness, each clause omitted when its data is absent.
     private func sourceLine(_ card: WeatherForLoad) -> some View {
-        let parts: [String] = [
-            "Conditions · \(card.source ?? "live source")",
-            card.freshnessDisplay
-        ].compactMap { $0 }
+        var parts: [String] = []
+        if let source = card.source?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !source.isEmpty {
+            parts.append("Conditions · \(source)")
+        } else {
+            parts.append("Conditions source pending")
+        }
+        if let forecastSource = store.forecastSourceAttribution {
+            parts.append("Forecast · \(forecastSource)")
+        }
+        if let freshness = card.freshnessDisplay { parts.append(freshness) }
         return Text(parts.joined(separator: " · "))
             .font(.system(size: 11))
             .foregroundStyle(.white.opacity(0.42))

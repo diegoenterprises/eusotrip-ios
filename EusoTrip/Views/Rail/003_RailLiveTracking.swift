@@ -756,7 +756,7 @@ private struct RailLiveTrackingBody003: View {
             .padding(.top, Space.s5)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
         .onAppear { startBreathing() }
         .onChange(of: reduceMotion) { _, _ in startBreathing() }
         .sheet(isPresented: $showPerCar) {
@@ -777,7 +777,7 @@ private struct RailLiveTrackingBody003: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: Space.s2) {
-                Text("✦ SHIPPER · RAIL · LIVE TRACKING")
+                EusoTripEyebrow(verbatim: "SHIPPER · RAIL · LIVE TRACKING")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer(minLength: Space.s2)
@@ -1579,7 +1579,7 @@ private struct RailPerCarPositionsSheet003: View {
         .background(palette.bgSheet.ignoresSafeArea())
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
-        .task { await loadFixes() }
+        .eusoRefreshTask { await loadFixes() }
     }
 
     private func carRow(_ car: RailWaybillNode003) -> some View {

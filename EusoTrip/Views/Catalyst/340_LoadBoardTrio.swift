@@ -31,10 +31,8 @@ struct MatchedLoadsScreen: View {
     var body: some View {
         Shell(theme: theme) { MatchedLoadsBody() } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home",  systemImage: "house",            isCurrent: false),
-                          NavSlot(label: "Match", systemImage: "arrow.triangle.merge", isCurrent: true)],
-                trailing: [NavSlot(label: "Drivers", systemImage: "person.3.fill", isCurrent: false),
-                           NavSlot(label: "Me",      systemImage: "person",        isCurrent: false)],
+                leading: CarrierNavRoute.leading(current: .loads),
+                trailing: CarrierNavRoute.trailing(current: .loads),
                 orbState: .idle
             )
         }
@@ -98,7 +96,7 @@ private struct MatchedLoadsBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await loadAll() }
-        .refreshable { await loadAll() }
+        .eusoRefreshable { await loadAll() }
     }
 
     private var header: some View {
@@ -289,10 +287,8 @@ struct FindLoadsScreen: View {
     var body: some View {
         Shell(theme: theme) { FindLoadsBody() } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home",   systemImage: "house",             isCurrent: false),
-                          NavSlot(label: "Find",   systemImage: "magnifyingglass",   isCurrent: true)],
-                trailing: [NavSlot(label: "Match", systemImage: "arrow.triangle.merge", isCurrent: false),
-                           NavSlot(label: "Me",    systemImage: "person",            isCurrent: false)],
+                leading: CarrierNavRoute.leading(current: .loads),
+                trailing: CarrierNavRoute.trailing(current: .loads),
                 orbState: .idle
             )
         }
@@ -322,7 +318,7 @@ private struct FindLoadsBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await loadAll() }
-        .refreshable { await loadAll() }
+        .eusoRefreshable { await loadAll() }
     }
 
     private var header: some View {
@@ -397,10 +393,8 @@ struct AssignedLoadsScreen: View {
     var body: some View {
         Shell(theme: theme) { AssignedLoadsBody() } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home",  systemImage: "house",             isCurrent: false),
-                          NavSlot(label: "Loads", systemImage: "shippingbox.fill",  isCurrent: true)],
-                trailing: [NavSlot(label: "Match", systemImage: "arrow.triangle.merge", isCurrent: false),
-                           NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)],
+                leading: CarrierNavRoute.leading(current: .loads),
+                trailing: CarrierNavRoute.trailing(current: .loads),
                 orbState: .idle
             )
         }
@@ -422,7 +416,7 @@ private struct AssignedLoadsBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await loadList() }
-        .refreshable { await loadList() }
+        .eusoRefreshable { await loadList() }
     }
 
     private var header: some View {

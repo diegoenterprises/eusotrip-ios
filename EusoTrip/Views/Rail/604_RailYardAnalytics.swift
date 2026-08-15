@@ -160,14 +160,14 @@ private struct RailYardAnalyticsBody: View {
             .padding(.top, Space.s4)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - Eyebrow (RAIL ENGINEER · ANALYTICS + audit ref)
 
     private var eyebrowRow: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("✦ RAIL ENGINEER · ANALYTICS")
+            EusoTripEyebrow(verbatim: "RAIL ENGINEER · ANALYTICS")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer()

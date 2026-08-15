@@ -402,14 +402,14 @@ private struct RailServiceLineupBody: View {
             .padding(.top, Space.s3)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: Eyebrow + headline
 
     private var eyebrow: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("✦ RAIL ENGINEER · LINEUP")
+            EusoTripEyebrow(verbatim: "RAIL ENGINEER · LINEUP")
                 .font(.system(size: 9, weight: .black))
                 .kerning(1.0)
                 .foregroundStyle(LinearGradient.primary)

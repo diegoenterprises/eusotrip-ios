@@ -180,7 +180,7 @@ private struct VesselSettlementBody: View {
             .padding(.top, Space.s4)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - Top bar (eyebrow + detail title · back chevron drawn by surface RoleNavBackOverlay)
@@ -188,7 +188,7 @@ private struct VesselSettlementBody: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("✦ VESSEL OPERATOR · SETTLEMENT")
+                EusoTripEyebrow(verbatim: "VESSEL OPERATOR · SETTLEMENT")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

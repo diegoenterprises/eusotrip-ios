@@ -168,7 +168,7 @@ private struct VesselDemurrageDetentionBody: View {
             .padding(.horizontal, Space.s5)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: Derived demurrage facts (from persisted rows — no fabrication)
@@ -200,7 +200,7 @@ private struct VesselDemurrageDetentionBody: View {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)
-                Text("✦ VESSEL SHIPPER · DEMURRAGE")
+                EusoTripEyebrow(verbatim: "VESSEL SHIPPER · DEMURRAGE")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer(minLength: 8)

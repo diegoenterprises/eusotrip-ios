@@ -35,29 +35,59 @@ extension Notification.Name {
     static let eusoBrokereSangTapped = Notification.Name("eusoBrokereSangTapped")
 }
 
+enum BrokerNavTab {
+    case home, tenders, carriers, me, none
+}
+
 /// Slot-label → screen-id map. `Loads` resolves to the canonical
 /// Tenders board (401); `Carriers` resolves to 402 Tender Detail's
 /// sibling Carrier Vet board (402b) which lists vetted carriers; `Me`
-/// resolves to 404 Commission Queue as the broker's earnings hub
-/// until a dedicated Me brick lands. Tapping `Me` from 400 keeps the
-/// existing pattern of using a real, useful surface rather than a
-/// stub Me page.
+/// resolves to the dedicated 404B Broker Me hub.
 enum BrokerNavRoute {
-    static let map: [String: String] = [
-        "home":     "400",
-        "loads":    "401",
-        "carriers": "402b",
-        "me":       "404B",
+    enum Destination: String {
+        case home = "400"
+        case tenders = "401"
+        case carriers = "402b"
+        case me = "404B"
+    }
+
+    private static let map: [String: Destination] = [
+        "home": .home,
+        "loads": .tenders,
+        "carriers": .carriers,
+        "me": .me,
         // 2026-06-09 alias sweep (audit M23): the 2nd broker slot is
         // LABELED "Tenders" on all 3 broker chrome screens but the map
         // only keyed "loads" — the slot was a silent no-op since the
         // 2026-05-30 IA recon flagged it. Both labels resolve to the
         // canonical Tenders board 401 (a BrokerSurface tabRoot, so the
         // tap performs a proper tab reset).
-        "tenders":  "401",
+        "tenders": .tenders,
     ]
 
-    static let orbLabels: Set<String> = ["esang", "orb"]
+    private static let orbLabels: Set<String> = ["esang", "orb"]
+
+    static func screenId(for label: String) -> String? {
+        map[normalize(label)]?.rawValue
+    }
+
+    static func isOrb(_ label: String) -> Bool {
+        orbLabels.contains(normalize(label))
+    }
+
+    private static func normalize(_ label: String) -> String {
+        label.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    static func leading(current: BrokerNavTab = .none) -> [NavSlot] {
+        [NavSlot(label: "Home", systemImage: "house", isCurrent: current == .home),
+         NavSlot(label: "Tenders", systemImage: "shippingbox.fill", isCurrent: current == .tenders)]
+    }
+
+    static func trailing(current: BrokerNavTab = .none) -> [NavSlot] {
+        [NavSlot(label: "Carriers", systemImage: "person.3.fill", isCurrent: current == .carriers),
+         NavSlot(label: "Me", systemImage: "person", isCurrent: current == .me)]
+    }
 }
 
 /// Lightweight bridge for catalystId / loadId payloads on
@@ -80,9 +110,7 @@ enum BrokerNavContext {
 @MainActor
 enum BrokerNavDispatcher {
     static func handle(_ label: String) {
-        let key = label.lowercased()
-
-        if BrokerNavRoute.orbLabels.contains(key) {
+        if BrokerNavRoute.isOrb(label) {
             NotificationCenter.default.post(
                 name: .eusoBrokereSangTapped,
                 object: nil
@@ -90,7 +118,7 @@ enum BrokerNavDispatcher {
             return
         }
 
-        guard let screenId = BrokerNavRoute.map[key] else { return }
+        guard let screenId = BrokerNavRoute.screenId(for: label) else { return }
         NotificationCenter.default.post(
             name: .eusoBrokerNavSwap,
             object: nil,

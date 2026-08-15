@@ -100,7 +100,7 @@ struct DriverCounterInboxView: View {
             .padding(.top, Space.s3)
         }
         .background(palette.bgPrimary.ignoresSafeArea())
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
         .task { await load() }
         .sheet(item: $detail) { p in
             DriverCounterDetailView(pair: p, onChanged: { Task { await load() } })
@@ -471,7 +471,7 @@ struct DriverCounterDetailView: View {
                     .background(palette.bgPrimary)
             }
             .task { await loadChain() }
-            .refreshable { await loadChain() }
+            .eusoRefreshable { await loadChain() }
         }
     }
 

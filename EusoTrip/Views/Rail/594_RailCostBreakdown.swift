@@ -233,7 +233,7 @@ private struct RailCostBreakdownBody: View {
             .padding(.top, Space.s5)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     /// The proc can return a non-nil object with no segments/transfers/total
@@ -248,7 +248,7 @@ private struct RailCostBreakdownBody: View {
 
     private var topBar: some View {
         HStack {
-            Text("✦ RAIL ENGINEER · COST BREAKDOWN")
+            EusoTripEyebrow(verbatim: "RAIL ENGINEER · COST BREAKDOWN")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer()

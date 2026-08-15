@@ -17,10 +17,8 @@ struct BrokerTenderToCarrierScreen: View {
     var body: some View {
         Shell(theme: theme) { TenderBody(loadId: loadId, catalystId: catalystId) } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home", systemImage: "house", isCurrent: false),
-                          NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: true)],
-                trailing: [NavSlot(label: "Carriers", systemImage: "person.3.fill", isCurrent: false),
-                           NavSlot(label: "Me", systemImage: "person", isCurrent: false)],
+                leading: BrokerNavRoute.leading(current: .tenders),
+                trailing: BrokerNavRoute.trailing(current: .tenders),
                 orbState: .idle
             )
         }

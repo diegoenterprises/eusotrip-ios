@@ -61,6 +61,7 @@ struct DvirSubmitted: View {
         .task {
             if case .loading = store.state { await store.refresh() }
         }
+        .eusoRefreshHandler { await store.refresh() }
         .screenTileRoot()
     }
 

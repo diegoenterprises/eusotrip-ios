@@ -936,7 +936,7 @@ private struct RailIntermodalJourneyBody009: View {
             .padding(.top, Space.s3)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
         .task {
             // Drives the staleness line only — no data motion, no timer-faked fix.
             while !Task.isCancelled {
@@ -951,7 +951,7 @@ private struct RailIntermodalJourneyBody009: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top, spacing: Space.s2) {
-                Text("✦ SHIPPER · RAIL · INTERMODAL JOURNEY")
+                EusoTripEyebrow(verbatim: "SHIPPER · RAIL · INTERMODAL JOURNEY")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer(minLength: Space.s2)

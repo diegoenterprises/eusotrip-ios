@@ -96,7 +96,7 @@ struct DriverWeeklyPlan: View {
             .padding(.top, Space.s4)
             .padding(.bottom, Space.s8)
         }
-        .refreshable {
+        .eusoRefreshable {
             await refreshAll()
         }
         .task {

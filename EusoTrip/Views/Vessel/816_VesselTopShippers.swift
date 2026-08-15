@@ -32,7 +32,7 @@
 //      companies.name and return a per-shipper letter grade so the row needs no second round-trip.
 //
 //  0 mock data on load · honest empty/error states — every value renders from real state; the
-//  design-time seeds below are overwritten by the live query on .task / .refreshable.
+//  design-time seeds below are overwritten by the live query on .task / .eusoRefreshable.
 //  RimCard816 / KpiTile816 / SecondaryButton816 / ESangRow816 / usd816 are file-scoped bespoke
 //  helpers (the canonical port's RimCard/KpiTile/SecondaryButton/ESangRow/Money.usd are not shared
 //  app symbols) built from the same grammar the registered siblings (757/800/801) ship.
@@ -127,13 +127,13 @@ private struct VesselTopShippersBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("VESSEL OPERATOR · TOP SHIPPERS").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
                 Spacer()
                 Text("90D · BY VOLUME").font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundStyle(palette.textTertiary)

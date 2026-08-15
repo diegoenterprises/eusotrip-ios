@@ -84,7 +84,7 @@ struct HaulPaySettlement: View {
             .padding(.horizontal, 14)
             .padding(.top, 8)
         }
-        .task { await hydrateLiveTrip() }
+        .eusoRefreshTask { await hydrateLiveTrip() }
         .alert(
             eligibility?.eligible == true ? "Confirm instant payout?" : "Set up instant payout",
             isPresented: $showClaimConfirm,

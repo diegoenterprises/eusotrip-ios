@@ -56,10 +56,8 @@ struct DispatchConvoyComposerScreen: View {
             )
         } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home", systemImage: "house", isCurrent: false),
-                          NavSlot(label: "Dispatch", systemImage: "shippingbox.and.arrow.backward", isCurrent: true)],
-                trailing: [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
-                           NavSlot(label: "Me", systemImage: "person", isCurrent: false)],
+                leading: DispatchNavRoute.leading(current: .board),
+                trailing: DispatchNavRoute.trailing(current: .board),
                 orbState: .idle
             )
         }

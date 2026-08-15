@@ -192,7 +192,7 @@ struct EscortHeightPole: View {
             .padding(.top, 8)
         }
         .task { await refreshAll() }
-        .refreshable { await refreshAll() }
+        .eusoRefreshable { await refreshAll() }
         .sheet(isPresented: $showStrikeSheet) {
             EscortStrikeCaptureSheet(
                 structures: sortedStructures,
@@ -242,7 +242,7 @@ struct EscortHeightPole: View {
 
     private var eyebrowRow: some View {
         HStack {
-            Text("✦ ESCORT · HEIGHT POLE")
+            EusoTripEyebrow(verbatim: "ESCORT · HEIGHT POLE")
                 .font(EType.micro).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer(minLength: Space.s2)
@@ -1434,13 +1434,11 @@ struct EscortHeightPoleScreen: View {
 }
 
 private func escortNavLeading_604() -> [NavSlot] {
-    [NavSlot(label: "Home",        systemImage: "house",                  isCurrent: false),
-     NavSlot(label: "Assignments", systemImage: "shield.lefthalf.filled", isCurrent: true)]
+    EscortNavRoute.leading(current: .assignments)
 }
 
 private func escortNavTrailing_604() -> [NavSlot] {
-    [NavSlot(label: "Corridor", systemImage: "map",    isCurrent: false),
-     NavSlot(label: "Me",       systemImage: "person", isCurrent: false)]
+    EscortNavRoute.trailing(current: .assignments)
 }
 
 // MARK: - Previews

@@ -336,7 +336,7 @@ struct ShipperFreightClaims: View {
             }
         }
         .task { await store.refresh() }
-        .refreshable { await store.refresh() }
+        .eusoRefreshable { await store.refresh() }
         // RealtimeService → freight claims refresh when carrier-side
         // claim status changes (filed, investigation, settled).
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
@@ -358,7 +358,7 @@ struct ShipperFreightClaims: View {
 
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("✦ SHIPPER · FREIGHT CLAIMS")
+            EusoTripEyebrow(verbatim: "SHIPPER · FREIGHT CLAIMS")
                 .font(EType.micro)
                 .tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)

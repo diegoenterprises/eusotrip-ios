@@ -42,7 +42,7 @@ private struct eSangSettingsBody: View {
             }
             .padding(.horizontal, 14).padding(.top, 56)
         }
-        .task { await load() }
+        .eusoRefreshTask { await load() }
         .sheet(isPresented: $showDialectPicker) {
             VoiceDialectPicker()
                 .presentationDetents([.large])

@@ -102,7 +102,7 @@ struct DriverTripsHistory: View {
             .padding(.top, Space.s4)
             .padding(.bottom, Space.s8)
         }
-        .refreshable {
+        .eusoRefreshable {
             await tripsStore.refresh()
         }
         .task {

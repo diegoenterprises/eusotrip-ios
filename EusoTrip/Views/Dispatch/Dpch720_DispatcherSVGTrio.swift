@@ -116,7 +116,7 @@ private struct TenderQueueBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
         .alert("Counter offer", isPresented: Binding(get: { counterFor != nil }, set: { if !$0 { counterFor = nil } })) {
             TextField("Rate", text: $counterAmount).keyboardType(.decimalPad)
             Button("Cancel", role: .cancel) { counterFor = nil; counterAmount = "" }
@@ -169,7 +169,7 @@ private struct TenderQueueBody: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("DISPATCHER · TENDER · QUEUE").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             Text("Tender queue").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
@@ -482,13 +482,13 @@ private struct CommsHubBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("DISPATCHER · COMMS · HUB").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             Text("Comms hub").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
@@ -714,13 +714,13 @@ private struct BOLBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("DISPATCHER · EXCEPTIONS · LIVE").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             Text("BOL Mismatch").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)

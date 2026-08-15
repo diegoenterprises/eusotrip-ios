@@ -141,14 +141,14 @@ private struct RailAppointmentComplianceBody: View {
             .padding(.top, Space.s4)
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
     }
 
     // MARK: - Eyebrow (✦ RAIL ENGINEER · APPT COMPLIANCE  ···  7-DAY)
 
     private var eyebrow: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("✦ RAIL ENGINEER · APPT COMPLIANCE")
+            EusoTripEyebrow(verbatim: "RAIL ENGINEER · APPT COMPLIANCE")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer(minLength: 8)

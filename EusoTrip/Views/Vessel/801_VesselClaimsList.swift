@@ -27,7 +27,7 @@
 //    rather than fabricating a figure.
 //
 //  0 mock data on load · honest empty/loading/error states — every value renders from real state;
-//  the design-time seeds below are overwritten by the live query on .task / .refreshable. The
+//  the design-time seeds below are overwritten by the live query on .task / .eusoRefreshable. The
 //  file-scoped helper types are suffixed 801 (the canonical port's ClaimDots/ClaimRow/ClaimChip/
 //  ClaimLifecycleDots are not shared app symbols); money801() replaces the canonical Money.usd
 //  (not an app symbol); the "primary" tint resolves to Brand.blue (Brand.primary is the gradient,
@@ -139,12 +139,12 @@ private struct VesselClaimsListBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     private var header: some View {
         HStack(spacing: 6) {
-            Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+            EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
             Text("VESSEL OPERATOR · CLAIMS LIST").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             Spacer()
             Text(totalCaption).font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundStyle(palette.textTertiary)

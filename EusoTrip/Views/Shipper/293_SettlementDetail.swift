@@ -45,7 +45,7 @@ private struct SettlementDetailBody: View {
             }
             .padding(.horizontal, 14).padding(.top, 56)
         }
-        .task { await load() }
+        .eusoRefreshTask { await load() }
         .fullScreenCover(item: $presentedPDF) { p in
             EusoPDFViewer(title: p.title, subtitle: p.subtitle, source: .url(p.url))
         }

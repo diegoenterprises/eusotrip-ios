@@ -25,7 +25,6 @@
 //
 
 import SwiftUI
-import PassKit
 
 @MainActor
 final class WalletCardStore: ObservableObject {
@@ -101,7 +100,9 @@ final class WalletCardStore: ObservableObject {
 
         guard let loadId else { return }
         do {
-            guard let detail = try await api.loads.getDetail(id: Self.numericLoadId(from: loadId)) else {
+            guard let detail = try await api.loads.getDetail(
+                id: EusoWalletPassService.numericLoadId(from: loadId)
+            ) else {
                 previewLoad = nil
                 return
             }
@@ -171,7 +172,7 @@ final class WalletCardStore: ObservableObject {
     }
 
     // MARK: Add to Apple Wallet — themed pass for a specific load.
-    func addToWallet(loadId: String, present: (PKAddPassesViewController) -> Void) async {
+    func addToWallet(loadId: String) async {
         await syncTask?.value                                          // ensure the choice is committed
         canRetryThemeSync = false
         do {
@@ -181,10 +182,7 @@ final class WalletCardStore: ObservableObject {
                   let digest = chosenTheme.digest else {
                 throw WalletPassValidationError.catalogUnavailable
             }
-            // Server keys on a numeric load id (`parseInt(loadId)`); normalize a
-            // display id ("LD-1039" / "load_1039") to its digits so the mint
-            // doesn't throw "Invalid loadId".
-            let numericLoadId = Self.numericLoadId(from: loadId)
+            let numericLoadId = EusoWalletPassService.numericLoadId(from: loadId)
             let cred = try await api.createPickupCredential(
                 loadId: numericLoadId,
                 expiresInHours: 24,
@@ -192,14 +190,31 @@ final class WalletCardStore: ObservableObject {
                 themeRevision: revision
             )
 
-            guard let urlString = cred.pkpassUrl, let url = URL(string: urlString) else {
-                // PassKit not configured server-side → caller shows the inline QR + shortCode.
+            let passURLText = cred.pkpassUrl?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let hasPassURL = !(passURLText?.isEmpty ?? true)
+            guard try EusoWalletPassService.signedPassAvailable(
+                status: cred.passkitStatus,
+                hasPassURL: hasPassURL
+            ) else {
+                // A genuinely unconfigured signer preserves the real inline
+                // credential. Signing, storage, and update failures surface.
                 NotificationCenter.default.post(name: .eusoFallbackToInlineQR,
                                                 object: nil, userInfo: ["shortCode": cred.shortCode])
                 return
             }
+            guard let urlString = passURLText, let url = URL(string: urlString) else {
+                throw WalletPassValidationError.invalidPassURL
+            }
             guard cred.passkitStatus == "signed",
                   let signedTheme = cred.signedTheme,
+                  let passTypeIdentifier = cred.passTypeIdentifier?.trimmingCharacters(
+                      in: .whitespacesAndNewlines
+                  ),
+                  !passTypeIdentifier.isEmpty,
+                  let serialNumber = cred.passSerialNumber?.trimmingCharacters(
+                      in: .whitespacesAndNewlines
+                  ),
+                  !serialNumber.isEmpty,
                   signedTheme.id == chosenTheme.id,
                   signedTheme.revision == revision,
                   signedTheme.digest == digest,
@@ -207,31 +222,21 @@ final class WalletCardStore: ObservableObject {
                   !(cred.manifestDigest ?? "").isEmpty else {
                 throw WalletPassValidationError.themeMismatch
             }
-            // BOUNDED, auth-aware download (no raw URLSession.shared default timeout).
-            let (data, _) = try await api.fetchAuthenticatedData(url)
-            let pass = try PKPass(data: data)
-            guard pass.userInfo?["walletThemeId"] as? String == chosenTheme.id,
-                  pass.userInfo?["walletThemeRevision"] as? String == revision,
-                  pass.userInfo?["walletThemeDigest"] as? String == digest,
-                  pass.userInfo?["walletThemeManifestVersion"] as? String == chosenTheme.manifestVersion,
-                  pass.userInfo?["walletThemePassStyle"] as? String == chosenTheme.passStyle else {
-                throw WalletPassValidationError.themeMismatch
-            }
-
-            let library = PKPassLibrary()
-            if library.containsPass(pass) {
-                guard library.replacePass(with: pass) else {
-                    errorMessage = "Couldn't update the pickup pass already in Wallet."
-                    return
-                }
+            switch await EusoWalletPassService.shared.addPass(
+                from: url,
+                expectedTheme: signedTheme,
+                expectedPassTypeIdentifier: passTypeIdentifier,
+                expectedSerialNumber: serialNumber
+            ) {
+            case .presented:
+                errorMessage = nil
+            case .updated:
                 errorMessage = "Your Wallet pass now uses \(selected.name)."
-                return
+            case .signingUnavailable:
+                throw WalletPassValidationError.themeMismatch
+            case .failure(let message):
+                errorMessage = message
             }
-            guard let vc = PKAddPassesViewController(pass: pass) else {
-                errorMessage = "Couldn't open Apple Wallet."
-                return
-            }
-            present(vc)
         } catch {
             errorMessage = "Couldn't add to Wallet: \(error.localizedDescription)"
         }
@@ -239,14 +244,14 @@ final class WalletCardStore: ObservableObject {
 
     // MARK: Add to Apple Wallet — themed STAFF ACCESS CARD (no load).
     //
-    // Sibling of `addToWallet(loadId:present:)`, but for the staff access
+    // Sibling of `addToWallet(loadId:)`, but for the staff access
     // credential. The server-side `terminals.createStaffAccessCredential` proc
     // (being built on the existing `staffAccessTokens` grant) signs the themed
     // pass for the caller's REAL temporary access token — the client never
     // invents an access code. When PassKit isn't configured server-side,
     // `pkpassUrl` is nil and the caller falls back to the inline QR + 6-digit
     // code (posted via `.eusoAccessFallbackToInlineQR`), never a fabricated pass.
-    func addAccessCardToWallet(present: (PKAddPassesViewController) -> Void) async {
+    func addAccessCardToWallet() async {
         await syncTask?.value                                          // ensure the choice is committed
         canRetryThemeSync = false
         do {
@@ -262,9 +267,15 @@ final class WalletCardStore: ObservableObject {
                 expiresInHours: 24
             )
 
-            guard let urlString = cred.pkpassUrl, let url = URL(string: urlString) else {
-                // PassKit not configured server-side → caller shows the inline
-                // QR (cred.qrPayload) + the real 6-digit code (cred.accessCode).
+            let passURLText = cred.pkpassUrl?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let hasPassURL = !(passURLText?.isEmpty ?? true)
+            guard try EusoWalletPassService.signedPassAvailable(
+                status: cred.passkitStatus,
+                hasPassURL: hasPassURL
+            ) else {
+                // A genuinely unconfigured signer preserves the real inline
+                // QR and code. Operational signing failures do not masquerade
+                // as that expected configuration state.
                 NotificationCenter.default.post(
                     name: .eusoAccessFallbackToInlineQR, object: nil,
                     userInfo: [
@@ -274,8 +285,19 @@ final class WalletCardStore: ObservableObject {
                     ])
                 return
             }
+            guard let urlString = passURLText, let url = URL(string: urlString) else {
+                throw WalletPassValidationError.invalidPassURL
+            }
             guard cred.passkitStatus == "signed",
                   let signedTheme = cred.signedTheme,
+                  let passTypeIdentifier = cred.passTypeIdentifier?.trimmingCharacters(
+                      in: .whitespacesAndNewlines
+                  ),
+                  !passTypeIdentifier.isEmpty,
+                  let serialNumber = cred.passSerialNumber?.trimmingCharacters(
+                      in: .whitespacesAndNewlines
+                  ),
+                  !serialNumber.isEmpty,
                   signedTheme.id == chosenTheme.id,
                   signedTheme.revision == revision,
                   signedTheme.digest == digest,
@@ -283,42 +305,24 @@ final class WalletCardStore: ObservableObject {
                   !(cred.manifestDigest ?? "").isEmpty else {
                 throw WalletPassValidationError.themeMismatch
             }
-            let (data, _) = try await api.fetchAuthenticatedData(url)
-            let pass = try PKPass(data: data)
-            guard pass.userInfo?["walletThemeId"] as? String == chosenTheme.id,
-                  pass.userInfo?["walletThemeRevision"] as? String == revision,
-                  pass.userInfo?["walletThemeDigest"] as? String == digest,
-                  pass.userInfo?["walletThemeManifestVersion"] as? String == chosenTheme.manifestVersion,
-                  pass.userInfo?["walletThemePassStyle"] as? String == "eventTicket" else {
-                throw WalletPassValidationError.themeMismatch
-            }
-
-            let library = PKPassLibrary()
-            if library.containsPass(pass) {
-                guard library.replacePass(with: pass) else {
-                    errorMessage = "Couldn't update the access card already in Wallet."
-                    return
-                }
+            switch await EusoWalletPassService.shared.addPass(
+                from: url,
+                expectedTheme: signedTheme,
+                expectedPassTypeIdentifier: passTypeIdentifier,
+                expectedSerialNumber: serialNumber
+            ) {
+            case .presented:
+                errorMessage = nil
+            case .updated:
                 errorMessage = "Your Wallet access card now uses \(selected.name)."
-                return
+            case .signingUnavailable:
+                throw WalletPassValidationError.themeMismatch
+            case .failure(let message):
+                errorMessage = message
             }
-            guard let vc = PKAddPassesViewController(pass: pass) else {
-                errorMessage = "Couldn't open Apple Wallet."
-                return
-            }
-            present(vc)
         } catch {
             errorMessage = "Couldn't add your access card to Wallet: \(error.localizedDescription)"
         }
-    }
-
-    /// Reduce a display load id to the digits the server's `parseInt` expects.
-    /// "1039" → "1039", "LD-1039" → "1039", "load_1039" → "1039".
-    private static func numericLoadId(from raw: String) -> String {
-        let trimmed = raw.trimmingCharacters(in: .whitespaces)
-        if Int(trimmed) != nil { return trimmed }
-        let digits = trimmed.filter(\.isNumber)
-        return digits.isEmpty ? trimmed : digits
     }
 
     private static func nonEmpty(_ value: String?) -> String? {
@@ -348,12 +352,15 @@ final class WalletCardStore: ObservableObject {
 
 private enum WalletPassValidationError: LocalizedError {
     case catalogUnavailable
+    case invalidPassURL
     case themeMismatch
 
     var errorDescription: String? {
         switch self {
         case .catalogUnavailable:
             return "Refresh Wallet styles before adding this pass."
+        case .invalidPassURL:
+            return "The credential service returned an invalid Wallet pass URL."
         case .themeMismatch:
             return "The signed Apple Wallet pass did not match the selected design."
         }

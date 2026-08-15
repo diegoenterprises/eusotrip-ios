@@ -49,7 +49,7 @@ private struct ClosedPaidBody: View {
             rateCard
             if let err = ratingError { errorBanner(err) }
         }
-        .task {
+        .eusoRefreshTask {
             settlement.loadId = loadId
             await settlement.refresh()
         }

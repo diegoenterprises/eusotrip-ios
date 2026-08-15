@@ -108,7 +108,7 @@ struct ShipperBOLs: View {
         }
         .task { await store.load() }
         .onChange(of: store.statusFilter) { _, _ in Task { await store.load() } }
-        .refreshable { await store.load() }
+        .eusoRefreshable { await store.load() }
         // RealtimeService → live updates refresh the BOL list when
         // upstream load events flip a BOL into available/expired,
         // when a new BOL is generated, or when POD lands.
@@ -170,7 +170,7 @@ struct ShipperBOLs: View {
                 .overlay(Circle().strokeBorder(palette.borderFaint)).clipShape(Circle())
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Image(systemName: "sparkles").font(.system(size: 9, weight: .heavy))
+                    EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy))
                         .foregroundStyle(LinearGradient.diagonal)
                     Text("SHIPPER · BOLS").font(.system(size: 9, weight: .heavy)).tracking(1.0)
                         .foregroundStyle(LinearGradient.diagonal)

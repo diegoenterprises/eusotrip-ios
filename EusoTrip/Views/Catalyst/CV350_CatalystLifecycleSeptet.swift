@@ -485,10 +485,8 @@ private struct CatalystLifecycleShell<Content: View>: View {
     var body: some View {
         Shell(theme: theme) { content() } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home",     systemImage: "house",                     isCurrent: false),
-                          NavSlot(label: "Dispatch", systemImage: "rectangle.split.3x1.fill",  isCurrent: true)],
-                trailing: [NavSlot(label: "Fleet",  systemImage: "truck.box.fill", isCurrent: false),
-                           NavSlot(label: "Me",     systemImage: "person",          isCurrent: false)],
+                leading: CarrierNavRoute.leading(current: .loads),
+                trailing: CarrierNavRoute.trailing(current: .loads),
                 orbState: .idle
             )
         }
@@ -506,7 +504,7 @@ private struct CL350TopBar: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("✦ \(eyebrow)")
+                EusoTripEyebrow(verbatim: "\(eyebrow)")
                     .font(.system(size: 9, weight: .heavy)).kerning(1)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()
@@ -825,7 +823,7 @@ private struct CatalystAtGateBody350: View {
             .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 20)
         }
         .task { await store.refresh(loadId: loadId, needs: needs) }
-        .refreshable { await store.refresh(loadId: loadId, needs: needs) }
+        .eusoRefreshable { await store.refresh(loadId: loadId, needs: needs) }
     }
 
     private var yardHero: some View {
@@ -1012,7 +1010,7 @@ private struct CatalystAtDockBody351: View {
             .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 20)
         }
         .task { await store.refresh(loadId: loadId, needs: needs) }
-        .refreshable { await store.refresh(loadId: loadId, needs: needs) }
+        .eusoRefreshable { await store.refresh(loadId: loadId, needs: needs) }
     }
 
     private var dockHero: some View {
@@ -1142,7 +1140,7 @@ private struct CatalystDepartingBody352: View {
             .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 20)
         }
         .task { await store.refresh(loadId: loadId, needs: needs) }
-        .refreshable { await store.refresh(loadId: loadId, needs: needs) }
+        .eusoRefreshable { await store.refresh(loadId: loadId, needs: needs) }
     }
 
     private var mapHero: some View {
@@ -1277,7 +1275,7 @@ private struct CatalystPreDeliveryBody353: View {
             .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 20)
         }
         .task { await store.refresh(loadId: loadId, needs: needs) }
-        .refreshable { await store.refresh(loadId: loadId, needs: needs) }
+        .eusoRefreshable { await store.refresh(loadId: loadId, needs: needs) }
     }
 
     private var metroHero: some View {
@@ -1415,7 +1413,7 @@ private struct CatalystAtDeliveryBody354: View {
             .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 20)
         }
         .task { await store.refresh(loadId: loadId, needs: needs) }
-        .refreshable { await store.refresh(loadId: loadId, needs: needs) }
+        .eusoRefreshable { await store.refresh(loadId: loadId, needs: needs) }
         .sheet(isPresented: $showPod) { CL350PodSheet(store: store) }
     }
 
@@ -1641,7 +1639,7 @@ private struct CatalystPodReceiptBody355: View {
             .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 20)
         }
         .task { await store.refresh(loadId: loadId, needs: needs) }
-        .refreshable { await store.refresh(loadId: loadId, needs: needs) }
+        .eusoRefreshable { await store.refresh(loadId: loadId, needs: needs) }
         .sheet(isPresented: $showPod) { CL350PodSheet(store: store) }
     }
 
@@ -1933,7 +1931,7 @@ private struct CatalystLoadClosedBody356: View {
             .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 20)
         }
         .task { await store.refresh(loadId: loadId, needs: needs) }
-        .refreshable { await store.refresh(loadId: loadId, needs: needs) }
+        .eusoRefreshable { await store.refresh(loadId: loadId, needs: needs) }
         .sheet(item: $backhaulSheet) { item in
             CatalystBackhaulTenderScreen(theme: theme, loadId: item.id)
         }

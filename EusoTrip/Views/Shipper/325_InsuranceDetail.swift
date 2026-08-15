@@ -167,7 +167,7 @@ private struct InsuranceBody: View {
             }
             .padding(.horizontal, 14).padding(.top, 56)
         }
-        .task { await load() }
+        .eusoRefreshTask { await load() }
         .task(id: loadId) { await loadPeril() }
         .fullScreenCover(item: $presentedPDF) { p in
             EusoPDFViewer(title: p.title, subtitle: p.subtitle, source: .url(p.url))

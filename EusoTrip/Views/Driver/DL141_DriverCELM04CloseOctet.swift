@@ -184,7 +184,7 @@ private struct CELCloseBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await loadCtx() }
-        .refreshable { await loadCtx() }
+        .eusoRefreshable { await loadCtx() }
     }
 
     private var signPODActionRow: some View {
@@ -251,7 +251,7 @@ private struct CELCloseBody: View {
     private func header(_ c: CCConfig) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("DRIVER · TRIPS · \(c.eyebrowStage) · \(loadNumberDisplay)")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
                     .lineLimit(1)

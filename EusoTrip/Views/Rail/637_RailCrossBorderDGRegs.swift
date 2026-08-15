@@ -103,7 +103,7 @@ private struct RailCrossBorderDGRegsBody: View {
             .padding(.top, Space.s2)
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
     }
 
     // MARK: - Header (back-chevron + eyebrow + mono caption + 28/-0.4 title)
@@ -112,7 +112,7 @@ private struct RailCrossBorderDGRegsBody: View {
         VStack(alignment: .leading, spacing: 0) {
             // Eyebrow row: sparkle gradient label · mono "HAZMAT" tag.
             HStack(alignment: .firstTextBaseline) {
-                Text("✦ RAIL ENGINEER · DG RULES")
+                EusoTripEyebrow(verbatim: "RAIL ENGINEER · DG RULES")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

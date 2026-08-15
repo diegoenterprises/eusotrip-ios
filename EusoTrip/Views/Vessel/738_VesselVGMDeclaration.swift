@@ -220,7 +220,7 @@ private struct VesselVGMDeclarationBody: View {
             }
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - Top bar (eyebrow + back chevron + headline + meta)
@@ -229,7 +229,7 @@ private struct VesselVGMDeclarationBody: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 HStack(spacing: 5) {
-                    Image(systemName: "sparkle")
+                    EusoTripBrandMark(size: 12)
                         .font(.system(size: 8, weight: .heavy))
                         .foregroundStyle(LinearGradient.primary)
                     Text("VESSEL OPERATOR · VGM SOLAS")

@@ -121,7 +121,7 @@ private struct RailShipmentDetailCarrierBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     private var header: some View {

@@ -49,7 +49,7 @@ private struct AddressPickerBody: View {
             }
             .padding(.horizontal, 14).padding(.top, 56)
         }
-        .task { await loadAddresses() }
+        .eusoRefreshTask { await loadAddresses() }
     }
 
     private var header: some View {

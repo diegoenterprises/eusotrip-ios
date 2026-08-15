@@ -160,7 +160,7 @@ private struct VesselBunkerFSCScheduleBody: View {
             }
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - Top bar (DETAIL)
@@ -168,7 +168,7 @@ private struct VesselBunkerFSCScheduleBody: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("✦ VESSEL OPERATOR · BUNKER FSC")
+                EusoTripEyebrow(verbatim: "VESSEL OPERATOR · BUNKER FSC")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

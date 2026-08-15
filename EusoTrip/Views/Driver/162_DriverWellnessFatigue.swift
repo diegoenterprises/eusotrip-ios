@@ -214,6 +214,7 @@ struct DriverWellnessFatigue_162: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.palette) private var palette
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.weatherRequestContext) private var weatherRequestContext
 
     // Real loading + action state (honest wiring; no try?-collapse).
     @State private var risk: FatigueRisk162? = nil
@@ -221,6 +222,7 @@ struct DriverWellnessFatigue_162: View {
     @State private var resources: WellnessResources162? = nil
     @State private var loading = true
     @State private var loadError: String? = nil
+    @State private var healthSyncError: String? = nil
     @State private var actionAck: String? = nil
     @State private var checkInPresented = false
     /// Distinct from `checkInPresented`: the "Self-assessment" CTA opens a
@@ -445,6 +447,7 @@ struct DriverWellnessFatigue_162: View {
 
                 VStack(alignment: .leading, spacing: Space.s5) {
                     if let err = loadError { banner(err, tint: Brand.danger, icon: "exclamationmark.triangle.fill") }
+                    if let err = healthSyncError { banner(err, tint: Brand.warning, icon: "heart.text.square.fill") }
                     if let ack = actionAck { banner(ack, tint: Brand.success, icon: "checkmark.seal.fill") }
 
                     fatigueHero
@@ -465,6 +468,10 @@ struct DriverWellnessFatigue_162: View {
             refreshPulseState()
             republishPulseIfPossible(showAck: false)
             if !seeded { await load() }
+        }
+        .eusoRefreshHandler(domains: [.general, .weather]) {
+            refreshPulseState()
+            await load()
         }
         .onReceive(pulseRefresh) { _ in refreshPulseState() }
         .sheet(isPresented: $checkInPresented) {
@@ -501,7 +508,7 @@ struct DriverWellnessFatigue_162: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("✦ DRIVER · WELLNESS")
+                EusoTripEyebrow(verbatim: "DRIVER · WELLNESS")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()
@@ -1198,7 +1205,7 @@ struct DriverWellnessFatigue_162: View {
     // MARK: - Loaders / actions (REAL endpoints — honest do/catch, no try?-collapse)
 
     private func load() async {
-        loading = true; loadError = nil
+        loading = true; loadError = nil; healthSyncError = nil
         // Three independent self-scoped reads + the live weather snapshot, run
         // concurrently. The wellness reads pass NO driverId → the server's
         // resolveDriver() falls back to ctx.user (self). The weather fetch is
@@ -1218,7 +1225,14 @@ struct DriverWellnessFatigue_162: View {
         // Driver Home dashboard reads. Best-effort: nil on denied/offline →
         // the weather factor degrades to the honest neutral, never failing the
         // wellness summary above.
-        weather = await WeatherService.shared.fetchCurrent()
+        if let weatherRequestContext {
+            weather = await WeatherService.shared.fetchCurrent(
+                scope: .device(weatherRequestContext),
+                includeLaneImpact: false
+            )
+        } else {
+            weather = nil
+        }
 
         // Live Apple-Health recovery snapshot — the phone reads the
         // Apple-Watch-synced sleep / RHR / HRV from the shared HealthKit store
@@ -1228,10 +1242,9 @@ struct DriverWellnessFatigue_162: View {
         // We mirror the auth status into @State so the CTA renders reactively.
         healthAuth = HealthService.shared.authorizationStatus
         health = await HealthService.shared.fetchRecovery()
-        // After a successful read WITH data, best-effort persist the metrics to
-        // the server (driverWellness.logHealthMetrics). Non-blocking and
-        // error-swallowing — the feature works locally whether or not the proc
-        // is deployed.
+        // After a successful read WITH data, persist the metrics to the server.
+        // A failed persistence remains visible so the UI never implies that a
+        // local HealthKit reading reached the driver's server record.
         if let snap = health, snap.hasAnyData {
             await submitHealthMetrics(snap)
         }
@@ -1265,14 +1278,12 @@ struct DriverWellnessFatigue_162: View {
         }
     }
 
-    /// Best-effort persist of the live Apple-Health metrics to the server via
-    /// driverWellness.logHealthMetrics. Non-blocking and error-swallowing: the
-    /// proc may not be deployed yet, and the RECOVERY surface + sleep bump work
-    /// entirely client-side regardless. Sends ONLY the metrics that came back
+    /// Persist the live Apple-Health metrics to the server via
+    /// driverWellness.logHealthMetrics. Sends ONLY the metrics that came back
     /// real — every nil metric is omitted (never defaulted to 0), exactly the
     /// shared contract's partial-grant rule. Source tag "healthkit".
     private func submitHealthMetrics(_ snap: HealthSnapshot) async {
-        // Require at least one non-null metric (the proc no-ops otherwise).
+        // Require at least one non-null metric.
         guard snap.hasAnyData else { return }
         struct In: Encodable {
             let sleepHours: Double?
@@ -1291,12 +1302,16 @@ struct DriverWellnessFatigue_162: View {
             source: "healthkit"
         )
         do {
-            let _: Out = try await EusoTripAPI.shared.mutation(
+            let result: Out = try await EusoTripAPI.shared.mutation(
                 "driverWellness.logHealthMetrics", input: input)
+            guard result.success == true, result.persisted == true else {
+                healthSyncError = "Apple Health data was read but not saved. Pull to retry."
+                return
+            }
+            healthSyncError = nil
         } catch {
-            // Swallow — the proc may not be deployed yet. The RECOVERY row and
-            // the sleep bump are entirely client-side; this submit is additive.
-            print("[162] logHealthMetrics best-effort failed — \(error.localizedDescription)")
+            healthSyncError = "Apple Health data was read but not saved. " +
+                ((error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription)
         }
     }
 

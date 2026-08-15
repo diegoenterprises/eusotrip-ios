@@ -234,7 +234,7 @@ struct ShipperLoads: View {
                 if let prefill, !prefill.isEmpty { query = prefill }
             }
         }
-        .refreshable { await refreshAll() }
+        .eusoRefreshable { await refreshAll() }
         // RealtimeService → live updates from any load on the
         // shipper's roster (carrier accept, driver assign, status
         // change, POD landing) refresh the loads board immediately
@@ -320,7 +320,7 @@ struct ShipperLoads: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("✦ SHIPPER · MY LOADS")
+                EusoTripEyebrow(verbatim: "SHIPPER · MY LOADS")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

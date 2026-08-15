@@ -181,7 +181,7 @@ private struct RailSettlementBatchBody: View {
             }
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - Top bar (DETAIL grammar)
@@ -189,7 +189,7 @@ private struct RailSettlementBatchBody: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("✦ RAIL ENGINEER · BATCH")
+                EusoTripEyebrow(verbatim: "RAIL ENGINEER · BATCH")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

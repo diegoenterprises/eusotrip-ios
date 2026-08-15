@@ -35,6 +35,8 @@ private struct PassUrl: Decodable, Hashable {
     let url: String
     let expiresAt: String?
     let theme: EusoTripAPI.WalletThemeMetadata
+    let passTypeIdentifier: String
+    let serialNumber: String
 }
 
 private struct WalletPassBody: View {
@@ -278,7 +280,12 @@ private struct WalletPassBody: View {
             walletMessage = "Wallet error: the signed pass URL is invalid."
             return
         }
-        switch await EusoWalletPassService.shared.addPass(from: passURL, expectedTheme: pass.theme) {
+        switch await EusoWalletPassService.shared.addPass(
+            from: passURL,
+            expectedTheme: pass.theme,
+            expectedPassTypeIdentifier: pass.passTypeIdentifier,
+            expectedSerialNumber: pass.serialNumber
+        ) {
         case .presented:
             walletMessage = "Apple Wallet is open with the signed pass."
         case .updated:
@@ -298,22 +305,55 @@ private struct WalletPassBody: View {
                 loadId: EusoWalletPassService.numericLoadId(from: loadId),
                 expiresInHours: 24
             )
-            if credential.passkitStatus == "signed",
-               let url = credential.pkpassUrl,
-               let signedTheme = credential.signedTheme,
-               signedTheme == credential.theme,
-               !(credential.manifestDigest ?? "").isEmpty {
-                pass = PassUrl(url: url, expiresAt: credential.expiresAt, theme: signedTheme)
-            } else {
+            let passURLText = credential.pkpassUrl?.trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
+            let hasPassURL = !(passURLText?.isEmpty ?? true)
+            let signedPassAvailable = try EusoWalletPassService.signedPassAvailable(
+                status: credential.passkitStatus,
+                hasPassURL: hasPassURL
+            )
+            if !signedPassAvailable {
                 pass = nil
                 fallbackShortCode = credential.shortCode
                 loadError = nil
+            } else {
+                guard let url = passURLText,
+                      URL(string: url) != nil,
+                      let signedTheme = credential.signedTheme,
+                      let passTypeIdentifier = credential.passTypeIdentifier?.trimmingCharacters(
+                          in: .whitespacesAndNewlines
+                      ),
+                      !passTypeIdentifier.isEmpty,
+                      let serialNumber = credential.passSerialNumber?.trimmingCharacters(
+                          in: .whitespacesAndNewlines
+                      ),
+                      !serialNumber.isEmpty,
+                      signedTheme == credential.theme,
+                      !(credential.manifestDigest ?? "").isEmpty else {
+                    throw WalletPassScreenError.invalidSignedPass
+                }
+                pass = PassUrl(
+                    url: url,
+                    expiresAt: credential.expiresAt,
+                    theme: signedTheme,
+                    passTypeIdentifier: passTypeIdentifier,
+                    serialNumber: serialNumber
+                )
             }
         } catch {
             pass = nil
             loadError = "Couldn't mint the pickup pass: \(error.localizedDescription)"
         }
         loading = false
+    }
+}
+
+private enum WalletPassScreenError: LocalizedError {
+    case invalidSignedPass
+
+    var errorDescription: String? {
+        "The signed Wallet pass did not match this credential and selected design."
     }
 }
 

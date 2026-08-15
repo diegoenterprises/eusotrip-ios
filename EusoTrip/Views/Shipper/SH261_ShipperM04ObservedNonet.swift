@@ -159,7 +159,7 @@ private struct ShipperM04ObservedBody: View {
             bids.setLoadId(loadId)
             await bids.refresh()
         }
-        .refreshable {
+        .eusoRefreshable {
             await loadCtx()
             await bids.refresh()
         }
@@ -209,7 +209,7 @@ private struct ShipperM04ObservedBody: View {
     private func header(_ s: SMStage) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("SHIPPER · LOADS · \(s.eyebrow) · \(loadNumberDisplay)")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.diagonal)

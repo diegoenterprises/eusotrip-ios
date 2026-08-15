@@ -253,7 +253,7 @@ struct EscortMyJobs: View {
             .padding(.top, 8)
         }
         .task { await refresh() }
-        .refreshable { await refresh() }
+        .eusoRefreshable { await refresh() }
         .overlay(alignment: .bottom) { toastLayer }
     }
 
@@ -261,7 +261,7 @@ struct EscortMyJobs: View {
 
     private var eyebrowRow: some View {
         HStack {
-            Text("✦ ESCORT · MY JOBS")
+            EusoTripEyebrow(verbatim: "ESCORT · MY JOBS")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.diagonal)
             Spacer(minLength: Space.s2)
@@ -902,14 +902,8 @@ struct EscortMyJobsScreen: View {
             // EscortNavController.swift is a single-writer file and is NOT
             // edited by this drop.
             BottomNav(
-                leading: [
-                    NavSlot(label: "Trip",  systemImage: "house",       isCurrent: true),
-                    NavSlot(label: "Comms", systemImage: "bubble.left", isCurrent: false),
-                ],
-                trailing: [
-                    NavSlot(label: "Permit", systemImage: "doc.text", isCurrent: false),
-                    NavSlot(label: "Me",     systemImage: "person",   isCurrent: false),
-                ],
+                leading: EscortNavRoute.leading(current: .assignments),
+                trailing: EscortNavRoute.trailing(current: .assignments),
                 orbState: .idle
             )
         }

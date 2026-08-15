@@ -69,10 +69,8 @@ struct DispatcherM05AssignDriverScreen: View {
             ADBody(loadId: loadId)
         } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home",  systemImage: "house",                isCurrent: false),
-                          NavSlot(label: "Board", systemImage: "rectangle.stack.fill", isCurrent: true)],
-                trailing: [NavSlot(label: "ESANG", systemImage: "sparkles", isCurrent: false),
-                           NavSlot(label: "Me",    systemImage: "person",   isCurrent: false)],
+                leading: DispatchNavRoute.leading(current: .board),
+                trailing: DispatchNavRoute.trailing(current: .board),
                 orbState: .idle
             )
         }
@@ -144,7 +142,7 @@ private struct ADBody: View {
             await loadCtx()
             await loadDrivers()
         }
-        .refreshable {
+        .eusoRefreshable {
             await loadCtx()
             await loadDrivers()
         }
@@ -153,7 +151,7 @@ private struct ADBody: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "sparkle")
+                EusoTripBrandMark(size: 12)
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
                 Text("DISPATCHER · BOARD · AWARDED · ASSIGN DRIVER · \(loadNumberDisplay)")

@@ -58,13 +58,11 @@ struct CatalystComplianceScreen: View {
 }
 
 private func catalystNavLeading_317() -> [NavSlot] {
-    [NavSlot(label: "Home",     systemImage: "house",                          isCurrent: false),
-     NavSlot(label: "Dispatch", systemImage: "shippingbox.and.arrow.backward", isCurrent: false)]
+    CarrierNavRoute.leading(current: .me)
 }
 
 private func catalystNavTrailing_317() -> [NavSlot] {
-    [NavSlot(label: "My Loads", systemImage: "shippingbox.fill", isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person",      isCurrent: true)]
+    CarrierNavRoute.trailing(current: .me)
 }
 
 // MARK: - Body
@@ -115,6 +113,7 @@ private struct CatalystCompliance: View {
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
             Task { await loadAll() }
         }
+        .eusoRefreshHandler { await loadAll() }
         .sheet(isPresented: $showFleetDrivers) {
             CatalystFleetDriversScreen(theme: palette)
                 .environmentObject(EusoTripSession())
@@ -132,7 +131,7 @@ private struct CatalystCompliance: View {
         Renewal request — Eusotrans LLC carrier insurance
         DOT \(safer?.dotNumber ?? "-") · MC \(safer?.mcNumber ?? "-")
         Liability current expiry: \(liability?.expires ?? "-") · status: \(liability?.status ?? "-")
-        Coverage: $\(Int(liability?.coverage ?? 0))
+        Coverage: \(liability?.coverage.map { formatCurrency($0) } ?? "not reported")
         Please send a renewal quote at your earliest convenience.
         """
         let mailto = "mailto:?subject=Insurance%20renewal%20request&body=\(body.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"
@@ -192,7 +191,7 @@ private struct CatalystCompliance: View {
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
             HStack(spacing: 4) {
-                Image(systemName: "sparkles")
+                EusoTripBrandMark(size: 12)
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
                 Text("CATALYST · COMPLIANCE")
@@ -462,7 +461,7 @@ private struct CatalystCompliance: View {
     }
 
     private func coverageLine(_ policy: ComplianceAPI.CatalystComplianceInsurance) -> String {
-        let coverage = formatCurrency(policy.coverage)
+        let coverage = policy.coverage.map(formatCurrency) ?? "not reported"
         let exp = policy.expires.isEmpty ? "-" : "exp \(policy.expires)"
         return "\(coverage) · \(exp)"
     }
@@ -682,19 +681,15 @@ private struct CatalystCompliance: View {
         loadError = nil
         defer { loading = false }
         do {
-            async let overviewTask: ComplianceAPI.CatalystComplianceOverview? = {
-                try? await EusoTripAPI.shared.compliance.getCatalystCompliance()
-            }()
-            async let saferTask: FMCSASelfLookup? = {
-                try? await EusoTripAPI.shared.fmcsa.lookupSelf()
-            }()
-            async let rosterTask: [ComplianceAPI.DriverComplianceRow] = {
-                ((try? await EusoTripAPI.shared.compliance.getDriverComplianceList(limit: 100))?.drivers) ?? []
-            }()
-            let (o, s, r) = await (overviewTask, saferTask, rosterTask)
+            async let overviewTask = EusoTripAPI.shared.compliance.getCatalystCompliance()
+            async let saferTask = EusoTripAPI.shared.fmcsa.lookupSelf()
+            async let rosterTask = EusoTripAPI.shared.compliance.getDriverComplianceList(limit: 100)
+            let (o, s, r) = try await (overviewTask, saferTask, rosterTask)
             self.overview = o
             self.safer = s
-            self.driverRoster = r
+            self.driverRoster = r.drivers
+        } catch {
+            self.loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
     }
 }

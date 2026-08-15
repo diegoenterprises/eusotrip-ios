@@ -45,6 +45,7 @@ struct ProfileEditView: View {
     @State private var draftLicenseClass: String = ""
     @State private var draftPhone: String = ""
     @State private var draftAvatarData: Data? = nil
+    @State private var draftAvatarChanged: Bool = false
 
     // Driver-specific compliance fields — written via
     // `DriverProfileStore.commitDriver(...)` which fires the
@@ -65,6 +66,7 @@ struct ProfileEditView: View {
 
     @State private var pickerItem: PhotosPickerItem? = nil
     @State private var isSaving: Bool = false
+    @State private var saveError: String? = nil
 
     // MARK: - Driver-license capture (document-intelligence spine)
     //
@@ -98,6 +100,12 @@ struct ProfileEditView: View {
                     licenseScanCard
                     complianceCard
                     endorsementsCard
+                    if let saveError {
+                        Text(saveError)
+                            .font(EType.caption)
+                            .foregroundStyle(Brand.danger)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     saveButton
 
                     // Reserve bottom inset so the Save button isn't hidden
@@ -118,8 +126,22 @@ struct ProfileEditView: View {
             // photo, not a document, so it never touches the classifier.)
             guard let newValue else { return }
             Task {
-                if let data = try? await newValue.loadTransferable(type: Data.self) {
-                    await MainActor.run { draftAvatarData = data }
+                do {
+                    guard let data = try await newValue.loadTransferable(type: Data.self), !data.isEmpty else {
+                        throw ProfileEditorError.unreadablePhoto
+                    }
+                    await MainActor.run {
+                        draftAvatarData = data
+                        draftAvatarChanged = true
+                        saveError = nil
+                    }
+                } catch {
+                    await MainActor.run {
+                        saveError = profileEditorMessage(
+                            error,
+                            fallback: "That photo could not be prepared. Choose another image and try again."
+                        )
+                    }
                 }
             }
         }
@@ -182,6 +204,7 @@ struct ProfileEditView: View {
                     if draftAvatarData != nil {
                         Button(role: .destructive) {
                             draftAvatarData = nil
+                            draftAvatarChanged = true
                             pickerItem = nil
                         } label: {
                             Text("Remove")
@@ -256,11 +279,23 @@ struct ProfileEditView: View {
 
     private var contactCard: some View {
         sectionCard(title: "Contact") {
-            fieldRow(label: "Email",
-                     placeholder: "you@example.com",
-                     text: $draftEmail,
-                     keyboard: .emailAddress,
-                     capitalization: .never)
+            HStack(alignment: .center) {
+                Text("Email")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textTertiary)
+                    .frame(width: 110, alignment: .leading)
+                Text(draftEmail)
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                Spacer()
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(palette.textTertiary)
+            }
+            .padding(.horizontal, Space.s4)
+            .padding(.vertical, Space.s3)
             Divider().overlay(palette.borderFaint)
             fieldRow(label: "Phone",
                      placeholder: "+1 (555) 000-0000",
@@ -508,40 +543,40 @@ struct ProfileEditView: View {
         CTAButton(title: isSaving ? "Saving…" : "Save changes") {
             guard !isSaving else { return }
             isSaving = true
-            profile.commit(
-                firstName: draftFirstName,
-                lastName: draftLastName,
-                email: draftEmail,
-                licenseClass: draftLicenseClass,
-                phone: draftPhone,
-                avatarData: draftAvatarData
-            )
-            // Compliance fields ride the same Save CTA — fired through
-            // `commitDriver(...)` which posts `profile.updateDriverProfile`
-            // and the server broadcasts `profile:updated` so other
-            // devices repaint these fields too.
-            profile.commitDriver(
-                cdlNumber:             draftCdlNumber,
-                cdlClass:              draftLicenseClass,
-                cdlState:              draftCdlState,
-                cdlEndorsements:       (draftHazmat ? ["H"] : []) + (draftTanker ? ["N"] : []),
-                cdlExpirationDate:     draftCdlExpDate,
-                medicalExpirationDate: draftMedExpDate,
-                medicalExaminerName:   draftMedExaminer,
-                twicNumber:            draftTwicNumber,
-                twicExpirationDate:    draftTwicExpDate,
-                hazmatEndorsement:     draftHazmat,
-                tankerEndorsement:     draftTanker,
-                homeTerminal:          draftHomeTerminal,
-                hireDate:              profile.hireDate,
-                yearsExperience:       profile.yearsExperience
-            )
-            // Short delay so the CTA's "Saving…" flash is visible for
-            // at least 120 ms. Purely cosmetic — the commits above are
-            // fire-and-forget at the network layer.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                isSaving = false
-                dismiss()
+            saveError = nil
+            Task {
+                do {
+                    try await profile.saveProfileBundle(
+                        firstName: draftFirstName,
+                        lastName: draftLastName,
+                        licenseClass: draftLicenseClass,
+                        phone: draftPhone,
+                        avatarData: draftAvatarData,
+                        avatarChanged: draftAvatarChanged,
+                        cdlNumber: draftCdlNumber,
+                        cdlState: draftCdlState,
+                        cdlEndorsements: (draftHazmat ? ["H"] : []) + (draftTanker ? ["N"] : []),
+                        cdlExpirationDate: draftCdlExpDate,
+                        medicalExpirationDate: draftMedExpDate,
+                        medicalExaminerName: draftMedExaminer,
+                        twicNumber: draftTwicNumber,
+                        twicExpirationDate: draftTwicExpDate,
+                        hazmatEndorsement: draftHazmat,
+                        tankerEndorsement: draftTanker,
+                        homeTerminal: draftHomeTerminal,
+                        hireDate: profile.hireDate,
+                        yearsExperience: profile.yearsExperience
+                    )
+                    isSaving = false
+                    dismiss()
+                } catch {
+                    isSaving = false
+                    saveError = profile.lastSaveError
+                        ?? profileEditorMessage(
+                            error,
+                            fallback: "Your profile was not saved. Nothing was recorded as complete."
+                        )
+                }
             }
         }
         .disabled(isSaving || draftFirstName.isEmpty || draftLastName.isEmpty)
@@ -600,6 +635,8 @@ struct ProfileEditView: View {
         draftLicenseClass = profile.licenseClass
         draftPhone        = profile.phone
         draftAvatarData   = profile.avatarData
+        draftAvatarChanged = false
+        saveError = nil
 
         // Compliance / endorsements drafts pull from the same store —
         // server-hydrated on launch via `profile.getDriverProfile`
@@ -657,9 +694,38 @@ struct ProfileEditView: View {
             )
             licenseScan = makeLicenseResult(from: resp)
         } catch let apiErr as EusoTripAPIError {
-            licenseScanError = "Couldn't read the license: \(apiErr.errorDescription ?? "classification failed")"
+            licenseScanError = profileEditorMessage(
+                apiErr,
+                fallback: "The license could not be read. Check your connection and try again."
+            )
         } catch {
-            licenseScanError = "Couldn't read the license: \((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)"
+            licenseScanError = profileEditorMessage(
+                error,
+                fallback: "The license could not be read. Choose a clear photo and try again."
+            )
+        }
+    }
+
+    private func profileEditorMessage(_ error: Error, fallback: String) -> String {
+        if let editorError = error as? ProfileEditorError {
+            return editorError.errorDescription ?? fallback
+        }
+        guard let apiError = error as? EusoTripAPIError else { return fallback }
+        switch apiError {
+        case .unauthenticated:
+            return "Sign in again to continue."
+        case .forbidden:
+            return "This account is not permitted to make that change."
+        case .httpStatus(let code, _):
+            return code == 401 || code == 403
+                ? "Sign in again or confirm that this is your profile."
+                : "The request could not be completed (error \(code)). Try again."
+        case .decodingFailed, .empty:
+            return "The result could not be verified. Refresh before trying again."
+        case .queuedForOfflineReplay:
+            return "This change needs an internet connection. Reconnect and try again."
+        case .notConfigured, .badURL, .trpcError:
+            return fallback
         }
     }
 
@@ -809,6 +875,14 @@ private struct LicenseScanResult {
         default:
             return classifiedType.replacingOccurrences(of: "_", with: " ").capitalized
         }
+    }
+}
+
+private enum ProfileEditorError: LocalizedError {
+    case unreadablePhoto
+
+    var errorDescription: String? {
+        "That photo could not be read. Choose another image and try again."
     }
 }
 

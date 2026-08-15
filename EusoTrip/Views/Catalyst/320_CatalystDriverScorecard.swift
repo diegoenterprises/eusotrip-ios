@@ -80,13 +80,11 @@ struct CatalystDriverScorecardScreen: View {
 // under Dispatch, mirrors 304 Fleet Drivers in the same fleet-ops
 // umbrella).
 private func catalystNavLeading_320() -> [NavSlot] {
-    [NavSlot(label: "Home",     systemImage: "house",                          isCurrent: false),
-     NavSlot(label: "Dispatch", systemImage: "shippingbox.and.arrow.backward", isCurrent: true)]
+    CarrierNavRoute.leading(current: .drivers)
 }
 
 private func catalystNavTrailing_320() -> [NavSlot] {
-    [NavSlot(label: "My Loads", systemImage: "shippingbox.fill", isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person",      isCurrent: false)]
+    CarrierNavRoute.trailing(current: .drivers)
 }
 
 // MARK: - Period filter
@@ -177,6 +175,7 @@ private struct CatalystDriverScorecard: View {
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
             Task { await loadScorecard() }
         }
+        .eusoRefreshHandler { await loadScorecard() }
         .sheet(isPresented: $showShareSheet) {
             scorecardShareSheet
                 .environment(\.palette, palette)
@@ -190,13 +189,17 @@ private struct CatalystDriverScorecard: View {
         if let s = scorecard {
             let (letter, composite) = letterGrade(for: s)
             let firstName = resolvedDriverName.split(separator: " ").first.map(String.init) ?? "driver"
+            let compositeText = hasCompositeEvidence(s) ? String(format: "%.2f", composite) : "Not enough data"
+            let onTimeText = s.tracked?.onTime == true ? String(format: "%.1f", s.metrics.onTimeDeliveryRate) + "%" : "Not tracked"
+            let hosText = s.tracked?.hos == true ? String(format: "%.0f", s.metrics.hosCompliance) + "%" : "Not tracked"
+            let inspectionText = s.tracked?.inspections == true ? String(format: "%.0f", s.metrics.inspectionPassRate) + "%" : "Not tracked"
             let digest = """
             EusoTrip Scorecard · \(resolvedDriverName) · \(period.subtitleLabel)
 
-            Composite: \(letter) · \(String(format: "%.2f", composite))
-            On-time: \(String(format: "%.1f", s.metrics.onTimeDeliveryRate))%
-            HOS compliance: \(String(format: "%.0f", s.metrics.hosCompliance))%
-            Inspection pass rate: \(String(format: "%.0f", s.metrics.inspectionPassRate))%
+            Composite: \(letter) · \(compositeText)
+            On-time: \(onTimeText)
+            HOS compliance: \(hosText)
+            Inspection pass rate: \(inspectionText)
             Loads: \(String(s.metrics.totalLoads))
             Total miles: \(String(format: "%.0f", s.metrics.totalMiles))
 
@@ -288,7 +291,7 @@ private struct CatalystDriverScorecard: View {
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
             HStack(spacing: 4) {
-                Image(systemName: "sparkles")
+                EusoTripBrandMark(size: 12)
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
                 Text("CATALYST · DRIVER · SCORECARD")
@@ -376,25 +379,26 @@ private struct CatalystDriverScorecard: View {
 
     private func kpiQuartet(_ s: DriversAPI.PerformanceScorecard) -> some View {
         let (letter, composite) = letterGrade(for: s)
+        let hasComposite = hasCompositeEvidence(s)
         return HStack(spacing: 0) {
             kpiCell(
                 eyebrow: "GRADE",
-                value: letter,
-                meta: String(format: "composite %.2f", composite),
+                value: hasComposite ? letter : "—",
+                meta: hasComposite ? String(format: "composite %.2f", composite) : "not enough data",
                 emphasis: .gradient
             )
             kpiDivider
             kpiCell(
                 eyebrow: "ON-TIME",
-                value: String(format: "%.1f%%", s.metrics.onTimeDeliveryRate),
-                meta: trendLabel(s.trends.onTimeRate),
+                value: s.tracked?.onTime == true ? String(format: "%.1f%%", s.metrics.onTimeDeliveryRate) : "—",
+                meta: s.tracked?.trends == true ? trendLabel(s.trends.onTimeRate) : "no timestamped delivery evidence",
                 emphasis: .success
             )
             kpiDivider
             kpiCell(
                 eyebrow: "SAFETY",
-                value: safetyDisplay(s.metrics.safetyScore),
-                meta: "CSA · pass \(Int(s.metrics.inspectionPassRate))%",
+                value: s.tracked?.safety == true ? safetyDisplay(s.metrics.safetyScore) : "—",
+                meta: s.tracked?.inspections == true ? "CSA · pass \(Int(s.metrics.inspectionPassRate))%" : "no inspection evidence",
                 emphasis: .gradient
             )
             kpiDivider
@@ -577,11 +581,11 @@ private struct CatalystDriverScorecard: View {
             Spacer(minLength: 0)
             // 56×56 grade badge
             VStack(spacing: 2) {
-                Text(letter)
+                Text(hasCompositeEvidence(s) ? letter : "—")
                     .font(.system(size: 22, weight: .heavy))
                     .tracking(-0.4)
                     .foregroundStyle(.white)
-                Text(String(format: "%.2f", composite))
+                Text(hasCompositeEvidence(s) ? String(format: "%.2f", composite) : "N/A")
                     .font(.system(size: 8, weight: .heavy))
                     .tracking(0.6)
                     .foregroundStyle(.white.opacity(0.85))
@@ -611,8 +615,8 @@ private struct CatalystDriverScorecard: View {
 
     private func threeStatRow(_ s: DriversAPI.PerformanceScorecard) -> some View {
         HStack(spacing: 0) {
-            statCell(label: "ON-TIME",    value: String(format: "%.1f%%", s.metrics.onTimeDeliveryRate))
-            statCell(label: "HOS",        value: String(format: "%.0f%%", s.metrics.hosCompliance))
+            statCell(label: "ON-TIME",    value: s.tracked?.onTime == true ? String(format: "%.1f%%", s.metrics.onTimeDeliveryRate) : "—")
+            statCell(label: "HOS",        value: s.tracked?.hos == true ? String(format: "%.0f%%", s.metrics.hosCompliance) : "—")
             statCell(label: "LOADS",      value: "\(s.metrics.totalLoads)")
         }
     }
@@ -784,6 +788,10 @@ private struct CatalystDriverScorecard: View {
             }
         }()
         return (letter, composite)
+    }
+
+    private func hasCompositeEvidence(_ s: DriversAPI.PerformanceScorecard) -> Bool {
+        s.tracked?.onTime == true && s.tracked?.hos == true
     }
 
     private func monogram(for name: String) -> String {

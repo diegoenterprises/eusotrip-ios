@@ -27,10 +27,8 @@ struct CarrierAssignDriverScreen: View {
     var body: some View {
         Shell(theme: theme) { AssignDriverBody(loadId: loadId) } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home", systemImage: "house", isCurrent: false),
-                          NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: true)],
-                trailing: [NavSlot(label: "Bids", systemImage: "hand.raised.fill", isCurrent: false),
-                           NavSlot(label: "Me", systemImage: "person", isCurrent: false)],
+                leading: CarrierNavRoute.leading(current: .loads),
+                trailing: CarrierNavRoute.trailing(current: .loads),
                 orbState: .idle
             )
         }
@@ -91,7 +89,7 @@ private struct AssignDriverBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     private var header: some View {

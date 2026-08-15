@@ -125,7 +125,7 @@ struct MeDataQsFiler: View {
             .padding(.bottom, Space.s8)
         }
         .task { await loadEverything() }
-        .refreshable { await loadEverything() }
+        .eusoRefreshable { await loadEverything() }
         .overlay(alignment: .bottom) {
             if let toast = lastToast {
                 toastView(toast)

@@ -235,7 +235,7 @@ struct DriverPaperwork: View {
             .padding(.horizontal, 20)
             .padding(.top, 8)
         }
-        .task { await hydrateLiveTrip() }
+        .eusoRefreshTask { await hydrateLiveTrip() }
         .screenTileRoot()
     }
 
@@ -257,7 +257,7 @@ struct DriverPaperwork: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("✦ DRIVER · PAPERWORK")
+                EusoTripEyebrow(verbatim: "DRIVER · PAPERWORK")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer(minLength: 8)

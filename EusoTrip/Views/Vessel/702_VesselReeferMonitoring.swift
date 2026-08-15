@@ -218,7 +218,7 @@ private struct VesselReeferMonitoringBody: View {
             .padding(.top, Space.s4)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
         .sheet(isPresented: $showTempLog) {
             VesselReeferTempLogSheet702(zones: zones, alerts: alerts, fsma: fsma)
                 .environment(\.palette, palette)
@@ -230,7 +230,7 @@ private struct VesselReeferMonitoringBody: View {
     private var eyebrow: some View {
         HStack {
             HStack(spacing: 5) {
-                Text("✦")
+                EusoTripBrandMark(size: 12)
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.primary)
                 Text("VESSEL · REEFER WATCH")

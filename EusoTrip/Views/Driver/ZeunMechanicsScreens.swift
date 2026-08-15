@@ -543,7 +543,7 @@ struct ZeunProviderNetwork: View {
         }
         .background(palette.bgPage.ignoresSafeArea())
         .task { await store.refresh() }
-        .refreshable { await store.refresh() }
+        .eusoRefreshable { await store.refresh() }
         .sheet(item: $selectedProvider) { p in
             ZeunProviderDetail(providerId: p.id)
                 .eusoSheetX()
@@ -760,7 +760,7 @@ struct ZeunProviderDetail: View {
             }
         }
         .background(palette.bgPage.ignoresSafeArea())
-        .task { await load() }
+        .eusoRefreshTask { await load() }
         .sheet(item: $webSession) { sess in
             ZeunInAppSafari(url: sess.url)
                 .ignoresSafeArea()
@@ -982,7 +982,7 @@ struct ZeunBreakdownDetail: View {
             }
         }
         .background(palette.bgPage.ignoresSafeArea())
-        .task { await load() }
+        .eusoRefreshTask { await load() }
     }
 
     private func load() async {
@@ -1184,7 +1184,7 @@ struct ZeunMaintenanceTracker: View {
         }
         .background(palette.bgPage.ignoresSafeArea())
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     private func load() async {

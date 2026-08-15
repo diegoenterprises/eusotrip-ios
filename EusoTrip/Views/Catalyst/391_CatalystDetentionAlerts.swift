@@ -51,13 +51,11 @@ struct CatalystDetentionAlertsScreen: View {
 }
 
 private func catalystNavLeading_391() -> [NavSlot] {
-    [NavSlot(label: "Home",     systemImage: "house",                          isCurrent: false),
-     NavSlot(label: "Dispatch", systemImage: "shippingbox.and.arrow.backward", isCurrent: false)]
+    CarrierNavRoute.leading(current: .me)
 }
 
 private func catalystNavTrailing_391() -> [NavSlot] {
-    [NavSlot(label: "Fleet", systemImage: "truck.box",          isCurrent: false),
-     NavSlot(label: "Me",    systemImage: "person.crop.circle", isCurrent: true)]
+    CarrierNavRoute.trailing(current: .me)
 }
 
 // MARK: - Body
@@ -100,6 +98,7 @@ private struct DetentionAlertsBody_391: View {
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
             Task { await loadAll() }
         }
+        .eusoRefreshHandler { await loadAll() }
     }
 
     // MARK: - TopBar + title  (_391 inline header)
@@ -107,7 +106,7 @@ private struct DetentionAlertsBody_391: View {
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
             HStack(spacing: 4) {
-                Image(systemName: "sparkles")
+                EusoTripBrandMark(size: 12)
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
                 Text("CATALYST · DETENTION ALERTS")

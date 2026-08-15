@@ -162,14 +162,14 @@ private struct RailFRAAccidentReportsBody: View {
             .padding(.top, Space.s5)
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
     }
 
     // MARK: - Eyebrow
 
     private var eyebrowRow: some View {
         HStack(spacing: 0) {
-            Text("✦ RAIL ENGINEER · FRA REPORTS")
+            EusoTripEyebrow(verbatim: "RAIL ENGINEER · FRA REPORTS")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer(minLength: 8)

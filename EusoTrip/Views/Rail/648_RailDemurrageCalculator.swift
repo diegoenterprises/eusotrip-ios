@@ -145,7 +145,7 @@ private struct RailDemurrageCalculatorBody: View {
             .padding(.top, Space.s2)
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
     }
 
     // MARK: - Header (eyebrow + mono caption + 28/-0.4 title + synced)
@@ -153,7 +153,7 @@ private struct RailDemurrageCalculatorBody: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("✦  RAIL ENGINEER · DEMURRAGE")
+                EusoTripEyebrow(verbatim: "RAIL ENGINEER · DEMURRAGE")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

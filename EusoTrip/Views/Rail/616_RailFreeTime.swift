@@ -140,7 +140,7 @@ private struct RailFreeTimeBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
     }
 
     // MARK: - Header (back chevron · eyebrow · mono caption · 28/-0.4 title)
@@ -148,7 +148,7 @@ private struct RailFreeTimeBody: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.primary)
+                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.primary)
                 Text("RAIL ENGINEER · FREE TIME")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)

@@ -132,7 +132,7 @@ private struct RailDwellReasonAnalysisBody: View {
             .padding(.top, Space.s4)
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
     }
 
     // MARK: - Header (eyebrow · back chevron · title · carrier caption)
@@ -141,7 +141,7 @@ private struct RailDwellReasonAnalysisBody: View {
         VStack(alignment: .leading, spacing: 0) {
             // Eyebrow row — sparkle eyebrow once + right mono window tag.
             HStack {
-                Text("✦ RAIL ENGINEER · DWELL ANALYSIS")
+                EusoTripEyebrow(verbatim: "RAIL ENGINEER · DWELL ANALYSIS")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

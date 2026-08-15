@@ -53,6 +53,37 @@ private enum PostLoadStep: Int, CaseIterable, Identifiable {
     var prev: PostLoadStep? { PostLoadStep(rawValue: rawValue - 1) }
 }
 
+/// A clear marker shared by local storage and iCloud KVS. Draft persistence
+/// runs off the main actor, so a write may already be in flight when the user
+/// discards a draft or finishes posting. The marker makes that older write
+/// ineligible even if it reaches storage after the delete.
+private enum PostLoadDraftPersistence {
+    static func tombstoneKey(for draftKey: String) -> String {
+        "\(draftKey).clearedAt"
+    }
+
+    static func clearedAt(for draftKey: String) -> Double {
+        let key = tombstoneKey(for: draftKey)
+        return max(
+            UserDefaults.standard.double(forKey: key),
+            NSUbiquitousKeyValueStore.default.double(forKey: key)
+        )
+    }
+
+    static func clear(_ draftKey: String) {
+        let key = tombstoneKey(for: draftKey)
+        let clearedAt = max(Date().timeIntervalSince1970, self.clearedAt(for: draftKey).nextUp)
+        UserDefaults.standard.set(clearedAt, forKey: key)
+        NSUbiquitousKeyValueStore.default.set(clearedAt, forKey: key)
+        removeDraftData(for: draftKey)
+    }
+
+    static func removeDraftData(for draftKey: String) {
+        UserDefaults.standard.removeObject(forKey: draftKey)
+        NSUbiquitousKeyValueStore.default.removeObject(forKey: draftKey)
+    }
+}
+
 // MARK: - Screen root
 
 struct ShipperPostLoad: View {
@@ -253,6 +284,10 @@ struct ShipperPostLoad: View {
     //    `loadTemplates.create` saves a named template; web platform
     //    sees it via the same router.
     @State private var didHydrateDraft: Bool = false
+    @State private var isHydratingStoredDraft: Bool = false
+    @State private var draftHydrationGeneration: UInt64 = 0
+    @State private var draftHydrationTask: Task<Void, Never>? = nil
+    @State private var lastHydratedDraftSavedAt: Double = 0
     @State private var showTemplatePicker: Bool = false
     @State private var showSaveTemplateSheet: Bool = false
     @State private var savingTemplate: Bool = false
@@ -694,6 +729,7 @@ struct ShipperPostLoad: View {
     @State private var rateCompareError: String? = nil
     @State private var isComparingRate: Bool = false
     @State private var lastRateCompareKey: String = ""
+    @State private var rateCompareTask: Task<Void, Never>? = nil
 
     /// Per-load Worldscale-100 flat ($/MT) for vessel TANKER loads.
     /// A WS% rate is meaningless without the lane's WS-100 flat to
@@ -754,6 +790,7 @@ struct ShipperPostLoad: View {
                 .padding(Space.s5)
             }
             .scrollDismissesKeyboard(.interactively)
+            .allowsHitTesting(!isHydratingStoredDraft)
         }
         .screenTileRoot()
         // F-ANIMATION (2026-06-14) — bespoke "Load posted" celebration on
@@ -795,9 +832,8 @@ struct ShipperPostLoad: View {
         // subsequent appears so navigating back to step 1 doesn't
         // wipe in-progress edits.
         .onAppear {
-            if !didHydrateDraft {
+            if !didHydrateDraft, draftHydrationTask == nil {
                 hydrateDraftIfPresent()
-                didHydrateDraft = true
             }
         }
         // Cancel the pending debounced-persist work item on dismiss.
@@ -806,7 +842,13 @@ struct ShipperPostLoad: View {
         // would read now-stale @State and crash ("crashed when going
         // back in post load"). Mirror the `voice.cancel()` teardown
         // pattern in 053_ESangDispatchChat.
-        .onDisappear { draftPersistWork?.cancel() }
+        .onDisappear {
+            draftPersistWork?.cancel()
+            cancelDraftHydration()
+            rateCompareTask?.cancel()
+            rateCompareTask = nil
+            isComparingRate = false
+        }
         // Autosave on every meaningful field change. Collapsed into
         // a single onChange driven by `autosaveDigest` (a hash of
         // every watched value) — chaining 30+ `.onChange` modifiers
@@ -1898,6 +1940,7 @@ struct ShipperPostLoad: View {
             savedAt: Date().timeIntervalSince1970,
             transportModeRaw: transportMode.rawValue
         )
+        lastHydratedDraftSavedAt = max(lastHydratedDraftSavedAt, snap.savedAt)
         // The snapshot was built on the main actor above because it reads
         // SwiftUI @State. Everything below — JSON encode, UserDefaults, and
         // (critically) the iCloud KVS .synchronize() — must NOT run on the
@@ -1908,35 +1951,80 @@ struct ShipperPostLoad: View {
         let key = draftStorageKey
         DispatchQueue.global(qos: .utility).async {
             guard let data = try? JSONEncoder().encode(snap) else { return }
+            guard snap.savedAt > PostLoadDraftPersistence.clearedAt(for: key) else { return }
             UserDefaults.standard.set(data, forKey: key)
+            guard snap.savedAt > PostLoadDraftPersistence.clearedAt(for: key) else {
+                PostLoadDraftPersistence.removeDraftData(for: key)
+                return
+            }
             // iCloud KVS — synchronous in-memory write; .synchronize()
             // schedules upload. Cross-device propagation handled by
             // Apple's iCloud daemon.
             NSUbiquitousKeyValueStore.default.set(data, forKey: key)
+            guard snap.savedAt > PostLoadDraftPersistence.clearedAt(for: key) else {
+                PostLoadDraftPersistence.removeDraftData(for: key)
+                return
+            }
             NSUbiquitousKeyValueStore.default.synchronize()
+            if snap.savedAt <= PostLoadDraftPersistence.clearedAt(for: key) {
+                PostLoadDraftPersistence.removeDraftData(for: key)
+            }
         }
     }
 
     private func hydrateDraftIfPresent() {
-        // Prefer iCloud copy when present (most-recently-edited
-        // device wins); fall back to local UserDefaults.
-        let cloud = NSUbiquitousKeyValueStore.default.data(forKey: draftStorageKey)
-        let local = UserDefaults.standard.data(forKey: draftStorageKey)
-        let chosen: Data? = {
-            switch (cloud, local) {
-            case (let c?, let l?):
-                let cs = (try? JSONDecoder().decode(PostLoadDraftSnapshot.self, from: c))?.savedAt ?? 0
-                let ls = (try? JSONDecoder().decode(PostLoadDraftSnapshot.self, from: l))?.savedAt ?? 0
-                return cs >= ls ? c : l
-            case (let c?, nil): return c
-            case (nil, let l?): return l
-            default: return nil
+        draftHydrationGeneration &+= 1
+        let generation = draftHydrationGeneration
+        let key = draftStorageKey
+        draftHydrationTask?.cancel()
+        isHydratingStoredDraft = true
+
+        // Storage reads and JSON decoding stay off the main actor. The outer
+        // task owns only this generation and never awaits `draftHydrationTask`,
+        // so there is no self-await path when Resume and Back race.
+        let task = Task {
+            let snap = await Task.detached(priority: .utility) {
+                Self.readStoredDraft(for: key)
+            }.value
+            guard !Task.isCancelled,
+                  generation == draftHydrationGeneration else { return }
+
+            if let snap,
+               !didHydrateDraft || snap.savedAt > lastHydratedDraftSavedAt {
+                applyStoredDraft(snap)
+                lastHydratedDraftSavedAt = max(lastHydratedDraftSavedAt, snap.savedAt)
             }
-        }()
-        guard let data = chosen,
-              let snap = try? JSONDecoder().decode(PostLoadDraftSnapshot.self, from: data) else {
-            return
+            didHydrateDraft = true
+            isHydratingStoredDraft = false
+            if generation == draftHydrationGeneration {
+                draftHydrationTask = nil
+            }
         }
+        draftHydrationTask = task
+    }
+
+    nonisolated private static func readStoredDraft(for key: String) -> PostLoadDraftSnapshot? {
+        let cloud = NSUbiquitousKeyValueStore.default.data(forKey: key)
+        let local = UserDefaults.standard.data(forKey: key)
+        let clearedAt = PostLoadDraftPersistence.clearedAt(for: key)
+        let decode: (Data) -> PostLoadDraftSnapshot? = {
+            guard let draft = try? JSONDecoder().decode(PostLoadDraftSnapshot.self, from: $0),
+                  draft.savedAt > clearedAt else { return nil }
+            return draft
+        }
+        switch (cloud.flatMap(decode), local.flatMap(decode)) {
+        case (let cloudDraft?, let localDraft?):
+            return cloudDraft.savedAt >= localDraft.savedAt ? cloudDraft : localDraft
+        case (let cloudDraft?, nil):
+            return cloudDraft
+        case (nil, let localDraft?):
+            return localDraft
+        default:
+            return nil
+        }
+    }
+
+    private func applyStoredDraft(_ snap: PostLoadDraftSnapshot) {
         origin = snap.origin
         destination = snap.destination
         originLat = snap.originLat; originLng = snap.originLng
@@ -2002,9 +2090,17 @@ struct ShipperPostLoad: View {
         }
     }
 
+    private func cancelDraftHydration() {
+        draftHydrationGeneration &+= 1
+        draftHydrationTask?.cancel()
+        draftHydrationTask = nil
+        isHydratingStoredDraft = false
+    }
+
     private func clearDraft() {
-        UserDefaults.standard.removeObject(forKey: draftStorageKey)
-        NSUbiquitousKeyValueStore.default.removeObject(forKey: draftStorageKey)
+        cancelDraftHydration()
+        lastHydratedDraftSavedAt = 0
+        PostLoadDraftPersistence.clear(draftStorageKey)
     }
 
     // MARK: - TopBar
@@ -2012,7 +2108,7 @@ struct ShipperPostLoad: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("✦ SHIPPER · POST A LOAD · STEP \(step.rawValue) / \(PostLoadStep.allCases.count)")
+                EusoTripEyebrow(verbatim: "SHIPPER · POST A LOAD · STEP \(step.rawValue) / \(PostLoadStep.allCases.count)")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()
@@ -2094,6 +2190,7 @@ struct ShipperPostLoad: View {
     }
 
     private var autosaveLine: String {
+        if isHydratingStoredDraft { return "DRAFT · RESUMING" }
         switch store.phase {
         case .submitting: return "POSTING…"
         case .success:    return "POSTED"
@@ -2106,11 +2203,13 @@ struct ShipperPostLoad: View {
         if let p = step.prev {
             withAnimation(.spring(response: 0.22, dampingFraction: 0.85)) { step = p }
         } else {
+            cancelDraftHydration()
             NotificationCenter.default.post(name: .eusoShipperPostLoadDismiss, object: nil)
         }
     }
 
     private func closeTapped() {
+        clearDraft()
         NotificationCenter.default.post(name: .eusoShipperPostLoadDismiss, object: nil)
     }
 
@@ -2951,14 +3050,22 @@ struct ShipperPostLoad: View {
         guard !oState.isEmpty,
               !dState.isEmpty,
               let rate = parseDouble(rateText), rate > 0 else {
+            rateCompareTask?.cancel()
+            rateCompareTask = nil
+            lastRateCompareKey = ""
             rateComparison = nil
             rateCompareError = nil
+            isComparingRate = false
             return
         }
         let distanceMiles = routeDistanceMeters.map { Double($0) / 1609.34 }
         if rateCompareRequiresDistance, (distanceMiles ?? 0) <= 0 {
+            rateCompareTask?.cancel()
+            rateCompareTask = nil
+            lastRateCompareKey = ""
             rateComparison = nil
             rateCompareError = nil
+            isComparingRate = false
             return
         }
         let miles = distanceMiles ?? 0
@@ -2974,11 +3081,17 @@ struct ShipperPostLoad: View {
         let countryW   = laneCountryWire
         let key = "\(oState)|\(dState)|\(Int(miles))|\(Int(rate))|\(cargoType.rawValue)|\(unitWire)|\(equipmentType.rawValue)|\(countryW)|\(wsFlatRef.map { Int($0) } ?? -1)"
         guard key != lastRateCompareKey else { return }
+        rateCompareTask?.cancel()
         lastRateCompareKey = key
         isComparingRate = true
         rateCompareError = nil
-        Task {
+        rateCompareTask = Task {
             do {
+                // Text fields emit on every keystroke. Coalesce edits so a
+                // single user change cannot fan out into a provider burst or
+                // let an older response overwrite the current lane.
+                try await Task.sleep(nanoseconds: 350_000_000)
+                guard !Task.isCancelled else { return }
                 // 2026-05-19 — pipe transportMode + commodity through
                 // so the server can branch units (rail $/car-mile,
                 // vessel $/MT, etc.) and tap Gemini for market intel
@@ -3004,13 +3117,20 @@ struct ShipperPostLoad: View {
                     country: countryW
                 )
                 await MainActor.run {
+                    guard self.lastRateCompareKey == key, !Task.isCancelled else { return }
                     self.rateComparison = r
                     self.isComparingRate = false
+                    self.rateCompareTask = nil
                 }
+            } catch is CancellationError {
+                return
             } catch {
+                guard !Task.isCancelled else { return }
                 await MainActor.run {
+                    guard self.lastRateCompareKey == key else { return }
                     self.rateCompareError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
                     self.isComparingRate = false
+                    self.rateCompareTask = nil
                 }
             }
         }
@@ -3050,6 +3170,9 @@ struct ShipperPostLoad: View {
                            shouldReplaceProperShippingName(with: name) {
                             properShippingName = name
                         }
+                        if let name = detail.name {
+                            applyERGProductFamilySuggestion(name)
+                        }
                     } else {
                         self.ergMatch = nil
                         self.ergLookupError = "UN\(raw) not found in ERG"
@@ -3071,8 +3194,47 @@ struct ShipperPostLoad: View {
         unNumber = hit.unNumber
         if !hit.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             properShippingName = hit.name
+            applyERGProductFamilySuggestion(hit.name)
         }
         showErgSearchSheet = false
+    }
+
+    /// ERG material names may safely improve the operational product family and
+    /// equipment preview, but never establish legal dangerous-goods fields.
+    /// Only a still-generic Hazmat/Liquid choice is eligible, so a user's more
+    /// specific Petroleum, Gas, or Chemicals selection is never overwritten.
+    private func applyERGProductFamilySuggestion(_ materialName: String) {
+        guard cargoType == .hazmat || cargoType == .liquid else { return }
+        let normalized = materialName
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .lowercased()
+
+        let gasTerms = [
+            "liquefied petroleum gas", "liquefied natural gas",
+            "natural gas", "propane", "butane", "lpg", "lng",
+        ]
+        let petroleumTerms = [
+            "petroleum", "crude oil", "gasoline", "diesel",
+            "fuel oil", "kerosene", "naphtha", "aviation fuel",
+        ]
+
+        let suggestion: ShipperAPI.CargoType?
+        if gasTerms.contains(where: normalized.contains) {
+            suggestion = .gas
+        } else if petroleumTerms.contains(where: normalized.contains) {
+            suggestion = .petroleum
+        } else {
+            suggestion = nil
+        }
+        guard let suggestion else { return }
+
+        cargoType = suggestion
+        if let compatible = suggestion.defaultEquipment(
+            currentEquipment: equipmentType,
+            mode: transportMode
+        ) {
+            equipmentType = compatible
+        }
     }
 
     private func shouldReplaceProperShippingName(with materialName: String) -> Bool {
@@ -7958,8 +8120,7 @@ struct ShipperPostLoadScreen: View {
                     storageKey: draftStorageKey,
                     onResume: { entryChoice = .resume },
                     onFresh: {
-                        UserDefaults.standard.removeObject(forKey: draftStorageKey)
-                        NSUbiquitousKeyValueStore.default.removeObject(forKey: draftStorageKey)
+                        PostLoadDraftPersistence.clear(draftStorageKey)
                         entryChoice = .fresh
                     }
                 )
@@ -7988,7 +8149,7 @@ private struct PostLoadDraftsEntryBody: View {
     /// Minimal summary used for the draft card — decodes a subset of
     /// the wizard's PostLoadDraftSnapshot fields (Codable matches by
     /// key name; extra fields in the source are ignored).
-    private struct DraftSummary: Codable {
+    private struct DraftSummary: Codable, Sendable {
         var origin: String = ""
         var destination: String = ""
         var cargoTypeRaw: String = "general"
@@ -8004,7 +8165,7 @@ private struct PostLoadDraftsEntryBody: View {
             // Eyebrow + title — mirrors the wizard header so the
             // visual rhythm matches when the gate hands off.
             VStack(alignment: .leading, spacing: Space.s1) {
-                Text("✦ SHIPPER · POST A LOAD")
+                EusoTripEyebrow(verbatim: "SHIPPER · POST A LOAD")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(LinearGradient.diagonal)
                 Text("Drafts")
@@ -8041,7 +8202,13 @@ private struct PostLoadDraftsEntryBody: View {
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .onAppear { summary = loadSummary() }
+        .task(id: storageKey) {
+            let loaded = await Task.detached(priority: .utility) {
+                Self.loadSummary(storageKey: storageKey)
+            }.value
+            guard !Task.isCancelled else { return }
+            summary = loaded
+        }
     }
 
     private func hasUsefulFields(_ s: DraftSummary) -> Bool {
@@ -8124,16 +8291,22 @@ private struct PostLoadDraftsEntryBody: View {
         return f.localizedString(for: date, relativeTo: Date())
     }
 
-    private func loadSummary() -> DraftSummary? {
+    nonisolated private static func loadSummary(storageKey: String) -> DraftSummary? {
         // Prefer iCloud KVS over local UserDefaults (same precedence
         // the wizard uses in hydrateDraftIfPresent).
         let cloud = NSUbiquitousKeyValueStore.default.data(forKey: storageKey)
         let local = UserDefaults.standard.data(forKey: storageKey)
+        let clearedAt = PostLoadDraftPersistence.clearedAt(for: storageKey)
+        let decode: (Data) -> DraftSummary? = {
+            guard let summary = try? JSONDecoder().decode(DraftSummary.self, from: $0),
+                  summary.savedAt > clearedAt else { return nil }
+            return summary
+        }
         let chosen: Data? = {
             switch (cloud, local) {
             case (let c?, let l?):
-                let cs = (try? JSONDecoder().decode(DraftSummary.self, from: c))?.savedAt ?? 0
-                let ls = (try? JSONDecoder().decode(DraftSummary.self, from: l))?.savedAt ?? 0
+                let cs = decode(c)?.savedAt ?? 0
+                let ls = decode(l)?.savedAt ?? 0
                 return cs >= ls ? c : l
             case (let c?, nil): return c
             case (nil, let l?): return l
@@ -8141,7 +8314,7 @@ private struct PostLoadDraftsEntryBody: View {
             }
         }()
         guard let data = chosen else { return nil }
-        return try? JSONDecoder().decode(DraftSummary.self, from: data)
+        return decode(data)
     }
 }
 

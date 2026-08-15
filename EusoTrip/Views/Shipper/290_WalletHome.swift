@@ -202,7 +202,7 @@ private struct WalletHomeBody: View {
             .padding(.horizontal, 14).padding(.top, 56)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
         .sheet(isPresented: $showCashOut) {
             ShipperCashOutSheet(
                 available: availableDollars,
@@ -604,7 +604,7 @@ private struct ShipperCashOutSheet: View {
             }
             .padding(.horizontal, 14).padding(.top, 24).padding(.bottom, 48)
         }
-        .task { await loadMethods() }
+        .eusoRefreshTask { await loadMethods() }
     }
 
     private var isDark: Bool { palette.bgPage == Theme.dark.bgPage }

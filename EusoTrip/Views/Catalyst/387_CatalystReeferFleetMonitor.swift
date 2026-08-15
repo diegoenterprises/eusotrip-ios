@@ -61,13 +61,11 @@ struct CatalystReeferFleetMonitorScreen: View {
 }
 
 private func catalystNavLeading_387() -> [NavSlot] {
-    [NavSlot(label: "Home",     systemImage: "house",                          isCurrent: false),
-     NavSlot(label: "Dispatch", systemImage: "shippingbox.and.arrow.backward", isCurrent: false)]
+    CarrierNavRoute.leading(current: .drivers)
 }
 
 private func catalystNavTrailing_387() -> [NavSlot] {
-    [NavSlot(label: "Fleet", systemImage: "box.truck.fill", isCurrent: true),
-     NavSlot(label: "Me",    systemImage: "person",         isCurrent: false)]
+    CarrierNavRoute.trailing(current: .drivers)
 }
 
 // MARK: - Typed telemetry model
@@ -186,7 +184,7 @@ private struct ReeferFleetBody_387: View {
             .padding(.top, 56)
         }
         .task { await loadAll() }
-        .refreshable { await loadAll() }
+        .eusoRefreshable { await loadAll() }
         .sheet(isPresented: $showFSMALog) { fsmaLogSheet }
     }
 
@@ -493,7 +491,7 @@ private struct ReeferFleetBody_387: View {
     private var eyebrow: some View {
         HStack(alignment: .firstTextBaseline) {
             HStack(spacing: 4) {
-                Image(systemName: "sparkles")
+                EusoTripBrandMark(size: 12)
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
                 Text("CATALYST · REEFER FLEET")

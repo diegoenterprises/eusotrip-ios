@@ -21,10 +21,8 @@ private struct ShellNav<Content: View>: View {
     var body: some View {
         Shell(theme: theme) { content() } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home",    systemImage: "house",            isCurrent: false),
-                          NavSlot(label: "Drivers", systemImage: "person.3.fill",    isCurrent: false)],
-                trailing: [NavSlot(label: "Loads", systemImage: "shippingbox.fill",  isCurrent: true),
-                           NavSlot(label: "Me",    systemImage: "person",            isCurrent: false)],
+                leading: DispatchNavRoute.leading(current: .board),
+                trailing: DispatchNavRoute.trailing(current: .board),
                 orbState: .idle
             )
         }
@@ -92,13 +90,13 @@ private struct YardSlotsBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("DISPATCHER · YARD").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             Text("Yard slots").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
@@ -261,13 +259,13 @@ private struct ReassignBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("DISPATCHER · REASSIGN · HOS-AWARE").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             Text("Reassign load").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
@@ -534,13 +532,13 @@ private struct QuickTenderBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("DISPATCHER · QUICK-TENDER · BUNDLE").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             Text("Quick-tender").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
@@ -754,13 +752,13 @@ private struct EscortBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await loadCtx() }
-        .refreshable { await loadCtx() }
+        .eusoRefreshable { await loadCtx() }
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("DISPATCHER · EXCEPTIONS · LIVE").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             Text("Republish escort").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)

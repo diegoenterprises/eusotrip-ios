@@ -10,10 +10,8 @@ struct DispatchDriverChatScreen: View {
     var body: some View {
         Shell(theme: theme) { ChatBody() } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home", systemImage: "house", isCurrent: false),
-                          NavSlot(label: "Drivers", systemImage: "person.3.fill", isCurrent: true)],
-                trailing: [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
-                           NavSlot(label: "Me", systemImage: "person", isCurrent: false)],
+                leading: DispatchNavRoute.leading(current: .comms),
+                trailing: DispatchNavRoute.trailing(current: .comms),
                 orbState: .idle
             )
         }
@@ -71,7 +69,7 @@ private struct ChatBody: View {
             .padding(.top, 58)
         }
         .task { await loadAll() }
-        .refreshable { await loadAll() }
+        .eusoRefreshable { await loadAll() }
     }
 
     private var header: some View {

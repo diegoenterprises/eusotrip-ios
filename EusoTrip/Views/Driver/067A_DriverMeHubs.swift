@@ -39,7 +39,6 @@
 //
 
 import SwiftUI
-import PhotosUI
 
 // MARK: - Public Screen wrappers (one per IA node)
 
@@ -183,13 +182,25 @@ enum DriverMeCellAction {
     case screen(String)
     case fire(String)
     case signOut
+
+    var stableID: String {
+        switch self {
+        case .screen(let id):
+            return "screen:\(id)"
+        case .fire(let key):
+            return "fire:\(key)"
+        case .signOut:
+            return "sign-out"
+        }
+    }
 }
 
 struct DriverMeCell: Identifiable {
-    let id = UUID()
     let icon: String
     let label: String
     let action: DriverMeCellAction
+
+    var id: String { "\(label)|\(action.stableID)" }
 }
 
 struct DriverMeSection {
@@ -323,32 +334,15 @@ enum DriverMeHubCatalog {
 private struct DriverMeHomeBody: View {
     @Environment(\.palette) private var palette
     @EnvironmentObject private var profile: DriverProfileStore
-    /// Avatar PhotosPicker trigger — replaces the prior dead avatar
-    /// where the founder reported "no longer a place to change
-    /// profile name or edit picture." Tapping the avatar surfaces
-    /// the system Photos picker; the picked Data is uploaded via
-    /// `profile.updateAvatar` and the new URL persists across
-    /// device restarts.
-    @State private var avatarPickerItem: PhotosPickerItem? = nil
     /// Drives the in-app ProfileEditView sheet so name / phone /
     /// email edits land via `profile.updateProfile` instead of
     /// going through some other path.
     @State private var showProfileEdit: Bool = false
-    /// Avatar upload state — keeps the user informed instead of
-    /// silently swallowing the failure. Was a `/* surface via toast
-    /// in a follow-up */` no-op; now drives an inline banner with
-    /// auto-dismiss.
-    @State private var avatarUploading: Bool = false
-    @State private var avatarAck: String? = nil
-    @State private var avatarError: String? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
                 hero
-                if avatarUploading || avatarAck != nil || avatarError != nil {
-                    avatarStatusBanner
-                }
 
                 hubCard(icon: "person.crop.circle.fill",
                         title: "Account & Profile",
@@ -385,106 +379,16 @@ private struct DriverMeHomeBody: View {
             }
             .padding(.horizontal, 14).padding(.top, 8)
         }
-        .onChange(of: avatarPickerItem) { _, item in
-            guard let item else { return }
-            Task { await uploadAvatar(item: item) }
-        }
         .sheet(isPresented: $showProfileEdit) {
             ProfileEditView()
                 .environmentObject(profile)
         }
     }
 
-    /// Avatar upload status — shown after the user picks a photo
-    /// from the system Photos picker. Renders one of three states:
-    /// uploading (gradient ring + spinner), success (gradient seal +
-    /// short ack copy, auto-dismisses), failure (danger glyph + the
-    /// concrete error string + manual dismiss).
-    @ViewBuilder
-    private var avatarStatusBanner: some View {
-        if avatarUploading {
-            HStack(spacing: 8) {
-                ProgressView().scaleEffect(0.75).tint(.white)
-                Text("Uploading profile photo…")
-                    .font(EType.caption)
-                    .foregroundStyle(.white)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 12).padding(.vertical, 8)
-            .background(Capsule().fill(LinearGradient.diagonal.opacity(0.85)))
-        } else if let ack = avatarAck {
-            HStack(spacing: 6) {
-                Image(systemName: "checkmark.seal.fill")
-                    .font(.system(size: 12, weight: .heavy))
-                    .foregroundStyle(LinearGradient.diagonal)
-                Text(ack)
-                    .font(EType.caption)
-                    .foregroundStyle(palette.textPrimary)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 12).padding(.vertical, 8)
-            .background(palette.bgCard)
-            .overlay(Capsule().strokeBorder(LinearGradient.diagonal.opacity(0.45)))
-            .clipShape(Capsule())
-            .task(id: avatarAck) {
-                try? await Task.sleep(nanoseconds: 2_400_000_000)
-                await MainActor.run { avatarAck = nil }
-            }
-        } else if let err = avatarError {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 11, weight: .heavy))
-                    .foregroundStyle(Brand.danger)
-                Text(err)
-                    .font(EType.caption)
-                    .foregroundStyle(palette.textPrimary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
-                Button { avatarError = nil } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .heavy))
-                        .foregroundStyle(palette.textTertiary)
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.horizontal, 12).padding(.vertical, 8)
-            .background(palette.bgCard)
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(Brand.danger.opacity(0.45))
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        }
-    }
-
     private var hero: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 10) {
-                // Tappable avatar — opens PhotosPicker so the driver
-                // can change their profile photo. Replaces the
-                // previously dead avatar circle.
-                PhotosPicker(selection: $avatarPickerItem,
-                             matching: .images,
-                             photoLibrary: .shared()) {
-                    let initials = profileInitials()
-                    Text(initials)
-                        .font(.system(size: 22, weight: .heavy))
-                        .foregroundStyle(.white)
-                        .frame(width: 64, height: 64)
-                        .background(LinearGradient.diagonal)
-                        .clipShape(Circle())
-                        .overlay(alignment: .bottomTrailing) {
-                            Image(systemName: "camera.fill")
-                                .font(.system(size: 10, weight: .heavy))
-                                .foregroundStyle(.white)
-                                .padding(5)
-                                .background(Circle().fill(palette.bgCard))
-                                .overlay(Circle().strokeBorder(palette.borderFaint))
-                                .offset(x: 2, y: 2)
-                        }
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Change profile photo")
+                EditableProfileAvatar(size: 64)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(displayName())
@@ -514,50 +418,6 @@ private struct DriverMeHomeBody: View {
         }
     }
 
-    /// Compress + base64-encode the picked photo, upload via
-    /// `profile.updateAvatar`, and reseat the local store so the new
-    /// image renders without a manual reload.
-    private func uploadAvatar(item: PhotosPickerItem) async {
-        guard let data = try? await item.loadTransferable(type: Data.self),
-              !data.isEmpty else {
-            avatarError = "Couldn't read the picked photo."
-            avatarPickerItem = nil
-            return
-        }
-        avatarUploading = true
-        avatarError = nil
-        avatarAck = nil
-        defer {
-            avatarUploading = false
-            avatarPickerItem = nil
-        }
-        // Re-encode to JPEG ≤ 200KB so the data-URL stays reasonable.
-        var jpeg = data
-        if let img = UIImage(data: data) {
-            var quality: CGFloat = 0.85
-            while quality > 0.3 {
-                if let d = img.jpegData(compressionQuality: quality), d.count <= 200_000 {
-                    jpeg = d
-                    break
-                }
-                quality -= 0.1
-            }
-        }
-        let dataURL = "data:image/jpeg;base64,\(jpeg.base64EncodedString())"
-        struct In: Encodable { let avatarUrl: String }
-        struct Out: Decodable { let success: Bool?; let avatarUrl: String? }
-        do {
-            let _: Out = try await EusoTripAPI.shared.mutation(
-                "profile.updateAvatar", input: In(avatarUrl: dataURL)
-            )
-            await profile.refreshFromServer()
-            avatarAck = "Profile photo updated"
-        } catch let apiErr as EusoTripAPIError {
-            avatarError = apiErr.errorDescription ?? "Couldn't upload photo."
-        } catch {
-            avatarError = error.localizedDescription
-        }
-    }
 
     /// Card-style hub button — opens its child via the canonical
     /// `eusoDriverMeNavSwap` notification.
@@ -626,14 +486,6 @@ private struct DriverMeHomeBody: View {
         return combined.isEmpty ? "Welcome" : combined
     }
 
-    private func profileInitials() -> String {
-        let parts = [profile.firstName, profile.lastName]
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-        let chars = parts.compactMap { $0.first }.map(String.init)
-        let derived = chars.joined().uppercased()
-        return derived.isEmpty ? "DU" : derived
-    }
 }
 
 // MARK: - Generic hub child body
@@ -648,21 +500,27 @@ private struct DriverMeHubBody: View {
     var showsELDStatus: Bool = false
 
     @Environment(\.palette) private var palette
+    @SceneStorage("driver.me.child.expandedSection") private var expandedSection = ""
+    @SceneStorage("driver.me.child.returnAnchor") private var returnAnchor = ""
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: Space.s4) {
-                header
-                if showsELDStatus {
-                    ELDComplianceStatusCard()
+        ScrollViewReader { proxy in
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Space.s4) {
+                    header
+                    if showsELDStatus {
+                        ELDComplianceStatusCard()
+                    }
+                    ForEach(sections, id: \.title) { section in
+                        cellGroup(section)
+                    }
+                    Color.clear.frame(height: 96)
                 }
-                ForEach(sections.indices, id: \.self) { i in
-                    let section = sections[i]
-                    cellGroup(title: section.title, icon: section.icon, cells: section.cells)
-                }
-                Color.clear.frame(height: 96)
+                .padding(.horizontal, 14).padding(.top, 8)
             }
-            .padding(.horizontal, 14).padding(.top, 8)
+            .onAppear {
+                restoreReturnPosition(using: proxy)
+            }
         }
     }
 
@@ -690,25 +548,76 @@ private struct DriverMeHubBody: View {
         }
     }
 
-    private func cellGroup(title: String, icon: String, cells: [DriverMeCell]) -> some View {
+    private func cellGroup(_ section: DriverMeSection) -> some View {
+        let sectionID = sectionAnchor(section)
+        let isExpanded = expandedSection == sectionID
+
         LifecycleCard {
-            LifecycleSection(label: title, icon: icon)
-            ForEach(cells) { cell in
-                Button {
-                    handle(cell.action)
-                } label: {
-                    HStack {
-                        Image(systemName: cell.icon).foregroundStyle(LinearGradient.diagonal)
-                        Text(cell.label).font(EType.body).foregroundStyle(palette.textPrimary)
-                        Spacer(minLength: 0)
-                        Image(systemName: "chevron.right").foregroundStyle(palette.textTertiary)
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    expandedSection = isExpanded ? "" : sectionID
+                    returnAnchor = ""
+                }
+            } label: {
+                HStack {
+                    LifecycleSection(label: section.title, icon: section.icon)
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(palette.textTertiary)
+                        .rotationEffect(.degrees(isExpanded ? 180 : 0))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if isExpanded {
+                ForEach(section.cells) { cell in
+                    let rowID = rowAnchor(cell, in: section)
+                    Button {
+                        expandedSection = sectionID
+                        returnAnchor = rowID
+                        handle(cell.action)
+                    } label: {
+                        HStack {
+                            Image(systemName: cell.icon).foregroundStyle(LinearGradient.diagonal)
+                            Text(cell.label).font(EType.body).foregroundStyle(palette.textPrimary)
+                            Spacer(minLength: 0)
+                            Image(systemName: "chevron.right").foregroundStyle(palette.textTertiary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 8)
+                        .contentShape(Rectangle())
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 8)
-                    .contentShape(Rectangle())
-                }.buttonStyle(.plain)
+                    .buttonStyle(.plain)
+                    .id(rowID)
+                }
             }
         }
+        .id(sectionID)
+    }
+
+    private var hubAnchorPrefix: String {
+        "driver.me.\(title)"
+    }
+
+    private func sectionAnchor(_ section: DriverMeSection) -> String {
+        "\(hubAnchorPrefix).section.\(section.title)"
+    }
+
+    private func rowAnchor(_ cell: DriverMeCell, in section: DriverMeSection) -> String {
+        "\(sectionAnchor(section)).row.\(cell.id)"
+    }
+
+    private func restoreReturnPosition(using proxy: ScrollViewProxy) {
+        guard !returnAnchor.isEmpty,
+              sections.contains(where: { sectionAnchor($0) == expandedSection }) else { return }
+        eusoRestoreScrollPosition(
+            using: proxy,
+            anchor: returnAnchor,
+            fallback: expandedSection
+        )
     }
 
     private func handle(_ action: DriverMeCellAction) {
@@ -756,7 +665,7 @@ private struct ELDComplianceStatusCard: View {
                 }
             }
         }
-        .task { await eld.bootstrap() }
+        .eusoRefreshTask { await eld.bootstrap() }
     }
 
     private var loadingRow: some View {
@@ -858,54 +767,51 @@ private struct ELDComplianceStatusCard: View {
 
 private struct DriverMeSettingsHubBody: View {
     @Environment(\.palette) private var palette
+    @SceneStorage("driver.me.settings.expandedSection") private var expandedSection = ""
+    @SceneStorage("driver.me.settings.returnAnchor") private var returnAnchor = ""
+
+    private let sections: [DriverMeSection] = [
+        DriverMeSection(title: "DEVICES & SYNC", icon: "applewatch", cells: [
+            DriverMeCell(icon: "applewatch", label: "EusoTrip Pulse (Apple Watch)", action: .screen("PULSE")),
+        ]),
+        DriverMeSection(title: "TRAINING & SUPPORT", icon: "graduationcap", cells: [
+            DriverMeCell(icon: "graduationcap", label: "Training", action: .screen("076")),
+            DriverMeCell(icon: "lifepreserver", label: "Support", action: .screen("089")),
+            DriverMeCell(icon: "person.2", label: "Invite & earn", action: .screen("088")),
+        ]),
+        DriverMeSection(title: "EMERGENCY & CLAIMS", icon: "exclamationmark.shield", cells: [
+            DriverMeCell(icon: "exclamationmark.shield.fill", label: "Emergency ops", action: .screen("098")),
+            DriverMeCell(icon: "doc.text.fill", label: "Incident filer", action: .screen("086")),
+            DriverMeCell(icon: "exclamationmark.bubble", label: "Freight claims", action: .screen("099")),
+            DriverMeCell(icon: "book.closed", label: "ERG (hazmat)", action: .screen("096")),
+        ]),
+        DriverMeSection(title: "ACCOUNT", icon: "person.crop.circle", cells: [
+            DriverMeCell(icon: "rectangle.portrait.and.arrow.right", label: "Sign out", action: .signOut),
+        ]),
+    ]
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: Space.s4) {
-                header
-
-                LifecycleCard {
-                    LifecycleSection(label: "DEVICES & SYNC", icon: "applewatch")
-                    cell(icon: "applewatch",           label: "EusoTrip Pulse (Apple Watch)", screenId: "PULSE")
+        ScrollViewReader { proxy in
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Space.s4) {
+                    header
+                    RoleSettingsAccessCard()
+                    ForEach(sections, id: \.title) { section in
+                        settingsGroup(section)
+                    }
+                    Color.clear.frame(height: 96)
                 }
-
-                LifecycleCard {
-                    LifecycleSection(label: "TRAINING & SUPPORT", icon: "graduationcap")
-                    cell(icon: "graduationcap",        label: "Training",            screenId: "076")
-                    cell(icon: "lifepreserver",        label: "Support",             screenId: "089")
-                    cell(icon: "person.2",             label: "Invite & earn",       screenId: "088")
-                }
-
-                LifecycleCard {
-                    LifecycleSection(label: "EMERGENCY & CLAIMS", icon: "exclamationmark.shield")
-                    cell(icon: "exclamationmark.shield.fill", label: "Emergency ops", screenId: "098")
-                    cell(icon: "doc.text.fill",        label: "Incident filer",      screenId: "086")
-                    cell(icon: "exclamationmark.bubble", label: "Freight claims",    screenId: "099")
-                    cell(icon: "book.closed",          label: "ERG (hazmat)",        screenId: "096")
-                }
-
-                LifecycleCard {
-                    LifecycleSection(label: "ACCOUNT", icon: "person.crop.circle")
-                    Button {
-                        NotificationCenter.default.post(
-                            name: .eusoDriverMeNavSwap, object: nil,
-                            userInfo: ["screenId": "_logout"]
-                        )
-                    } label: {
-                        HStack {
-                            Image(systemName: "rectangle.portrait.and.arrow.right").foregroundStyle(.red)
-                            Text("Sign out").font(EType.body).foregroundStyle(.red)
-                            Spacer(minLength: 0)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 8)
-                        .contentShape(Rectangle())
-                    }.buttonStyle(.plain)
-                }
-
-                Color.clear.frame(height: 96)
+                .padding(.horizontal, 14).padding(.top, 8)
             }
-            .padding(.horizontal, 14).padding(.top, 8)
+            .onAppear {
+                guard !returnAnchor.isEmpty,
+                      sections.contains(where: { sectionAnchor($0) == expandedSection }) else { return }
+                eusoRestoreScrollPosition(
+                    using: proxy,
+                    anchor: returnAnchor,
+                    fallback: expandedSection
+                )
+            }
         }
     }
 
@@ -932,23 +838,84 @@ private struct DriverMeSettingsHubBody: View {
         }
     }
 
-    private func cell(icon: String, label: String, screenId: String) -> some View {
-        Button {
+    private func settingsGroup(_ section: DriverMeSection) -> some View {
+        let sectionID = sectionAnchor(section)
+        let isExpanded = expandedSection == sectionID
+
+        LifecycleCard {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    expandedSection = isExpanded ? "" : sectionID
+                    returnAnchor = ""
+                }
+            } label: {
+                HStack {
+                    LifecycleSection(label: section.title, icon: section.icon)
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(palette.textTertiary)
+                        .rotationEffect(.degrees(isExpanded ? 180 : 0))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if isExpanded {
+                ForEach(section.cells) { cell in
+                    let rowID = rowAnchor(cell, in: section)
+                    Button {
+                        expandedSection = sectionID
+                        returnAnchor = rowID
+                        handle(cell.action)
+                    } label: {
+                        HStack {
+                            Image(systemName: cell.icon)
+                                .foregroundStyle(cell.action.stableID == "sign-out" ? AnyShapeStyle(.red) : AnyShapeStyle(LinearGradient.diagonal))
+                            Text(cell.label)
+                                .font(EType.body)
+                                .foregroundStyle(cell.action.stableID == "sign-out" ? AnyShapeStyle(.red) : AnyShapeStyle(palette.textPrimary))
+                            Spacer(minLength: 0)
+                            if cell.action.stableID != "sign-out" {
+                                Image(systemName: "chevron.right").foregroundStyle(palette.textTertiary)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 8)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .id(rowID)
+                }
+            }
+        }
+        .id(sectionID)
+    }
+
+    private func sectionAnchor(_ section: DriverMeSection) -> String {
+        "driver.me.settings.section.\(section.title)"
+    }
+
+    private func rowAnchor(_ cell: DriverMeCell, in section: DriverMeSection) -> String {
+        "\(sectionAnchor(section)).row.\(cell.id)"
+    }
+
+    private func handle(_ action: DriverMeCellAction) {
+        switch action {
+        case .screen(let id):
             NotificationCenter.default.post(
                 name: .eusoDriverMeNavSwap, object: nil,
-                userInfo: ["screenId": screenId]
+                userInfo: ["screenId": id]
             )
-        } label: {
-            HStack {
-                Image(systemName: icon).foregroundStyle(LinearGradient.diagonal)
-                Text(label).font(EType.body).foregroundStyle(palette.textPrimary)
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.right").foregroundStyle(palette.textTertiary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 8)
-            .contentShape(Rectangle())
-        }.buttonStyle(.plain)
+        case .fire(let key):
+            MeAction.fire(key)
+        case .signOut:
+            NotificationCenter.default.post(
+                name: .eusoDriverMeNavSwap, object: nil,
+                userInfo: ["screenId": "_logout"]
+            )
+        }
     }
 }
 
@@ -1019,6 +986,7 @@ struct DriverMeSurface: View {
     var body: some View {
         current.view(palette)
             .id("driver-me-\(currentScreenId)")
+            .eusoRefreshSurface("driver:me:\(currentScreenId)")
             .transition(.opacity)
             // Inside the Me stack, the ONLY back mechanism is this
             // surface's `.eusoDriverMeNavBack` pop. A couple of pushed
@@ -1058,6 +1026,14 @@ struct DriverMeSurface: View {
                     .accessibilityLabel("Back")
                 }
             }
+            .modifier(EusoEdgeSwipeBack(
+                isEnabled: screenStack.count > 1,
+                onBack: {
+                    NotificationCenter.default.post(
+                        name: .eusoDriverMeNavBack, object: nil
+                    )
+                }
+            ))
             .onReceive(NotificationCenter.default.publisher(
                 for: .eusoDriverMeNavSwap)) { note in
                 guard let id = note.userInfo?["screenId"] as? String else { return }

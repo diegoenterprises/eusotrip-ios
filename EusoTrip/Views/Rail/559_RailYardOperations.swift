@@ -287,7 +287,7 @@ private struct RailYardOperationsBody: View {
             }
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - Top bar (route-scoped)
@@ -296,7 +296,7 @@ private struct RailYardOperationsBody: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 HStack(spacing: 5) {
-                    Image(systemName: "sparkle")
+                    EusoTripBrandMark(size: 12)
                         .font(.system(size: 8, weight: .heavy))
                         .foregroundStyle(LinearGradient.primary)
                     Text("RAIL ENGINEER · YARD OPS")

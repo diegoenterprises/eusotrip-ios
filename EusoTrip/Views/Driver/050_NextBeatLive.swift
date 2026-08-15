@@ -237,7 +237,7 @@ struct NextBeatLive: View {
             .padding(.horizontal, 14)
             .padding(.top, 8)
         }
-        .task { await hydrateLiveTrip() }
+        .eusoRefreshTask { await hydrateLiveTrip() }
         .onAppear { startFillAnimation(); now = Date() }
         // Re-settle the gauge when the load envelope (and with it a
         // possible metered loadedGallons row) hydrates after appear.
@@ -979,7 +979,7 @@ private struct AmenitiesNearbySheet: View {
             }
         }
         .background(palette.bgPage.ignoresSafeArea())
-        .task { await load() }
+        .eusoRefreshTask { await load() }
     }
 
     @ViewBuilder

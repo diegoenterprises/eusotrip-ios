@@ -141,10 +141,8 @@ private struct CatalystShipperBShell<Content: View>: View {
     var body: some View {
         Shell(theme: theme) { content() } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home",  systemImage: "house",          isCurrent: false),
-                          NavSlot(label: "Fleet", systemImage: "truck.box.fill", isCurrent: true)],
-                trailing: [NavSlot(label: "Fleet",  systemImage: "truck.box.fill", isCurrent: false),
-                           NavSlot(label: "Me",     systemImage: "person",          isCurrent: false)],
+                leading: CarrierNavRoute.leading(current: .drivers),
+                trailing: CarrierNavRoute.trailing(current: .drivers),
                 orbState: .idle
             )
         }
@@ -177,13 +175,13 @@ private struct CatalystShipperBBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     private func header(_ c: CSBConfig) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text(c.eyebrow).font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             Text(c.title).font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)

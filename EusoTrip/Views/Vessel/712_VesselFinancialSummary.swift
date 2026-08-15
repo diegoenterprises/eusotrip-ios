@@ -213,7 +213,7 @@ private struct VesselFinancialSummaryBody: View {
             }
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - Top bar (DETAIL · back chevron + eyebrow + title)
@@ -221,7 +221,7 @@ private struct VesselFinancialSummaryBody: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
-                Text("✦ VESSEL OPERATOR · FINANCE")
+                EusoTripEyebrow(verbatim: "VESSEL OPERATOR · FINANCE")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

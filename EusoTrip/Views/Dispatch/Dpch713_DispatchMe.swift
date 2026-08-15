@@ -27,48 +27,49 @@ struct DispatchMeScreen: View {
     @Environment(\.palette) private var palette
     @State private var showSignOutConfirm: Bool = false
 
-    /// Which hub cards are expanded. Consolidation (fix pack L15-11): the Me tab
+    /// The custom role router reconstructs this screen after a child pop. Keep
+    /// the active accordion and last tapped row in scene storage so Back returns
+    /// to the user's working position instead of resetting to the top.
+    @SceneStorage("dispatch.me.expandedHub") private var expandedHubId: String = "operations"
+    @SceneStorage("dispatch.me.returnAnchor") private var returnAnchor: String = ""
+
+    /// Which hub card is expanded. Consolidation (fix pack L15-11): the Me tab
     /// rendered 8 always-open sections = ~41 rows in one scroll (with "Comms
     /// hub" duplicated across two sections). Rebuilt into 7 bespoke collapsible
     /// hubs; the Command & Fleet and Fleet+HOS sections merged, the duplicate
     /// Comms hub removed. Operations starts expanded; the rest collapse.
-    @State private var expandedHubs: Set<String> = ["operations"]
-
     var body: some View {
         Shell(theme: theme) {
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: Space.s4) {
-                    topBar
-                    titleBlock
-                    iridescentHairline
-                    identityHero
-                    EusoCardIssuePanel(
-                        title: "EusoCard",
-                        subtitle: "Dispatch spend card for fleet exceptions and accessorials"
-                    )
-                    operationsHub
-                    commandFleetHub
-                    liveWorkflowsHub
-                    exceptionsHub
-                    analyticsHub
-                    toolsHub
-                    settingsHub
-                    signOutButton
-                    Color.clear.frame(height: 96)
+            ScrollViewReader { proxy in
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: Space.s4) {
+                        topBar
+                        titleBlock
+                        iridescentHairline
+                        identityHero
+                        EusoCardIssuePanel(
+                            title: "EusoCard",
+                            subtitle: "Dispatch spend card for fleet exceptions and accessorials"
+                        )
+                        operationsHub
+                        commandFleetHub
+                        liveWorkflowsHub
+                        exceptionsHub
+                        analyticsHub
+                        toolsHub
+                        settingsHub
+                        signOutButton
+                        Color.clear.frame(height: 96)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.top, 8)
                 }
-                .padding(.horizontal, 14)
-                .padding(.top, 8)
+                .onAppear { restorePosition(using: proxy) }
             }
         } nav: {
             BottomNav(
-                leading: [
-                    NavSlot(label: "Home", systemImage: "house", isCurrent: false),
-                    NavSlot(label: "Board", systemImage: "rectangle.split.3x1.fill", isCurrent: false)
-                ],
-                trailing: [
-                    NavSlot(label: "Comms", systemImage: "bubble.left.and.bubble.right.fill", isCurrent: false),
-                    NavSlot(label: "Me", systemImage: "person.fill", isCurrent: true)
-                ],
+                leading: DispatchNavRoute.leading(current: .me),
+                trailing: DispatchNavRoute.trailing(current: .me),
                 orbState: .idle
             )
         }
@@ -87,9 +88,7 @@ struct DispatchMeScreen: View {
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
             HStack(spacing: 4) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 9, weight: .heavy))
-                    .foregroundStyle(LinearGradient.diagonal)
+                EusoTripBrandMark(size: 12)
                 Text("DISPATCH · ME")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.diagonal)
@@ -140,15 +139,9 @@ struct DispatchMeScreen: View {
     private var identityHero: some View {
         let user = session.user
         let displayName = user?.name ?? "Dispatch user"
-        let monogram = monogramFor(displayName)
         return LifecycleCard(accentGradient: true) {
             HStack(alignment: .center, spacing: 10) {
-                Text(monogram)
-                    .font(.system(size: 18, weight: .heavy))
-                    .foregroundStyle(.white)
-                    .frame(width: 56, height: 56)
-                    .background(LinearGradient.diagonal)
-                    .clipShape(Circle())
+                EditableProfileAvatar(size: 56)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(displayName)
                         .font(.system(size: 18, weight: .heavy))
@@ -172,12 +165,6 @@ struct DispatchMeScreen: View {
                 Spacer(minLength: 0)
             }
         }
-    }
-
-    private func monogramFor(_ s: String) -> String {
-        let parts = s.split(separator: " ").prefix(2)
-        let initials = parts.compactMap { $0.first.map(String.init) }.joined().uppercased()
-        return initials.isEmpty ? "?" : String(initials.prefix(2))
     }
 
     // MARK: - Sections — every id is a registered .dispatch screen
@@ -310,11 +297,12 @@ struct DispatchMeScreen: View {
                                         summary: String,
                                         rowCount: Int,
                                         @ViewBuilder content: () -> Content) -> some View {
-        let isOpen = expandedHubs.contains(id)
+        let isOpen = expandedHubId == id
         LifecycleCard {
             Button {
                 withAnimation(.easeOut(duration: 0.22)) {
-                    if isOpen { expandedHubs.remove(id) } else { expandedHubs.insert(id) }
+                    expandedHubId = isOpen ? "" : id
+                    returnAnchor = "hub-\(id)"
                 }
             } label: {
                 HStack(spacing: 12) {
@@ -358,10 +346,14 @@ struct DispatchMeScreen: View {
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
+        .id("hub-\(id)")
     }
 
     private func row(label: String, detail: String? = nil, icon: String, to screenId: String) -> some View {
-        Button(action: { swap(to: screenId) }) {
+        Button(action: {
+            returnAnchor = "row-\(screenId)"
+            swap(to: screenId)
+        }) {
             HStack(spacing: 12) {
                 ZStack {
                     Circle().fill(LinearGradient.diagonal).frame(width: 36, height: 36)
@@ -388,6 +380,7 @@ struct DispatchMeScreen: View {
             .padding(.vertical, 4)
         }
         .buttonStyle(.plain)
+        .id("row-\(screenId)")
     }
 
     private func swap(to screenId: String) {
@@ -395,6 +388,14 @@ struct DispatchMeScreen: View {
             name: .eusoDispatchNavSwap,
             object: nil,
             userInfo: ["screenId": screenId]
+        )
+    }
+
+    private func restorePosition(using proxy: ScrollViewProxy) {
+        eusoRestoreScrollPosition(
+            using: proxy,
+            anchor: returnAnchor,
+            fallback: "hub-\(expandedHubId.isEmpty ? "operations" : expandedHubId)"
         )
     }
 }

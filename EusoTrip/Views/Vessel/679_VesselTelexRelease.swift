@@ -119,13 +119,13 @@ private struct VesselTelexReleaseBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("\u{2726} VESSEL OPERATOR · TELEX RELEASE")
+                EusoTripEyebrow("VESSEL OPERATOR · TELEX RELEASE")
                     .font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.primary)
                 Spacer()
                 Text("US IMPORT · 46 CFR")

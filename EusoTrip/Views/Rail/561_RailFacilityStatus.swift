@@ -118,7 +118,7 @@ private struct RailFacilityStatusBody: View {
             .padding(.horizontal, Space.s5).padding(.top, 8)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: Header

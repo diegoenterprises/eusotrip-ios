@@ -180,7 +180,7 @@ struct TerminalHome: View {
             .padding(.top, 8)
         }
         .task { await refreshAll() }
-        .refreshable { await refreshAll() }
+        .eusoRefreshable { await refreshAll() }
         .screenTileRoot()
         // 701_TerminalGateQueue sheet — opened by tapping the
         // "View queue →" CTA on the active-movements section header.
@@ -237,7 +237,7 @@ struct TerminalHome: View {
     // MARK: - Header
     //
     // Bespoke hero — matches the gold-standard Driver-010 idiom: a
-    // gradient eyebrow chip ("✦ TERMINAL · DASHBOARD") with the
+    // branded eyebrow row (EusoTrip mark + "TERMINAL · DASHBOARD") with the
     // time-of-day · context caps trailing on the right (per the SVG
     // header motif, sparkle glyph used exactly once per surface), then
     // the identity headline rendered in the brand gradient so the
@@ -251,7 +251,7 @@ struct TerminalHome: View {
             // time-of-day · live-count, mirroring the Dark-SVG header
             // and the Driver-010 / Shipper-200 idiom.
             HStack {
-                Text("✦ TERMINAL · DASHBOARD")
+                EusoTripEyebrow(verbatim: "TERMINAL · DASHBOARD")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer(minLength: Space.s2)
@@ -1019,13 +1019,11 @@ struct TerminalHomeScreen: View {
 }
 
 private func terminalNavLeading_700() -> [NavSlot] {
-    [NavSlot(label: "Home",      systemImage: "house.fill",      isCurrent: true),
-     NavSlot(label: "Movements", systemImage: "shippingbox.fill", isCurrent: false)]
+    TerminalNavRoute.leading(current: .home)
 }
 
 private func terminalNavTrailing_700() -> [NavSlot] {
-    [NavSlot(label: "Yard", systemImage: "map",    isCurrent: false),
-     NavSlot(label: "Me",   systemImage: "person", isCurrent: false)]
+    TerminalNavRoute.trailing(current: .home)
 }
 
 // MARK: - Previews

@@ -159,14 +159,14 @@ private struct RailDetentionHistoryBody: View {
             .padding(.top, Space.s4)
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
     }
 
     // MARK: - Eyebrow (✦ RAIL ENGINEER · DETENTION  ·  HISTORY)
 
     private var eyebrow: some View {
         HStack {
-            Text("✦  RAIL ENGINEER · DETENTION")
+            EusoTripEyebrow(verbatim: "RAIL ENGINEER · DETENTION")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer()

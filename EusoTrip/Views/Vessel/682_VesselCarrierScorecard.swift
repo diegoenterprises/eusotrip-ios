@@ -163,7 +163,7 @@ private struct VesselCarrierScorecardBody: View {
             }
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - Top bar (DETAIL)
@@ -171,7 +171,7 @@ private struct VesselCarrierScorecardBody: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: Space.s3) {
             HStack {
-                Text("✦ VESSEL OPERATOR · CARRIER SCORECARD")
+                EusoTripEyebrow(verbatim: "VESSEL OPERATOR · CARRIER SCORECARD")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

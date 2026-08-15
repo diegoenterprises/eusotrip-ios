@@ -94,7 +94,7 @@ struct TheHaulStreaks: View {
         }
         .background(palette.bgPage.ignoresSafeArea())
         .task { await store.refresh() }
-        .refreshable { await store.refresh() }
+        .eusoRefreshable { await store.refresh() }
     }
 
     // MARK: Header

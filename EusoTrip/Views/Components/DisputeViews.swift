@@ -131,7 +131,7 @@ struct DisputeListView: View {
         }
         .background(palette.bgPrimary.ignoresSafeArea())
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
         .sheet(item: $detail) { d in
             DisputeDetailView(initial: d, onChanged: { Task { await load() } })
                 .environment(\.palette, palette)

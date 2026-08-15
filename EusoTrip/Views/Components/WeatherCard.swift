@@ -37,6 +37,54 @@ import SwiftUI
 import UIKit
 #endif
 
+private struct AppleWeatherAttributionAsset: Sendable {
+    let lightMarkURL: URL?
+    let darkMarkURL: URL?
+    let legalURL: URL
+}
+
+private actor AppleWeatherAttributionLoader {
+    static let shared = AppleWeatherAttributionLoader()
+    private var cache: [String: AppleWeatherAttributionAsset] = [:]
+
+    private struct Payload: Decodable {
+        let light: String?
+        let dark: String?
+
+        enum CodingKeys: String, CodingKey {
+            case light = "logoLight@2x"
+            case dark = "logoDark@2x"
+        }
+    }
+
+    func load(languageTag: String) async -> AppleWeatherAttributionAsset? {
+        let candidate = languageTag
+            .components(separatedBy: "@").first?
+            .replacingOccurrences(of: "_", with: "-") ?? "en-US"
+        let safeTag = candidate.allSatisfy { $0.isLetter || $0 == "-" } ? candidate : "en-US"
+        if let cached = cache[safeTag] { return cached }
+        guard let endpoint = URL(string: "https://weatherkit.apple.com/attribution/\(safeTag)") else {
+            return nil
+        }
+        do {
+            let (data, response) = try await URLSession.shared.data(from: endpoint)
+            guard let http = response as? HTTPURLResponse,
+                  (200..<300).contains(http.statusCode) else { return nil }
+            let payload = try JSONDecoder().decode(Payload.self, from: data)
+            let base = URL(string: "https://weatherkit.apple.com")!
+            let asset = AppleWeatherAttributionAsset(
+                lightMarkURL: payload.light.flatMap { URL(string: $0, relativeTo: base)?.absoluteURL },
+                darkMarkURL: payload.dark.flatMap { URL(string: $0, relativeTo: base)?.absoluteURL },
+                legalURL: URL(string: "https://weatherkit.apple.com/legal-attribution.html")!
+            )
+            cache[safeTag] = asset
+            return asset
+        } catch {
+            return nil
+        }
+    }
+}
+
 struct WeatherCard: View {
     let snapshot: WeatherSnapshot
     /// Route-aware lane weather for the active load. Nil → the lane
@@ -61,6 +109,16 @@ struct WeatherCard: View {
     /// flip-card (the 6-day forecast now lives inline in the expanded
     /// view as the v2 7-day chip row).
     @State private var expanded: Bool
+    @State private var expandedLaneIDs: Set<String> = []
+    @State private var showAllLaneImpacts = false
+    @State private var esangAnswers: [String: String] = [:]
+    @State private var esangErrors: [String: String] = [:]
+    @State private var esangLoading: Set<String> = []
+    /// Drives only presentation-time astronomy. Provider values and their
+    /// observation timestamp remain untouched while a cached card naturally
+    /// crosses sunrise or sunset on screen.
+    @State private var displayDate = Date()
+    @State private var appleWeatherAttribution: AppleWeatherAttributionAsset?
 
     init(snapshot: WeatherSnapshot,
          lane: LaneWeather? = nil,
@@ -73,25 +131,40 @@ struct WeatherCard: View {
         _expanded = State(initialValue: startExpanded)
     }
 
-    private var isNight: Bool {
-        // Local clock is the *primary* night gate. The previous order
-        // ("symbol first, clock fallback") was wrong because the NWS +
-        // Open-Meteo fallback paths in WeatherService return day-only
-        // SF Symbols (sun.max, cloud.rain.fill, etc.) regardless of
-        // local hour — only WeatherKit emits a night-specific symbol.
-        let h = Calendar.current.component(.hour, from: Date())
-        let clockSaysNight = h >= 20 || h < 6
-        if clockSaysNight { return true }
-        if snapshot.symbol.contains("moon") || snapshot.symbol.contains("night") {
-            return true
-        }
-        return false
+    private var solarState: WeatherSnapshot.SolarState {
+        snapshot.displaySolarState(at: displayDate)
     }
 
+    private var isNight: Bool { solarState == .night }
+
     var body: some View {
-        switch style {
-        case .compact: compactBody
-        case .full:    fullBody
+        Group {
+            switch style {
+            case .compact: compactBody
+            case .full:    fullBody
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoWeatherDisplayClockChanged)) { _ in
+            displayDate = Date()
+        }
+        .task {
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(nanoseconds: 60_000_000_000)
+                } catch {
+                    break
+                }
+                displayDate = Date()
+            }
+        }
+        .task(id: "\(snapshot.dataSource.rawValue):\(Locale.current.identifier)") {
+            guard snapshot.dataSource == .weatherKit || snapshot.dataSource == .appleWeather else {
+                appleWeatherAttribution = nil
+                return
+            }
+            appleWeatherAttribution = await AppleWeatherAttributionLoader.shared.load(
+                languageTag: Locale.current.identifier
+            )
         }
     }
 
@@ -130,8 +203,8 @@ struct WeatherCard: View {
         }
         if let segs = snapshot.laneImpact, !segs.isEmpty {
             parts.append("\(segs.count) loads in this cell")
-            for s in segs {
-                parts.append("\(s.loadId), \(s.route), ETA risk \(s.etaDelayDisplay)")
+            if let highest = rankedLaneSegments.first {
+                parts.append("Highest risk \(highest.loadId), \(highest.route), \(highest.etaDelayDisplay)")
             }
         }
         parts.append(expanded ? "Tap the chevron to collapse." : "Tap to expand the full forecast.")
@@ -150,13 +223,22 @@ struct WeatherCard: View {
             // build-751: the continuous animated sky engine (WeatherSkyView)
             // behind the readout, with the brand route motif on top. Reduce
             // Motion → the engine's single static frame.
-            SkyStageHeroLive(snapshot: snapshot, animated: !reduceMotion, compact: true)
+            SkyStageHeroLive(
+                snapshot: snapshot,
+                animated: !reduceMotion,
+                compact: true,
+                displayDate: displayDate
+            )
                 .allowsHitTesting(false)
 
             VStack(alignment: .leading, spacing: 11) {
                 // top: glyph · location/condition · temp
                 HStack(alignment: .center, spacing: 13) {
-                    WeatherIcons.symbolView(for: snapshot.weatherCode, size: 46)
+                    WeatherIcons.symbolView(
+                        for: snapshot.weatherCode,
+                        isDaylight: solarState.isDaylight,
+                        size: 46
+                    )
                         .shadow(color: WeatherV3.sun.opacity(0.25), radius: 6, y: 4)
                     VStack(alignment: .leading, spacing: 1) {
                         HStack(spacing: 5) {
@@ -350,7 +432,11 @@ struct WeatherCard: View {
                                 .rotationEffect(.degrees(-90))
                         }
                         HStack(spacing: 7) {
-                            WeatherIcons.symbolView(for: point.snapshot.weatherCode, size: 24)
+                            WeatherIcons.symbolView(
+                                for: point.snapshot.weatherCode,
+                                isDaylight: point.snapshot.displaySolarState(at: displayDate).isDaylight,
+                                size: 24
+                            )
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(point.role)
                                     .font(.system(size: 9, weight: .heavy)).tracking(0.5)
@@ -431,7 +517,11 @@ struct WeatherCard: View {
         ZStack(alignment: .topLeading) {
             // build-751: the full continuous animated sky engine behind the
             // expanded hero readout, with the brand route motif on top.
-            SkyStageHeroLive(snapshot: snapshot, animated: !reduceMotion)
+            SkyStageHeroLive(
+                snapshot: snapshot,
+                animated: !reduceMotion,
+                displayDate: displayDate
+            )
                 .allowsHitTesting(false)
 
             VStack(alignment: .leading, spacing: 0) {
@@ -475,7 +565,11 @@ struct WeatherCard: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Collapse weather")
-                        WeatherIcons.symbolView(for: snapshot.weatherCode, size: 64)
+                        WeatherIcons.symbolView(
+                            for: snapshot.weatherCode,
+                            isDaylight: solarState.isDaylight,
+                            size: 64
+                        )
                             .shadow(color: WeatherV3.sun.opacity(0.25), radius: 8, y: 6)
                     }
                 }
@@ -495,7 +589,11 @@ struct WeatherCard: View {
 
                 // hourly ribbon — the v3 temp polyline over a precip area
                 if snapshot.hourly.count >= 2 {
-                    HourlyRibbon(hours: snapshot.hourly, peakIndex: snapshot.peakHourIndex)
+                    HourlyRibbon(
+                        hours: snapshot.hourly,
+                        peakIndex: snapshot.peakHourIndex,
+                        solarSnapshot: snapshot
+                    )
                         .padding(.top, 14)
                         .padding(.horizontal, -16)
                 }
@@ -527,7 +625,22 @@ struct WeatherCard: View {
 
     /// Government ALERT bar — gradient danger fill, real CAP severity +
     /// expiry. Only shown when `heroAlert` is non-nil (honest).
+    @ViewBuilder
     private func alertBar(_ alert: WeatherSnapshot.ActiveAlert) -> some View {
+        if let detailsURL = alert.detailsURL {
+            Link(destination: detailsURL) {
+                alertBarContent(alert, showsLink: true)
+            }
+            .buttonStyle(.plain)
+        } else {
+            alertBarContent(alert, showsLink: false)
+        }
+    }
+
+    private func alertBarContent(
+        _ alert: WeatherSnapshot.ActiveAlert,
+        showsLink: Bool
+    ) -> some View {
         HStack(spacing: 9) {
             WeatherIcons.utility(.alert, size: 18, tint: .white)
             Text(alert.title)
@@ -535,10 +648,15 @@ struct WeatherCard: View {
                 .foregroundStyle(.white)
                 .lineLimit(1)
             Spacer(minLength: Space.s1)
-            Text([alert.severity.label, alert.untilDisplay].compactMap { $0 }.joined(separator: " · "))
+            Text([alert.severity.label, alert.untilDisplay, alert.source].compactMap { $0 }.joined(separator: " · "))
                 .font(.system(size: 11, weight: .heavy)).tracking(0.3)
                 .foregroundStyle(.white.opacity(0.92))
                 .lineLimit(1)
+            if showsLink {
+                Image(systemName: "arrow.up.right.square")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.92))
+            }
         }
         .padding(.horizontal, 12).padding(.vertical, 10)
         .background(
@@ -584,12 +702,14 @@ struct WeatherCard: View {
 
     /// The differentiator: per-load route-cell diagram (weather drawn
     /// crossing the actual lane) + the §3 footer + the mode-specific
-    /// driver tiles + the ESang recommendation. Renders ONLY when
+    /// driver tiles + operational guidance + on-demand ESANG analysis. Renders ONLY when
     /// `laneImpact` has real segments — collapses entirely between loads
     /// or when the route tier is absent.
     @ViewBuilder
     private var laneImpactPanel: some View {
         if let segs = snapshot.laneImpact, !segs.isEmpty {
+            let ranked = rankedLaneSegments
+            let visible = Array(ranked.prefix(showAllLaneImpacts ? ranked.count : min(3, ranked.count)))
             VStack(alignment: .leading, spacing: 0) {
                 // header: route glyph · LANE IMPACT · N-loads pill
                 HStack(spacing: 8) {
@@ -606,12 +726,39 @@ struct WeatherCard: View {
                         .overlay(Capsule().strokeBorder(WeatherV3.danger.opacity(0.46), lineWidth: 1))
                 }
 
-                ForEach(Array(segs.enumerated()), id: \.element.id) { idx, seg in
+                ForEach(Array(visible.enumerated()), id: \.element.id) { idx, seg in
                     if idx > 0 {
                         Rectangle().fill(Color.white.opacity(0.07)).frame(height: 1)
-                            .padding(.vertical, 13)
+                            .padding(.vertical, 8)
                     }
-                    laneSegment(seg).padding(.top, idx == 0 ? 13 : 0)
+                    laneDisclosure(seg).padding(.top, idx == 0 ? 13 : 0)
+                }
+
+                if ranked.count > 3 {
+                    Button {
+                        withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) {
+                            showAllLaneImpacts.toggle()
+                            if !showAllLaneImpacts {
+                                let retained = Set(ranked.prefix(3).map(\.id))
+                                expandedLaneIDs.formIntersection(retained)
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 7) {
+                            Text(showAllLaneImpacts ? "Show fewer" : "Show \(ranked.count - 3) more")
+                            Image(systemName: showAllLaneImpacts ? "chevron.up" : "chevron.down")
+                        }
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.82))
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 14)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(showAllLaneImpacts
+                        ? "Show fewer lane impacts"
+                        : "Show \(ranked.count - 3) more lane impacts")
+                    .accessibilityValue(showAllLaneImpacts ? "All rows shown" : "Three rows shown")
+                    .accessibilityHint("Changes how many active-load weather rows are visible")
                 }
             }
             .padding(15)
@@ -629,6 +776,76 @@ struct WeatherCard: View {
         }
     }
 
+    private var rankedLaneSegments: [WeatherSnapshot.LaneImpactSegment] {
+        (snapshot.laneImpact ?? []).sorted { lhs, rhs in
+            if lhs.riskTier.rank != rhs.riskTier.rank {
+                return lhs.riskTier.rank > rhs.riskTier.rank
+            }
+            return (lhs.etaDelayMin ?? 0) > (rhs.etaDelayMin ?? 0)
+        }
+    }
+
+    private func laneDisclosure(_ seg: WeatherSnapshot.LaneImpactSegment) -> some View {
+        let isOpen = expandedLaneIDs.contains(seg.id)
+        return VStack(alignment: .leading, spacing: 11) {
+            Button {
+                let shouldAnalyze = !isOpen
+                    && esangAnswers[seg.id] == nil
+                    && esangErrors[seg.id] == nil
+                    && !esangLoading.contains(seg.id)
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.86)) {
+                    if isOpen { expandedLaneIDs.remove(seg.id) }
+                    else { expandedLaneIDs.insert(seg.id) }
+                }
+                if shouldAnalyze {
+                    Task { await askESANG(about: seg) }
+                }
+            } label: {
+                HStack(spacing: 11) {
+                    WeatherIcons.utility(modeGlyph(seg.mode), size: 17,
+                                         tint: modeAccent(seg.mode))
+                        .frame(width: 34, height: 34)
+                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(modeAccent(seg.mode).opacity(0.16)))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(seg.loadId)
+                            .font(.system(size: 12, weight: .heavy))
+                            .foregroundStyle(.white)
+                        Text(seg.route.isEmpty ? "Route details" : seg.route)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.white.opacity(0.64))
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 8)
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(seg.headlineDisplay)
+                            .font(.system(size: 13, weight: .heavy))
+                            .foregroundStyle(seg.riskTier.color)
+                            .lineLimit(1)
+                        Text(isOpen ? "Hide" : "Review")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(.white.opacity(0.52))
+                    }
+                    Image(systemName: isOpen ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.55))
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(seg.loadId), \(seg.headlineDisplay)")
+            .accessibilityValue(isOpen ? "Expanded" : "Collapsed")
+            .accessibilityHint(isOpen
+                ? "Collapses route weather details"
+                : "Expands route weather details and requests grounded ESANG analysis")
+
+            if isOpen {
+                laneSegment(seg)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+    }
+
     /// "LANE IMPACT" (truck/default) · "CORRIDOR IMPACT" (rail) ·
     /// "VOYAGE + BERTH IMPACT" (vessel) — from the tri-modal HTML headers.
     private func laneHeaderTitle(_ segs: [WeatherSnapshot.LaneImpactSegment]) -> String {
@@ -641,7 +858,7 @@ struct WeatherCard: View {
 
     /// One full segment block: the route-cell diagram, the footer
     /// (mode chip · id/route/pickup · headline), the mode-specific driver
-    /// tiles, and the ESang recommendation.
+    /// tiles, provider provenance, operational guidance, and ESANG analysis.
     @ViewBuilder
     private func laneSegment(_ seg: WeatherSnapshot.LaneImpactSegment) -> some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -666,12 +883,22 @@ struct WeatherCard: View {
                 driverTiles(seg).padding(.top, 11)
             }
 
-            // §3 recommendation — ESang orb line
+            Text(seg.routeWeatherAttribution)
+                .font(.system(size: 9.5, weight: .bold))
+                .tracking(0.4)
+                .foregroundStyle(.white.opacity(0.48))
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .padding(.top, 8)
+
+            // Deterministic weather-rule guidance is explicitly separated
+            // from ESANG. AI analysis runs only after the operator asks.
             if let rec = seg.recommendation {
-                esangRecommendation(rec).padding(.top, 12)
+                operationalGuidance(rec).padding(.top, 12)
             } else if let suggestion = seg.esangSuggestion {
-                esangFlat(suggestion).padding(.top, 12)
+                operationalGuidance(suggestion).padding(.top, 12)
             }
+
+            esangAnalysis(seg).padding(.top, 10)
         }
     }
 
@@ -739,10 +966,10 @@ struct WeatherCard: View {
                 VStack(spacing: 3) {
                     WeatherIcons.utility(driverGlyph(d.field), size: 17,
                                          tint: driverTint(d.field))
-                    Text(d.value)
+                    Text(d.displayValue)
                         .font(.system(size: 13, weight: .heavy))
                         .monospacedDigit()
-                        .foregroundStyle(.white)
+                        .foregroundStyle(d.available ? Color.white : Color.white.opacity(0.68))
                         .lineLimit(1).minimumScaleFactor(0.7)
                     Text(d.field.uppercased())
                         .font(.system(size: 9)).tracking(0.2)
@@ -757,6 +984,12 @@ struct WeatherCard: View {
                 .overlay(
                     RoundedRectangle(cornerRadius: 13, style: .continuous)
                         .strokeBorder(Color.white.opacity(0.16), lineWidth: 0.5))
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(d.field)
+                .accessibilityValue(d.displayValue)
+                .accessibilityHint(d.available
+                    ? "Live route-weather reading"
+                    : (d.unavailableReason ?? "This measurement was not reported"))
             }
         }
     }
@@ -779,13 +1012,13 @@ struct WeatherCard: View {
         return WeatherIcons.hatch
     }
 
-    /// The §3 recommendation — ESang conic orb + framed text/action/
-    /// protects. `action` is highlighted; the framing text + protected
-    /// outcome read as one sentence. Verbatim from the v3 `.esang`.
-    private func esangRecommendation(_ rec: WeatherSnapshot.Recommendation) -> some View {
+    /// Rules-engine guidance derived from the live weather reduction. This is
+    /// intentionally not branded as ESANG: no model call produced it.
+    private func operationalGuidance(_ rec: WeatherSnapshot.Recommendation) -> some View {
         HStack(alignment: .top, spacing: 11) {
-            esangOrb
-            esangText(rec).font(.system(size: 13))
+            WeatherIcons.utility(.route, size: 17, tint: WeatherV3.nodeOrigin)
+                .frame(width: 26, height: 26)
+            operationalText(rec).font(.system(size: 13))
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, 12).padding(.vertical, 11)
@@ -795,10 +1028,10 @@ struct WeatherCard: View {
                 .strokeBorder(WeatherV3.auroraB.opacity(0.34), lineWidth: 1))
     }
 
-    /// Compose "ESang — {text}. {action} — protects {protects}." with the
+    /// Compose the weather rule's framing, action, and protected outcome. The
     /// action in the brand highlight. Each clause is omitted when empty.
-    private func esangText(_ rec: WeatherSnapshot.Recommendation) -> Text {
-        var t = Text("ESang").bold().foregroundColor(.white)
+    private func operationalText(_ rec: WeatherSnapshot.Recommendation) -> Text {
+        var t = Text("Weather guidance").bold().foregroundColor(.white)
         let framing = rec.text.trimmingCharacters(in: .whitespaces)
         if !framing.isEmpty {
             t = t + Text(" — \(framing). ").foregroundColor(Color(red: 0.93, green: 0.92, blue: 0.96))
@@ -813,11 +1046,11 @@ struct WeatherCard: View {
         return t
     }
 
-    /// Legacy flat ESang line (older payloads with only `esangSuggestion`).
-    private func esangFlat(_ suggestion: String) -> some View {
+    private func operationalGuidance(_ suggestion: String) -> some View {
         HStack(alignment: .top, spacing: 11) {
-            esangOrb
-            (Text("ESang").bold().foregroundStyle(.white)
+            WeatherIcons.utility(.route, size: 17, tint: WeatherV3.nodeOrigin)
+                .frame(width: 26, height: 26)
+            (Text("Weather guidance").bold().foregroundStyle(.white)
              + Text(" — \(suggestion)").foregroundStyle(Color(red: 0.93, green: 0.92, blue: 0.96)))
                 .font(.system(size: 13))
                 .fixedSize(horizontal: false, vertical: true)
@@ -827,6 +1060,99 @@ struct WeatherCard: View {
         .overlay(
             RoundedRectangle(cornerRadius: 15, style: .continuous)
                 .strokeBorder(WeatherV3.auroraB.opacity(0.34), lineWidth: 1))
+    }
+
+    @ViewBuilder
+    private func esangAnalysis(_ seg: WeatherSnapshot.LaneImpactSegment) -> some View {
+        if let answer = esangAnswers[seg.id] {
+            HStack(alignment: .top, spacing: 11) {
+                esangOrb
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("ESANG analysis")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.white)
+                    Text(answer)
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(Color(red: 0.93, green: 0.92, blue: 0.96))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(.horizontal, 12).padding(.vertical, 11)
+            .background(esangBackground)
+            .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous)
+                .strokeBorder(WeatherV3.auroraB.opacity(0.34), lineWidth: 1))
+        } else {
+            Button {
+                Task { await askESANG(about: seg) }
+            } label: {
+                HStack(spacing: 9) {
+                    esangOrb
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(esangLoading.contains(seg.id) ? "ESANG is analyzing…" : "Ask ESANG about this load")
+                            .font(.system(size: 12.5, weight: .bold))
+                            .foregroundStyle(.white)
+                        if let error = esangErrors[seg.id] {
+                            Text(error)
+                                .font(.system(size: 11))
+                                .foregroundStyle(WeatherV3.danger)
+                        } else {
+                            Text("Uses this live route-weather context")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.white.opacity(0.62))
+                        }
+                    }
+                    Spacer(minLength: 0)
+                    if esangLoading.contains(seg.id) {
+                        ProgressView().tint(.white)
+                    } else {
+                        Image(systemName: "arrow.up.right")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(.white.opacity(0.7))
+                    }
+                }
+                .padding(.horizontal, 12).padding(.vertical, 9)
+                .background(esangBackground)
+            }
+            .buttonStyle(.plain)
+            .disabled(esangLoading.contains(seg.id))
+            .accessibilityLabel(esangLoading.contains(seg.id)
+                ? "ESANG is analyzing \(seg.loadId)"
+                : "Ask ESANG about \(seg.loadId)")
+            .accessibilityHint("Uses server-grounded live lane and weather facts")
+        }
+    }
+
+    @MainActor
+    private func askESANG(about seg: WeatherSnapshot.LaneImpactSegment) async {
+        struct Input: Encodable { let loadId: String }
+        struct Output: Decodable {
+            let available: Bool
+            let message: String?
+            let reason: String?
+        }
+
+        esangLoading.insert(seg.id)
+        esangErrors[seg.id] = nil
+        defer { esangLoading.remove(seg.id) }
+
+        do {
+            let result: Output = try await EusoTripAPI.shared.mutation(
+                "weather.analyzeLaneImpact",
+                input: Input(loadId: seg.loadId)
+            )
+            guard result.available else {
+                esangErrors[seg.id] = "ESANG analysis is unavailable right now. Try again."
+                return
+            }
+            guard let answer = result.message?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !answer.isEmpty else {
+                esangErrors[seg.id] = "ESANG returned no analysis. Try again."
+                return
+            }
+            esangAnswers[seg.id] = answer
+        } catch {
+            esangErrors[seg.id] = "ESANG could not analyze this load. Try again."
+        }
     }
 
     /// The ESang conic-gradient orb brand mark (§D.1.5).
@@ -906,7 +1232,7 @@ struct WeatherCard: View {
             Text(day.weekdayLabel == "Today" ? "Today" : day.weekdayLabel)
                 .font(.system(size: 11, weight: .heavy))
                 .foregroundStyle(.white.opacity(0.84))
-            WeatherIcons.symbolView(for: dayCode(day), size: 20)
+            WeatherIcons.symbolView(for: dayCode(day), isDaylight: true, size: 20)
                 .padding(.vertical, 1)
             DayRangeBar(lowF: day.lowF, highF: day.highF,
                         weekLow: weekLow, weekHigh: weekHigh)
@@ -949,15 +1275,28 @@ struct WeatherCard: View {
         // white-on-light was invisible in light mode. Palette tertiary
         // contrasts in both schemes.
         Group {
-            if snapshot.dataSource == .weatherKit {
-                // Apple WeatherKit legal terms REQUIRE a visible "Apple Weather"
-                // mark (already in attributionLine) PLUS a tappable link to the
-                // attribution page on any surface showing WeatherKit data —
-                // omitting it is an App Review rejection. Only rendered when
-                // WeatherKit actually produced the data (honest attribution).
+            if snapshot.dataSource == .weatherKit || snapshot.dataSource == .appleWeather {
+                // Apple provides the current localized mark URLs from its
+                // attribution endpoint. The legal page and official alert
+                // links remain tappable; copied brand artwork is not bundled.
                 HStack(spacing: 4) {
+                    if let asset = appleWeatherAttribution,
+                       let markURL = (scheme == .dark ? asset.darkMarkURL : asset.lightMarkURL) {
+                        Link(destination: asset.legalURL) {
+                            AsyncImage(url: markURL) { image in
+                                image.resizable().scaledToFit()
+                            } placeholder: {
+                                Color.clear
+                            }
+                            .frame(height: 12)
+                        }
+                    }
                     Text(snapshot.attributionLine)
-                    Link("Legal", destination: URL(string: "https://weatherkit.apple.com/legal-attribution.html")!)
+                    Link(
+                        "Legal",
+                        destination: appleWeatherAttribution?.legalURL
+                            ?? URL(string: "https://weatherkit.apple.com/legal-attribution.html")!
+                    )
                         .underline()
                 }
                 .font(.system(size: 11))
@@ -982,7 +1321,11 @@ struct WeatherCard: View {
             // live `weatherCode` (fixing the Fog/Mist↔Thunderstorm coarsening
             // bug) and scales rain/snow/sleet/fog/lightning by the real
             // precip/wind/visibility fields. Reduce Motion → static frame.
-            WeatherSkyView(snapshot: snapshot, animated: !reduceMotion)
+            WeatherSkyView(
+                snapshot: snapshot,
+                animated: !reduceMotion,
+                displayDate: displayDate
+            )
                 .allowsHitTesting(false)
 
             HStack(spacing: Space.s2) {
@@ -1070,7 +1413,11 @@ struct WeatherCard: View {
                         .strokeBorder(Color.white.opacity(0.35), lineWidth: 0.5)
                 )
             // Bespoke vector glyph (no SF Symbol on any weather surface).
-            WeatherIcons.symbolView(for: snapshot.weatherCode, size: glyphSize)
+            WeatherIcons.symbolView(
+                for: snapshot.weatherCode,
+                isDaylight: solarState.isDaylight,
+                size: glyphSize
+            )
                 .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
         }
         .frame(width: size, height: size)

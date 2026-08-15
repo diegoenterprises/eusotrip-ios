@@ -138,7 +138,7 @@ private struct RailShipperHome: View {
             }
         }
         .task { await refreshAll() }
-        .refreshable { await refreshAll() }
+        .eusoRefreshable { await refreshAll() }
     }
 
     // MARK: - Refresh
@@ -156,7 +156,7 @@ private struct RailShipperHome: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("✦ SHIPPER · RAIL · DASHBOARD")
+                EusoTripEyebrow(verbatim: "SHIPPER · RAIL · DASHBOARD")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

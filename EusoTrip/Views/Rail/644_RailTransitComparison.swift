@@ -149,7 +149,7 @@ private struct RailTransitComparisonBody: View {
             .padding(.top, Space.s4)
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
     }
 
     // MARK: - Top bar (eyebrow + back + title + lane/id)
@@ -158,7 +158,7 @@ private struct RailTransitComparisonBody: View {
         VStack(alignment: .leading, spacing: Space.s3) {
             HStack {
                 HStack(spacing: 5) {
-                    Image(systemName: "sparkles")
+                    EusoTripBrandMark(size: 12)
                         .font(.system(size: 8, weight: .heavy))
                         .foregroundStyle(LinearGradient.primary)
                     Text("RAIL ENGINEER · ROUTING")

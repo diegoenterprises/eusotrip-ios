@@ -74,7 +74,7 @@ struct MeSettlements: View {
             .padding(.bottom, Space.s8)
         }
         .task { await seedAndRefresh() }
-        .refreshable { await seedAndRefresh() }
+        .eusoRefreshable { await seedAndRefresh() }
         .onChange(of: session.user?.id) { _, newId in
             store.driverId = Int(newId ?? "0") ?? 0
             Task { await store.refresh() }

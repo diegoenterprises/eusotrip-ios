@@ -179,7 +179,7 @@ struct ShipperAppIntents: View {
 
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("\u{2726} SHIPPER · INTENTS")
+            EusoTripEyebrow("SHIPPER · INTENTS")
                 .font(EType.micro)
                 .tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)

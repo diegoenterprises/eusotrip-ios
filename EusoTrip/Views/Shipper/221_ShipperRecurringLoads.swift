@@ -197,6 +197,7 @@ struct ShipperRecurringLoads: View {
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
             Task { await store.load() }
         }
+        .eusoRefreshHandler { await store.load() }
         .onReceive(NotificationCenter.default.publisher(for: .eusoLoadAssigned)) { _ in
             Task { await store.load() }
         }
@@ -249,7 +250,7 @@ struct ShipperRecurringLoads: View {
 
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("✦ SHIPPER · RECURRING LOADS")
+            EusoTripEyebrow(verbatim: "SHIPPER · RECURRING LOADS")
                 .font(EType.micro)
                 .tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)

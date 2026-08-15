@@ -198,7 +198,7 @@ private struct VesselOceanRateLookupBody: View {
             }
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - Top bar (DETAIL chrome · eyebrow + back + title + overflow)
@@ -206,7 +206,7 @@ private struct VesselOceanRateLookupBody: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("✦  VESSEL OPERATOR · OCEAN RATE")
+                EusoTripEyebrow(verbatim: "VESSEL OPERATOR · OCEAN RATE")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

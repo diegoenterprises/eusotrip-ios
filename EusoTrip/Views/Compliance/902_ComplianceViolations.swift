@@ -22,10 +22,8 @@ struct ComplianceViolationsScreen: View {
     var body: some View {
         Shell(theme: theme) { ViolationsBody() } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home", systemImage: "house", isCurrent: false),
-                          NavSlot(label: "Drivers", systemImage: "person.3.fill", isCurrent: false)],
-                trailing: [NavSlot(label: "Audits", systemImage: "doc.text.magnifyingglass", isCurrent: true),
-                           NavSlot(label: "Me", systemImage: "person", isCurrent: false)],
+                leading: ComplianceNavRoute.leading(current: .audits),
+                trailing: ComplianceNavRoute.trailing(current: .audits),
                 orbState: .idle
             )
         }
@@ -108,7 +106,7 @@ private struct ViolationsBody: View {
             }
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     private var header: some View {

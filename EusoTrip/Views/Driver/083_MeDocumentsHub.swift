@@ -212,7 +212,7 @@ struct MeDocumentsHub: View {
             .padding(.bottom, Space.s8)
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
         .sheet(isPresented: $showUploadPicker) {
             DocumentPickerSheet { url in
                 pendingUploadURL = url

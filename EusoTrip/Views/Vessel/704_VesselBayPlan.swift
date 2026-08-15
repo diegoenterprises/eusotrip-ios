@@ -237,7 +237,7 @@ private struct VesselBayPlanBody704: View {
             .padding(.horizontal, Space.s5)
             .padding(.top, Space.s5)
         }
-        .task { await load() }
+        .eusoRefreshTask { await load() }
     }
 
     // MARK: - Header
@@ -245,7 +245,7 @@ private struct VesselBayPlanBody704: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
-                Text("✦ VESSEL · BAY PLAN · STOW")
+                EusoTripEyebrow(verbatim: "VESSEL · BAY PLAN · STOW")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer(minLength: Space.s2)

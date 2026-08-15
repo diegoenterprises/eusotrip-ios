@@ -70,13 +70,11 @@ struct CatalystVehicleScorecardAxisDetailScreen: View {
 }
 
 private func catalystNavLeading_330B() -> [NavSlot] {
-    [NavSlot(label: "Home",     systemImage: "house",                          isCurrent: false),
-     NavSlot(label: "Dispatch", systemImage: "shippingbox.and.arrow.backward", isCurrent: true)]
+    CarrierNavRoute.leading(current: .drivers)
 }
 
 private func catalystNavTrailing_330B() -> [NavSlot] {
-    [NavSlot(label: "Fleet",  systemImage: "truck.box.fill", isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person",          isCurrent: false)]
+    CarrierNavRoute.trailing(current: .drivers)
 }
 
 // MARK: - Detail row tier (the §92 RegulatoryRow geometry · TENTH port)
@@ -154,7 +152,7 @@ private struct CatalystVehicleScorecardAxisDetailBody: View {
             .padding(.top, 56)
         }
         .task { await loadAll() }
-        .refreshable { await loadAll() }
+        .eusoRefreshable { await loadAll() }
     }
 
     // MARK: - TopBar (eyebrow + entity-ID kicker) + back-to-Scorecard pill
@@ -162,7 +160,7 @@ private struct CatalystVehicleScorecardAxisDetailBody: View {
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
             HStack(spacing: 4) {
-                Image(systemName: "sparkle")
+                EusoTripBrandMark(size: 12)
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
                 Text("CATALYST · VEHICLE · SCORECARD AXIS")

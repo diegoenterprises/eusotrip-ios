@@ -56,7 +56,7 @@ struct MeEmergencyOps: View {
             .padding(.bottom, Space.s8)
         }
         .task { await store.refresh() }
-        .refreshable { await store.refresh() }
+        .eusoRefreshable { await store.refresh() }
         .sheet(item: $responding) { order in
             RespondSheet(order: order, store: store)
                 .eusoSheetX()

@@ -130,14 +130,14 @@ private struct RailETAPredictionBody: View {
             .padding(.top, Space.s4)
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
     }
 
     // MARK: - Eyebrow (✦ RAIL ENGINEER · ETA FORECAST … LIVE)
 
     private var eyebrow: some View {
         HStack {
-            Text("✦ RAIL ENGINEER · ETA FORECAST")
+            EusoTripEyebrow(verbatim: "RAIL ENGINEER · ETA FORECAST")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer()

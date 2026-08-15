@@ -171,14 +171,14 @@ private struct RailClaimWorkflowBody: View {
             }
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
     }
 
     // MARK: - Eyebrow (sparkle once · mono claim caption right)
 
     private var eyebrow: some View {
         HStack {
-            Text("✦ RAIL ENGINEER · CLAIMS")
+            EusoTripEyebrow(verbatim: "RAIL ENGINEER · CLAIMS")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer()

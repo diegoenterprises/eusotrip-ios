@@ -41,8 +41,29 @@ private struct VesselShipperDash: Decodable {
 }
 
 /// vesselShipments.getVesselShipments (EXISTS :121)
+private struct VesselBookingIdentifier: Decodable, Hashable {
+    let value: Int
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let value = try? container.decode(Int.self), value > 0 {
+            self.value = value
+            return
+        }
+        if let raw = try? container.decode(String.self),
+           let value = Int(raw), value > 0 {
+            self.value = value
+            return
+        }
+        throw DecodingError.dataCorruptedError(
+            in: container,
+            debugDescription: "Vessel shipment id must be a positive integer"
+        )
+    }
+}
+
 private struct VesselBooking: Decodable, Identifiable {
-    let id: String
+    let id: VesselBookingIdentifier
     let bookingNumber: String?
     let origin: String?
     let destination: String?
@@ -57,6 +78,11 @@ private struct VesselBooking: Decodable, Identifiable {
     let reefer: Bool?
     let hazmat: Bool?
     let customsHold: Bool?
+}
+
+private struct VesselBookingPage: Decodable {
+    let shipments: [VesselBooking]
+    let total: Int
 }
 
 /// Synthesized attention item — fed from getVesselDemurrage (EXISTS :632)
@@ -157,8 +183,8 @@ private struct VesselShipperHomeBody: View {
             }
         }
         .task { await load() }
-        .refreshable { await load() }
-        .sheet(isPresented: $showCreateBooking) {
+        .eusoRefreshable { await load() }
+            .sheet(isPresented: $showCreateBooking) {
             VesselBookingCreateScreen(theme: palette) { _ in
                 showCreateBooking = false
                 actionError = nil
@@ -172,7 +198,7 @@ private struct VesselShipperHomeBody: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top) {
-                Text("✦ VESSEL SHIPPER · DASHBOARD")
+                EusoTripEyebrow(verbatim: "VESSEL SHIPPER · DASHBOARD")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer(minLength: 8)
@@ -303,7 +329,7 @@ private struct VesselShipperHomeBody: View {
             }
             Spacer(minLength: 8)
             Button {
-                Task { await openBooking(item.bookingNumber) }
+                openBooking(item.bookingNumber)
             } label: {
                 Text("VIEW")
                     .font(.system(size: 11, weight: .bold)).tracking(0.6)
@@ -338,7 +364,7 @@ private struct VesselShipperHomeBody: View {
             .buttonStyle(.plain)
 
             Button {
-                Task { await trackCargo() }
+                trackCargo()
             } label: {
                 Text("Track cargo")
                     .font(.system(size: 15, weight: .semibold))
@@ -421,9 +447,14 @@ private struct VesselShipperHomeBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("See all (\(bookings.count))")
-                    .font(EType.caption)
-                    .foregroundStyle(palette.textSecondary)
+                Button {
+                    VesselShipperNavDispatcher.handle("Bookings")
+                } label: {
+                    Text("See all (\(bookings.count))")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+                .buttonStyle(.plain)
             }
 
             if bookings.isEmpty {
@@ -450,31 +481,37 @@ private struct VesselShipperHomeBody: View {
 
     private func bookingRow(_ b: VesselBooking) -> some View {
         let (statusText, statusColor) = statusStyle(for: b)
-        return HStack(alignment: .top, spacing: Space.s3) {
-            bookingBadge(for: b)
-            VStack(alignment: .leading, spacing: 5) {
-                Text("\(b.origin ?? "-") → \(b.destination ?? "-")")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(palette.textPrimary)
-                    .lineLimit(1).minimumScaleFactor(0.8)
-                Text(metaLine(b))
-                    .font(EType.mono(.caption)).tracking(0.4)
-                    .foregroundStyle(palette.textSecondary)
-                    .lineLimit(1).minimumScaleFactor(0.8)
-                progressDots(b.progress ?? 0)
-                    .padding(.top, 2)
+        return Button {
+            openBooking(b)
+        } label: {
+            HStack(alignment: .top, spacing: Space.s3) {
+                bookingBadge(for: b)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("\(b.origin ?? "-") → \(b.destination ?? "-")")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(1).minimumScaleFactor(0.8)
+                    Text(metaLine(b))
+                        .font(EType.mono(.caption)).tracking(0.4)
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(1).minimumScaleFactor(0.8)
+                    progressDots(b.progress ?? 0)
+                        .padding(.top, 2)
+                }
+                Spacer(minLength: 8)
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text(statusText)
+                        .font(.system(size: 11, weight: .bold)).tracking(0.6)
+                        .foregroundStyle(statusColor)
+                    Text(amountStr(b.amount))
+                        .font(.system(size: 14, weight: .bold)).monospacedDigit()
+                        .foregroundStyle(palette.textPrimary)
+                }
             }
-            Spacer(minLength: 8)
-            VStack(alignment: .trailing, spacing: 4) {
-                Text(statusText)
-                    .font(.system(size: 11, weight: .bold)).tracking(0.6)
-                    .foregroundStyle(statusColor)
-                Text(amountStr(b.amount))
-                    .font(.system(size: 14, weight: .bold)).monospacedDigit()
-                    .foregroundStyle(palette.textPrimary)
-            }
+            .padding(Space.s4)
+            .contentShape(Rectangle())
         }
-        .padding(Space.s4)
+        .buttonStyle(.plain)
     }
 
     private func bookingBadge(for b: VesselBooking) -> some View {
@@ -545,7 +582,7 @@ private struct VesselShipperHomeBody: View {
 
     private var esangCard: some View {
         Button {
-            Task { await openEsangSuggestion() }
+            openEsangSuggestion()
         } label: {
             HStack(spacing: Space.s3) {
                 OrbeSang(state: .idle, diameter: 32)
@@ -644,7 +681,7 @@ private struct VesselShipperHomeBody: View {
             async let dashTask: VesselShipperDash =
                 EusoTripAPI.shared.queryNoInput("vesselShipments.getVesselDashboard")
             // getVesselShipments (EXISTS :121) — active bookings list.
-            async let listTask: [VesselBooking] =
+            async let listTask: VesselBookingPage =
                 EusoTripAPI.shared.query("vesselShipments.getVesselShipments",
                                          input: ListIn(limit: 50, offset: 0))
             // getVesselDemurrage (EXISTS :632) — demurrage exposure rows.
@@ -656,7 +693,7 @@ private struct VesselShipperHomeBody: View {
 
             let (d, list, dem, isf) = try await (dashTask, listTask, demTask, isfTask)
             self.dash = d
-            self.bookings = list
+            self.bookings = list.shipments
             self.attention = buildAttention(demurrage: dem, isf: isf)
         } catch {
             loadError = error.eusoUserCopy
@@ -721,45 +758,495 @@ private struct VesselShipperHomeBody: View {
 
     // MARK: - Actions (do/catch · actionError on failure)
 
-    /// getVesselTrack (EXISTS :1013) / liveTrackOceanShipment (EXISTS :1060)
-    /// back the Track-cargo destination. We validate the live-track endpoint
-    /// is reachable before routing so a dead feed surfaces honestly.
-    private func trackCargo() async {
-        struct TrackOut: Decodable { let positions: [String]? }
-        do {
-            let _: TrackOut = try await EusoTripAPI.shared.queryNoInput(
-                "vesselShipments.liveTrackOceanShipment")
-        } catch {
-            actionError = "Tracking unavailable. "
-                + (error.eusoUserCopy)
+    private func trackCargo() {
+        guard let booking = bookings.first(where: {
+            $0.bookingNumber?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        }) else {
+            actionError = "No assigned vessel booking is available to track."
+            return
+        }
+        openTracking(booking)
+    }
+
+    private func openBooking(_ booking: VesselBooking) {
+        NotificationCenter.default.post(
+            name: .eusoVesselShipperNavSwap,
+            object: nil,
+            userInfo: [
+                "screenId": "Vesl002",
+                "shipmentId": booking.id.value,
+                "bookingNumber": booking.bookingNumber ?? "",
+            ]
+        )
+    }
+
+    private func openBooking(_ bookingNumber: String) {
+        guard let booking = bookings.first(where: {
+            $0.bookingNumber?.caseInsensitiveCompare(bookingNumber) == .orderedSame
+        }) else {
+            actionError = "That booking is no longer in your active vessel list. Refresh and try again."
+            return
+        }
+        openBooking(booking)
+    }
+
+    private func openTracking(_ booking: VesselBooking) {
+        guard let bookingNumber = booking.bookingNumber?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !bookingNumber.isEmpty else {
+            actionError = "This vessel booking does not have a tracking reference yet."
+            return
+        }
+        NotificationCenter.default.post(
+            name: .eusoVesselShipperNavSwap,
+            object: nil,
+            userInfo: [
+                "screenId": "Vesl003",
+                "shipmentId": booking.id.value,
+                "bookingNumber": bookingNumber,
+            ]
+        )
+    }
+
+    private func openEsangSuggestion() {
+        NotificationCenter.default.post(name: .eusoVesselShippereSangTapped, object: nil)
+    }
+}
+
+// MARK: - Native vessel booking board
+
+struct VesselShipperBookingsScreen: View {
+    let theme: Theme.Palette
+
+    var body: some View {
+        Shell(theme: theme) {
+            VesselShipperBookingsBody()
+        } nav: {
+            BottomNav(
+                leading: [
+                    NavSlot(label: "Home", systemImage: "house", isCurrent: false),
+                    NavSlot(label: "Bookings", systemImage: "shippingbox.fill", isCurrent: true),
+                ],
+                trailing: [
+                    NavSlot(label: "Track", systemImage: "location", isCurrent: false),
+                    NavSlot(label: "Me", systemImage: "person", isCurrent: false),
+                ],
+                orbState: .idle
+            )
+        }
+    }
+}
+
+private struct VesselShipperBookingsBody: View {
+    @Environment(\.palette) private var palette
+    @State private var page: VesselBookingPage?
+    @State private var loading = true
+    @State private var errorMessage: String?
+    @State private var query = ""
+
+    private var filtered: [VesselBooking] {
+        guard let shipments = page?.shipments else { return [] }
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !needle.isEmpty else { return shipments }
+        return shipments.filter { booking in
+            [booking.bookingNumber, booking.origin, booking.destination,
+             booking.commodity, booking.carrier]
+                .compactMap { $0?.lowercased() }
+                .contains(where: { $0.contains(needle) })
         }
     }
 
-    private func openBooking(_ bookingNumber: String) async {
-        struct DetailIn: Encodable { let bookingNumber: String }
-        struct DetailOut: Decodable { let id: String? }
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: Space.s4) {
+                HStack {
+                    VStack(alignment: .leading, spacing: Space.s2) {
+                        EusoTripEyebrow(verbatim: "VESSEL SHIPPER · BOOKINGS")
+                        Text("Ocean bookings")
+                            .font(.system(size: 34, weight: .bold))
+                            .foregroundStyle(palette.textPrimary)
+                    }
+                    Spacer()
+                    if let total = page?.total {
+                        Text("\(total)")
+                            .font(EType.mono(.caption))
+                            .foregroundStyle(palette.textSecondary)
+                    }
+                }
+
+                IridescentHairline()
+
+                TextField("Booking, port, commodity or carrier", text: $query)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .padding(.horizontal, Space.s4)
+                    .frame(height: 48)
+                    .background(palette.bgCardSoft)
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(palette.borderSoft))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+
+                if loading {
+                    ProgressView()
+                        .tint(Brand.blue)
+                        .frame(maxWidth: .infinity, minHeight: 180)
+                } else if let errorMessage {
+                    LifecycleCard(accentDanger: true) {
+                        VStack(alignment: .leading, spacing: Space.s3) {
+                            Text(errorMessage)
+                                .font(EType.caption)
+                                .foregroundStyle(Brand.danger)
+                            Button("Try again") { Task { await load() } }
+                                .buttonStyle(.bordered)
+                        }
+                    }
+                } else if filtered.isEmpty {
+                    EusoEmptyState(
+                        systemImage: "shippingbox",
+                        title: query.isEmpty ? "No vessel bookings" : "No matching bookings",
+                        subtitle: query.isEmpty
+                            ? "Create a booking to start the port, cargo, compliance and routing workflow."
+                            : "Try a different booking, port, commodity or carrier.",
+                        cta: query.isEmpty
+                            ? (label: "Create vessel booking", action: openCreateBooking)
+                            : nil
+                    )
+                } else {
+                    LazyVStack(spacing: Space.s3) {
+                        ForEach(filtered) { booking in
+                            bookingRow(booking)
+                        }
+                    }
+                }
+
+                Color.clear.frame(height: 96)
+            }
+            .padding(.horizontal, Space.s5)
+            .padding(.top, Space.s6)
+        }
+        .task { await load() }
+        .eusoRefreshable { await load() }
+    }
+
+    private func bookingRow(_ booking: VesselBooking) -> some View {
+        Button {
+            openDetail(booking)
+        } label: {
+            HStack(spacing: Space.s3) {
+                Image(systemName: booking.reefer == true ? "thermometer.snowflake" : "shippingbox.fill")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(booking.customsHold == true ? Brand.warning : Brand.blue)
+                    .frame(width: 42, height: 42)
+                    .background((booking.customsHold == true ? Brand.warning : Brand.blue).opacity(0.14))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(booking.bookingNumber ?? "Booking reference pending")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(palette.textPrimary)
+                    Text("\(booking.origin ?? "Origin pending") → \(booking.destination ?? "Destination pending")")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(1)
+                    Text([booking.commodity, booking.containerType, booking.carrier]
+                        .compactMap { $0 }
+                        .filter { !$0.isEmpty }
+                        .joined(separator: " · "))
+                        .font(EType.mono(.caption))
+                        .foregroundStyle(palette.textTertiary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: Space.s2)
+                Image(systemName: "chevron.right")
+                    .foregroundStyle(palette.textTertiary)
+            }
+            .padding(Space.s4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(palette.bgCardSoft)
+            .overlay(RoundedRectangle(cornerRadius: Radius.lg).strokeBorder(palette.borderFaint))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            if let reference = booking.bookingNumber, !reference.isEmpty {
+                Button {
+                    openTracking(booking, reference: reference)
+                } label: {
+                    Label("Track booking", systemImage: "location")
+                }
+            }
+        }
+    }
+
+    private func load() async {
+        struct Input: Encodable { let limit: Int; let offset: Int }
+        loading = true
+        errorMessage = nil
         do {
-            let _: DetailOut = try await EusoTripAPI.shared.query(
+            page = try await EusoTripAPI.shared.query(
                 "vesselShipments.getVesselShipments",
-                input: DetailIn(bookingNumber: bookingNumber))
+                input: Input(limit: 200, offset: 0)
+            )
         } catch {
-            actionError = "Couldn't open \(bookingNumber). "
-                + (error.eusoUserCopy)
+            errorMessage = error.eusoUserCopy
         }
+        loading = false
     }
 
-    /// ESang demurrage suggestion taps into getVesselDemurrage (EXISTS :632)
-    /// for the live free-time window. STUB · named-gap:
-    /// vesselShipments.esangVesselSuggestion (no AI suggestion endpoint yet).
-    private func openEsangSuggestion() async {
-        struct DemOut: Decodable { let bookingNumber: String? }
-        do {
-            let _: [DemOut] = try await EusoTripAPI.shared.queryNoInput(
-                "vesselShipments.getVesselDemurrage")
-        } catch {
-            actionError = "ESang couldn't refresh demurrage. "
-                + (error.eusoUserCopy)
+    private func openDetail(_ booking: VesselBooking) {
+        NotificationCenter.default.post(
+            name: .eusoVesselShipperNavSwap,
+            object: nil,
+            userInfo: [
+                "screenId": "Vesl002",
+                "shipmentId": booking.id.value,
+                "bookingNumber": booking.bookingNumber ?? "",
+            ]
+        )
+    }
+
+    private func openTracking(_ booking: VesselBooking, reference: String) {
+        NotificationCenter.default.post(
+            name: .eusoVesselShipperNavSwap,
+            object: nil,
+            userInfo: [
+                "screenId": "Vesl003",
+                "shipmentId": booking.id.value,
+                "bookingNumber": reference,
+            ]
+        )
+    }
+
+    private func openCreateBooking() {
+        NotificationCenter.default.post(
+            name: .eusoVesselShipperNavSwap,
+            object: nil,
+            userInfo: ["screenId": "Vesl010"]
+        )
+    }
+}
+
+// MARK: - Tracking reference lookup
+
+struct VesselShipperTrackingLookupScreen: View {
+    let theme: Theme.Palette
+
+    var body: some View {
+        Shell(theme: theme) {
+            VesselShipperTrackingLookupBody()
+        } nav: {
+            BottomNav(
+                leading: [
+                    NavSlot(label: "Home", systemImage: "house", isCurrent: false),
+                    NavSlot(label: "Bookings", systemImage: "shippingbox", isCurrent: false),
+                ],
+                trailing: [
+                    NavSlot(label: "Track", systemImage: "location.fill", isCurrent: true),
+                    NavSlot(label: "Me", systemImage: "person", isCurrent: false),
+                ],
+                orbState: .idle
+            )
         }
+    }
+}
+
+private struct VesselShipperTrackingLookupBody: View {
+    @Environment(\.palette) private var palette
+    @State private var reference = ""
+    @State private var submitting = false
+    @State private var errorMessage: String?
+    @State private var bookingPage: VesselBookingPage?
+    @State private var bookingListLoading = true
+    @State private var bookingListError: String?
+
+    private var trackableBookings: [VesselBooking] {
+        Array((bookingPage?.shipments ?? [])
+            .filter { !($0.bookingNumber ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .prefix(12))
+    }
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: Space.s4) {
+                EusoTripEyebrow(verbatim: "VESSEL SHIPPER · LIVE TRACKING")
+                Text("Track ocean cargo")
+                    .font(.system(size: 34, weight: .bold))
+                    .foregroundStyle(palette.textPrimary)
+                Text("Use an assigned booking number from your vessel account.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                IridescentHairline()
+
+                TextField("Booking number", text: $reference)
+                    .textInputAutocapitalization(.characters)
+                    .autocorrectionDisabled()
+                    .padding(.horizontal, Space.s4)
+                    .frame(height: 50)
+                    .background(palette.bgCardSoft)
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(palette.borderSoft))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+
+                if let errorMessage {
+                    Text(errorMessage)
+                        .font(EType.caption)
+                        .foregroundStyle(Brand.danger)
+                }
+
+                Button {
+                    Task { await openTracking() }
+                } label: {
+                    HStack(spacing: Space.s2) {
+                        if submitting { ProgressView().tint(.white) }
+                        Image(systemName: "location.viewfinder")
+                        Text("Open live tracking")
+                            .font(.system(size: 15, weight: .bold))
+                    }
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, minHeight: 50)
+                    .background(LinearGradient.primary)
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+                }
+                .buttonStyle(.plain)
+                .disabled(submitting || reference.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                IridescentHairline()
+
+                HStack {
+                    Text("YOUR BOOKINGS")
+                        .font(EType.mono(.caption))
+                        .foregroundStyle(palette.textTertiary)
+                    Spacer()
+                    if bookingListLoading {
+                        ProgressView().controlSize(.small).tint(Brand.blue)
+                    }
+                }
+
+                if let bookingListError {
+                    LifecycleCard(accentDanger: true) {
+                        VStack(alignment: .leading, spacing: Space.s2) {
+                            Text(bookingListError)
+                                .font(EType.caption)
+                                .foregroundStyle(Brand.danger)
+                            Button("Refresh bookings") { Task { await loadBookings() } }
+                                .buttonStyle(.bordered)
+                        }
+                    }
+                } else if !bookingListLoading && trackableBookings.isEmpty {
+                    EusoEmptyState(
+                        systemImage: "shippingbox",
+                        title: "No trackable bookings",
+                        subtitle: "Create a vessel booking, then its live tracking reference will appear here.",
+                        cta: (label: "Create vessel booking", action: openCreateBooking)
+                    )
+                } else {
+                    LazyVStack(spacing: Space.s2) {
+                        ForEach(trackableBookings) { booking in
+                            Button {
+                                openTracking(booking)
+                            } label: {
+                                HStack(spacing: Space.s3) {
+                                    Image(systemName: "location.fill")
+                                        .foregroundStyle(Brand.blue)
+                                        .frame(width: 36, height: 36)
+                                        .background(Brand.blue.opacity(0.12))
+                                        .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(booking.bookingNumber ?? "")
+                                            .font(.system(size: 15, weight: .semibold))
+                                            .foregroundStyle(palette.textPrimary)
+                                        Text("\(booking.origin ?? "Origin pending") → \(booking.destination ?? "Destination pending")")
+                                            .font(EType.caption)
+                                            .foregroundStyle(palette.textSecondary)
+                                            .lineLimit(1)
+                                    }
+                                    Spacer(minLength: Space.s2)
+                                    Image(systemName: "chevron.right")
+                                        .foregroundStyle(palette.textTertiary)
+                                }
+                                .padding(Space.s3)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(palette.bgCardSoft)
+                                .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(palette.borderFaint))
+                                .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+
+                Color.clear.frame(height: 96)
+            }
+            .padding(.horizontal, Space.s5)
+            .padding(.top, Space.s6)
+        }
+        .task { await loadBookings() }
+        .eusoRefreshable { await loadBookings() }
+    }
+
+    private func loadBookings() async {
+        struct Input: Encodable { let limit: Int; let offset: Int }
+        bookingListLoading = true
+        bookingListError = nil
+        do {
+            bookingPage = try await EusoTripAPI.shared.query(
+                "vesselShipments.getVesselShipments",
+                input: Input(limit: 50, offset: 0)
+            )
+        } catch {
+            bookingListError = error.eusoUserCopy
+        }
+        bookingListLoading = false
+    }
+
+    private func openTracking(_ booking: VesselBooking) {
+        guard let bookingNumber = booking.bookingNumber?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !bookingNumber.isEmpty else { return }
+        reference = bookingNumber
+        NotificationCenter.default.post(
+            name: .eusoVesselShipperNavSwap,
+            object: nil,
+            userInfo: [
+                "screenId": "Vesl003",
+                "shipmentId": booking.id.value,
+                "bookingNumber": bookingNumber,
+            ]
+        )
+    }
+
+    private func openCreateBooking() {
+        NotificationCenter.default.post(
+            name: .eusoVesselShipperNavSwap,
+            object: nil,
+            userInfo: ["screenId": "Vesl010"]
+        )
+    }
+
+    @MainActor
+    private func openTracking() async {
+        struct Input: Encodable { let bookingNumber: String }
+        struct Probe: Decodable { let found: Bool }
+        let cleaned = reference.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        guard !cleaned.isEmpty else { return }
+        submitting = true
+        errorMessage = nil
+        do {
+            let probe: Probe = try await EusoTripAPI.shared.query(
+                "vesselShipments.getOceanTrackingBoard",
+                input: Input(bookingNumber: cleaned)
+            )
+            guard probe.found else {
+                errorMessage = "No assigned vessel booking matches that reference."
+                submitting = false
+                return
+            }
+            NotificationCenter.default.post(
+                name: .eusoVesselShipperNavSwap,
+                object: nil,
+                userInfo: ["screenId": "Vesl003", "bookingNumber": cleaned]
+            )
+        } catch {
+            errorMessage = error.eusoUserCopy
+        }
+        submitting = false
     }
 }
 
@@ -895,9 +1382,20 @@ private enum VesselBookingPortRole: String, Identifiable {
     var title: String { self == .origin ? "Origin port" : "Destination port" }
 }
 
-private struct VesselBookingCreateScreen: View {
+struct VesselBookingCreateScreen: View {
     let theme: Theme.Palette
     let onCreated: (String) -> Void
+    let onCancel: (() -> Void)?
+
+    init(
+        theme: Theme.Palette,
+        onCreated: @escaping (String) -> Void,
+        onCancel: (() -> Void)? = nil
+    ) {
+        self.theme = theme
+        self.onCreated = onCreated
+        self.onCancel = onCancel
+    }
 
     @Environment(\.dismiss) private var dismiss
 
@@ -1071,7 +1569,10 @@ private struct VesselBookingCreateScreen: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        if let onCancel { onCancel() }
+                        else { dismiss() }
+                    }
                         .disabled(isSubmitting)
                 }
             }
@@ -1339,6 +1840,29 @@ private struct VesselBookingCreateScreen: View {
         } catch {
             actionError = error.eusoUserCopy
         }
+    }
+}
+
+/// Stack-owned create destination used by BottomNav and ESANG. It reuses the
+/// same production booking form as the Home sheet and routes completion/back
+/// through the Vessel Shipper surface rather than relying on modal dismissal.
+struct VesselShipperCreateBookingScreen: View {
+    let theme: Theme.Palette
+
+    var body: some View {
+        VesselBookingCreateScreen(
+            theme: theme,
+            onCreated: { _ in
+                NotificationCenter.default.post(
+                    name: .eusoVesselShipperNavSwap,
+                    object: nil,
+                    userInfo: ["screenId": "Vesl011"]
+                )
+            },
+            onCancel: {
+                NotificationCenter.default.post(name: .eusoVesselShipperNavBack, object: nil)
+            }
+        )
     }
 }
 

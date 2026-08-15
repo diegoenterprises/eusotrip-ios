@@ -142,14 +142,14 @@ private struct RailLossPreventionBody: View {
             .padding(.top, Space.s4)
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
     }
 
     // MARK: - Eyebrow (sparkle once · 12 MO mono)
 
     private var eyebrow: some View {
         HStack {
-            Text("✦ RAIL ENGINEER · LOSS PREVENTION")
+            EusoTripEyebrow(verbatim: "RAIL ENGINEER · LOSS PREVENTION")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer()

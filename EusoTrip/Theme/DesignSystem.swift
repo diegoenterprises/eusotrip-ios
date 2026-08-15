@@ -658,6 +658,56 @@ struct NavSlot: Identifiable {
     var onTap: () -> Void = {}
 }
 
+/// A stable, role-owned dock destination. Screen files may still describe a
+/// local BottomNav for previews, but a signed-in role surface installs one of
+/// these contracts and `Shell` renders it in preference to screen-owned chrome.
+/// This prevents a child screen from changing the user's four primary tools or
+/// accidentally routing through another role's string aliases.
+struct RoleDockItem: Identifiable {
+    let destinationId: String
+    let label: String
+    let systemImage: String
+
+    var id: String { destinationId }
+}
+
+struct RoleDockContract {
+    let leading: [RoleDockItem]
+    let trailing: [RoleDockItem]
+    let activeDestinationId: String
+    let select: (String) -> Void
+    let openESang: () -> Void
+
+    static func four(
+        home: RoleDockItem,
+        workOne: RoleDockItem,
+        workTwo: RoleDockItem,
+        me: RoleDockItem,
+        active: String,
+        select: @escaping (String) -> Void,
+        openESang: @escaping () -> Void
+    ) -> RoleDockContract {
+        RoleDockContract(
+            leading: [home, workOne],
+            trailing: [workTwo, me],
+            activeDestinationId: active,
+            select: select,
+            openESang: openESang
+        )
+    }
+}
+
+private struct RoleDockContractKey: EnvironmentKey {
+    static let defaultValue: RoleDockContract? = nil
+}
+
+extension EnvironmentValues {
+    var roleDockContract: RoleDockContract? {
+        get { self[RoleDockContractKey.self] }
+        set { self[RoleDockContractKey.self] = newValue }
+    }
+}
+
 /// THE bottom-nav definition for every role. One source of truth, on purpose.
 ///
 /// WHY THIS EXISTS. Every screen used to hand-roll its own `NavSlot` pair in a
@@ -718,6 +768,10 @@ struct BottomNav: View {
     let trailing: [NavSlot]  // exactly 2
     var orbState: OrbeSang.State = .idle
     var onTapOrb: () -> Void = {}
+    /// Role-owned Shell docks set this to false because every slot already
+    /// carries a typed destination closure. Legacy/preview docks retain the
+    /// environment-handler bridge until their call sites are retired.
+    var routesThroughEnvironment: Bool = true
     /// Press-and-hold handler — fires when the orb is held ~0.45s.
     /// Defaults to the universal autopilot entry: a haptic + posting
     /// `.esangEnterAutopilot` and latching `eSangAutopilot.pendingAutopilotActivation`
@@ -779,6 +833,7 @@ struct BottomNav: View {
     @Environment(\.dispatchNavHandler)      var dispatchNavHandler
     @Environment(\.railEngineerNavHandler)  var railEngineerNavHandler
     @Environment(\.vesselOperatorNavHandler) var vesselOperatorNavHandler
+    @Environment(\.vesselShipperNavHandler) var vesselShipperNavHandler
 
     /// Resolves the first injected handler in priority order. Only
     /// one role's handler is ever in the env at a time (each surface
@@ -798,6 +853,7 @@ struct BottomNav: View {
             ?? dispatchNavHandler
         let modalHandlers: ((String) -> Void)? = railEngineerNavHandler
             ?? vesselOperatorNavHandler
+            ?? vesselShipperNavHandler
         return truckHandlers ?? platformHandlers ?? modalHandlers
     }
 
@@ -897,7 +953,7 @@ struct BottomNav: View {
                             longPressFired = false
                             return
                         }
-                        if let h = activeNavHandler {
+                        if routesThroughEnvironment, let h = activeNavHandler {
                             h("esang")
                         } else {
                             onTapOrb()
@@ -991,7 +1047,7 @@ struct BottomNav: View {
         // through to the slot's local `onTap` — this keeps per-slot
         // closures (and the default no-op) working in isolation.
         Button(action: {
-            if let h = activeNavHandler {
+            if routesThroughEnvironment, let h = activeNavHandler {
                 h(s.label)
             } else {
                 s.onTap()
@@ -1472,6 +1528,7 @@ struct Shell<Content: View, Nav: View>: View {
     let theme: Theme.Palette
     @ViewBuilder var content: () -> Content
     @ViewBuilder var nav: () -> Nav
+    @Environment(\.roleDockContract) private var roleDockContract
 
     var body: some View {
         // The app runs inside a real device (or the Simulator's own chrome),
@@ -1489,9 +1546,19 @@ struct Shell<Content: View, Nav: View>: View {
                 .ignoresSafeArea()
             ScrollView(.vertical, showsIndicators: false) {
                 content()
+                if let roleDockContract,
+                   RoleSettingsCatalog.needsSharedEntry(for: roleDockContract) {
+                    RoleSettingsAccessCard()
+                        .padding(.horizontal, Space.s4)
+                        .padding(.top, Space.s4)
+                }
                 Color.clear.frame(height: Device.navHeight + Device.safeBottom + Space.s4)
             }
-            nav()
+            if let roleDockContract {
+                roleDock(roleDockContract)
+            } else {
+                nav()
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         // Hard-pin the entire Shell to the device frame regardless of
@@ -1508,6 +1575,30 @@ struct Shell<Content: View, Nav: View>: View {
         // nav child which didn't affect the parent's geometry.
         .ignoresSafeArea(.keyboard, edges: .bottom)
         .environment(\.palette, theme)
+    }
+
+    private func roleDock(_ contract: RoleDockContract) -> some View {
+        BottomNav(
+            leading: contract.leading.map { item in
+                NavSlot(
+                    label: item.label,
+                    systemImage: item.systemImage,
+                    isCurrent: item.destinationId == contract.activeDestinationId,
+                    onTap: { contract.select(item.destinationId) }
+                )
+            },
+            trailing: contract.trailing.map { item in
+                NavSlot(
+                    label: item.label,
+                    systemImage: item.systemImage,
+                    isCurrent: item.destinationId == contract.activeDestinationId,
+                    onTap: { contract.select(item.destinationId) }
+                )
+            },
+            orbState: .idle,
+            onTapOrb: contract.openESang,
+            routesThroughEnvironment: false
+        )
     }
 }
 
@@ -1665,4 +1756,3 @@ extension View {
         modifier(EusoCardModifier(radius: radius, intensity: .whisper))
     }
 }
-

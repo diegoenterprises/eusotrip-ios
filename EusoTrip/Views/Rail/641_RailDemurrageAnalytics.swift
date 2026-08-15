@@ -149,7 +149,7 @@ private struct RailDemurrageAnalyticsBody: View {
             .padding(.horizontal, 16).padding(.top, 8)
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
     }
 
     // MARK: - Eyebrow row (✦ RAIL ENGINEER · DEMURRAGE  ·  30-DAY)
@@ -157,7 +157,7 @@ private struct RailDemurrageAnalyticsBody: View {
     private var eyebrow: some View {
         HStack {
             HStack(spacing: 6) {
-                Image(systemName: "sparkle")
+                EusoTripBrandMark(size: 12)
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.primary)
                 Text("RAIL ENGINEER · DEMURRAGE")

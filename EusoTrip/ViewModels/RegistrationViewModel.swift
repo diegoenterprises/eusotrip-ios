@@ -193,6 +193,8 @@ final class RegistrationViewModel: ObservableObject {
               acceptsTerms, acceptsPrivacy else { return false }
 
         switch role {
+        case .serviceProvider:
+            return false
         case .catalyst, .shipper, .broker:
             return !companyName.isEmpty
         case .compliance, .safety:
@@ -238,6 +240,9 @@ final class RegistrationViewModel: ObservableObject {
         do {
             let successMessage: String
             switch role {
+            case .serviceProvider:
+                phase = .error("Repair providers onboard through the Zeun Provider Network after signing in with an existing company account.")
+                return
             case .driver:
                 _ = try await api.registration.registerDriver(.init(
                     email: email,

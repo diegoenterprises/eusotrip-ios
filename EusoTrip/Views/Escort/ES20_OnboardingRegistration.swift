@@ -370,7 +370,7 @@ struct EscortOnboardingRegistration: View {
         .safeAreaInset(edge: .bottom) { ctaBar }
         .overlay(alignment: .top) { toastBanner }
         .task { await load() }
-        .refreshable { await load(forceNetwork: true) }
+        .eusoRefreshable { await load(forceNetwork: true) }
         .fileImporter(isPresented: $pickerPresented,
                       allowedContentTypes: [.pdf, .image, .item],
                       allowsMultipleSelection: false) { result in
@@ -394,7 +394,7 @@ struct EscortOnboardingRegistration: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 4) {
-                Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy))
+                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
                 Text("ESCORT · ONBOARDING").font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.diagonal)
@@ -1399,14 +1399,8 @@ struct EscortOnboardingRegistrationScreen: View {
             // Escort role enum TRIP · COMMS | PERMIT · ME — the application lives
             // under ME beside the cert wallet, mirroring ES-08 and ES-12.
             BottomNav(
-                leading: [
-                    NavSlot(label: "Trip",  systemImage: "house",       isCurrent: false),
-                    NavSlot(label: "Comms", systemImage: "bubble.left", isCurrent: false),
-                ],
-                trailing: [
-                    NavSlot(label: "Permit", systemImage: "doc.text", isCurrent: false),
-                    NavSlot(label: "Me",     systemImage: "person",   isCurrent: true),
-                ],
+                leading: EscortNavRoute.leading(current: .me),
+                trailing: EscortNavRoute.trailing(current: .me),
                 orbState: .idle
             )
         }

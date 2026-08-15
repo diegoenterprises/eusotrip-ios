@@ -625,7 +625,7 @@ private struct ProcurementEyebrow: View {
     var showRegister: Bool = true
     var body: some View {
         HStack {
-            Text("✦ CATALYST · PROCUREMENT")
+            EusoTripEyebrow(verbatim: "CATALYST · PROCUREMENT")
                 .font(EType.micro).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer()
@@ -977,18 +977,8 @@ extension Notification.Name {
 /// Every slot routes through the real `CarrierNavDispatcher`, so "fleet"
 /// resolves through `CarrierNavRoute.map["fleet"]` (CarrierNavController.swift:87).
 private func catalystNav404() -> ([NavSlot], [NavSlot]) {
-    let leading = [
-        NavSlot(label: "Home",     systemImage: "house.fill", isCurrent: false,
-                onTap: { Task { @MainActor in CarrierNavDispatcher.handle("home") } }),
-        NavSlot(label: "Dispatch", systemImage: "tray.full",  isCurrent: false,
-                onTap: { Task { @MainActor in CarrierNavDispatcher.handle("dispatch") } }),
-    ]
-    let trailing = [
-        NavSlot(label: "Fleet", systemImage: "truck.box",   isCurrent: true,
-                onTap: { Task { @MainActor in CarrierNavDispatcher.handle("fleet") } }),
-        NavSlot(label: "Me",    systemImage: "person.fill", isCurrent: false,
-                onTap: { Task { @MainActor in CarrierNavDispatcher.handle("me") } }),
-    ]
+    let leading = CarrierNavRoute.leading(current: .drivers)
+    let trailing = CarrierNavRoute.trailing(current: .drivers)
     return (leading, trailing)
 }
 

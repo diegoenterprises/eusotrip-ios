@@ -68,10 +68,8 @@ struct BrokerCatalystVettingScreen: View {
     var body: some View {
         Shell(theme: theme) { CatalystVettingBody() } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home",     systemImage: "house",            isCurrent: false),
-                          NavSlot(label: "Loads",    systemImage: "shippingbox.fill", isCurrent: false)],
-                trailing: [NavSlot(label: "Carriers", systemImage: "person.3.fill",   isCurrent: true),
-                           NavSlot(label: "Me",       systemImage: "person",          isCurrent: false)],
+                leading: BrokerNavRoute.leading(current: .carriers),
+                trailing: BrokerNavRoute.trailing(current: .carriers),
                 orbState: .idle
             )
         }
@@ -118,7 +116,7 @@ private struct CatalystVettingBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await loadAll() }
-        .refreshable { await loadAll() }
+        .eusoRefreshable { await loadAll() }
     }
 
     // MARK: subviews

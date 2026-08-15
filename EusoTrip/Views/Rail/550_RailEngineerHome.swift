@@ -103,7 +103,7 @@ private struct RailEngineerHomeBody: View {
             }
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - Top bar
@@ -112,12 +112,12 @@ private struct RailEngineerHomeBody: View {
         VStack(alignment: .leading, spacing: Space.s2) {
             // Bespoke eyebrow row — gradient role chip on the left, caps
             // live fleet stat on the right. Mirrors the 550 SVG header
-            // motif ("✦ RAIL ENGINEER · HOME" + "8 ACTIVE · 23 CARS")
+            // motif (EusoTrip mark + "RAIL ENGINEER · HOME" + "8 ACTIVE · 23 CARS")
             // and the DriverHome idiom so every role home reads as one
             // family. The sparkle glyph is the surface's single §4.3
             // accent budget.
             HStack(spacing: Space.s3) {
-                Text("✦ RAIL ENGINEER · DASHBOARD")
+                EusoTripEyebrow(verbatim: "RAIL ENGINEER · DASHBOARD")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer(minLength: Space.s2)

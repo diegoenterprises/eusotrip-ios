@@ -176,7 +176,7 @@ private struct RailCarmanCertRegistryBody: View {
             .padding(.top, Space.s5)
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
         .sheet(isPresented: $showAddSheet) {
             VStack(alignment: .leading, spacing: Space.s3) {
                 Text("Certify Carman").font(EType.h2).foregroundStyle(palette.textPrimary)
@@ -224,7 +224,7 @@ private struct RailCarmanCertRegistryBody: View {
 
     private var eyebrowRow: some View {
         HStack(spacing: 0) {
-            Text("✦ RAIL ENGINEER · CARMAN REGISTRY")
+            EusoTripEyebrow(verbatim: "RAIL ENGINEER · CARMAN REGISTRY")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer(minLength: 8)

@@ -130,7 +130,7 @@ struct EscortRouteSurvey: View {
             })
             .environment(\.palette, palette)
         }
-        .task { await load() }
+        .eusoRefreshTask { await load() }
     }
 
     private var header: some View {
@@ -385,14 +385,8 @@ struct EscortRouteSurveyScreen: View {
             EscortRouteSurvey(assignmentId: assignmentId)
         } nav: {
             BottomNav(
-                leading: [
-                    NavSlot(label: "Home",        systemImage: "house",                  isCurrent: false),
-                    NavSlot(label: "Assignments", systemImage: "shield.lefthalf.filled", isCurrent: true),
-                ],
-                trailing: [
-                    NavSlot(label: "Corridor", systemImage: "map",    isCurrent: false),
-                    NavSlot(label: "Me",       systemImage: "person", isCurrent: false),
-                ],
+                leading: EscortNavRoute.leading(current: .assignments),
+                trailing: EscortNavRoute.trailing(current: .assignments),
                 orbState: .idle
             )
         }

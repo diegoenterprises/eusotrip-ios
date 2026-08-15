@@ -116,14 +116,14 @@ private struct VesselIMDGDGRulesBody: View {
             }
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - Top bar (eyebrow + UN/CLASS mono)
 
     private var topBar: some View {
         HStack(alignment: .top) {
-            Text("✦ VESSEL OPERATOR · IMDG DG RULES")
+            EusoTripEyebrow(verbatim: "VESSEL OPERATOR · IMDG DG RULES")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer(minLength: 8)

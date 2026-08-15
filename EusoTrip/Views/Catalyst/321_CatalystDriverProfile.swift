@@ -61,13 +61,11 @@ struct CatalystDriverProfileScreen: View {
 }
 
 private func catalystNavLeading_321() -> [NavSlot] {
-    [NavSlot(label: "Home",     systemImage: "house",                          isCurrent: false),
-     NavSlot(label: "Dispatch", systemImage: "shippingbox.and.arrow.backward", isCurrent: true)]
+    CarrierNavRoute.leading(current: .drivers)
 }
 
 private func catalystNavTrailing_321() -> [NavSlot] {
-    [NavSlot(label: "My Loads", systemImage: "shippingbox.fill", isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person",      isCurrent: false)]
+    CarrierNavRoute.trailing(current: .drivers)
 }
 
 // MARK: - Body
@@ -125,6 +123,7 @@ private struct CatalystDriverProfile: View {
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
             Task { await loadAll() }
         }
+        .eusoRefreshHandler { await loadAll() }
         .onReceive(NotificationCenter.default.publisher(for: .eusoProfileUpdated)) { _ in
             Task { await loadAll() }
         }
@@ -151,7 +150,7 @@ private struct CatalystDriverProfile: View {
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
             HStack(spacing: 4) {
-                Image(systemName: "sparkles")
+                EusoTripBrandMark(size: 12)
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
                 Text("CATALYST · DRIVER · PROFILE")

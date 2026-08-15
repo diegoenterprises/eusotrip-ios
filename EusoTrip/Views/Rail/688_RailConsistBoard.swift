@@ -600,7 +600,7 @@ private struct RailConsistBoardBody688: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
         .overlay(alignment: .bottom) { toastView }
         .sheet(isPresented: $showBuildSheet) { buildSheet }
         .sheet(isPresented: $showYardSheet) { yardSheet }
@@ -641,7 +641,7 @@ private struct RailConsistBoardBody688: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
-                Text("✦ CARRIER · RAIL · CONSIST")
+                EusoTripEyebrow(verbatim: "CARRIER · RAIL · CONSIST")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.diagonal)
                 Spacer(minLength: 8)

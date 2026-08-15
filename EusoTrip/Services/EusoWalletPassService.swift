@@ -73,36 +73,27 @@ final class EusoWalletPassService {
     static let shared = EusoWalletPassService()
     private init() {}
 
-    /// Coerce whatever id a caller hands us into the numeric form the
-    /// server's `createPickupCredential` expects (it `parseInt`s the
-    /// value). "LD-1039" → "1039", "load_1039" → "1039", "1039" →
-    /// "1039". If the string carries no digits we pass it through
-    /// untouched so the server can return its own validation error
-    /// rather than us silently swallowing it.
+    /// Normalize only the display-id forms the app actually emits. Never
+    /// concatenate arbitrary digits: `LD-10-39` must not become database load
+    /// 1039 and accidentally target a different credential.
     static func numericLoadId(from raw: String) -> String {
-        let trimmed = raw.trimmingCharacters(in: .whitespaces)
-        if Int(trimmed) != nil { return trimmed }   // already clean numeric
-        let digits = trimmed.filter(\.isNumber)
-        return digits.isEmpty ? trimmed : digits
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty, trimmed.allSatisfy(\.isNumber) { return trimmed }
+
+        let lowercased = trimmed.lowercased()
+        for prefix in ["ld-", "load_", "load-"] where lowercased.hasPrefix(prefix) {
+            let suffix = String(trimmed.dropFirst(prefix.count))
+            if !suffix.isEmpty, suffix.allSatisfy(\.isNumber) { return suffix }
+        }
+        return trimmed
     }
 
-    /// Server-side credential payload, decoded from
-    /// `eusoWallet.createPickupCredential`. Returned shape mirrors the
-    /// web `customerPortal.createPortalAccess` envelope so the same
-    /// audit + revoke flow applies on both platforms. `loadNumber` is
-    /// optional — server populates it for display, and we surface it
-    /// in the inline-fallback caption when present.
-    struct PickupCredential: Decodable {
-        let loadId: String
-        let loadNumber: String?
-        let accessToken: String
-        let shortCode: String
-        let pkpassUrl: String?
-        let passkitStatus: String
-        let theme: EusoTripAPI.WalletThemeMetadata
-        let signedTheme: EusoTripAPI.WalletThemeMetadata?
-        let manifestDigest: String?
-        let expiresAt: String
+    /// Exact live selection sent back to the mint route. Keeping the revision
+    /// with the id prevents a stale catalog row from silently producing the
+    /// wrong art while the picker and server refresh concurrently.
+    private struct ThemeSelection {
+        let id: String
+        let revision: String
     }
 
     /// Mint a credential and try to add it to Apple Wallet. The tap
@@ -110,33 +101,55 @@ final class EusoWalletPassService {
     /// the caller. Returns a `EusoWalletPassResult` so the call site
     /// can render the right UX (toast, inline fallback, error banner).
     func addPass(forLoadId loadId: String) async -> EusoWalletPassResult {
-        // 0. Normalize the load id. The server keys on a NUMERIC load id
-        //    and does `parseInt(loadId)` — so a display id like
-        //    "LD-1039" or "load_1039" becomes NaN and the mint throws
-        //    "Invalid loadId". Every PassKit caller (wallet hero, pass
-        //    rows, EusoTicket renderers, PDF viewer) funnels through
-        //    here, so normalizing centrally hardens the whole system
-        //    against the display-vs-numeric id mismatch regardless of
-        //    which surface called us.
+        // 0. Normalize the app's known display ids. Unknown or malformed
+        //    forms remain untouched and fail the server's strict numeric-id
+        //    contract instead of being lossy-converted to another load.
         let resolvedLoadId = Self.numericLoadId(from: loadId)
 
         // 1. Mint the credential server-side. The server signs the QR
         //    payload, generates a 5-digit shortCode, and (when the
         //    signing pipeline is healthy) uploads a .pkpass bundle to
         //    Azure Blob and returns its presigned URL.
-        struct Input: Encodable { let loadId: String }
-        let credential: PickupCredential
+        let requestedTheme: ThemeSelection
         do {
-            credential = try await EusoTripAPI.shared.mutation(
-                "eusoWallet.createPickupCredential",
-                input: Input(loadId: resolvedLoadId)
-            )
+            requestedTheme = try await currentThemeSelection()
         } catch {
-            // The server explicitly returns
-            // `eusoWallet.createPickupCredential` per the canonical
-            // schema. If the path is missing the caller's error path
-            // falls back to the inline credential card anyway, so a
-            // 404 here is non-fatal for the user-visible flow.
+            return .failure(
+                message: "Couldn't verify your selected Wallet design. Refresh Wallet styles and try again."
+            )
+        }
+        let credential: EusoTripAPI.PickupCredential
+        do {
+            do {
+                credential = try await EusoTripAPI.shared.createPickupCredential(
+                    loadId: resolvedLoadId,
+                    themeId: requestedTheme.id,
+                    themeRevision: requestedTheme.revision
+                )
+            } catch {
+                guard Self.isThemeCatalogConflict(error) else {
+                    throw error
+                }
+                // The catalog may have advanced between the read and mint.
+                // Refresh the exact versioned selection once; never ask the
+                // signer to silently substitute its default design.
+                let refreshedTheme: ThemeSelection
+                do {
+                    refreshedTheme = try await currentThemeSelection()
+                } catch {
+                    throw WalletPassContractError(
+                        message: "Wallet styles changed and couldn't be refreshed. Refresh styles and try again."
+                    )
+                }
+                credential = try await EusoTripAPI.shared.createPickupCredential(
+                    loadId: resolvedLoadId,
+                    themeId: refreshedTheme.id,
+                    themeRevision: refreshedTheme.revision
+                )
+            }
+        } catch {
+            // The server is the sole credential authority. Surface its real
+            // failure; never substitute a locally invented pass or QR token.
             let msg: String
             if let api = error as? EusoTripAPIError {
                 switch api {
@@ -158,12 +171,27 @@ final class EusoWalletPassService {
         //    is still valid — the gate worker scans the QR or types
         //    the 5-digit shortCode into the receiving party's web
         //    portal.
-        guard let urlStr = credential.pkpassUrl,
-              let url = URL(string: urlStr) else {
+        let passURLText = credential.pkpassUrl?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasPassURL = !(passURLText?.isEmpty ?? true)
+        let signedPassAvailable: Bool
+        do {
+            signedPassAvailable = try Self.signedPassAvailable(
+                status: credential.passkitStatus,
+                hasPassURL: hasPassURL
+            )
+        } catch let contractError as WalletPassContractError {
+            return .failure(message: contractError.message)
+        } catch {
+            return .failure(message: "Wallet pass availability could not be verified. Try again.")
+        }
+        guard signedPassAvailable else {
             return .signingUnavailable(
                 qrPayload: credential.accessToken,
                 shortCode: credential.shortCode
             )
+        }
+        guard let urlStr = passURLText, let url = URL(string: urlStr) else {
+            return .failure(message: "The credential service returned an invalid Wallet pass URL.")
         }
         guard credential.passkitStatus == "signed",
               let signedTheme = credential.signedTheme,
@@ -171,21 +199,37 @@ final class EusoWalletPassService {
               !(credential.manifestDigest ?? "").isEmpty else {
             return .failure(message: "The signed pass did not match the selected Wallet design.")
         }
+        guard let expectedPassType = credential.passTypeIdentifier?.trimmingCharacters(
+                  in: .whitespacesAndNewlines
+              ),
+              !expectedPassType.isEmpty,
+              let expectedSerial = credential.passSerialNumber?.trimmingCharacters(
+                  in: .whitespacesAndNewlines
+              ),
+              !expectedSerial.isEmpty else {
+            return .failure(message: "The signed pass did not include its credential identity.")
+        }
 
-        return await addPass(from: url, expectedTheme: signedTheme)
+        return await addPass(
+            from: url,
+            expectedTheme: signedTheme,
+            expectedPassTypeIdentifier: expectedPassType,
+            expectedSerialNumber: expectedSerial
+        )
     }
 
     /// Download and install an already-minted pass URL. This is shared by the
     /// wallet picker, BOL wallet screen, and document viewer so duplicate-pass
     /// replacement and download security cannot drift between entry points.
     func addPass(from url: URL,
-                 expectedTheme: EusoTripAPI.WalletThemeMetadata? = nil) async -> EusoWalletPassResult {
+                 expectedTheme: EusoTripAPI.WalletThemeMetadata,
+                 expectedPassTypeIdentifier: String,
+                 expectedSerialNumber: String) async -> EusoWalletPassResult {
         // Pull through the app's bounded, auth-aware transport. It adds the
         // bearer only for EusoTrip hosts and leaves Azure SAS URLs untouched.
         let data: Data
         do {
-            let (bytes, _) = try await EusoTripAPI.shared.fetchAuthenticatedData(url)
-            data = bytes
+            data = try await EusoTripAPI.shared.fetchBoundedWalletPassData(url)
         } catch {
             return .failure(message: "Couldn't download the wallet pass.")
         }
@@ -197,16 +241,25 @@ final class EusoWalletPassService {
         do {
             pkpass = try PKPass(data: data)
         } catch {
-            return .failure(message: "This wallet pass is invalid or expired.")
+            return .failure(message: "This wallet pass failed signature validation.")
         }
-        if let expectedTheme {
-            guard pkpass.userInfo?["walletThemeId"] as? String == expectedTheme.id,
-                  pkpass.userInfo?["walletThemeRevision"] as? String == expectedTheme.revision,
-                  pkpass.userInfo?["walletThemeDigest"] as? String == expectedTheme.digest,
-                  pkpass.userInfo?["walletThemeManifestVersion"] as? String == expectedTheme.manifestVersion,
-                  pkpass.userInfo?["walletThemePassStyle"] as? String == expectedTheme.passStyle else {
-                return .failure(message: "The downloaded pass did not match the selected Wallet design.")
-            }
+        guard Self.hasAuthenticatedUpdateChannel(pkpass) else {
+            return .failure(message: "This wallet pass is missing its secure update channel.")
+        }
+        let expectedPassType = expectedPassTypeIdentifier.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        let expectedSerial = expectedSerialNumber.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        guard !expectedPassType.isEmpty,
+              !expectedSerial.isEmpty,
+              pkpass.passTypeIdentifier == expectedPassType,
+              pkpass.serialNumber == expectedSerial else {
+            return .failure(message: "The downloaded pass did not match this credential.")
+        }
+        guard Self.matches(pkpass, expectedTheme: expectedTheme) else {
+            return .failure(message: "The downloaded pass did not match the selected Wallet design.")
         }
 
         // 5. A theme change keeps the same pass serial number. Apple Wallet
@@ -214,23 +267,108 @@ final class EusoWalletPassService {
         //    sheet leaves the old design installed and may reject a duplicate.
         let library = PKPassLibrary()
         if library.containsPass(pkpass) {
-            return library.replacePass(with: pkpass)
-                ? .updated
-                : .failure(message: "Apple Wallet couldn't update the installed pass.")
+            guard library.replacePass(with: pkpass),
+                  let installed = library.pass(
+                    withPassTypeIdentifier: expectedPassType,
+                    serialNumber: expectedSerial
+                  ),
+                  installed.passTypeIdentifier == expectedPassType,
+                  installed.serialNumber == expectedSerial,
+                  Self.matches(installed, expectedTheme: expectedTheme) else {
+                return .failure(message: "Apple Wallet couldn't verify the updated pass design.")
+            }
+            return .updated
         }
 
         // 6. Present `PKAddPassesViewController` over the topmost view
         //    controller. We resolve "topmost" through the active
         //    UIWindowScene — required since iOS 13 because there can
         //    be multiple windows in the foreground.
-        guard let presenter = topPresenter() else {
-            return .failure(message: "Couldn't find a screen to add the pass to.")
-        }
         guard let addVC = PKAddPassesViewController(pass: pkpass) else {
             return .failure(message: "PassKit declined the pass — likely a duplicate or wrong device.")
         }
+        guard let presenter = topPresenter() else {
+            return .failure(message: "Couldn't find a screen to add the pass to.")
+        }
         presenter.present(addVC, animated: true)
         return .presented
+    }
+
+    private func currentThemeSelection() async throws -> ThemeSelection {
+        async let themesRequest = EusoTripAPI.shared.listWalletThemes()
+        async let selectedRequest = EusoTripAPI.shared.getWalletTheme()
+        let (themes, selected) = try await (themesRequest, selectedRequest)
+        guard let theme = themes.first(where: { $0.id == selected.themeId }),
+              theme.revision == selected.themeRevision,
+              theme.digest == selected.themeDigest,
+              theme.manifestVersion == selected.manifestVersion,
+              let revision = theme.revision else {
+            throw WalletPassSelectionError.catalogMismatch
+        }
+        return ThemeSelection(id: theme.id, revision: revision)
+    }
+
+    private static func matches(_ pass: PKPass,
+                                expectedTheme: EusoTripAPI.WalletThemeMetadata) -> Bool {
+        pass.userInfo?["walletThemeId"] as? String == expectedTheme.id
+            && pass.userInfo?["walletThemeRevision"] as? String == expectedTheme.revision
+            && pass.userInfo?["walletThemeDigest"] as? String == expectedTheme.digest
+            && pass.userInfo?["walletThemeManifestVersion"] as? String == expectedTheme.manifestVersion
+            && pass.userInfo?["walletThemePassStyle"] as? String == expectedTheme.passStyle
+            && pass.userInfo?["walletThemeArtSlot"] as? String == expectedTheme.artSlot
+    }
+
+    private static func hasAuthenticatedUpdateChannel(_ pass: PKPass) -> Bool {
+        guard let serviceURL = pass.webServiceURL,
+              serviceURL.scheme?.lowercased() == "https",
+              serviceURL.user == nil,
+              serviceURL.password == nil,
+              serviceURL.query == nil,
+              serviceURL.fragment == nil,
+              let token = pass.authenticationToken,
+              token.range(
+                of: "^[A-Za-z0-9_-]{32,128}$",
+                options: .regularExpression
+              ) != nil else { return false }
+        return true
+    }
+
+    static func signedPassAvailable(status: String, hasPassURL: Bool) throws -> Bool {
+        switch (status, hasPassURL) {
+        case ("signed", true):
+            return true
+        case ("not_configured", false):
+            return false
+        case ("signing_failed", _):
+            throw WalletPassContractError(
+                message: "Apple Wallet signing failed. Try again or contact support."
+            )
+        case ("storage_failed", _):
+            throw WalletPassContractError(
+                message: "The signed Wallet pass could not be stored. Try again."
+            )
+        case ("update_service_failed", _):
+            throw WalletPassContractError(
+                message: "Secure Apple Wallet updates are temporarily unavailable. Try again."
+            )
+        case ("signed", false):
+            throw WalletPassContractError(
+                message: "The credential service reported a signed Wallet pass but did not return it."
+            )
+        case ("not_configured", true):
+            throw WalletPassContractError(
+                message: "The credential service returned a Wallet pass without active signing."
+            )
+        default:
+            throw WalletPassContractError(
+                message: "The credential service returned an unsupported Wallet status."
+            )
+        }
+    }
+
+    private static func isThemeCatalogConflict(_ error: Error) -> Bool {
+        guard case EusoTripAPIError.trpcError(let message) = error else { return false }
+        return message.localizedCaseInsensitiveContains("wallet theme catalog changed")
     }
 
     /// Resolves the currently-active topmost UIViewController so we
@@ -249,4 +387,13 @@ final class EusoWalletPassService {
         }
         return top
     }
+}
+
+private enum WalletPassSelectionError: Error {
+    case catalogMismatch
+}
+
+private struct WalletPassContractError: LocalizedError {
+    let message: String
+    var errorDescription: String? { message }
 }

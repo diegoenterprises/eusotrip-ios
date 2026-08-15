@@ -220,7 +220,7 @@ struct RailShipperTenderWorkflow_008: View {
                 .padding(.top, Space.s5)
             }
         }
-        .task { await load() }
+        .eusoRefreshTask { await load() }
     }
 
     // MARK: - TopBar
@@ -228,7 +228,7 @@ struct RailShipperTenderWorkflow_008: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("✦ SHIPPER · RAIL · TENDER")
+                EusoTripEyebrow(verbatim: "SHIPPER · RAIL · TENDER")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

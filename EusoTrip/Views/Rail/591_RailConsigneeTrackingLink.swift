@@ -272,7 +272,7 @@ private struct RailConsigneeTrackingLinkBody: View {
             .padding(.horizontal, Space.s5).padding(.top, Space.s4)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - Header (back chevron · eyebrow · mono ID · 28/-0.4 title)
@@ -280,7 +280,7 @@ private struct RailConsigneeTrackingLinkBody: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("✦ RAIL ENGINEER · SHARE LINK")
+                EusoTripEyebrow(verbatim: "RAIL ENGINEER · SHARE LINK")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

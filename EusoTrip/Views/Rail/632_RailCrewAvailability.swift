@@ -118,16 +118,16 @@ private struct RailCrewAvailabilityBody: View {
             .padding(.top, Space.s2)
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
     }
 
     // MARK: - Header (eyebrow + back chevron + title + sync block)
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Eyebrow row: gradient sparkle eyebrow + right mono regulation tag.
+            // Eyebrow row: EusoTrip mark + right mono regulation tag.
             HStack {
-                Text("✦  RAIL ENGINEER · CREW AVAIL")
+                EusoTripEyebrow(verbatim: "RAIL ENGINEER · CREW AVAIL")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

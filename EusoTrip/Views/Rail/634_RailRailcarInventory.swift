@@ -256,7 +256,7 @@ private struct RailRailcarInventoryBody: View {
             .padding(.top, Space.s5)
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
     }
 
     // MARK: - Top bar (eyebrow + chevron + title + caption)
@@ -264,7 +264,7 @@ private struct RailRailcarInventoryBody: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("✦ RAIL ENGINEER · RAILCARS")
+                EusoTripEyebrow(verbatim: "RAIL ENGINEER · RAILCARS")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

@@ -65,7 +65,7 @@ struct MeDetention: View {
             .padding(.bottom, Space.s8)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
         .sheet(item: $disputing) { event in
             DisputeSheet(event: event, store: store)
                 .eusoSheetX()

@@ -101,14 +101,14 @@ private struct RailCrewCertificationsBody: View {
             .padding(.horizontal, 20).padding(.top, 8)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - Eyebrow
 
     private var eyebrow: some View {
         HStack {
-            Text("✦ RAIL ENGINEER · CREW CERTS")
+            EusoTripEyebrow(verbatim: "RAIL ENGINEER · CREW CERTS")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer()

@@ -140,7 +140,7 @@ struct ShipperWidgetGallery: View {
 
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("✦ SHIPPER · WIDGETS")
+            EusoTripEyebrow(verbatim: "SHIPPER · WIDGETS")
                 .font(EType.micro)
                 .tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)

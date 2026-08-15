@@ -216,7 +216,7 @@ struct ShipperLoadDetail: View {
             await loadListingTrust()
             joinLoadRoom()
         }
-        .refreshable {
+        .eusoRefreshable {
             await refreshAll()
             await loadListingTrust()
         }
@@ -1033,7 +1033,7 @@ struct ShipperLoadDetail: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: Space.s2) {
-                Text("✦ SHIPPER · LOAD · \(cargoEyebrow)")
+                EusoTripEyebrow(verbatim: "SHIPPER · LOAD · \(cargoEyebrow)")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()
@@ -2573,7 +2573,7 @@ struct ShipperLoadDetailUnresolvedScreen: View {
         Shell(theme: theme) {
             VStack(alignment: .leading, spacing: Space.s4) {
                 HStack(spacing: Space.s2) {
-                    Text("✦ SHIPPER · LOAD · DETAIL")
+                    EusoTripEyebrow(verbatim: "SHIPPER · LOAD · DETAIL")
                         .font(EType.micro).tracking(1.0)
                         .foregroundStyle(LinearGradient.primary)
                     Spacer()

@@ -39,10 +39,8 @@ struct CatalystProfileScreen: View {
     var body: some View {
         Shell(theme: theme) { ProfileBody() } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home",     systemImage: "house",         isCurrent: false),
-                          NavSlot(label: "Dispatch", systemImage: "rectangle.split.3x1.fill", isCurrent: false)],
-                trailing: [NavSlot(label: "Fleet",  systemImage: "truck.box.fill", isCurrent: false),
-                           NavSlot(label: "Me",     systemImage: "person",          isCurrent: true)],
+                leading: CarrierNavRoute.leading(current: .me),
+                trailing: CarrierNavRoute.trailing(current: .me),
                 orbState: .idle
             )
         }
@@ -91,7 +89,7 @@ private struct ProfileBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
         .alert("Edit profile", isPresented: $editing) {
             TextField("Name", text: $editName)
             TextField("Company", text: $editCompany)
@@ -129,7 +127,7 @@ private struct ProfileBody: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("CATALYST · ME · PROFILE").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
                 Spacer()
                 Button {

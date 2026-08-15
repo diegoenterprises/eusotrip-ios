@@ -194,7 +194,7 @@ private struct RailScacMarkCheckBody: View {
 
     private var eyebrowRow: some View {
         HStack(spacing: 0) {
-            Text("✦ CARRIER · RAIL · MARK CHECK")
+            EusoTripEyebrow(verbatim: "CARRIER · RAIL · MARK CHECK")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer(minLength: 8)

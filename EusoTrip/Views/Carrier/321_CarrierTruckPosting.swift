@@ -58,10 +58,8 @@ struct CarrierTruckPostingScreen: View {
             CarrierTruckPostingBody()
         } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home",  systemImage: "house",       isCurrent: false),
-                          NavSlot(label: "Loads", systemImage: "shippingbox", isCurrent: false)],
-                trailing: [NavSlot(label: "Fleet", systemImage: "truck.box.fill", isCurrent: true),
-                           NavSlot(label: "Me",    systemImage: "person",         isCurrent: false)],
+                leading: CarrierNavRoute.leading(current: .drivers),
+                trailing: CarrierNavRoute.trailing(current: .drivers),
                 orbState: .idle
             )
         }
@@ -125,7 +123,7 @@ private struct CarrierTruckPostingBody: View {
             .padding(.top, 8)
         }
         .task { await loadAll() }
-        .refreshable { await loadAll() }
+        .eusoRefreshable { await loadAll() }
     }
 
     // MARK: Header

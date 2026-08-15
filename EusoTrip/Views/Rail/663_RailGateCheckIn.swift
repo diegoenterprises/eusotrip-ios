@@ -490,7 +490,7 @@ private struct RailGateCheckInBody663: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
         .overlay(alignment: .bottom) { toastView }
         .sheet(isPresented: $showCapture) { captureSheet }
     }
@@ -500,11 +500,9 @@ private struct RailGateCheckInBody663: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 0) {
-                HStack(spacing: 6) {
-                    Text("\u{2726} RAIL ENGINEER · GATE")
-                        .font(.system(size: 9, weight: .heavy)).tracking(1.0)
-                        .foregroundStyle(LinearGradient.diagonal)
-                }
+                EusoTripEyebrow("RAIL ENGINEER · GATE")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(LinearGradient.diagonal)
                 Spacer(minLength: 8)
                 Text("RAMP · \(siteCaption)")
                     .font(.system(size: 9, weight: .heavy, design: .monospaced))

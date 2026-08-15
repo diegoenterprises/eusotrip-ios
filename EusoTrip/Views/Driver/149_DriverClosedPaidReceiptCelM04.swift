@@ -185,7 +185,7 @@ private struct PRBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await refresh() }
-        .refreshable { await refresh() }
+        .eusoRefreshable { await refresh() }
     }
 
     // MARK: header / pills
@@ -193,7 +193,7 @@ private struct PRBody: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "sparkle")
+                EusoTripBrandMark(size: 12)
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
                 Text("DRIVER · TRIPS · CLOSED · PAID · \(loadNumberDisplay)")

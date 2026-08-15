@@ -244,7 +244,7 @@ private struct RailWaybill: View {
             }
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - TopBar (SVG: eyebrow + ISSUED/DRAFT, back chevron, H1 "Waybill", mono caption)
@@ -252,7 +252,7 @@ private struct RailWaybill: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("✦ SHIPPER · RAIL · WAYBILL")
+                EusoTripEyebrow(verbatim: "SHIPPER · RAIL · WAYBILL")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

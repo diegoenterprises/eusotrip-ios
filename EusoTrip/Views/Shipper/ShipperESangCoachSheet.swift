@@ -67,6 +67,7 @@ struct ShippereSangCoachSheet: View {
     @State private var draft: String = ""
     @State private var sending: Bool = false
     @State private var sendError: String? = nil
+    @State private var conversationSessionId = "ios-shipper-\(UUID().uuidString)"
     /// Drives the document-router sheet. The composer's paperclip
     /// opens it; on `onApplySingle` we surface the REAL classifier
     /// result (type + summary + key fields + any warnings) into the
@@ -103,6 +104,7 @@ struct ShippereSangCoachSheet: View {
         // (ASC AOd5xzXVfU6CF6hyijTDwgk) — without the safe-area ignore the
         // status-bar band showed the presenting screen's labels through.
         .background(palette.bgPage.ignoresSafeArea())
+        .eusoRefreshSurface("modal:esang:shipper")
         .contentShape(Rectangle())
         .onTapGesture { composerFocused = false }
         // Wire the voice pipeline's final transcript back into the
@@ -287,7 +289,8 @@ struct ShippereSangCoachSheet: View {
         // follow-up isn't reading a stale @Environment value.
         let dispatcher = autopilot
         let localNavAction = eSangAutopilot.localNavIntent(for: text)
-        if let action = localNavAction,
+        if dispatcher != nil,
+           let action = localNavAction,
            let label = navigationFallbackLabel(for: action) {
             messages.append(Msg(role: .esang, text: "Opening \(label)."))
             sending = false
@@ -299,8 +302,16 @@ struct ShippereSangCoachSheet: View {
                 let resp = try await EusoTripAPI.shared.esang.chat(
                     message: text,
                     currentPage: "shipper.coach",
-                    loadId: nil
+                    loadId: nil,
+                    sessionId: conversationSessionId
                 )
+                guard resp.answerWasGenerated else {
+                    await MainActor.run {
+                        messages.append(Msg(role: .esang, text: resp.message))
+                        sending = false
+                    }
+                    return
+                }
                 // Split ESANG's reply into shipper-visible text + machine
                 // actions. The parser strips every `<<<ACTION:verb:arg>>>`
                 // token so the bubble shows clean prose, and hands back the
@@ -318,31 +329,9 @@ struct ShippereSangCoachSheet: View {
                     dispatchActions(dispatchable, dispatcher: dispatcher)
                 }
             } catch {
-                do {
-                    let grounded = try await ShipmentAgentService.shared.ask(text)
-                    let (cleaned, actions) = eSangAutopilot.parse(grounded.answer)
-                    let dispatchable = actions.isEmpty ? localNavAction.map { [$0] } ?? [] : actions
-                    await MainActor.run {
-                        if !cleaned.isEmpty {
-                            messages.append(Msg(role: .esang, text: cleaned))
-                        } else if let label = navigationFallbackLabel(for: localNavAction) {
-                            messages.append(Msg(role: .esang, text: "Opening \(label)."))
-                        }
-                        sending = false
-                        dispatchActions(dispatchable, dispatcher: dispatcher)
-                    }
-                } catch {
-                    await MainActor.run {
-                        if let action = localNavAction,
-                           let label = navigationFallbackLabel(for: action) {
-                            messages.append(Msg(role: .esang, text: "I could not reach live intelligence, but I can still open \(label)."))
-                            sending = false
-                            dispatchActions([action], dispatcher: dispatcher)
-                        } else {
-                            sendError = "ESANG could not connect to live intelligence. Try again."
-                            sending = false
-                        }
-                    }
+                await MainActor.run {
+                    sendError = "ESANG could not connect to live intelligence. Your message was not answered; try again when the connection returns."
+                    sending = false
                 }
             }
         }
@@ -350,12 +339,18 @@ struct ShippereSangCoachSheet: View {
 
     private func dispatchActions(_ actions: [eSangAction],
                                  dispatcher: ((eSangAction) -> Void)?) {
+        guard let dispatcher else {
+            if !actions.isEmpty {
+                sendError = "That ESANG command is not available from this screen."
+            }
+            return
+        }
         // Stagger so a navigate-then-execute sequence animates naturally
         // instead of stepping on itself.
         for (idx, action) in actions.enumerated() {
             let delay = Double(idx) * 0.20
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                dispatcher?(action)
+                dispatcher(action)
             }
         }
     }
@@ -500,28 +495,28 @@ enum ShippereSangGreeting {
 
     static let variants: [DayPart: [String]] = [
         .morning: [
-            "Morning. I've got your overnight bid sweep ready. Want a quick rundown?",
-            "Morning, shipper. Three lanes need posting before the 10AM cutoff. Where do you want to start?",
-            "Hey, early start. I'm tracking carrier capacity on your top lanes. What can I tee up?",
-            "Morning. Settlement queue cleared overnight. Any new lanes you want to post?",
+            "Morning. Ask about live bids, carrier vetting, market intelligence, settlements, or a new load.",
+            "Good morning. I can open a shipper workflow or answer from connected EusoTrip data.",
+            "Morning, shipper. What would you like to check or move forward today?",
+            "Morning. Tell me the lane, load, carrier, or settlement you want to work on.",
         ],
         .day: [
-            "Hey, afternoon. Two of your loads need attention; want me to surface them?",
-            "Hey, shipper. Catalysts are bidding live on your active posts. What do you need?",
-            "Afternoon. I'm watching your spend run-rate vs. budget. What's on your mind?",
+            "Good afternoon. Ask about live loads, bids, carriers, market signals, or settlements.",
+            "Afternoon. I can open a shipper workflow or answer from connected EusoTrip data.",
+            "What would you like to check across your freight operation?",
             "Hey. Ready to post a load, vet a carrier or check settlements?",
         ],
         .evening: [
-            "Evening. Bid windows on three loads close by midnight. Want me to summarize?",
-            "Evening, shipper. Carriers are staging for tomorrow's pickups. Anything to adjust?",
-            "Hey. End of day, I can pull your dashboard or queue tomorrow's posts. What helps?",
+            "Evening. Ask about bids, active loads, tomorrow's posts, or settlement work.",
+            "Evening, shipper. Which live workflow or record should we open?",
+            "End of day check-in. What would you like to review or prepare?",
             "Evening. Settlement, agreements or fresh load posts. Where do we go?",
         ],
         .night: [
-            "Hey, running late. I've got bids stacking on your overnight posts. What do you need?",
-            "Quiet hours, but the carrier marketplace is awake. Want me to walk through the queue?",
-            "Hey. ESANG is on the night watch, load status, exception triage, settlement. What's first?",
-            "Late one. Your active loads are tracking; I'll flag any that drift. What can I get for you?",
+            "Running late? Ask about a load, bid, carrier, market signal, or settlement.",
+            "Quiet hours. Which shipper workflow or live record should we open?",
+            "ESANG is ready for load status, exception triage, market intelligence, or settlement questions.",
+            "Late one. What would you like to check in your freight operation?",
         ],
     ]
 

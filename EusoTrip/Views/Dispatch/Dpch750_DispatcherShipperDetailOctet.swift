@@ -155,10 +155,8 @@ private struct DispatcherShipperDetailShell<Content: View>: View {
     var body: some View {
         Shell(theme: theme) { content() } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home", systemImage: "house", isCurrent: false),
-                          NavSlot(label: "Board", systemImage: "rectangle.stack.fill", isCurrent: true)],
-                trailing: [NavSlot(label: "ESANG", systemImage: "sparkles", isCurrent: false),
-                           NavSlot(label: "Me",    systemImage: "person",   isCurrent: false)],
+                leading: DispatchNavRoute.leading(current: .board),
+                trailing: DispatchNavRoute.trailing(current: .board),
                 orbState: .idle
             )
         }
@@ -187,13 +185,13 @@ private struct DispatcherShipperDetailBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     private func header(_ c: ShipperDetailConfig) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text(c.eyebrow).font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             Text(c.title).font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)

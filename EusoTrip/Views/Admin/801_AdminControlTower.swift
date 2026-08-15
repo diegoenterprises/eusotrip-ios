@@ -146,7 +146,7 @@ struct AdminControlTower: View {
             .padding(.top, 8)
         }
         .task { await refreshAll() }
-        .refreshable { await refreshAll() }
+        .eusoRefreshable { await refreshAll() }
     }
 
     private func refreshAll() async {
@@ -174,7 +174,7 @@ struct AdminControlTower: View {
                     .clipShape(Circle())
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Image(systemName: "sparkles")
+                        EusoTripBrandMark(size: 12)
                             .font(.system(size: 9, weight: .heavy))
                             .foregroundStyle(LinearGradient.diagonal)
                         Text("ADMIN · CONTROL TOWER")
@@ -696,13 +696,11 @@ struct AdminControlTowerScreen: View {
 }
 
 private func adminNavLeading_801() -> [NavSlot] {
-    [NavSlot(label: "Home",    systemImage: "house",         isCurrent: false),
-     NavSlot(label: "Tickets", systemImage: "ticket.fill",   isCurrent: false)]
+    AdminNavRoute.leading(current: .tickets)
 }
 
 private func adminNavTrailing_801() -> [NavSlot] {
-    [NavSlot(label: "Tower",   systemImage: "scope",           isCurrent: true),
-     NavSlot(label: "Tenants", systemImage: "building.2.fill", isCurrent: false)]
+    AdminNavRoute.trailing(current: .tickets)
 }
 
 // MARK: - Previews

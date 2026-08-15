@@ -14,10 +14,8 @@ struct CarrierMaintenanceScreen: View {
     var body: some View {
         Shell(theme: theme) { MaintenanceBody() } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home", systemImage: "house", isCurrent: false),
-                          NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false)],
-                trailing: [NavSlot(label: "Bids", systemImage: "hand.raised.fill", isCurrent: false),
-                           NavSlot(label: "Me", systemImage: "person", isCurrent: true)],
+                leading: CarrierNavRoute.leading(current: .me),
+                trailing: CarrierNavRoute.trailing(current: .me),
                 orbState: .idle
             )
         }
@@ -50,7 +48,7 @@ private struct MaintenanceBody: View {
             }
             .padding(.horizontal, 14).padding(.top, 8)
         }
-        .task { await load() }
+        .eusoRefreshTask { await load() }
     }
 
     private var header: some View {

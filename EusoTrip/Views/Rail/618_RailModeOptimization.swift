@@ -215,14 +215,14 @@ private struct RailModeOptimizationBody: View {
             .padding(.top, Space.s3)
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
     }
 
     // MARK: - Eyebrow (✦ RAIL ENGINEER · MODE  …  RAIL-260528-D331C)
 
     private var eyebrow: some View {
         HStack {
-            Text("✦ RAIL ENGINEER · MODE")
+            EusoTripEyebrow(verbatim: "RAIL ENGINEER · MODE")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer()

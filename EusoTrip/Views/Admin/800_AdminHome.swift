@@ -128,7 +128,7 @@ struct AdminHome: View {
             .padding(.top, Space.s2)
         }
         .task { await refreshAll() }
-        .refreshable { await refreshAll() }
+        .eusoRefreshable { await refreshAll() }
         .screenTileRoot()
         // 802_AdminTenants sheet — opened by the ACTIVE TENANTS
         // section header's "View all →" CTA. Detents `[.large]` +
@@ -240,13 +240,13 @@ struct AdminHome: View {
 
     private var header: some View {
         // Bespoke hero — gradient role eyebrow chip + tertiary context
-        // on the right (the "✦ ADMIN · DASHBOARD" idiom from 010_DriverHome),
+        // on the right (the branded ADMIN · DASHBOARD idiom from DriverHome),
         // then an avatar-anchored greeting row with a gradient headline.
         VStack(alignment: .leading, spacing: Space.s2) {
             // Eyebrow row — gradient role chip left, tertiary platform
             // context right, matching the Driver/Shipper role-home family.
             HStack(spacing: Space.s2) {
-                Text("✦ ADMIN · DASHBOARD")
+                EusoTripEyebrow(verbatim: "ADMIN · DASHBOARD")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer(minLength: Space.s2)
@@ -772,13 +772,11 @@ struct AdminHomeScreen: View {
 }
 
 private func adminNavLeading_800() -> [NavSlot] {
-    [NavSlot(label: "Home",    systemImage: "house.fill",        isCurrent: true),
-     NavSlot(label: "Tickets", systemImage: "ticket.fill",       isCurrent: false)]
+    AdminNavRoute.leading(current: .home)
 }
 
 private func adminNavTrailing_800() -> [NavSlot] {
-    [NavSlot(label: "Tenants", systemImage: "building.2",        isCurrent: false),
-     NavSlot(label: "Me",      systemImage: "person",            isCurrent: false)]
+    AdminNavRoute.trailing(current: .home)
 }
 
 // MARK: - Previews

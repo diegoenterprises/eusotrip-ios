@@ -273,15 +273,15 @@ private struct VesselTransshipmentConnectionBody692: View {
         .padding(.horizontal, Space.s5)
         .padding(.top, Space.s4)
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
-    // ── Eyebrow · the ONE sparkle ───────────────────────────────────────────
+    // ── Eyebrow · EusoTrip brand mark ───────────────────────────────────────
 
     private var eyebrow: some View {
         HStack {
             HStack(spacing: 5) {
-                Text("✦").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.primary)
+                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.primary)
                 Text("VESSEL · TRANSSHIPMENT · HUB MESH")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)

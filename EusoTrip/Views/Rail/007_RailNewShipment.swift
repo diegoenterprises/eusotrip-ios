@@ -186,7 +186,7 @@ struct RailNewShipment_007: View {
                 .padding(.top, Space.s5)
             }
         }
-        .task { await bootstrap() }
+        .eusoRefreshTask { await bootstrap() }
         .sheet(item: $picking) { slot in yardPickerSheet(slot) }
         .sheet(isPresented: $editingEquipment) { equipmentSheet }
     }
@@ -196,7 +196,7 @@ struct RailNewShipment_007: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("✦ SHIPPER · RAIL · NEW SHIPMENT")
+                EusoTripEyebrow(verbatim: "SHIPPER · RAIL · NEW SHIPMENT")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

@@ -166,8 +166,8 @@ struct ActiveEnroute: View {
             }
         }
         .screenTileRoot()
-        .task { await hydrateLiveTrip() }
-        .task { await refreshHosReachability() }
+        .eusoRefreshTask { await hydrateLiveTrip() }
+        .eusoRefreshTask { await refreshHosReachability() }
         // L13-3 live fix feed — drives maneuver advance + voice + deviation.
         .onReceive(DriverLocationResolver.shared.$lastLocation.compactMap { $0 }) { fix in
             guard tbtEnabled else { return }

@@ -101,7 +101,7 @@ struct MeReferrals: View {
             .padding(.bottom, Space.s8)
         }
         .task { await store.refresh() }
-        .refreshable { await store.refresh() }
+        .eusoRefreshable { await store.refresh() }
         .sheet(isPresented: $showingShare) {
             if let code = store.code?.code {
                 // Share sheet now includes BOTH the message + the

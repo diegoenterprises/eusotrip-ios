@@ -149,14 +149,14 @@ private struct RailEDIMessagesBody: View {
             }
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
     }
 
     // MARK: - Eyebrow row (✦ RAIL ENGINEER · EDI MESSAGES · ISA 7012840 · AS2)
 
     private var eyebrowRow: some View {
         HStack {
-            Text("✦ RAIL ENGINEER · EDI MESSAGES")
+            EusoTripEyebrow(verbatim: "RAIL ENGINEER · EDI MESSAGES")
                 .font(EType.micro).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer(minLength: 8)

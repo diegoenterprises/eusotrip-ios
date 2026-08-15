@@ -970,7 +970,7 @@ private struct RailWaybillReceiptBody685: View {
             if idText.isEmpty && shipmentId > 0 { idText = String(shipmentId) }
             await load()
         }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
         // rail:doc_updated → .esangRefreshSurface (RealtimeService.swift:591).
         // A re-issue committed anywhere now repaints this document live.
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { note in
@@ -987,7 +987,7 @@ private struct RailWaybillReceiptBody685: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack(alignment: .firstTextBaseline) {
-                Text("✦ RAIL · WAYBILL OF RECORD")
+                EusoTripEyebrow(verbatim: "RAIL · WAYBILL OF RECORD")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer(minLength: Space.s2)

@@ -157,7 +157,7 @@ private struct VesselPortDirectoryBody: View {
             }
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - Top bar (eyebrow + back chevron + title + subtitle)
@@ -165,7 +165,7 @@ private struct VesselPortDirectoryBody: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 5) {
-                Image(systemName: "sparkle")
+                EusoTripBrandMark(size: 12)
                     .font(.system(size: 8, weight: .heavy))
                     .foregroundStyle(LinearGradient.primary)
                 Text("VESSEL OPERATOR · PORT DIRECTORY")

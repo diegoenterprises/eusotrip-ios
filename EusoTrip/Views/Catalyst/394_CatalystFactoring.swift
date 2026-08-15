@@ -43,12 +43,10 @@ struct CatalystFactoringScreen: View {
 }
 
 private func catalystNavLeading_394() -> [NavSlot] {
-    [NavSlot(label: "Home",     systemImage: "house",                          isCurrent: false),
-     NavSlot(label: "Dispatch", systemImage: "shippingbox.and.arrow.backward", isCurrent: false)]
+    CarrierNavRoute.leading(current: .me)
 }
 private func catalystNavTrailing_394() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "creditcard",         isCurrent: true),
-     NavSlot(label: "Me",     systemImage: "person.crop.circle", isCurrent: false)]
+    CarrierNavRoute.trailing(current: .me)
 }
 
 // MARK: - Display row (built from live factoring.getInvoices rows only)
@@ -162,7 +160,7 @@ private struct FactoringBody_394: View {
             }
         }
         .task { await loadAll() }
-        .refreshable { await loadAll() }
+        .eusoRefreshable { await loadAll() }
         .sheet(isPresented: $showFundingReview) { fundingReviewSheet_394 }
         .sheet(isPresented: $showFeeSchedule) { feeScheduleSheet_394 }
         .sheet(item: $selectedAdvanceActivity) { activity in
@@ -199,7 +197,7 @@ private struct FactoringBody_394: View {
     private var topBar_394: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("✦ CATALYST · FACTORING · ADVANCE LINE")
+                EusoTripEyebrow(verbatim: "CATALYST · FACTORING · ADVANCE LINE")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

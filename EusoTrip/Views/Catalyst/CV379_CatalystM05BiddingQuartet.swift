@@ -156,10 +156,8 @@ private struct CVQShell<Content: View>: View {
     var body: some View {
         Shell(theme: theme) { content() } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home",     systemImage: "house",                isCurrent: false),
-                          NavSlot(label: "Dispatch", systemImage: "rectangle.stack.fill", isCurrent: true)],
-                trailing: [NavSlot(label: "Fleet",  systemImage: "truck.box.fill",      isCurrent: false),
-                           NavSlot(label: "Me",     systemImage: "person",                isCurrent: false)],
+                leading: CarrierNavRoute.leading(current: .loads),
+                trailing: CarrierNavRoute.trailing(current: .loads),
                 orbState: .idle
             )
         }
@@ -240,13 +238,13 @@ private struct CVQBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await loadCtx() }
-        .refreshable { await loadCtx() }
+        .eusoRefreshable { await loadCtx() }
     }
 
     private func header(_ c: CVQConfig) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "sparkle")
+                EusoTripBrandMark(size: 12)
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
                 Text(c.eyebrow)

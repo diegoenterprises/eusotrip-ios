@@ -136,7 +136,7 @@ struct MeWallet: View {
             .padding(.bottom, Space.s8)
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
         .sheet(isPresented: $showAddPayout) {
             AddPaymentAccountSheet(onLinked: {
                 Task { await reload() }

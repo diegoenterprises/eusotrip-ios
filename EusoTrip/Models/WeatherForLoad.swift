@@ -113,8 +113,16 @@ struct WeatherForLoad: Decodable, Hashable {
         struct PeakLeg: Decodable, Hashable { let label: String; let time: String }
         struct Driver: Decodable, Hashable, Identifiable {
             let field: String   // "PRECIP" | "CROSSWIND" | "VISIBILITY" | "YARD VIS" | "STREAMFLOW" | "SIG WAVE" | "GUST @ BERTH"
-            let value: String   // already display-formatted by the server ("0.4 in/h", "31 mph", "—")
+            let value: String   // display-formatted only when `available` is true
+            let available: Bool?
+            let unavailableReason: String?
             var id: String { field }
+
+            var isAvailable: Bool {
+                if let available { return available }
+                let legacy = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                return legacy != "—" && legacy != "-"
+            }
         }
         struct Recommendation: Decodable, Hashable { let text: String; let action: String; let protects: String }
     }

@@ -330,7 +330,7 @@ private struct VesselTerminalStatusBody690: View {
             .padding(.top, Space.s4)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: header · title + the drawn staleness stamp

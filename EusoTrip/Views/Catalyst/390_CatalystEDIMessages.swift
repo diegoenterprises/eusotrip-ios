@@ -62,13 +62,11 @@ struct CatalystEDIMessagesScreen: View {
 // MARK: - Nav (HOME · DISPATCH(current) · [orb] · FLEET · ME)
 
 private func catalystNavLeading_390() -> [NavSlot] {
-    [NavSlot(label: "Home",     systemImage: "house",                          isCurrent: false),
-     NavSlot(label: "Dispatch", systemImage: "shippingbox.and.arrow.backward", isCurrent: true)]
+    CarrierNavRoute.leading(current: .loads)
 }
 
 private func catalystNavTrailing_390() -> [NavSlot] {
-    [NavSlot(label: "Fleet", systemImage: "box.truck.fill", isCurrent: false),
-     NavSlot(label: "Me",    systemImage: "person",         isCurrent: false)]
+    CarrierNavRoute.trailing(current: .loads)
 }
 
 // MARK: - Domain model (typed; live shapes per nativeEdi.transactionLog)
@@ -159,7 +157,7 @@ private struct CatalystEDIMessages_390: View {
     private var eyebrowRow_390: some View {
         HStack(alignment: .firstTextBaseline) {
             HStack(spacing: 4) {
-                Image(systemName: "sparkles")
+                EusoTripBrandMark(size: 12)
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
                 Text("CATALYST · EDI MESSAGES")

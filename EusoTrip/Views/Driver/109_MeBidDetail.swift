@@ -118,7 +118,7 @@ struct MeBidDetailView: View {
             .padding(.top, 8)
         }
         .task { await store.load() }
-        .refreshable { await store.load() }
+        .eusoRefreshable { await store.load() }
         .sheet(isPresented: $showCounterSheet) { counterSheet }
         .onChange(of: store.lastAck ?? "") { _, v in if !v.isEmpty { showAck = true } }
         .alert("Done", isPresented: $showAck, actions: {
@@ -136,7 +136,7 @@ struct MeBidDetailView: View {
                 .overlay(Circle().strokeBorder(palette.borderFaint)).clipShape(Circle())
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Image(systemName: "sparkles").font(.system(size: 9, weight: .heavy))
+                    EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy))
                         .foregroundStyle(LinearGradient.diagonal)
                     Text("DRIVER · BID THREAD").font(.system(size: 9, weight: .heavy)).tracking(1.0)
                         .foregroundStyle(LinearGradient.diagonal)

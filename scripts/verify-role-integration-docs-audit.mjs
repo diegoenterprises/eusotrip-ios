@@ -191,8 +191,15 @@ async function refreshLedger(ledger, parsed) {
 }
 
 function verifyLedger(ledger, parsed) {
-  assert.equal(ledger.schemaVersion, 1, "Unexpected provider docs audit schema");
+  assert.equal(ledger.schemaVersion, 2, "Unexpected provider docs audit schema");
   assert.equal(ledger.checkedAt, checkedAt, "Provider docs audit date is stale");
+  assert.equal(ledger.policy?.scope, "documentation_reachability_only", "Docs audit scope must remain explicit");
+  assert.equal(ledger.policy?.provesConnectorReadiness, false, "Docs reachability must not prove connector readiness");
+  assert.equal(
+    ledger.policy?.connectorReadinessAuthority,
+    "backend:scripts/audit-rios-role-activation.mjs",
+    "Connector-readiness authority drifted",
+  );
   assert.equal(ledger.priorUnadjudicated.length, 55, "Historical queue must contain exactly 55 providers");
   assert.deepEqual(
     ledger.priorUnadjudicated.map(row => row.providerId).sort(),
@@ -256,9 +263,14 @@ if (process.argv.includes("--refresh")) ledger = await refreshLedger(ledger, par
 verifyLedger(ledger, parsed);
 
 console.log(JSON.stringify({
-  priorQueue: ledger.priorUnadjudicated.length,
-  declaredRows: parsed.declaredRows,
-  runtimeRows: parsed.runtimeRows.length,
-  uniqueUrls: ledger.catalogUrls.length,
-  stateCounts: ledger.catalogSummary.stateCounts,
+  evidenceScope: ledger.policy.scope,
+  provesConnectorReadiness: ledger.policy.provesConnectorReadiness,
+  checkedAt: ledger.checkedAt,
+  historicalProviderQueue: ledger.priorUnadjudicated.length,
+  roleCatalog: {
+    declaredRows: parsed.declaredRows,
+    runtimeRows: parsed.runtimeRows.length,
+    uniqueDocumentationUrls: ledger.catalogUrls.length,
+    documentationStateCounts: ledger.catalogSummary.stateCounts,
+  },
 }, null, 2));

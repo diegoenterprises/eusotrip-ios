@@ -51,7 +51,7 @@ struct MePermits: View {
             .padding(.bottom, Space.s8)
         }
         .task { await store.refresh() }
-        .refreshable { await store.refresh() }
+        .eusoRefreshable { await store.refresh() }
         .sheet(item: $renewing) { permit in
             RenewSheet(permit: permit, store: store)
                 .eusoSheetX()

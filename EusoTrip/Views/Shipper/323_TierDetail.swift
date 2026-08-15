@@ -46,7 +46,7 @@ private struct TierDetailBody: View {
             }
             .padding(.horizontal, 14).padding(.top, 56)
         }
-        .task { await load() }
+        .eusoRefreshTask { await load() }
     }
 
     private func load() async {

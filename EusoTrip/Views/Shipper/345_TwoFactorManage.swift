@@ -18,8 +18,15 @@ import SwiftUI
 
 struct TwoFactorManageScreen: View {
     let theme: Theme.Palette
+    var roleLabel: String = "SHIPPER"
+    var showsBottomNav: Bool = true
+
     var body: some View {
-        Shell(theme: theme) { TwoFactorBody() } nav: { shipperLifecycleNav() }
+        Shell(theme: theme) {
+            TwoFactorBody(roleLabel: roleLabel)
+        } nav: {
+            if showsBottomNav { shipperLifecycleNav() }
+        }
     }
 }
 
@@ -42,6 +49,7 @@ private struct TfaVerifyResult: Decodable, Hashable {
 }
 
 private struct TwoFactorBody: View {
+    let roleLabel: String
     @Environment(\.palette) private var palette
     @State private var status: TfaStatus? = nil
     @State private var loading = true
@@ -101,7 +109,7 @@ private struct TwoFactorBody: View {
             }
             .padding(.horizontal, 14).padding(.top, 56)
         }
-        .task { await load() }
+        .eusoRefreshTask { await load() }
         .sheet(isPresented: $showEnrollSheet) {
             TfaEnrollSheet { codes in
                 presentedBackupCodes = codes
@@ -140,7 +148,7 @@ private struct TwoFactorBody: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: "key.fill").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
-                Text("SHIPPER · TWO-FACTOR AUTH").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
+                Text("\(roleLabel) · TWO-FACTOR AUTH").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             Text("Two-factor authentication").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
             Text("Azure AD-backed. TOTP, backup codes, audit log on every sign-in.")
@@ -350,7 +358,7 @@ private struct TfaEnrollSheet: View {
             .padding(Space.s5)
         }
         .background(palette.bgPrimary)
-        .task { await loadSetup() }
+        .eusoRefreshTask { await loadSetup() }
         .navigationBarHidden(true)
         .overlay(alignment: .topTrailing) {
             Button { dismiss() } label: {

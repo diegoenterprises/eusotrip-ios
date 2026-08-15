@@ -111,7 +111,7 @@ private struct IndustryVerticalsBody: View {
             .padding(.horizontal, 14)
             .padding(.top, 56)
         }
-        .refreshable { await loadCatalog() }
+        .eusoRefreshable { await loadCatalog() }
         .task { await loadCatalog() }
         .sheet(item: $selectedSector) { sector in
             IndustryVerticalDetail(

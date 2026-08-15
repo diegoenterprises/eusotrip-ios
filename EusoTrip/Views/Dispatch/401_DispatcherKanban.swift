@@ -43,10 +43,8 @@ struct DispatcherKanbanScreen: View {
         Shell(theme: theme) { DispatcherKanbanBody() } nav: {
             // Nav: HOME · BOARD(active) · [orb] · COMMS · ME.
             BottomNav(
-                leading: [NavSlot(label: "Home",  systemImage: "house",                      isCurrent: false),
-                          NavSlot(label: "Board", systemImage: "rectangle.split.3x1.fill",   isCurrent: true)],
-                trailing: [NavSlot(label: "Comms", systemImage: "bubble.left.and.bubble.right.fill", isCurrent: false),
-                           NavSlot(label: "Me",    systemImage: "person",                    isCurrent: false)],
+                leading: DispatchNavRoute.leading(current: .board),
+                trailing: DispatchNavRoute.trailing(current: .board),
                 orbState: .idle
             )
         }
@@ -57,7 +55,9 @@ struct DispatcherKanbanScreen: View {
 
 /// Shared with 708's lifecycle board — `dispatch.unifiedLoads` payload.
 private struct KanbanLoad: Decodable, Identifiable, Hashable {
-    let id: Int
+    // The server contract is canonical string identity (`String(r.id)`). Keep
+    // it exact from read -> drag payload -> mutation -> acknowledgement.
+    let id: String
     let loadNumber: String
     let status: String
     let rate: Double?
@@ -68,6 +68,7 @@ private struct KanbanLoad: Decodable, Identifiable, Hashable {
     let commodityName: String?
     let originCity: String?
     let destinationCity: String?
+    let driverId: String?
     let driverName: String?
     let temperatureF: Double?
     let etaMinutes: Int?
@@ -80,8 +81,20 @@ private struct UnifiedLoadsResponse: Decodable, Hashable {
     let summary: Summary
 }
 
+private struct KanbanSettingsPayload: Decodable {
+    let rolePreferences: RolePreferences?
+    struct RolePreferences: Decodable { let dispatch: Dispatch? }
+    struct Dispatch: Decodable { let board: Board? }
+    struct Board: Decodable {
+        let visibleStages: [String]
+        let cardDensity: String
+    }
+}
+
 private struct DispatcherMutationResult: Decodable {
     let success: Bool?
+    let loadId: String?
+    let newStatus: String?
     let message: String?
     let error: String?
 
@@ -90,6 +103,59 @@ private struct DispatcherMutationResult: Decodable {
         return [message, error]
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .first(where: { !$0.isEmpty }) ?? fallback
+    }
+
+    func validateStatus(loadId expectedId: String, status expectedStatus: String) throws {
+        if let failure = failureMessage(fallback: "The stage change was rejected.") {
+            throw DispatcherKanbanCommitError.rejected(failure)
+        }
+        guard success == true else {
+            throw DispatcherKanbanCommitError.rejected("The server did not acknowledge the stage change.")
+        }
+        guard loadId == expectedId else {
+            throw DispatcherKanbanCommitError.identityMismatch(expected: expectedId, received: loadId)
+        }
+        guard newStatus == expectedStatus else {
+            throw DispatcherKanbanCommitError.statusMismatch(expected: expectedStatus, received: newStatus)
+        }
+    }
+
+    func validateUnassignment(loadId expectedId: String) throws {
+        if let failure = failureMessage(fallback: "The unassignment was rejected.") {
+            throw DispatcherKanbanCommitError.rejected(failure)
+        }
+        guard success == true else {
+            throw DispatcherKanbanCommitError.rejected("The server did not acknowledge the unassignment.")
+        }
+        guard loadId == expectedId else {
+            throw DispatcherKanbanCommitError.identityMismatch(expected: expectedId, received: loadId)
+        }
+    }
+}
+
+private enum DispatcherKanbanCommitError: LocalizedError {
+    case rejected(String)
+    case identityMismatch(expected: String, received: String?)
+    case statusMismatch(expected: String, received: String?)
+    case readbackMissing(loadId: String)
+    case readbackMismatch(loadId: String, expectedStatus: String, receivedStatus: String)
+    case readbackUnassignedMismatch(loadId: String)
+
+    var errorDescription: String? {
+        switch self {
+        case .rejected(let message):
+            return message
+        case .identityMismatch:
+            return "EusoTrip acknowledged a different load. The board was restored; pull to refresh before retrying."
+        case .statusMismatch:
+            return "EusoTrip acknowledged a different stage. The board was restored; pull to refresh before retrying."
+        case .readbackMissing:
+            return "The saved load could not be read back from the dispatch board. The board was restored; pull to refresh."
+        case .readbackMismatch:
+            return "The saved stage could not be confirmed. The board was restored; pull to refresh before retrying."
+        case .readbackUnassignedMismatch:
+            return "The driver removal could not be confirmed. The board was restored; pull to refresh before retrying."
+        }
     }
 }
 
@@ -143,6 +209,7 @@ private let kanbanLanes: [KanbanLane] = [
 
 private struct DispatcherKanbanBody: View {
     @Environment(\.palette) private var palette
+    @EnvironmentObject private var session: EusoTripSession
 
     @State private var byLane: [String: [KanbanLoad]] = [:]
     @State private var totalAll: Int = 0
@@ -151,10 +218,12 @@ private struct DispatcherKanbanBody: View {
     @State private var loadError: String? = nil
 
     @State private var sheetLoad: KanbanLoad? = nil      // tap-and-shift confirm
-    @State private var shifting: Int? = nil
+    @State private var shifting: String? = nil
     @State private var actionError: String? = nil
-    @State private var draggingLoadId: Int? = nil
+    @State private var draggingLoadId: String? = nil
     @State private var dropLaneId: String? = nil
+    @State private var visibleStageIds = Set(kanbanLanes.map(\.id))
+    @State private var cardDensity = "compact"
 
     // Filter chips — verbatim from wireframe (All · Hazmat · Reefer · Dry).
     @State private var filter: BoardFilter = .all
@@ -186,7 +255,7 @@ private struct DispatcherKanbanBody: View {
                     .padding(.horizontal, 20).padding(.top, 14)
                 } else {
                     VStack(alignment: .leading, spacing: 18) {
-                        ForEach(kanbanLanes) { lane in
+                        ForEach(visibleLanes) { lane in
                             laneView(lane)
                         }
                     }
@@ -204,19 +273,20 @@ private struct DispatcherKanbanBody: View {
             }
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
         .sheet(item: $sheetLoad) { l in confirmSheet(l) }
     }
 
-    // MARK: TopBar eyebrow  ("✦ DISPATCHER · BOARD · KANBAN"  ·  "22 LOADS · 5 STAGES")
+    // MARK: TopBar eyebrow
 
     private var eyebrow: some View {
         HStack {
-            Text("✦ DISPATCHER · BOARD · KANBAN")
+            EusoTripBrandMark(size: 12)
+            Text("DISPATCHER · BOARD · KANBAN")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer(minLength: 0)
-            Text("\(totalAll) LOADS · 5 STAGES")
+            Text("\(totalAll) LOADS · \(visibleLanes.count) STAGES")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
         }
@@ -227,7 +297,7 @@ private struct DispatcherKanbanBody: View {
             Text("Board")
                 .font(.system(size: 28, weight: .bold)).tracking(-0.4)
                 .foregroundStyle(palette.textPrimary)
-            Text("Aurora Freight · hold a load, then drop it onto a stage")
+            Text("\(session.user?.name ?? "Dispatch") · hold a load, then drop it onto a stage")
                 .font(.system(size: 12)).foregroundStyle(palette.textSecondary)
         }
     }
@@ -266,6 +336,10 @@ private struct DispatcherKanbanBody: View {
     private var reeferCount: Int { allLoads.filter { ($0.cargoType ?? "").lowercased().contains("reefer") || ($0.cargoType ?? "").lowercased().contains("refrig") }.count }
     private var dryCount: Int    { allLoads.filter { ($0.cargoType ?? "").lowercased().contains("dry") }.count }
     private var allLoads: [KanbanLoad] { byLane.values.flatMap { $0 } }
+    private var visibleLanes: [KanbanLane] {
+        let configured = kanbanLanes.filter { visibleStageIds.contains($0.id) }
+        return configured.isEmpty ? kanbanLanes : configured
+    }
 
     // MARK: Stage lane (header row + drag/drop card grid)
 
@@ -287,10 +361,9 @@ private struct DispatcherKanbanBody: View {
                     .padding(.vertical, 4)
             } else {
                 LazyVGrid(
-                    columns: [
-                        GridItem(.flexible(minimum: 0), spacing: 10),
-                        GridItem(.flexible(minimum: 0), spacing: 10)
-                    ],
+                    columns: cardDensity == "comfortable"
+                        ? [GridItem(.flexible(minimum: 0), spacing: 10)]
+                        : [GridItem(.flexible(minimum: 0), spacing: 10), GridItem(.flexible(minimum: 0), spacing: 10)],
                     alignment: .leading,
                     spacing: 10
                 ) {
@@ -313,7 +386,7 @@ private struct DispatcherKanbanBody: View {
                         cardView(l, lane: lane)
                             .contentShape(Rectangle())
                             .onTapGesture { handleCardTap(l, in: lane) }
-                            .draggable(String(l.id)) {
+                            .draggable(l.id) {
                                 dragPreview(l, lane: lane)
                             }
                     }
@@ -334,7 +407,7 @@ private struct DispatcherKanbanBody: View {
                 )
         )
         .dropDestination(for: String.self) { ids, _ in
-            guard let raw = ids.first, let loadId = Int(raw) else { return false }
+            guard let loadId = ids.first, !loadId.isEmpty else { return false }
             guard shifting == nil else { return false }
             Task { await drop(loadId, into: lane) }
             return true
@@ -403,7 +476,7 @@ private struct DispatcherKanbanBody: View {
                 .padding(.leading, 9)
                 .padding(.trailing, 10)
             }
-            .frame(maxWidth: .infinity, minHeight: 96, alignment: .topLeading)
+            .frame(maxWidth: .infinity, minHeight: cardDensity == "comfortable" ? 112 : 96, alignment: .topLeading)
             .background(palette.bgCard)
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
@@ -426,7 +499,7 @@ private struct DispatcherKanbanBody: View {
             .onAppear { armDragFeedback(for: l.id) }
     }
 
-    private func armDragFeedback(for loadId: Int) {
+    private func armDragFeedback(for loadId: String) {
         withAnimation(.easeInOut(duration: 0.11).repeatCount(4, autoreverses: true)) {
             draggingLoadId = loadId
         }
@@ -482,7 +555,7 @@ private struct DispatcherKanbanBody: View {
 
     private func confirmSheet(_ l: KanbanLoad) -> some View {
         let lane = currentLane(for: l.status) ?? kanbanLanes[0]
-        let needsDriver = lane.id == "tender" && (l.driverName?.isEmpty != false)
+        let needsDriver = lane.id == "tender" && l.driverId == nil
         return VStack(alignment: .leading, spacing: 0) {
             // Grabber.
             Capsule().fill(palette.borderSoft)
@@ -587,7 +660,7 @@ private struct DispatcherKanbanBody: View {
             object: nil,
             userInfo: [
                 "screenId": "Dpch710A",
-                "loadId": String(l.id),
+                "loadId": l.id,
                 "loadNumber": l.loadNumber
             ]
         )
@@ -600,14 +673,14 @@ private struct DispatcherKanbanBody: View {
             object: nil,
             userInfo: [
                 "screenId": "532",
-                "loadId": String(l.id),
+                "loadId": l.id,
                 "loadNumber": l.loadNumber,
             ]
         )
     }
 
     private func handleCardTap(_ l: KanbanLoad, in lane: KanbanLane) {
-        if lane.id == "tender", l.driverName?.isEmpty != false {
+        if lane.id == "tender", l.driverId == nil {
             openAssignDriver(l)
         } else {
             sheetLoad = l
@@ -625,47 +698,65 @@ private struct DispatcherKanbanBody: View {
     // MARK: - Load + shift pipeline
 
     private func load() async {
+        guard shifting == nil else { return }
         loading = true; loadError = nil
-        struct In: Encodable { let mode: String; let limit: Int; let offset: Int }
         do {
-            let r: UnifiedLoadsResponse = try await EusoTripAPI.shared.query(
-                "dispatch.unifiedLoads", input: In(mode: "company", limit: 500, offset: 0))
-            var grouped: [String: [KanbanLoad]] = [:]
-            for l in r.loads {
-                let key = laneId(for: l.status) ?? "tender"
-                grouped[key, default: []].append(l)
-            }
-            byLane = grouped
-            totalAll = r.total
+            let response = try await fetchBoard()
+            applyBoard(response)
         } catch {
+            if error is CancellationError { return }
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loading = false
+            return
+        }
+
+        // Board preferences are an enhancement, not a dependency of the live
+        // load feed. A settings outage must never turn a healthy board into an
+        // empty/error screen; the complete five-stage compact board remains
+        // usable while the next refresh retries preferences.
+        do {
+            let settings: KanbanSettingsPayload = try await EusoTripAPI.shared.queryNoInput("settings.getSettings")
+            if let board = settings.rolePreferences?.dispatch?.board {
+                let valid = Set(board.visibleStages).intersection(kanbanLanes.map(\.id))
+                visibleStageIds = valid.isEmpty ? Set(kanbanLanes.map(\.id)) : valid
+                cardDensity = board.cardDensity == "comfortable" ? "comfortable" : "compact"
+            }
+        } catch {
+            visibleStageIds = Set(kanbanLanes.map(\.id))
+            cardDensity = "compact"
         }
         loading = false
     }
 
     private func shift(_ l: KanbanLoad, to next: String) async {
         guard shifting == nil else { return }
-        shifting = l.id; actionError = nil
+        let previousBoard = byLane
+        let previousTotal = totalAll
+        shifting = l.id
+        actionError = nil
         struct In: Encodable { let loadId: String; let status: String }
         do {
             let response: DispatcherMutationResult = try await EusoTripAPI.shared.mutation(
-                "dispatch.updateLoadStatus", input: In(loadId: String(l.id), status: next))
-            if let failure = response.failureMessage(
-                fallback: "The stage change for \(l.loadNumber) was rejected. The load has not moved."
-            ) {
-                actionError = failure
-                await load()
-            } else {
-                sheetLoad = nil
-                await load()
-            }
+                "dispatch.updateLoadStatus", input: In(loadId: l.id, status: next))
+            try response.validateStatus(loadId: l.id, status: next)
+            let confirmed = try await readBack(
+                loadId: l.id,
+                expectedStatus: next,
+                requiresNoDriver: false
+            )
+            applyBoard(confirmed)
+            sheetLoad = nil
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            byLane = previousBoard
+            totalAll = previousTotal
+            if !(error is CancellationError) {
+                actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            }
         }
         shifting = nil
     }
 
-    private func drop(_ loadId: Int, into lane: KanbanLane) async {
+    private func drop(_ loadId: String, into lane: KanbanLane) async {
         guard let load = allLoads.first(where: { $0.id == loadId }),
               let source = currentLane(for: load.status),
               let sourceIndex = kanbanLanes.firstIndex(where: { $0.id == source.id }),
@@ -681,7 +772,7 @@ private struct DispatcherKanbanBody: View {
         if source.id == "assigned", lane.id == "tender" {
             await unassign(load)
         } else if targetIndex == sourceIndex + 1 {
-            if lane.id == "assigned", load.driverName?.isEmpty != false {
+            if lane.id == "assigned", load.driverId == nil {
                 await MainActor.run {
                     actionError = "Assign a driver before moving \(load.loadNumber) into Assigned."
                     openAssignDriver(load)
@@ -699,27 +790,100 @@ private struct DispatcherKanbanBody: View {
 
     private func unassign(_ l: KanbanLoad) async {
         guard shifting == nil else { return }
+        let previousBoard = byLane
+        let previousTotal = totalAll
         shifting = l.id
         actionError = nil
         struct In: Encodable { let loadId: String; let reason: String }
         do {
             let response: DispatcherMutationResult = try await EusoTripAPI.shared.mutation(
                 "dispatch.unassignDriver",
-                input: In(loadId: String(l.id), reason: "Dispatcher Kanban move to Tender")
+                input: In(loadId: l.id, reason: "Dispatcher Kanban move to Tender")
             )
-            if let failure = response.failureMessage(
-                fallback: "The unassignment for \(l.loadNumber) was rejected. The driver is still assigned."
-            ) {
-                actionError = failure
-                await load()
-            } else {
-                sheetLoad = nil
-                await load()
-            }
+            try response.validateUnassignment(loadId: l.id)
+            let confirmed = try await readBack(
+                loadId: l.id,
+                expectedStatus: "posted",
+                requiresNoDriver: true
+            )
+            applyBoard(confirmed)
+            sheetLoad = nil
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            byLane = previousBoard
+            totalAll = previousTotal
+            if !(error is CancellationError) {
+                actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            }
         }
         shifting = nil
+    }
+
+    private func fetchBoard() async throws -> UnifiedLoadsResponse {
+        struct In: Encodable { let mode: String; let limit: Int; let offset: Int }
+        try Task.checkCancellation()
+        let response: UnifiedLoadsResponse = try await EusoTripAPI.shared.query(
+            "dispatch.unifiedLoads",
+            input: In(mode: "company", limit: 500, offset: 0)
+        )
+        try Task.checkCancellation()
+        return response
+    }
+
+    private func readBack(
+        loadId: String,
+        expectedStatus: String,
+        requiresNoDriver: Bool
+    ) async throws -> UnifiedLoadsResponse {
+        // `unifiedLoads` reads from the configured read database. Give a
+        // replica a short bounded window to catch the committed primary write;
+        // never paint the new lane until the exact ID/status is observable.
+        let delays: [UInt64] = [0, 150_000_000, 350_000_000, 700_000_000]
+        var lastStatus: String?
+        var sawLoad = false
+        var lastReadError: Error?
+
+        for delay in delays {
+            try Task.checkCancellation()
+            if delay > 0 { try await Task.sleep(nanoseconds: delay) }
+            do {
+                let response = try await fetchBoard()
+                guard let row = response.loads.first(where: { $0.id == loadId }) else {
+                    lastReadError = DispatcherKanbanCommitError.readbackMissing(loadId: loadId)
+                    continue
+                }
+                sawLoad = true
+                lastStatus = row.status
+                guard row.status == expectedStatus else { continue }
+                if requiresNoDriver, row.driverId != nil { continue }
+                return response
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                lastReadError = error
+            }
+        }
+
+        if requiresNoDriver, sawLoad, lastStatus == expectedStatus {
+            throw DispatcherKanbanCommitError.readbackUnassignedMismatch(loadId: loadId)
+        }
+        if sawLoad, let lastStatus {
+            throw DispatcherKanbanCommitError.readbackMismatch(
+                loadId: loadId,
+                expectedStatus: expectedStatus,
+                receivedStatus: lastStatus
+            )
+        }
+        throw lastReadError ?? DispatcherKanbanCommitError.readbackMissing(loadId: loadId)
+    }
+
+    private func applyBoard(_ response: UnifiedLoadsResponse) {
+        var grouped: [String: [KanbanLoad]] = [:]
+        for load in response.loads {
+            let key = laneId(for: load.status) ?? "tender"
+            grouped[key, default: []].append(load)
+        }
+        byLane = grouped
+        totalAll = response.total
     }
 
     private func resetDragState() async {

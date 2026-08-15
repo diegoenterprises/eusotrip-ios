@@ -8,34 +8,97 @@
 //  RBAC enforcement (a Shipper user can only ever see Shipper screens,
 //  a Driver user can only ever see Driver screens, etc.).
 //
-//  Roles with full native iOS surfaces this session:
-//    • DRIVER   → driverSurface (existing 4-pane: Home/Trips/Loads/Me)
-//    • SHIPPER  → ShipperSurface (200/201/202/204 routed by
-//                  `eusoShipperNavSwap` from `ShipperNavController`)
+//  `RoleSurfaceAssignment` exhaustively binds all 25 backend roles. Twenty-two
+//  roles mount native role-owned surfaces; Safety Manager, Factoring and the
+//  verified Zeun Service Provider are explicit App.tsx continuations until persona-correct native roots
+//  exist. Shared rail/vessel registries are fenced again by each role's exact
+//  `NativeModeRoleDefinition.allowedRoutes` catalog.
 //
-//  Roles that have a real registered Home screen and route to it:
-//    • CATALYST (Carrier)        → 300_CarrierHome
-//    • BROKER                    → 400_BrokerHome
-//    • ESCORT                    → 600_EscortHome
-//    • TERMINAL_MANAGER          → 700_TerminalHome
-//    • ADMIN / SUPER_ADMIN       → 800_AdminHome
-//
-//  Roles whose iOS surface ships in a later session route to a real
-//  `WebContinuationView` backed by an App.tsx route. Safari authentication
-//  is independent from the native bearer session, so web sign-in may be
-//  required. Vessel Shipper and Vessel Operator already have native homes.
-//
-//  RBAC: every cross-role nav request (notification, deep-link, sheet)
-//  passes through `RoleAccess.canRender(role:screenId:)` which short-
-//  circuits to the role's home if the requested screen is not in
-//  `ScreenRegistry.forRole(role)`.
+//  Every surface installs one stable Home/work/work/Me dock around ESANG and
+//  owns its navigation stack. Cross-role notifications are accepted only when
+//  the target is both registered and assigned to the signed-in role.
 //
 
 import SwiftUI
-import PhotosUI
 import SafariServices
 
 // MARK: - Role surface router
+
+/// One exhaustive assignment per backend role. Keeping this separate from the
+/// view switch makes the 25-role contract machine-verifiable: adding an
+/// `EusoRole` cannot silently inherit a family default or a different role's
+/// dock. The raw value is deliberately unique even where two roles share a
+/// proven native container (ADMIN / SUPER_ADMIN).
+enum RoleSurfaceAssignment: String, CaseIterable {
+    case driver = "DriverSurfaceHost"
+    case shipper = "ShipperSurface"
+    case catalyst = "CarrierSurface"
+    case broker = "BrokerSurface"
+    case dispatch = "DispatchSurface"
+    case escort = "EscortSurface"
+    case terminal = "TerminalSurface"
+    case compliance = "ComplianceSurface"
+    case safety = "WebContinuationSurface.SAFETY_MANAGER"
+    case admin = "AdminSurface.ADMIN"
+    case superAdmin = "AdminSurface.SUPER_ADMIN"
+    case factoring = "WebContinuationSurface.FACTORING"
+    case railShipper = "NativeModeRoleSurface.RAIL_SHIPPER"
+    case railCatalyst = "NativeModeRoleSurface.RAIL_CATALYST"
+    case railDispatch = "NativeModeRoleSurface.RAIL_DISPATCHER"
+    case railEngineer = "RailEngineerSurface"
+    case railConductor = "NativeModeRoleSurface.RAIL_CONDUCTOR"
+    case railBroker = "NativeModeRoleSurface.RAIL_BROKER"
+    case vesselShipper = "VesselShipperSurface"
+    case vesselOperator = "VesselOperatorSurface"
+    case portMaster = "NativeModeRoleSurface.PORT_MASTER"
+    case shipCaptain = "NativeModeRoleSurface.SHIP_CAPTAIN"
+    case vesselBroker = "NativeModeRoleSurface.VESSEL_BROKER"
+    case customsBroker = "NativeModeRoleSurface.CUSTOMS_BROKER"
+    case serviceProvider = "WebContinuationSurface.SERVICE_PROVIDER"
+
+    static func forRole(_ role: EusoRole) -> RoleSurfaceAssignment {
+        switch role {
+        case .driver: return .driver
+        case .shipper: return .shipper
+        case .catalyst: return .catalyst
+        case .broker: return .broker
+        case .dispatch: return .dispatch
+        case .escort: return .escort
+        case .terminal: return .terminal
+        case .compliance: return .compliance
+        case .safety: return .safety
+        case .admin: return .admin
+        case .superAdmin: return .superAdmin
+        case .factoring: return .factoring
+        case .railShipper: return .railShipper
+        case .railCatalyst: return .railCatalyst
+        case .railDispatch: return .railDispatch
+        case .railEngineer: return .railEngineer
+        case .railConductor: return .railConductor
+        case .railBroker: return .railBroker
+        case .vesselShipper: return .vesselShipper
+        case .vesselOperator: return .vesselOperator
+        case .portMaster: return .portMaster
+        case .shipCaptain: return .shipCaptain
+        case .vesselBroker: return .vesselBroker
+        case .customsBroker: return .customsBroker
+        case .serviceProvider: return .serviceProvider
+        }
+    }
+
+    var isContinuation: Bool {
+        switch self {
+        case .safety, .factoring, .serviceProvider:
+            return true
+        case .driver, .shipper, .catalyst, .broker, .dispatch, .escort,
+             .terminal, .compliance, .admin, .superAdmin, .railShipper,
+             .railCatalyst, .railDispatch, .railEngineer, .railConductor,
+             .railBroker, .vesselShipper, .vesselOperator, .portMaster,
+             .shipCaptain, .vesselBroker, .customsBroker:
+            return false
+        }
+    }
+}
 
 struct RoleSurfaceRouter: View {
     @EnvironmentObject var session: EusoTripSession
@@ -50,7 +113,7 @@ struct RoleSurfaceRouter: View {
         // to Driver-by-accident.
         let role = session.user?.roleEnum ?? .driver
 
-        switch role {
+        switch RoleSurfaceAssignment.forRole(role) {
         case .driver:
             // The Driver surface lives inside ContentView because it
             // owns the `nav: DriverNavController`, `trip:
@@ -69,20 +132,18 @@ struct RoleSurfaceRouter: View {
         case .broker:
             BrokerSurface(palette: palette)
 
+        case .dispatch:
+            // Dispatch has 13 native iOS files (Dpch700-Dpch712) —
+            // surface landed natively 2026-05-01 with the design-
+            // token normalization + unshelf of 702-712.
+            DispatchSurface(palette: palette)
+
         case .escort:
             EscortSurface(palette: palette)
 
         case .terminal:
             TerminalSurface(palette: palette)
 
-        case .admin, .superAdmin:
-            AdminSurface(palette: palette)
-
-        case .dispatch:
-            // Dispatch has 13 native iOS files (Dpch700-Dpch712) —
-            // surface landed natively 2026-05-01 with the design-
-            // token normalization + unshelf of 702-712.
-            DispatchSurface(palette: palette)
         case .compliance:
             // Compliance has 3 native iOS files (900-902) — surfaces
             // landed natively 2026-05-01 with the resurrection of the
@@ -90,46 +151,458 @@ struct RoleSurfaceRouter: View {
             // to the chrome registry.
             ComplianceSurface(palette: palette)
         case .safety:
-            WebContinuationSurface(role: role, palette: palette,
-                                   pathSlug: "safety")
+            WebContinuationSurface(role: role, palette: palette)
+
+        case .admin:
+            AdminSurface(palette: palette)
+
+        case .superAdmin:
+            AdminSurface(palette: palette)
+
         case .factoring:
-            WebContinuationSurface(role: role, palette: palette,
-                                   pathSlug: "factoring")
+            WebContinuationSurface(role: role, palette: palette)
+
         case .railShipper:
-            WebContinuationSurface(role: role, palette: palette,
-                                   pathSlug: "rail/shipper")
+            NativeModeRoleSurface(definition: .railShipper, palette: palette)
+
         case .railCatalyst:
-            WebContinuationSurface(role: role, palette: palette,
-                                   pathSlug: "rail/carrier")
+            NativeModeRoleSurface(definition: .railCatalyst, palette: palette)
+
         case .railDispatch:
-            WebContinuationSurface(role: role, palette: palette,
-                                   pathSlug: "rail/dispatch")
+            NativeModeRoleSurface(definition: .railDispatch, palette: palette)
+
         case .railEngineer:
             RailEngineerSurface(palette: palette)
+
         case .railConductor:
-            WebContinuationSurface(role: role, palette: palette,
-                                   pathSlug: "rail/conductor")
+            NativeModeRoleSurface(definition: .railConductor, palette: palette)
+
         case .railBroker:
-            WebContinuationSurface(role: role, palette: palette,
-                                   pathSlug: "rail/broker")
+            NativeModeRoleSurface(definition: .railBroker, palette: palette)
+
         case .vesselShipper:
-            // Native equivalent of the web `/vessel/dashboard` route.
-            VesselShipperHomeScreen(theme: palette)
+            VesselShipperSurface(palette: palette)
+
         case .vesselOperator:
             VesselOperatorSurface(palette: palette)
+
         case .portMaster:
-            WebContinuationSurface(role: role, palette: palette,
-                                   pathSlug: "port/dashboard")
+            NativeModeRoleSurface(definition: .portMaster, palette: palette)
+
         case .shipCaptain:
-            WebContinuationSurface(role: role, palette: palette,
-                                   pathSlug: "vessel/captain/dashboard")
+            NativeModeRoleSurface(definition: .shipCaptain, palette: palette)
+
         case .vesselBroker:
-            WebContinuationSurface(role: role, palette: palette,
-                                   pathSlug: "vessel/broker/dashboard")
+            NativeModeRoleSurface(definition: .vesselBroker, palette: palette)
+
         case .customsBroker:
-            WebContinuationSurface(role: role, palette: palette,
-                                   pathSlug: "customs/dashboard")
+            NativeModeRoleSurface(definition: .customsBroker, palette: palette)
+
+        case .serviceProvider:
+            WebContinuationSurface(role: role, palette: palette)
         }
+    }
+}
+
+// MARK: - Canonical role docks
+
+/// Typed four-destination contracts installed by every native role surface.
+/// `Shell` owns the rendering, so child screens and reused cross-mode screens
+/// cannot replace a role's primary navigation or inherit another role's dock.
+enum RoleDockCatalog {
+    static func driver(active: String, select: @escaping (String) -> Void, openESang: @escaping () -> Void) -> RoleDockContract {
+        .four(
+            home: .init(destinationId: "home", label: "Home", systemImage: "house"),
+            workOne: .init(destinationId: "trips", label: "Trips", systemImage: "truck.box"),
+            workTwo: .init(destinationId: "loads", label: "Loads", systemImage: "shippingbox.fill"),
+            me: .init(destinationId: "me", label: "Me", systemImage: "person"),
+            active: active, select: select, openESang: openESang
+        )
+    }
+
+    static func shipper(active: String, select: @escaping (String) -> Void, openESang: @escaping () -> Void) -> RoleDockContract {
+        .four(
+            home: .init(destinationId: "200", label: "Home", systemImage: "house"),
+            workOne: .init(destinationId: "204", label: "Create Load", systemImage: "plus.rectangle.on.rectangle"),
+            workTwo: .init(destinationId: "201", label: "Loads", systemImage: "shippingbox.fill"),
+            me: .init(destinationId: "320", label: "Me", systemImage: "person"),
+            active: active, select: select, openESang: openESang
+        )
+    }
+
+    static func carrier(active: String, select: @escaping (String) -> Void, openESang: @escaping () -> Void) -> RoleDockContract {
+        .four(
+            home: .init(destinationId: "300", label: "Home", systemImage: "house"),
+            workOne: .init(destinationId: "301", label: "Loads", systemImage: "shippingbox.fill"),
+            workTwo: .init(destinationId: "304", label: "Drivers", systemImage: "person.3.fill"),
+            me: .init(destinationId: "350", label: "Me", systemImage: "person"),
+            active: active, select: select, openESang: openESang
+        )
+    }
+
+    static func catalyst(active: String, select: @escaping (String) -> Void, openESang: @escaping () -> Void) -> RoleDockContract {
+        .four(
+            home: .init(destinationId: "500", label: "Home", systemImage: "house"),
+            workOne: .init(destinationId: "501", label: "Matches", systemImage: "point.3.connected.trianglepath.dotted"),
+            workTwo: .init(destinationId: "304", label: "Fleet", systemImage: "truck.box.fill"),
+            me: .init(destinationId: "350", label: "Me", systemImage: "person"),
+            active: active, select: select, openESang: openESang
+        )
+    }
+
+    static func broker(active: String, select: @escaping (String) -> Void, openESang: @escaping () -> Void) -> RoleDockContract {
+        .four(
+            home: .init(destinationId: "400", label: "Home", systemImage: "house"),
+            workOne: .init(destinationId: "401", label: "Tenders", systemImage: "doc.text.fill"),
+            workTwo: .init(destinationId: "402b", label: "Carriers", systemImage: "truck.box.fill"),
+            me: .init(destinationId: "404B", label: "Me", systemImage: "person"),
+            active: active, select: select, openESang: openESang
+        )
+    }
+
+    static func escort(active: String, select: @escaping (String) -> Void, openESang: @escaping () -> Void) -> RoleDockContract {
+        .four(
+            home: .init(destinationId: "600", label: "Home", systemImage: "house"),
+            workOne: .init(destinationId: "601", label: "Assignments", systemImage: "shield.fill"),
+            workTwo: .init(destinationId: "602", label: "Corridor", systemImage: "map.fill"),
+            me: .init(destinationId: "620", label: "Me", systemImage: "person"),
+            active: active, select: select, openESang: openESang
+        )
+    }
+
+    static func terminal(active: String, select: @escaping (String) -> Void, openESang: @escaping () -> Void) -> RoleDockContract {
+        .four(
+            home: .init(destinationId: "700", label: "Home", systemImage: "house"),
+            workOne: .init(destinationId: "701", label: "Movements", systemImage: "arrow.left.arrow.right"),
+            workTwo: .init(destinationId: "702", label: "Yard", systemImage: "map.fill"),
+            me: .init(destinationId: "703", label: "Me", systemImage: "person"),
+            active: active, select: select, openESang: openESang
+        )
+    }
+
+    static func admin(active: String, select: @escaping (String) -> Void, openESang: @escaping () -> Void) -> RoleDockContract {
+        .four(
+            home: .init(destinationId: "800", label: "Home", systemImage: "house"),
+            workOne: .init(destinationId: "801", label: "Tickets", systemImage: "ticket.fill"),
+            workTwo: .init(destinationId: "802", label: "Tenants", systemImage: "building.2.fill"),
+            me: .init(destinationId: "804", label: "Me", systemImage: "person"),
+            active: active, select: select, openESang: openESang
+        )
+    }
+
+    static func compliance(active: String, select: @escaping (String) -> Void, openESang: @escaping () -> Void) -> RoleDockContract {
+        .four(
+            home: .init(destinationId: "900", label: "Home", systemImage: "house"),
+            workOne: .init(destinationId: "901", label: "Drivers", systemImage: "person.3.fill"),
+            workTwo: .init(destinationId: "902", label: "Audits", systemImage: "checkmark.shield.fill"),
+            me: .init(destinationId: "903", label: "Me", systemImage: "person"),
+            active: active, select: select, openESang: openESang
+        )
+    }
+
+    static func dispatch(active: String, select: @escaping (String) -> Void, openESang: @escaping () -> Void) -> RoleDockContract {
+        .four(
+            home: .init(destinationId: "Disp400", label: "Home", systemImage: "house"),
+            workOne: .init(destinationId: "Disp401", label: "Board", systemImage: "rectangle.split.3x1.fill"),
+            workTwo: .init(destinationId: "Dpch721", label: "Comms", systemImage: "bubble.left.and.bubble.right.fill"),
+            me: .init(destinationId: "Dpch713", label: "Me", systemImage: "person"),
+            active: active, select: select, openESang: openESang
+        )
+    }
+
+    static func railEngineer(active: String, select: @escaping (String) -> Void, openESang: @escaping () -> Void) -> RoleDockContract {
+        .four(
+            home: .init(destinationId: "Rail550", label: "Home", systemImage: "house"),
+            workOne: .init(destinationId: "Rail551", label: "Shipments", systemImage: "train.side.front.car"),
+            workTwo: .init(destinationId: "Rail552", label: "Compliance", systemImage: "checkmark.shield.fill"),
+            me: .init(destinationId: "Rail556", label: "Me", systemImage: "person"),
+            active: active, select: select, openESang: openESang
+        )
+    }
+
+    static func vesselOperator(active: String, select: @escaping (String) -> Void, openESang: @escaping () -> Void) -> RoleDockContract {
+        .four(
+            home: .init(destinationId: "Vesl650", label: "Home", systemImage: "house"),
+            workOne: .init(destinationId: "Vesl651", label: "Shipments", systemImage: "shippingbox.fill"),
+            workTwo: .init(destinationId: "Vesl652", label: "Compliance", systemImage: "checkmark.shield.fill"),
+            me: .init(destinationId: "Vesl656", label: "Me", systemImage: "person"),
+            active: active, select: select, openESang: openESang
+        )
+    }
+
+    static func vesselShipper(active: String, select: @escaping (String) -> Void, openESang: @escaping () -> Void) -> RoleDockContract {
+        .four(
+            home: .init(destinationId: "Vesl001", label: "Home", systemImage: "house"),
+            workOne: .init(destinationId: "Vesl011", label: "Bookings", systemImage: "doc.text.fill"),
+            workTwo: .init(destinationId: "Vesl012", label: "Track", systemImage: "location.fill"),
+            me: .init(destinationId: "320", label: "Me", systemImage: "person"),
+            active: active, select: select, openESang: openESang
+        )
+    }
+}
+
+// MARK: - Shared native rail / vessel role contracts
+
+/// A role-specific shell over an existing native mode registry. These
+/// definitions intentionally use only context-free roots whose initial load is
+/// backed by a real server query. Record-detail screens that need an id are not
+/// promoted to a dock destination with a sentinel id.
+struct NativeModeRoleDefinition {
+    enum Mode {
+        case rail
+        case vessel
+    }
+
+    let role: EusoRole
+    let mode: Mode
+    let registryRole: ProductionScreen.Role
+    let home: RoleDockItem
+    let workOne: RoleDockItem
+    let workTwo: RoleDockItem
+    let me: RoleDockItem
+    let detailRoutes: Set<String>
+    let screensWithOwnBack: Set<String>
+
+    var dockItems: [RoleDockItem] { [home, workOne, workTwo, me] }
+    var tabRoots: Set<String> { Set(dockItems.map(\.destinationId)) }
+    var allowedRoutes: Set<String> {
+        tabRoots.union(detailRoutes)
+    }
+
+    static let railShipper = Self(
+        role: .railShipper,
+        mode: .rail,
+        registryRole: .railEngineer,
+        home: .init(destinationId: "RoleRailShipperHome", label: "Home", systemImage: "house"),
+        workOne: .init(destinationId: "Rail551", label: "Shipments", systemImage: "shippingbox.fill"),
+        workTwo: .init(destinationId: "Rail639", label: "Network", systemImage: "point.3.connected.trianglepath.dotted"),
+        me: .init(destinationId: "RoleRailShipperMe", label: "Me", systemImage: "person"),
+        detailRoutes: [],
+        screensWithOwnBack: []
+    )
+
+    static let railCatalyst = Self(
+        role: .railCatalyst,
+        mode: .rail,
+        registryRole: .railEngineer,
+        home: .init(destinationId: "RoleRailCatalystHome", label: "Home", systemImage: "house"),
+        workOne: .init(destinationId: "Rail559", label: "Yards", systemImage: "square.grid.3x3.fill"),
+        workTwo: .init(destinationId: "Rail552", label: "Compliance", systemImage: "checkmark.shield.fill"),
+        me: .init(destinationId: "RoleRailCatalystMe", label: "Me", systemImage: "person"),
+        detailRoutes: [],
+        screensWithOwnBack: []
+    )
+
+    static let railDispatch = Self(
+        role: .railDispatch,
+        mode: .rail,
+        registryRole: .railEngineer,
+        home: .init(destinationId: "RoleRailDispatchHome", label: "Home", systemImage: "house"),
+        workOne: .init(destinationId: "Rail555", label: "Consists", systemImage: "train.side.front.car"),
+        workTwo: .init(destinationId: "Rail559", label: "Yards", systemImage: "square.grid.3x3.fill"),
+        me: .init(destinationId: "RoleRailDispatchMe", label: "Me", systemImage: "person"),
+        detailRoutes: [],
+        screensWithOwnBack: []
+    )
+
+    static let railConductor = Self(
+        role: .railConductor,
+        mode: .rail,
+        registryRole: .railEngineer,
+        home: .init(destinationId: "RoleRailConductorHome", label: "Home", systemImage: "house"),
+        workOne: .init(destinationId: "Rail554", label: "Duty", systemImage: "clock.fill"),
+        workTwo: .init(destinationId: "Rail595", label: "Credentials", systemImage: "person.text.rectangle.fill"),
+        me: .init(destinationId: "RoleRailConductorMe", label: "Me", systemImage: "person"),
+        detailRoutes: [],
+        screensWithOwnBack: []
+    )
+
+    static let railBroker = Self(
+        role: .railBroker,
+        mode: .rail,
+        registryRole: .railEngineer,
+        home: .init(destinationId: "RoleRailBrokerHome", label: "Home", systemImage: "house"),
+        workOne: .init(destinationId: "Rail551", label: "Shipments", systemImage: "shippingbox.fill"),
+        workTwo: .init(destinationId: "Rail639", label: "Network", systemImage: "point.3.connected.trianglepath.dotted"),
+        me: .init(destinationId: "RoleRailBrokerMe", label: "Me", systemImage: "person"),
+        detailRoutes: [],
+        screensWithOwnBack: []
+    )
+
+    static let portMaster = Self(
+        role: .portMaster,
+        mode: .vessel,
+        registryRole: .vesselOperator,
+        home: .init(destinationId: "RolePortMasterHome", label: "Home", systemImage: "house"),
+        workOne: .init(destinationId: "Vesl697", label: "Port Ops", systemImage: "ferry.fill"),
+        workTwo: .init(destinationId: "Vesl686", label: "Directory", systemImage: "building.2.fill"),
+        me: .init(destinationId: "RolePortMasterMe", label: "Me", systemImage: "person"),
+        detailRoutes: ["Vesl661", "Vesl822"],
+        screensWithOwnBack: []
+    )
+
+    static let shipCaptain = Self(
+        role: .shipCaptain,
+        mode: .vessel,
+        registryRole: .vesselOperator,
+        home: .init(destinationId: "RoleShipCaptainHome", label: "Home", systemImage: "house"),
+        workOne: .init(destinationId: "Vesl660", label: "Position", systemImage: "location.fill"),
+        workTwo: .init(destinationId: "Vesl711", label: "Crew", systemImage: "person.3.fill"),
+        me: .init(destinationId: "RoleShipCaptainMe", label: "Me", systemImage: "person"),
+        detailRoutes: ["Vesl654", "Vesl822"],
+        screensWithOwnBack: ["Vesl654"]
+    )
+
+    static let vesselBroker = Self(
+        role: .vesselBroker,
+        mode: .vessel,
+        registryRole: .vesselOperator,
+        home: .init(destinationId: "RoleVesselBrokerHome", label: "Home", systemImage: "house"),
+        workOne: .init(destinationId: "Vesl651", label: "Bookings", systemImage: "doc.text.fill"),
+        workTwo: .init(destinationId: "Vesl686", label: "Ports", systemImage: "ferry.fill"),
+        me: .init(destinationId: "RoleVesselBrokerMe", label: "Me", systemImage: "person"),
+        detailRoutes: [],
+        screensWithOwnBack: []
+    )
+
+    static let customsBroker = Self(
+        role: .customsBroker,
+        mode: .vessel,
+        registryRole: .vesselOperator,
+        home: .init(destinationId: "RoleCustomsBrokerHome", label: "Home", systemImage: "house"),
+        workOne: .init(destinationId: "Vesl789", label: "Entries", systemImage: "doc.badge.clock"),
+        workTwo: .init(destinationId: "Vesl814", label: "Filing", systemImage: "doc.badge.plus"),
+        me: .init(destinationId: "RoleCustomsBrokerMe", label: "Me", systemImage: "person"),
+        detailRoutes: [],
+        screensWithOwnBack: []
+    )
+}
+
+extension RoleDockCatalog {
+    static func nativeModeRole(
+        definition: NativeModeRoleDefinition,
+        active: String,
+        select: @escaping (String) -> Void,
+        openESang: @escaping () -> Void
+    ) -> RoleDockContract {
+        .four(
+            home: definition.home,
+            workOne: definition.workOne,
+            workTwo: definition.workTwo,
+            me: definition.me,
+            active: active,
+            select: select,
+            openESang: openESang
+        )
+    }
+}
+
+/// App.tsx-verified web destinations for roles that still have an
+/// explicit continuation instead of a production-safe native surface.
+struct WebRoleDockDefinition {
+    let home: RoleDockItem
+    let workOne: RoleDockItem
+    let workTwo: RoleDockItem
+    let me: RoleDockItem
+
+    var items: [RoleDockItem] { [home, workOne, workTwo, me] }
+
+    static func forRole(_ role: EusoRole) -> WebRoleDockDefinition {
+        func item(_ path: String, _ label: String, _ icon: String) -> RoleDockItem {
+            RoleDockItem(destinationId: path, label: label, systemImage: icon)
+        }
+
+        switch role {
+        case .safety:
+            return .init(
+                home: item("/safety", "Home", "house"),
+                workOne: item("/safety/incidents", "Incidents", "exclamationmark.triangle.fill"),
+                workTwo: item("/safety/scores", "Scores", "checkmark.shield.fill"),
+                me: item("/settings", "Me", "person")
+            )
+        case .factoring:
+            return .init(
+                home: item("/factoring", "Home", "house"),
+                workOne: item("/factoring/invoices", "Invoices", "doc.text.fill"),
+                workTwo: item("/factoring/funding", "Funding", "banknote.fill"),
+                me: item("/factoring/settings", "Me", "person")
+            )
+        case .serviceProvider:
+            return .init(
+                home: item("/zeun/providers", "Home", "house"),
+                workOne: item("/zeun/provider/work-orders", "Work", "wrench.and.screwdriver.fill"),
+                workTwo: item("/zeun/provider/team", "Team", "person.3.fill"),
+                me: item("/settings", "Me", "person")
+            )
+        case .driver, .shipper, .catalyst, .broker, .dispatch, .escort,
+             .terminal, .compliance, .admin, .superAdmin, .railShipper,
+             .railCatalyst, .railDispatch, .railEngineer, .railConductor,
+             .railBroker, .vesselShipper, .vesselOperator, .portMaster,
+             .shipCaptain, .vesselBroker, .customsBroker:
+            preconditionFailure("\(role.rawValue) is assigned to a native role surface")
+        }
+    }
+
+    /// Allow ESANG to open role-owned web routes without granting a role a
+    /// cross-domain or cross-role navigation primitive. Final authorization is
+    /// still enforced by App.tsx and the server; this is the client-side fence.
+    func allows(path rawPath: String, for role: EusoRole) -> Bool {
+        let path = Self.normalizedPath(rawPath)
+        if items.contains(where: { $0.destinationId == path }) { return true }
+        if ["/", "/profile", "/settings", "/messages", "/documents", "/esang"].contains(path) {
+            return true
+        }
+
+        switch role {
+        case .safety:
+            return path.hasPrefix("/safety") || path.hasPrefix("/hazmat")
+                || path == "/incidents" || path == "/training"
+                || path == "/driver-health" || path == "/vehicle-safety"
+        case .factoring:
+            return path.hasPrefix("/factoring")
+        case .serviceProvider:
+            return path.hasPrefix("/zeun/providers") || path.hasPrefix("/zeun/provider")
+        case .driver, .shipper, .catalyst, .broker, .dispatch, .escort,
+             .terminal, .compliance, .admin, .superAdmin, .railShipper,
+             .railCatalyst, .railDispatch, .railEngineer, .railConductor,
+             .railBroker, .vesselShipper, .vesselOperator, .portMaster,
+             .shipCaptain, .vesselBroker, .customsBroker:
+            return false
+        }
+    }
+
+    static func normalizedPath(_ rawPath: String) -> String {
+        let trimmed = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "/" }
+        if let url = URL(string: trimmed), url.scheme != nil {
+            return normalizedPath(url.path)
+        }
+        var path = trimmed
+        if let query = path.firstIndex(of: "?") { path = String(path[..<query]) }
+        if let fragment = path.firstIndex(of: "#") { path = String(path[..<fragment]) }
+        if !path.hasPrefix("/") { path = "/" + path }
+        while path.count > 1 && path.hasSuffix("/") { path.removeLast() }
+        return path.lowercased()
+    }
+}
+
+extension RoleDockCatalog {
+    static func webContinuation(
+        role: EusoRole,
+        active: String,
+        select: @escaping (String) -> Void,
+        openESang: @escaping () -> Void
+    ) -> RoleDockContract {
+        let definition = WebRoleDockDefinition.forRole(role)
+        return .four(
+            home: definition.home,
+            workOne: definition.workOne,
+            workTwo: definition.workTwo,
+            me: definition.me,
+            active: active,
+            select: select,
+            openESang: openESang
+        )
     }
 }
 
@@ -353,19 +826,6 @@ struct ShipperSurface: View {
     /// Cleared when the sheet dismisses.
     @State private var webContinuationURL: URL? = nil
 
-    /// Photos picker visibility — toggled by the avatar tap from the
-    /// Me hero. The picked `PhotosPickerItem` resolves to JPEG `Data`
-    /// in `.onChange`, gets uploaded as a base64 data URL via
-    /// `profile.updateAvatar`, and the new URL is mirrored into the
-    /// session user so the Me hero re-renders with the new image
-    /// without a manual refresh.
-    @State private var avatarPickerItem: PhotosPickerItem? = nil
-    @State private var avatarPickerOpen: Bool = false
-    /// Surfaces a failed avatar upload to the user. Was previously a
-    /// silent `try?`/`if let` — on failure nothing happened and the
-    /// user re-picked the photo forever. (the-oath §6 FIX 6.)
-    @State private var avatarUploadError: String? = nil
-
     /// The single generic detail layer pushed in-stack via the shared
     /// `\.rolePushDetail` (aliased to `\.shipperPushDetail` for the four
     /// converted Shipper screens). Sheet→push, NAV remediation
@@ -470,6 +930,19 @@ struct ShipperSurface: View {
                                 }
     }
 
+    private var roleDock: RoleDockContract {
+        RoleDockCatalog.shipper(
+            active: screenStack.first ?? "200",
+            select: { destination in
+                pushedDetail = nil
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    pushOrTab(destination)
+                }
+            },
+            openESang: { showeSang = true }
+        )
+    }
+
     var body: some View {
         // Body kept short to dodge SwiftUI's "compiler unable to
         // type-check this expression in reasonable time" timeout —
@@ -480,6 +953,7 @@ struct ShipperSurface: View {
         // ViewModifier types below.
         current.view(palette)
             .id(currentIdentity)
+            .eusoRefreshSurface("shipper:\(currentIdentity)")
             .transition(.opacity)
             .modifier(ShipperBackOverlay(
                 stackDepth: screenStack.count,
@@ -500,6 +974,7 @@ struct ShipperSurface: View {
                 }
             ))
             .modifier(ShipperEnvInjections())
+            .environment(\.roleDockContract, roleDock)
             .modifier(ShipperNotificationListeners(
                 screenStack: $screenStack,
                 activeLoadId: $activeLoadId,
@@ -508,7 +983,6 @@ struct ShipperSurface: View {
                 activePortIntelProduct: $activePortIntelProduct,
                 activeSearchQuery: $activeSearchQuery,
                 activePostLoadDraftId: $activePostLoadDraftId,
-                avatarPickerOpen: $avatarPickerOpen,
                 showeSang: $showeSang,
                 webContinuationURL: $webContinuationURL,
                 pushedDetail: $pushedDetail,
@@ -518,27 +992,13 @@ struct ShipperSurface: View {
                 applyIndustryWorkflow: { postLoadDraft.applyIndustryWorkflow($0) },
                 handleMeAction: handleShipperMeAction
             ))
-            .photosPicker(isPresented: $avatarPickerOpen,
-                          selection: $avatarPickerItem,
-                          matching: .images)
-            .onChange(of: avatarPickerItem) { _, newItem in
-                guard let newItem else { return }
-                Task {
-                    await uploadShipperAvatar(item: newItem)
-                    avatarPickerItem = nil
-                }
-            }
-            .alert("Profile photo", isPresented: Binding(
-                get: { avatarUploadError != nil },
-                set: { if !$0 { avatarUploadError = nil } })) {
-                Button("OK", role: .cancel) { avatarUploadError = nil }
-            } message: { Text(avatarUploadError ?? "") }
             .sheet(item: Binding<ShipperWebContinuationItem?>(
                 get: { webContinuationURL.map(ShipperWebContinuationItem.init) },
                 set: { webContinuationURL = $0?.url }
             )) { ident in
                 SafariContinuationView(url: ident.url)
                     .ignoresSafeArea()
+                    .eusoRefreshSurface("modal:web-continuation:shipper")
             }
             // ASC AOd5xzXVfU6CF6hyijTDwgk (build 712): present as a full-
             // screen cover, not a page sheet. The page-sheet peek band let
@@ -655,80 +1115,6 @@ struct ShipperSurface: View {
         }
     }
 
-    // MARK: - Avatar upload
-
-    /// Convert the picked photo to a JPEG data URL and ship it through
-    /// `profile.updateAvatar`. The mutation persists `profilePicture`
-    /// on the `users` row so web + iPad read the new image on next
-    /// `profile.getMyProfile`. Best-effort — silent failure leaves
-    /// the previous avatar in place.
-    @MainActor
-    private func uploadShipperAvatar(item: PhotosPickerItem) async {
-        guard let data = try? await item.loadTransferable(type: Data.self),
-              !data.isEmpty else { return }
-        // Compress so the base64 data-URL stays well under the 64KB
-        // `users.profilePicture` TEXT column (max 65535 bytes). A detailed
-        // 512px@0.8 JPEG could base64-inflate past 64KB, and the server
-        // UPDATE then throws "Data too long for column" — surfaced to the
-        // user as "your photo didn't upload". Resize to ~320px, then
-        // iteratively drop quality (and dimension as a backstop) until the
-        // JPEG is < 37KB binary (~49KB base64), with a hard floor so it
-        // ALWAYS terminates and ALWAYS fits.
-        let bytes: Data = {
-            #if canImport(UIKit)
-            guard let img = UIImage(data: data) else { return data }
-            let maxBinary = 37_000   // -> base64 < ~49KB, safely under the 64KB column
-            func encode(at dimension: CGFloat, quality: CGFloat) -> Data? {
-                let scale = min(dimension / max(img.size.width, 1), dimension / max(img.size.height, 1), 1)
-                let size = CGSize(width: max(img.size.width * scale, 1), height: max(img.size.height * scale, 1))
-                let renderer = UIGraphicsImageRenderer(size: size)
-                let resized = renderer.image { _ in img.draw(in: CGRect(origin: .zero, size: size)) }
-                return resized.jpegData(compressionQuality: quality)
-            }
-            var dimension: CGFloat = 320
-            for _ in 0..<4 {                 // dimension backstop: 320 -> ~88
-                var quality: CGFloat = 0.7
-                while quality >= 0.2 {       // quality floor 0.2
-                    if let jpeg = encode(at: dimension, quality: quality), jpeg.count < maxBinary {
-                        return jpeg
-                    }
-                    quality -= 0.15
-                }
-                dimension *= 0.65
-            }
-            // Hard floor — a 96px @0.3 JPEG is a few KB, guaranteed to fit.
-            return encode(at: 96, quality: 0.3) ?? encode(at: 64, quality: 0.3) ?? data
-            #else
-            return data
-            #endif
-        }()
-        let dataURL = "data:image/jpeg;base64,\(bytes.base64EncodedString())"
-
-        struct In: Encodable { let avatarUrl: String }
-        struct Out: Decodable { let success: Bool; let avatarUrl: String }
-        do {
-            let out: Out = try await EusoTripAPI.shared.mutation(
-                "profile.updateAvatar",
-                input: In(avatarUrl: dataURL)
-            )
-            if out.success {
-                // Post the LIVE profile-updated event so avatar-rendering
-                // surfaces re-fetch and pick up the new picture. Was
-                // `.eusoProfileAvatarUpdated`, which had ZERO observers anywhere
-                // (a dead post); `.eusoProfileUpdated` is the event the
-                // real-time profile-refresh path actually listens on.
-                NotificationCenter.default.post(name: .eusoProfileUpdated, object: nil)
-            } else {
-                avatarUploadError = "Your photo didn't upload. Please try again."
-            }
-        } catch {
-            // Was `try?` — a failed upload silently did nothing and the
-            // user re-picked the photo forever. Surface the real error.
-            avatarUploadError = (error as? EusoTripAPIError)?.errorDescription
-                ?? "Your photo didn't upload. Please try again."
-        }
-    }
-
     // MARK: - Navigation stack helpers
 
     /// Push a screen id onto the stack, OR collapse to a tab root.
@@ -822,6 +1208,7 @@ struct ShipperSurface: View {
 /// own header back row — keeping the overlay path off avoids the
 /// double-button collision.
 private struct ShipperBackOverlay: ViewModifier {
+    @Environment(\.eusoRoleDetailPresented) private var detailPresented
     let stackDepth: Int
     /// Screens that ship their own header back chevron — suppressing the
     /// surface overlay for these prevents the double-back collision the
@@ -911,6 +1298,14 @@ private struct ShipperBackOverlay: ViewModifier {
                 .padding(.vertical, 8)
             }
         }
+        .modifier(EusoEdgeSwipeBack(
+            isEnabled: stackDepth > 1 && !detailPresented,
+            onBack: {
+                NotificationCenter.default.post(
+                    name: .eusoShipperNavBack, object: nil
+                )
+            }
+        ))
     }
 }
 
@@ -983,7 +1378,6 @@ private struct ShipperNotificationListeners: ViewModifier {
     @Binding var activePortIntelProduct: String?
     @Binding var activeSearchQuery: String?
     @Binding var activePostLoadDraftId: String?
-    @Binding var avatarPickerOpen: Bool
     @Binding var showeSang: Bool
     @Binding var webContinuationURL: URL?
     @Binding var pushedDetail: RoleDetailPush?
@@ -1003,7 +1397,6 @@ private struct ShipperNotificationListeners: ViewModifier {
                 activePortIntelProduct: $activePortIntelProduct,
                 activeSearchQuery: $activeSearchQuery,
                 activePostLoadDraftId: $activePostLoadDraftId,
-                avatarPickerOpen: $avatarPickerOpen,
                 showeSang: $showeSang,
                 pushedDetail: $pushedDetail,
                 pushOrTab: pushOrTab,
@@ -1032,7 +1425,6 @@ private struct ShipperNavReceivers: ViewModifier {
     @Binding var activePortIntelProduct: String?
     @Binding var activeSearchQuery: String?
     @Binding var activePostLoadDraftId: String?
-    @Binding var avatarPickerOpen: Bool
     @Binding var showeSang: Bool
     @Binding var pushedDetail: RoleDetailPush?
     let pushOrTab: (String) -> Void
@@ -1139,9 +1531,6 @@ private struct ShipperNavReceivers: ViewModifier {
                 } else {
                     withAnimation(.easeInOut(duration: 0.22)) { popOne() }
                 }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .eusoShipperAvatarPickRequested)) { _ in
-                avatarPickerOpen = true
             }
             .onReceive(NotificationCenter.default.publisher(for: .eusoShippereSangTapped)) { _ in
                 showeSang = true
@@ -1353,7 +1742,7 @@ enum ShipperWebToNativeMap {
             return "206"
         case "settlement":            return "227"
         case "payment-methods",
-             "payment-method":        return "208"
+             "payment-method":        return "295"
         // `bol`/`bols` → registry id "228" = ShipperBOLs (the BOLs
         // LIST). NOTE: registry ids are NOT the file numbers — file
         // 228_ShipperRFPDetail registers as "228b", and registry "228"
@@ -1540,7 +1929,7 @@ struct CarrierSurface: View {
     /// Founder mandate 2026-05-05 — push/pop nav stack so leaf screens
     /// always have a back path. Bottom-nav tabs reset the stack to a
     /// single entry; non-tab screens append.
-    @State private var screenStack: [String] = ["300"]
+    @State private var screenStack: [String] = ["500"]
     @State private var showeSang: Bool = false
     /// Shared sheet→push detail layer (NAV remediation 2026-05-30).
     /// Ready for the per-role sheet-conversion wave; surfaces the
@@ -1557,7 +1946,7 @@ struct CarrierSurface: View {
     // never reset to its root (350 CarrierMe). Carrier's back-overlay uses a
     // separate `backSuppress` set, so this change only corrects tab-reset
     // semantics. Corrected to the real slot set. (IA recon 2026-05-30.)
-    private static let tabRoots: Set<String> = ["300", "301", "304", "350"]
+    private static let tabRoots: Set<String> = ["500", "501", "304", "350"]
 
     /// Carrier-side suppress list — same purpose as ShipperBackOverlay's
     /// `screensWithOwnBack`. Tab roots + leaves that draw their OWN
@@ -1584,24 +1973,34 @@ struct CarrierSurface: View {
     ///     (the real tab roots are 300/301/304/350). Removed as stale; if
     ///     either is ever pushed it now correctly gets the surface chevron.
     private static let backSuppress: Set<String> = [
-        "300", "301", "304",   // tab roots (Home / Loads / Drivers)
-        "350",                  // CarrierMe tab root (own dismiss)
+        "500", "501", "304", "350", // Catalyst role roots
         "321",                  // Catalyst Driver Profile — own .eusoRoleNavBack
     ]
 
-    private var currentScreenId: String { screenStack.last ?? "300" }
+    private var currentScreenId: String { screenStack.last ?? "500" }
 
     private var current: ProductionScreen {
-        let pool = ScreenRegistry.forRole(.carrier)
-                 + ScreenRegistry.forRole(.catalyst)
+        let pool = ScreenRegistry.forRole(.catalyst)
+                 + ScreenRegistry.forRole(.carrier)
         return pool.first { $0.id == currentScreenId }
-            ?? pool.first { $0.id == "300" }
+            ?? pool.first { $0.id == "500" }
             ?? pool.first
-            ?? ProductionScreen(id: "300",
-                                title: "Carrier · Home",
-                                role: .carrier) { p in
-                                    AnyView(CarrierHomeScreen(theme: p))
+            ?? ProductionScreen(id: "500",
+                                title: "Catalyst · Home",
+                                role: .catalyst) { p in
+                                    AnyView(CatalystHomeScreen(theme: p))
                                 }
+    }
+
+    private var roleDock: RoleDockContract {
+        RoleDockCatalog.catalyst(
+            active: screenStack.first ?? "500",
+            select: { destination in
+                pushedDetail = nil
+                withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(destination) }
+            },
+            openESang: { showeSang = true }
+        )
     }
 
     private func pushOrTab(_ id: String) {
@@ -1614,6 +2013,7 @@ struct CarrierSurface: View {
     var body: some View {
         current.view(palette)
             .id("carrier-\(currentScreenId)")
+            .eusoRefreshSurface("catalyst:\(currentScreenId)")
             .transition(.opacity)
             .modifier(RoleNavBackOverlay(
                 stackDepth: screenStack.count,
@@ -1636,10 +2036,11 @@ struct CarrierSurface: View {
             .environment(\.carrierNavHandler) { label in
                 CarrierNavDispatcher.handle(label)
             }
+            .environment(\.roleDockContract, roleDock)
             .onReceive(NotificationCenter.default.publisher(for: .eusoCarrierNavSwap)) { note in
                 guard let id = note.userInfo?["screenId"] as? String else { return }
                 guard RoleAccess.canRender(role: .catalyst, screenId: id) else {
-                    screenStack = ["300"]; return
+                    screenStack = ["500"]; return
                 }
                 // Any explicit swap leaves the detail layer behind.
                 pushedDetail = nil
@@ -1720,9 +2121,21 @@ struct BrokerSurface: View {
     }
     private func popOne() { if screenStack.count > 1 { screenStack.removeLast() } }
 
+    private var roleDock: RoleDockContract {
+        RoleDockCatalog.broker(
+            active: screenStack.first ?? "400",
+            select: { destination in
+                pushedDetail = nil
+                withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(destination) }
+            },
+            openESang: { showeSang = true }
+        )
+    }
+
     var body: some View {
         current.view(palette)
             .id("broker-\(currentScreenId)")
+            .eusoRefreshSurface("broker:\(currentScreenId)")
             .transition(.opacity)
             .modifier(RoleNavBackOverlay(
                 stackDepth: screenStack.count,
@@ -1734,6 +2147,7 @@ struct BrokerSurface: View {
             .environment(\.brokerNavHandler) { label in
                 BrokerNavDispatcher.handle(label)
             }
+            .environment(\.roleDockContract, roleDock)
             .modifier(RoleDetailLayer(
                 pushedDetail: $pushedDetail,
                 palette: palette,
@@ -1822,9 +2236,21 @@ struct EscortSurface: View {
     }
     private func popOne() { if screenStack.count > 1 { screenStack.removeLast() } }
 
+    private var roleDock: RoleDockContract {
+        RoleDockCatalog.escort(
+            active: screenStack.first ?? "600",
+            select: { destination in
+                pushedDetail = nil
+                withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(destination) }
+            },
+            openESang: { showeSang = true }
+        )
+    }
+
     var body: some View {
         current.view(palette)
             .id("escort-\(currentScreenId)")
+            .eusoRefreshSurface("escort:\(currentScreenId)")
             .transition(.opacity)
             .modifier(RoleNavBackOverlay(
                 stackDepth: screenStack.count,
@@ -1836,6 +2262,7 @@ struct EscortSurface: View {
             .environment(\.escortNavHandler) { label in
                 EscortNavDispatcher.handle(label)
             }
+            .environment(\.roleDockContract, roleDock)
             .modifier(RoleDetailLayer(
                 pushedDetail: $pushedDetail,
                 palette: palette,
@@ -1919,9 +2346,21 @@ struct TerminalSurface: View {
     }
     private func popOne() { if screenStack.count > 1 { screenStack.removeLast() } }
 
+    private var roleDock: RoleDockContract {
+        RoleDockCatalog.terminal(
+            active: screenStack.first ?? "700",
+            select: { destination in
+                pushedDetail = nil
+                withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(destination) }
+            },
+            openESang: { showeSang = true }
+        )
+    }
+
     var body: some View {
         current.view(palette)
             .id("terminal-\(currentScreenId)")
+            .eusoRefreshSurface("terminal:\(currentScreenId)")
             .transition(.opacity)
             .modifier(RoleNavBackOverlay(
                 stackDepth: screenStack.count,
@@ -1933,6 +2372,7 @@ struct TerminalSurface: View {
             .environment(\.terminalNavHandler) { label in
                 TerminalNavDispatcher.handle(label)
             }
+            .environment(\.roleDockContract, roleDock)
             .modifier(RoleDetailLayer(
                 pushedDetail: $pushedDetail,
                 palette: palette,
@@ -2019,9 +2459,21 @@ struct AdminSurface: View {
     }
     private func popOne() { if screenStack.count > 1 { screenStack.removeLast() } }
 
+    private var roleDock: RoleDockContract {
+        RoleDockCatalog.admin(
+            active: screenStack.first ?? "800",
+            select: { destination in
+                pushedDetail = nil
+                withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(destination) }
+            },
+            openESang: { showeSang = true }
+        )
+    }
+
     var body: some View {
         current.view(palette)
             .id("admin-\(currentScreenId)")
+            .eusoRefreshSurface("admin:\(currentScreenId)")
             .transition(.opacity)
             .modifier(RoleNavBackOverlay(
                 stackDepth: screenStack.count,
@@ -2033,6 +2485,7 @@ struct AdminSurface: View {
             .environment(\.adminNavHandler) { label in
                 AdminNavDispatcher.handle(label)
             }
+            .environment(\.roleDockContract, roleDock)
             .modifier(RoleDetailLayer(
                 pushedDetail: $pushedDetail,
                 palette: palette,
@@ -2127,9 +2580,21 @@ struct DispatchSurface: View {
     }
     private func popOne() { if screenStack.count > 1 { screenStack.removeLast() } }
 
+    private var roleDock: RoleDockContract {
+        RoleDockCatalog.dispatch(
+            active: screenStack.first ?? "Disp400",
+            select: { destination in
+                pushedDetail = nil
+                withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(destination) }
+            },
+            openESang: { showeSang = true }
+        )
+    }
+
     var body: some View {
         current.view(palette)
             .id("dispatch-\(currentScreenId)")
+            .eusoRefreshSurface("dispatch:\(currentScreenId)")
             .transition(.opacity)
             .modifier(RoleNavBackOverlay(
                 stackDepth: screenStack.count,
@@ -2141,6 +2606,7 @@ struct DispatchSurface: View {
             .environment(\.dispatchNavHandler) { label in
                 DispatchNavDispatcher.handle(label)
             }
+            .environment(\.roleDockContract, roleDock)
             .modifier(RoleDetailLayer(
                 pushedDetail: $pushedDetail,
                 palette: palette,
@@ -2249,9 +2715,21 @@ struct ComplianceSurface: View {
     }
     private func popOne() { if screenStack.count > 1 { screenStack.removeLast() } }
 
+    private var roleDock: RoleDockContract {
+        RoleDockCatalog.compliance(
+            active: screenStack.first ?? "900",
+            select: { destination in
+                pushedDetail = nil
+                withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(destination) }
+            },
+            openESang: { showeSang = true }
+        )
+    }
+
     var body: some View {
         current.view(palette)
             .id("compliance-\(currentScreenId)")
+            .eusoRefreshSurface("compliance:\(currentScreenId)")
             .transition(.opacity)
             .modifier(RoleNavBackOverlay(
                 stackDepth: screenStack.count,
@@ -2263,6 +2741,7 @@ struct ComplianceSurface: View {
             .environment(\.complianceNavHandler) { label in
                 ComplianceNavDispatcher.handle(label)
             }
+            .environment(\.roleDockContract, roleDock)
             .modifier(RoleDetailLayer(
                 pushedDetail: $pushedDetail,
                 palette: palette,
@@ -2299,6 +2778,353 @@ struct ComplianceSurface: View {
                             dismissSheet: { showeSang = false })
                     }
             }
+    }
+}
+
+// MARK: - Shared native mode-role surface
+
+/// Native container for rail and vessel roles whose strongest existing iOS
+/// workspaces live in the shared mode registry. The definition is an exact
+/// role allowlist: child-screen notifications can never broaden the catalog or
+/// replace the role's four dock destinations.
+@MainActor
+struct NativeModeRoleSurface: View {
+    let definition: NativeModeRoleDefinition
+    let palette: Theme.Palette
+
+    @EnvironmentObject private var session: EusoTripSession
+    @State private var screenStack: [String]
+    @State private var showeSang = false
+    @State private var pushedDetail: RoleDetailPush?
+    @State private var routeError: String?
+
+    init(definition: NativeModeRoleDefinition, palette: Theme.Palette) {
+        self.definition = definition
+        self.palette = palette
+        _screenStack = State(initialValue: [definition.home.destinationId])
+    }
+
+    private var currentScreenId: String {
+        screenStack.last ?? definition.home.destinationId
+    }
+
+    private var currentView: AnyView {
+        if currentScreenId == definition.home.destinationId {
+            return AnyView(NativeModeRoleHome(
+                definition: definition,
+                palette: palette,
+                open: selectDockDestination
+            ))
+        }
+        if currentScreenId == definition.me.destinationId {
+            return AnyView(NativeModeRoleMe(
+                definition: definition,
+                palette: palette
+            ))
+        }
+        guard definition.allowedRoutes.contains(currentScreenId),
+              let screen = ScreenRegistry.forRole(definition.registryRole)
+                .first(where: { $0.id == currentScreenId }) else {
+            return AnyView(NativeModeRouteUnavailable(
+                definition: definition,
+                palette: palette,
+                returnHome: { selectDockDestination(definition.home.destinationId) }
+            ))
+        }
+        return screen.view(palette)
+    }
+
+    private var swapNotification: Notification.Name {
+        switch definition.mode {
+        case .rail: return .eusoRailNavSwap
+        case .vessel: return .eusoVesselNavSwap
+        }
+    }
+
+    private var railNavigation: ((String) -> Void)? {
+        guard definition.mode == .rail else { return nil }
+        return { label in RailEngineerNavDispatcher.handle(label) }
+    }
+
+    private var vesselNavigation: ((String) -> Void)? {
+        guard definition.mode == .vessel else { return nil }
+        return { label in VesselOperatorNavDispatcher.handle(label) }
+    }
+
+    private var roleDock: RoleDockContract {
+        RoleDockCatalog.nativeModeRole(
+            definition: definition,
+            active: screenStack.first ?? definition.home.destinationId,
+            select: { destination in selectDockDestination(destination) },
+            openESang: { showeSang = true }
+        )
+    }
+
+    var body: some View {
+        currentView
+            .id("native-mode-role-\(definition.role.rawValue)-\(currentScreenId)")
+            .eusoRefreshSurface("native-mode-role:\(definition.role.rawValue):\(currentScreenId)")
+            .modifier(RoleNavBackOverlay(
+                stackDepth: screenStack.count,
+                currentScreenId: currentScreenId,
+                screensWithOwnBack: definition.screensWithOwnBack.union(definition.tabRoots)
+            ))
+            .environment(\.driverNavHandler, nil)
+            .environment(\.shipperNavHandler, nil)
+            .environment(\.vesselShipperNavHandler, nil)
+            .environment(\.railEngineerNavHandler, railNavigation)
+            .environment(\.vesselOperatorNavHandler, vesselNavigation)
+            .environment(\.roleDockContract, roleDock)
+            .modifier(RoleDetailLayer(
+                pushedDetail: $pushedDetail,
+                palette: palette,
+                onBack: {
+                    NotificationCenter.default.post(name: .eusoRoleNavBack, object: nil)
+                }
+            ))
+            .onReceive(NotificationCenter.default.publisher(for: swapNotification)) { note in
+                guard let screenId = note.userInfo?["screenId"] as? String else { return }
+                openNotificationRoute(screenId)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoRoleNavBack)) { _ in
+                if pushedDetail != nil {
+                    withAnimation(.easeInOut(duration: 0.28)) { pushedDetail = nil }
+                } else if screenStack.count > 1 {
+                    withAnimation(.easeInOut(duration: 0.22)) { screenStack.removeLast() }
+                }
+            }
+            .fullScreenCover(isPresented: $showeSang) {
+                DrivereSangCoachSheet()
+                    .environment(\.palette, palette)
+                    .environmentObject(session)
+                    .environment(\.esangActionHandler) { action in
+                        eSangRoleDispatcher.dispatch(
+                            action,
+                            role: definition.role,
+                            dismissSheet: { showeSang = false }
+                        )
+                    }
+            }
+            .alert("Route unavailable", isPresented: Binding(
+                get: { routeError != nil },
+                set: { if !$0 { routeError = nil } }
+            )) {
+                Button("OK", role: .cancel) { routeError = nil }
+            } message: {
+                Text(routeError ?? "")
+            }
+    }
+
+    private func selectDockDestination(_ destination: String) {
+        guard definition.tabRoots.contains(destination) else {
+            routeError = "That destination is not assigned to the \(definition.role.displayName) dock."
+            return
+        }
+        pushedDetail = nil
+        withAnimation(.easeInOut(duration: 0.22)) {
+            screenStack = [destination]
+        }
+    }
+
+    private func openNotificationRoute(_ screenId: String) {
+        guard definition.allowedRoutes.contains(screenId),
+              ScreenRegistry.forRole(definition.registryRole)
+                .contains(where: { $0.id == screenId }) else {
+            routeError = "Open this item from its record so EusoTrip can preserve the required context."
+            return
+        }
+        pushedDetail = nil
+        withAnimation(.easeInOut(duration: 0.22)) {
+            if definition.tabRoots.contains(screenId) {
+                screenStack = [screenId]
+            } else if screenStack.last != screenId {
+                screenStack.append(screenId)
+            }
+        }
+    }
+}
+
+@MainActor
+private struct NativeModeRoleHome: View {
+    let definition: NativeModeRoleDefinition
+    let palette: Theme.Palette
+    let open: (String) -> Void
+
+    @EnvironmentObject private var session: EusoTripSession
+
+    private var displayName: String {
+        let value = session.user?.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return value.isEmpty ? definition.role.displayName : value
+    }
+
+    var body: some View {
+        Shell(theme: palette) {
+            VStack(alignment: .leading, spacing: Space.s5) {
+                Spacer().frame(height: Space.s5)
+                EusoTripEyebrow(verbatim: "\(definition.role.displayName.uppercased()) · HOME")
+                Text("Welcome, \(displayName)")
+                    .font(EType.h1)
+                    .foregroundStyle(palette.textPrimary)
+                Text(session.user?.email ?? "")
+                    .font(EType.body)
+                    .foregroundStyle(palette.textSecondary)
+
+                if let companyId = session.user?.companyId, !companyId.isEmpty {
+                    Label("Company \(companyId)", systemImage: "building.2.fill")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+
+                Text("WORKSPACES")
+                    .font(EType.micro)
+                    .foregroundStyle(palette.textTertiary)
+                    .padding(.top, Space.s3)
+
+                workspaceButton(definition.workOne)
+                workspaceButton(definition.workTwo)
+                if definition.role == .portMaster {
+                    workspaceButton(.init(
+                        destinationId: "Vesl822",
+                        label: "Register container",
+                        systemImage: "shippingbox.fill"
+                    ))
+                } else if definition.role == .shipCaptain {
+                    workspaceButton(.init(
+                        destinationId: "Vesl822",
+                        label: "Bunker delivery",
+                        systemImage: "fuelpump.fill"
+                    ))
+                }
+            }
+            .padding(.horizontal, Space.s5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } nav: {
+            EmptyView()
+        }
+    }
+
+    private func workspaceButton(_ item: RoleDockItem) -> some View {
+        Button { open(item.destinationId) } label: {
+            HStack(spacing: Space.s3) {
+                Image(systemName: item.systemImage)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(LinearGradient.diagonal)
+                    .frame(width: 36, height: 36)
+                Text(item.label)
+                    .font(EType.title)
+                    .foregroundStyle(palette.textPrimary)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(palette.textTertiary)
+            }
+            .padding(Space.s4)
+            .background(palette.bgCard)
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.borderFaint)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+@MainActor
+private struct NativeModeRoleMe: View {
+    let definition: NativeModeRoleDefinition
+    let palette: Theme.Palette
+
+    @EnvironmentObject private var session: EusoTripSession
+
+    var body: some View {
+        Shell(theme: palette) {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Space.s5) {
+                    Spacer().frame(height: Space.s5)
+                    EusoTripEyebrow(verbatim: "\(definition.role.displayName.uppercased()) · ME")
+                    Text("Account")
+                        .font(EType.h1)
+                        .foregroundStyle(palette.textPrimary)
+
+                    VStack(alignment: .leading, spacing: Space.s3) {
+                        Label(session.user?.name ?? definition.role.displayName,
+                              systemImage: definition.role.iconSystemName)
+                        Label(session.user?.email ?? "", systemImage: "envelope.fill")
+                        if let companyId = session.user?.companyId, !companyId.isEmpty {
+                            Label("Company \(companyId)", systemImage: "building.2.fill")
+                        }
+                    }
+                    .font(EType.body)
+                    .foregroundStyle(palette.textPrimary)
+                    .padding(Space.s4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(palette.bgCard)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                            .strokeBorder(palette.borderFaint)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+
+                    EusoCardIssuePanel(
+                        title: "\(definition.role.displayName) EusoCard",
+                        subtitle: "Operational spend card backed by EusoWallet Treasury"
+                    )
+
+                    Button {
+                        Task { await session.signOut() }
+                    } label: {
+                        Text("Sign out")
+                            .font(EType.bodyStrong)
+                            .foregroundStyle(Brand.danger)
+                            .frame(maxWidth: .infinity, minHeight: 48)
+                            .background(palette.bgCardSoft)
+                            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+
+                    Color.clear.frame(height: 96)
+                }
+                .padding(.horizontal, Space.s5)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        } nav: {
+            EmptyView()
+        }
+    }
+}
+
+@MainActor
+private struct NativeModeRouteUnavailable: View {
+    let definition: NativeModeRoleDefinition
+    let palette: Theme.Palette
+    let returnHome: () -> Void
+
+    var body: some View {
+        Shell(theme: palette) {
+            VStack(spacing: Space.s4) {
+                Spacer().frame(height: Space.s8)
+                Image(systemName: "exclamationmark.shield.fill")
+                    .font(.system(size: 36, weight: .semibold))
+                    .foregroundStyle(Brand.warning)
+                Text("Route unavailable")
+                    .font(EType.h2)
+                    .foregroundStyle(palette.textPrimary)
+                Text("This screen is not assigned to the \(definition.role.displayName) workspace.")
+                    .font(EType.body)
+                    .foregroundStyle(palette.textSecondary)
+                    .multilineTextAlignment(.center)
+                Button("Return Home", action: returnHome)
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, minHeight: 48)
+                    .background(LinearGradient.diagonal)
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            }
+            .padding(.horizontal, Space.s5)
+        } nav: {
+            EmptyView()
+        }
     }
 }
 
@@ -2346,9 +3172,21 @@ struct RailEngineerSurface: View {
     }
     private func popOne() { if screenStack.count > 1 { screenStack.removeLast() } }
 
+    private var roleDock: RoleDockContract {
+        RoleDockCatalog.railEngineer(
+            active: screenStack.first ?? "Rail550",
+            select: { destination in
+                pushedDetail = nil
+                withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(destination) }
+            },
+            openESang: { showeSang = true }
+        )
+    }
+
     var body: some View {
         current.view(palette)
             .id("rail-\(currentScreenId)")
+            .eusoRefreshSurface("rail-engineer:\(currentScreenId)")
             .transition(.opacity)
             .modifier(RoleNavBackOverlay(
                 stackDepth: screenStack.count,
@@ -2360,6 +3198,7 @@ struct RailEngineerSurface: View {
             .environment(\.railEngineerNavHandler) { label in
                 RailEngineerNavDispatcher.handle(label)
             }
+            .environment(\.roleDockContract, roleDock)
             .modifier(RoleDetailLayer(
                 pushedDetail: $pushedDetail,
                 palette: palette,
@@ -2396,6 +3235,369 @@ struct RailEngineerSurface: View {
                             dismissSheet: { showeSang = false })
                     }
             }
+    }
+}
+
+// MARK: - Vessel Shipper surface
+
+/// Owns Vessel Shipper navigation, selected-booking context, and the shared
+/// edge-swipe/detail stack. Mounting `VesselShipperHomeScreen` directly left
+/// every BottomNav event without a history owner and made all drill-ins dead.
+struct VesselShipperSurface: View {
+    let palette: Theme.Palette
+
+    @EnvironmentObject private var session: EusoTripSession
+    @State private var screenStack = ["Vesl001"]
+    @SceneStorage("EusoTrip.vesselShipper.activeShipmentId") private var activeShipmentId = 0
+    @SceneStorage("EusoTrip.vesselShipper.activeBookingNumber") private var activeBookingNumber = ""
+    @State private var showeSang = false
+    @State private var pushedDetail: RoleDetailPush?
+    @State private var contextResolving = false
+    @State private var contextRecoveryMessage: String?
+
+    private static let tabRoots: Set<String> = [
+        "Vesl001", "Vesl011", "Vesl012", "320",
+    ]
+
+    private static let vesselRoutes: Set<String> = [
+        "Vesl001", "Vesl002", "Vesl003", "Vesl004", "Vesl006",
+        "Vesl010", "Vesl011", "Vesl012",
+    ]
+
+    /// Vessel Shippers share identity, wallet, partner, document, support, and
+    /// account controls with the Shipper registry. Build this allow-list from
+    /// the live Me catalog so newly added rows cannot become silent dead taps.
+    private static let sharedMeRoutes: Set<String> = {
+        var ids: Set<String> = [
+            "320", "320a", "320b", "320c", "320d", "320e", "320f", "320g",
+        ]
+        let catalogs = [
+            MeHubCatalog.account,
+            MeHubCatalog.wallet,
+            MeHubCatalog.operations,
+            MeHubCatalog.network,
+            MeHubCatalog.compliance,
+        ]
+        for sections in catalogs {
+            for section in sections {
+                for cell in section.cells {
+                    if case .screen(let id) = cell.action { ids.insert(id) }
+                }
+            }
+        }
+        // Settings uses its own local catalog in `MeSettingsHubBody`.
+        ids.formUnion(["211", "319", "340", "343", "347", "348", "PULSE"])
+        return ids
+    }()
+
+    private static let screensWithOwnBack: Set<String> = [
+        "Vesl010", "320a", "320b", "320c", "320d", "320e", "320f", "320g",
+    ]
+
+    private var currentScreenId: String { screenStack.last ?? "Vesl001" }
+
+    private var current: ProductionScreen {
+        switch currentScreenId {
+        case "Vesl001":
+            return ProductionScreen(id: "Vesl001", title: "Vessel Shipper · Home", role: .shipper) { p in
+                AnyView(VesselShipperHomeScreen(theme: p))
+            }
+        case "Vesl002":
+            guard activeShipmentId > 0 else {
+                return ProductionScreen(id: "Vesl011", title: "Vessel Shipper · Bookings", role: .shipper) { p in
+                    AnyView(VesselShipperBookingsScreen(theme: p))
+                }
+            }
+            return ProductionScreen(id: "Vesl002", title: "Vessel Shipper · Booking Detail", role: .shipper) { p in
+                AnyView(VesselBookingDetailScreen(theme: p, shipmentId: activeShipmentId))
+            }
+        case "Vesl003":
+            guard !activeBookingNumber.isEmpty else {
+                return ProductionScreen(id: "Vesl012", title: "Vessel Shipper · Tracking", role: .shipper) { p in
+                    AnyView(VesselShipperTrackingLookupScreen(theme: p))
+                }
+            }
+            return ProductionScreen(id: "Vesl003", title: "Vessel Shipper · Live Tracking", role: .shipper) { p in
+                AnyView(VesselLiveTrackingScreen(theme: p, bookingNumber: activeBookingNumber))
+            }
+        case "Vesl004":
+            guard activeShipmentId > 0 else {
+                return ProductionScreen(id: "Vesl011", title: "Vessel Shipper · Bookings", role: .shipper) { p in
+                    AnyView(VesselShipperBookingsScreen(theme: p))
+                }
+            }
+            return ProductionScreen(id: "Vesl004", title: "Vessel Shipper · Demurrage & Detention", role: .shipper) { p in
+                AnyView(VesselDemurrageDetentionScreen(theme: p, shipmentId: activeShipmentId))
+            }
+        case "Vesl006":
+            return ProductionScreen(id: "Vesl006", title: "Vessel Shipper · Customs", role: .shipper) { p in
+                AnyView(VesselCustomsISFScreen(theme: p))
+            }
+        case "Vesl010":
+            return ProductionScreen(id: "Vesl010", title: "Vessel Shipper · Create Booking", role: .shipper) { p in
+                AnyView(VesselShipperCreateBookingScreen(theme: p))
+            }
+        case "Vesl011":
+            return ProductionScreen(id: "Vesl011", title: "Vessel Shipper · Bookings", role: .shipper) { p in
+                AnyView(VesselShipperBookingsScreen(theme: p))
+            }
+        case "Vesl012":
+            return ProductionScreen(id: "Vesl012", title: "Vessel Shipper · Tracking", role: .shipper) { p in
+                AnyView(VesselShipperTrackingLookupScreen(theme: p))
+            }
+        default:
+            if Self.sharedMeRoutes.contains(currentScreenId),
+               let screen = ScreenRegistry.forRole(.shipper).first(where: { $0.id == currentScreenId }) {
+                return screen
+            }
+            return ProductionScreen(id: "Vesl001", title: "Vessel Shipper · Home", role: .shipper) { p in
+                AnyView(VesselShipperHomeScreen(theme: p))
+            }
+        }
+    }
+
+    private var currentIdentity: String {
+        switch currentScreenId {
+        case "Vesl002", "Vesl004":
+            return "vessel-shipper-\(currentScreenId)-\(activeShipmentId)"
+        case "Vesl003":
+            return "vessel-shipper-Vesl003-\(activeBookingNumber.isEmpty ? "missing" : activeBookingNumber)"
+        default:
+            return "vessel-shipper-\(currentScreenId)"
+        }
+    }
+
+    private var roleDock: RoleDockContract {
+        RoleDockCatalog.vesselShipper(
+            active: screenStack.first ?? "Vesl001",
+            select: { destination in
+                pushedDetail = nil
+                withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(destination) }
+            },
+            openESang: { showeSang = true }
+        )
+    }
+
+    var body: some View {
+        current.view(palette)
+            .id(currentIdentity)
+            .eusoRefreshSurface("vessel-shipper:\(currentIdentity)")
+            .transition(.opacity)
+            .modifier(RoleNavBackOverlay(
+                stackDepth: screenStack.count,
+                currentScreenId: currentScreenId,
+                screensWithOwnBack: Self.screensWithOwnBack.union(Self.tabRoots)
+            ))
+            .modifier(RoleDetailLayer(
+                pushedDetail: $pushedDetail,
+                palette: palette,
+                onBack: {
+                    NotificationCenter.default.post(name: .eusoVesselShipperNavBack, object: nil)
+                }
+            ))
+            .environment(\.driverNavHandler, nil)
+            .environment(\.shipperNavHandler, nil)
+            .environment(\.vesselOperatorNavHandler, nil)
+            .environment(\.vesselShipperNavHandler) { label in
+                VesselShipperNavDispatcher.handle(label)
+            }
+            .environment(\.roleDockContract, roleDock)
+            .overlay(alignment: .topTrailing) {
+                if contextResolving {
+                    ProgressView()
+                        .controlSize(.small)
+                        .padding(.top, Device.safeTop + Space.s3)
+                        .padding(.trailing, Space.s4)
+                        .accessibilityLabel("Verifying vessel booking")
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoVesselShipperNavSwap)) { note in
+                handleVesselSwap(note)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoShipperNavSwap)) { note in
+                handleSharedMeSwap(note)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoVesselShipperNavBack)) { _ in
+                popOneLevel()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoRoleNavBack)) { _ in
+                popOneLevel()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoShipperNavBack)) { _ in
+                popOneLevel()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoVesselShippereSangTapped)) { _ in
+                showeSang = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoShippereSangTapped)) { _ in
+                showeSang = true
+            }
+            .alert("Choose a vessel booking", isPresented: Binding(
+                get: { contextRecoveryMessage != nil },
+                set: { if !$0 { contextRecoveryMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) { contextRecoveryMessage = nil }
+            } message: {
+                Text(contextRecoveryMessage ?? "")
+            }
+            .fullScreenCover(isPresented: $showeSang) {
+                ShippereSangCoachSheet()
+                    .environment(\.palette, palette)
+                    .environmentObject(session)
+                    .environment(\.esangActionHandler) { action in
+                        eSangRoleDispatcher.dispatch(
+                            action,
+                            role: .vesselShipper,
+                            dismissSheet: { showeSang = false }
+                        )
+                    }
+            }
+    }
+
+    private func handleVesselSwap(_ note: Notification) {
+        guard let id = note.userInfo?["screenId"] as? String,
+              Self.vesselRoutes.contains(id) || Self.sharedMeRoutes.contains(id) else {
+            return
+        }
+        if ["Vesl002", "Vesl003", "Vesl004"].contains(id) {
+            let requestedShipmentId = Self.positiveInteger(note.userInfo?["shipmentId"])
+            let requestedBookingNumber = Self.nonemptyString(note.userInfo?["bookingNumber"])
+            let hasFreshContext = requestedShipmentId != nil || requestedBookingNumber != nil
+            let shipmentId = requestedShipmentId ?? (hasFreshContext || activeShipmentId <= 0 ? nil : activeShipmentId)
+            let bookingNumber = requestedBookingNumber
+                ?? (hasFreshContext || activeBookingNumber.isEmpty ? nil : activeBookingNumber)
+            Task {
+                await resolveBookingContextAndNavigate(
+                    target: id,
+                    shipmentId: shipmentId,
+                    bookingNumber: bookingNumber
+                )
+            }
+            return
+        }
+        pushedDetail = nil
+        withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(id) }
+    }
+
+    @MainActor
+    private func resolveBookingContextAndNavigate(
+        target: String,
+        shipmentId: Int?,
+        bookingNumber: String?
+    ) async {
+        guard shipmentId != nil || bookingNumber != nil else {
+            routeToBookingPicker(for: target, message: nil)
+            return
+        }
+
+        struct Input: Encodable {
+            let shipmentId: Int?
+            let bookingNumber: String?
+        }
+        struct Output: Decodable {
+            let found: Bool
+            let shipmentId: Int?
+            let bookingNumber: String?
+            let canTrack: Bool?
+        }
+
+        contextResolving = true
+        defer { contextResolving = false }
+        var lastError: Error?
+        for attempt in 0..<2 {
+            do {
+                let resolved: Output = try await EusoTripAPI.shared.query(
+                    "vesselShipments.resolveVesselBookingContext",
+                    input: Input(shipmentId: shipmentId, bookingNumber: bookingNumber)
+                )
+                guard resolved.found, let resolvedId = resolved.shipmentId, resolvedId > 0 else {
+                    routeToBookingPicker(
+                        for: target,
+                        message: "Your live vessel bookings are refreshed. Choose the booking you want to continue with."
+                    )
+                    return
+                }
+
+                let resolvedNumber = resolved.bookingNumber?
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                if target == "Vesl003" && (resolved.canTrack != true || resolvedNumber.isEmpty) {
+                    routeToBookingPicker(
+                        for: target,
+                        message: "This booking is yours, but its live tracking reference is not active yet. Choose another booking or open its details."
+                    )
+                    return
+                }
+
+                activeShipmentId = resolvedId
+                activeBookingNumber = resolvedNumber
+                pushedDetail = nil
+                withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(target) }
+                return
+            } catch {
+                lastError = error
+                if attempt == 0 {
+                    try? await Task.sleep(nanoseconds: 350_000_000)
+                }
+            }
+        }
+
+        routeToBookingPicker(
+            for: target,
+            message: "Your own booking list is open so you can continue. \(lastError?.eusoUserCopy ?? "")"
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+    }
+
+    @MainActor
+    private func routeToBookingPicker(for target: String, message: String?) {
+        pushedDetail = nil
+        let recoveryRoot = target == "Vesl003" ? "Vesl012" : "Vesl011"
+        withAnimation(.easeInOut(duration: 0.22)) { screenStack = [recoveryRoot] }
+        contextRecoveryMessage = message
+    }
+
+    private func handleSharedMeSwap(_ note: Notification) {
+        guard let id = note.userInfo?["screenId"] as? String else { return }
+        if id == "_logout" {
+            NotificationCenter.default.post(name: Notification.Name("eusoLogoutRequested"), object: nil)
+            return
+        }
+        guard Self.sharedMeRoutes.contains(id),
+              RoleAccess.canRender(role: .vesselShipper, screenId: id) else {
+            return
+        }
+        pushedDetail = nil
+        withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(id) }
+    }
+
+    private func pushOrTab(_ id: String) {
+        if Self.tabRoots.contains(id) {
+            screenStack = [id]
+        } else if screenStack.last != id {
+            screenStack.append(id)
+        }
+    }
+
+    private func popOneLevel() {
+        if pushedDetail != nil {
+            withAnimation(.easeInOut(duration: 0.28)) { pushedDetail = nil }
+        } else if screenStack.count > 1 {
+            withAnimation(.easeInOut(duration: 0.22)) { screenStack.removeLast() }
+        }
+    }
+
+    private static func positiveInteger(_ value: Any?) -> Int? {
+        if let value = value as? Int, value > 0 { return value }
+        if let value = value as? String,
+           let parsed = Int(value.trimmingCharacters(in: .whitespacesAndNewlines)),
+           parsed > 0 { return parsed }
+        return nil
+    }
+
+    private static func nonemptyString(_ value: Any?) -> String? {
+        guard let value = value as? String else { return nil }
+        let cleaned = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleaned.isEmpty ? nil : cleaned
     }
 }
 
@@ -2449,9 +3651,21 @@ struct VesselOperatorSurface: View {
     }
     private func popOne() { if screenStack.count > 1 { screenStack.removeLast() } }
 
+    private var roleDock: RoleDockContract {
+        RoleDockCatalog.vesselOperator(
+            active: screenStack.first ?? "Vesl650",
+            select: { destination in
+                pushedDetail = nil
+                withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(destination) }
+            },
+            openESang: { showeSang = true }
+        )
+    }
+
     var body: some View {
         current.view(palette)
             .id("vessel-\(currentScreenId)")
+            .eusoRefreshSurface("vessel-operator:\(currentScreenId)")
             .transition(.opacity)
             .modifier(RoleNavBackOverlay(
                 stackDepth: screenStack.count,
@@ -2463,6 +3677,7 @@ struct VesselOperatorSurface: View {
             .environment(\.vesselOperatorNavHandler) { label in
                 VesselOperatorNavDispatcher.handle(label)
             }
+            .environment(\.roleDockContract, roleDock)
             .modifier(RoleDetailLayer(
                 pushedDetail: $pushedDetail,
                 palette: palette,
@@ -2519,6 +3734,7 @@ struct VesselOperatorSurface: View {
 // matching the Shipper pattern that prevents the double-back collision.
 
 private struct RoleNavBackOverlay: ViewModifier {
+    @Environment(\.eusoRoleDetailPresented) private var detailPresented
     let stackDepth: Int
     let currentScreenId: String
     let screensWithOwnBack: Set<String>
@@ -2552,29 +3768,58 @@ private struct RoleNavBackOverlay: ViewModifier {
                 .padding(.vertical, 8)
             }
         }
+        .modifier(EusoEdgeSwipeBack(
+            isEnabled: stackDepth > 1 && !detailPresented,
+            onBack: {
+                NotificationCenter.default.post(
+                    name: .eusoRoleNavBack, object: nil
+                )
+            }
+        ))
     }
 }
 
 // MARK: - Web continuation surface (roles without an iOS surface yet)
 
 /// Production landing for backend roles that do not yet ship a native iOS
-/// surface. Loads a verified `App.tsx` route in SFSafariViewController.
+/// surface. Loads only App.tsx-verified, role-owned routes in
+/// SFSafariViewController and keeps the same four destinations under every
+/// continuation screen.
 /// Native bearer credentials are not transferred to Safari; the web app may
 /// require its own sign-in.
 struct WebContinuationSurface: View {
     let role: EusoRole
     let palette: Theme.Palette
-    /// Path segment under `/` on the web app — e.g. "dispatch", "rail/shipper".
-    let pathSlug: String
 
     @EnvironmentObject var session: EusoTripSession
     @State private var presentingWeb = false
+    @State private var selectedPath = ""
+    @State private var activeDestinationId = ""
+    @State private var showeSang = false
+    @State private var routeError: String?
 
-    private var continuationURL: URL {
-        // Production web app. Keep this as the public domain rather
-        // than the Azure backend host because the web SPA + cookies
-        // live on eusotrip.com.
-        URL(string: "https://app.eusotrip.com/\(pathSlug)")!
+    private var definition: WebRoleDockDefinition {
+        WebRoleDockDefinition.forRole(role)
+    }
+
+    private var continuationURL: URL? {
+        // Production web app. Keep this as the public domain rather than the
+        // Azure backend host because the web SPA + cookies live on eusotrip.com.
+        let path = selectedPath.isEmpty ? definition.home.destinationId : selectedPath
+        return URL(string: "https://app.eusotrip.com\(path)")
+    }
+
+    private var refreshSurfaceID: String {
+        "web:\(role.rawValue):\(activeDestinationId.isEmpty ? definition.home.destinationId : activeDestinationId)"
+    }
+
+    private var roleDock: RoleDockContract {
+        RoleDockCatalog.webContinuation(
+            role: role,
+            active: activeDestinationId.isEmpty ? definition.home.destinationId : activeDestinationId,
+            select: { path in open(path: path, dockDestinationId: path) },
+            openESang: { showeSang = true }
+        )
     }
 
     var body: some View {
@@ -2630,11 +3875,12 @@ struct WebContinuationSurface: View {
                 .padding(.horizontal, Space.s4)
 
                 Button {
-                    presentingWeb = true
+                    open(path: definition.home.destinationId,
+                         dockDestinationId: definition.home.destinationId)
                 } label: {
                     HStack(spacing: Space.s2) {
                         Image(systemName: "safari")
-                        Text("Continue on app.eusotrip.com")
+                        Text("Open \(role.displayName) workspace")
                     }
                     .font(EType.bodyStrong)
                     .frame(maxWidth: .infinity, minHeight: 52)
@@ -2661,11 +3907,101 @@ struct WebContinuationSurface: View {
         } nav: {
             EmptyView()
         }
+        .environment(\.roleDockContract, roleDock)
+        .eusoRefreshSurface(refreshSurfaceID)
+        .onAppear {
+            if selectedPath.isEmpty { selectedPath = definition.home.destinationId }
+            if activeDestinationId.isEmpty { activeDestinationId = definition.home.destinationId }
+        }
         .sheet(isPresented: $presentingWeb) {
-            SafariContinuationView(url: continuationURL)
-                .ignoresSafeArea()
+            if let continuationURL {
+                SafariContinuationView(url: continuationURL)
+                    .ignoresSafeArea()
+                    .eusoRefreshSurface("modal:web-continuation:\(role.rawValue)")
+            }
+        }
+        .fullScreenCover(isPresented: $showeSang) {
+            DrivereSangCoachSheet()
+                .environment(\.palette, palette)
+                .environmentObject(session)
+                .environment(\.esangActionHandler) { action in
+                    handleESang(action)
+                }
+        }
+        .alert("Workspace route", isPresented: Binding(
+            get: { routeError != nil },
+            set: { if !$0 { routeError = nil } }
+        )) {
+            Button("OK", role: .cancel) { routeError = nil }
+        } message: {
+            Text(routeError ?? "")
         }
     }
+
+    @MainActor
+    private func open(path rawPath: String, dockDestinationId: String?) {
+        let path = WebRoleDockDefinition.normalizedPath(rawPath)
+        guard definition.allows(path: path, for: role),
+              URL(string: "https://app.eusotrip.com\(path)") != nil else {
+            routeError = "That workspace destination is not assigned to your \(role.displayName) role."
+            return
+        }
+        selectedPath = path
+        if let dockDestinationId { activeDestinationId = dockDestinationId }
+        presentingWeb = true
+    }
+
+    @MainActor
+    private func handleESang(_ action: eSangAction) {
+        switch action {
+        case .navigatePath(let rawPath):
+            let path = WebRoleDockDefinition.normalizedPath(rawPath)
+            guard definition.allows(path: path, for: role) else {
+                NotificationCenter.default.post(name: .esangUnhandledCommand, object: rawPath)
+                return
+            }
+            showeSang = false
+            let dockId = definition.items.first(where: { $0.destinationId == path })?.destinationId
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                open(path: path, dockDestinationId: dockId)
+            }
+
+        case .navigate(let route):
+            let destination: RoleDockItem
+            switch route {
+            case .home:
+                destination = definition.home
+            case .trips:
+                destination = definition.workOne
+            case .myLoads:
+                destination = definition.workTwo
+            case .me, .meDetail:
+                destination = definition.me
+            }
+            showeSang = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                open(path: destination.destinationId,
+                     dockDestinationId: destination.destinationId)
+            }
+
+        case .selectLoad(let rawId):
+            // Safety and factoring do not own a load-record continuation.
+            // Leave the command unhandled instead of crossing into another
+            // role's route catalog.
+            NotificationCenter.default.post(name: .esangUnhandledCommand, object: rawId)
+
+        case .closeChat, .back:
+            showeSang = false
+
+        default:
+            _ = eSangRoleDispatcher.dispatch(
+                action,
+                role: role,
+                dismissSheet: { showeSang = false }
+            )
+        }
+    }
+
 }
 
 private struct SafariContinuationView: UIViewControllerRepresentable {
@@ -2729,59 +4065,52 @@ enum RoleAccess {
     static func allowedScreenRoles(for role: EusoRole) -> [ProductionScreen.Role] {
         switch role {
         case .driver:                                   return [.driver]
-        case .shipper, .railShipper, .vesselShipper:    return [.shipper]
+        case .shipper, .vesselShipper:                  return [.shipper]
         // Carrier-track backend roles can navigate into both the
         // canonical Carrier registry (300-320) AND the Catalyst
         // SpectraMatch sub-surface (500-502).
-        case .catalyst, .railCatalyst:                  return [.carrier, .catalyst]
-        case .vesselOperator:                           return [.vesselOperator]
-        case .broker, .railBroker, .vesselBroker,
-             .customsBroker:                            return [.broker]
+        case .catalyst:                                 return [.carrier, .catalyst]
+        case .broker:                                   return [.broker]
         case .escort:                                   return [.escort]
-        case .terminal, .portMaster:                    return [.terminal]
+        case .terminal:                                 return [.terminal]
         case .admin, .superAdmin:                       return [.admin]
         case .compliance:                               return [.compliance]
         case .dispatch:                                 return [.dispatch]
-        case .railEngineer:                             return [.railEngineer]
-        // Roles below have no native chrome — they route to web
-        // continuation in `RoleSurfaceRouter`. Empty list means
-        // every cross-role swap is denied for them, which is the
-        // correct outcome since their surface lives outside the
-        // app entirely.
-        case .safety, .factoring,
-             .railDispatch, .railConductor,
-             .shipCaptain:                              return []
+        // Shared mode registries are deliberately broad enough to mount a
+        // proven native screen. `NativeModeRoleDefinition.allowedRoutes` is
+        // the narrower, role-specific navigation fence.
+        case .railShipper, .railCatalyst, .railDispatch,
+             .railEngineer, .railConductor, .railBroker:
+                                                        return [.railEngineer]
+        case .vesselOperator, .portMaster, .shipCaptain,
+             .vesselBroker, .customsBroker:             return [.vesselOperator]
+        // Explicit web continuations do not own a native screen registry.
+        case .safety, .factoring, .serviceProvider:     return []
         }
     }
 
-    /// Map the 24-role backend enum to the 8-role chrome enum used by
-    /// `ScreenRegistry`. Roles without a registered surface map to
-    /// their nearest analog so RBAC can still answer truthfully (a
-    /// rail-shipper has no registered iOS screens, so every check
-    /// fails — which is the correct outcome).
+    /// Map every backend role with a native surface to the registry bucket
+    /// that owns its implementation. Continuation roles remain explicit
+    /// continuations and therefore never call this function from the router.
     static func productionRole(for role: EusoRole) -> ProductionScreen.Role {
         switch role {
-        case .driver:                return .driver
-        case .shipper, .railShipper, .vesselShipper:
-                                     return .shipper
-        case .catalyst, .railCatalyst:
-                                     return .carrier
-        case .vesselOperator:        return .vesselOperator
-        case .broker, .railBroker, .vesselBroker, .customsBroker:
-                                     return .broker
-        case .escort:                return .escort
-        case .terminal, .portMaster: return .terminal
-        case .admin, .superAdmin:    return .admin
-        case .railEngineer:          return .railEngineer
-        // Roles below have no chrome-role analog; map to a sentinel
-        // (.driver) but RoleAccess.canRender still returns false for
-        // them because none of their screen IDs are registered against
-        // .driver. The router routes these to web continuation, never
-        // through the registry path.
-        case .dispatch, .compliance, .safety, .factoring,
-             .railDispatch, .railConductor,
-             .shipCaptain:
-                                     return .driver
+        case .driver:                                   return .driver
+        case .shipper, .vesselShipper:                  return .shipper
+        case .catalyst:                                 return .carrier
+        case .broker:                                   return .broker
+        case .escort:                                   return .escort
+        case .terminal:                                 return .terminal
+        case .admin, .superAdmin:                       return .admin
+        case .compliance:                               return .compliance
+        case .dispatch:                                 return .dispatch
+        case .railShipper, .railCatalyst, .railDispatch,
+             .railEngineer, .railConductor, .railBroker:
+                                                        return .railEngineer
+        case .vesselOperator, .portMaster, .shipCaptain,
+             .vesselBroker, .customsBroker:             return .vesselOperator
+        // No native registry exists for the explicit continuations.
+        // The value is never consumed by their routed surface.
+        case .safety, .factoring, .serviceProvider:     return .driver
         }
     }
 }

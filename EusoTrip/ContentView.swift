@@ -1787,6 +1787,7 @@ enum ScreenRegistry {
             // from 700_TerminalHome ("Access control · scan") and 703 Me
             // (Operations). A pushed leaf (not a tabRoot) via .eusoTerminalNavSwap.
             .init(id: "TerminalAccessScan", title: "Terminal · Access control · scan", role: .terminal) { p in AnyView(TerminalAccessScanScreen(theme: p)) },
+            .init(id: "TerminalVesselWrites", title: "Terminal · Register Container", role: .terminal) { p in AnyView(VesselWriteCenterScreen(theme: p)) },
             // 800 Admin Home — first real brick on the Admin role track
             // (108th eusotrip-killers firing). Replaced the
             // RolePlaceholderScreen stub. Backend wiring: `admin.*` tRPC
@@ -1822,6 +1823,7 @@ enum ScreenRegistry {
             // two-screen depth, parity with Terminal/Escort/Catalyst/
             // Carrier/Broker.
             .init(id: "802", title: "Admin · Tenants",                role: .admin)    { p in AnyView(AdminTenantsScreen(theme: p)) },
+            .init(id: "AdminVesselWrites", title: "Admin · Vessel Writes", role: .admin) { p in AnyView(VesselWriteCenterScreen(theme: p)) },
             // 803 — Admin · Tenant Detail (161st eusotrip-killers firing).
             // Fourth screen on the Admin role track (800s). Drilled
             // into from 802's per-row "View detail →" CTA via a
@@ -1909,7 +1911,8 @@ enum ScreenRegistry {
             // 2026-06-03 — landed 3 scheduled-lane ports from _PORT_STAGING.
             // Dpch402 (NOT "402" — that id is Broker·Tender Detail).
             .init(id: "Dpch402", title: "Dispatch · Profile",           role: .dispatch) { p in AnyView(DispatcherProfileScreen(theme: p)) },
-            .init(id: "Vesl004", title: "Vessel Shipper · Demurrage & Detention", role: .shipper) { p in AnyView(VesselDemurrageDetentionScreen(theme: p)) },
+            // Vessel Shipper detail routes are context-bound and are therefore
+            // constructed by VesselShipperSurface, never this static registry.
             .init(id: "Rail008", title: "Rail Shipper · Tender Workflow", role: .shipper) { _ in AnyView(RailShipperTenderWorkflow_008()) },
             // 2026-05-21 — eusotrip-killers screen-porting sweep.
             // Three dispatch flagship screens land bundled in one
@@ -2311,10 +2314,12 @@ enum ScreenRegistry {
             .init(id: "Vesl650", title: "Vessel Operator · Home",       role: .vesselOperator) { p in AnyView(VesselOperatorHomeScreen(theme: p)) },
             // 2026-05-31 — Rescue land: bespoke Vessel shipper greenfield home + booking detail + live tracking (full ports).
             .init(id: "Vesl001", title: "Vessel Shipper · Home",          role: .shipper) { p in AnyView(VesselShipperHomeScreen(theme: p)) },
-            .init(id: "Vesl002", title: "Vessel Shipper · Booking Detail", role: .shipper) { p in AnyView(VesselBookingDetailScreen(theme: p, shipmentId: 48217)) },
-            .init(id: "Vesl003", title: "Vessel Shipper · Live Tracking",  role: .shipper) { p in AnyView(VesselLiveTrackingScreen(theme: p, bookingNumber: "VS-48217")) },
+            .init(id: "Vesl010", title: "Vessel Shipper · Create Booking", role: .shipper) { p in AnyView(VesselShipperCreateBookingScreen(theme: p)) },
+            .init(id: "Vesl011", title: "Vessel Shipper · Bookings",       role: .shipper) { p in AnyView(VesselShipperBookingsScreen(theme: p)) },
+            .init(id: "Vesl012", title: "Vessel Shipper · Tracking",       role: .shipper) { p in AnyView(VesselShipperTrackingLookupScreen(theme: p)) },
             .init(id: "Vesl651", title: "Vessel Operator · Shipments",  role: .vesselOperator) { p in AnyView(VesselShipmentsScreen(theme: p)) },
             .init(id: "Vesl652", title: "Vessel Operator · Compliance", role: .vesselOperator) { p in AnyView(VesselComplianceScreen(theme: p)) },
+            .init(id: "Vesl822", title: "Vessel · Create & Register", role: .vesselOperator) { p in AnyView(VesselWriteCenterScreen(theme: p)) },
             .init(id: "Vesl757", title: "Vessel · Detention Letters", role: .vesselOperator) { p in AnyView(VesselDetentionLettersScreen(theme: p)) },
             .init(id: "Vesl815", title: "Vessel · Demurrage Charge Approval", role: .vesselOperator) { p in AnyView(VesselDemurrageChargeApprovalScreen(theme: p)) },
             .init(id: "Vesl669", title: "Vessel · Booking Amendment", role: .vesselOperator) { p in AnyView(VesselBookingAmendmentScreen(theme: p)) },
@@ -2526,8 +2531,24 @@ struct ContentView: View {
     /// mirroring, letting the reviewer pin Night or Afternoon for a
     /// design-fidelity walk.
     @Environment(\.colorScheme) private var systemColorScheme
+    @AppStorage("com.eusorone.EusoTrip.appearance") private var appearancePreference = "system"
+    @AppStorage("com.eusorone.EusoTrip.locale") private var localePreference = "en"
     @State private var register: ThemeRegister = .dark
     @State private var userOverrodeRegister: Bool = false
+
+    private func applyAppearancePreference() {
+        switch appearancePreference {
+        case "dark":
+            register = .dark
+            userOverrodeRegister = true
+        case "light":
+            register = .light
+            userOverrodeRegister = true
+        default:
+            userOverrodeRegister = false
+            register = ThemeRegister(colorScheme: systemColorScheme)
+        }
+    }
 
     /// The signed-in user's role drives every dispatch decision in this
     /// view. Read once per render, then routed through
@@ -2625,6 +2646,38 @@ struct ContentView: View {
     /// a slide-up modal. Back posts the shared `.eusoRoleNavBack`.
     @State private var driverPushedDetail: RoleDetailPush? = nil
 
+    private var driverRoleDock: RoleDockContract {
+        let active: String
+        switch nav.currentTab {
+        case .home: active = "home"
+        case .trips: active = "trips"
+        case .wallet: active = "loads"
+        case .me: active = "me"
+        }
+
+        return RoleDockCatalog.driver(
+            active: active,
+            select: { destination in
+                if driverPushedDetail != nil {
+                    withAnimation(.easeInOut(duration: 0.24)) {
+                        driverPushedDetail = nil
+                    }
+                }
+                nav.showeSang = false
+                switch destination {
+                case "home":
+                    nav.currentTab = .home
+                    trip.jump(to: .idle)
+                case "trips": nav.currentTab = .trips
+                case "loads": nav.currentTab = .wallet
+                case "me": nav.currentTab = .me
+                default: break
+                }
+            },
+            openESang: { nav.showeSang = true }
+        )
+    }
+
 #if DEBUG
     private var screens: [ProductionScreen] {
         ScreenRegistry.forRole(selectedRole)
@@ -2672,6 +2725,13 @@ struct ContentView: View {
                 let role = session.user?.roleEnum ?? .driver
                 if role == .driver {
                     driverSurface
+                        .environment(\.roleDockContract, driverRoleDock)
+                        .modifier(EusoEdgeSwipeBack(
+                            isEnabled: driverPushedDetail == nil
+                                && nav.currentTab == .home
+                                && trip.phase.happyPathPrev != nil,
+                            onBack: { trip.stepBack() }
+                        ))
                         // Push-nav mandate (2026-06-09 / audit M25): the
                         // shared sheet→push detail layer, identical to
                         // every RoleSurfaceRouter surface. Injects
@@ -3021,6 +3081,7 @@ struct ContentView: View {
         // to that register, meaning the system-appearance flip the user
         // makes in Control Center would never propagate into the app.
         .preferredColorScheme(userOverrodeRegister ? register.preferredColorScheme : nil)
+        .environment(\.locale, Locale(identifier: localePreference))
         .animation(.easeInOut(duration: 0.22), value: register)
 #if DEBUG
         .animation(.easeInOut(duration: 0.22), value: currentIndex)
@@ -3045,9 +3106,7 @@ struct ContentView: View {
         // appearance while the app is open — but only as long as they
         // haven't manually overridden via the dev-chrome switch.
         .onAppear {
-            if !userOverrodeRegister {
-                register = ThemeRegister(colorScheme: systemColorScheme)
-            }
+            applyAppearancePreference()
             // Bind the observers that drive background TripEvents into
             // the controller we own. GeofenceService will fire
             // .geofenceApproachingPickup / .geofenceApproachingDelivery
@@ -3070,6 +3129,9 @@ struct ContentView: View {
         .onChange(of: systemColorScheme) { _, newScheme in
             guard !userOverrodeRegister else { return }
             register = ThemeRegister(colorScheme: newScheme)
+        }
+        .onChange(of: appearancePreference) { _, _ in
+            applyAppearancePreference()
         }
         // Re-register geofences whenever the active load changes (new
         // assignment, trip completed, sign-out). `monitor(load:)` clears
@@ -3434,6 +3496,7 @@ struct ContentView: View {
                     // the tree via `.environment(\.palette, ...)` below
                     // without needing a remount.
                     .id(s.id)
+                    .eusoRefreshSurface("driver:home:\(s.id)")
                     // Uniform cafe-door surface animation on every
                     // lifecycle-screen swap — fires fresh because the
                     // `.id` above remounts the view on each phase hop.
@@ -3445,6 +3508,7 @@ struct ContentView: View {
             }
         case .trips:
             paneWithNav(.trips) { DriverTripsPane() }
+                .eusoRefreshSurface("driver:trips")
         case .wallet:
             // Request 3 restructure: the former wallet tab is now the My
             // Loads surface (current / upcoming / pending / finished) with
@@ -3452,6 +3516,7 @@ struct ContentView: View {
             // content has been folded into `DriverMePane` via the
             // existing `.earnings` MeDetailRoute.
             paneWithNav(.wallet) { DriverLoadsPane() }
+                .eusoRefreshSurface("driver:loads")
         case .me:
             // Founder direction 2026-05-04: driver Me adopts the
             // Shipper-320 parent-child hub design. `DriverMeSurface`

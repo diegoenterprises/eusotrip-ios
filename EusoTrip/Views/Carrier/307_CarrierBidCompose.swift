@@ -15,10 +15,8 @@ struct CarrierBidComposeScreen: View {
     var body: some View {
         Shell(theme: theme) { BidComposeBody(loadId: loadId) } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home", systemImage: "house", isCurrent: false),
-                          NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: true)],
-                trailing: [NavSlot(label: "Bids", systemImage: "hand.raised.fill", isCurrent: false),
-                           NavSlot(label: "Me", systemImage: "person", isCurrent: false)],
+                leading: CarrierNavRoute.leading(current: .loads),
+                trailing: CarrierNavRoute.trailing(current: .loads),
                 orbState: .idle
             )
         }

@@ -663,7 +663,7 @@ struct CatalystRegistrationPermitRenewals: View {
             }
         }
         .task { await store.refresh() }
-        .refreshable { await store.refresh() }
+        .eusoRefreshable { await store.refresh() }
     }
 
     // MARK: Header — eyebrow · title 34/700 · identity · subline
@@ -671,7 +671,7 @@ struct CatalystRegistrationPermitRenewals: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: Space.s3) {
-                Text("✦ CATALYST · REGISTRATION & PERMITS")
+                EusoTripEyebrow(verbatim: "CATALYST · REGISTRATION & PERMITS")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer(minLength: Space.s2)
@@ -1126,18 +1126,8 @@ extension Notification.Name {
 /// Every slot routes through the real `CarrierNavDispatcher`, so "Fleet"
 /// resolves through `CarrierNavRoute.map["fleet"]` (CarrierNavController.swift:87).
 private func catalystNav406() -> ([NavSlot], [NavSlot]) {
-    let leading = [
-        NavSlot(label: "Home",     systemImage: "house.fill", isCurrent: false,
-                onTap: { Task { @MainActor in CarrierNavDispatcher.handle("home") } }),
-        NavSlot(label: "Dispatch", systemImage: "tray.full",  isCurrent: false,
-                onTap: { Task { @MainActor in CarrierNavDispatcher.handle("dispatch") } }),
-    ]
-    let trailing = [
-        NavSlot(label: "Fleet", systemImage: "truck.box",   isCurrent: true,
-                onTap: { Task { @MainActor in CarrierNavDispatcher.handle("fleet") } }),
-        NavSlot(label: "Me",    systemImage: "person.fill", isCurrent: false,
-                onTap: { Task { @MainActor in CarrierNavDispatcher.handle("me") } }),
-    ]
+    let leading = CarrierNavRoute.leading(current: .drivers)
+    let trailing = CarrierNavRoute.trailing(current: .drivers)
     return (leading, trailing)
 }
 
@@ -1169,7 +1159,7 @@ private struct RenewalGateSkeleton: View {
     @Environment(\.palette) var palette
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s4) {
-            Text("✦ CATALYST · REGISTRATION & PERMITS")
+            EusoTripEyebrow(verbatim: "CATALYST · REGISTRATION & PERMITS")
                 .font(EType.micro).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Text("Renewals").font(EType.display).tracking(-0.6)

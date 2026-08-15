@@ -343,7 +343,7 @@ struct EnRouteDrive: View {
         .accessibilityLabel("En route drive")
         // Uniform cafe-door entrance.
         .screenTileRoot()
-        .task { await hydrateLiveTrip() }
+        .eusoRefreshTask { await hydrateLiveTrip() }
         // §3 weather store stops with the screen (cancels the 30s active poll).
         .onDisappear { wx.stop() }
     }

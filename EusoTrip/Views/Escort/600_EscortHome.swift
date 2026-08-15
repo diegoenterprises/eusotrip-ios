@@ -107,7 +107,7 @@ struct EscortHome: View {
             .padding(.top, 8)
         }
         .task { await refreshAll() }
-        .refreshable { await refreshAll() }
+        .eusoRefreshable { await refreshAll() }
         .screenTileRoot()
         // 601_EscortAssignmentDetail sheet — opened by tapping an
         // active-assignment row. Detents `[.large]` + drag indicator
@@ -152,10 +152,10 @@ struct EscortHome: View {
     //
     // Bespoke hero header matching the 010_DriverHome idiom (the gold
     // standard merged in the bespoke-homes lane): a gradient eyebrow
-    // role-chip row ("✦ ESCORT · DASHBOARD") balanced by a tertiary
+    // role row (EusoTrip mark + "ESCORT · DASHBOARD") balanced by a tertiary
     // context caps line on the right, then a heavy display greeting in
     // the brand diagonal gradient and a tertiary sub-context line. The
-    // sparkle glyph rides the eyebrow exactly once per surface (§4.3
+    // EusoTrip brand mark leads the eyebrow exactly once per surface (§4.3
     // budget). Split into `eyebrowRow` + `headerRow` so the new chip can
     // sit above the greeting without exploding the type-check budget on
     // one giant view literal.
@@ -172,7 +172,7 @@ struct EscortHome: View {
     /// home reads as one family.
     private var eyebrowRow: some View {
         HStack {
-            Text("✦ ESCORT · DASHBOARD")
+            EusoTripEyebrow(verbatim: "ESCORT · DASHBOARD")
                 .font(EType.micro).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer(minLength: Space.s2)
@@ -718,13 +718,11 @@ struct EscortHomeScreen: View {
 }
 
 private func escortNavLeading_600() -> [NavSlot] {
-    [NavSlot(label: "Home",        systemImage: "house.fill",                 isCurrent: true),
-     NavSlot(label: "Assignments", systemImage: "shield.lefthalf.filled",     isCurrent: false)]
+    EscortNavRoute.leading(current: .home)
 }
 
 private func escortNavTrailing_600() -> [NavSlot] {
-    [NavSlot(label: "Corridor", systemImage: "map", isCurrent: false),
-     NavSlot(label: "Me",       systemImage: "person", isCurrent: false)]
+    EscortNavRoute.trailing(current: .home)
 }
 
 // MARK: - Previews

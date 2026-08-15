@@ -94,10 +94,8 @@ struct DispatcherAIDispatchAssistScreen: View {
         // Per the wireframe <desc>: BOARD is the current bottom-nav tab.
         Shell(theme: theme) { DispatcherAIDispatchAssistBody() } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home",  systemImage: "house",                  isCurrent: false),
-                          NavSlot(label: "Board", systemImage: "rectangle.split.3x1.fill", isCurrent: true)],
-                trailing: [NavSlot(label: "Comms", systemImage: "bubble.left.and.bubble.right.fill", isCurrent: false),
-                           NavSlot(label: "Me",    systemImage: "person",                isCurrent: false)],
+                leading: DispatchNavRoute.leading(current: .board),
+                trailing: DispatchNavRoute.trailing(current: .board),
                 orbState: .idle
             )
         }
@@ -144,7 +142,7 @@ private struct DispatcherAIDispatchAssistBody: View {
             .padding(.horizontal, 20)
             .padding(.top, Space.s5)
         }
-        .task { await load() }
+        .eusoRefreshTask { await load() }
     }
 
     // MARK: Top bar (back chevron + eyebrow + mono caption + title + kebab)
@@ -152,7 +150,7 @@ private struct DispatcherAIDispatchAssistBody: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack(alignment: .firstTextBaseline) {
-                Text("✦ DISPATCHER · AUTOPILOT")
+                EusoTripEyebrow(verbatim: "DISPATCHER · AUTOPILOT")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer(minLength: Space.s2)

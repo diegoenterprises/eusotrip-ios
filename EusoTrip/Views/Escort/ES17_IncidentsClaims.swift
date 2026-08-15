@@ -199,14 +199,14 @@ struct EscortIncidentsClaims: View {
             .padding(.top, 8)
         }
         .task { await load() }
-        .refreshable { await load(force: true) }
+        .eusoRefreshable { await load(force: true) }
     }
 
     // MARK: Header
 
     private var eyebrowRow: some View {
         HStack {
-            Text("✦ ESCORT · INCIDENTS & CLAIMS")
+            EusoTripEyebrow(verbatim: "ESCORT · INCIDENTS & CLAIMS")
                 .font(EType.micro).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer(minLength: Space.s2)
@@ -713,14 +713,8 @@ struct EscortIncidentsClaimsScreen: View {
             EscortIncidentsClaims()
         } nav: {
             BottomNav(
-                leading: [
-                    NavSlot(label: "Home",        systemImage: "house",                  isCurrent: false),
-                    NavSlot(label: "Assignments", systemImage: "shield.lefthalf.filled", isCurrent: false),
-                ],
-                trailing: [
-                    NavSlot(label: "Corridor", systemImage: "map",    isCurrent: false),
-                    NavSlot(label: "Me",       systemImage: "person", isCurrent: true),
-                ],
+                leading: EscortNavRoute.leading(current: .me),
+                trailing: EscortNavRoute.trailing(current: .me),
                 orbState: .idle
             )
         }

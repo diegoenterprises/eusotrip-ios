@@ -36,10 +36,8 @@ struct DispatcherBHPickupFired517Screen: View {
             BH517Body(loadId: loadId)
         } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home",  systemImage: "house",                    isCurrent: false),
-                          NavSlot(label: "Board", systemImage: "rectangle.split.3x1.fill", isCurrent: true)],
-                trailing: [NavSlot(label: "Comms", systemImage: "bubble.left.and.bubble.right.fill", isCurrent: false),
-                           NavSlot(label: "Me",    systemImage: "person",                  isCurrent: false)],
+                leading: DispatchNavRoute.leading(current: .board),
+                trailing: DispatchNavRoute.trailing(current: .board),
                 orbState: .idle
             )
         }
@@ -100,7 +98,7 @@ private struct BH517Body: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await refresh() }
-        .refreshable { await refresh() }
+        .eusoRefreshable { await refresh() }
         .onReceive(clock) { now = $0 }
         .sheet(isPresented: $showDetailSheet) { BH517DetailSheet(load: load, tracking: tracking) }
     }
@@ -110,7 +108,7 @@ private struct BH517Body: View {
     private var eyebrowRow: some View {
         HStack {
             HStack(spacing: 6) {
-                Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("DISPATCHER · PICKUP · FIRED")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }

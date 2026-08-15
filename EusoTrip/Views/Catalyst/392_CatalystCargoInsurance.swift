@@ -51,13 +51,11 @@ struct CatalystCargoInsuranceScreen: View {
 }
 
 private func catalystNavLeading_392() -> [NavSlot] {
-    [NavSlot(label: "Home",     systemImage: "house",                          isCurrent: false),
-     NavSlot(label: "Dispatch", systemImage: "shippingbox.and.arrow.backward", isCurrent: false)]
+    CarrierNavRoute.leading(current: .me)
 }
 
 private func catalystNavTrailing_392() -> [NavSlot] {
-    [NavSlot(label: "Fleet", systemImage: "truck.box",          isCurrent: false),
-     NavSlot(label: "Me",    systemImage: "person.crop.circle", isCurrent: true)]
+    CarrierNavRoute.trailing(current: .me)
 }
 
 // MARK: - Body
@@ -123,7 +121,7 @@ private struct CargoInsuranceBody_392: View {
             .padding(.horizontal, 20)
             .padding(.top, 56)
         }
-        .task { await loadAll() }
+        .eusoRefreshTask { await loadAll() }
         .sheet(isPresented: $showCOIRequest) {
             RequestCOISheet_392(policyIds: activePolicies.map(\.id)) { result in
                 coiMessage = "COI requested · \(result.certificateNumber ?? "pending")"
@@ -139,7 +137,7 @@ private struct CargoInsuranceBody_392: View {
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
             HStack(spacing: 4) {
-                Image(systemName: "sparkles")
+                EusoTripBrandMark(size: 12)
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
                 Text("CATALYST · CARGO INSURANCE")

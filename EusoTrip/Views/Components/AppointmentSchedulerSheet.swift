@@ -162,7 +162,7 @@ public struct AppointmentSchedulerSheet: View {
             }
             .task { await loadAll() }
             .onChange(of: selectedDate) { _, _ in Task { await loadAll() } }
-            .refreshable { await loadAll() }
+            .eusoRefreshable { await loadAll() }
         }
     }
 

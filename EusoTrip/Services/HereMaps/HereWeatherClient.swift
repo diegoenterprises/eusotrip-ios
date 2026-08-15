@@ -135,14 +135,16 @@ struct HereWeatherObservation: Decodable {
     let iconId: Int?
     /// Visibility in miles / km.
     let visibility: Double?
-    /// ISO8601 timestamp.
+    /// Provider-issued observation/forecast timestamp from HERE location
+    /// metadata. It includes the location offset when one is available.
+    let utcTime: String?
     let daylight: String?
     let timeZoneOffset: String?
 
     private enum CodingKeys: String, CodingKey {
         case temperature, temperatureFahrenheit, comfort, comfortFahrenheit, humidity
         case windSpeed, windSpeedMph, windSpeedKmh, windDesc, description, iconName, iconId
-        case visibility, daylight, timeZoneOffset
+        case visibility, utcTime, daylight, timeZoneOffset
     }
 
     init(from decoder: Decoder) throws {
@@ -160,6 +162,7 @@ struct HereWeatherObservation: Decodable {
         iconName = try c.decodeIfPresent(String.self, forKey: .iconName)
         iconId = c.decodeLossyIntIfPresent(.iconId)
         visibility = c.decodeLossyDoubleIfPresent(.visibility)
+        utcTime = try c.decodeIfPresent(String.self, forKey: .utcTime)
         daylight = try c.decodeIfPresent(String.self, forKey: .daylight)
         timeZoneOffset = try c.decodeIfPresent(String.self, forKey: .timeZoneOffset)
     }
@@ -171,6 +174,11 @@ struct HereHourlyForecastBlock: Decodable {
 
 struct HereHourlyForecast: Decodable {
     let time: String?
+    /// HERE emits "D"/"N" (and, in some response variants, a full
+    /// day/night word) for the forecast hour. Keep the provider evidence at
+    /// the hour boundary so destination forecasts never borrow the card's
+    /// current solar state.
+    let daylight: String?
     let description: String?
     let iconName: String?
     let iconId: Int?
@@ -181,13 +189,14 @@ struct HereHourlyForecast: Decodable {
     let windSpeedMph: Double?
 
     private enum CodingKeys: String, CodingKey {
-        case time, description, iconName, iconId, temperature
+        case time, daylight, description, iconName, iconId, temperature
         case temperatureFahrenheit, precipitationProbability, windSpeed, windSpeedMph
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         time = try c.decodeIfPresent(String.self, forKey: .time)
+        daylight = try c.decodeIfPresent(String.self, forKey: .daylight)
         description = try c.decodeIfPresent(String.self, forKey: .description)
         iconName = try c.decodeIfPresent(String.self, forKey: .iconName)
         iconId = c.decodeLossyIntIfPresent(.iconId)

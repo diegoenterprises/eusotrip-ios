@@ -4,7 +4,8 @@
 //
 //  Verbatim port of "579 Rail Network Disruption.svg" (Light + Dark).
 //  Composes from three real backend procedures — there is no dedicated
-//  disruption router; disruption state is derived from weather alerts (embargoes),
+//  disruption router; disruption state is derived from attributed WeatherKit
+//  ambient alerts (embargoes),
 //  impacted loads (affected count), and active yards (re-route options).
 //  Nav anchored to RailEngineerNavController (HOME[current] · SHIPMENTS · [orb] · COMPLIANCE · ME).
 //
@@ -35,23 +36,49 @@ struct RailNetworkDisruptionScreen: View {
 // MARK: - Data shapes
 
 private struct WeatherAlert579: Decodable, Identifiable {
-    let id: Int
+    let id: String
     let eventType: String?
     let severity: String?
     let headline: String?
     let states: [String]?
     let onsetAt: String?
     let expiresAt: String?
+    let detailsUrl: String?
+    let issuingSource: String?
+    let source: String?
 }
 
 private struct ImpactedLoad579: Decodable, Identifiable {
-    let loadId: Int
-    var id: Int { loadId }
+    let loadId: String
+    var id: String { loadId }
     let loadNumber: String?
     let status: String?
     let origin: String?
     let destination: String?
     let alertSeverity: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case loadId, loadNumber, status, origin, destination, alertSeverity
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        if let value = try? c.decode(String.self, forKey: .loadId) {
+            loadId = value
+        } else if let value = try? c.decode(Int.self, forKey: .loadId) {
+            loadId = String(value)
+        } else {
+            throw DecodingError.keyNotFound(
+                CodingKeys.loadId,
+                .init(codingPath: c.codingPath, debugDescription: "Missing loadId")
+            )
+        }
+        loadNumber = try c.decodeIfPresent(String.self, forKey: .loadNumber)
+        status = try c.decodeIfPresent(String.self, forKey: .status)
+        origin = try c.decodeIfPresent(String.self, forKey: .origin)
+        destination = try c.decodeIfPresent(String.self, forKey: .destination)
+        alertSeverity = try c.decodeIfPresent(String.self, forKey: .alertSeverity)
+    }
 }
 
 private struct RailYard579: Decodable, Identifiable {
@@ -70,6 +97,7 @@ private struct RailYard579: Decodable, Identifiable {
 
 private struct RailNetworkDisruptionBody: View {
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
 
     @State private var alerts: [WeatherAlert579] = []
     @State private var impacted: [ImpactedLoad579] = []
@@ -120,7 +148,7 @@ private struct RailNetworkDisruptionBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - Header
@@ -129,7 +157,7 @@ private struct RailNetworkDisruptionBody: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 0) {
                 HStack(spacing: 6) {
-                    Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                    EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                     Text("RAIL ENGINEER · NETWORK DISRUPTION")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                         .foregroundStyle(LinearGradient.diagonal)
@@ -256,7 +284,8 @@ private struct RailNetworkDisruptionBody: View {
         let pillLabel = isEmbargo ? "EMBARGO" : "OUTAGE"
         let title = alert.headline.map { String($0.prefix(44)) } ?? (alert.eventType ?? "-")
         let stateSub = (alert.states ?? []).prefix(2).joined(separator: ", ")
-        let causeSub = stateSub.isEmpty ? "-" : stateSub
+        let sourceSub = alert.issuingSource.map { stateSub.isEmpty ? $0 : "\(stateSub) · \($0)" }
+        let causeSub = sourceSub ?? (stateSub.isEmpty ? "-" : stateSub)
         let rightText = isEmbargo ? "weather" : "~6h"
 
         return HStack(spacing: 12) {
@@ -289,9 +318,20 @@ private struct RailNetworkDisruptionBody: View {
                 Text(rightText)
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(palette.textSecondary)
+                if alert.detailsUrl.flatMap(URL.init(string:)) != nil {
+                    Image(systemName: "arrow.up.right.square")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(palette.textSecondary)
+                }
             }
         }
         .padding(16)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if let url = alert.detailsUrl.flatMap(URL.init(string:)) {
+                openURL(url)
+            }
+        }
     }
 
     // MARK: - Re-route section
@@ -403,13 +443,22 @@ private struct RailNetworkDisruptionBody: View {
             async let yardsResult: [RailYard579] = EusoTripAPI.shared.query(
                 "railShipments.getRailYards", input: YardsIn(hasIntermodal: true, limit: 10))
             let (a, i, y) = try await (alertsResult, impactedResult, yardsResult)
-            self.alerts   = a
+            self.alerts   = a.filter { approvedAmbientAlertSource($0.source) }
             self.impacted = i
             self.yards    = y
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
         loading = false
+    }
+
+    private func approvedAmbientAlertSource(_ raw: String?) -> Bool {
+        switch (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "weatherkit", "openweather":
+            return true
+        default:
+            return false
+        }
     }
 
     private func reportDisruption() async {

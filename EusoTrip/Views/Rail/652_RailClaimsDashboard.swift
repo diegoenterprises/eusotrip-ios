@@ -170,7 +170,7 @@ private struct RailClaimsDashboardBody: View {
             .padding(.top, Space.s5)
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
     }
 
     // MARK: - Top bar (eyebrow + back-chevron + title + sync)
@@ -179,7 +179,7 @@ private struct RailClaimsDashboardBody: View {
         VStack(alignment: .leading, spacing: 0) {
             // Eyebrow row: gradient sparkle title left · mono "OPEN" right.
             HStack {
-                Text("✦ RAIL ENGINEER · CLAIMS")
+                EusoTripEyebrow(verbatim: "RAIL ENGINEER · CLAIMS")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

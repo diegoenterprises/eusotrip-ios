@@ -581,7 +581,7 @@ private struct ScorecardRadarPreviewHost: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Space.s5) {
-                Text("✦ SCORECARD RADAR · SAMPLE")
+                EusoTripEyebrow(verbatim: "SCORECARD RADAR · SAMPLE")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.diagonal)
 

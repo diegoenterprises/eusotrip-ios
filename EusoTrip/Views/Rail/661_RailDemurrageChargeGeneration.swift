@@ -442,7 +442,7 @@ private struct RailDemurrageChargeRunBody661: View {
             .padding(.top, Space.s4)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
         .overlay(alignment: .bottom) { toastView }
         .sheet(isPresented: $showRunSheet) { runSheet }
         .sheet(isPresented: $showAnalytics) { analyticsSheet }
@@ -495,7 +495,7 @@ private struct RailDemurrageChargeRunBody661: View {
 
     private var topRegister: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("✦ RAIL ENGINEER · CHARGE RUN")
+            EusoTripEyebrow(verbatim: "RAIL ENGINEER · CHARGE RUN")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer(minLength: 8)

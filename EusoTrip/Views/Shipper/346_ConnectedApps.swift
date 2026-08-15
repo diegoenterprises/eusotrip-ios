@@ -12,8 +12,8 @@
 //      scoped provider catalog) + `userIntegrations.listConnections` (the
 //      user's own connection state). Connect / disconnect / sync run in-app
 //      via `userIntegrations.connect` / `.disconnect` / `.sync`. Provider rows
-//      always come from the live server catalog. The local registry is used
-//      only to identify integration-owning roles when the catalog is offline.
+//      always come from the live server catalog. The local registry is an
+//      offline parity artifact only and never supplies fallback provider rows.
 //
 //    • API TOKENS      → `devPortal.apiKeys.list` / `.create` / `.revoke`,
 //      with scopes from `devPortal.mcpTools.getScopes`. Tokens are issued
@@ -24,9 +24,8 @@
 //      `auth.me` (RIOS Axis O) — the same data the web's
 //      useIntegrationProfileAdaptation hook consumes.
 //
-//  Surfaces only for integration-OWNING roles (SHIPPER / CATALYST / BROKER
-//  families across truck / rail / vessel, plus ADMIN); operator/driver roles
-//  get an honest, graceful explanation rather than an empty placeholder.
+//  The server decides role/mode/vertical eligibility for every authenticated
+//  role; iOS does not widen or reconstruct that catalog locally.
 //
 //  Powered by ESANG AI™.
 //
@@ -273,7 +272,7 @@ private struct ConnectedAppsBody: View {
         if r == "ADMIN" || r == "SUPER_ADMIN" { return true }
         if !providers.isEmpty || !connections.isEmpty { return true }
         if catalogUnavailableReason != nil || connectionsUnavailableReason != nil { return true }
-        return !RoleIntegrationRegistry.providers(for: r).isEmpty
+        return false
     }
 
     var body: some View {
@@ -309,7 +308,7 @@ private struct ConnectedAppsBody: View {
             }
             .padding(.horizontal, 14).padding(.top, 72)
         }
-        .task { await load() }
+        .eusoRefreshTask { await load() }
     }
 
     private var header: some View {
@@ -1344,7 +1343,7 @@ private struct ConnectedAppsBody: View {
         guard let raw, !raw.isEmpty else { return nil }
         guard let url = URL(string: raw),
               let scheme = url.scheme?.lowercased(),
-              (scheme == "https" || scheme == "http"),
+              scheme == "https",
               url.host != nil else { return nil }
         return url
     }
@@ -1676,7 +1675,7 @@ private enum IntegrationJourneyPlanner {
     private static func liveConnectionIds(_ connections: [IntegrationConnection]) -> Set<String> {
         Set(
             connections
-                .filter { ($0.status ?? "").lowercased() != "disabled" }
+                .filter(\.isOperational)
                 .map { $0.providerId.lowercased() }
         )
     }

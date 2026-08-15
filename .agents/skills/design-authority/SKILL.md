@@ -108,9 +108,9 @@ The house has a voice. A screen that follows the rubric but has no personality i
     orb, hero rim, primary CTA) is the same on every screen in every mode — that's the "same
     company" signal. Mode is signaled by the LoadModeBadge + accent only (rail slate, vessel
     cyan), never by changing the brand. Truck · Rail · Vessel must feel like one product.
-  • RESTRAINT IS LUXURY. One ✦ eyebrow. One iridescent hairline. ≤12 iridescent elements. White
-    space is intentional. Glass only on nav + sheets. The screen should feel expensive and
-    quiet, not busy. If it sparkles everywhere, it sparkles nowhere.
+  • RESTRAINT IS LUXURY. One EusoTrip logo mark leads the screen eyebrow. One iridescent
+    hairline. ≤12 iridescent elements. White space is intentional. Glass only on nav + sheets.
+    Sparkle symbols are reserved for real ESANG/AI actions, never used as generic chrome.
 
 ═══════════════════════════════════════════════════════════════════════
 WHO IS THE BAR — golden anchors (render at least one every fire; never grade vs an un-rendered file)
@@ -196,8 +196,9 @@ B. DEFS — eusoPrimary · eusoDiagonal · iridHairline · cardRim · orbSpec ·
    (+ dangerWash where the flagship uses the attention card; + mapBg/mapClip on map heroes).
    Brand stops #1473FF→#BE01FF. iridHairline opacity .55 Light / .40 Dark. Glass only on nav +
    Sheet.
-C. EYEBROW — exactly one "✦ ROLE · SECTION" @ translate(20,72) 9/800/1.0 url(#eusoPrimary) +
-   a short right caption in tertiary (often the real ID in SF-Mono). Never >1 ✦.
+C. EYEBROW — exactly one EusoTrip logo mark + "ROLE · SECTION" @ translate(20,72), with the
+   label at 9/800/1.0 in url(#eusoPrimary), plus a short right caption in tertiary (often the
+   real ID in SF-Mono). Reserve sparkle symbols for genuine ESANG/AI semantics.
 D. HAIRLINE — exactly one iridescent hairline rect, full-width, @ y158 (home; subline y140) /
    @ y138 (detail).
 E. TYPE RAMP (matches DesignSystem.swift) — HOME H1 34/700/-0.6 @ y116 · DETAIL title

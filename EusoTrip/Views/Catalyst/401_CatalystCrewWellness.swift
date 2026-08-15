@@ -76,15 +76,22 @@ private struct CrewWellnessVM_401 {
 // MARK: - Wire shapes (mirror driverWellness.ts projections exactly)
 
 private struct WellnessDashboardWire_401: Decodable {
-    let fleetAverageScore: Double
+    struct Tracked: Decodable {
+        let safety: Bool
+        let inspections: Bool
+        let rest: Bool
+    }
+
+    let fleetAverageScore: Double?
     let totalDrivers: Int
     let driversAtRisk: Double          // SUM(CASE…) Number()-wrapped server-side
-    let averageHosCompliance: Double
-    let averageRestQuality: Double
-    let averageDrivingPatterns: Double
-    let monthOverMonthChange: Double
+    let averageHosCompliance: Double?
+    let averageRestQuality: Double?
+    let averageDrivingPatterns: Double?
+    let monthOverMonthChange: Double?
     let recentCheckIns: Int
     let checkInRate: Double
+    let tracked: Tracked?
 }
 
 private struct FatigueAlertsWire_401: Decodable {
@@ -103,13 +110,11 @@ private struct FatigueAlertsWire_401: Decodable {
 // MARK: - Catalyst BottomNav (HOME · DISPATCH · [orb] · WALLET · ME)
 
 private func catalystNavLeading_401() -> [NavSlot] {
-    [NavSlot(label: "Home",     systemImage: "house.fill", isCurrent: false),
-     NavSlot(label: "Dispatch", systemImage: "tray.full",  isCurrent: true)]
+    CarrierNavRoute.leading(current: .loads)
 }
 
 private func catalystNavTrailing_401() -> [NavSlot] {
-    [NavSlot(label: "Fleet",  systemImage: "truck.box.fill",  isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
+    CarrierNavRoute.trailing(current: .loads)
 }
 
 // MARK: - Wrapper
@@ -175,6 +180,7 @@ private struct CrewWellnessBody_401: View {
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
             Task { await loadAll() }
         }
+        .eusoRefreshHandler { await loadAll() }
         .sheet(isPresented: $showInsight) { insightSheet }
         .sheet(isPresented: $showRestPlan) { restPlanSheet }
         .sheet(isPresented: $showHistory) { historySheet }
@@ -185,7 +191,7 @@ private struct CrewWellnessBody_401: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("✦ CATALYST · WELLNESS").font(EType.micro).tracking(1.0)
+                EusoTripEyebrow(verbatim: "CATALYST · WELLNESS").font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()
                 Text("FMCSA · FATIGUE").font(EType.micro).tracking(1.0)
@@ -573,24 +579,29 @@ private struct CrewWellnessBody_401: View {
 
             let atRiskCount = Int(dash.driversAtRisk.rounded())
             let topAlert = alertsWire.alerts.first
+            let fleetScore = dash.fleetAverageScore
+            let safetyTracked = dash.tracked?.safety ?? (dash.averageHosCompliance != nil)
             vm = CrewWellnessVM_401(
                 headerSub: "\(dash.totalDrivers) driver\(dash.totalDrivers == 1 ? "" : "s") · 7-day window",
-                fleetIndex: "\(Int(dash.fleetAverageScore.rounded()))",
-                atRisk: "\(atRiskCount) driver\(atRiskCount == 1 ? "" : "s")",
+                fleetIndex: fleetScore.map { "\(Int($0.rounded()))" } ?? "—",
+                atRisk: safetyTracked ? "\(atRiskCount) driver\(atRiskCount == 1 ? "" : "s")" : "—",
                 onDuty: "—",   // no on-duty-now rollup on any wired proc
-                bandMarkerFrac: min(1.0, max(0.0, dash.fleetAverageScore / 100.0)),
-                bandCaption: atRiskCount == 0
+                bandMarkerFrac: fleetScore.map { min(1.0, max(0.0, $0 / 100.0)) } ?? 0,
+                bandCaption: !safetyTracked
+                    ? "Safety scores have not been recorded"
+                    : atRiskCount == 0
                     ? "No drivers below the safety floor this period"
                     : "\(atRiskCount) driver\(atRiskCount == 1 ? "" : "s") below the safety floor",
-                safetyAvg: "\(Int(dash.averageHosCompliance.rounded()))",
-                safetyDelta: dash.monthOverMonthChange == 0 ? "" :
-                    String(format: "%+.1f vs prior 30d", dash.monthOverMonthChange),
-                restQuality: "\(Int(dash.averageRestQuality.rounded()))",
+                safetyAvg: dash.averageHosCompliance.map { "\(Int($0.rounded()))" } ?? "—",
+                safetyDelta: dash.monthOverMonthChange.map {
+                    $0 == 0 ? "" : String(format: "%+.1f vs prior 30d", $0)
+                } ?? "",
+                restQuality: dash.averageRestQuality.map { "\(Int($0.rounded()))" } ?? "—",
                 checkIns: "\(dash.recentCheckIns)",
                 crew: crew,
                 insightTitle: topAlert.map { "\($0.driverName) · risk \(Int($0.riskScore.rounded()))" }
-                    ?? "No fatigue flags",
-                insightSub: topAlert?.reason ?? "All active drivers below the alert threshold."
+                    ?? "No active-load fatigue signals",
+                insightSub: topAlert?.reason ?? "No active load produced a fatigue alert."
             )
         } catch {
             vm = .empty

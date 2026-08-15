@@ -142,7 +142,7 @@ public struct FacilityProfileSheet: View {
                 }
             }
             .task { await loadAll() }
-            .refreshable { await loadAll() }
+            .eusoRefreshable { await loadAll() }
         }
     }
 

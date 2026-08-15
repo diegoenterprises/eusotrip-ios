@@ -203,7 +203,7 @@ private struct VesselIntermodalJourneyBody: View {
             }
             .padding(.horizontal, Space.s5)
         }
-        .task { await load() }
+        .eusoRefreshTask { await load() }
         .sheet(isPresented: $showCostDetail) { costDetailSheet }
     }
 
@@ -232,7 +232,7 @@ private struct VesselIntermodalJourneyBody: View {
     @ViewBuilder private var topBar: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("✦ VESSEL SHIPPER · INTERMODAL JOURNEY")
+                EusoTripEyebrow(verbatim: "VESSEL SHIPPER · INTERMODAL JOURNEY")
                     .font(.system(size: 9, weight: .heavy))
                     .tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)

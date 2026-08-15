@@ -46,8 +46,12 @@ enum WeatherIcons {
     /// `size` is the square edge in points; the 0–24 SVG viewBox scales
     /// to fit. Unknown / unmapped codes render the neutral cloud.
     @ViewBuilder
-    static func symbolView(for weatherCode: Int, size: CGFloat = 24) -> some View {
-        WeatherGlyph(kind: glyph(for: weatherCode))
+    static func symbolView(
+        for weatherCode: Int,
+        isDaylight: Bool? = nil,
+        size: CGFloat = 24
+    ) -> some View {
+        WeatherGlyph(kind: glyph(for: weatherCode, isDaylight: isDaylight))
             .frame(width: size, height: size)
     }
 
@@ -55,14 +59,29 @@ enum WeatherIcons {
     /// `weatherCode` when present, otherwise infers from the SF symbol so
     /// the legacy WeatherKit/NWS/Open-Meteo paths still show a real icon.
     @ViewBuilder
-    static func symbolView(for hour: WeatherSnapshot.HourlyForecast, size: CGFloat = 22) -> some View {
+    static func symbolView(
+        for hour: WeatherSnapshot.HourlyForecast,
+        isDaylight: Bool? = nil,
+        size: CGFloat = 22
+    ) -> some View {
         let code = hour.weatherCode != 0 ? hour.weatherCode : code(forSymbol: hour.symbol)
-        symbolView(for: code, size: size)
+        let resolvedDaylight = isDaylight
+            ?? hour.isDaylightHint
+            ?? daylightHint(forSymbol: hour.symbol)
+        symbolView(for: code, isDaylight: resolvedDaylight, size: size)
     }
 
     /// The v2 weatherCode → glyph table (WEATHER_WIDGET_WIRING.md). The
     /// labels in comments mirror the spec's "label" column verbatim.
-    static func glyph(for weatherCode: Int) -> Glyph {
+    static func glyph(for weatherCode: Int, isDaylight: Bool? = nil) -> Glyph {
+        if isDaylight == false {
+            switch weatherCode {
+            case 1000: return .clearNight
+            case 1100: return .mostlyClearNight
+            case 1101: return .partlyCloudyNight
+            default: break
+            }
+        }
         switch weatherCode {
         case 1000: return .clear        // Clear / Sunny      → #i-clear
         case 1100: return .mostlyClear  // Mostly Clear       → #i-mclear
@@ -106,16 +125,33 @@ enum WeatherIcons {
         if s.contains("rain")       { return 4001 }
         if s.contains("fog")        { return 2000 }
         if s.contains("cloud.sun") || s.contains("partly") { return 1101 }
-        if s.contains("cloud")      { return 1001 }
+        if s.contains("cloud.moon") { return 1101 }
         if s.contains("moon")       { return 1100 } // clear-ish at night
+        if s.contains("cloud")      { return 1001 }
         if s.contains("sun.max") || s.contains("sun.min") || s.contains("sun") { return 1000 }
         return 1001
+    }
+
+    /// Provider symbol daylight evidence for an individual observation/hour.
+    /// Ambiguous cloud/precipitation symbols return nil and defer to the
+    /// coordinate/sun-window resolver instead of borrowing the current card.
+    static func daylightHint(forSymbol symbol: String) -> Bool? {
+        let value = symbol.lowercased()
+        if value.contains("moon") || value.contains("stars") || value.contains("night") {
+            return false
+        }
+        if value.contains("sun") || value.contains("day") {
+            return true
+        }
+        return nil
     }
 
     // MARK: - Glyph identity
 
     enum Glyph: Hashable {
-        case clear, mostlyClear, partlyCloudy, cloudy, fog
+        case clear, mostlyClear, partlyCloudy
+        case clearNight, mostlyClearNight, partlyCloudyNight
+        case cloudy, fog
         case drizzle, rain, heavyRain, storm, snow, sleet
     }
 
@@ -163,6 +199,9 @@ struct WeatherGlyph: View {
         case .clear:        drawClear(&ctx)
         case .mostlyClear:  drawMostlyClear(&ctx)
         case .partlyCloudy: drawPartlyCloudy(&ctx)
+        case .clearNight:   drawClearNight(&ctx)
+        case .mostlyClearNight: drawMostlyClearNight(&ctx)
+        case .partlyCloudyNight: drawPartlyCloudyNight(&ctx)
         case .cloudy:       drawCloudBody(&ctx, dy: 0)
         case .fog:          drawFog(&ctx)
         case .drizzle:      drawDrizzle(&ctx)
@@ -205,6 +244,46 @@ struct WeatherGlyph: View {
     private func drawClear(_ ctx: inout GraphicsContext) {
         strokeRays(&ctx)
         sunDisc(&ctx)
+    }
+
+    // Night variants intentionally contain no sun disc or rays. The pale
+    // crescent uses the same 24-point canvas as the daytime SVG corpus.
+    private func drawMoon(_ ctx: inout GraphicsContext, scale: CGFloat = 1, dx: CGFloat = 0, dy: CGFloat = 0) {
+        var moon = Path()
+        moon.move(to: CGPoint(x: dx + 14 * scale, y: dy + 2 * scale))
+        moon.addCurve(
+            to: CGPoint(x: dx + 6 * scale, y: dy + 18.5 * scale),
+            control1: CGPoint(x: dx + 7 * scale, y: dy + 4 * scale),
+            control2: CGPoint(x: dx + 5 * scale, y: dy + 12 * scale)
+        )
+        moon.addCurve(
+            to: CGPoint(x: dx + 18.5 * scale, y: dy + 18 * scale),
+            control1: CGPoint(x: dx + 10 * scale, y: dy + 22 * scale),
+            control2: CGPoint(x: dx + 16.5 * scale, y: dy + 21 * scale)
+        )
+        moon.addCurve(
+            to: CGPoint(x: dx + 14 * scale, y: dy + 2 * scale),
+            control1: CGPoint(x: dx + 12 * scale, y: dy + 15 * scale),
+            control2: CGPoint(x: dx + 11 * scale, y: dy + 7 * scale)
+        )
+        moon.closeSubpath()
+        ctx.fill(moon, with: .color(WeatherIcons.snowDot))
+    }
+
+    private func drawClearNight(_ ctx: inout GraphicsContext) {
+        drawMoon(&ctx)
+    }
+
+    private func drawMostlyClearNight(_ ctx: inout GraphicsContext) {
+        drawMoon(&ctx, scale: 0.78, dx: 1.5, dy: 0)
+        ctx.opacity = 0.96
+        drawCloudBody(&ctx, dy: 1)
+        ctx.opacity = 1
+    }
+
+    private func drawPartlyCloudyNight(_ ctx: inout GraphicsContext) {
+        drawMoon(&ctx, scale: 0.72, dx: 2, dy: 0)
+        drawCloudBody(&ctx, dy: -1)
     }
 
     // #i-mclear — shrunk/offset sun behind a cloud

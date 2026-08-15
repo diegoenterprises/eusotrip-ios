@@ -103,14 +103,14 @@ private struct VesselOperatorHomeBody: View {
             }
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - Top bar
 
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Bespoke eyebrow row — gradient role chip (sparkle glyph used
+            // Bespoke eyebrow row — EusoTrip brand mark used
             // exactly once per surface, §4.3) + right-rail TEU/active caps
             // context. Mirrors the SVG-650 header motif and the Driver-010
             // idiom so every role home reads as one family.
@@ -119,7 +119,7 @@ private struct VesselOperatorHomeBody: View {
                     Image(systemName: "ferry.fill")
                         .font(.system(size: 9, weight: .heavy))
                         .foregroundStyle(LinearGradient.primary)
-                    Text("✦ VESSEL OPERATOR · HOME")
+                    EusoTripEyebrow(verbatim: "VESSEL OPERATOR · HOME")
                         .font(EType.micro).tracking(1.0)
                         .foregroundStyle(LinearGradient.primary)
                 }

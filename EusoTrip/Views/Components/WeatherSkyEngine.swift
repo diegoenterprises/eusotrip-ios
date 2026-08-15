@@ -26,7 +26,7 @@
 //      intensity ← `snapshot.precipChancePct` (+ condition floor)
 //      wind lean ← `snapshot.windMph`
 //      low-vis   ← `snapshot.visibilityMi`
-//      day/night ← `snapshot.isNight`        (sunrise/sunset → hour gate)
+//      day/night ← `snapshot.displaySolarState` (provider/sun pair/coordinate/timezone)
 //      day part  ← `snapshot.dayPart`        (6-band, sun-pair anchored)
 //      season    ← `snapshot.season`         (hemisphere-aware)
 //      moon      ← `snapshot.moonPhase`      (synodic illumination + limb)
@@ -203,18 +203,54 @@ enum SkyConditionV2: Hashable, CaseIterable {
 struct WeatherSkyView: View {
     let snapshot: WeatherSnapshot
     var animated: Bool = true
+    var displayDate: Date? = nil
 
-    init(snapshot: WeatherSnapshot, animated: Bool = true) {
+    init(
+        snapshot: WeatherSnapshot,
+        animated: Bool = true,
+        displayDate: Date? = nil
+    ) {
         self.snapshot = snapshot
         self.animated = animated
+        self.displayDate = displayDate
     }
+
+    @ViewBuilder
+    var body: some View {
+        if let displayDate {
+            WeatherSkyScene(
+                snapshot: snapshot,
+                animated: animated,
+                displayDate: displayDate
+            )
+        } else {
+            TimelineView(.periodic(from: .now, by: 60)) { timeline in
+                WeatherSkyScene(
+                    snapshot: snapshot,
+                    animated: animated,
+                    displayDate: timeline.date
+                )
+            }
+        }
+    }
+}
+
+/// Pure sky renderer for one display instant. The wrapper above advances the
+/// clock without remounting the owning weather card or mutating provider data.
+private struct WeatherSkyScene: View {
+    let snapshot: WeatherSnapshot
+    var animated: Bool
+    let displayDate: Date
 
     // ── Scene inputs — ALL read from the live snapshot (no local astro) ──
     private var condition: SkyConditionV2 { SkyConditionV2(weatherCode: snapshot.weatherCode) }
-    private var isNight: Bool { snapshot.isNight }
-    private var dayPart: WeatherSnapshot.DayPart { snapshot.dayPart }
-    private var season: WeatherSnapshot.Season { snapshot.season }
-    private var moon: WeatherSnapshot.MoonPhase { snapshot.moonPhase }
+    private var solarState: WeatherSnapshot.SolarState {
+        snapshot.displaySolarState(at: displayDate)
+    }
+    private var isNight: Bool { solarState == .night }
+    private var dayPart: WeatherSnapshot.DayPart { snapshot.dayPart(at: displayDate) }
+    private var season: WeatherSnapshot.Season { snapshot.season(at: displayDate) }
+    private var moon: WeatherSnapshot.MoonPhase { snapshot.moonPhase(at: displayDate) }
 
     /// Precipitation intensity 0…1, blended from the condition's base
     /// profile and the LIVE `precipChancePct`. The condition sets the floor
@@ -325,7 +361,8 @@ struct WeatherSkyView: View {
 
     @ViewBuilder
     private var celestialLayer: some View {
-        if isNight {
+        switch solarState {
+        case .night:
             // Stars first (behind the moon), brightness scaled by season +
             // how much the condition obscures the sky.
             let starDensity = condition.hidesCelestial ? 0.18 : (1.0 - condition.cloudDensity * 0.6)
@@ -335,13 +372,17 @@ struct WeatherSkyView: View {
             if !condition.hidesCelestial {
                 MoonPhaseView(phase: moon, animated: animated)
             }
-        } else {
+        case .daylight:
             if !condition.hidesCelestial {
                 SunBody(elevation: sunElevation,
                         warmth: dayPart.isTwilight,
                         obscured: condition.cloudDensity > 0.55,
                         animated: animated)
             }
+        case .unknown:
+            // No coordinate, sun pair, provider hint, or destination timezone:
+            // keep the atmosphere neutral instead of inventing a sun or moon.
+            Color.clear
         }
     }
 
@@ -854,14 +895,14 @@ private struct DriftingClouds: View {
     var turbulent: Bool = false
     var animated: Bool = true
 
-    private let clouds: [CloudPuff] = (0..<8).map { i in
+    private let clouds: [CloudPuff] = (0..<6).map { i in
         var rng = SeededRNG(seed: UInt64(0xC100 + i * 31))
         return CloudPuff(
-            y: 0.10 + rng.next01() * 0.55,
-            width: 0.34 + rng.next01() * 0.60,
+            y: 0.12 + rng.next01() * 0.42,
+            width: 0.20 + rng.next01() * 0.26,
             speed: 0.006 + rng.next01() * 0.012,
             phase: rng.next01() * 1.4,
-            opacity: 0.55 + rng.next01() * 0.45,
+            opacity: 0.30 + rng.next01() * 0.34,
             bob: rng.next01()
         )
     }
@@ -877,7 +918,7 @@ private struct DriftingClouds: View {
     }
 
     private func frame(t: TimeInterval) -> some View {
-        let visible = max(1, Int(Double(clouds.count) * density))
+        let visible = min(clouds.count, Int((Double(clouds.count) * density).rounded(.up)))
         return Canvas { gc, size in
             for puff in clouds.prefix(visible) {
                 let travel = (t * puff.speed * speedScale + puff.phase)
@@ -895,14 +936,34 @@ private struct DriftingClouds: View {
 
     private func drawCloud(_ gc: GraphicsContext, center: CGPoint, width: CGFloat,
                            tint: Color, turbulent: Bool) {
-        let h = width * (turbulent ? 0.34 : 0.26)
-        let base = CGRect(x: center.x - width / 2, y: center.y - h / 2, width: width, height: h)
-        let r1 = h * 0.9, r2 = h * 1.15, r3 = h * 0.85, r4 = h * 0.7
+        let h = width * (turbulent ? 0.32 : 0.24)
+        let left = center.x - width / 2
+        let right = center.x + width / 2
+        let top = center.y - h / 2
+        let base = center.y + h / 2
         var path = Path()
-        path.addEllipse(in: CGRect(x: base.minX, y: base.midY - r1, width: r1 * 2, height: r1 * 2))
-        path.addEllipse(in: CGRect(x: base.midX - r2 * 1.2, y: base.midY - r2 * 1.2, width: r2 * 2, height: r2 * 2))
-        path.addEllipse(in: CGRect(x: base.midX, y: base.midY - r4, width: r4 * 2, height: r4 * 2))
-        path.addEllipse(in: CGRect(x: base.maxX - r3 * 2, y: base.midY - r3, width: r3 * 2, height: r3 * 2))
+        path.move(to: CGPoint(x: left, y: base))
+        path.addCurve(
+            to: CGPoint(x: left + width * 0.30, y: top + h * 0.34),
+            control1: CGPoint(x: left + width * 0.02, y: base - h * 0.38),
+            control2: CGPoint(x: left + width * 0.17, y: top + h * 0.36)
+        )
+        path.addCurve(
+            to: CGPoint(x: left + width * 0.62, y: top + h * 0.22),
+            control1: CGPoint(x: left + width * 0.37, y: top - h * 0.18),
+            control2: CGPoint(x: left + width * 0.54, y: top - h * 0.12)
+        )
+        path.addCurve(
+            to: CGPoint(x: right, y: base),
+            control1: CGPoint(x: left + width * 0.80, y: top + h * 0.05),
+            control2: CGPoint(x: right - width * 0.01, y: base - h * 0.44)
+        )
+        path.addCurve(
+            to: CGPoint(x: left, y: base),
+            control1: CGPoint(x: right - width * 0.18, y: base + h * 0.12),
+            control2: CGPoint(x: left + width * 0.18, y: base + h * 0.12)
+        )
+        path.closeSubpath()
         gc.fill(path, with: .color(tint))
     }
 

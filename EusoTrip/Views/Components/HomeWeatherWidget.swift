@@ -22,7 +22,7 @@
 //  launch, a fetch error, or with no network. Two guarantees enforce this:
 //
 //    1. The last-good REAL snapshot is PERSISTED to disk
-//       (`WeatherService.cachedSnapshot`), so a COLD launch seeds straight
+//       (`WeatherService.cachedSnapshot(for:)`), so a COLD launch seeds straight
 //       into `.data` from the most recent reading instead of a skeleton.
 //    2. `refresh()` NEVER flips to a "no data" state while ANY cache exists
 //       (memory or disk): a failed fetch KEEPS the last-good card on screen
@@ -40,22 +40,34 @@ import SwiftUI
 import CoreLocation
 import UIKit
 
+private struct WeatherRequestContextEnvironmentKey: EnvironmentKey {
+    static let defaultValue: WeatherRequestContext? = nil
+}
+
+extension EnvironmentValues {
+    var weatherRequestContext: WeatherRequestContext? {
+        get { self[WeatherRequestContextEnvironmentKey.self] }
+        set { self[WeatherRequestContextEnvironmentKey.self] = newValue }
+    }
+}
+
 struct HomeWeatherWidget: View {
     /// Optional route-aware lane weather for an active load (driver
     /// dashboard passes this through); nil on every other role.
     var lane: LaneWeather? = nil
 
-    /// Destination-hero policy (user direction 2026-04-24): while a load is
-    /// active the hero shows the DESTINATION conditions (HERE Destination
-    /// Weather), not the parked-here reading. The driver dashboard passes
-    /// its resolved destination snapshot here; when non-nil it wins over
-    /// the widget's own local fetch. Nil (every other role / between
-    /// loads) → the widget's own local snapshot renders as before.
-    var preferredSnapshot: WeatherSnapshot? = nil
+    /// Lets a role home reuse this widget's single scoped provider owner for
+    /// header/secondary-tile state without starting a duplicate weather fetch.
+    var onSnapshot: ((WeatherSnapshot) -> Void)? = nil
+
+    /// Route-impact is authenticated operational data, not part of ambient
+    /// local weather. A dashboard that knows it has no active work disables
+    /// the extra query and strips any in-memory value while KPIs are zero.
+    var includeLaneImpact: Bool = true
 
     @Environment(\.palette) private var palette
-    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.openURL) private var openURL
+    @Environment(\.weatherRequestContext) private var requestContext
 
     private enum Phase {
         case loading
@@ -73,28 +85,29 @@ struct HomeWeatherWidget: View {
     @State private var hasLoadedOnce = false
 
     /// Live auto-refresh cadence. Current conditions don't change
-    /// second-to-second and the upstream sources (Apple WeatherKit / WeatherKit
-    /// / NWS) are rate-limited, so a 10-minute live tick — plus an instant
+    /// second-to-second and the ambient authority chain (on-device/server
+    /// WeatherKit with an attributed OpenWeather failover) is rate-limited,
+    /// so a 10-minute live tick — plus an instant
     /// refresh whenever the app returns to the foreground — is the right
     /// "real-time" behavior for a home weather surface.
     private let refreshInterval: UInt64 = 600 * 1_000_000_000
 
     /// Hard ceiling on the FIRST load (no cache). If the upstream chain
-    /// (location + Apple WeatherKit + WeatherKit/NWS/Open-Meteo fallbacks)
+    /// (location + on-device/server WeatherKit + attributed OpenWeather failover)
     /// stalls, the widget resolves to an honest state instead of sitting on
     /// the skeleton — no multi-minute lingering loads.
-    private let firstLoadCeiling: UInt64 = 9 * 1_000_000_000
+    private let firstLoadCeiling: Duration = .seconds(9)
 
-    init(lane: LaneWeather? = nil, preferredSnapshot: WeatherSnapshot? = nil) {
+    init(lane: LaneWeather? = nil,
+         includeLaneImpact: Bool = true,
+         onSnapshot: ((WeatherSnapshot) -> Void)? = nil) {
         self.lane = lane
-        self.preferredSnapshot = preferredSnapshot
-        // Seed from the last-good cache so the widget is NEVER blank on a
-        // return visit — it shows the most recent REAL reading instantly
-        // (even a stale one, with its honest "updated Nh ago" line) and
-        // refreshes in the background.
-        let cached = WeatherService.cachedSnapshot
-        _phase = State(initialValue: cached.map { Phase.data($0) } ?? .loading)
-        _hasLoadedOnce = State(initialValue: cached != nil)
+        self.includeLaneImpact = includeLaneImpact
+        self.onSnapshot = onSnapshot
+        // Auth-scoped cache lookup happens after Environment injection. Reading
+        // a process-global cache here could expose a previous account's city.
+        _phase = State(initialValue: .loading)
+        _hasLoadedOnce = State(initialValue: false)
     }
 
     var body: some View {
@@ -102,13 +115,12 @@ struct HomeWeatherWidget: View {
             .animation(.easeInOut(duration: 0.25), value: phaseKey)
             // Initial fetch + periodic live refresh; SwiftUI cancels the
             // loop when the widget leaves the screen.
-            .task { await autoRefreshLoop() }
-            // Refresh the instant the app returns to the foreground so a
-            // returning user never sees a stale reading.
-            .onChange(of: scenePhase) { _, newPhase in
-                if newPhase == .active {
-                    Task { await refresh() }
-                }
+            .task(id: refreshTaskIdentity) { await autoRefreshLoop() }
+            // Register the real provider refresh with the enclosing visible
+            // surface. The same widget instance and its last-good reading stay
+            // mounted until the new response arrives.
+            .eusoRefreshHandler(domains: [.weather]) {
+                await refresh(force: true)
             }
             .onReceive(NotificationCenter.default.publisher(for: .eusoWeatherAuthorizationChanged)) { _ in
                 Task { await refresh(force: true) }
@@ -126,12 +138,44 @@ struct HomeWeatherWidget: View {
         }
     }
 
+    private struct RefreshTaskIdentity: Hashable {
+        let context: WeatherRequestContext?
+        let includeLaneImpact: Bool
+        let routeFingerprint: String
+    }
+
+    private var refreshTaskIdentity: RefreshTaskIdentity {
+        .init(
+            context: requestContext,
+            includeLaneImpact: includeLaneImpact,
+            routeFingerprint: routeFingerprint
+        )
+    }
+
+    private var requestScope: WeatherRequestScope? {
+        guard let requestContext else { return nil }
+        return includeLaneImpact
+            ? .route(requestContext, fingerprint: routeFingerprint)
+            : .device(requestContext)
+    }
+
+    /// Stable route identity from real lane/load values. It partitions route
+    /// impact flights even if the device remains in the same weather cell.
+    private var routeFingerprint: String {
+        let points: [String] = lane?.points.map { point in
+            let latitude = point.snapshot.latitude.map { String(format: "%.4f", $0) } ?? "-"
+            let longitude = point.snapshot.longitude.map { String(format: "%.4f", $0) } ?? "-"
+            return "\(point.role)|\(point.city)|\(latitude),\(longitude)"
+        } ?? []
+        return points.isEmpty ? "active-route-unresolved" : points.joined(separator: ";")
+    }
+
     @ViewBuilder private var content: some View {
         switch phase {
         case .data(let snap):
-            // Destination-hero policy: the caller's active-load destination
-            // snapshot wins over the local reading while a load is active.
-            WeatherCard(snapshot: preferredSnapshot ?? snap, lane: lane)
+            // Ambient weather remains WeatherKit-owned even during an active
+            // load. HERE route endpoints render only through `lane` below.
+            WeatherCard(snapshot: displaySnapshot(snap), lane: lane)
         case .loading:
             HomeWeatherSkeleton()
         case .needsLocation:
@@ -143,9 +187,33 @@ struct HomeWeatherWidget: View {
         }
     }
 
+    private func displaySnapshot(_ snapshot: WeatherSnapshot) -> WeatherSnapshot {
+        guard !includeLaneImpact else { return snapshot }
+        var localOnly = snapshot
+        localOnly.laneImpact = nil
+        return localOnly
+    }
+
+    private func showSnapshot(_ snapshot: WeatherSnapshot) {
+        phase = .data(snapshot)
+        hasLoadedOnce = true
+        onSnapshot?(displaySnapshot(snapshot))
+    }
+
     /// Initial load, then a live refresh every `refreshInterval`. Runs
     /// inside `.task`, so SwiftUI cancels it when the widget disappears.
     private func autoRefreshLoop() async {
+        guard let requestContext else {
+            phase = .updating
+            hasLoadedOnce = false
+            return
+        }
+        if let cache = WeatherService.cachedSnapshot(for: requestContext.identity) {
+            showSnapshot(cache)
+        } else {
+            phase = .loading
+            hasLoadedOnce = false
+        }
         await refresh()
         while !Task.isCancelled {
             // Back off briefly after a FAILED fetch so a transient weather
@@ -162,17 +230,23 @@ struct HomeWeatherWidget: View {
     }
 
     private func refresh(force: Bool = false) async {
+        // Pull/resume must also advance presentation astronomy even when the
+        // provider returns the same cached payload.
+        NotificationCenter.default.post(name: .eusoWeatherDisplayClockChanged, object: nil)
+        guard let requestContext, let requestScope else {
+            if !hasLoadedOnce { phase = .updating }
+            return
+        }
         // The persisted/in-memory last-good snapshot — survives a cold
         // launch, so on EVERY refresh (including the very first of a fresh
         // process) we know whether weather has ever loaded for this device.
-        let cache = WeatherService.cachedSnapshot
+        let cache = WeatherService.cachedSnapshot(for: requestContext.identity)
 
         // If we have ANY cache (memory or disk), paint it INSTANTLY and
         // never fall to a skeleton — even an explicit retry refreshes the
         // card in place over the last-good reading.
         if let cache, !hasLoadedOnce {
-            phase = .data(cache)
-            hasLoadedOnce = true
+            showSnapshot(cache)
         } else if !hasLoadedOnce {
             // No cache at all (brand-new install) → the ONLY time we show
             // the loading placeholder. `force` deliberately does NOT reach
@@ -184,25 +258,26 @@ struct HomeWeatherWidget: View {
             phase = .loading
         }
 
-        // Bound the FIRST load so a stalled upstream chain can't leave the
-        // placeholder spinning for minutes; once we have data the live
-        // refresh runs unbounded in the background (it never shows loading).
-        let snap = hasLoadedOnce
-            ? await WeatherService.shared.fetchCurrent()
-            : await fetchBounded(ceiling: firstLoadCeiling)
+        // WeatherService owns the per-waiter deadline. A first-load waiter can
+        // leave after nine seconds while another visible consumer continues
+        // on the same provider flight; the provider is cancelled only after
+        // its final waiter leaves.
+        let snap = await WeatherService.shared.fetchCurrent(
+            scope: requestScope,
+            includeLaneImpact: includeLaneImpact,
+            waiterTimeout: hasLoadedOnce ? .seconds(15) : firstLoadCeiling
+        )
         if let snap {
-            phase = .data(snap)
-            hasLoadedOnce = true
+            showSnapshot(snap)
             return
         }
 
         // Fetch failed. NEVER leave the weather surface blank/"unavailable":
         //  • If a cache exists (memory or disk), KEEP showing it. The
         //    auto-refresh loop already retries faster on a miss.
-        let liveCache = WeatherService.cachedSnapshot
+        let liveCache = WeatherService.cachedSnapshot(for: requestContext.identity)
         if let liveCache {
-            phase = .data(liveCache)
-            hasLoadedOnce = true
+            showSnapshot(liveCache)
             return
         }
         //  • No cache AND we've truly never loaded. Distinguish a real,
@@ -215,23 +290,6 @@ struct HomeWeatherWidget: View {
             // the soft "Updating weather…" placeholder (NOT "unavailable")
             // and keep silently retrying until the first reading lands.
             if !hasLoadedOnce { phase = .updating }
-        }
-    }
-
-    /// `fetchCurrent()` raced against a hard time ceiling. Whichever
-    /// finishes first wins; the loser is cancelled. Guarantees the first
-    /// load resolves promptly instead of lingering on the skeleton if the
-    /// upstream chain stalls.
-    private func fetchBounded(ceiling: UInt64) async -> WeatherSnapshot? {
-        await withTaskGroup(of: WeatherSnapshot?.self) { group in
-            group.addTask { await WeatherService.shared.fetchCurrent() }
-            group.addTask {
-                try? await Task.sleep(nanoseconds: ceiling)
-                return nil
-            }
-            let first = await group.next() ?? nil
-            group.cancelAll()
-            return first
         }
     }
 

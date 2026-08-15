@@ -32,7 +32,7 @@ private struct SettlementBody: View {
             breakdownCard
             escrowCard
         }
-        .task {
+        .eusoRefreshTask {
             settlement.loadId = loadId
             await settlement.refresh()
         }

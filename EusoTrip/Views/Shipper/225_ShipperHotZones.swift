@@ -298,7 +298,7 @@ struct ShipperHotZones: View {
             .containerRelativeFrame(.horizontal, alignment: .leading)
         }
         .task { await store.load() }
-        .refreshable { await store.load() }
+        .eusoRefreshable { await store.load() }
         // RealtimeService → hot-zone heatmap rebalances when load
         // density shifts; refresh on assignment / surface events.
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
@@ -313,7 +313,7 @@ struct ShipperHotZones: View {
 
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
-            Text("✦ SHIPPER · HOT ZONES")
+            EusoTripEyebrow(verbatim: "SHIPPER · HOT ZONES")
                 .font(EType.micro)
                 .tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)

@@ -134,7 +134,7 @@ private struct RailCrossDockOperationsBody: View {
             .padding(.top, Space.s4)
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
     }
 
     // MARK: - Eyebrow (RAIL ENGINEER · CROSS-DOCK + audit ref)
@@ -144,7 +144,7 @@ private struct RailCrossDockOperationsBody: View {
             Image(systemName: "tram.fill")
                 .font(.system(size: 8, weight: .heavy))
                 .foregroundStyle(LinearGradient.primary)
-            Text("✦ RAIL ENGINEER · CROSS-DOCK")
+            EusoTripEyebrow(verbatim: "RAIL ENGINEER · CROSS-DOCK")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer()

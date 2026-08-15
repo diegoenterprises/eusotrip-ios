@@ -106,7 +106,7 @@ private struct RailShipmentsBody: View {
             .padding(.horizontal, 16).padding(.top, 8)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - Header

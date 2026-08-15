@@ -258,11 +258,18 @@ struct SkyStageHeroLive: View {
     /// Collapsed state uses the smaller route-motif composition (matches the
     /// v3 collapsed stage viewBox 360×150 vs expanded 360×220).
     var compact: Bool = false
+    /// Presentation clock supplied by the owning card. This keeps the sky and
+    /// the current-condition glyph on one canonical local solar decision.
+    var displayDate: Date? = nil
 
     var body: some View {
         ZStack {
             // ── Base: the full Apple-Weather-grade continuous sky engine ──
-            WeatherSkyView(snapshot: snapshot, animated: animated)
+            WeatherSkyView(
+                snapshot: snapshot,
+                animated: animated,
+                displayDate: displayDate
+            )
 
             // ── Brand signature on top: the dashed route motif + nodes ──
             // (the operational "lane drawn through the sky" identity the raw
@@ -388,6 +395,9 @@ struct HourlyRibbon: View {
     let hours: [WeatherSnapshot.HourlyForecast]
     /// The peak/risk hour index in `hours` (snapshot.peakHourIndex).
     let peakIndex: Int?
+    /// Supplies destination coordinates, sun times, and timezone. Each hour
+    /// still gets its own provider daylight flag/symbol before this fallback.
+    var solarSnapshot: WeatherSnapshot? = nil
 
     /// The hour the user is actively scrubbing to (drag your finger across
     /// the chart — the indicator + readout follow). Nil when not touching.
@@ -550,7 +560,7 @@ struct HourlyRibbon: View {
                 .position(point)
             // floating readout capsule — clamped within the chart width
             HStack(spacing: 5) {
-                Text(index == 0 ? "Now" : hour.hourLabel)
+                Text(index == 0 ? "Now" : localHourLabel(hour))
                     .font(.system(size: 10, weight: .heavy))
                     .foregroundStyle(.white.opacity(0.7))
                 Text("\(hour.tempF)°")
@@ -624,14 +634,18 @@ struct HourlyRibbon: View {
                 let isPeak = idx == peakIndex
                 let isScrubbed = idx == scrubIndex
                 VStack(spacing: 4) {
-                    Text(idx == 0 ? "Now" : hour.hourLabel)
+                    Text(idx == 0 ? "Now" : localHourLabel(hour))
                         .font(.system(size: 10, weight: isScrubbed ? .heavy : .regular))
                         .foregroundStyle(isScrubbed
                             ? AnyShapeStyle(.white)
                             : (isPeak
                                 ? AnyShapeStyle(Color(red: 1.0, green: 0.84, blue: 0.82))
                                 : AnyShapeStyle(.white.opacity(0.62))))
-                    WeatherIcons.symbolView(for: hour, size: 15)
+                    WeatherIcons.symbolView(
+                        for: hour,
+                        isDaylight: daylight(for: hour),
+                        size: 15
+                    )
                         .scaleEffect(isScrubbed ? 1.22 : 1)
                         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isScrubbed)
                     if let p = hour.precipDisplay {
@@ -646,6 +660,31 @@ struct HourlyRibbon: View {
                 .frame(maxWidth: .infinity)
             }
         }
+    }
+
+    /// Provider evidence belongs to the individual forecast hour. If it is
+    /// absent, resolve that exact instant against the destination sun window,
+    /// coordinate, or timezone; never borrow the card's current day state.
+    private func daylight(for hour: WeatherSnapshot.HourlyForecast) -> Bool? {
+        if let providerHint = hour.isDaylightHint {
+            return providerHint
+        }
+        guard let solarSnapshot else {
+            return WeatherIcons.daylightHint(forSymbol: hour.symbol)
+        }
+        return solarSnapshot.solarState(at: hour.date).isDaylight
+    }
+
+    private func localHourLabel(_ hour: WeatherSnapshot.HourlyForecast) -> String {
+        guard let timezoneId = solarSnapshot?.timezoneId,
+              let timezone = TimeZone(identifier: timezoneId),
+              hour.date != .distantPast else {
+            return hour.hourLabel
+        }
+        let formatter = DateFormatter()
+        formatter.timeZone = timezone
+        formatter.dateFormat = "ha"
+        return formatter.string(from: hour.date)
     }
 }
 

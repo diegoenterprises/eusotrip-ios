@@ -264,7 +264,7 @@ struct eSangSmartStop: View {
         }
         // Uniform cafe-door entrance.
         .screenTileRoot()
-        .task { await hydrateLiveTrip() }
+        .eusoRefreshTask { await hydrateLiveTrip() }
     }
 
     private func hydrateLiveTrip() async {

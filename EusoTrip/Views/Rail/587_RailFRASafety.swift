@@ -420,7 +420,7 @@ private struct RailFRASafetyBody: View {
             didLoad = true
             await loadAll()
         }
-        .refreshable { await loadAll() }
+        .eusoRefreshable { await loadAll() }
     }
 
     // MARK: Loading skeleton (bespoke — mirrors the hero + strip + trend stack)
@@ -455,7 +455,7 @@ private struct RailFRASafetyBody: View {
 
     private var eyebrow: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("✦ RAIL ENGINEER · FRA SAFETY")
+            EusoTripEyebrow(verbatim: "RAIL ENGINEER · FRA SAFETY")
                 .font(.system(size: 9, weight: .black)).kerning(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer()

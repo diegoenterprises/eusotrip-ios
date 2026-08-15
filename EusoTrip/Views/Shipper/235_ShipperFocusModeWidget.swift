@@ -147,7 +147,7 @@ struct ShipperFocusModeWidget: View {
 
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("✦ SHIPPER · FOCUS")
+            EusoTripEyebrow(verbatim: "SHIPPER · FOCUS")
                 .font(EType.micro)
                 .tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)

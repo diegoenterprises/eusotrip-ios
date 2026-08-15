@@ -135,7 +135,7 @@ private struct RailYardMapBody: View {
             }
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
     }
 
     // MARK: - Selected yard
@@ -149,7 +149,7 @@ private struct RailYardMapBody: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("✦  RAIL ENGINEER · YARD MAP")
+                EusoTripEyebrow(verbatim: "RAIL ENGINEER · YARD MAP")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer(minLength: 8)

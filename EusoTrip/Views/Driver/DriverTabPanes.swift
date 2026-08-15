@@ -273,7 +273,7 @@ struct DriverTripsPane: View {
             // Pull-to-refresh re-runs the live `loads.search` call on the
             // LoadBoardStore. No more "visible pulse" — the store owns
             // the loading/error/empty lifecycle end-to-end.
-            .refreshable {
+            .eusoRefreshable {
                 // Pull-to-refresh fans out: the public board re-fetches
                 // and the private "active loads" count refreshes in
                 // parallel so the My Loads pill on this surface stays
@@ -329,7 +329,7 @@ struct DriverTripsPane: View {
             // live telemetry is in. We also opportunistically refetch
             // the HERE truck-route polyline so drivers who roll out of
             // cell coverage can pull-to-reload when signal returns.
-            .refreshable {
+            .eusoRefreshable {
                 if let load = trip.currentLoad {
                     await fetchActiveRoute(for: load)
                 }
@@ -1178,7 +1178,7 @@ struct DriverTripsPane: View {
     // MARK: Pull-to-refresh
     //
     // Both scrollable bodies (eusoboardsBody and activeTripBody) bind
-    // `.refreshable` to this shared stub. It simulates a backend round
+    // `.eusoRefreshable` to this shared stub. It simulates a backend round
     // trip so the spinner is actually visible; when real data sources
     // land this becomes a fan-out of async refetches (loads list for
     // Eusoboards; trip controller + HOS for Active Trip).
@@ -1519,7 +1519,7 @@ struct MyLoadsSheet: View {
             .scrollIndicators(.hidden)
             // Pull-to-refresh re-runs the live `loads.search` call for
             // whichever bucket is currently selected.
-            .refreshable { await myLoadsStore.refresh() }
+            .eusoRefreshable { await myLoadsStore.refresh() }
         }
         // Swap the bucket → the store re-fetches via its `didSet`.
         .onChange(of: bucket) { _, newBucket in
@@ -1908,7 +1908,7 @@ struct DriverLoadsPane: View {
             .scrollIndicators(.hidden)
             // Pull-to-refresh runs the live `loads.search` for the
             // currently-selected bucket.
-            .refreshable { await myLoadsStore.refresh() }
+            .eusoRefreshable { await myLoadsStore.refresh() }
         }
         .onChange(of: bucket) { _, newBucket in
             myLoadsStore.bucket = MyLoadsStore.Bucket(rawValue: newBucket.storeKey) ?? .active
@@ -2207,7 +2207,7 @@ struct DriverWalletPane: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .refreshable { await refreshAll() }
+        .eusoRefreshable { await refreshAll() }
         .task { await refreshAll() }
         .onChange(of: session.user?.id) { _, newId in
             // When the signed-in user changes, re-pull everything so
@@ -3426,7 +3426,7 @@ struct DriverMePane: View {
             .scrollIndicators(.hidden)
             // Refresh driver profile card (name / CDL / rating / loads
             // completed) and the Me hub row counts.
-            .refreshable {
+            .eusoRefreshable {
                 try? await Task.sleep(nanoseconds: 700_000_000)
             }
         }
@@ -4020,7 +4020,7 @@ struct DriverMessagesSheet: View {
             }
             // Refresh the thread inbox — re-pulls getConversations and
             // the aggregate unread count in parallel.
-            .refreshable {
+            .eusoRefreshable {
                 await loadInbox(force: true)
             }
         }
@@ -4352,43 +4352,41 @@ enum eSangGreeting {
     /// the time of day, then opens the lane for the driver to talk.
     private static let variants: [DayPart: [String]] = [
         .earlyMorning: [
-            "Morning, driver. Coffee's kicking in for both of us. I've got your HOS, the load and weather on deck. What are we chasing first?",
-            "Early start, huh? I'm riding shotgun, HOS, dispatch, weather, all pulled up. Talk to me.",
-            "Hey, you're up before the sun again. I'm watching the clock and the road. What's on the radar?",
-            "Good morning. Let's make this one smooth, HOS is green, weather's clean. What do you need from me?"
+            "Morning, driver. Ask about HOS, an assigned load, route weather, fuel, or detention.",
+            "Early start. What live driver workflow or record should we check?",
+            "Good morning. Tell me what you need from your route, clock, load, or dispatch workflow.",
+            "Morning. I can answer from connected EusoTrip data or open a driver workflow."
         ],
         .morning: [
-            // 113th firing — corridor fixture excised ("I-20 weather"). Live
-            // greeting hydrates real corridor weather from the routing layer.
-            "Hey, good morning. I'm locked in on your HOS, the assigned load and the corridor weather. What's first?",
-            "Morning, driver. The rig's dialed in and so am I. Tell me what you want to tackle.",
-            "Hey there. Dispatch queue is quiet so far, HOS looks healthy. What's on your mind?",
-            "Good to see you rolling. Weather, route, clock, all pulled up. What can I chase down for you?",
-            "Morning. I've been watching your lane overnight, nothing hot. How can I help today?"
+            "Good morning. Ask about HOS, your assigned load, route weather, fuel, or detention.",
+            "Morning, driver. What would you like to check or move forward?",
+            "Good to see you. Which live driver workflow or record should we open?",
+            "Morning. Tell me what you need from your route, clock, load, or dispatch workflow.",
+            "Morning. I can answer from connected EusoTrip data or open a driver workflow."
         ],
         .afternoon: [
-            "Hey, afternoon stretch. Load's tracking, HOS has runway. What do you need a hand with?",
-            "Afternoon, driver. I've got your eyes on the road so you keep yours on the road. What's up?",
-            "Hey. Midday check-in, everything on your load looks clean from here. Talk to me.",
-            "Good afternoon. I'm monitoring the corridor ahead, nothing flagged. What's on your list?"
+            "Good afternoon. Ask about HOS, a load, route weather, fuel, or detention.",
+            "Afternoon, driver. What would you like to check or move forward?",
+            "Midday check-in. Which live driver workflow or record should we open?",
+            "Good afternoon. Tell me what you need from your route, clock, load, or dispatch workflow."
         ],
         .evening: [
-            "Hey, evening driver. I'm tracking traffic into sundown. What can I get for you?",
-            "Evening, driver. Let's bring this one home clean. What's on your mind?",
-            "Hey. Sun's sliding down, HOS still has room. How can I help wrap this leg?",
-            "Evening. I'm keeping an eye on overnight parking within your buffer. What do you need?"
+            "Evening, driver. Ask about HOS, a load, route weather, fuel, or detention.",
+            "Evening. What would you like to check or move forward?",
+            "End-of-day check-in. Which live driver workflow or record should we open?",
+            "Evening. Tell me what you need from your route, clock, load, or dispatch workflow."
         ],
         .night: [
-            "Hey, running on night shift. I've got HOS, weather and a parking list ready. What's first?",
-            "Evening, driver. It's quiet out there, perfect time to nail this load. Talk to me.",
-            "Hey. You hanging in? Clock and road are watched. What can I chase for you?",
-            "Late push tonight. I'm here, HOS, fuel, safe stops, all pulled up. What do you need?"
+            "Night shift. Ask about HOS, a load, route weather, fuel, parking, or detention.",
+            "Evening, driver. What live workflow or record should we check?",
+            "Late push. Tell me what you need from your route, clock, load, or dispatch workflow.",
+            "I'm here. What would you like to check or move forward?"
         ],
         .lateNight: [
-            "Hey. You're grinding. Watching your HOS like a hawk so you don't have to. What's up?",
-            "Late one tonight, driver. I'm on weather and parking within your remaining clock. Talk to me.",
-            "Hey. Running on fumes out there? I've got truck stops w/ open parking queued. What do you need?",
-            "Middle of the night and the only company worth having is the one watching your clock. What's first?"
+            "Late one. Ask about HOS, a load, route weather, fuel, parking, or detention.",
+            "Night shift. What live driver workflow or record should we check?",
+            "I'm here. Tell me what you need from your route, clock, load, or dispatch workflow.",
+            "Middle of the night. What would you like to check or move forward?"
         ]
     ]
 
@@ -4481,6 +4479,7 @@ struct DrivereSangCoachSheet: View {
     ]
 
     @State private var draft: String = ""
+    @State private var conversationSessionId = "ios-driver-\(UUID().uuidString)"
     @State private var orbState: OrbeSang.State = .idle
     /// `+` attach menu state. The composer exposes two affordances through
     /// this menu: photo upload (BOL/DVIR/reefer evidence) and P2P transfer
@@ -4490,14 +4489,7 @@ struct DrivereSangCoachSheet: View {
     @State private var showPhotoPicker: Bool = false
     @State private var pickedPhoto: PhotosPickerItem? = nil
 
-    /// Canned quick-actions — ESANG answers these locally for the Wave-4 demo
-    /// until the live chat procedure lands.
-    // 113th firing — M2 doctrine sweep. The previous chip seeds carried
-    // city + corridor fixtures ("Dallas delivery", "I-20 corridor",
-    // "before Dallas"). Replaced with corridor-agnostic prompt copy so
-    // the offline / pre-load state never leaks a destination the active
-    // Load doesn't actually carry. Live chip copy, when ESANG endpoint
-    // is reachable, will substitute the real Load city / corridor.
+    /// Quick prompts use the same authenticated ESANG path as typed messages.
     private let chips: [(String, String)] = [
         ("HOS buffer",      "How's my HOS buffer looking for today's delivery?"),
         ("Route weather",   "Weather on the corridor tonight?"),
@@ -4516,6 +4508,11 @@ struct DrivereSangCoachSheet: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(palette.bgPage)
+        // The coach is a full-screen modal, so it must become the current
+        // refresh target instead of forwarding a pull/foreground event into
+        // the obscured role screen. With no transcript read owner, the shared
+        // production fallback performs authenticated session revalidation.
+        .eusoRefreshSurface("modal:esang:driver")
         // Tapping anywhere outside the composer dismisses the keyboard.
         // We skip `.toolbar(.keyboard)` because the coach sheet is a custom
         // ZStack overlay (not inside a NavigationStack), and the system
@@ -5010,9 +5007,8 @@ struct DrivereSangCoachSheet: View {
     /// Push the driver's message into the transcript, then ship it to
     /// `esang.chat` on the live backend (eusotrip-app.azurewebsites.net)
     /// — same procedure the web app uses, so replies here match what
-    /// drivers get in the browser. Falls back to the canned intent
-    /// matcher only if the network call fails, so the orb is never
-    /// dead silent.
+    /// drivers get in the browser. Provider failures remain explicit; this
+    /// client never substitutes a different-domain answer.
     ///
     /// `image` is the optional attached photo. For the in-memory wave we
     /// just echo the attachment in the transcript; Wave-6 base64-encodes
@@ -5030,20 +5026,19 @@ struct DrivereSangCoachSheet: View {
 
         Task {
             let reply: String
+            let answerWasGenerated: Bool
             do {
                 let resp = try await EusoTripAPI.shared.esang.chat(
                     message: text,
                     currentPage: "driver.coach",
-                    loadId: nil
+                    loadId: nil,
+                    sessionId: conversationSessionId
                 )
                 reply = resp.message
+                answerWasGenerated = resp.answerWasGenerated
             } catch {
-                do {
-                    let grounded = try await ShipmentAgentService.shared.ask(text)
-                    reply = grounded.answer
-                } catch {
-                    reply = "ESANG could not connect to live intelligence. Your message was not answered; please try again when the connection returns."
-                }
+                reply = "ESANG could not connect to live intelligence. Your message was not answered; please try again when the connection returns."
+                answerWasGenerated = false
             }
             // Split ESANG's reply into driver-visible text + machine actions.
             // The parser strips every `<<<ACTION:verb:arg>>>` token so the
@@ -5052,7 +5047,9 @@ struct DrivereSangCoachSheet: View {
             // open a load sheet, etc.). Per user direction (2026-04-20):
             //   > can you hide the '<<<action:navigate:/marketplace '
             //   > which i know that is a command. please hide this…
-            let (cleaned, actions) = eSangAutopilot.parse(reply)
+            let (cleaned, actions) = answerWasGenerated
+                ? eSangAutopilot.parse(reply)
+                : (reply, [])
             await MainActor.run {
                 if !cleaned.isEmpty {
                     messages.append(Msg(role: .esang, text: cleaned))
@@ -5069,60 +5066,6 @@ struct DrivereSangCoachSheet: View {
                 }
             }
         }
-    }
-
-    /// Offline fallback — tiny intent matcher so the orb stays useful
-    /// when the device is off-network. Once the live `esang.chat` call
-    /// succeeds this is skipped entirely; it's only here as a safety
-    /// net behind the production endpoint.
-    ///
-    /// 113th firing — M2 doctrine sweep: every reply below was rewritten
-    /// to a generic, voice-preserving response that does NOT carry
-    /// fixture brands (Love's #448 / Pilot #612), fixture addresses
-    /// (2115 Dallas Logistics Blvd), fixture corridors (I-20 / Longview),
-    /// or specific clock numbers (7h 22m, 13:13 CDT, $3.89/gal, 62 mi).
-    /// When `esang.chat` is reachable the live endpoint hydrates the
-    /// real numbers from the active Load + HOS + fuel-grid + ETA
-    /// payloads. Until then these strings stay generic so the offline
-    /// fallback can never hallucinate a number the driver would act on.
-    static func canned(for prompt: String) -> String {
-        let p = prompt.lowercased()
-        if p.contains("hos") {
-            // 113th firing — was: hard-coded "7h 22m / 90 min buffer / 14-hr
-            // clock / Dallas on-time with 45-min cushion". Replaced with a
-            // generic clock-pointer response. Live endpoint serves the real
-            // hours from `hos.getStatus`.
-            return "I'm reading your remaining drive time and 14-hour clock, open the HOS panel for the exact minutes and I'll flag the next break window."
-        }
-        if p.contains("weather") || p.contains("rain") || p.contains("storm") {
-            // 113th firing — was: "I-20 west / Longview / Visibility 10+ mi"
-            // corridor-specific fixture copy. Replaced with a generic radar
-            // response. Live endpoint pulls real corridor weather from the
-            // routing layer.
-            return "Pulling the radar along your route. I'll ping you the moment anything severe pops onto the corridor ahead."
-        }
-        if p.contains("fuel") || p.contains("diesel") {
-            // 113th firing — was: competitor brand fixtures "Love's #448 in
-            // Tyler — $3.89/gal, 62 mi ahead ... Beats Pilot #612 by 9¢".
-            // Replaced with a generic fuel-grid response. Live endpoint
-            // hydrates real cheapest-first stops from `fuel.getStops`.
-            return "Watching the diesel grid up the corridor. Open the Fuel pane and I'll line them up cheapest-first with detention-risk and shower availability already weighed in."
-        }
-        if p.contains("detention") || p.contains("claim") {
-            // M2 doctrine — generic copy until ESANG live endpoint hydrates the
-            // real shipper / dock / over-window / accessorial dollars from the
-            // Load + dispatch.getExceptions payload. Removed the Walmart DC 4492
-            // / 2h 14m / $150 fixture per 111th firing's M2 leak sweep.
-            return "Filed. Detention claim is in queue with the receiver. I'll ping you the moment they cut the add-on."
-        }
-        if p.contains("eta") || p.contains("dallas") || p.contains("arriv") {
-            // 113th firing — was: hard-coded "ETA 13:13 CDT at 2115 Dallas
-            // Logistics Blvd — 7 min ahead". Replaced with a generic ETA
-            // pointer. Live endpoint serves real ETA from the active Load
-            // + routing telemetry.
-            return "Math says you're trending toward your receiver appointment, tap the load card for the live ETA breakdown and the cushion you've got in hand."
-        }
-        return "Got it. I'll dig into that and come back with specifics in a sec."
     }
 }
 

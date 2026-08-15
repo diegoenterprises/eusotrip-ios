@@ -395,7 +395,7 @@ private struct VesselTerminalMoveQueueBody780: View {
             .padding(.top, Space.s4)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
         .onReceive(Self.tick) { now = $0 }
         .sheet(isPresented: $showRoster) {
             HostlerRosterSheet780(hostlers: hostlers, shiftLeader: shiftLeader)
@@ -407,13 +407,9 @@ private struct VesselTerminalMoveQueueBody780: View {
 
     private var eyebrow: some View {
         HStack {
-            HStack(spacing: 5) {
-                Text("\u{2726}").font(.system(size: 9, weight: .heavy))
-                    .foregroundStyle(LinearGradient.primary)
-                Text("VESSEL · MOVE QUEUE · UTR DISPATCH")
-                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
-                    .foregroundStyle(LinearGradient.primary)
-            }
+            EusoTripEyebrow("VESSEL · MOVE QUEUE · UTR DISPATCH")
+                .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                .foregroundStyle(LinearGradient.primary)
             Spacer(minLength: 8)
             Text(locationId.isEmpty ? "ALL TERMINALS" : locationId.uppercased())
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)

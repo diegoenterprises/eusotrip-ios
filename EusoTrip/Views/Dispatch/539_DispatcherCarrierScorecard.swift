@@ -69,10 +69,8 @@ struct DispatcherCarrierScorecardScreen: View {
     var body: some View {
         Shell(theme: theme) { DispatcherCarrierScorecardBody() } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home",    systemImage: "house",         isCurrent: false),
-                          NavSlot(label: "Drivers", systemImage: "person.3.fill", isCurrent: false)],
-                trailing: [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: true),
-                           NavSlot(label: "Me",    systemImage: "person",          isCurrent: false)],
+                leading: DispatchNavRoute.leading(current: .board),
+                trailing: DispatchNavRoute.trailing(current: .board),
                 orbState: .idle
             )
         }
@@ -147,7 +145,7 @@ private struct DispatcherCarrierScorecardBody: View {
         .padding(.horizontal, 20)
         .padding(.top, 8)
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - Top bar (DETAIL grammar)
@@ -155,7 +153,7 @@ private struct DispatcherCarrierScorecardBody: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 0) {
-                Text("✦ DISPATCHER · CARRIER SCORECARD")
+                EusoTripEyebrow(verbatim: "DISPATCHER · CARRIER SCORECARD")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

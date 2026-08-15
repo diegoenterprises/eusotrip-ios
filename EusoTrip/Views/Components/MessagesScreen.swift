@@ -71,15 +71,13 @@ struct MessagesScreen: View {
                     DriverConversationView(thread: thread)
                         .environment(\.palette, palette)
                         .navigationBarBackButtonHidden(true)
+                        .modifier(EusoEdgeSwipeBack(
+                            isEnabled: !path.isEmpty,
+                            onBack: popConversation
+                        ))
                         .toolbar {
                             ToolbarItem(placement: .topBarLeading) {
-                                Button {
-                                    // No-slide pop (founder 2026-06-18): strip
-                                    // the default horizontal back-slide.
-                                    if !path.isEmpty {
-                                        _ = withTransaction(Transaction(animation: nil)) { path.removeLast() }
-                                    }
-                                } label: {
+                                Button(action: popConversation) {
                                     HStack(spacing: 4) {
                                         Image(systemName: "chevron.left")
                                             .font(.system(size: 16, weight: .heavy))
@@ -100,6 +98,10 @@ struct MessagesScreen: View {
                 }
         }
         .background(palette.bgPage.ignoresSafeArea())
+        .modifier(EusoEdgeSwipeBack(
+            isEnabled: path.isEmpty,
+            onBack: { dismiss() }
+        ))
         .task {
             if !didFirstLoad { await loadInbox(force: true) }
         }
@@ -150,6 +152,13 @@ struct MessagesScreen: View {
             Button("Cancel", role: .cancel) { pendingDelete = nil }
         } message: { _ in
             Text("This removes the thread from your inbox. The other participant's copy is unaffected.")
+        }
+    }
+
+    private func popConversation() {
+        guard !path.isEmpty else { return }
+        withTransaction(Transaction(animation: nil)) {
+            path.removeLast()
         }
     }
 
@@ -233,7 +242,7 @@ struct MessagesScreen: View {
             ScrollView { inboxSkeleton.padding(Space.s5) }
         } else if threads.isEmpty {
             ScrollView { emptyState.padding(Space.s5) }
-                .refreshable { await loadInbox(force: true) }
+                .eusoRefreshable { await loadInbox(force: true) }
         } else {
             List {
                 Section {
@@ -271,7 +280,7 @@ struct MessagesScreen: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .background(palette.bgPage)
-            .refreshable { await loadInbox(force: true) }
+            .eusoRefreshable { await loadInbox(force: true) }
         }
     }
 

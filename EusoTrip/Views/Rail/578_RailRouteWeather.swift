@@ -3,7 +3,7 @@
 //  EusoTrip — Rail Engineer · Route Weather (per-route weather conditions).
 //
 //  Verbatim port of "578 Rail Route Weather.svg" (Light + Dark).
-//  Live NWS weather alerts + impacted-loads count for the active route.
+//  Live WeatherKit alerts + impacted-loads count for the active route.
 //  Map hero rendered via SwiftUI Canvas (no MapKit): gradient bg, dotted bezier
 //  route line, origin/dest circles, snow/wind marker circles, ETA pill.
 //  Nav anchored to RailEngineerNavController (HOME · SHIPMENTS[current] · [orb] · COMPLIANCE · ME).
@@ -14,8 +14,8 @@
 //    weather.getRouteConditions(EXISTS weather.ts:392)  → {available?,origin,destination,
 //        overallRisk, segments:[{from,to,risk,condition,weatherCode,windGust,visibility,
 //        precipitationIntensity,floods[],overallRisk}], advisories:[{eventType,severity,
-//        headline,expiresAt}]}  — Apple WeatherKit-sourced; per-segment weather is enterprise-
-//        gated (available:false / nil today), so the screen renders an HONEST empty corridor.
+//        headline,expiresAt}]}  — HERE route weather first, with an explicitly
+//        attributed WeatherKit fallback and honest unavailable state.
 //        Input: {origin:{city,state}, destination:{city,state}} — derived from the first
 //        REAL impacted load's "City, ST" endpoints; never invented.
 //
@@ -42,7 +42,7 @@ struct RailRouteWeatherScreen: View {
 // MARK: - Data shapes
 
 private struct WeatherAlert578: Decodable, Identifiable {
-    let id: Int
+    let id: String
     let eventType: String?
     let severity: String?
     let urgency: String?
@@ -51,25 +51,50 @@ private struct WeatherAlert578: Decodable, Identifiable {
     let counties: [String]?
     let onsetAt: String?
     let expiresAt: String?
+    let detailsUrl: String?
+    let issuingSource: String?
+    let source: String?
 }
 
 private struct ImpactedLoad578: Decodable, Identifiable {
-    let loadId: Int
-    var id: Int { loadId }
+    let loadId: String
+    var id: String { loadId }
     let loadNumber: String?
     let status: String?
     let origin: String?
     let destination: String?
     let alertSeverity: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case loadId, loadNumber, status, origin, destination, alertSeverity
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        if let value = try? c.decode(String.self, forKey: .loadId) {
+            loadId = value
+        } else if let value = try? c.decode(Int.self, forKey: .loadId) {
+            loadId = String(value)
+        } else {
+            throw DecodingError.keyNotFound(
+                CodingKeys.loadId,
+                .init(codingPath: c.codingPath, debugDescription: "Missing loadId")
+            )
+        }
+        loadNumber = try c.decodeIfPresent(String.self, forKey: .loadNumber)
+        status = try c.decodeIfPresent(String.self, forKey: .status)
+        origin = try c.decodeIfPresent(String.self, forKey: .origin)
+        destination = try c.decodeIfPresent(String.self, forKey: .destination)
+        alertSeverity = try c.decodeIfPresent(String.self, forKey: .alertSeverity)
+    }
 }
 
-/// `weather.getRouteConditions` — the corridor envelope. The server is now
-/// Apple WeatherKit-sourced; every weather field is enterprise-gated, so all the
-/// new keys are OPTIONAL and stay nil today (we render the honest empty
-/// state). `available` is the gate flag (absent on the legacy alert-only
-/// path → treated as `nil`, which the screen reads as "feed not configured").
+/// `weather.getRouteConditions` — the HERE-first corridor envelope with an
+/// explicitly attributed WeatherKit fallback. Every field remains optional;
+/// `available == false`, missing source, or missing content is an honest empty.
 private struct RouteConditions578: Decodable {
     let available: Bool?
+    let source: String?
     let overallRisk: String?           // "low"|"moderate"|"high"|"extreme"|"unknown"
     let segments: [RouteSegment578]?
     let advisories: [RouteAdvisory578]?
@@ -103,7 +128,7 @@ private struct RouteAdvisory578: Decodable, Identifiable {
     var id: String { (headline ?? eventType ?? "advisory") + (expiresAt ?? "") }
 }
 
-/// A corridor segment with the new Apple WeatherKit per-segment weather. EVERY
+/// A corridor segment with normalized provider weather. EVERY
 /// field is optional → `Decodable` synthesizes cleanly and the row collapses
 /// to its honest endpoints when the enterprise feed is dark. (ForEach keys on
 /// the enumerated offset, so no `Identifiable`/synthetic id is needed.)
@@ -112,7 +137,7 @@ private struct RouteSegment578: Decodable {
     let to: String?
     let risk: String?                   // per-segment riskTier ladder
     let condition: String?
-    // Apple WeatherKit per-segment metrics (gated; nil until the key lands).
+    // Provider per-segment metrics (nil when the route feed omitted them).
     let weatherCode: Int?
     let windGust: Double?               // mph
     let visibility: Double?             // mi
@@ -131,6 +156,7 @@ private struct RouteFlood578: Decodable {
 private struct RailRouteWeatherBody: View {
     @Environment(\.palette) private var palette
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.openURL) private var openURL
     let railId: String
 
     @State private var alerts: [WeatherAlert578] = []
@@ -195,7 +221,7 @@ private struct RailRouteWeatherBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - Header
@@ -204,7 +230,7 @@ private struct RailRouteWeatherBody: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 0) {
                 HStack(spacing: 6) {
-                    Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                    EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                     Text("RAIL ENGINEER · ROUTE WEATHER")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                         .foregroundStyle(LinearGradient.diagonal)
@@ -421,7 +447,19 @@ private struct RailRouteWeatherBody: View {
     private var corridorAvailable: Bool {
         guard let r = route else { return false }
         if r.available == false { return false }
+        guard routeSourceAttribution != nil else { return false }
         return !(r.segments?.isEmpty ?? true) || !(r.advisories?.isEmpty ?? true)
+    }
+
+    private var routeSourceAttribution: String? {
+        let normalized = (route?.source ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        if normalized.contains("here") { return "HERE ROUTE WEATHER" }
+        if normalized.contains("weatherkit") || normalized.contains("apple weather") {
+            return "APPLE WEATHERKIT FALLBACK"
+        }
+        return nil
     }
 
     private var corridorSection: some View {
@@ -431,7 +469,7 @@ private struct RailRouteWeatherBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("route conditions feed")
+                Text(routeSourceAttribution ?? "route source pending")
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(palette.textTertiary)
             }
@@ -491,7 +529,7 @@ private struct RailRouteWeatherBody: View {
         .padding(.horizontal, 14).padding(.vertical, 12)
     }
 
-    /// One corridor leg: condition glyph (Apple WeatherKit weatherCode) + the
+    /// One corridor leg: normalized condition glyph + the
     /// endpoints + a riskTier dot, with the gated metrics (gust · vis ·
     /// precip) shown only when present.
     private func segmentRow(_ seg: RouteSegment578) -> some View {
@@ -506,7 +544,7 @@ private struct RailRouteWeatherBody: View {
             }
         }()
         return HStack(alignment: .top, spacing: 12) {
-            // Apple WeatherKit condition glyph (honest unknown-cloud at code 0).
+            // Provider-normalized condition glyph (honest unknown-cloud at code 0).
             WeatherIcons.symbolView(for: seg.weatherCode ?? 0, size: 28)
                 .frame(width: 28, height: 28)
             VStack(alignment: .leading, spacing: 5) {
@@ -570,7 +608,9 @@ private struct RailRouteWeatherBody: View {
     /// shown ONLY when its field is present → honest collapse otherwise.
     private func segmentMetrics(_ seg: RouteSegment578) -> [SegMetric578] {
         var out: [SegMetric578] = []
-        if let g = seg.windGust { out.append(.init(glyph: .wind, value: "\(Int(g.rounded())) mph")) }
+        if let gust = WeatherNumeric.roundedInt(seg.windGust, allowed: WeatherNumeric.windMph) {
+            out.append(.init(glyph: .wind, value: "\(gust) mph"))
+        }
         if let v = seg.visibility {
             out.append(.init(glyph: .eye, value: "\(v.formatted(.number.precision(.fractionLength(0...1)))) mi"))
         }
@@ -694,7 +734,8 @@ private struct RailRouteWeatherBody: View {
         let title = alert.headline.map { String($0.prefix(48)) } ?? (alert.eventType ?? "-")
         let stateSub = statesLabel(alert.states)
         let timeSub  = alert.onsetAt.map { " · \($0.prefix(16))" } ?? ""
-        let sub = stateSub + timeSub
+        let sourceSub = alert.issuingSource.map { " · \($0)" } ?? ""
+        let sub = stateSub + timeSub + sourceSub
 
         return HStack(spacing: 12) {
             ZStack {
@@ -720,8 +761,19 @@ private struct RailRouteWeatherBody: View {
                 .foregroundStyle(pillColor)
                 .padding(.horizontal, 10).padding(.vertical, 4)
                 .background(Capsule().fill(pillColor.opacity(0.12)))
+            if alert.detailsUrl.flatMap(URL.init(string:)) != nil {
+                Image(systemName: "arrow.up.right.square")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(palette.textSecondary)
+            }
         }
         .padding(16)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if let url = alert.detailsUrl.flatMap(URL.init(string:)) {
+                openURL(url)
+            }
+        }
     }
 
     private func alertChipInfo(_ eventType: String) -> (Color, String) {
@@ -872,7 +924,7 @@ private struct RailRouteWeatherBody: View {
             async let alertsResult: [WeatherAlert578] = EusoTripAPI.shared.queryNoInput("weather.getAlerts")
             async let impactedResult: [ImpactedLoad578] = EusoTripAPI.shared.queryNoInput("weather.getImpactedLoads")
             let (a, i) = try await (alertsResult, impactedResult)
-            self.alerts   = a
+            self.alerts   = a.filter { approvedAmbientAlertSource($0.source) }
             self.impacted = i
 
             // Corridor conditions are computed for the first REAL impacted
@@ -891,6 +943,15 @@ private struct RailRouteWeatherBody: View {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
         loading = false
+    }
+
+    private func approvedAmbientAlertSource(_ raw: String?) -> Bool {
+        switch (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "weatherkit", "openweather":
+            return true
+        default:
+            return false
+        }
     }
 
     // MARK: - Route geometry (single source of truth for line + position dot)

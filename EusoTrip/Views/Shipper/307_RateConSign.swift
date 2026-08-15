@@ -6,18 +6,14 @@
 //  REAL rate_confirmations row + its line items for the load via
 //  `rateConfirmations.listForLoad`, renders the actual terms / rate breakdown,
 //  captures an in-app E-SIGN / UETA signature on the shared gradient-ink pad,
-//  and fires the real `rateConfirmations.signBroker` (or `signCarrier`, by
-//  role) mutation that advances the server status FSM. The post-sign state is
-//  driven entirely by the returned row — never a fabricated "signed".
-//
-//  HONEST DocuSign degrade: the optional "send for provider signature" action
-//  fires `rateConfirmations.sendDocusign`, which outside a provisioned prod
-//  tenant returns `pending_docusign_prod`. We surface that as a clear
-//  "e-signature pending provider" state rather than faking a completed
-//  envelope.
+//  and submits the exact PNG evidence through `rateConfirmations.sign` only
+//  after the authenticated PDF bytes, immutable source hash, consent, and
+//  App Attest payload all agree. The post-sign state is re-fetched from the
+//  server — never fabricated from a button tap.
 //
 
 import SwiftUI
+import CryptoKit
 
 struct RateConSignScreen: View {
     let theme: Theme.Palette
@@ -27,7 +23,7 @@ struct RateConSignScreen: View {
     }
 }
 
-private struct RateConSignBody: View {
+struct RateConSignBody: View {
     @Environment(\.palette) private var palette
     @EnvironmentObject private var session: EusoTripSession
     let loadId: String
@@ -36,29 +32,26 @@ private struct RateConSignBody: View {
     private enum Phase: Equatable { case loading, ready, empty, failed(String) }
     @State private var phase: Phase = .loading
     @State private var rc: RateConfirmationsAPI.Detail?
+    @State private var review: RateConfirmationsAPI.ReviewSource?
+    @State private var pdfData: Data?
+    @State private var showingPDF: Bool = false
+    @State private var reviewedChecksum: String?
+    @State private var consentAccepted: Bool = false
 
     // Signing state.
     @State private var strokes: [[CGPoint]] = [[]]
     @State private var signing: Bool = false
     @State private var actionError: String? = nil
-
-    // DocuSign honest seam.
-    @State private var sendingDocusign: Bool = false
-    @State private var docusignReason: String? = nil
+    @State private var pendingSignatureDataURL: String?
+    @State private var pendingSignatureId: UUID = UUID()
 
     private var loadNumeric: Int { Int(loadId.replacingOccurrences(of: "load_", with: "")) ?? 0 }
 
-    /// Carrier-side roles sign as carrier; everyone else (the shipper surface
-    /// default) signs as broker. Mirrors the server's role-gated sign procs.
-    private var signsAsCarrier: Bool {
-        let r = (session.user?.role ?? "").uppercased()
-        return r == "CATALYST"
-    }
-
     /// True once THIS party has already signed (drives the post-sign state).
     private var thisPartyHasSigned: Bool {
-        guard let rc else { return false }
-        return signsAsCarrier ? rc.carrierHasSigned : rc.brokerHasSigned
+        guard let rc, let side = review?.signerSide else { return false }
+        if review?.signatures.contains(where: { $0.side == side }) == true { return true }
+        return side == "carrier" ? rc.carrierHasSigned : rc.brokerHasSigned
     }
 
     var body: some View {
@@ -71,6 +64,17 @@ private struct RateConSignBody: View {
             .padding(.horizontal, 14).padding(.top, 56)
         }
         .task { await load() }
+        .fullScreenCover(isPresented: $showingPDF, onDismiss: acknowledgePDFReview) {
+            if let pdfData, let source = review {
+                EusoPDFViewer(
+                    title: "Rate Confirmation #\(source.id)",
+                    subtitle: "\(source.loadNumber) · revision \(source.bookingRevision)",
+                    source: .data(pdfData),
+                    allowSigning: false,
+                    onSigned: nil
+                )
+            }
+        }
     }
 
     // MARK: Header
@@ -79,7 +83,7 @@ private struct RateConSignBody: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: "doc.richtext").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
-                Text("SHIPPER · RATE-CON · SIGN").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
+                Text("RATE CONFIRMATION · E-SIGN").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             Text("Sign rate confirmation").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
         }
@@ -112,6 +116,7 @@ private struct RateConSignBody: View {
             if let rc {
                 termsCard(rc)
                 if rc.lineItems.isEmpty == false { lineItemsCard(rc) }
+                if !thisPartyHasSigned { evidenceReviewCard }
                 signatureSection(rc)
             }
         }
@@ -188,6 +193,56 @@ private struct RateConSignBody: View {
         }
     }
 
+    private var evidenceReviewCard: some View {
+        LifecycleCard(accentGradient: reviewedChecksum == review?.pdfChecksumSha256) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("SOURCE-BOUND REVIEW")
+                        .font(.system(size: 9, weight: .heavy))
+                        .tracking(0.8)
+                        .foregroundStyle(palette.textTertiary)
+                    Spacer()
+                    if reviewedChecksum == review?.pdfChecksumSha256 {
+                        Label("REVIEWED", systemImage: "checkmark.shield.fill")
+                            .font(.system(size: 8, weight: .heavy))
+                            .foregroundStyle(Brand.success)
+                    }
+                }
+                if let source = review {
+                    Text("Booking revision \(source.bookingRevision) · source v\(source.sourceVersion)")
+                        .font(EType.caption.weight(.semibold))
+                        .foregroundStyle(palette.textPrimary)
+                    Text("PDF SHA-256 · \(shortHash(source.pdfChecksumSha256))")
+                        .font(EType.mono(.caption))
+                        .foregroundStyle(palette.textSecondary)
+                    Button { showingPDF = true } label: {
+                        Label(
+                            reviewedChecksum == source.pdfChecksumSha256 ? "Review exact PDF again" : "Review exact PDF",
+                            systemImage: "doc.text.magnifyingglass"
+                        )
+                        .font(.system(size: 12, weight: .heavy))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 11)
+                        .foregroundStyle(.white)
+                        .background(LinearGradient.diagonal)
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(pdfData == nil)
+
+                    Toggle(isOn: $consentAccepted) {
+                        Text(source.consentText)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(palette.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .tint(Brand.blue)
+                    .disabled(reviewedChecksum != source.pdfChecksumSha256)
+                }
+            }
+        }
+    }
+
     // MARK: Signature / post-sign state
 
     @ViewBuilder private func signatureSection(_ rc: RateConfirmationsAPI.Detail) -> some View {
@@ -211,20 +266,22 @@ private struct RateConSignBody: View {
     }
 
     private func signedState(_ rc: RateConfirmationsAPI.Detail) -> some View {
-        VStack(alignment: .leading, spacing: Space.s4) {
-            LifecycleCard(accentGradient: true) {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "checkmark.seal.fill").font(.system(size: 13, weight: .bold)).foregroundStyle(LinearGradient.diagonal)
-                        Text(rc.isFullySigned ? "Rate-con fully executed" : "Your signature recorded")
-                            .font(EType.body.weight(.bold)).foregroundStyle(palette.textPrimary)
-                    }
-                    Text(signedSubtitle(rc)).font(EType.caption).foregroundStyle(palette.textSecondary)
-                    Text("Electronic signature binding under the E-SIGN Act / UETA.")
-                        .font(.system(size: 9, weight: .heavy)).tracking(0.3).foregroundStyle(palette.textTertiary)
+        LifecycleCard(accentGradient: true) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.seal.fill").font(.system(size: 13, weight: .bold)).foregroundStyle(LinearGradient.diagonal)
+                    Text(rc.isFullySigned ? "Rate-con fully executed" : "Your signature recorded")
+                        .font(EType.body.weight(.bold)).foregroundStyle(palette.textPrimary)
                 }
+                Text(signedSubtitle(rc)).font(EType.caption).foregroundStyle(palette.textSecondary)
+                if let signature = review?.signatures.first(where: { $0.side == review?.signerSide }) {
+                    Text("Evidence · \(shortHash(signature.serverDigestSha256))")
+                        .font(EType.mono(.caption))
+                        .foregroundStyle(palette.textTertiary)
+                }
+                Text("Electronic signature binding under the E-SIGN Act / UETA.")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.3).foregroundStyle(palette.textTertiary)
             }
-            docusignSeamCard(rc)
         }
     }
 
@@ -232,49 +289,8 @@ private struct RateConSignBody: View {
         if rc.isFullySigned {
             return "Both parties have signed. The rate confirmation is locked."
         }
-        let other = signsAsCarrier ? "broker" : "carrier"
+        let other = review?.signerSide == "carrier" ? "broker" : "carrier"
         return "Waiting on the \(other) to countersign."
-    }
-
-    // HONEST DocuSign seam. Only the broker/shipper side can dispatch the
-    // outbound provider envelope, and we NEVER claim it was sent unless the
-    // server returned a genuine prod dispatch.
-    @ViewBuilder private func docusignSeamCard(_ rc: RateConfirmationsAPI.Detail) -> some View {
-        if rc.docusignDispatched {
-            LifecycleCard {
-                HStack(spacing: 8) {
-                    Image(systemName: "paperplane.fill").font(.system(size: 12, weight: .bold)).foregroundStyle(Brand.success)
-                    Text("Sent to e-signature provider\(rc.docusignEnvelopeId.map { " · \($0)" } ?? "")")
-                        .font(EType.caption).foregroundStyle(palette.textPrimary)
-                }
-            }
-        } else if rc.docusignPending || docusignReason != nil {
-            LifecycleCard(accentWarning: true) {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "clock.badge.exclamationmark").font(.system(size: 12, weight: .bold)).foregroundStyle(Brand.warning)
-                        Text("E-signature pending provider").font(EType.caption.weight(.bold)).foregroundStyle(palette.textPrimary)
-                    }
-                    Text(docusignReason ?? "The DocuSign provider isn’t provisioned in this environment yet. Your in-app signature is already binding; the provider envelope will dispatch once production e-sign is enabled.")
-                        .font(.system(size: 10, weight: .semibold)).foregroundStyle(palette.textSecondary)
-                }
-            }
-        } else if !signsAsCarrier {
-            // Broker side may optionally route to the provider for an external
-            // countersignature. Honest about the not-yet-provisioned state.
-            Button { Task { await sendDocusign(rc) } } label: {
-                HStack(spacing: 6) {
-                    if sendingDocusign { ProgressView().tint(palette.textPrimary).controlSize(.small) }
-                    Image(systemName: "paperplane").font(.system(size: 11, weight: .bold))
-                    Text(sendingDocusign ? "Sending…" : "Send for provider e-signature")
-                        .font(.system(size: 12, weight: .heavy)).tracking(0.3)
-                }
-                .foregroundStyle(palette.textPrimary)
-                .padding(.horizontal, 14).padding(.vertical, 10)
-                .background(palette.tintNeutral)
-                .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
-            }.buttonStyle(.plain).disabled(sendingDocusign)
-        }
     }
 
     private var pad: some View {
@@ -290,7 +306,7 @@ private struct RateConSignBody: View {
 
     private func ctaRow(_ rc: RateConfirmationsAPI.Detail) -> some View {
         HStack(spacing: 10) {
-            Button { strokes = [[]] } label: {
+            Button { resetSignature() } label: {
                 Text("Clear").font(.system(size: 13, weight: .heavy)).tracking(0.4).foregroundStyle(palette.textPrimary)
                     .padding(.horizontal, 18).padding(.vertical, 12)
                     .background(palette.tintNeutral).clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
@@ -305,7 +321,12 @@ private struct RateConSignBody: View {
                 .padding(.horizontal, 18).padding(.vertical, 12)
                 .background(LinearGradient.diagonal)
                 .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }.buttonStyle(.plain).disabled(signing || !EusoGradientInkCanvas.hasInk(strokes))
+            }.buttonStyle(.plain).disabled(
+                signing ||
+                !EusoGradientInkCanvas.hasInk(strokes) ||
+                reviewedChecksum != review?.pdfChecksumSha256 ||
+                !consentAccepted
+            )
         }
     }
 
@@ -347,21 +368,58 @@ private struct RateConSignBody: View {
         v == v.rounded() ? String(Int(v)) : String(format: "%g", v)
     }
 
+    private func shortHash(_ value: String) -> String {
+        guard value.count > 20 else { return value }
+        return "\(value.prefix(12))…\(value.suffix(8))"
+    }
+
     // MARK: Networking
 
     private func load() async {
         phase = .loading
+        actionError = nil
         do {
+            guard loadNumeric > 0 else {
+                throw EusoTripAPIError.trpcError("The load identifier is invalid. Reopen the load and try again.")
+            }
             // Newest-first; pick the most recent non-void RC as the active one.
             let rows = try await EusoTripAPI.shared.rateConfirmations.listForLoad(loadId: loadNumeric)
             let active = rows.first(where: { $0.status != "void" }) ?? rows.first
             if let active {
                 // Re-fetch the full detail (line items) for the active RC.
                 let detail = try await EusoTripAPI.shared.rateConfirmations.get(id: active.id)
+                let source = try await EusoTripAPI.shared.rateConfirmations.reviewSource(id: active.id)
+                guard source.id == detail.id,
+                      source.sourceHashSha256 == detail.sourceHashSha256,
+                      source.pdfChecksumSha256 == detail.pdfChecksumSha256,
+                      source.signerSide != nil else {
+                    throw EusoTripAPIError.trpcError("The live booking party or rate-confirmation evidence did not match.")
+                }
+                guard let url = absoluteURL(source.pdfUrl) else {
+                    throw EusoTripAPIError.trpcError("The exact rate-confirmation PDF URL is invalid.")
+                }
+                let (bytes, response) = try await EusoTripAPI.shared.fetchAuthenticatedData(url)
+                guard response.mimeType?.lowercased() == source.pdfMimeType.lowercased() else {
+                    throw EusoTripAPIError.trpcError("The rate-confirmation download was not the expected PDF document.")
+                }
+                if let expectedSize = source.pdfFileSizeBytes, expectedSize > 0,
+                   bytes.count != expectedSize {
+                    throw EusoTripAPIError.trpcError("The rate-confirmation PDF byte count did not match its evidence record.")
+                }
+                let checksum = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+                guard checksum == source.pdfChecksumSha256 else {
+                    throw EusoTripAPIError.trpcError("The downloaded rate-confirmation PDF failed its integrity check.")
+                }
                 rc = detail
+                review = source
+                pdfData = bytes
+                reviewedChecksum = nil
+                consentAccepted = false
                 phase = .ready
             } else {
                 rc = nil
+                review = nil
+                pdfData = nil
                 phase = .empty
             }
         } catch {
@@ -371,40 +429,78 @@ private struct RateConSignBody: View {
     }
 
     private func sign(_ target: RateConfirmationsAPI.Detail) async {
+        guard let source = review,
+              source.id == target.id,
+              reviewedChecksum == source.pdfChecksumSha256,
+              consentAccepted,
+              let actorUserId = Int(session.user?.id ?? ""), actorUserId > 0 else {
+            actionError = "Review the exact PDF and accept the electronic-signature consent before signing."
+            return
+        }
         signing = true; actionError = nil
         defer { signing = false }
-        // The gradient-ink signature is captured for the document record; the
-        // server FSM advance is what makes the RC legally signed.
-        _ = EusoGradientInkCanvas.renderPNGBase64(strokes, size: CGSize(width: 600, height: 200))
-        do {
-            let updated: RateConfirmationsAPI.Detail
-            if signsAsCarrier {
-                updated = try await EusoTripAPI.shared.rateConfirmations.signCarrier(id: target.id)
-            } else {
-                updated = try await EusoTripAPI.shared.rateConfirmations.signBroker(id: target.id)
+        if pendingSignatureDataURL == nil {
+            let base64 = EusoGradientInkCanvas.renderPNGBase64(strokes, size: CGSize(width: 600, height: 200))
+            guard !base64.isEmpty else {
+                actionError = "The signature image could not be prepared. Clear it and sign again."
+                return
             }
-            // Drive the post-sign state entirely off the returned row.
-            rc = updated
-            phase = .ready
+            pendingSignatureDataURL = "data:image/png;base64,\(base64)"
+        }
+        guard let signatureDataURL = pendingSignatureDataURL else { return }
+        do {
+            _ = try await EusoTripAPI.shared.rateConfirmations.sign(
+                id: target.id,
+                signatureDataURL: signatureDataURL,
+                consentAccepted: true,
+                idempotencyKey: pendingSignatureId,
+                actorUserId: actorUserId,
+                sourceHashSha256: source.sourceHashSha256,
+                pdfChecksumSha256: source.pdfChecksumSha256
+            )
+            resetSignature()
+            await load()
         } catch {
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
     }
 
-    private func sendDocusign(_ target: RateConfirmationsAPI.Detail) async {
-        sendingDocusign = true
-        defer { sendingDocusign = false }
-        do {
-            let seam = try await EusoTripAPI.shared.rateConfirmations.sendDocusign(id: target.id)
-            if seam.sent {
-                // Real prod dispatch — refresh the row so the dispatched state shows.
-                rc = try await EusoTripAPI.shared.rateConfirmations.get(id: target.id)
-            } else {
-                // HONEST pending — surface the provider-pending reason verbatim.
-                docusignReason = seam.reason ?? "E-signature provider not provisioned in this environment."
+    private func acknowledgePDFReview() {
+        guard pdfData != nil, let checksum = review?.pdfChecksumSha256 else { return }
+        reviewedChecksum = checksum
+    }
+
+    private func resetSignature() {
+        strokes = [[]]
+        pendingSignatureDataURL = nil
+        pendingSignatureId = UUID()
+    }
+
+    private func absoluteURL(_ raw: String) -> URL? {
+        if let absolute = URL(string: raw), absolute.scheme != nil { return absolute }
+        guard let base = EusoTripAPI.shared.baseURL else { return nil }
+        return URL(string: raw, relativeTo: base)?.absoluteURL
+    }
+}
+
+/// Reuses the exact same source-bound signing body from carrier/catalyst
+/// document surfaces without exposing the unsafe historical one-tap mutation.
+struct RateConSigningSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.palette) private var palette
+    let loadId: String
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            palette.bgPrimary.ignoresSafeArea()
+            RateConSignBody(loadId: loadId)
+            Button { dismiss() } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 24, weight: .heavy))
+                    .foregroundStyle(palette.textTertiary)
+                    .padding(16)
             }
-        } catch {
-            docusignReason = error.eusoUserCopy
+            .buttonStyle(.plain)
         }
     }
 }

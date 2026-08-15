@@ -381,7 +381,7 @@ struct DriverConversationView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            .refreshable {
+            .eusoRefreshable {
                 await loadTranscript()
             }
             .onChange(of: messages.count) {

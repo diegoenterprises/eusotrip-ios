@@ -189,7 +189,7 @@ private struct VesselMarineWeatherRoutingBody: View {
             Color.clear.frame(height: Space.s5)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - Origin / destination resolution (DB coords → PortDirectory fallback)
@@ -564,7 +564,7 @@ private struct VesselMarineWeatherRoutingBody: View {
         // fabricated marine reading.
         if feedUnavailable { return "Live marine conditions on the enterprise feed · route geometry shown" }
         // Transient fetch error → framed as an in-progress update (the
-        // `.refreshable`/`.task` path silently re-fetches), never "unavailable".
+        // `.eusoRefreshable`/`.task` path silently re-fetches), never "unavailable".
         if loadError != nil { return "Updating route weather…" }
         let segs = route?.segments?.count ?? 0
         if segs == 0 { return "No route-weather segments returned" }
@@ -594,7 +594,7 @@ private struct VesselMarineWeatherRoutingBody: View {
             } else if loadError != nil {
                 // Transient fetch error → a soft "Updating route weather…"
                 // pane (no alarming danger card, never "unavailable"). The
-                // screen's `.refreshable`/`.task` path re-fetches; pull-to-
+                // screen's `.eusoRefreshable`/`.task` path re-fetches; pull-to-
                 // refresh re-runs `load()`. NEVER a fabricated reading.
                 marineEmptyPane(
                     glyph: .route,

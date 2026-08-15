@@ -142,14 +142,14 @@ struct ShipperRFPDetail: View {
             }
         }
         .task { await store.load() }
-        .refreshable { await store.load() }
+        .eusoRefreshable { await store.load() }
     }
 
     // MARK: TopBar
 
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("✦ SHIPPER · RFP DETAIL")
+            EusoTripEyebrow(verbatim: "SHIPPER · RFP DETAIL")
                 .font(EType.micro)
                 .tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)

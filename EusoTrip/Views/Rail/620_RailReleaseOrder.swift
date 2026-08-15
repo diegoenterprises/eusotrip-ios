@@ -221,7 +221,7 @@ private struct RailReleaseOrderBody: View {
             .padding(.top, Space.s5)
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
     }
 
     // MARK: - Top bar (back chevron + eyebrow + caption + 28/-0.4 title)
@@ -230,7 +230,7 @@ private struct RailReleaseOrderBody: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 HStack(spacing: 6) {
-                    Image(systemName: "sparkle")
+                    EusoTripBrandMark(size: 12)
                         .font(.system(size: 8, weight: .heavy))
                         .foregroundStyle(LinearGradient.primary)
                     Text("RAIL ENGINEER · RELEASE")

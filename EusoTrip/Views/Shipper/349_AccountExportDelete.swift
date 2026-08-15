@@ -20,7 +20,6 @@ private struct ExportDeleteBody: View {
     @State private var deleting = false
     @State private var exportUrl: String? = nil
     @State private var exportFilename: String? = nil
-    @State private var exportQueued = false
     @State private var deletionLifecycleStatus: UsersAPI.AccountDeletionStatus.Status = .none
     @State private var deleteScheduledFor: String? = nil
     @State private var deletionBlockedReason: String? = nil
@@ -31,6 +30,7 @@ private struct ExportDeleteBody: View {
     @State private var actionError: String? = nil
     @State private var confirmDelete: Bool = false
     @State private var confirmText: String = ""
+    @State private var deletionPassword: String = ""
     /// In-app share-sheet state for the "Download archive" action.
     /// Authed fetch + UIActivityViewController so the user can save the
     /// signed JSON export straight into Files or AirDrop it — never a
@@ -52,13 +52,13 @@ private struct ExportDeleteBody: View {
     @State private var transfersLoading = true
     @State private var transfersError: String? = nil
     @State private var decidingImportId: String? = nil
+    @State private var importDecisionPasswords: [String: String] = [:]
 
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
                 if let url = exportUrl { exportReadyCard(url) }
-                else if exportQueued { exportQueuedCard }
                 if deleteCancelled { deleteCancelledCard }
                 if let err = actionError { LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) } }
                 exportCard
@@ -79,7 +79,7 @@ private struct ExportDeleteBody: View {
             case .failure(let err): importError = err.localizedDescription
             }
         }
-        .task {
+        .eusoRefreshTask {
             await loadDeletionStatus()
             await loadTransfers()
         }
@@ -110,14 +110,6 @@ private struct ExportDeleteBody: View {
                 .padding(.horizontal, 14).padding(.vertical, 10)
                 .background(LinearGradient.diagonal).clipShape(Capsule())
             }.buttonStyle(.plain).disabled(exporting)
-        }
-    }
-
-    private var exportQueuedCard: some View {
-        LifecycleCard(accentGradient: true) {
-            LifecycleSection(label: "EXPORT QUEUED", icon: "clock.badge.checkmark")
-            Text("Export queued. We'll email a secure download link to your account email when your archive is ready (loads, settlements, contacts, documents).")
-                .font(EType.caption).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -183,9 +175,9 @@ private struct ExportDeleteBody: View {
             try data.write(to: tmp, options: .atomic)
             archiveShareItem = ExportArchiveShareItem(id: UUID(), url: tmp)
         } catch let apiErr as EusoTripAPIError {
-            archiveError = apiErr.errorDescription ?? "Network error"
+            archiveError = apiErrorMessage(apiErr)
         } catch {
-            archiveError = error.localizedDescription
+            archiveError = "The export could not be saved to this device. Try the download again."
         }
     }
 
@@ -234,15 +226,24 @@ private struct ExportDeleteBody: View {
                 importError = "That file has no signed manifest. Download a fresh export archive from the source account and try again."
                 return
             }
+            let required = Set(UsersAPI.ExportManifest.requiredSections)
+            guard manifest.schemaName == UsersAPI.ExportManifest.schemaName,
+                  manifest.schemaVersion == UsersAPI.ExportManifest.schemaVersion,
+                  manifest.complete,
+                  Set(manifest.requiredSections) == required,
+                  required.allSatisfy({ manifest.entityCounts[$0] != nil }) else {
+                importError = "That archive is incomplete or uses an unsupported EusoTrip export schema. Download a fresh export from the source account."
+                return
+            }
             importAck = try await EusoTripAPI.shared.users.requestDataImport(manifest: manifest, signature: signature)
             await loadTransfers()
         } catch let apiErr as EusoTripAPIError {
-            importError = apiErr.errorDescription ?? "Network error"
+            importError = apiErrorMessage(apiErr)
         } catch let decodeErr as DecodingError {
             _ = decodeErr
             importError = "That file isn't an EusoTrip export archive."
         } catch {
-            importError = "Couldn't read that archive: \(error.localizedDescription)"
+            importError = "That archive could not be read. Choose the original downloaded export and try again."
         }
     }
 
@@ -300,6 +301,13 @@ private struct ExportDeleteBody: View {
                 Text(email).font(EType.caption).foregroundStyle(palette.textSecondary)
             }
             if row.status.lowercased() == "pending" {
+                SecureField("Source-account password", text: importPasswordBinding(row.importId))
+                    .textContentType(.password)
+                    .textFieldStyle(.plain)
+                    .padding(.horizontal, 10).padding(.vertical, 8)
+                    .background(palette.bgCard.opacity(0.6))
+                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(palette.stroke, lineWidth: 1))
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 HStack(spacing: 8) {
                     Button { Task { await decide(row.importId, approve: true) } } label: {
                         HStack(spacing: 4) {
@@ -308,12 +316,12 @@ private struct ExportDeleteBody: View {
                         }
                         .padding(.horizontal, 12).padding(.vertical, 7)
                         .background(LinearGradient.diagonal).clipShape(Capsule())
-                    }.buttonStyle(.plain).disabled(decidingImportId != nil)
+                    }.buttonStyle(.plain).disabled(decidingImportId != nil || importDecisionPasswords[row.importId, default: ""].isEmpty)
                     Button { Task { await decide(row.importId, approve: false) } } label: {
                         Text("Reject").font(.system(size: 11, weight: .heavy)).tracking(0.4).foregroundStyle(.white)
                             .padding(.horizontal, 12).padding(.vertical, 7)
                             .background(Brand.danger).clipShape(Capsule())
-                    }.buttonStyle(.plain).disabled(decidingImportId != nil)
+                    }.buttonStyle(.plain).disabled(decidingImportId != nil || importDecisionPasswords[row.importId, default: ""].isEmpty)
                 }
             } else if let ex = row.executed {
                 Text("\(ex.contactsMoved ?? 0) contacts · \(ex.documentsMoved ?? 0) eligible personal documents moved")
@@ -361,12 +369,18 @@ private struct ExportDeleteBody: View {
 
     @MainActor
     private func decide(_ importId: String, approve: Bool) async {
+        let password = importDecisionPasswords[importId, default: ""]
+        guard !password.isEmpty else {
+            transfersError = "Enter the source-account password to approve or reject this migration."
+            return
+        }
         decidingImportId = importId
         transfersError = nil
         defer { decidingImportId = nil }
         do {
-            if approve { _ = try await EusoTripAPI.shared.users.approveDataImport(importId: importId) }
-            else { _ = try await EusoTripAPI.shared.users.rejectDataImport(importId: importId) }
+            if approve { _ = try await EusoTripAPI.shared.users.approveDataImport(importId: importId, password: password) }
+            else { _ = try await EusoTripAPI.shared.users.rejectDataImport(importId: importId, password: password) }
+            importDecisionPasswords[importId] = nil
             await loadTransfers()
         } catch {
             transfersError = apiErrorMessage(error)
@@ -378,7 +392,7 @@ private struct ExportDeleteBody: View {
     private var deleteCard: some View {
         LifecycleCard(accentDanger: true) {
             LifecycleSection(label: "DELETE ACCOUNT", icon: "trash.fill")
-            Text("Soft-delete your Eusorone account. 30-day window before purge. Active loads + settlements must be closed first.")
+            Text("Schedule account deletion with a 30-day cancellation window. Active truck, rail, and vessel work; settlements; wallet balances or transfers; and legal or regulatory holds must be cleared first.")
                 .font(EType.caption).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
             if loadingDeletionStatus {
                 HStack(spacing: 8) {
@@ -446,14 +460,21 @@ private struct ExportDeleteBody: View {
                         .background(palette.bgCard.opacity(0.6))
                         .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Brand.danger.opacity(0.5), lineWidth: 1))
                         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    SecureField("Re-enter account password", text: $deletionPassword)
+                        .textContentType(.password)
+                        .textFieldStyle(.plain)
+                        .padding(.horizontal, 10).padding(.vertical, 8)
+                        .background(palette.bgCard.opacity(0.6))
+                        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Brand.danger.opacity(0.5), lineWidth: 1))
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     Button { Task { await requestDelete() } } label: {
                         HStack(spacing: 6) {
                             if deleting { ProgressView().tint(.white) }
-                            Text(deleting ? "Deleting…" : "Delete account").font(.system(size: 13, weight: .heavy)).tracking(0.4).foregroundStyle(.white)
+                            Text(deleting ? "Scheduling…" : "Schedule deletion").font(.system(size: 13, weight: .heavy)).tracking(0.4).foregroundStyle(.white)
                         }
                         .padding(.horizontal, 14).padding(.vertical, 10)
                         .background(Brand.danger).clipShape(Capsule())
-                    }.buttonStyle(.plain).disabled(deleting || confirmText != "DELETE")
+                    }.buttonStyle(.plain).disabled(deleting || confirmText != "DELETE" || deletionPassword.isEmpty)
                 }
             }
         }
@@ -463,14 +484,14 @@ private struct ExportDeleteBody: View {
         exporting = true; actionError = nil
         do {
             let pkg = try await EusoTripAPI.shared.users.requestDataExport()
-            // A non-nil URL means the archive downloads now via the authed
-            // route; a nil URL only survives against older servers whose
-            // export pipeline was still queue-and-email.
-            exportUrl = pkg.url
+            guard let url = pkg.url, !url.isEmpty else {
+                actionError = "A complete export archive was not issued. No export was recorded as ready."
+                return
+            }
+            exportUrl = url
             exportFilename = pkg.filename
-            exportQueued = (pkg.url == nil)
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = apiErrorMessage(error)
         }
         exporting = false
     }
@@ -479,7 +500,10 @@ private struct ExportDeleteBody: View {
         deleting = true; actionError = nil
         defer { deleting = false }
         do {
-            let r = try await EusoTripAPI.shared.users.requestAccountDeletion()
+            let r = try await EusoTripAPI.shared.users.requestAccountDeletion(
+                password: deletionPassword,
+                reason: "user_requested"
+            )
             guard r.success else {
                 actionError = "Your deletion request was not confirmed. Your account remains active and nothing is scheduled — submit the request again."
                 return
@@ -488,6 +512,7 @@ private struct ExportDeleteBody: View {
             deletionLifecycleStatus = .pending
             deletionBlockedReason = nil
             deleteCancelled = false
+            deletionPassword = ""
         } catch {
             actionError = friendlyDeletionError(error)
         }
@@ -507,9 +532,10 @@ private struct ExportDeleteBody: View {
             deletionBlockedReason = nil
             confirmDelete = false
             confirmText = ""
+            deletionPassword = ""
             deleteCancelled = true
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = apiErrorMessage(error)
         }
     }
 
@@ -532,23 +558,54 @@ private struct ExportDeleteBody: View {
     private var deletionBlockMessage: String {
         let reason = deletionBlockedReason?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return reason.isEmpty
-            ? "The server marked this deletion as blocked but did not provide a reason. Check again or contact support before retrying."
+            ? "This deletion is blocked, but no reason is available. Check again or contact support before retrying."
             : reason
     }
 
     private func apiErrorMessage(_ error: Error) -> String {
-        (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        guard let apiError = error as? EusoTripAPIError else {
+            return "The account request could not be completed. Try again."
+        }
+        switch apiError {
+        case .unauthenticated:
+            return "Sign in again to continue this account request."
+        case .forbidden:
+            return "This account is not permitted to complete that request."
+        case .httpStatus(let code, _):
+            return code == 401 || code == 403
+                ? "Sign in again or confirm that this is your account."
+                : "The account request could not be completed (error \(code)). Try again."
+        case .decodingFailed, .empty:
+            return "The result could not be verified. Refresh before trying again."
+        case .queuedForOfflineReplay:
+            return "This account request needs an internet connection. Reconnect and try again."
+        case .notConfigured, .badURL, .trpcError:
+            return "The account request could not be completed. Try again."
+        }
     }
 
-    /// Maps the server's active-loads rejection to a plain-language inline
-    /// message; falls back to the raw API error for anything else.
+    private func importPasswordBinding(_ importId: String) -> Binding<String> {
+        Binding(
+            get: { importDecisionPasswords[importId, default: ""] },
+            set: { importDecisionPasswords[importId] = $0 }
+        )
+    }
+
+    /// Maps the active-loads rejection to a plain-language inline message.
     private func friendlyDeletionError(_ error: Error) -> String {
-        let raw = apiErrorMessage(error)
-        let lowered = raw.lowercased()
+        let internalReason: String
+        if case EusoTripAPIError.trpcError(let message) = error {
+            internalReason = message
+        } else if case EusoTripAPIError.forbidden(let message) = error {
+            internalReason = message
+        } else {
+            internalReason = ""
+        }
+        let lowered = internalReason.lowercased()
         if lowered.contains("active load") || lowered.contains("active loads") {
             return "You can't delete your account while you have active loads. Close or cancel them first."
         }
-        return raw
+        return apiErrorMessage(error)
     }
 
     /// Human-readable purge date from the server's `scheduledFor` ISO string,

@@ -481,7 +481,7 @@ struct EscortTeam: View {
             .padding(.top, 8)
         }
         .task { await refresh() }
-        .refreshable { await refresh() }
+        .eusoRefreshable { await refresh() }
         .overlay(alignment: .bottom) { toastLayer }
     }
 
@@ -508,7 +508,7 @@ struct EscortTeam: View {
 
     private var eyebrowRow: some View {
         HStack {
-            Text("✦ ESCORT · TEAM OPS")
+            EusoTripEyebrow(verbatim: "ESCORT · TEAM OPS")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.diagonal)
             Spacer(minLength: Space.s2)
@@ -1247,14 +1247,8 @@ struct EscortTeamScreen: View {
             // edited by this drop. Nav entry needed: EscortNavRoute.map gains
             // "team": "ES19" (EscortNavController.swift:39-44), owner's call.
             BottomNav(
-                leading: [
-                    NavSlot(label: "Trip",  systemImage: "house",       isCurrent: true),
-                    NavSlot(label: "Comms", systemImage: "bubble.left", isCurrent: false),
-                ],
-                trailing: [
-                    NavSlot(label: "Permit", systemImage: "doc.text", isCurrent: false),
-                    NavSlot(label: "Me",     systemImage: "person",   isCurrent: false),
-                ],
+                leading: EscortNavRoute.leading(current: .assignments),
+                trailing: EscortNavRoute.trailing(current: .assignments),
                 orbState: .idle
             )
         }

@@ -60,13 +60,11 @@ struct CatalystFleetCarbonScreen: View {
 }
 
 private func catalystNavLeading_403() -> [NavSlot] {
-    [NavSlot(label: "Home",     systemImage: "house.fill", isCurrent: false),
-     NavSlot(label: "Dispatch", systemImage: "tray.full",  isCurrent: false)]
+    CarrierNavRoute.leading(current: .me)
 }
 
 private func catalystNavTrailing_403() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: true),
-     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
+    CarrierNavRoute.trailing(current: .me)
 }
 
 // MARK: - Lane emission model (nested at file scope, _403-suffixed)
@@ -160,6 +158,7 @@ private struct FleetCarbonBody_403: View {
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
             Task { await loadAll() }
         }
+        .eusoRefreshHandler { await loadAll() }
         .sheet(isPresented: $showInsight) { insightSheet }
     }
 
@@ -169,7 +168,7 @@ private struct FleetCarbonBody_403: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 HStack(spacing: 4) {
-                    Image(systemName: "sparkles")
+                    EusoTripBrandMark(size: 12)
                         .font(.system(size: 9, weight: .heavy))
                         .foregroundStyle(LinearGradient.primary)
                     Text("CATALYST · EMISSIONS")

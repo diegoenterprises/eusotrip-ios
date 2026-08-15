@@ -57,13 +57,11 @@ struct CatalystCargoClaimScreen: View {
 
 // NAV (REAL · CatalystNavController): HOME · DISPATCH(current) · [orb] · FLEET · ME
 private func catalystNavLeading_389() -> [NavSlot] {
-    [NavSlot(label: "Home",     systemImage: "house",                          isCurrent: false),
-     NavSlot(label: "Dispatch", systemImage: "shippingbox.and.arrow.backward", isCurrent: true)]
+    CarrierNavRoute.leading(current: .loads)
 }
 
 private func catalystNavTrailing_389() -> [NavSlot] {
-    [NavSlot(label: "Fleet", systemImage: "truck.box", isCurrent: false),
-     NavSlot(label: "Me",    systemImage: "person",    isCurrent: false)]
+    CarrierNavRoute.trailing(current: .loads)
 }
 
 // MARK: - Live claim detail contracts
@@ -243,6 +241,7 @@ private struct CatalystCargoClaim_389: View {
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
             Task { await reload() }
         }
+        .eusoRefreshHandler { await reload() }
     }
 
     // MARK: - Top bar + title
@@ -250,7 +249,7 @@ private struct CatalystCargoClaim_389: View {
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
             HStack(spacing: 4) {
-                Image(systemName: "sparkles")
+                EusoTripBrandMark(size: 12)
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
                 Text("CATALYST · CARGO CLAIM")

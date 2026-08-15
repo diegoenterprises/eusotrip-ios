@@ -115,7 +115,7 @@ struct DriverVehicleCard: View {
                 .padding(.top, Space.s4)
                 .padding(.bottom, Space.s8)
         }
-        .task {
+        .eusoRefreshTask {
             // First load the fleet — the maintenance store is gated
             // behind having a tractor id, so it can't run in parallel
             // on the very first tick.

@@ -119,7 +119,7 @@ struct MeLoadBoardView: View {
         .onChange(of: store.equipmentType) { _, _ in Task { await store.search() } }
         .onChange(of: store.hazmatOnly) { _, _ in Task { await store.search() } }
         .onChange(of: store.sortBy) { _, _ in Task { await store.search() } }
-        .refreshable { await store.search() }
+        .eusoRefreshable { await store.search() }
         // LEGACY FALLBACK ONLY (push-nav mandate, 2026-06-09 / audit M25):
         // row taps push in-stack via `\.rolePushDetail`; this slide-up
         // presenter fires only when no detail layer is mounted.
@@ -182,7 +182,7 @@ struct MeLoadBoardView: View {
                 .overlay(Circle().strokeBorder(palette.borderFaint)).clipShape(Circle())
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Image(systemName: "sparkles").font(.system(size: 9, weight: .heavy))
+                    EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy))
                         .foregroundStyle(LinearGradient.diagonal)
                     Text("DRIVER · EUSOBOARDS").font(.system(size: 9, weight: .heavy)).tracking(1.0)
                         .foregroundStyle(LinearGradient.diagonal)

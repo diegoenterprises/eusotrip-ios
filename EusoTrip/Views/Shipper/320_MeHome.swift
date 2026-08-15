@@ -114,13 +114,27 @@ enum MeCellAction {
     case detail(MeDetailRoute)
     case hardwareCapabilities
     case signOut
+
+    var stableID: String {
+        switch self {
+        case .screen(let id):
+            return "screen:\(id)"
+        case .detail(let route):
+            return "detail:\(route.rawValue)"
+        case .hardwareCapabilities:
+            return "hardware-capabilities"
+        case .signOut:
+            return "sign-out"
+        }
+    }
 }
 
 struct MeCell: Identifiable {
-    let id = UUID()
     let icon: String
     let label: String
     let action: MeCellAction
+
+    var id: String { "\(label)|\(action.stableID)" }
 }
 
 struct MeSection {
@@ -259,10 +273,6 @@ private struct MeHomeBody: View {
     @EnvironmentObject private var session: EusoTripSession
     @State private var profile: ShipperAPI.Profile? = nil
     @State private var stats: ShipperAPI.Stats? = nil
-    /// The signed-in user's avatar photo (users.profilePicture, stored as a
-    /// base64 data URL by profile.updateAvatar). Decoded for the hero circle;
-    /// nil falls back to the initials monogram. Mirrors 200_ShipperHome.
-    @State private var avatarImage: UIImage? = nil
     @State private var loading = true
     /// Inline load-error surface. Was a `/* tolerate */` no-op that
     /// left the profile screen blank on network failure with no hint.
@@ -342,84 +352,18 @@ private struct MeHomeBody: View {
             }
             .padding(.horizontal, 14).padding(.top, 8)
         }
-        .task { await load() }
-        .task { await loadAvatar() }
-        .onReceive(NotificationCenter.default.publisher(for: .eusoProfileUpdated)) { _ in
-            Task { await loadAvatar() }
-        }
+        .task { await refreshMeData() }
+        .eusoRefreshable { await refreshMeData() }
     }
 
-    /// Fetch the signed-in user's avatar (users.profilePicture, a base64 data
-    /// URL written by profile.updateAvatar) via profile.getMyProfile and decode
-    /// it for the hero. Cosmetic — any failure silently keeps the initials.
-    private func loadAvatar() async {
-        struct Out: Decodable { let avatar: String? }
-        do {
-            let out: Out = try await EusoTripAPI.shared.queryNoInput("profile.getMyProfile")
-            let img = Self.decodeAvatarDataURL(out.avatar)
-            await MainActor.run { avatarImage = img }
-        } catch { /* cosmetic — keep initials */ }
-    }
-
-    private static func decodeAvatarDataURL(_ s: String?) -> UIImage? {
-        guard let s, !s.isEmpty else { return nil }
-        let b64 = s.contains(",") ? String(s.split(separator: ",").last ?? "") : s
-        guard let data = Data(base64Encoded: b64), let img = UIImage(data: data) else { return nil }
-        return img
+    private func refreshMeData() async {
+        await load()
     }
 
     private func hero(_ p: ShipperAPI.Profile) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 10) {
-                // Avatar — tappable to present the photo picker so
-                // shippers can change their company/personal photo.
-                // Founder reported 2026-05-04: "profile picture on me
-                // screen at the top circled cant change anything
-                // picture wise". The previous bare ZStack had no tap
-                // gesture at all; now wraps a Button that posts the
-                // canonical `eusoShipperAvatarPickRequested`
-                // notification — `ShipperSurface` listens and
-                // presents `PhotosPicker`.
-                Button {
-                    NotificationCenter.default.post(
-                        name: .eusoShipperAvatarPickRequested,
-                        object: nil
-                    )
-                } label: {
-                    // 56pt avatar — shows the user's uploaded photo (decoded
-                    // from users.profilePicture's base64 data URL) when present,
-                    // otherwise the initials monogram. (64 was visually
-                    // overpowering the company-name lockup.)
-                    ZStack {
-                        if let avatarImage {
-                            Image(uiImage: avatarImage)
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: 56, height: 56)
-                                .clipShape(Circle())
-                                .overlay(Circle().strokeBorder(LinearGradient.diagonal, lineWidth: 1.5))
-                        } else {
-                            Text(initials(p.companyName.isEmpty ? p.contactName : p.companyName))
-                                .font(.system(size: 18, weight: .heavy))
-                                .foregroundStyle(.white)
-                                .frame(width: 56, height: 56)
-                                .background(LinearGradient.diagonal)
-                                .clipShape(Circle())
-                        }
-                    }
-                    .overlay(alignment: .bottomTrailing) {
-                        // Camera affordance — visual cue that the avatar is interactive.
-                        Image(systemName: "camera.fill")
-                            .font(.system(size: 9, weight: .heavy))
-                            .foregroundStyle(.white)
-                            .padding(5)
-                            .background(Circle().fill(palette.bgCard))
-                            .overlay(Circle().strokeBorder(palette.borderFaint))
-                            .offset(x: 2, y: 2)
-                    }
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Change profile photo")
+                EditableProfileAvatar(size: 56)
 
                 VStack(alignment: .leading, spacing: 2) {
                     // Long company names ("EUSORONE TECHNOLOGIES, INC.")
@@ -570,18 +514,24 @@ private struct MeHubBody: View {
     @EnvironmentObject private var session: EusoTripSession
     @State private var detailRoute: MeDetailRoute? = nil
     @State private var showHardwareCaps: Bool = false
+    @SceneStorage("shipper.me.child.expandedSection") private var expandedSection = ""
+    @SceneStorage("shipper.me.child.returnAnchor") private var returnAnchor = ""
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: Space.s4) {
-                hubHeader
-                ForEach(sections.indices, id: \.self) { i in
-                    let section = sections[i]
-                    cellGroup(title: section.title, icon: section.icon, cells: section.cells)
+        ScrollViewReader { proxy in
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Space.s4) {
+                    hubHeader
+                    ForEach(sections, id: \.title) { section in
+                        cellGroup(section)
+                    }
+                    Color.clear.frame(height: 96)
                 }
-                Color.clear.frame(height: 96)
+                .padding(.horizontal, 14).padding(.top, 8)
             }
-            .padding(.horizontal, 14).padding(.top, 8)
+            .onAppear {
+                restoreReturnPosition(using: proxy)
+            }
         }
         .sheet(item: $detailRoute) { route in
             MeDetailContainer(route: route)
@@ -616,25 +566,76 @@ private struct MeHubBody: View {
         }
     }
 
-    private func cellGroup(title: String, icon: String, cells: [MeCell]) -> some View {
+    private func cellGroup(_ section: MeSection) -> some View {
+        let sectionID = sectionAnchor(section)
+        let isExpanded = expandedSection == sectionID
+
         LifecycleCard {
-            LifecycleSection(label: title, icon: icon)
-            ForEach(cells) { cell in
-                Button {
-                    handle(cell.action)
-                } label: {
-                    HStack {
-                        Image(systemName: cell.icon).foregroundStyle(LinearGradient.diagonal)
-                        Text(cell.label).font(EType.body).foregroundStyle(palette.textPrimary)
-                        Spacer(minLength: 0)
-                        Image(systemName: "chevron.right").foregroundStyle(palette.textTertiary)
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    expandedSection = isExpanded ? "" : sectionID
+                    returnAnchor = ""
+                }
+            } label: {
+                HStack {
+                    LifecycleSection(label: section.title, icon: section.icon)
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(palette.textTertiary)
+                        .rotationEffect(.degrees(isExpanded ? 180 : 0))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if isExpanded {
+                ForEach(section.cells) { cell in
+                    let rowID = rowAnchor(cell, in: section)
+                    Button {
+                        expandedSection = sectionID
+                        returnAnchor = rowID
+                        handle(cell.action)
+                    } label: {
+                        HStack {
+                            Image(systemName: cell.icon).foregroundStyle(LinearGradient.diagonal)
+                            Text(cell.label).font(EType.body).foregroundStyle(palette.textPrimary)
+                            Spacer(minLength: 0)
+                            Image(systemName: "chevron.right").foregroundStyle(palette.textTertiary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 8)
+                        .contentShape(Rectangle())
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 8)
-                    .contentShape(Rectangle())
-                }.buttonStyle(.plain)
+                    .buttonStyle(.plain)
+                    .id(rowID)
+                }
             }
         }
+        .id(sectionID)
+    }
+
+    private var hubAnchorPrefix: String {
+        "shipper.me.\(title)"
+    }
+
+    private func sectionAnchor(_ section: MeSection) -> String {
+        "\(hubAnchorPrefix).section.\(section.title)"
+    }
+
+    private func rowAnchor(_ cell: MeCell, in section: MeSection) -> String {
+        "\(sectionAnchor(section)).row.\(cell.id)"
+    }
+
+    private func restoreReturnPosition(using proxy: ScrollViewProxy) {
+        guard !returnAnchor.isEmpty,
+              sections.contains(where: { sectionAnchor($0) == expandedSection }) else { return }
+        eusoRestoreScrollPosition(
+            using: proxy,
+            anchor: returnAnchor,
+            fallback: expandedSection
+        )
     }
 
     private func handle(_ action: MeCellAction) {
@@ -725,57 +726,51 @@ private struct MeIntelHubBody: View {
 
 private struct MeSettingsHubBody: View {
     @Environment(\.palette) private var palette
+    @SceneStorage("shipper.me.settings.expandedSection") private var expandedSection = ""
+    @SceneStorage("shipper.me.settings.returnAnchor") private var returnAnchor = ""
+
+    private let sections: [MeSection] = [
+        MeSection(title: "APP", icon: "gearshape.fill", cells: [
+            MeCell(icon: "gear", label: "Shipper settings", action: .screen("211")),
+            MeCell(icon: "house", label: "Settings home", action: .screen("340")),
+            MeCell(icon: "bell", label: "Notifications", action: .screen("343")),
+        ]),
+        MeSection(title: "ESANG", icon: "sparkles", cells: [
+            MeCell(icon: "sparkles", label: "ESANG preferences", action: .screen("319")),
+        ]),
+        MeSection(title: "DEVICES & SYNC", icon: "applewatch", cells: [
+            MeCell(icon: "applewatch", label: "EusoTrip Pulse (Apple Watch)", action: .screen("PULSE")),
+        ]),
+        MeSection(title: "SUPPORT", icon: "questionmark.circle", cells: [
+            MeCell(icon: "questionmark.circle", label: "Help & support", action: .screen("347")),
+            MeCell(icon: "doc.plaintext", label: "Legal", action: .screen("348")),
+        ]),
+        MeSection(title: "ACCOUNT", icon: "person.crop.circle", cells: [
+            MeCell(icon: "rectangle.portrait.and.arrow.right", label: "Sign out", action: .signOut),
+        ]),
+    ]
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: Space.s4) {
-                header
-
-                LifecycleCard {
-                    LifecycleSection(label: "APP", icon: "gearshape.fill")
-                    cell(icon: "gear",        label: "Shipper settings", screenId: "211")
-                    cell(icon: "house",       label: "Settings home",    screenId: "340")
-                    cell(icon: "bell",        label: "Notifications",    screenId: "343")
+        ScrollViewReader { proxy in
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Space.s4) {
+                    header
+                    ForEach(sections, id: \.title) { section in
+                        settingsGroup(section)
+                    }
+                    Color.clear.frame(height: 96)
                 }
-
-                LifecycleCard {
-                    LifecycleSection(label: "ESANG", icon: "sparkles")
-                    cell(icon: "sparkles",        label: "ESANG preferences", screenId: "319")
-                }
-
-                LifecycleCard {
-                    LifecycleSection(label: "DEVICES & SYNC", icon: "applewatch")
-                    cell(icon: "applewatch",      label: "EusoTrip Pulse (Apple Watch)", screenId: "PULSE")
-                }
-
-                LifecycleCard {
-                    LifecycleSection(label: "SUPPORT", icon: "questionmark.circle")
-                    cell(icon: "questionmark.circle", label: "Help & support", screenId: "347")
-                    cell(icon: "doc.plaintext",       label: "Legal",          screenId: "348")
-                }
-
-                LifecycleCard {
-                    LifecycleSection(label: "ACCOUNT", icon: "person.crop.circle")
-                    Button {
-                        NotificationCenter.default.post(
-                            name: .eusoShipperNavSwap, object: nil,
-                            userInfo: ["screenId": "_logout"]
-                        )
-                    } label: {
-                        HStack {
-                            Image(systemName: "rectangle.portrait.and.arrow.right").foregroundStyle(.red)
-                            Text("Sign out").font(EType.body).foregroundStyle(.red)
-                            Spacer(minLength: 0)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 8)
-                        .contentShape(Rectangle())
-                    }.buttonStyle(.plain)
-                }
-
-                Color.clear.frame(height: 96)
+                .padding(.horizontal, 14).padding(.top, 8)
             }
-            .padding(.horizontal, 14).padding(.top, 8)
+            .onAppear {
+                guard !returnAnchor.isEmpty,
+                      sections.contains(where: { sectionAnchor($0) == expandedSection }) else { return }
+                eusoRestoreScrollPosition(
+                    using: proxy,
+                    anchor: returnAnchor,
+                    fallback: expandedSection
+                )
+            }
         }
     }
 
@@ -801,23 +796,84 @@ private struct MeSettingsHubBody: View {
         }
     }
 
-    private func cell(icon: String, label: String, screenId: String) -> some View {
-        Button {
+    private func settingsGroup(_ section: MeSection) -> some View {
+        let sectionID = sectionAnchor(section)
+        let isExpanded = expandedSection == sectionID
+
+        LifecycleCard {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    expandedSection = isExpanded ? "" : sectionID
+                    returnAnchor = ""
+                }
+            } label: {
+                HStack {
+                    LifecycleSection(label: section.title, icon: section.icon)
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(palette.textTertiary)
+                        .rotationEffect(.degrees(isExpanded ? 180 : 0))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if isExpanded {
+                ForEach(section.cells) { cell in
+                    let rowID = rowAnchor(cell, in: section)
+                    Button {
+                        expandedSection = sectionID
+                        returnAnchor = rowID
+                        handle(cell.action)
+                    } label: {
+                        HStack {
+                            Image(systemName: cell.icon)
+                                .foregroundStyle(cell.action.stableID == "sign-out" ? AnyShapeStyle(.red) : AnyShapeStyle(LinearGradient.diagonal))
+                            Text(cell.label)
+                                .font(EType.body)
+                                .foregroundStyle(cell.action.stableID == "sign-out" ? AnyShapeStyle(.red) : AnyShapeStyle(palette.textPrimary))
+                            Spacer(minLength: 0)
+                            if cell.action.stableID != "sign-out" {
+                                Image(systemName: "chevron.right").foregroundStyle(palette.textTertiary)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 8)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .id(rowID)
+                }
+            }
+        }
+        .id(sectionID)
+    }
+
+    private func sectionAnchor(_ section: MeSection) -> String {
+        "shipper.me.settings.section.\(section.title)"
+    }
+
+    private func rowAnchor(_ cell: MeCell, in section: MeSection) -> String {
+        "\(sectionAnchor(section)).row.\(cell.id)"
+    }
+
+    private func handle(_ action: MeCellAction) {
+        switch action {
+        case .screen(let id):
             NotificationCenter.default.post(
                 name: .eusoShipperNavSwap, object: nil,
-                userInfo: ["screenId": screenId]
+                userInfo: ["screenId": id]
             )
-        } label: {
-            HStack {
-                Image(systemName: icon).foregroundStyle(LinearGradient.diagonal)
-                Text(label).font(EType.body).foregroundStyle(palette.textPrimary)
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.right").foregroundStyle(palette.textTertiary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 8)
-            .contentShape(Rectangle())
-        }.buttonStyle(.plain)
+        case .signOut:
+            NotificationCenter.default.post(
+                name: .eusoShipperNavSwap, object: nil,
+                userInfo: ["screenId": "_logout"]
+            )
+        case .detail, .hardwareCapabilities:
+            break
+        }
     }
 }
 

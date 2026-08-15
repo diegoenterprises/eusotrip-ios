@@ -185,7 +185,7 @@ private struct RailDutyHTSEstimateBody: View {
             .padding(.top, Space.s4)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - Top bar (eyebrow + reference id)
@@ -193,7 +193,7 @@ private struct RailDutyHTSEstimateBody: View {
     private var topBar: some View {
         HStack(alignment: .top) {
             HStack(spacing: 5) {
-                Image(systemName: "sparkle")
+                EusoTripBrandMark(size: 12)
                     .font(.system(size: 8, weight: .heavy))
                     .foregroundStyle(LinearGradient.primary)
                 Text("RAIL ENGINEER · DUTY ESTIMATE")

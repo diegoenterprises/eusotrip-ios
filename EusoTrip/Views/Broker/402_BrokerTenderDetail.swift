@@ -98,7 +98,7 @@ struct BrokerTenderDetail: View {
             .padding(.top, 8)
         }
         .task { await refreshAll() }
-        .refreshable { await refreshAll() }
+        .eusoRefreshable { await refreshAll() }
     }
 
     // MARK: - Header
@@ -123,7 +123,7 @@ struct BrokerTenderDetail: View {
                     .clipShape(Circle())
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Image(systemName: "sparkles")
+                        EusoTripBrandMark(size: 12)
                             .font(.system(size: 9, weight: .heavy))
                             .foregroundStyle(LinearGradient.diagonal)
                         Text("BROKER · TENDER DETAIL")
@@ -1044,13 +1044,11 @@ struct BrokerTenderDetailScreen: View {
 }
 
 private func brokerNavLeading_402() -> [NavSlot] {
-    [NavSlot(label: "Home",    systemImage: "house",                isCurrent: false),
-     NavSlot(label: "Tenders", systemImage: "doc.badge.gearshape",  isCurrent: true)]
+    BrokerNavRoute.leading(current: .tenders)
 }
 
 private func brokerNavTrailing_402() -> [NavSlot] {
-    [NavSlot(label: "Carriers", systemImage: "person.2", isCurrent: false),
-     NavSlot(label: "Me",       systemImage: "person",   isCurrent: false)]
+    BrokerNavRoute.trailing(current: .tenders)
 }
 
 // MARK: - Previews

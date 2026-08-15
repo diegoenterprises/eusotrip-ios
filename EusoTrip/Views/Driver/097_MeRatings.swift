@@ -57,7 +57,7 @@ struct MeRatings: View {
             .padding(.bottom, Space.s8)
         }
         .task { await seedAndRefresh() }
-        .refreshable { await seedAndRefresh() }
+        .eusoRefreshable { await seedAndRefresh() }
         .onChange(of: session.user?.id) { _, newId in
             store.userId = newId ?? ""
             Task { await store.refresh() }

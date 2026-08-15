@@ -21,25 +21,27 @@ struct EscortMeHomeScreen: View {
     @EnvironmentObject private var session: EusoTripSession
     @Environment(\.palette) private var palette
     @State private var showSignOutConfirm: Bool = false
+    @SceneStorage("escort.me.expandedCategory") private var expandedCategory: String = ""
+    @SceneStorage("escort.me.returnAnchor") private var returnAnchor: String = ""
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: Space.s4) {
-                topBar
-                titleBlock
-                iridescentHairline
-                identityHero
-                EusoCardIssuePanel(
-                    title: "Escort EusoCard",
-                    subtitle: "Virtual card for escort earnings and field spend"
-                )
-                operationsSection
-                supportSection
-                signOutButton
-                Color.clear.frame(height: 96)
+        ScrollViewReader { proxy in
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Space.s4) {
+                    topBar
+                    titleBlock
+                    iridescentHairline
+                    identityHero
+                    walletSection
+                    operationsSection
+                    supportSection
+                    signOutButton
+                    Color.clear.frame(height: 96)
+                }
+                .padding(.horizontal, 14)
+                .padding(.top, 8)
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 8)
+            .onAppear { restoreScrollPosition(using: proxy) }
         }
         .alert("Sign out?", isPresented: $showSignOutConfirm) {
             Button("Sign out", role: .destructive) {
@@ -56,7 +58,7 @@ struct EscortMeHomeScreen: View {
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
             HStack(spacing: 4) {
-                Image(systemName: "sparkles")
+                EusoTripBrandMark(size: 12)
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
                 Text("ESCORT · ME")
@@ -109,15 +111,9 @@ struct EscortMeHomeScreen: View {
     private var identityHero: some View {
         let user = session.user
         let displayName = user?.name ?? "Escort user"
-        let monogram = monogramFor(displayName)
         return LifecycleCard(accentGradient: true) {
             HStack(alignment: .center, spacing: 10) {
-                Text(monogram)
-                    .font(.system(size: 18, weight: .heavy))
-                    .foregroundStyle(.white)
-                    .frame(width: 56, height: 56)
-                    .background(LinearGradient.diagonal)
-                    .clipShape(Circle())
+                EditableProfileAvatar(size: 56)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(displayName)
                         .font(.system(size: 18, weight: .heavy))
@@ -143,16 +139,27 @@ struct EscortMeHomeScreen: View {
         }
     }
 
-    private func monogramFor(_ s: String) -> String {
-        let parts = s.split(separator: " ").prefix(2)
-        let initials = parts.compactMap { $0.first.map(String.init) }.joined().uppercased()
-        return initials.isEmpty ? "?" : String(initials.prefix(2))
-    }
-
     // MARK: - Sections (LifecycleCard chrome — visual parity with 350)
 
+    private var walletSection: some View {
+        VStack(spacing: Space.s3) {
+            LifecycleCard {
+                categoryHeader(key: "wallet", title: "WALLET", icon: "creditcard")
+            }
+            .id(categoryAnchor("wallet"))
+
+            if expandedCategory == "wallet" {
+                EusoCardIssuePanel(
+                    title: "Escort EusoCard",
+                    subtitle: "Virtual card for escort earnings and field spend"
+                )
+                .id("escort-me-row-eusocard")
+            }
+        }
+    }
+
     private var operationsSection: some View {
-        sectionCard(title: "OPERATIONS", icon: "shield.lefthalf.filled") {
+        sectionCard(key: "operations", title: "OPERATIONS", icon: "shield.lefthalf.filled") {
             row(label: "Assignment detail", icon: "shield.lefthalf.filled", to: "601")
             row(label: "Corridor map",      icon: "map",                    to: "602")
             row(label: "Route survey",      icon: "list.bullet.clipboard",  to: "606")
@@ -167,7 +174,7 @@ struct EscortMeHomeScreen: View {
     }
 
     private var supportSection: some View {
-        sectionCard(title: "SUPPORT", icon: "lifepreserver") {
+        sectionCard(key: "support", title: "SUPPORT", icon: "lifepreserver") {
             eSangRow
         }
     }
@@ -195,27 +202,47 @@ struct EscortMeHomeScreen: View {
     // MARK: - Section + row primitives (LifecycleCard parity)
 
     @ViewBuilder
-    private func sectionCard<Content: View>(title: String,
+    private func sectionCard<Content: View>(key: String,
+                                            title: String,
                                             icon: String,
                                             @ViewBuilder content: () -> Content) -> some View {
         LifecycleCard {
-            HStack(spacing: 6) {
+            categoryHeader(key: key, title: title, icon: icon)
+            if expandedCategory == key {
+                Divider().overlay(palette.borderFaint)
+                VStack(spacing: 6) {
+                    content()
+                }
+            }
+        }
+        .id(categoryAnchor(key))
+    }
+
+    private func categoryHeader(key: String, title: String, icon: String) -> some View {
+        Button(action: { toggleCategory(key) }) {
+            HStack(spacing: 8) {
                 Image(systemName: icon)
                     .font(.system(size: 11, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
                 Text(title)
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textPrimary)
+                Spacer(minLength: 0)
+                Image(systemName: expandedCategory == key ? "chevron.up" : "chevron.down")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(palette.textTertiary)
             }
-            .padding(.bottom, 2)
-            VStack(spacing: 6) {
-                content()
-            }
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .accessibilityValue(expandedCategory == key ? "Expanded" : "Collapsed")
     }
 
     private func row(label: String, icon: String, to screenId: String) -> some View {
-        Button(action: { swap(to: screenId) }) {
+        Button(action: {
+            returnAnchor = rowAnchor(screenId)
+            swap(to: screenId)
+        }) {
             HStack(spacing: 12) {
                 ZStack {
                     Circle().fill(LinearGradient.diagonal).frame(width: 36, height: 36)
@@ -234,12 +261,14 @@ struct EscortMeHomeScreen: View {
             .padding(.vertical, 4)
         }
         .buttonStyle(.plain)
+        .id(rowAnchor(screenId))
     }
 
     // SUPPORT row — same visual grammar as `row`, but its action posts the
     // ESANG notification instead of a nav swap.
     private var eSangRow: some View {
         Button(action: {
+            returnAnchor = rowAnchor("esang")
             NotificationCenter.default.post(
                 name: .eusoEscorteSangTapped,
                 object: nil
@@ -263,6 +292,31 @@ struct EscortMeHomeScreen: View {
             .padding(.vertical, 4)
         }
         .buttonStyle(.plain)
+        .id(rowAnchor("esang"))
+    }
+
+    private func toggleCategory(_ key: String) {
+        returnAnchor = ""
+        withAnimation(.easeInOut(duration: 0.2)) {
+            expandedCategory = expandedCategory == key ? "" : key
+        }
+    }
+
+    private func categoryAnchor(_ key: String) -> String {
+        "escort-me-category-\(key)"
+    }
+
+    private func rowAnchor(_ key: String) -> String {
+        "escort-me-row-\(key)"
+    }
+
+    private func restoreScrollPosition(using proxy: ScrollViewProxy) {
+        guard !expandedCategory.isEmpty, !returnAnchor.isEmpty else { return }
+        eusoRestoreScrollPosition(
+            using: proxy,
+            anchor: returnAnchor,
+            fallback: categoryAnchor(expandedCategory)
+        )
     }
 
     private func swap(to screenId: String) {

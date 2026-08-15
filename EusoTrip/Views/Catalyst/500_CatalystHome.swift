@@ -59,6 +59,7 @@ import SwiftUI
 struct CatalystHome: View {
     @Environment(\.palette) private var palette
     @Environment(\.openURL) private var openURL
+    @Environment(\.weatherRequestContext) private var weatherRequestContext
     @EnvironmentObject private var session: EusoTripSession
 
     @StateObject private var dashboard = CatalystHomeDashboardStore()
@@ -124,7 +125,7 @@ struct CatalystHome: View {
             .padding(.top, 8)
         }
         .task { await refreshAll() }
-        .refreshable { await refreshAll() }
+        .eusoRefreshable { await refreshAll() }
         .sheet(isPresented: $presentingMatchesBoard) {
             CatalystMatchesScreen(theme: palette)
                 .environmentObject(session)
@@ -186,7 +187,7 @@ struct CatalystHome: View {
         async let b: Void = alerts.refresh()
         async let c: Void = matches.refresh()
         async let d: Void = recent.refresh()
-        async let w: WeatherSnapshot? = WeatherService.shared.fetchCurrent()
+        async let w: WeatherSnapshot? = fetchLocalWeather()
         let snap = await w
         _ = await (a, b, c, d)
         weather = snap
@@ -195,6 +196,14 @@ struct CatalystHome: View {
             status == .notDetermined ||
             status == .denied ||
             status == .restricted
+        )
+    }
+
+    private func fetchLocalWeather() async -> WeatherSnapshot? {
+        guard let weatherRequestContext else { return nil }
+        return await WeatherService.shared.fetchCurrent(
+            scope: .device(weatherRequestContext),
+            includeLaneImpact: false
         )
     }
 
@@ -296,7 +305,7 @@ struct CatalystHome: View {
     // MARK: - Header
 
     // SVG 300 Catalyst Home — bespoke eyebrow row: gradient
-    // "✦ CATALYST · DASHBOARD" chip on the left, tertiary context caps
+    // EusoTrip mark + CATALYST · DASHBOARD on the left, tertiary context caps
     // on the right (matching the Driver-010 idiom + the Dark-SVG header
     // motif where the sparkle glyph appears exactly once per surface).
     // The eyebrow sits above the avatar + display greeting so the
@@ -305,7 +314,7 @@ struct CatalystHome: View {
         VStack(alignment: .leading, spacing: Space.s2) {
             // Bespoke eyebrow — gradient role chip + tertiary context.
             HStack(spacing: Space.s2) {
-                Text("✦ CATALYST · DASHBOARD")
+                EusoTripEyebrow(verbatim: "CATALYST · DASHBOARD")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                     .lineLimit(1).minimumScaleFactor(0.7)
@@ -906,13 +915,11 @@ struct CatalystHomeScreen: View {
 }
 
 private func catalystNavLeading_500() -> [NavSlot] {
-    [NavSlot(label: "Home",    systemImage: "house.fill",   isCurrent: true),
-     NavSlot(label: "Matches", systemImage: "scope", isCurrent: false)]
+    CarrierNavRoute.leading(current: .home)
 }
 
 private func catalystNavTrailing_500() -> [NavSlot] {
-    [NavSlot(label: "Network", systemImage: "person.2",   isCurrent: false),
-     NavSlot(label: "Me",      systemImage: "person",     isCurrent: false)]
+    CarrierNavRoute.trailing(current: .home)
 }
 
 // MARK: - Previews

@@ -804,7 +804,7 @@ private struct RailIntermodalSegmentBoardBody614: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
         .overlay(alignment: .bottom) { toastView }
         .sheet(item: $advanceTarget) { target in advanceSheet(target) }
     }
@@ -814,7 +814,7 @@ private struct RailIntermodalSegmentBoardBody614: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: Space.s2) {
-                Text("✦ RAIL ENGINEER · SEGMENT BOARD")
+                EusoTripEyebrow(verbatim: "RAIL ENGINEER · SEGMENT BOARD")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer(minLength: Space.s2)

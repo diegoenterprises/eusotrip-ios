@@ -44,7 +44,7 @@ private struct AddPaymentMethodBody: View {
             }
             .padding(.horizontal, 14).padding(.top, 56)
         }
-        .task { await load() }
+        .eusoRefreshTask { await load() }
         .sheet(item: $stripeSession) { sess in
             StripeSecureSafariView(url: sess.url)
                 .ignoresSafeArea()

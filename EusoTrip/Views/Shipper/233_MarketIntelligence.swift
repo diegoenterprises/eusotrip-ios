@@ -451,7 +451,7 @@ struct MarketIntelligenceBody: View {
             .padding(.top, embedded ? Device.safeTop + Space.s4 : 56)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: Header

@@ -332,7 +332,7 @@ private struct VesselDropYardOperationsBody781: View {
             .padding(.horizontal, Space.s5)
             .padding(.bottom, Space.s8)
         }
-        .task { await load() }
+        .eusoRefreshTask { await load() }
     }
 
     // MARK: Header
@@ -340,7 +340,7 @@ private struct VesselDropYardOperationsBody781: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack {
-                Text("✦ VESSEL · DROP YARD · PER-DIEM")
+                EusoTripEyebrow(verbatim: "VESSEL · DROP YARD · PER-DIEM")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

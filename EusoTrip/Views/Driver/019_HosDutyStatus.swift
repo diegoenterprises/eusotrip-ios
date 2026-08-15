@@ -294,7 +294,7 @@ struct HosDutyStatus: View {
             }
         }
         .task { await store.bootstrap() }
-        .refreshable { await store.refreshAll() }
+        .eusoRefreshable { await store.refreshAll() }
         // RealtimeService → ELD posts a duty-status change for this
         // driver (or any other) → refresh the HOS clock + violations
         // strip + daily log without waiting for the next tick.

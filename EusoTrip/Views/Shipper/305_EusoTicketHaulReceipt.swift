@@ -58,7 +58,7 @@ private struct ShipperEusoTicketHaulReceiptBody: View {
             await fetch()
             joinLoadRoom()
         }
-        .refreshable { await fetch() }
+        .eusoRefreshable { await fetch() }
         .onDisappear { leaveLoadRoom() }
         // RealtimeService → re-fetch the receipt the moment the load
         // record changes (POD landing late, settlement clearing, etc).
@@ -78,7 +78,7 @@ private struct ShipperEusoTicketHaulReceiptBody: View {
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
             HStack(spacing: 4) {
-                Image(systemName: "sparkles").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("SHIPPER · EUSOTICKET · HAUL RECEIPT")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }

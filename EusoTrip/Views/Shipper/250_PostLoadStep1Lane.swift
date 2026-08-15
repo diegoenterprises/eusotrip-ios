@@ -59,12 +59,15 @@ private struct PostLoadStep1Body: View {
             guard let resumeDraftId, !resumeDraftId.isEmpty else { return }
             await draft.hydrateFromServerDraft(id: resumeDraftId)
         }
+        .onDisappear {
+            draft.cancelServerDraftHydration(for: resumeDraftId)
+        }
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "sparkles").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("POST A LOAD · STEP 1 · LANE")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.diagonal)
@@ -335,7 +338,10 @@ private struct PostLoadStep1Body: View {
                 Text("Multi-stop builder").font(.system(size: 11, weight: .heavy)).tracking(0.4).foregroundStyle(palette.textPrimary)
                     .padding(.horizontal, 12).padding(.vertical, 10)
                     .background(palette.tintNeutral).clipShape(Capsule())
-            }.buttonStyle(.plain)
+            }
+            .buttonStyle(.plain)
+            .disabled(!canAdvance)
+            .opacity(canAdvance ? 1 : 0.48)
             Spacer(minLength: 0)
             Button {
                 NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": "251"])
@@ -344,8 +350,21 @@ private struct PostLoadStep1Body: View {
                     .padding(.horizontal, 18).padding(.vertical, 12)
                     .background(LinearGradient.diagonal)
                     .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }.buttonStyle(.plain)
+            }
+            .buttonStyle(.plain)
+            .disabled(!canAdvance)
+            .opacity(canAdvance ? 1 : 0.48)
         }
+    }
+
+    private var canAdvance: Bool {
+        guard let resumeDraftId,
+              !resumeDraftId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return true
+        }
+        return !draft.isHydratingDraft
+            && draft.hydrateError == nil
+            && draft.hydratedDraftId == resumeDraftId.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 

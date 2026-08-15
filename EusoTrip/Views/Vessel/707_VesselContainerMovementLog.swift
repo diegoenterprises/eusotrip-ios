@@ -430,7 +430,7 @@ private struct VesselContainerMovementLogBody707: View {
             .padding(.bottom, Space.s7)
         }
         .background(palette.bgPage.ignoresSafeArea())
-        .task { await load() }
+        .eusoRefreshTask { await load() }
     }
 
     // MARK: Header
@@ -438,7 +438,7 @@ private struct VesselContainerMovementLogBody707: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack {
-                Text("✦ VESSEL · SHIPMENTS · MOVE LOG")
+                EusoTripEyebrow(verbatim: "VESSEL · SHIPMENTS · MOVE LOG")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

@@ -5381,7 +5381,7 @@ final class AdminTenantDetailStore: BaseDynamicStore<AdminAPI.TenantDetail?> {
 //      `lastError` so the UI can surface a banner.
 //
 // The store does NOT re-fetch on every flip. The Settings UI's
-// `.refreshable` block calls `refresh()` for explicit pull-to-refresh
+// `.eusoRefreshable` block calls `refresh()` for explicit pull-to-refresh
 // reconciliation, which is the only path that re-reads from the
 // server. This keeps round-trips proportional to user intent.
 //

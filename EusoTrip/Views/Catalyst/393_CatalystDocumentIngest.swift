@@ -57,13 +57,11 @@ struct CatalystDocumentIngestScreen: View {
 }
 
 private func catalystNavLeading_393() -> [NavSlot] {
-    [NavSlot(label: "Home",     systemImage: "house",                          isCurrent: false),
-     NavSlot(label: "Dispatch", systemImage: "shippingbox.and.arrow.backward", isCurrent: false)]
+    CarrierNavRoute.leading(current: .me)
 }
 
 private func catalystNavTrailing_393() -> [NavSlot] {
-    [NavSlot(label: "Fleet", systemImage: "truck.box",          isCurrent: false),
-     NavSlot(label: "Me",    systemImage: "person.crop.circle", isCurrent: true)]
+    CarrierNavRoute.trailing(current: .me)
 }
 
 // MARK: - Body
@@ -75,11 +73,11 @@ private struct DocumentIngestBody_393: View {
     // Live state — empty/zero until documentManagement.getDocuments answers.
     // No seed rows, no seeded hero figures (zero-fallback purge · audit M6).
     @State private var rows: [IngestRow_393] = []
-    @State private var autoPct: Int = 0
+    @State private var readPct: Int = 0
     @State private var totalDocs: Int = 0
-    @State private var autoExtracted: Int = 0
-    @State private var needsReview: Int = 0
-    @State private var failed: Int = 0
+    @State private var readProposals: Int = 0
+    @State private var awaitingRead: Int = 0
+    @State private var notRead: Int = 0
     @State private var syncedAgo: String = "—"
 
     @State private var loading: Bool = true
@@ -91,8 +89,7 @@ private struct DocumentIngestBody_393: View {
 
     private var classifiableRows: [IngestRow_393] {
         rows.filter { row in
-            let status = row.rawStatus.lowercased()
-            return ["pending", "uploaded", "processing", "review", "needs_review", "failed", ""].contains(status)
+            ["pending", "not_attempted", "scanner_unavailable", "nothing_read", "unreadable_type"].contains(row.rawStatus)
         }
     }
 
@@ -145,6 +142,7 @@ private struct DocumentIngestBody_393: View {
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
             Task { await loadAll() }
         }
+        .eusoRefreshHandler { await loadAll() }
     }
 
     // MARK: TopBar
@@ -152,7 +150,7 @@ private struct DocumentIngestBody_393: View {
     private var topBar_393: some View {
         HStack(alignment: .firstTextBaseline) {
             HStack(spacing: 4) {
-                Image(systemName: "sparkles")
+                EusoTripBrandMark(size: 12)
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
                 Text("CATALYST · DOCUMENT INGEST")
@@ -185,7 +183,7 @@ private struct DocumentIngestBody_393: View {
     private var heroCard_393: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("AUTO-CLASSIFIED · TODAY")
+                Text("DOCUMENT READ COVERAGE")
                     .font(.system(size: 9, weight: .heavy))
                     .tracking(0.6)
                     .foregroundStyle(palette.textTertiary)
@@ -199,16 +197,16 @@ private struct DocumentIngestBody_393: View {
                     .background(Capsule().fill(hydrated ? Brand.success.opacity(0.14) : palette.bgCardSoft))
             }
             HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text(hydrated && totalDocs > 0 ? "\(autoPct)%" : "—")
+                Text(hydrated && totalDocs > 0 ? "\(readPct)%" : "—")
                     .font(.system(size: 30, weight: .heavy))
                     .monospacedDigit()
                     .foregroundStyle(LinearGradient.diagonal)
-                Text(hydrated ? "of \(totalDocs) docs" : "of — docs")
+                Text(hydrated ? "of \(totalDocs) loaded" : "of — loaded")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(palette.textSecondary)
             }
             Text(hydrated
-                 ? "\(autoExtracted) auto-extracted · \(needsReview) needs review · \(failed) failed"
+                 ? "\(readProposals) proposals read · \(awaitingRead) awaiting read · \(notRead) not read"
                  : "—")
                 .font(.system(size: 10.5))
                 .foregroundStyle(palette.textSecondary)
@@ -274,13 +272,6 @@ private struct DocumentIngestBody_393: View {
                             .frame(height: 1)
                     }
                 }
-                HStack {
-                    Text("Live document records · per-row OCR confidence not yet connected")
-                        .font(.system(size: 10))
-                        .foregroundStyle(palette.textSecondary)
-                    Spacer(minLength: 0)
-                }
-                .padding(.top, 6)
             }
         }
         .padding(18)
@@ -304,7 +295,7 @@ private struct DocumentIngestBody_393: View {
             Text("Driver camera captures at the dock + portal uploads feed this queue")
                 .font(.system(size: 11))
                 .foregroundStyle(palette.textSecondary)
-            Text("\(totalDocs) live document\(totalDocs == 1 ? "" : "s") · \(autoExtracted) extracted · \(needsReview) need review · \(failed) failed")
+            Text("\(totalDocs) loaded live document\(totalDocs == 1 ? "" : "s") · \(readProposals) read proposals · \(awaitingRead) awaiting read · \(notRead) not read")
                 .font(.system(size: 11))
                 .foregroundStyle(palette.textSecondary)
         }
@@ -363,20 +354,23 @@ private struct DocumentIngestBody_393: View {
         do {
             let resp = try await EusoTripAPI.shared.documentManagement.getDocuments(page: 1, pageSize: 50)
             let docs = resp.documents
-            let total = resp.total > 0 ? resp.total : docs.count
+            let total = docs.count
 
-            let pendingStates: Set<String> = ["pending", "uploaded", "processing", "review"]
-            let needs = docs.filter { pendingStates.contains($0.status.lowercased()) }.count
-            let fail = docs.filter { ["rejected", "failed"].contains($0.status.lowercased()) }.count
-            let extracted = max(0, total - needs - fail)
-            let pct = total > 0 ? Int((Double(extracted) / Double(total) * 100.0).rounded()) : 0
+            let read = docs.filter { $0.extraction?.status.lowercased() == "read" }.count
+            let unreadStates: Set<String> = ["scanner_unavailable", "nothing_read", "unreadable_type"]
+            let unread = docs.filter { doc in
+                guard let status = doc.extraction?.status.lowercased() else { return false }
+                return unreadStates.contains(status)
+            }.count
+            let waiting = max(0, total - read - unread)
+            let pct = total > 0 ? Int((Double(read) / Double(total) * 100.0).rounded()) : 0
 
             self.rows = docs.prefix(8).map { mapRow_393($0) }
             self.totalDocs = total
-            self.autoExtracted = extracted
-            self.needsReview = needs
-            self.failed = fail
-            self.autoPct = pct
+            self.readProposals = read
+            self.awaitingRead = waiting
+            self.notRead = unread
+            self.readPct = pct
             self.syncedAgo = "synced just now"
             self.hydrated = true
         } catch {
@@ -416,7 +410,7 @@ private struct DocumentIngestBody_393: View {
 
         await loadAll()
         if successes > 0 {
-            classifyMessage = "Classified \(successes) document\(successes == 1 ? "" : "s")."
+            classifyMessage = "Read \(successes) document\(successes == 1 ? "" : "s"). Review every proposed value before filing."
         }
         if !failures.isEmpty {
             classifyError = failures.prefix(2).joined(separator: "\n")
@@ -427,14 +421,16 @@ private struct DocumentIngestBody_393: View {
     /// Right column is the document's real status — per-row OCR confidence
     /// has no live source on mobile, so it is never invented.
     private func mapRow_393(_ d: DocumentManagementAPI.Document) -> IngestRow_393 {
-        let status = d.status.lowercased()
-        let ok = !["pending", "uploaded", "processing", "review", "rejected", "failed"].contains(status)
+        let status = d.extraction?.status.lowercased() ?? "not_attempted"
+        let confidence = d.extraction?.fieldConfidence.map { "\(Int(($0 * 100).rounded()))% · \(status.replacingOccurrences(of: "_", with: " "))" }
+            ?? status.replacingOccurrences(of: "_", with: " ")
+        let ok = status == "read"
         let typeTag = String(d.type.replacingOccurrences(of: "_", with: " ").uppercased().prefix(9))
         return IngestRow_393(
             id: d.id,
             type: typeTag.isEmpty ? "DOC" : typeTag,
             detail: d.name,
-            confidence: status.isEmpty ? "—" : status,
+            confidence: confidence,
             rawStatus: status,
             ok: ok
         )

@@ -79,7 +79,7 @@ struct DriverProfile: View {
             .padding(.horizontal, 14)
             .padding(.top, 8)
         }
-        .task {
+        .eusoRefreshTask {
             async let a: () = identityStore.refresh()
             async let b: () = reputationStore.refresh()
             _ = await (a, b)

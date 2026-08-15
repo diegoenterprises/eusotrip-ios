@@ -8,7 +8,7 @@
 //  me, at which facilities, and what is still on the clock."
 //
 //  Screen anatomy (1:1 with the SVG, top → bottom):
-//    • TopBar eyebrow  "✦ SHIPPER · DETENTION"  +  right rail
+//    • TopBar EusoTrip mark + "SHIPPER · DETENTION" + right rail
 //      "$8,420 · 3 ACTIVE"  (live: dashboard.totalCharges +
 //      dashboard.activeDetentions).
 //    • Title  "Detention exposure"  +  "Eusorone Technologies ·
@@ -81,7 +81,7 @@ struct ShipperDetentionExposure: View {
             .padding(.bottom, Space.s8)
         }
         .task { await store.refresh() }
-        .refreshable { await store.refresh() }
+        .eusoRefreshable { await store.refresh() }
         .sheet(item: $disputing) { detention in
             DisputeChargeSheet(detention: detention, store: store)
                 .eusoSheetX()
@@ -92,7 +92,7 @@ struct ShipperDetentionExposure: View {
 
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("✦ SHIPPER · DETENTION")
+            EusoTripEyebrow(verbatim: "SHIPPER · DETENTION")
                 .font(EType.micro)
                 .tracking(1.0)
                 .foregroundStyle(LinearGradient.diagonal)

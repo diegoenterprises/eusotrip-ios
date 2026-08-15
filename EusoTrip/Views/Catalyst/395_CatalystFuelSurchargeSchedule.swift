@@ -68,13 +68,11 @@ struct CatalystFuelSurchargeScheduleScreen: View {
 }
 
 private func catalystNavLeading_395() -> [NavSlot] {
-    [NavSlot(label: "Home",     systemImage: "house",                          isCurrent: false),
-     NavSlot(label: "Dispatch", systemImage: "shippingbox.and.arrow.backward", isCurrent: false)]
+    CarrierNavRoute.leading(current: .me)
 }
 
 private func catalystNavTrailing_395() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: true),
-     NavSlot(label: "Me",     systemImage: "person.crop.circle", isCurrent: false)]
+    CarrierNavRoute.trailing(current: .me)
 }
 
 // MARK: - Bracket model
@@ -150,6 +148,7 @@ private struct FuelSurchargeBody_395: View {
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
             Task { await loadAll() }
         }
+        .eusoRefreshHandler { await loadAll() }
         .sheet(isPresented: $showScheduleEditor) {
             scheduleEditorSheet_395
         }
@@ -161,7 +160,7 @@ private struct FuelSurchargeBody_395: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 HStack(spacing: 4) {
-                    Image(systemName: "sparkles")
+                    EusoTripBrandMark(size: 12)
                         .font(.system(size: 9, weight: .heavy))
                         .foregroundStyle(LinearGradient.primary)
                     Text("CATALYST · FUEL SURCHARGE · PADD 3")

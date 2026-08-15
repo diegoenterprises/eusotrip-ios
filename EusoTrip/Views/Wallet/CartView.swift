@@ -46,7 +46,7 @@ public struct CartView: View {
         .navigationTitle("Universal Cart")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     private var header: some View {

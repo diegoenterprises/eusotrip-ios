@@ -334,7 +334,7 @@ struct EscortActiveTripConsole: View {
         }
         .safeAreaInset(edge: .bottom) { ctaBar }
         .task { await load() }
-        .refreshable { await load(forceNetwork: true) }
+        .eusoRefreshable { await load(forceNetwork: true) }
     }
 
     // MARK: Header
@@ -342,7 +342,7 @@ struct EscortActiveTripConsole: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 4) {
-                Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy))
+                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
                 Text("ESCORT · ACTIVE TRIP").font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.diagonal)
@@ -1134,14 +1134,8 @@ struct EscortActiveTripConsoleScreen: View {
             // Escort role enum TRIP·COMMS·PERMIT·ME — the active trip IS the
             // TRIP tab, mirroring ES-01/ES-02/ES-05.
             BottomNav(
-                leading: [
-                    NavSlot(label: "Trip",  systemImage: "house",       isCurrent: true),
-                    NavSlot(label: "Comms", systemImage: "bubble.left", isCurrent: false),
-                ],
-                trailing: [
-                    NavSlot(label: "Permit", systemImage: "doc.text", isCurrent: false),
-                    NavSlot(label: "Me",     systemImage: "person",   isCurrent: false),
-                ],
+                leading: EscortNavRoute.leading(current: .assignments),
+                trailing: EscortNavRoute.trailing(current: .assignments),
                 orbState: .idle
             )
         }

@@ -50,6 +50,7 @@ import SwiftUI
 struct CarrierHome: View {
     @Environment(\.palette) private var palette
     @Environment(\.openURL) private var openURL
+    @Environment(\.weatherRequestContext) private var weatherRequestContext
     @EnvironmentObject private var session: EusoTripSession
 
     @StateObject private var dashboard = CarrierHomeDashboardStore()
@@ -99,7 +100,7 @@ struct CarrierHome: View {
             .padding(.top, 8)
         }
         .task { await refreshAll() }
-        .refreshable { await refreshAll() }
+        .eusoRefreshable { await refreshAll() }
         .screenTileRoot()
     }
 
@@ -108,7 +109,7 @@ struct CarrierHome: View {
         async let b: Void = alerts.refresh()
         async let c: Void = active.refresh()
         async let d: Void = recent.refresh()
-        async let w: WeatherSnapshot? = WeatherService.shared.fetchCurrent()
+        async let w: WeatherSnapshot? = fetchLocalWeather()
         let snap = await w
         _ = await (a, b, c, d)
         weather = snap
@@ -117,6 +118,14 @@ struct CarrierHome: View {
             status == .notDetermined ||
             status == .denied ||
             status == .restricted
+        )
+    }
+
+    private func fetchLocalWeather() async -> WeatherSnapshot? {
+        guard let weatherRequestContext else { return nil }
+        return await WeatherService.shared.fetchCurrent(
+            scope: .device(weatherRequestContext),
+            includeLaneImpact: false
         )
     }
 
@@ -220,7 +229,7 @@ struct CarrierHome: View {
             // role homes read as one family. The sparkle glyph is the
             // surface's single §4.3 accent budget.
             HStack(spacing: Space.s2) {
-                Text("✦ CARRIER · DASHBOARD")
+                EusoTripEyebrow(verbatim: "CARRIER · DASHBOARD")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer(minLength: Space.s2)
@@ -751,13 +760,11 @@ struct CarrierHomeScreen: View {
 }
 
 private func carrierNavLeading_300() -> [NavSlot] {
-    [NavSlot(label: "Home",  systemImage: "house.fill",   isCurrent: true),
-     NavSlot(label: "Loads", systemImage: "shippingbox",  isCurrent: false)]
+    CarrierNavRoute.leading(current: .home)
 }
 
 private func carrierNavTrailing_300() -> [NavSlot] {
-    [NavSlot(label: "Drivers", systemImage: "person.2",   isCurrent: false),
-     NavSlot(label: "Me",      systemImage: "person",     isCurrent: false)]
+    CarrierNavRoute.trailing(current: .home)
 }
 
 // MARK: - Previews

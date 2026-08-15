@@ -35,7 +35,7 @@ private struct CatalystRatingsBody: View {
             }
             .padding(.horizontal, 14).padding(.top, 56)
         }
-        .task { await perf.refresh() }
+        .eusoRefreshTask { await perf.refresh() }
     }
 
     private var header: some View {

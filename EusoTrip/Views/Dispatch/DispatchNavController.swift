@@ -37,35 +37,68 @@ extension Notification.Name {
     static let eusoDispatcheSangTapped = Notification.Name("eusoDispatcheSangTapped")
 }
 
+enum DispatchNavTab {
+    case home, board, comms, me, none
+}
+
 enum DispatchNavRoute {
-    static let map: [String: String] = [
-        "home":  "Disp400",
-        "board": "Disp401",
-        "comms": "Dpch721",
+    enum Destination: String {
+        case home = "Disp400"
+        case board = "Disp401"
+        case comms = "Dpch721"
+        case me = "Dpch713"
+        case drivers = "Dpch701"
+        case loads = "Dpch702"
+    }
+
+    private static let map: [String: Destination] = [
+        "home": .home,
+        "board": .board,
+        "comms": .comms,
         // 2026-05-21 — dedicated Dispatch Me hub (Dpch713). Was "Dpch700"
         // (Home), which made the "Me" tab a silent dead-end that bounced
         // the dispatcher back to the screen they were already on.
-        "me":    "Dpch713",
+        "me": .me,
         // 2026-06-09 alias sweep (audit M24): ~20 dispatch screens still
         // carry the legacy SVG slot labels "Drivers" / "Loads" in their
         // BottomNav rows. Those labels had no map entry, so the slots
         // were silent dead-taps (the dispatcher's `guard let` returns).
         // Alias them onto the registered boards instead of relabeling
         // every bespoke port (the labels are wireframe-verbatim).
-        "drivers": "Dpch701",   // Dispatch · Driver Board (registered)
-        "loads":   "Dpch702",   // Dispatch · Load Assignment (registered)
-        "dispatch": "Disp401",  // Dpch710A Convoy Composer's "Dispatch" slot → canonical board
+        "drivers": .drivers,
+        "loads": .loads,
+        "dispatch": .board,
     ]
 
-    static let orbLabels: Set<String> = ["esang", "orb"]
+    private static let orbLabels: Set<String> = ["esang", "orb"]
+
+    static func screenId(for label: String) -> String? {
+        map[normalize(label)]?.rawValue
+    }
+
+    static func isOrb(_ label: String) -> Bool {
+        orbLabels.contains(normalize(label))
+    }
+
+    private static func normalize(_ label: String) -> String {
+        label.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    static func leading(current: DispatchNavTab = .none) -> [NavSlot] {
+        [NavSlot(label: "Home", systemImage: "house", isCurrent: current == .home),
+         NavSlot(label: "Board", systemImage: "rectangle.split.3x1.fill", isCurrent: current == .board)]
+    }
+
+    static func trailing(current: DispatchNavTab = .none) -> [NavSlot] {
+        [NavSlot(label: "Comms", systemImage: "bubble.left.and.bubble.right.fill", isCurrent: current == .comms),
+         NavSlot(label: "Me", systemImage: "person", isCurrent: current == .me)]
+    }
 }
 
 @MainActor
 enum DispatchNavDispatcher {
     static func handle(_ label: String) {
-        let key = label.lowercased()
-
-        if DispatchNavRoute.orbLabels.contains(key) {
+        if DispatchNavRoute.isOrb(label) {
             NotificationCenter.default.post(
                 name: .eusoDispatcheSangTapped,
                 object: nil
@@ -73,7 +106,7 @@ enum DispatchNavDispatcher {
             return
         }
 
-        guard let screenId = DispatchNavRoute.map[key] else { return }
+        guard let screenId = DispatchNavRoute.screenId(for: label) else { return }
         NotificationCenter.default.post(
             name: .eusoDispatchNavSwap,
             object: nil,

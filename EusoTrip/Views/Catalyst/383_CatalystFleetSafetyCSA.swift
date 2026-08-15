@@ -9,7 +9,7 @@
 //  the structural twin this file mirrors).
 //
 //  Layout (section-by-section against the SVG):
-//    • Header — eyebrow "✦ CATALYST · FLEET SAFETY" (gradient) + "SMS · 24-MO"
+//    • Header — EusoTrip mark + "CATALYST · FLEET SAFETY" + "SMS · 24-MO"
 //      (mono); back-chevron orb; title "Fleet CSA" (22/700); subtitle
 //      "7 BASICs · FMCSA SMS"; right rail "{carrier} · USDOT {dot}" +
 //      "synced …"; IridescentHairline.
@@ -274,7 +274,7 @@ struct CatalystFleetSafetyCSA: View {
             .padding(.bottom, Space.s8)
         }
         .task { await store.refresh() }
-        .refreshable { await store.refresh() }
+        .eusoRefreshable { await store.refresh() }
         .sheet(isPresented: $planSheet) {
             CSAImprovementPlanSheet(carrierId: Int(store.state.value?.overview.companyId ?? "") ?? 0)
                 .environment(\.palette, palette)
@@ -309,7 +309,7 @@ struct CatalystFleetSafetyCSA: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack {
-                Text("✦ CATALYST · FLEET SAFETY")
+                EusoTripEyebrow(verbatim: "CATALYST · FLEET SAFETY")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.diagonal)
                 Spacer()
@@ -711,7 +711,7 @@ private struct CSAImprovementPlanSheet: View {
             .padding(Space.s4)
         }
         .background(palette.bgPrimary)
-        .task { await store.refresh() }
+        .eusoRefreshTask { await store.refresh() }
     }
 
     private func categoryCard(_ c: CSAImprovementPlan.Category) -> some View {
@@ -816,7 +816,7 @@ private struct CSAHazmatQualSheet: View {
             .padding(Space.s4)
         }
         .background(palette.bgPrimary)
-        .task { await store.refresh() }
+        .eusoRefreshTask { await store.refresh() }
     }
 
     private func qualBadge(_ ok: Bool) -> some View {

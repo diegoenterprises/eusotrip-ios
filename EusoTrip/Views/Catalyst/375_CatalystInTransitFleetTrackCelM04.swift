@@ -73,13 +73,11 @@ struct CatalystInTransitFleetTrackCelM04Screen: View {
 }
 
 private func catalystNavLeading_375() -> [NavSlot] {
-    [NavSlot(label: "Home",     systemImage: "house",                          isCurrent: false),
-     NavSlot(label: "Dispatch", systemImage: "shippingbox.and.arrow.backward", isCurrent: true)]
+    CarrierNavRoute.leading(current: .loads)
 }
 
 private func catalystNavTrailing_375() -> [NavSlot] {
-    [NavSlot(label: "My Loads", systemImage: "shippingbox.fill", isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person",      isCurrent: false)]
+    CarrierNavRoute.trailing(current: .loads)
 }
 
 // MARK: - Wire models (exact getActiveLoads / getMyDrivers shapes)
@@ -189,6 +187,7 @@ private struct CatalystInTransitFleetTrackCelM04Body: View {
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
             Task { await fetch() }
         }
+        .eusoRefreshHandler { await fetch() }
         .sheet(isPresented: $showLoadDetail) {
             if let loadId = transitLoad?.id {
                 CatalystLoadDetailScreen(theme: palette, loadId: loadId)
@@ -205,7 +204,7 @@ private struct CatalystInTransitFleetTrackCelM04Body: View {
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
             HStack(spacing: 4) {
-                Image(systemName: "sparkles")
+                EusoTripBrandMark(size: 12)
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
                 Text("CATALYST · DISPATCH · IN-TRANSIT · FLEET-TRACK")

@@ -65,13 +65,11 @@ struct CatalystDriverDocumentsScreen: View {
 }
 
 private func catalystNavLeading_322() -> [NavSlot] {
-    [NavSlot(label: "Home",     systemImage: "house",                          isCurrent: false),
-     NavSlot(label: "Dispatch", systemImage: "shippingbox.and.arrow.backward", isCurrent: true)]
+    CarrierNavRoute.leading(current: .drivers)
 }
 
 private func catalystNavTrailing_322() -> [NavSlot] {
-    [NavSlot(label: "My Loads", systemImage: "shippingbox.fill", isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person",      isCurrent: false)]
+    CarrierNavRoute.trailing(current: .drivers)
 }
 
 // MARK: - DQ taxonomy filter
@@ -165,6 +163,7 @@ private struct CatalystDriverDocuments: View {
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
             Task { await loadAll() }
         }
+        .eusoRefreshHandler { await loadAll() }
         .sheet(item: $selectedDocument) { doc in
             CatalystDocumentDetailSheet(
                 document: doc,
@@ -208,7 +207,7 @@ private struct CatalystDriverDocuments: View {
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
             HStack(spacing: 4) {
-                Image(systemName: "sparkles")
+                EusoTripBrandMark(size: 12)
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
                 Text("CATALYST · DRIVER · DOCUMENTS")

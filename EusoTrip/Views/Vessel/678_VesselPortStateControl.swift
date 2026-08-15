@@ -192,7 +192,7 @@ private struct VesselPortStateControlBody: View {
             }
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - DETAIL header
@@ -204,7 +204,7 @@ private struct VesselPortStateControlBody: View {
                     Image(systemName: "ferry.fill")
                         .font(.system(size: 8, weight: .heavy))
                         .foregroundStyle(LinearGradient.primary)
-                    Text("✦ VESSEL OPERATOR · PSC INSPECTION")
+                    EusoTripEyebrow(verbatim: "VESSEL OPERATOR · PSC INSPECTION")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                         .foregroundStyle(LinearGradient.primary)
                 }

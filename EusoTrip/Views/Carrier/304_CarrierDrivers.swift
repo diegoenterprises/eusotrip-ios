@@ -151,7 +151,7 @@ struct CarrierDrivers: View {
             .padding(.top, 8)
         }
         .task { await active.refresh() }
-        .refreshable { await active.refresh() }
+        .eusoRefreshable { await active.refresh() }
         .screenTileRoot()
     }
 
@@ -168,7 +168,7 @@ struct CarrierDrivers: View {
                 .clipShape(Circle())
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Image(systemName: "sparkles")
+                    EusoTripBrandMark(size: 12)
                         .font(.system(size: 9, weight: .heavy))
                         .foregroundStyle(LinearGradient.diagonal)
                     Text("CARRIER · ROSTER")
@@ -581,13 +581,11 @@ struct CarrierDriversScreen: View {
 }
 
 private func carrierNavLeading_304() -> [NavSlot] {
-    [NavSlot(label: "Home",     systemImage: "house",                  isCurrent: false),
-     NavSlot(label: "Drivers",  systemImage: "person.2.fill",          isCurrent: true)]
+    CarrierNavRoute.leading(current: .drivers)
 }
 
 private func carrierNavTrailing_304() -> [NavSlot] {
-    [NavSlot(label: "Dispatch", systemImage: "antenna.radiowaves.left.and.right", isCurrent: false),
-     NavSlot(label: "Me",       systemImage: "person",                  isCurrent: false)]
+    CarrierNavRoute.trailing(current: .drivers)
 }
 
 // MARK: - Previews

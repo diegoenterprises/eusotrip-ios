@@ -163,7 +163,7 @@ private struct RailDrayageOrdersBody: View {
             }
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
         .onChange(of: filter) { _, _ in Task { await reload() } }
     }
 
@@ -171,7 +171,7 @@ private struct RailDrayageOrdersBody: View {
 
     private var eyebrow: some View {
         HStack {
-            Text("✦  RAIL ENGINEER · DRAYAGE")
+            EusoTripEyebrow(verbatim: "RAIL ENGINEER · DRAYAGE")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer()

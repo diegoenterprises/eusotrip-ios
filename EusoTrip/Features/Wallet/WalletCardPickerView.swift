@@ -11,7 +11,6 @@
 //
 
 import SwiftUI
-import PassKit
 
 struct WalletCardPickerView: View {
     /// What KIND of pass this picker mints when the bottom CTA fires.
@@ -99,18 +98,18 @@ struct WalletCardPickerView: View {
             // staffAccessTokens (no load).
             if mode == .staffAccess {
                 addCTA(title: "Add access card to Wallet") {
-                    Task { await store.addAccessCardToWallet(present: present) }
+                    Task { await store.addAccessCardToWallet() }
                 }
             } else if let loadId {
                 addCTA(title: "Add to Apple Wallet") {
-                    Task { await store.addToWallet(loadId: loadId, present: present) }
+                    Task { await store.addToWallet(loadId: loadId) }
                 }
             }
         }
         .overlay(alignment: .top) {
             if store.isSyncing { ProgressView().padding(8) }
         }
-        .task { await store.load(loadId: mode == .pickup ? loadId : nil) }
+        .eusoRefreshTask { await store.load(loadId: mode == .pickup ? loadId : nil) }
         .onReceive(NotificationCenter.default.publisher(for: .eusoAccessFallbackToInlineQR)) { note in
             guard mode == .staffAccess else { return }
             let code = note.userInfo?["accessCode"] as? String ?? ""
@@ -144,13 +143,6 @@ struct WalletCardPickerView: View {
         .disabled(!store.canMintSelectedTheme)
         .padding(.horizontal, 18).padding(.bottom, 10)
         .background(.ultraThinMaterial)
-    }
-
-    // Present the PassKit sheet from the active window's root.
-    private func present(_ vc: PKAddPassesViewController) {
-        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-              let root = scene.windows.first?.rootViewController else { return }
-        (root.presentedViewController ?? root).present(vc, animated: true)
     }
 }
 

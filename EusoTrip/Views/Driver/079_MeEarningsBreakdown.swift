@@ -86,7 +86,7 @@ struct MeEarningsBreakdown: View {
             .padding(.bottom, Space.s8)
         }
         .task { await store.refresh() }
-        .refreshable { await store.refresh() }
+        .eusoRefreshable { await store.refresh() }
         .onChange(of: selected) { _, newValue in
             store.period = newValue.rawValue
         }

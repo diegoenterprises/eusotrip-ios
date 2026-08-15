@@ -89,7 +89,7 @@ struct EscortCertReciprocity: View {
             })
             .environment(\.palette, palette)
         }
-        .task { await load() }
+        .eusoRefreshTask { await load() }
     }
 
     private var header: some View {
@@ -397,14 +397,8 @@ struct EscortCertReciprocityScreen: View {
         } nav: {
             // Escort role enum TRIP·COMMS·PERMIT·ME — mirrors ES-01/ES-02 (ESC-07 axis-I precedent).
             BottomNav(
-                leading: [
-                    NavSlot(label: "Trip",  systemImage: "house",       isCurrent: false),
-                    NavSlot(label: "Comms", systemImage: "bubble.left", isCurrent: false),
-                ],
-                trailing: [
-                    NavSlot(label: "Permit", systemImage: "doc.text", isCurrent: false),
-                    NavSlot(label: "Me",     systemImage: "person",   isCurrent: true),
-                ],
+                leading: EscortNavRoute.leading(current: .me),
+                trailing: EscortNavRoute.trailing(current: .me),
                 orbState: .idle
             )
         }

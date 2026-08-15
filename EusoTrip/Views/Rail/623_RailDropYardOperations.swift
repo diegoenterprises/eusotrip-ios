@@ -197,7 +197,7 @@ private struct RailDropYardOperationsBody: View {
             }
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
         .sheet(isPresented: $showChassis) {
             ChassisSheet(chassis: chassis,
                          summary: chassisSummary,
@@ -213,7 +213,7 @@ private struct RailDropYardOperationsBody: View {
         VStack(alignment: .leading, spacing: 0) {
             // Eyebrow row
             HStack {
-                Text("✦  RAIL ENGINEER · DROP YARD")
+                EusoTripEyebrow(verbatim: "RAIL ENGINEER · DROP YARD")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

@@ -510,7 +510,7 @@ struct DriverTruckPosted: View {
         .scrollIndicators(.hidden)
         .background(palette.bgPage.ignoresSafeArea())
         .task { await vm.load() }
-        .refreshable {
+        .eusoRefreshable {
             if case .posted = vm.phase { await vm.refreshOffers() }
             else { await vm.load() }
         }

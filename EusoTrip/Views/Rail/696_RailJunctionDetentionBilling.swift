@@ -449,7 +449,7 @@ private struct RailJunctionDetentionBillingBody696: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
         .overlay(alignment: .bottom) { toastView }
         .sheet(isPresented: $showJunctionPicker) { junctionSheet }
         .sheet(item: $billLine) { l in billSheet(l) }
@@ -460,7 +460,7 @@ private struct RailJunctionDetentionBillingBody696: View {
 
     private var eyebrow: some View {
         HStack(spacing: 6) {
-            Text("✦ CARRIER · RAIL · DETENTION")
+            EusoTripEyebrow(verbatim: "CARRIER · RAIL · DETENTION")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.diagonal)
             Spacer()

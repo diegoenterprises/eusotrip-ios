@@ -345,7 +345,7 @@ private struct RailDemurrageApprovalBody662: View {
         }
         .task { await load() }
         .task { await staleTicker() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
         .overlay(alignment: .bottom) { toastView }
         .sheet(item: $verdictCase) { c in verdictSheet(c) }
     }
@@ -354,7 +354,7 @@ private struct RailDemurrageApprovalBody662: View {
 
     private var topRegister: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("\u{2726} RAIL ENGINEER · APPROVALS")
+            EusoTripEyebrow("RAIL ENGINEER · APPROVALS")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.diagonal)
             Spacer(minLength: Space.s2)

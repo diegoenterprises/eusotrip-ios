@@ -150,7 +150,7 @@ private struct RailForwarderPortalBody: View {
             .padding(.horizontal, Space.s5).padding(.top, Space.s2)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - Header (back chevron · eyebrow · mono ID · title 28/-0.4)
@@ -158,7 +158,7 @@ private struct RailForwarderPortalBody: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("✦ RAIL ENGINEER · 3PL PORTAL")
+                EusoTripEyebrow(verbatim: "RAIL ENGINEER · 3PL PORTAL")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

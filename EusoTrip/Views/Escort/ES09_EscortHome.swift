@@ -228,14 +228,14 @@ struct EscortHomeES09: View {
         .padding(.horizontal, Space.s5)
         .padding(.top, Space.s2)
         .task { await refresh() }
-        .refreshable { await refresh() }
+        .eusoRefreshable { await refresh() }
     }
 
     // MARK: Header
 
     private var eyebrowRow: some View {
         HStack {
-            Text("✦ ESCORT · TODAY")
+            EusoTripEyebrow(verbatim: "ESCORT · TODAY")
                 .font(EType.micro).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer(minLength: Space.s2)
@@ -1208,13 +1208,11 @@ struct EscortHomeES09Screen: View {
 }
 
 private func es09NavLeading() -> [NavSlot] {
-    [NavSlot(label: "Home",        systemImage: "house",                  isCurrent: true),
-     NavSlot(label: "Assignments", systemImage: "shield.lefthalf.filled", isCurrent: false)]
+    EscortNavRoute.leading(current: .home)
 }
 
 private func es09NavTrailing() -> [NavSlot] {
-    [NavSlot(label: "Corridor", systemImage: "map",    isCurrent: false),
-     NavSlot(label: "Me",       systemImage: "person", isCurrent: false)]
+    EscortNavRoute.trailing(current: .home)
 }
 
 // MARK: - Previews

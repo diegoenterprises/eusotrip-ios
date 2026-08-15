@@ -76,13 +76,11 @@ struct CatalystConvoyPlatooningScreen: View {
 // MARK: - Catalyst BottomNav (HOME · DISPATCH · [orb] · WALLET · ME — DISPATCH current)
 
 private func catalystNavLeading_400() -> [NavSlot] {
-    [NavSlot(label: "Home",     systemImage: "house.fill", isCurrent: false),
-     NavSlot(label: "Dispatch", systemImage: "tray.full",  isCurrent: true)]
+    CarrierNavRoute.leading(current: .loads)
 }
 
 private func catalystNavTrailing_400() -> [NavSlot] {
-    [NavSlot(label: "Fleet",  systemImage: "truck.box.fill",  isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
+    CarrierNavRoute.trailing(current: .loads)
 }
 
 // MARK: - View model (file-local)
@@ -296,6 +294,7 @@ private struct ConvoyBody_400: View {
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
             Task { await reload() }
         }
+        .eusoRefreshHandler { await reload() }
         .sheet(isPresented: $showAlerts) { alertSheet }
     }
 
@@ -304,7 +303,7 @@ private struct ConvoyBody_400: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("✦ CATALYST · CONVOY").font(EType.micro).tracking(1.0)
+                EusoTripEyebrow(verbatim: "CATALYST · CONVOY").font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()
                 Text("I-10 W · ACTIVE").font(EType.micro).tracking(1.0)

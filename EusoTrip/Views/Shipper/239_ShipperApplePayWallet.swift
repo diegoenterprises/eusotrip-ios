@@ -154,7 +154,7 @@ struct ShipperApplePayWallet: View {
         .overlay(alignment: .top) { passBannerOverlay }
         .animation(.easeInOut(duration: 0.2), value: passBannerText)
         .task { await loadAll() }
-        .refreshable { await loadAll() }
+        .eusoRefreshable { await loadAll() }
     }
 
     // MARK: — Header (290 wallet-home recipe: eyebrow + heavy title +

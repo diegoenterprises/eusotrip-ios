@@ -13,8 +13,15 @@ import SwiftUI
 
 struct SecuritySessionsScreen: View {
     let theme: Theme.Palette
+    var roleLabel: String = "SHIPPER"
+    var showsBottomNav: Bool = true
+
     var body: some View {
-        Shell(theme: theme) { SessionsBody() } nav: { shipperLifecycleNav() }
+        Shell(theme: theme) {
+            SessionsBody(roleLabel: roleLabel)
+        } nav: {
+            if showsBottomNav { shipperLifecycleNav() }
+        }
     }
 }
 
@@ -28,6 +35,7 @@ private struct ActiveSession: Decodable, Identifiable, Hashable {
 }
 
 private struct SessionsBody: View {
+    let roleLabel: String
     @Environment(\.palette) private var palette
     @State private var sessions: [ActiveSession] = []
     @State private var loading = true
@@ -57,7 +65,7 @@ private struct SessionsBody: View {
             .padding(.horizontal, 14).padding(.top, 56)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     private var header: some View {
@@ -66,7 +74,7 @@ private struct SessionsBody: View {
                 Image(systemName: "lock.shield.fill")
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
-                Text("SHIPPER · ACTIVE SESSIONS · LIVE")
+                Text("\(roleLabel) · ACTIVE SESSIONS · LIVE")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.diagonal)
             }

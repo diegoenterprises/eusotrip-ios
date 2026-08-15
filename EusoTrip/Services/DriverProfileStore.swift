@@ -28,8 +28,57 @@ import SwiftUI
 import UIKit
 #endif
 
+private enum ProfileSaveError: LocalizedError {
+    case firstNameRequired
+    case unreadableAvatar
+    case avatarTooLarge
+    case readbackMismatch
+
+    var errorDescription: String? {
+        switch self {
+        case .firstNameRequired: return "First name is required."
+        case .unreadableAvatar: return "That profile photo could not be read."
+        case .avatarTooLarge: return "That profile photo could not be reduced to the secure upload limit."
+        case .readbackMismatch: return "The saved profile could not be verified. Nothing was shown as complete."
+        }
+    }
+}
+
 @MainActor
 final class DriverProfileStore: ObservableObject {
+
+    private struct ProfileResponse: Decodable {
+        let name: String?
+        let email: String?
+        let phone: String?
+        let avatar: String?
+        let createdAt: String?
+    }
+    private struct CDLResponse: Decodable {
+        let number: String?
+        let `class`: String?
+        let state: String?
+        let endorsements: [String]?
+        let expirationDate: String?
+    }
+    private struct MedicalResponse: Decodable {
+        let expirationDate: String?
+        let examinerName: String?
+    }
+    private struct TWICResponse: Decodable {
+        let number: String?
+        let expirationDate: String?
+    }
+    private struct DriverResponse: Decodable {
+        let cdl: CDLResponse?
+        let medicalCard: MedicalResponse?
+        let twic: TWICResponse?
+        let hazmatEndorsement: Bool?
+        let tankerEndorsement: Bool?
+        let homeTerminal: String?
+        let hireDate: String?
+        let yearsExperience: Double?
+    }
 
     // MARK: - Published fields (read by Home greeting, Me header, Settings)
 
@@ -121,26 +170,53 @@ final class DriverProfileStore: ObservableObject {
     /// hydrate correctly. Idempotent — safe to call from the editor's
     /// `.task` modifier or anywhere a fresh fetch is wanted.
     func refreshFromServer() async {
-        struct Profile: Decodable {
-            let name: String?
-            let email: String?
-            let phone: String?
-            let avatar: String?
-            let createdAt: String?
+        do {
+            try await refreshAuthoritativeProfile()
+            lastSaveError = nil
+        } catch {
+            lastSaveError = profileFailureMessage(
+                error,
+                fallback: "Your profile could not be refreshed."
+            )
         }
-        guard let p: Profile = try? await EusoTripAPI.shared.queryNoInput("profile.getMyProfile") else {
-            return
+    }
+
+    private func profileFailureMessage(_ error: Error, fallback: String) -> String {
+        if let profileError = error as? ProfileSaveError {
+            return profileError.errorDescription ?? fallback
         }
+        guard let apiError = error as? EusoTripAPIError else { return fallback }
+        switch apiError {
+        case .unauthenticated:
+            return "Sign in again to update your profile."
+        case .forbidden:
+            return "This account is not permitted to update that profile."
+        case .httpStatus(let code, _):
+            return code == 401 || code == 403
+                ? "Sign in again or confirm that this is your profile."
+                : "Your profile could not be updated (error \(code)). Nothing was recorded as complete."
+        case .decodingFailed, .empty:
+            return "Your profile response could not be verified. Refresh before trying again."
+        case .queuedForOfflineReplay:
+            return "Your profile update needs an internet connection. Reconnect and try again."
+        case .notConfigured, .badURL, .trpcError:
+            return fallback
+        }
+    }
+
+    private func refreshAuthoritativeProfile() async throws {
+        async let profileRequest: ProfileResponse = EusoTripAPI.shared.queryNoInput("profile.getMyProfile")
+        async let driverRequest: DriverResponse = EusoTripAPI.shared.queryNoInput("profile.getDriverProfile")
+        let (p, dp) = try await (profileRequest, driverRequest)
         // Split combined `name` into first / last using whitespace as
         // the delimiter. First token = first name; the rest joined =
         // last name. Single-word names land entirely in `firstName`.
-        if let combined = p.name, !combined.isEmpty {
-            let parts = combined.split(separator: " ", maxSplits: 1).map(String.init)
-            self.firstName = parts.first ?? ""
-            self.lastName  = parts.count > 1 ? parts[1] : ""
-        }
-        if let e = p.email, !e.isEmpty { self.email = e }
-        if let ph = p.phone, !ph.isEmpty { self.phone = ph }
+        let parts = (p.name ?? "").split(separator: " ", maxSplits: 1).map(String.init)
+        self.firstName = parts.first ?? ""
+        self.lastName = parts.count > 1 ? parts[1] : ""
+        self.email = p.email ?? ""
+        self.phone = p.phone ?? ""
+        self.avatarData = Self.avatarBytes(from: p.avatar)
         // Year-extract from createdAt (ISO 8601) for the
         // "Member since" line. Falls back to existing value.
         if let iso = p.createdAt, iso.count >= 4 {
@@ -155,121 +231,24 @@ final class DriverProfileStore: ObservableObject {
         d.set(self.email,           forKey: Key.email)
         d.set(self.phone,           forKey: Key.phone)
         d.set(self.memberSinceYear, forKey: Key.memberSinceYear)
+        if let avatarData { d.set(avatarData, forKey: Key.avatarData) }
+        else { d.removeObject(forKey: Key.avatarData) }
 
-        // Driver-specific fields — fetched from `profile.getDriverProfile`
-        // which reads `users.metadata.driver` JSON on the server.
-        struct CDL: Decodable { let number: String?; let `class`: String?; let state: String?; let endorsements: [String]?; let expirationDate: String? }
-        struct Med: Decodable { let expirationDate: String?; let examinerName: String? }
-        struct TWIC: Decodable { let number: String?; let expirationDate: String? }
-        struct DriverProfile: Decodable {
-            let cdl: CDL?
-            let medicalCard: Med?
-            let twic: TWIC?
-            let hazmatEndorsement: Bool?
-            let tankerEndorsement: Bool?
-            let homeTerminal: String?
-            let hireDate: String?
-            let yearsExperience: Double?
-        }
-        if let dp: DriverProfile = try? await EusoTripAPI.shared.queryNoInput("profile.getDriverProfile") {
-            self.cdlNumber             = dp.cdl?.number ?? ""
-            self.licenseClass          = dp.cdl?.class ?? self.licenseClass
-            self.cdlState              = dp.cdl?.state ?? ""
-            self.cdlEndorsements       = dp.cdl?.endorsements ?? []
-            self.cdlExpirationDate     = dp.cdl?.expirationDate ?? ""
-            self.medicalExpirationDate = dp.medicalCard?.expirationDate ?? ""
-            self.medicalExaminerName   = dp.medicalCard?.examinerName ?? ""
-            self.twicNumber            = dp.twic?.number ?? ""
-            self.twicExpirationDate    = dp.twic?.expirationDate ?? ""
-            self.hazmatEndorsement     = dp.hazmatEndorsement ?? false
-            self.tankerEndorsement     = dp.tankerEndorsement ?? false
-            self.homeTerminal          = dp.homeTerminal ?? ""
-            self.hireDate              = dp.hireDate ?? ""
-            self.yearsExperience       = Int(dp.yearsExperience ?? 0)
-            d.set(self.licenseClass, forKey: Key.licenseClass)
-        }
-    }
-
-    /// Persist driver-specific fields (CDL, medical, TWIC,
-    /// endorsements, home terminal, etc.) to the server. Mirrors
-    /// `commit(...)` for the basic profile — fire-and-forget; local
-    /// values flip immediately so the UI doesn't wait on the network.
-    /// Server broadcasts `profile:updated` so other devices repaint.
-    func commitDriver(
-        cdlNumber: String,
-        cdlClass: String,
-        cdlState: String,
-        cdlEndorsements: [String],
-        cdlExpirationDate: String,
-        medicalExpirationDate: String,
-        medicalExaminerName: String,
-        twicNumber: String,
-        twicExpirationDate: String,
-        hazmatEndorsement: Bool,
-        tankerEndorsement: Bool,
-        homeTerminal: String,
-        hireDate: String,
-        yearsExperience: Int
-    ) {
-        self.cdlNumber             = cdlNumber.trimmingCharacters(in: .whitespacesAndNewlines)
-        self.licenseClass          = cdlClass.trimmingCharacters(in: .whitespacesAndNewlines)
-        self.cdlState              = cdlState.trimmingCharacters(in: .whitespacesAndNewlines)
-        self.cdlEndorsements       = cdlEndorsements
-        self.cdlExpirationDate     = cdlExpirationDate
-        self.medicalExpirationDate = medicalExpirationDate
-        self.medicalExaminerName   = medicalExaminerName.trimmingCharacters(in: .whitespacesAndNewlines)
-        self.twicNumber            = twicNumber.trimmingCharacters(in: .whitespacesAndNewlines)
-        self.twicExpirationDate    = twicExpirationDate
-        self.hazmatEndorsement     = hazmatEndorsement
-        self.tankerEndorsement     = tankerEndorsement
-        self.homeTerminal          = homeTerminal.trimmingCharacters(in: .whitespacesAndNewlines)
-        self.hireDate              = hireDate
-        self.yearsExperience       = yearsExperience
-        UserDefaults.standard.set(self.licenseClass, forKey: Key.licenseClass)
-
-        struct In: Encodable {
-            let cdlNumber: String
-            let cdlClass: String
-            let cdlState: String
-            let cdlEndorsements: [String]
-            let cdlExpirationDate: String
-            let medicalExpirationDate: String
-            let medicalExaminerName: String
-            let twicNumber: String
-            let twicExpirationDate: String
-            let hazmatEndorsement: Bool
-            let tankerEndorsement: Bool
-            let homeTerminal: String
-            let hireDate: String
-            let yearsExperience: Int
-        }
-        struct Out: Decodable { let success: Bool }
-        let payload = In(
-            cdlNumber: cdlNumber, cdlClass: cdlClass, cdlState: cdlState,
-            cdlEndorsements: cdlEndorsements, cdlExpirationDate: cdlExpirationDate,
-            medicalExpirationDate: medicalExpirationDate,
-            medicalExaminerName: medicalExaminerName,
-            twicNumber: twicNumber, twicExpirationDate: twicExpirationDate,
-            hazmatEndorsement: hazmatEndorsement, tankerEndorsement: tankerEndorsement,
-            homeTerminal: homeTerminal, hireDate: hireDate, yearsExperience: yearsExperience
-        )
-        Task { @MainActor in
-            do {
-                let out: Out? = try await EusoTripAPI.shared.mutation(
-                    "profile.updateDriverProfile",
-                    input: payload
-                )
-                // updateDriverProfile returns {success:false} when the DB write
-                // can't resolve the user — treat that as a real failure so the
-                // driver isn't told their CDL is on file when it isn't.
-                lastSaveError = (out?.success == true)
-                    ? nil
-                    : "Your credentials didn't save. Please try again."
-            } catch {
-                lastSaveError = (error as? EusoTripAPIError)?.errorDescription
-                    ?? "Your credentials didn't save. Please try again."
-            }
-        }
+        self.cdlNumber = dp.cdl?.number ?? ""
+        self.licenseClass = dp.cdl?.class ?? ""
+        self.cdlState = dp.cdl?.state ?? ""
+        self.cdlEndorsements = dp.cdl?.endorsements ?? []
+        self.cdlExpirationDate = dp.cdl?.expirationDate ?? ""
+        self.medicalExpirationDate = dp.medicalCard?.expirationDate ?? ""
+        self.medicalExaminerName = dp.medicalCard?.examinerName ?? ""
+        self.twicNumber = dp.twic?.number ?? ""
+        self.twicExpirationDate = dp.twic?.expirationDate ?? ""
+        self.hazmatEndorsement = dp.hazmatEndorsement ?? false
+        self.tankerEndorsement = dp.tankerEndorsement ?? false
+        self.homeTerminal = dp.homeTerminal ?? ""
+        self.hireDate = dp.hireDate ?? ""
+        self.yearsExperience = Int(dp.yearsExperience ?? 0)
+        d.set(self.licenseClass, forKey: Key.licenseClass)
     }
 
     // MARK: - Derived read-only displays
@@ -300,122 +279,156 @@ final class DriverProfileStore: ObservableObject {
 
     // MARK: - Write surface used by ProfileEditView
 
-    /// Atomic save — ProfileEditView calls this once, after the user
-    /// taps the "Save" CTA. Individual `@Published` bindings in the
-    /// editor are driven via a draft value; we flip them all together
-    /// here so the Home greeting / Me header card do not flicker
-    /// through each keystroke.
-    ///
-    /// Now round-trips to the server via `profile.updateProfile` so
-    /// edits propagate to web + iPad in real time. UserDefaults stays
-    /// as a local cache for offline reads. Server failure does NOT
-    /// roll back the local state — the user sees their edit
-    /// immediately and the next `refreshFromServer()` will
-    /// reconcile if the write was rejected.
-    func commit(
+    /// One awaited transaction for identity, photo and driver credentials.
+    /// Local state changes only after the server returns its readback and a
+    /// second authoritative fetch agrees with it.
+    func saveProfileBundle(
         firstName: String,
         lastName: String,
-        email: String,
         licenseClass: String,
         phone: String,
-        avatarData: Data?
-    ) {
-        self.firstName    = firstName.trimmingCharacters(in: .whitespacesAndNewlines)
-        self.lastName     = lastName.trimmingCharacters(in: .whitespacesAndNewlines)
-        self.email        = email.trimmingCharacters(in: .whitespacesAndNewlines)
-        self.licenseClass = licenseClass.trimmingCharacters(in: .whitespacesAndNewlines)
-        self.phone        = phone.trimmingCharacters(in: .whitespacesAndNewlines)
-        self.avatarData   = avatarData
+        avatarData: Data?,
+        avatarChanged: Bool,
+        cdlNumber: String,
+        cdlState: String,
+        cdlEndorsements: [String],
+        cdlExpirationDate: String,
+        medicalExpirationDate: String,
+        medicalExaminerName: String,
+        twicNumber: String,
+        twicExpirationDate: String,
+        hazmatEndorsement: Bool,
+        tankerEndorsement: Bool,
+        homeTerminal: String,
+        hireDate: String,
+        yearsExperience: Int
+    ) async throws {
+        struct AvatarPayload: Encodable { let action: String; let value: String? }
+        struct DriverPayload: Encodable {
+            let cdlNumber: String
+            let cdlClass: String
+            let cdlState: String
+            let cdlEndorsements: [String]
+            let cdlExpirationDate: String
+            let medicalExpirationDate: String
+            let medicalExaminerName: String
+            let twicNumber: String
+            let twicExpirationDate: String
+            let hazmatEndorsement: Bool
+            let tankerEndorsement: Bool
+            let homeTerminal: String
+            let hireDate: String
+            let yearsExperience: Int
+        }
+        struct Input: Encodable {
+            let firstName: String
+            let lastName: String
+            let phone: String
+            let avatar: AvatarPayload
+            let driver: DriverPayload
+        }
+        struct SavedProfile: Decodable {
+            let name: String?
+            let phone: String?
+            let avatar: String?
+        }
+        struct Output: Decodable { let success: Bool; let profile: SavedProfile }
 
-        let d = UserDefaults.standard
-        d.set(self.firstName,       forKey: Key.firstName)
-        d.set(self.lastName,        forKey: Key.lastName)
-        d.set(self.email,           forKey: Key.email)
-        d.set(self.licenseClass,    forKey: Key.licenseClass)
-        d.set(self.phone,           forKey: Key.phone)
-        // memberSinceYear is not user-editable — driver cannot backdate
-        // when they joined. It's displayed read-only in ProfileEditView.
-        if let avatarData {
-            d.set(avatarData, forKey: Key.avatarData)
+        let cleanFirst = firstName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanLast = lastName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanPhone = phone.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanFirst.isEmpty else { throw ProfileSaveError.firstNameRequired }
+
+        let avatarPayload: AvatarPayload
+        if !avatarChanged {
+            avatarPayload = AvatarPayload(action: "unchanged", value: nil)
+        } else if let avatarData, !avatarData.isEmpty {
+            let jpeg = try Self.compressedAvatarJPEG(avatarData)
+            avatarPayload = AvatarPayload(
+                action: "set",
+                value: "data:image/jpeg;base64,\(jpeg.base64EncodedString())"
+            )
         } else {
-            d.removeObject(forKey: Key.avatarData)
+            avatarPayload = AvatarPayload(action: "remove", value: nil)
         }
-
-        // Server round-trip — fire-and-forget. The mutation writes to
-        // `users` (name, email, phone) so any other surface
-        // (`shippers.getProfile`, `profile.getMyProfile`,
-        // `auth.me`) sees the fresh row on next read.
-        let firstSnapshot = self.firstName
-        let lastSnapshot = self.lastName
-        let emailSnapshot = self.email
-        let phoneSnapshot = self.phone
-        let avatarSnapshot = avatarData
-        Task {
-            struct In: Encodable {
-                let firstName: String
-                let lastName: String
-                let email: String
-                let phone: String
+        let payload = Input(
+            firstName: cleanFirst,
+            lastName: cleanLast,
+            phone: cleanPhone,
+            avatar: avatarPayload,
+            driver: DriverPayload(
+                cdlNumber: cdlNumber, cdlClass: licenseClass, cdlState: cdlState,
+                cdlEndorsements: cdlEndorsements, cdlExpirationDate: cdlExpirationDate,
+                medicalExpirationDate: medicalExpirationDate,
+                medicalExaminerName: medicalExaminerName, twicNumber: twicNumber,
+                twicExpirationDate: twicExpirationDate,
+                hazmatEndorsement: hazmatEndorsement,
+                tankerEndorsement: tankerEndorsement, homeTerminal: homeTerminal,
+                hireDate: hireDate, yearsExperience: yearsExperience
+            )
+        )
+        do {
+            let output: Output = try await EusoTripAPI.shared.mutation(
+                "profile.saveProfileBundle",
+                input: payload
+            )
+            let expectedName = "\(cleanFirst) \(cleanLast)".trimmingCharacters(in: .whitespaces)
+            guard output.success,
+                  output.profile.name == expectedName,
+                  (output.profile.phone ?? "") == cleanPhone,
+                  avatarPayload.action != "set" || output.profile.avatar == avatarPayload.value,
+                  avatarPayload.action != "remove" || output.profile.avatar == nil else {
+                throw ProfileSaveError.readbackMismatch
             }
-            struct Out: Decodable { let success: Bool }
-            do {
-                let _: Out? = try await EusoTripAPI.shared.mutation(
-                    "profile.updateProfile",
-                    input: In(firstName: firstSnapshot,
-                              lastName:  lastSnapshot,
-                              email:     emailSnapshot,
-                              phone:     phoneSnapshot)
-                )
-                await MainActor.run { lastSaveError = nil }
-            } catch {
-                // Local edit is kept (offline-first); refreshFromServer() will
-                // reconcile. But the failure is no longer invisible.
-                await MainActor.run {
-                    lastSaveError = (error as? EusoTripAPIError)?.errorDescription
-                        ?? "Profile changes didn't sync. They'll retry on next refresh."
+            try await refreshAuthoritativeProfile()
+            lastSaveError = nil
+            NotificationCenter.default.post(name: .eusoProfileUpdated, object: nil)
+        } catch {
+            lastSaveError = profileFailureMessage(
+                error,
+                fallback: "Your profile was not saved. Nothing was recorded as complete."
+            )
+            throw error
+        }
+    }
+
+    private static func avatarBytes(from raw: String?) -> Data? {
+        guard let raw, !raw.isEmpty else { return nil }
+        let encoded: String
+        if raw.hasPrefix("data:"), let comma = raw.firstIndex(of: ",") {
+            encoded = String(raw[raw.index(after: comma)...])
+        } else if !raw.hasPrefix("https://") {
+            encoded = raw
+        } else {
+            return nil
+        }
+        return Data(base64Encoded: encoded, options: .ignoreUnknownCharacters)
+    }
+
+    private static func compressedAvatarJPEG(_ source: Data) throws -> Data {
+        #if canImport(UIKit)
+        guard let image = UIImage(data: source) else { throw ProfileSaveError.unreadableAvatar }
+        for dimension: CGFloat in [512, 384, 320, 256, 192, 128, 96] {
+            let scale = min(dimension / max(image.size.width, 1), dimension / max(image.size.height, 1), 1)
+            let size = CGSize(width: max(image.size.width * scale, 1), height: max(image.size.height * scale, 1))
+            let format = UIGraphicsImageRendererFormat.default()
+            format.opaque = true
+            format.scale = 1
+            let rendered = UIGraphicsImageRenderer(size: size, format: format).image { context in
+                UIColor.black.setFill()
+                context.fill(CGRect(origin: .zero, size: size))
+                image.draw(in: CGRect(origin: .zero, size: size))
+            }
+            for quality: CGFloat in [0.82, 0.70, 0.58, 0.46, 0.34, 0.24] {
+                if let jpeg = rendered.jpegData(compressionQuality: quality), jpeg.count <= 37_000 {
+                    return jpeg
                 }
             }
         }
-
-        // Avatar round-trip — separate mutation. Compresses the picked
-        // image to ≤512px JPEG and ships as a base64 data URL through
-        // `profile.updateAvatar` (writes `users.profilePicture` server-
-        // side). Web `/profile` reads from the same column so the new
-        // photo appears there immediately. Server broadcasts
-        // `profile:updated` so iPad / Watch repaint without a manual
-        // refresh.
-        if let avatarData = avatarSnapshot, !avatarData.isEmpty {
-            Task {
-                let bytes: Data = {
-                    #if canImport(UIKit)
-                    if let img = UIImage(data: avatarData) {
-                        let target: CGFloat = 512
-                        let scale = min(target / max(img.size.width, 1), target / max(img.size.height, 1), 1)
-                        let size = CGSize(width: img.size.width * scale, height: img.size.height * scale)
-                        let renderer = UIGraphicsImageRenderer(size: size)
-                        let resized = renderer.image { _ in img.draw(in: CGRect(origin: .zero, size: size)) }
-                        if let jpeg = resized.jpegData(compressionQuality: 0.8) { return jpeg }
-                    }
-                    #endif
-                    return avatarData
-                }()
-                let dataURL = "data:image/jpeg;base64,\(bytes.base64EncodedString())"
-                struct AIn: Encodable { let avatarUrl: String }
-                struct AOut: Decodable { let success: Bool; let avatarUrl: String }
-                do {
-                    let _: AOut? = try await EusoTripAPI.shared.mutation(
-                        "profile.updateAvatar",
-                        input: AIn(avatarUrl: dataURL)
-                    )
-                    await MainActor.run { lastSaveError = nil }
-                } catch {
-                    await MainActor.run {
-                        lastSaveError = (error as? EusoTripAPIError)?.errorDescription
-                            ?? "Your photo didn't upload. Please try again."
-                    }
-                }
-            }
-        }
+        throw ProfileSaveError.avatarTooLarge
+        #else
+        throw ProfileSaveError.unreadableAvatar
+        #endif
     }
 
     // MARK: - UserDefaults keys

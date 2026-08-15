@@ -54,13 +54,11 @@ struct CatalystCapacityPlannerScreen: View {
 // MARK: - Catalyst BottomNav (HOME · DISPATCH · [orb] · WALLET · ME — DISPATCH current)
 
 private func catalystNavLeading_402() -> [NavSlot] {
-    [NavSlot(label: "Home",     systemImage: "house.fill", isCurrent: false),
-     NavSlot(label: "Dispatch", systemImage: "tray.full",  isCurrent: true)]
+    CarrierNavRoute.leading(current: .loads)
 }
 
 private func catalystNavTrailing_402() -> [NavSlot] {
-    [NavSlot(label: "Fleet",  systemImage: "truck.box.fill",  isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
+    CarrierNavRoute.trailing(current: .loads)
 }
 
 // MARK: - View model
@@ -141,6 +139,7 @@ private struct CapacityBody_402: View {
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
             Task { await loadAll_402() }
         }
+        .eusoRefreshHandler { await loadAll_402() }
         .sheet(isPresented: $showInsightSheet) { insightSheet }
         .sheet(isPresented: $showPostTruckSheet) { postTruckSheet }
         .sheet(isPresented: $showMatchSheet) { matchSheet }
@@ -151,7 +150,7 @@ private struct CapacityBody_402: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("✦ CATALYST · CAPACITY")
+                EusoTripEyebrow(verbatim: "CATALYST · CAPACITY")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

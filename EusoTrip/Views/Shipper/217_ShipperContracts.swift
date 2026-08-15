@@ -216,7 +216,7 @@ struct ShipperContracts: View {
             }
         }
         .task { await store.refresh() }
-        .refreshable { await store.refresh() }
+        .eusoRefreshable { await store.refresh() }
         // RealtimeService → contracts refresh when carrier signs,
         // amends, or contract terms expire upstream.
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
@@ -235,7 +235,7 @@ struct ShipperContracts: View {
 
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("✦ SHIPPER · CONTRACTS")
+            EusoTripEyebrow(verbatim: "SHIPPER · CONTRACTS")
                 .font(EType.micro)
                 .tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)

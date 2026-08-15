@@ -262,7 +262,7 @@ private struct RailChassisPoolBody: View {
             .padding(.horizontal, 16).padding(.top, 8)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - Header (eyebrow + title + subtitle)
@@ -271,7 +271,7 @@ private struct RailChassisPoolBody: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 0) {
                 HStack(spacing: 6) {
-                    Image(systemName: "sparkle")
+                    EusoTripBrandMark(size: 12)
                         .font(.system(size: 9, weight: .heavy))
                         .foregroundStyle(LinearGradient.primary)
                     Text("RAIL ENGINEER · CHASSIS POOL")

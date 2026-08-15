@@ -60,13 +60,11 @@ struct CatalystTollCorridorCostScreen: View {
 // MARK: - BottomNav (HOME · DISPATCH · [orb] · WALLET · ME — WALLET current)
 
 private func catalystNavLeading_399() -> [NavSlot] {
-    [NavSlot(label: "Home",     systemImage: "house.fill", isCurrent: false),
-     NavSlot(label: "Dispatch", systemImage: "tray.full",  isCurrent: false)]
+    CarrierNavRoute.leading(current: .me)
 }
 
 private func catalystNavTrailing_399() -> [NavSlot] {
-    [NavSlot(label: "Wallet", systemImage: "creditcard",  isCurrent: true),
-     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
+    CarrierNavRoute.trailing(current: .me)
 }
 
 // MARK: - View model (built from the LIVE tolls.getRecentRoutes envelope only)
@@ -176,7 +174,7 @@ private struct TollCorridorBody_399: View {
                 .padding(.bottom, Space.s7)
             }
         }
-        .task { await loadAll() }
+        .eusoRefreshTask { await loadAll() }
         .sheet(item: Binding(
             get: { selectedLoadId.map { LoadDrilldown_399(id: $0) } },
             set: { selectedLoadId = $0?.id }
@@ -194,7 +192,7 @@ private struct TollCorridorBody_399: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("✦ CATALYST · TOLLS").font(EType.micro).tracking(1.0)
+                EusoTripEyebrow(verbatim: "CATALYST · TOLLS").font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()
                 Text(loading ? "LOADING…" : "RECENT ROUTES").font(EType.micro).tracking(1.0)

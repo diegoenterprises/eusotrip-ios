@@ -173,7 +173,7 @@ private struct RailDieselFuelIndexBody: View {
             .padding(.horizontal, Space.s5).padding(.top, Space.s2)
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
     }
 
     // MARK: - Header (eyebrow + caption + breadcrumb)
@@ -182,7 +182,7 @@ private struct RailDieselFuelIndexBody: View {
         VStack(alignment: .leading, spacing: Space.s3) {
             HStack(spacing: 0) {
                 HStack(spacing: 6) {
-                    Image(systemName: "sparkle")
+                    EusoTripBrandMark(size: 12)
                         .font(.system(size: 9, weight: .heavy))
                         .foregroundStyle(LinearGradient.primary)
                     Text("RAIL ENGINEER · FUEL INDEX")

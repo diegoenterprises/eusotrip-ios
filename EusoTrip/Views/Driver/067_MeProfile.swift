@@ -71,7 +71,7 @@ struct MeProfile: View {
             async let r: Void = reputation.refresh()
             _ = await (i, l, r)
         }
-        .refreshable {
+        .eusoRefreshable {
             async let i: Void = identity.refresh()
             async let l: Void = loyalty.refresh()
             async let r: Void = reputation.refresh()

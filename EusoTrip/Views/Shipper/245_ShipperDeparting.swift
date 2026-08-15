@@ -165,7 +165,7 @@ struct ShipperDeparting: View {
         }
         .background(palette.bgPage.ignoresSafeArea())
         .task { await store.load() }
-        .refreshable { await store.load() }
+        .eusoRefreshable { await store.load() }
     }
 
     // MARK: Bound load (nil until loaded)
@@ -245,7 +245,7 @@ struct ShipperDeparting: View {
 
     private var topBar: some View {
         HStack(alignment: .top) {
-            Text("✦ SHIPPER · LOADS · IN TRANSIT · DEPARTING")
+            EusoTripEyebrow(verbatim: "SHIPPER · LOADS · IN TRANSIT · DEPARTING")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer(minLength: 8)

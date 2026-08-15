@@ -150,14 +150,14 @@ private struct RailDetentionDashboardBody: View {
             .padding(.top, Space.s3)
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
     }
 
     // MARK: - Eyebrow  (✦ RAIL ENGINEER · DETENTION  ·  30-DAY)
 
     private var eyebrow: some View {
         HStack {
-            Text("✦ RAIL ENGINEER · DETENTION")
+            EusoTripEyebrow(verbatim: "RAIL ENGINEER · DETENTION")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer()

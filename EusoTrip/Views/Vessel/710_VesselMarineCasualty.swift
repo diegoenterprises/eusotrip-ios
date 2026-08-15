@@ -179,7 +179,7 @@ private struct VesselMarineCasualtyBody: View {
             .padding(.top, Space.s3)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - Top bar (eyebrow · INC id · back · title · menu)
@@ -187,7 +187,7 @@ private struct VesselMarineCasualtyBody: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("✦ VESSEL OPERATOR · CASUALTY")
+                EusoTripEyebrow(verbatim: "VESSEL OPERATOR · CASUALTY")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

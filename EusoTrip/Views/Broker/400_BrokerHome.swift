@@ -104,7 +104,7 @@ struct BrokerHome: View {
             .padding(.top, 8)
         }
         .task { await refreshAll() }
-        .refreshable { await refreshAll() }
+        .eusoRefreshable { await refreshAll() }
         .screenTileRoot()
         .sheet(isPresented: $showLaneIntel) {
             LaneIntelSheet(companyId: Int(session.user?.companyId ?? "") ?? 1)
@@ -191,7 +191,7 @@ struct BrokerHome: View {
     // MARK: - Header
     //
     // Bespoke header matching the DriverHome (010) idiom: a gradient
-    // eyebrow row ("✦ BROKER · DASHBOARD" chip + a right-rail caps
+    // eyebrow row (EusoTrip mark + "BROKER · DASHBOARD" + right-rail caps
     // time-of-day · context line), then the identity row (briefcase
     // glyph + gradient greeting + tender/awarded subhead). The eyebrow
     // is the SVG's defining header motif — sparkle glyph used exactly
@@ -205,7 +205,7 @@ struct BrokerHome: View {
             // broker home reads as one family with the Driver/Shipper
             // homes.
             HStack {
-                Text("✦ BROKER · DASHBOARD")
+                EusoTripEyebrow(verbatim: "BROKER · DASHBOARD")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer(minLength: Space.s2)
@@ -759,13 +759,11 @@ struct BrokerHomeScreen: View {
 }
 
 private func brokerNavLeading_400() -> [NavSlot] {
-    [NavSlot(label: "Home",    systemImage: "house.fill",   isCurrent: true),
-     NavSlot(label: "Tenders", systemImage: "doc.badge.gearshape", isCurrent: false)]
+    BrokerNavRoute.leading(current: .home)
 }
 
 private func brokerNavTrailing_400() -> [NavSlot] {
-    [NavSlot(label: "Carriers", systemImage: "person.2",   isCurrent: false),
-     NavSlot(label: "Me",       systemImage: "person",     isCurrent: false)]
+    BrokerNavRoute.trailing(current: .home)
 }
 
 // MARK: - Previews

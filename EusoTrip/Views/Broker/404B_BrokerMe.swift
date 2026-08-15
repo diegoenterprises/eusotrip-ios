@@ -22,23 +22,28 @@ struct BrokerMeScreen: View {
     @EnvironmentObject private var session: EusoTripSession
     @Environment(\.palette) private var palette
     @State private var showSignOutConfirm: Bool = false
+    @SceneStorage("broker.me.expandedCategory") private var expandedCategory: String = ""
+    @SceneStorage("broker.me.returnAnchor") private var returnAnchor: String = ""
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: Space.s4) {
-                topBar
-                titleBlock
-                iridescentHairline
-                identityHero
-                operationsSection
-                networkSection
-                walletSection
-                supportSection
-                signOutButton
-                Color.clear.frame(height: 96)
+        ScrollViewReader { proxy in
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Space.s4) {
+                    topBar
+                    titleBlock
+                    iridescentHairline
+                    identityHero
+                    operationsSection
+                    networkSection
+                    walletSection
+                    supportSection
+                    signOutButton
+                    Color.clear.frame(height: 96)
+                }
+                .padding(.horizontal, 14)
+                .padding(.top, 8)
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 8)
+            .onAppear { restoreScrollPosition(using: proxy) }
         }
         .alert("Sign out?", isPresented: $showSignOutConfirm) {
             Button("Sign out", role: .destructive) {
@@ -55,7 +60,7 @@ struct BrokerMeScreen: View {
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
             HStack(spacing: 4) {
-                Image(systemName: "sparkles")
+                EusoTripBrandMark(size: 12)
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
                 Text("BROKER · ME")
@@ -108,15 +113,9 @@ struct BrokerMeScreen: View {
     private var identityHero: some View {
         let user = session.user
         let displayName = user?.name ?? "Broker user"
-        let monogram = monogramFor(displayName)
         return LifecycleCard(accentGradient: true) {
             HStack(alignment: .center, spacing: 10) {
-                Text(monogram)
-                    .font(.system(size: 18, weight: .heavy))
-                    .foregroundStyle(.white)
-                    .frame(width: 56, height: 56)
-                    .background(LinearGradient.diagonal)
-                    .clipShape(Circle())
+                EditableProfileAvatar(size: 56)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(displayName)
                         .font(.system(size: 18, weight: .heavy))
@@ -142,12 +141,6 @@ struct BrokerMeScreen: View {
         }
     }
 
-    private func monogramFor(_ s: String) -> String {
-        let parts = s.split(separator: " ").prefix(2)
-        let initials = parts.compactMap { $0.first.map(String.init) }.joined().uppercased()
-        return initials.isEmpty ? "?" : String(initials.prefix(2))
-    }
-
     // MARK: - Sections (LifecycleCard chrome — visual parity with 350)
     //
     // Pure nav hub. Each id below maps to a registered Broker/ surface:
@@ -156,7 +149,7 @@ struct BrokerMeScreen: View {
     //   404  Commission Queue
 
     private var operationsSection: some View {
-        sectionCard(title: "OPERATIONS", icon: "antenna.radiowaves.left.and.right") {
+        sectionCard(key: "operations", title: "OPERATIONS", icon: "antenna.radiowaves.left.and.right") {
             row(label: "Tenders",            icon: "doc.text",               to: "401")
             row(label: "Load board",         icon: "list.bullet.rectangle",  to: "401b")
             row(label: "Active brokerages",  icon: "briefcase",              to: "405")
@@ -164,7 +157,7 @@ struct BrokerMeScreen: View {
     }
 
     private var networkSection: some View {
-        sectionCard(title: "NETWORK", icon: "person.3") {
+        sectionCard(key: "network", title: "NETWORK", icon: "person.3") {
             row(label: "Carrier vetting",  icon: "checkmark.shield",                  to: "402b")
             row(label: "Catalyst vetting", icon: "person.badge.shield.checkmark",     to: "406")
         }
@@ -172,18 +165,21 @@ struct BrokerMeScreen: View {
 
     private var walletSection: some View {
         VStack(spacing: Space.s3) {
-            sectionCard(title: "WALLET", icon: "creditcard") {
+            sectionCard(key: "wallet", title: "WALLET", icon: "creditcard") {
                 row(label: "Commission queue", icon: "dollarsign.circle", to: "404")
             }
-            EusoCardIssuePanel(
-                title: "EusoCard",
-                subtitle: "Broker spend card for commissions and freight exceptions"
-            )
+            if expandedCategory == "wallet" {
+                EusoCardIssuePanel(
+                    title: "EusoCard",
+                    subtitle: "Broker spend card for commissions and freight exceptions"
+                )
+                .id("broker-me-row-eusocard")
+            }
         }
     }
 
     private var supportSection: some View {
-        sectionCard(title: "SUPPORT", icon: "lifepreserver") {
+        sectionCard(key: "support", title: "SUPPORT", icon: "lifepreserver") {
             eSangRow()
         }
     }
@@ -211,27 +207,44 @@ struct BrokerMeScreen: View {
     // MARK: - Section + row primitives (LifecycleCard parity)
 
     @ViewBuilder
-    private func sectionCard<Content: View>(title: String,
+    private func sectionCard<Content: View>(key: String,
+                                            title: String,
                                             icon: String,
                                             @ViewBuilder content: () -> Content) -> some View {
         LifecycleCard {
-            HStack(spacing: 6) {
-                Image(systemName: icon)
-                    .font(.system(size: 11, weight: .heavy))
-                    .foregroundStyle(LinearGradient.diagonal)
-                Text(title)
-                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
-                    .foregroundStyle(palette.textPrimary)
+            Button(action: { toggleCategory(key) }) {
+                HStack(spacing: 8) {
+                    Image(systemName: icon)
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundStyle(LinearGradient.diagonal)
+                    Text(title)
+                        .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                        .foregroundStyle(palette.textPrimary)
+                    Spacer(minLength: 0)
+                    Image(systemName: expandedCategory == key ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundStyle(palette.textTertiary)
+                }
+                .contentShape(Rectangle())
             }
-            .padding(.bottom, 2)
-            VStack(spacing: 6) {
-                content()
+            .buttonStyle(.plain)
+            .accessibilityValue(expandedCategory == key ? "Expanded" : "Collapsed")
+
+            if expandedCategory == key {
+                Divider().overlay(palette.borderFaint)
+                VStack(spacing: 6) {
+                    content()
+                }
             }
         }
+        .id(categoryAnchor(key))
     }
 
     private func row(label: String, icon: String, to screenId: String) -> some View {
-        Button(action: { swap(to: screenId) }) {
+        Button(action: {
+            returnAnchor = rowAnchor(screenId)
+            swap(to: screenId)
+        }) {
             HStack(spacing: 12) {
                 ZStack {
                     Circle().fill(LinearGradient.diagonal).frame(width: 36, height: 36)
@@ -250,10 +263,14 @@ struct BrokerMeScreen: View {
             .padding(.vertical, 4)
         }
         .buttonStyle(.plain)
+        .id(rowAnchor(screenId))
     }
 
     private func eSangRow() -> some View {
-        Button(action: { tapESang() }) {
+        Button(action: {
+            returnAnchor = rowAnchor("esang")
+            tapESang()
+        }) {
             HStack(spacing: 12) {
                 ZStack {
                     Circle().fill(LinearGradient.diagonal).frame(width: 36, height: 36)
@@ -272,6 +289,31 @@ struct BrokerMeScreen: View {
             .padding(.vertical, 4)
         }
         .buttonStyle(.plain)
+        .id(rowAnchor("esang"))
+    }
+
+    private func toggleCategory(_ key: String) {
+        returnAnchor = ""
+        withAnimation(.easeInOut(duration: 0.2)) {
+            expandedCategory = expandedCategory == key ? "" : key
+        }
+    }
+
+    private func categoryAnchor(_ key: String) -> String {
+        "broker-me-category-\(key)"
+    }
+
+    private func rowAnchor(_ key: String) -> String {
+        "broker-me-row-\(key)"
+    }
+
+    private func restoreScrollPosition(using proxy: ScrollViewProxy) {
+        guard !expandedCategory.isEmpty, !returnAnchor.isEmpty else { return }
+        eusoRestoreScrollPosition(
+            using: proxy,
+            anchor: returnAnchor,
+            fallback: categoryAnchor(expandedCategory)
+        )
     }
 
     private func swap(to screenId: String) {

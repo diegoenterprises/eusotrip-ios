@@ -96,7 +96,7 @@ struct VehicleAndEquipment: View {
             .padding(.bottom, Space.s8)
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
         .overlay(alignment: .top) {
             if let notice = bookOilNotice {
                 Text(notice)
@@ -126,12 +126,12 @@ struct VehicleAndEquipment: View {
     }
 
     // MARK: Header
-    //  SVG: "✦ DRIVER · VEHICLE & EQUIPMENT" eyebrow + "ASSIGNED RIG 2041".
+    //  Header: EusoTrip mark + "DRIVER · VEHICLE & EQUIPMENT" + "ASSIGNED RIG 2041".
 
     private var header: some View {
         VStack(alignment: .leading, spacing: Space.s1) {
             HStack(alignment: .firstTextBaseline) {
-                Text("✦ DRIVER · VEHICLE & EQUIPMENT")
+                EusoTripEyebrow(verbatim: "DRIVER · VEHICLE & EQUIPMENT")
                     .font(EType.micro)
                     .tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)

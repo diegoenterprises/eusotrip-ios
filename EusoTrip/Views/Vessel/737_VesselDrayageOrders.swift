@@ -187,7 +187,7 @@ private struct VesselDrayageOrdersBody: View {
             .padding(.horizontal, Space.s5).padding(.top, 8)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
         .sheet(isPresented: $showNewOrder) { newOrderSheet }
         .sheet(isPresented: $showFilters) { filterSheet }
     }
@@ -197,7 +197,7 @@ private struct VesselDrayageOrdersBody: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("VESSEL OPERATOR · DRAYAGE").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
                 Spacer()
                 Text(headerPortLabel).font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundStyle(palette.textTertiary)

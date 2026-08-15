@@ -227,7 +227,7 @@ private struct RailLayoverTrackingBody672: View {
             .padding(.top, 8)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: TopBar
@@ -235,7 +235,7 @@ private struct RailLayoverTrackingBody672: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 HStack(spacing: 6) {
-                    Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                    EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                     Text("RAIL ENGINEER · ACCESSORIAL")
                         .font(.system(size: 9, weight: .heavy)).kerning(1.0)
                         .foregroundStyle(LinearGradient.diagonal)

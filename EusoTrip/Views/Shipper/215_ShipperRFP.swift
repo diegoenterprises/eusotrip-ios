@@ -231,7 +231,7 @@ struct ShipperRFP: View {
             }
         }
         .task { await store.refresh() }
-        .refreshable { await store.refresh() }
+        .eusoRefreshable { await store.refresh() }
         // RealtimeService → RFPs refresh when carriers submit bids,
         // award decisions are made, or RFP windows open/close.
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
@@ -268,7 +268,7 @@ struct ShipperRFP: View {
 
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("✦ SHIPPER · RFP MANAGER")
+            EusoTripEyebrow(verbatim: "SHIPPER · RFP MANAGER")
                 .font(EType.micro)
                 .tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)

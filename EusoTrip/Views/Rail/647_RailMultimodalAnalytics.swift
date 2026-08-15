@@ -114,7 +114,7 @@ private struct RailMultimodalAnalyticsBody: View {
             .padding(.top, Space.s3)
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
     }
 
     // MARK: - Top bar (eyebrow · back · title · subtitle)
@@ -122,7 +122,7 @@ private struct RailMultimodalAnalyticsBody: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("✦ RAIL ENGINEER · ANALYTICS")
+                EusoTripEyebrow(verbatim: "RAIL ENGINEER · ANALYTICS")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

@@ -131,7 +131,7 @@ struct CatalystMatchDetail: View {
             await refreshRoutePolyline()
             joinLoadRoom()
         }
-        .refreshable {
+        .eusoRefreshable {
             await refreshAll()
             await refreshCandidates()
             await refreshRoutePolyline()
@@ -209,7 +209,7 @@ struct CatalystMatchDetail: View {
                     .clipShape(Circle())
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Image(systemName: "sparkles")
+                        EusoTripBrandMark(size: 12)
                             .font(.system(size: 9, weight: .heavy))
                             .foregroundStyle(LinearGradient.diagonal)
                         Text("CATALYST · MATCH DETAIL")
@@ -1180,13 +1180,11 @@ struct CatalystMatchDetailScreen: View {
 }
 
 private func catalystNavLeading_502() -> [NavSlot] {
-    [NavSlot(label: "Home",    systemImage: "house",   isCurrent: false),
-     NavSlot(label: "Matches", systemImage: "scope",   isCurrent: true)]
+    CarrierNavRoute.leading(current: .loads)
 }
 
 private func catalystNavTrailing_502() -> [NavSlot] {
-    [NavSlot(label: "Network", systemImage: "person.2", isCurrent: false),
-     NavSlot(label: "Me",      systemImage: "person",   isCurrent: false)]
+    CarrierNavRoute.trailing(current: .loads)
 }
 
 // MARK: - Previews

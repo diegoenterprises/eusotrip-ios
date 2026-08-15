@@ -141,7 +141,7 @@ struct EscortSettlementDetail: View {
             .padding(.top, 8)
         }
         .task { await refreshAll() }
-        .refreshable { await refreshAll() }
+        .eusoRefreshable { await refreshAll() }
         .sheet(isPresented: $showDisputeSheet) { disputeSheet }
     }
 
@@ -179,7 +179,7 @@ struct EscortSettlementDetail: View {
 
     private var eyebrowRow: some View {
         HStack {
-            Text("✦ ESCORT · SETTLEMENT DETAIL")
+            EusoTripEyebrow(verbatim: "ESCORT · SETTLEMENT DETAIL")
                 .font(EType.micro).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer(minLength: Space.s2)
@@ -854,13 +854,11 @@ struct EscortSettlementDetailScreen: View {
 }
 
 private func escortNavLeading_605() -> [NavSlot] {
-    [NavSlot(label: "Home",        systemImage: "house",                  isCurrent: false),
-     NavSlot(label: "Assignments", systemImage: "shield.lefthalf.filled", isCurrent: false)]
+    EscortNavRoute.leading(current: .me)
 }
 
 private func escortNavTrailing_605() -> [NavSlot] {
-    [NavSlot(label: "Corridor", systemImage: "map",    isCurrent: false),
-     NavSlot(label: "Me",       systemImage: "person", isCurrent: true)]
+    EscortNavRoute.trailing(current: .me)
 }
 
 // MARK: - Previews

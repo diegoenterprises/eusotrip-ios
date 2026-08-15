@@ -120,7 +120,7 @@ struct AdminTenantDetail: View {
             store.tenantId = newValue
             Task { await store.refresh() }
         }
-        .refreshable {
+        .eusoRefreshable {
             await store.refresh()
         }
         .animation(
@@ -173,7 +173,7 @@ struct AdminTenantDetail: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Image(systemName: "sparkles")
+                        EusoTripBrandMark(size: 12)
                             .font(.system(size: 9, weight: .heavy))
                             .foregroundStyle(LinearGradient.diagonal)
                         Text("ADMIN · TENANT DETAIL")

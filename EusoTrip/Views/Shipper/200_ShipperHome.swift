@@ -35,6 +35,7 @@ import SwiftUI
 
 struct ShipperHome: View {
     @Environment(\.palette) private var palette
+    @Environment(\.weatherRequestContext) private var weatherRequestContext
     @Environment(\.openURL) private var openURL
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @EnvironmentObject private var session: EusoTripSession
@@ -65,8 +66,10 @@ struct ShipperHome: View {
     /// conversation, matching the web platform's messaging surface.
     @State private var showMessages: Bool = false
 
-    // Real weather snapshot (CoreLocation + WeatherKit → NWS → Open-Meteo
-    // cascade in WeatherService). nil → render the "Enable location"
+    // Real ambient-weather snapshot: on-device WeatherKit first, then the
+    // server's WeatherKit endpoint with a visibly attributed OpenWeather
+    // failover. HERE remains authoritative for route weather.
+    // nil → render the "Enable location"
     // CTA when CoreLocation is .notDetermined / .denied / .restricted,
     // or render nothing when authorized but momentarily unavailable.
     // Per home-widget doctrine the weather card sits between the
@@ -178,7 +181,7 @@ struct ShipperHome: View {
             }
         }
         .task { await refreshAll() }
-        .refreshable { await refreshAll() }
+        .eusoRefreshable { await refreshAll() }
         // After the user taps Allow / Deny on the iOS location
         // prompt, WeatherService posts this — re-run the dashboard
         // refresh so the weather card flips from the CTA into the
@@ -219,7 +222,7 @@ struct ShipperHome: View {
         async let p: Void = profile.refresh()
         async let ag: Void = aggregates.refresh()
         async let av: Void = loadAvatar()
-        async let w: WeatherSnapshot? = WeatherService.shared.fetchCurrent()
+        async let w: WeatherSnapshot? = fetchLocalWeather()
         let snap = await w
         _ = await (a, b, c, d, p, ag, av)
         weather = snap
@@ -236,8 +239,17 @@ struct ShipperHome: View {
         unread.refresh()  // EUSO-2057: kicks UnreadMessageStore -> messaging.getUnreadCount
     }
 
-    /// Live weather card driven by `WeatherService.shared.fetchCurrent()`
-    /// (WeatherKit → NWS → Open-Meteo cascade, real CoreLocation fix).
+    private func fetchLocalWeather() async -> WeatherSnapshot? {
+        guard let weatherRequestContext else { return nil }
+        return await WeatherService.shared.fetchCurrent(
+            scope: .device(weatherRequestContext),
+            includeLaneImpact: false
+        )
+    }
+
+    /// Live weather card driven by the auth-scoped WeatherService request:
+    /// WeatherKit ambient authority with visibly attributed server failover;
+    /// HERE route weather is rendered separately through lane intelligence.
     /// Renders nothing when the snapshot is nil — empty state per
     /// the no-mock-data doctrine. The shared `WeatherCard` view is
     /// the same component the driver dashboard uses, so the
@@ -308,7 +320,7 @@ struct ShipperHome: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("✦ SHIPPER · DASHBOARD")
+                EusoTripEyebrow(verbatim: "SHIPPER · DASHBOARD")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()
@@ -1590,10 +1602,11 @@ struct ShipperWidgetBoard: View {
                 }
             }
         }
-        .task {
-            guard !hydrated else { return }
-            hydrated = true
-            order = canonicalOrder
+        .eusoRefreshTask {
+            if !hydrated {
+                hydrated = true
+                order = canonicalOrder
+            }
             await hydrate()
         }
     }

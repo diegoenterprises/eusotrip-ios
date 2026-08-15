@@ -87,7 +87,7 @@ struct TheHaulMissions: View {
                 .padding(.top, Space.s4)
                 .padding(.bottom, Space.s8)
             }
-            .refreshable { await store.refresh() }
+            .eusoRefreshable { await store.refresh() }
 
             if let toast {
                 toastBanner(toast)

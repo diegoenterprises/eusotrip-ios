@@ -84,7 +84,7 @@ struct TheHaulLeaderboard: View {
             .padding(.bottom, Space.s8)
         }
         .background(palette.bgPage.ignoresSafeArea())
-        .refreshable { await refresh() }
+        .eusoRefreshable { await refresh() }
         .task { await refresh() }
     }
 

@@ -217,7 +217,7 @@ private struct VesselEmissionsCIIBody: View {
             .padding(.horizontal, 16).padding(.top, 8)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
         .sheet(isPresented: $showSEEMPPlan) { seempPlanSheet }
     }
 

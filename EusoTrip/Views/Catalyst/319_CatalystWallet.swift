@@ -90,10 +90,8 @@ struct CatalystWalletScreen: View {
     var body: some View {
         Shell(theme: theme) { WalletBody() } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home",     systemImage: "house",         isCurrent: false),
-                          NavSlot(label: "Dispatch", systemImage: "rectangle.split.3x1.fill", isCurrent: false)],
-                trailing: [NavSlot(label: "Wallet", systemImage: "creditcard.fill", isCurrent: true),
-                           NavSlot(label: "Me",     systemImage: "person",          isCurrent: false)],
+                leading: CarrierNavRoute.leading(current: .me),
+                trailing: CarrierNavRoute.trailing(current: .me),
                 orbState: .idle
             )
         }
@@ -199,7 +197,7 @@ private struct WalletBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: Header — drawn wallet mark (no SF Symbol)

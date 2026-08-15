@@ -99,7 +99,7 @@ struct ShipperPaymentMethods: View {
             }
         }
         .task { await store.refresh() }
-        .refreshable { await store.refresh() }
+        .eusoRefreshable { await store.refresh() }
         .sheet(isPresented: $showAddSheet, onDismiss: {
             Task { await store.refresh() }
         }) {
@@ -159,7 +159,7 @@ struct ShipperPaymentMethods: View {
 
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("✦ SHIPPER · WALLET · PAYMENT METHODS")
+            EusoTripEyebrow(verbatim: "SHIPPER · WALLET · PAYMENT METHODS")
                 .font(EType.micro).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
                 .lineLimit(1).minimumScaleFactor(0.78)

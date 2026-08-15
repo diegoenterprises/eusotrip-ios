@@ -507,7 +507,7 @@ struct MeRateSheet: View {
         .padding(.horizontal, Space.s4)
         .padding(.top, 56)
         .task { await store.bootstrap() }
-        .refreshable {
+        .eusoRefreshable {
             switch store.pane {
             case .calculator: await store.recalc()
             case .surcharges: await store.recalc()

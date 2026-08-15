@@ -136,7 +136,7 @@ private struct PartnerAgreementsBody: View {
             .padding(.horizontal, 14).padding(.top, 56)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
         .fullScreenCover(item: $presentedPDF) { p in
             EusoPDFViewer(title: p.title, subtitle: p.subtitle, source: .url(p.url))
         }

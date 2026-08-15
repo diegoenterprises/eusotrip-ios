@@ -141,14 +141,14 @@ private struct RailWarehouseReceiptBody: View {
             .padding(.top, Space.s4)
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
     }
 
     // MARK: - Eyebrow
 
     private var eyebrow: some View {
         HStack {
-            Text("✦  RAIL ENGINEER · WAREHOUSE RECEIPT")
+            EusoTripEyebrow(verbatim: "RAIL ENGINEER · WAREHOUSE RECEIPT")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer()

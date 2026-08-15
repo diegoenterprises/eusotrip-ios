@@ -96,7 +96,7 @@ private struct EusoTicketBolBody: View {
             await fetch()
             joinLoadRoom()
         }
-        .refreshable { await fetch() }
+        .eusoRefreshable { await fetch() }
         .onDisappear { leaveLoadRoom() }
         // RealtimeService → re-fetch when the BOL load state changes
         // (carrier accept, status update, accessorial added). Keeps
@@ -139,7 +139,7 @@ private struct EusoTicketBolBody: View {
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
             HStack(spacing: 4) {
-                Image(systemName: "sparkles")
+                EusoTripBrandMark(size: 12)
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
                 Text("SHIPPER · EUSOTICKET")

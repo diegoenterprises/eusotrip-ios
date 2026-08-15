@@ -53,7 +53,7 @@ struct MeFreightClaims: View {
             .padding(.bottom, Space.s8)
         }
         .task { await store.refresh() }
-        .refreshable { await store.refresh() }
+        .eusoRefreshable { await store.refresh() }
         .sheet(isPresented: $showingFile) {
             FileClaimSheet(store: store)
                 .eusoSheetX()

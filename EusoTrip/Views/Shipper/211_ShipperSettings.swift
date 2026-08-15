@@ -66,6 +66,8 @@ struct ShipperSettings: View {
     /// Replaces the prior openURL("https://app.eusotrip.com/about")
     /// stub.
     @State private var showAboutSheet: Bool = false
+    @SceneStorage("shipper.settings.expandedSection") private var expandedSection = "account"
+    @SceneStorage("shipper.settings.returnAnchor") private var returnAnchor = "section-account"
 
     /// Closure injected by ContentView so role-tab destinations can
     /// fall through to other registry rows without owning the routing
@@ -73,72 +75,105 @@ struct ShipperSettings: View {
     /// Loads → Detail jump.
     var pushScreenById: ((String) -> Void)? = nil
 
-    // §11 Diego canon — persona-and-build identification eyebrow.
-    private let counterEyebrow = "DIEGO USORO · v\(Self.shortVersion)"
+    private var counterEyebrow: String {
+        let signedInName = session.user?.name?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let identity: String
+        if let signedInName, !signedInName.isEmpty {
+            identity = signedInName.uppercased()
+        } else {
+            identity = "SIGNED IN"
+        }
+        return "\(identity) · v\(Self.shortVersion)"
+    }
 
     // §11 ABOUT-row copy. Build number reads from Bundle at runtime
     // so the displayed version stays honest, but the doctrine pointer
     // is verbatim wireframe canon.
     private static var shortVersion: String {
-        (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "2.8.1"
+        (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "unavailable"
     }
     private static var buildNumber: String {
-        (Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? "4821"
+        (Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? "unavailable"
     }
     private var aboutHeadline: String {
         "EusoTrip 2027 · v\(Self.shortVersion) (build \(Self.buildNumber))"
     }
     private let aboutSub = "EusoTrip 2027 · Eusorone Technologies, Inc"
 
-    // §11.4 SECURITY card placeholder copy (EUSO-2105 / EUSO-2106).
-    // Mirrors Diego's actual device stack per persona canon — never
-    // synthesised, never anonymised. Will be replaced with live
-    // `auth.tfaStatus` + `auth.listSessions` data on those procedures.
-    private let twoFactorStatus     = "Active · authenticator · SMS backup"
-    private let activeSessionsCount = 3
-    private let activeSessionsList  = "iPhone 17 Pro Max · MacBook Pro · iPad mini"
-
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(spacing: 0) {
-                topBar
-                    .padding(.top, Space.s5)
-                titleBlock
-                    .padding(.top, Space.s3)
-                IridescentHairline()
-                    .padding(.top, Space.s3)
+        ScrollViewReader { proxy in
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: Space.s4) {
+                    topBar
+                        .padding(.top, Space.s5)
+                    titleBlock
+                    IridescentHairline()
 
-                accountSection
-                    .padding(.top, Space.s5)
+                    settingsCategory(
+                        id: "account",
+                        icon: "person.crop.circle.fill",
+                        title: "Account",
+                        summary: "Profile · loads · payments · carriers",
+                        rowCount: 4
+                    ) {
+                        accountSection
+                    }
 
-                notificationsChannelsSection
-                    .padding(.top, Space.s5)
+                    settingsCategory(
+                        id: "notifications",
+                        icon: "bell.badge.fill",
+                        title: "Notifications",
+                        summary: "Channels · lifecycle · bids · payments",
+                        rowCount: 11
+                    ) {
+                        notificationsChannelsSection
+                        notificationsAlertsSection
+                    }
 
-                notificationsAlertsSection
-                    .padding(.top, Space.s4)
+                    settingsCategory(
+                        id: "templates",
+                        icon: "road.lanes",
+                        title: "Lane templates",
+                        summary: laneTemplateCountAccessory ?? "Reusable posting defaults",
+                        rowCount: laneTemplateRowCount
+                    ) {
+                        laneTemplatesSection
+                    }
 
-                laneTemplatesSection
-                    .padding(.top, Space.s5)
+                    settingsCategory(
+                        id: "security",
+                        icon: "lock.shield.fill",
+                        title: "Security",
+                        summary: "Two-factor · active sessions",
+                        rowCount: 2
+                    ) {
+                        securitySection
+                    }
 
-                securitySection
-                    .padding(.top, Space.s5)
+                    settingsCategory(
+                        id: "about",
+                        icon: "info.circle.fill",
+                        title: "About",
+                        summary: "Version · privacy · terms · support",
+                        rowCount: 1
+                    ) {
+                        aboutCard
+                            .padding(.horizontal, Space.s5)
+                    }
 
-                aboutCard
-                    .padding(.horizontal, Space.s5)
-                    .padding(.top, Space.s5)
-
-                signOutButton
-                    .padding(.horizontal, Space.s5)
-                    .padding(.top, Space.s4)
-                    .padding(.bottom, Space.s8)
+                    signOutButton
+                        .padding(.horizontal, Space.s5)
+                        .padding(.bottom, Space.s8)
+                }
             }
+            .onAppear { restorePosition(using: proxy) }
         }
         .task {
             async let a: Void = prefsStore.refresh()
             async let b: Void = laneTemplatesStore.refresh()
             _ = await (a, b)
         }
-        .refreshable {
+        .eusoRefreshable {
             async let a: Void = prefsStore.refresh()
             async let b: Void = laneTemplatesStore.refresh()
             _ = await (a, b)
@@ -171,7 +206,7 @@ struct ShipperSettings: View {
 
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("✦ SHIPPER · SETTINGS")
+            EusoTripEyebrow(verbatim: "SHIPPER · SETTINGS")
                 .font(EType.micro)
                 .tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
@@ -185,7 +220,7 @@ struct ShipperSettings: View {
                 .font(EType.micro)
                 .tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
-                .accessibilityLabel("Diego Usoro, EusoTrip version \(Self.shortVersion)")
+                .accessibilityLabel("\(counterEyebrow), EusoTrip settings")
         }
         .padding(.horizontal, Space.s5)
     }
@@ -227,12 +262,86 @@ struct ShipperSettings: View {
         .padding(.horizontal, Space.s5)
     }
 
+    private func settingsCategory<Content: View>(
+        id: String,
+        icon: String,
+        title: String,
+        summary: String,
+        rowCount: Int,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        let isOpen = expandedSection == id
+        return VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(.easeOut(duration: 0.22)) {
+                    expandedSection = isOpen ? "" : id
+                    returnAnchor = "section-\(id)"
+                }
+            } label: {
+                HStack(spacing: 12) {
+                    ZStack {
+                        Circle()
+                            .fill(LinearGradient.diagonal)
+                            .frame(width: 40, height: 40)
+                        Image(systemName: icon)
+                            .font(.system(size: 16, weight: .heavy))
+                            .foregroundStyle(.white)
+                    }
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(title)
+                            .font(.system(size: 15, weight: .heavy))
+                            .foregroundStyle(palette.textPrimary)
+                        Text(summary)
+                            .font(EType.mono(.micro))
+                            .foregroundStyle(palette.textSecondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.72)
+                    }
+
+                    Spacer(minLength: 0)
+
+                    Text("\(rowCount)")
+                        .font(.system(size: 10, weight: .heavy))
+                        .monospacedDigit()
+                        .foregroundStyle(palette.textTertiary)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(Capsule().fill(palette.bgCardSoft))
+
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundStyle(palette.textTertiary)
+                        .rotationEffect(.degrees(isOpen ? 90 : 0))
+                }
+                .padding(.horizontal, Space.s5)
+                .padding(.vertical, Space.s3)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityValue(isOpen ? "Expanded" : "Collapsed")
+
+            if isOpen {
+                Rectangle()
+                    .fill(palette.borderFaint.opacity(0.4))
+                    .frame(height: 1)
+                    .padding(.horizontal, Space.s5)
+
+                VStack(alignment: .leading, spacing: Space.s4) {
+                    content()
+                }
+                .padding(.vertical, Space.s3)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .id("section-\(id)")
+    }
+
     // MARK: - ACCOUNT (preserved from prior wiring — pushScreenById
     //          fall-through into brick 202 / 201 / 208 / 209)
 
     private var accountSection: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
-            sectionLabel("ACCOUNT")
             VStack(spacing: 0) {
                 accountRow(
                     glyph: "person.crop.circle.fill",
@@ -252,7 +361,7 @@ struct ShipperSettings: View {
                     glyph: "creditcard.fill",
                     title: "Payment methods",
                     subtitle: "Cards and bank accounts",
-                    action: { navigate(to: "208") }
+                    action: { navigate(to: "295") }
                 )
                 Divider().overlay(palette.borderFaint).padding(.leading, 56)
                 accountRow(
@@ -325,7 +434,7 @@ struct ShipperSettings: View {
     private var notificationsChannelsSection: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack {
-                Text("NOTIFICATIONS · CHANNELS")
+                Text("CHANNELS")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
@@ -420,7 +529,7 @@ struct ShipperSettings: View {
 
     private var notificationsAlertsSection: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
-            sectionLabel("NOTIFICATIONS · ALERTS")
+            sectionLabel("ALERTS")
             VStack(spacing: 0) {
                 alertToggle(
                     glyph: "shippingbox.fill",
@@ -600,10 +709,16 @@ struct ShipperSettings: View {
 
     private var laneTemplatesSection: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
-            sectionLabel("LANE TEMPLATES", accessory: laneTemplateCountAccessory)
             laneTemplatesContent
                 .padding(.horizontal, Space.s5)
         }
+    }
+
+    private var laneTemplateRowCount: Int {
+        if case .loaded(let rows) = laneTemplatesStore.state {
+            return max(rows.count, 1)
+        }
+        return 1
     }
 
     private var laneTemplateCountAccessory: String? {
@@ -816,7 +931,6 @@ struct ShipperSettings: View {
 
     private var securitySection: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
-            sectionLabel("SECURITY")
             VStack(spacing: 0) {
                 twoFactorRow
                     .padding(.horizontal, Space.s4)
@@ -852,9 +966,9 @@ struct ShipperSettings: View {
                 Text("Two-factor auth")
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
-                Text(twoFactorStatus)
+                Text("View current authentication status")
                     .font(EType.caption)
-                    .foregroundStyle(Brand.success)
+                    .foregroundStyle(palette.textSecondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
             }
@@ -880,10 +994,10 @@ struct ShipperSettings: View {
             }
             .frame(width: 36, height: 36)
             VStack(alignment: .leading, spacing: 1) {
-                Text("Active sessions · \(activeSessionsCount)")
+                Text("Active sessions")
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
-                Text(activeSessionsList)
+                Text("Review signed-in devices")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(2)
@@ -984,6 +1098,7 @@ struct ShipperSettings: View {
     /// DOES inject it (e.g. a NavigationStack host), but it is no
     /// longer required for the rows to work.
     private func navigate(to screenId: String) {
+        returnAnchor = "section-account"
         if let push = pushScreenById {
             push(screenId)
         } else {
@@ -997,7 +1112,17 @@ struct ShipperSettings: View {
 
     // MARK: - Notification posts (§20.4 — wireframe-defined names)
 
+    private func settingsEventInfo(_ fields: [AnyHashable: Any] = [:]) -> [AnyHashable: Any] {
+        var info: [AnyHashable: Any] = ["source": "211_ShipperSettings"]
+        if let companyId = session.user?.companyId, !companyId.isEmpty {
+            info["shipperCompanyId"] = companyId
+        }
+        for (key, value) in fields { info[key] = value }
+        return info
+    }
+
     private func tapLaneTemplate(_ t: LoadTemplatesAPI.Template) {
+        returnAnchor = "section-templates"
         // Real action: jump to 204 Post Load with the template id so
         // the post-load wizard pre-fills from the saved lane. The
         // wizard listens for `templateId` in eusoShipperNavSwap
@@ -1005,11 +1130,7 @@ struct ShipperSettings: View {
         NotificationCenter.default.post(
             name: .eusoShipperSettingsLaneTemplateRow,
             object: nil,
-            userInfo: [
-                "source": "211_ShipperSettings",
-                "templateId": t.id,
-                "shipperCompanyId": 1
-            ]
+            userInfo: settingsEventInfo(["templateId": t.id])
         )
         NotificationCenter.default.post(
             name: .eusoShipperNavSwap, object: nil,
@@ -1018,6 +1139,7 @@ struct ShipperSettings: View {
     }
 
     private func tapNewTemplate() {
+        returnAnchor = "section-templates"
         // Real action: jump to 204 Post Load. The wizard's "Save as
         // template" toggle persists the just-typed lane as a fresh
         // template via `loadTemplates.create`. Replaces the prior
@@ -1025,10 +1147,7 @@ struct ShipperSettings: View {
         NotificationCenter.default.post(
             name: .eusoShipperSettingsLaneTemplateAdd,
             object: nil,
-            userInfo: [
-                "source": "211_ShipperSettings",
-                "shipperCompanyId": 1
-            ]
+            userInfo: settingsEventInfo()
         )
         NotificationCenter.default.post(
             name: .eusoShipperNavSwap, object: nil,
@@ -1037,19 +1156,14 @@ struct ShipperSettings: View {
     }
 
     private func tapManage2FA() {
-        // Real action: 2FA is enterprise-managed pending the
-        // auth.tfaEnable / tfaDisable / tfaStatus build-out
-        // (EUSO-2105). For now, surface a real mail composer to
-        // security@eusotrip.com so the founder + ops team can
-        // co-ordinate the enrolment. No more dead 404 link.
+        returnAnchor = "section-security"
+        // Route to the authenticated status/enrollment surface. It
+        // loads the current state from auth.tfaStatus before showing
+        // any enabled/disabled claim.
         NotificationCenter.default.post(
             name: .eusoShipperSettingsSecurityManage,
             object: nil,
-            userInfo: [
-                "source": "211_ShipperSettings",
-                "subject": "tfa",
-                "shipperCompanyId": 1
-            ]
+            userInfo: settingsEventInfo(["subject": "tfa"])
         )
         // Founder doctrine 2026-05-07: Settings rows route to the
         // in-app management screens, never mailto. 345 is the
@@ -1062,17 +1176,13 @@ struct ShipperSettings: View {
     }
 
     private func tapViewSessions() {
-        // Real action: same enterprise-managed pattern as 2FA above.
-        // Composes a mail to ops with the device hint so the founder
-        // can request a session audit. Replaces the prior
-        // openURL("…/security/sessions").
+        returnAnchor = "section-security"
+        // Route to the authenticated session list. Counts and device
+        // names are rendered only from auth.listSessions.
         NotificationCenter.default.post(
             name: .eusoShipperSettingsSecuritySessions,
             object: nil,
-            userInfo: [
-                "source": "211_ShipperSettings",
-                "shipperCompanyId": 1
-            ]
+            userInfo: settingsEventInfo()
         )
         // 344 is the in-app SecuritySessionsScreen — lists active
         // sessions, lets the user revoke any. Same canonical
@@ -1085,6 +1195,7 @@ struct ShipperSettings: View {
     }
 
     private func tapAbout() {
+        returnAnchor = "section-about"
         // Real action: present an in-app About detail showing version,
         // build, copyright, and quick links to privacy + terms +
         // support. Sheet→push (NAV rollout 2026-05-30): renders in-stack
@@ -1093,12 +1204,10 @@ struct ShipperSettings: View {
         NotificationCenter.default.post(
             name: .eusoShipperSettingsAbout,
             object: nil,
-            userInfo: [
-                "source": "211_ShipperSettings",
+            userInfo: settingsEventInfo([
                 "build": Self.buildNumber,
-                "version": Self.shortVersion,
-                "shipperCompanyId": 1
-            ]
+                "version": Self.shortVersion
+            ])
         )
         showAboutSheet = true
         let version = Self.shortVersion
@@ -1110,6 +1219,11 @@ struct ShipperSettings: View {
                     .environment(\.palette, pal)
             )
         }
+    }
+
+    private func restorePosition(using proxy: ScrollViewProxy) {
+        let fallback = "section-\(expandedSection.isEmpty ? "account" : expandedSection)"
+        eusoRestoreScrollPosition(using: proxy, anchor: returnAnchor, fallback: fallback)
     }
 
     // MARK: - Toast

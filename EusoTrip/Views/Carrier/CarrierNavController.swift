@@ -45,74 +45,74 @@ extension Notification.Name {
     static let eusoCarriereSangTapped = Notification.Name("eusoCarriereSangTapped")
 }
 
-/// Slot-label → screen-id map. Keyed off the lowercased label string
-/// the BottomNav primitive emits. Centralized so future carrier
-/// chrome additions only have to touch this dictionary.
-///
-/// `Loads` resolves to `301_CarrierLoads` (the "all my loads" board);
-/// `Drivers` resolves to `304_CarrierDrivers` (the dispatch /
-/// driver-assignment hub); `Me` resolves to `350_CarrierMe` — the
-/// canonical Catalyst Me hub with identity hero, full surface index
-/// (Account / Operations / Fleet / Financials / Compliance /
-/// Support), and the founder-mandated sign-out button. Founder ask
-/// 2026-05-07: "catalyst profile has not sign out button" + "make
-/// sure all necessary screens outside of active load and load board
-/// is accessible".
-enum CarrierNavRoute {
-    static let map: [String: String] = [
-        "home":    "300",
-        "loads":   "301",
-        "drivers": "304",
-        "me":      "350",
-        // Catalyst SpectraMatch sub-surface deep-links — not in the
-        // bottom-nav slots (the canonical Carrier nav is Home /
-        // Loads / Drivers / Me) but addressable from in-screen CTAs
-        // and notification deep-links. Carrier users can navigate
-        // here because `RoleAccess.allowedScreenRoles(for:.catalyst)`
-        // includes `.catalyst`. Surface lookup spans both
-        // `.carrier` and `.catalyst` registries (see
-        // `CarrierSurface.current`).
-        "matches":         "501",
-        "catalyst":        "500",
-        "catalyst home":   "500",
-        "match detail":    "502",
-        // 2026-06-09 alias sweep (audit M24): ~140 catalyst/carrier
-        // screens carry legacy SVG slot labels with no map entry, which
-        // made those BottomNav slots silent dead-taps (the dispatcher's
-        // `guard let` returns). Alias the verbatim labels onto registered
-        // screens in the carrier+catalyst pool (CarrierSurface looks up
-        // .carrier first, then .catalyst — ids below resolve as noted):
-        "dispatch": "303",      // Carrier · Dispatch Board (57 catalyst files)
-        "wallet":   "312",      // Carrier · Earnings home (44 files)
-        "fleet":    "320",      // Carrier · Vehicles List (20 files)
-        "my loads": "301",      // Carrier · Loads board (12 files)
-        "bids":     "308",      // Carrier · My Bids (16 carrier files)
-        "network":  "304",      // Carrier · Drivers (person.2 hub; 500-trio)
-        "match":    "501",      // Catalyst · Matches (SpectraMatch board)
-        "find":     "341",      // Catalyst · Find Loads (341's own slot)
-        // 2026-06-18 — Carrier · Truck Posting board (321_CarrierTruckPosting).
-        // Registered under id "321C" (NOT "321"; that id is the catalyst
-        // "Driver Profile" .catalyst screen, and CarrierSurface resolves
-        // .carrier→.catalyst by FIRST id, so a carrier "321" would shadow
-        // it — documented dup/destroy hazard). Reached from a Fleet/Home
-        // "Post your truck / capacity" CTA that emits one of these labels.
-        "post truck": "321C",   // Carrier · Truck Posting (capacity board)
-        "capacity":   "321C",   // alias — same board
-    ]
-
-    /// `BottomNav` emits the orb tap as `"esang"`.
-    static let orbLabels: Set<String> = ["esang", "orb"]
+enum CarrierNavTab {
+    case home, loads, drivers, me, none
 }
 
-/// Shared dispatcher. Pure function — accepts a label, posts the right
-/// notification. Kept out of view code so the routing logic is unit-
-/// testable.
+/// Carrier/Catalyst bottom-nav contract. Every accepted label resolves to
+/// a `.carrier` screen so legacy Catalyst chrome cannot switch the user into
+/// the parallel `.catalyst` registry family. Deep links must post a typed
+/// `.eusoCarrierNavSwap` payload directly instead of expanding this tab map.
+enum CarrierNavRoute {
+    enum Destination: String {
+        case home = "300"
+        case loads = "301"
+        case drivers = "304"
+        case me = "350"
+        case dispatch = "303"
+        case earnings = "312"
+        case fleet = "320"
+        case bids = "308"
+    }
+
+    private static let map: [String: Destination] = [
+        "home": .home,
+        "loads": .loads,
+        "drivers": .drivers,
+        "me": .me,
+        // Verbatim labels retained by older Carrier and Catalyst screens.
+        "dispatch": .dispatch,
+        "wallet": .earnings,
+        "fleet": .fleet,
+        "my loads": .loads,
+        "bids": .bids,
+        "network": .drivers,
+        "match": .bids,
+        "matches": .bids,
+        "find": .loads,
+    ]
+
+    private static let orbLabels: Set<String> = ["esang", "orb"]
+
+    static func screenId(for label: String) -> String? {
+        map[normalize(label)]?.rawValue
+    }
+
+    static func isOrb(_ label: String) -> Bool {
+        orbLabels.contains(normalize(label))
+    }
+
+    private static func normalize(_ label: String) -> String {
+        label.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    static func leading(current: CarrierNavTab = .none) -> [NavSlot] {
+        [NavSlot(label: "Home", systemImage: "house", isCurrent: current == .home),
+         NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: current == .loads)]
+    }
+
+    static func trailing(current: CarrierNavTab = .none) -> [NavSlot] {
+        [NavSlot(label: "Drivers", systemImage: "person.2", isCurrent: current == .drivers),
+         NavSlot(label: "Me", systemImage: "person", isCurrent: current == .me)]
+    }
+}
+
+/// Shared dispatcher. Accepts a role-local label and emits exactly one
+/// Carrier notification; unknown labels emit nothing.
 @MainActor
 enum CarrierNavDispatcher {
     static func handle(_ label: String) {
-        let key = label.lowercased()
-
-        if CarrierNavRoute.orbLabels.contains(key) {
+        if CarrierNavRoute.isOrb(label) {
             NotificationCenter.default.post(
                 name: .eusoCarriereSangTapped,
                 object: nil
@@ -120,7 +120,7 @@ enum CarrierNavDispatcher {
             return
         }
 
-        guard let screenId = CarrierNavRoute.map[key] else { return }
+        guard let screenId = CarrierNavRoute.screenId(for: label) else { return }
         NotificationCenter.default.post(
             name: .eusoCarrierNavSwap,
             object: nil,

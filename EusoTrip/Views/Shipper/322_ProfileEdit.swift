@@ -69,7 +69,7 @@ private struct ProfileEditBody: View {
             }
             .padding(.horizontal, 14).padding(.top, 56)
         }
-        .task { await load() }
+        .eusoRefreshTask { await load() }
     }
 
     private var header: some View {
@@ -86,7 +86,7 @@ private struct ProfileEditBody: View {
         LifecycleCard {
             LifecycleSection(label: "DETAILS", icon: "person")
             field("Contact name", text: $contactName)
-            field("Email", text: $email)
+            lockedField("Account email", value: email)
             field("Phone", text: $phone)
             field("Address", text: $address)
             field("Website", text: $website)
@@ -154,6 +154,21 @@ private struct ProfileEditBody: View {
         }
     }
 
+    private func lockedField(_ label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label.uppercased()).font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
+            HStack(spacing: 8) {
+                Text(value).font(EType.body).foregroundStyle(palette.textSecondary)
+                Spacer(minLength: 8)
+                Image(systemName: "lock.fill").font(.system(size: 11, weight: .semibold)).foregroundStyle(palette.textTertiary)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 8)
+            .background(palette.bgCard.opacity(0.6))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+    }
+
     private var ctaRow: some View {
         Button { Task { await save() } } label: {
             HStack(spacing: 6) {
@@ -168,8 +183,17 @@ private struct ProfileEditBody: View {
 
     private func load() async {
         do {
-            let p = try await EusoTripAPI.shared.shipper.getProfile()
-            contactName = p.contactName; email = p.email; phone = p.phone
+            struct AccountProfile: Decodable {
+                let name: String?
+                let email: String?
+            }
+            async let companyProfile = EusoTripAPI.shared.shipper.getProfile()
+            async let accountProfile: AccountProfile = EusoTripAPI.shared.queryNoInput("profile.getMyProfile")
+            let (p, account) = try await (companyProfile, accountProfile)
+            let accountName = account.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            contactName = accountName.isEmpty ? p.contactName : accountName
+            email = account.email ?? ""
+            phone = p.phone
             address = p.address; website = p.website
             city = p.city; state = p.state; zipCode = p.zipCode
             // Normalize the server's country against the picker allowlist.
@@ -197,36 +221,47 @@ private struct ProfileEditBody: View {
 
     private func save() async {
         sending = true; actionError = nil
-        // DIRTY-CHECK input. Every field is optional; a `nil` field is
-        // omitted entirely from the encoded JSON (synthesized `Encodable`
-        // uses `encodeIfPresent` for optionals), which the server reads as
-        // `input.X === undefined` and leaves that column untouched. Only
-        // fields whose current value differs from the loaded baseline are
-        // sent — so we never blank-overwrite an untouched field, and a
-        // field the user deliberately cleared ("" vs a non-empty baseline)
-        // still reaches the server as an explicit value it can honor.
-        struct In: Encodable {
-            let contactName: String?; let email: String?; let phone: String?
-            let address: String?; let website: String?
+        struct CompanyInput: Encodable {
+            let phone: String?; let address: String?; let website: String?
             let city: String?; let state: String?; let zipCode: String?; let country: String?
             let legalName: String?; let ein: String?; let description: String?
         }
-        // Server echoes the persisted row back so we can re-confirm what landed.
+        struct AvatarInput: Encodable { let action = "unchanged" }
+        struct In: Encodable {
+            let firstName: String
+            let lastName: String
+            let phone: String
+            let avatar: AvatarInput
+            let companyProfile: CompanyInput?
+        }
+        struct PersistedProfile: Decodable {
+            let name: String?
+            let email: String?
+            let phone: String?
+        }
+        struct PersistedCompany: Decodable {
+            let phone: String?; let address: String?; let website: String?
+            let city: String?; let state: String?; let zipCode: String?; let country: String?
+            let legalName: String?; let ein: String?; let description: String?
+        }
         struct Out: Decodable {
             let success: Bool
-            let contactName: String?; let email: String?; let phone: String?
-            let address: String?; let website: String?
-            let city: String?; let state: String?; let zipCode: String?; let country: String?
-            let legalName: String?; let ein: String?; let description: String?
+            let profile: PersistedProfile
+            let company: PersistedCompany?
         }
-        // Returns the new value only when it differs from the baseline,
-        // otherwise nil (→ omitted from the request).
         func diff(_ current: String, _ base: String) -> String? {
             current == base ? nil : current
         }
-        let input = In(
-            contactName: diff(contactName, loaded.contactName),
-            email:       diff(email, loaded.email),
+        let nameParts = contactName.trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(maxSplits: 1, whereSeparator: \.isWhitespace)
+        guard let firstName = nameParts.first.map(String.init), !firstName.isEmpty else {
+            actionError = "Contact name is required."
+            sending = false
+            return
+        }
+        let lastName = nameParts.count > 1 ? String(nameParts[1]) : ""
+        let normalizedName = [firstName, lastName].filter { !$0.isEmpty }.joined(separator: " ")
+        let company = CompanyInput(
             phone:       diff(phone, loaded.phone),
             address:     diff(address, loaded.address),
             website:     diff(website, loaded.website),
@@ -237,23 +272,34 @@ private struct ProfileEditBody: View {
             legalName:   diff(legalName, loaded.legalName),
             ein:         diff(ein, loaded.ein),
             description: diff(companyDescription, loaded.description))
+        let companyChanged = [
+            company.phone, company.address, company.website, company.city,
+            company.state, company.zipCode, company.country, company.legalName,
+            company.ein, company.description,
+        ].contains { $0 != nil }
+        let input = In(
+            firstName: firstName,
+            lastName: lastName,
+            phone: phone,
+            avatar: AvatarInput(),
+            companyProfile: companyChanged ? company : nil)
         do {
-            let out: Out = try await EusoTripAPI.shared.mutation("shippers.updateProfile", input: input)
-            // Re-prefill from the authoritative persisted values…
-            if let v = out.contactName { contactName = v }
-            if let v = out.email { email = v }
-            if let v = out.phone { phone = v }
-            if let v = out.address { address = v }
-            if let v = out.website { website = v }
-            if let v = out.city { city = v }
-            if let v = out.state { state = v }
-            if let v = out.zipCode { zipCode = v }
-            if let v = out.country, Self.countryOptions.contains(v) { country = v }
-            if let v = out.legalName { legalName = v }
-            if let v = out.ein { ein = v }
-            if let v = out.description { companyDescription = v }
-            // …and re-baseline so a second save in the same session only
-            // sends the next set of edits (not the ones we just persisted).
+            let out: Out = try await EusoTripAPI.shared.mutation("profile.saveProfileBundle", input: input)
+            guard out.success, out.profile.name == normalizedName else {
+                throw ProfileEditError.authoritativeReadbackMismatch
+            }
+            contactName = out.profile.name ?? normalizedName
+            email = out.profile.email ?? email
+            phone = out.company?.phone ?? out.profile.phone ?? ""
+            if let v = out.company?.address { address = v }
+            if let v = out.company?.website { website = v }
+            if let v = out.company?.city { city = v }
+            if let v = out.company?.state { state = v }
+            if let v = out.company?.zipCode { zipCode = v }
+            if let v = out.company?.country, Self.countryOptions.contains(v) { country = v }
+            if let v = out.company?.legalName { legalName = v }
+            if let v = out.company?.ein { ein = v }
+            if let v = out.company?.description { companyDescription = v }
             loaded = LoadedProfile(
                 contactName: contactName, email: email, phone: phone,
                 address: address, website: website,
@@ -264,6 +310,14 @@ private struct ProfileEditBody: View {
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
         sending = false
+    }
+}
+
+private enum ProfileEditError: LocalizedError {
+    case authoritativeReadbackMismatch
+
+    var errorDescription: String? {
+        "The saved profile could not be verified. Please reload and try again."
     }
 }
 

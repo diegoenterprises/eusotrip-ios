@@ -111,7 +111,7 @@ struct TheHaulCrates: View {
             .padding(.bottom, Space.s8)
         }
         .task { await store.refresh() }
-        .refreshable { await store.refresh() }
+        .eusoRefreshable { await store.refresh() }
         .sheet(item: $pendingOpen) { crate in
             openConfirmSheet(for: crate)
                 .environment(\.palette, palette)

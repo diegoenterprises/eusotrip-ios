@@ -165,7 +165,7 @@ private struct RailAccessorialAnalyticsBody: View {
             .padding(.horizontal, 16).padding(.top, 8)
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
     }
 
     // MARK: - Header (eyebrow + 30-DAY · title + BNSF / invoices)
@@ -174,7 +174,7 @@ private struct RailAccessorialAnalyticsBody: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 HStack(spacing: 6) {
-                    Image(systemName: "sparkle")
+                    EusoTripBrandMark(size: 12)
                         .font(.system(size: 9, weight: .heavy))
                         .foregroundStyle(LinearGradient.primary)
                     Text("RAIL ENGINEER · ACCESSORIALS")

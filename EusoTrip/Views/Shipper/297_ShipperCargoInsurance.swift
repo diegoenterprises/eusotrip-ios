@@ -7,7 +7,7 @@
 //  so there is no back-chevron orb in the header (matches the SVG exactly).
 //
 //  Layout (section-by-section against the SVG):
-//    • Header — eyebrow "✦ SHIPPER · CARGO INSURANCE" (gradient) on the left +
+//    • Header — EusoTrip mark + "SHIPPER · CARGO INSURANCE" on the left +
 //      "{active} ACTIVE · {expiring} EXPIRING" (amber) on the right; title
 //      "Cargo insurance" (34/700); subtitle "{shipper} · {coverage} all-risk ·
 //      annual"; IridescentHairline.
@@ -319,7 +319,7 @@ struct ShipperCargoInsurance: View {
         }
         .overlay(alignment: .top) { bannerView }
         .task { await store.refresh() }
-        .refreshable { await store.refresh() }
+        .eusoRefreshable { await store.refresh() }
         .sheet(isPresented: $quoteSheet) {
             // Detents kill the dead bottom half: the sheet opens at .medium
             // (form-height) and grows to .large only when the shipper pulls it.
@@ -347,7 +347,7 @@ struct ShipperCargoInsurance: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack {
-                Text("✦ SHIPPER · CARGO INSURANCE")
+                EusoTripEyebrow(verbatim: "SHIPPER · CARGO INSURANCE")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.diagonal)
                 Spacer()
@@ -1051,7 +1051,7 @@ private struct PerLoadQuoteSheet: View {
             .padding(Space.s4)
         }
         .background(palette.bgPrimary)
-        .task { await loadsStore.refresh() }
+        .eusoRefreshTask { await loadsStore.refresh() }
         .task(id: quoteKey) { await debouncedQuote() }
     }
 
@@ -1060,7 +1060,7 @@ private struct PerLoadQuoteSheet: View {
     private var sheetHeader: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack(alignment: .top) {
-                Text("✦ EUSOSHIELD · PER-LOAD QUOTE")
+                EusoTripEyebrow(verbatim: "EUSOSHIELD · PER-LOAD QUOTE")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.diagonal)
                 Spacer()

@@ -136,7 +136,7 @@ private struct RailRebookingOptionsBody: View {
             .padding(.top, 8)
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
     }
 
     // MARK: - Eyebrow (✦ RAIL ENGINEER · REROUTE  ·  N OPTIONS)
@@ -144,7 +144,7 @@ private struct RailRebookingOptionsBody: View {
     private var eyebrow: some View {
         HStack {
             HStack(spacing: 5) {
-                Image(systemName: "sparkles")
+                EusoTripBrandMark(size: 12)
                     .font(.system(size: 8, weight: .heavy))
                     .foregroundStyle(LinearGradient.primary)
                 Text("RAIL ENGINEER · REROUTE")

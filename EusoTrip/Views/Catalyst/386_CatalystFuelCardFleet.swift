@@ -49,13 +49,11 @@ struct CatalystFuelCardFleetScreen: View {
 }
 
 private func catalystNavLeading_386() -> [NavSlot] {
-    [NavSlot(label: "Home",     systemImage: "house",                          isCurrent: false),
-     NavSlot(label: "Dispatch", systemImage: "shippingbox.and.arrow.backward", isCurrent: false)]
+    CarrierNavRoute.leading(current: .drivers)
 }
 
 private func catalystNavTrailing_386() -> [NavSlot] {
-    [NavSlot(label: "Fleet", systemImage: "box.truck.fill", isCurrent: true),
-     NavSlot(label: "Me",    systemImage: "person",         isCurrent: false)]
+    CarrierNavRoute.trailing(current: .drivers)
 }
 
 // MARK: - Body
@@ -93,6 +91,7 @@ private struct FuelCardFleetContent_386: View {
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
             Task { await reload() }
         }
+        .eusoRefreshHandler { await reload() }
     }
 
     // MARK: - Derived data (live-only — zero on no data, never a seed)
@@ -124,7 +123,7 @@ private struct FuelCardFleetContent_386: View {
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
             HStack(spacing: 4) {
-                Image(systemName: "sparkles")
+                EusoTripBrandMark(size: 12)
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
                 Text("CATALYST · FUEL CARDS")

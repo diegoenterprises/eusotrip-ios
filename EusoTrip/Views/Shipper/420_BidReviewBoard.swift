@@ -57,7 +57,7 @@ private struct BidReviewBody: View {
             columnScrubber.padding(.bottom, 6)
             columnPager
         }
-        .task { await loadAll() }
+        .eusoRefreshTask { await loadAll() }
     }
 
     // MARK: - Header

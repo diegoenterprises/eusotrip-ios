@@ -121,7 +121,7 @@ private struct ShipperInvoicesBody: View {
             .padding(.horizontal, 14).padding(.top, 56)
         }
         .task { if !hasLoadedOnce { await load() } }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: Header + create CTA
@@ -392,7 +392,7 @@ struct ShipperInvoiceDetailBody: View {
             }
             .padding(.horizontal, 14).padding(.top, Space.s4)
         }
-        .task { await load() }
+        .eusoRefreshTask { await load() }
         .sheet(isPresented: $showPayment) { paymentSheet }
     }
 
@@ -788,7 +788,7 @@ struct ShipperInvoiceCreateBody: View {
             }
             .padding(.horizontal, 14).padding(.top, Space.s4)
         }
-        .task { await loadSources() }
+        .eusoRefreshTask { await loadSources() }
     }
 
     // MARK: Source picker (load → derives customer + line haul server-side)

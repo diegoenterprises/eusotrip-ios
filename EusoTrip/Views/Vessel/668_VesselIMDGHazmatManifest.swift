@@ -175,7 +175,7 @@ private struct VesselIMDGHazmatManifestBody: View {
             }
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
         .sheet(isPresented: $showEmsCard) { emsCardSheet }
     }
 
@@ -184,7 +184,7 @@ private struct VesselIMDGHazmatManifestBody: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("✦ VESSEL OPERATOR · IMDG HAZMAT")
+                EusoTripEyebrow(verbatim: "VESSEL OPERATOR · IMDG HAZMAT")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

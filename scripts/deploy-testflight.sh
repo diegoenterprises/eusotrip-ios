@@ -34,11 +34,37 @@ cd "$PROJECT_ROOT"
 
 BUILD_SETTINGS="$(xcodebuild -project EusoTrip.xcodeproj -scheme EusoTrip -configuration Release -showBuildSettings)"
 VERSION="${RELEASE_VERSION:-$(awk '/MARKETING_VERSION =/ { print $3; exit }' <<<"$BUILD_SETTINGS")}"
-BUILD_NUMBER="${RELEASE_BUILD_NUMBER:-$(awk '/CURRENT_PROJECT_VERSION =/ { print $3; exit }' <<<"$BUILD_SETTINGS")}"
-if [[ -z "$VERSION" || -z "$BUILD_NUMBER" ]]; then
+PROJECT_BUILD_NUMBER="$(awk '/CURRENT_PROJECT_VERSION =/ { print $3; exit }' <<<"$BUILD_SETTINGS")"
+ASC_BUNDLE_ID="${ASC_BUNDLE_ID:-com.app.eusotrip}"
+if [[ -z "$VERSION" || -z "$PROJECT_BUILD_NUMBER" || -z "$ASC_BUNDLE_ID" ]]; then
   echo "ERROR: Unable to resolve MARKETING_VERSION/CURRENT_PROJECT_VERSION." >&2
   exit 1
 fi
+
+# Apple rejects reused CFBundleVersion values after an upload has entered ASC,
+# even when the project file still carries that historical floor. Resolve the
+# live maximum before spending time on an archive. With build 850 already in
+# TestFlight, the default candidate becomes 851; an explicit override must be
+# higher than whatever ASC reports at release time.
+ASC_LATEST_BUILD="$({
+  ASC_BUNDLE_ID="$ASC_BUNDLE_ID" \
+  ASC_API_KEY_ID="$ASC_API_KEY_ID" \
+  ASC_API_KEY_ISSUER="$ASC_API_KEY_ISSUER" \
+  ASC_API_KEY_PATH="$ASC_API_KEY_PATH" \
+    node "${PROJECT_ROOT}/scripts/asc-latest-build.mjs"
+})"
+BUILD_NUMBER="$(
+  node --input-type=module - \
+    "$PROJECT_BUILD_NUMBER" \
+    "$ASC_LATEST_BUILD" \
+    "${RELEASE_BUILD_NUMBER:-}" \
+    "${PROJECT_ROOT}/scripts/asc-latest-build.mjs" <<'NODE'
+import { pathToFileURL } from 'node:url';
+const [projectBuild, latestAscBuild, overrideBuild, modulePath] = process.argv.slice(2);
+const { selectReleaseBuild } = await import(pathToFileURL(modulePath));
+process.stdout.write(String(selectReleaseBuild({ projectBuild, latestAscBuild, overrideBuild })));
+NODE
+)"
 
 RELEASE_ROOT="${RELEASE_ROOT:-$(mktemp -d "/tmp/eusotrip-testflight-${VERSION}-${BUILD_NUMBER}-XXXXXX")}"
 DERIVED_DATA_PATH="${RELEASE_ROOT}/DerivedData"
@@ -58,6 +84,8 @@ write_ladder() {
 {
   "version": "${VERSION}",
   "build": "${BUILD_NUMBER}",
+  "projectBuild": "${PROJECT_BUILD_NUMBER}",
+  "ascLatestBuildBeforeRelease": "${ASC_LATEST_BUILD}",
   "releaseRoot": "${RELEASE_ROOT}",
   "archivePath": "${ARCHIVE_PATH}",
   "compiled": "${LADDER_COMPILED}",
@@ -87,7 +115,7 @@ mark_failed_step() {
 }
 
 write_ladder
-echo "Release ${VERSION} (${BUILD_NUMBER})"
+echo "Release ${VERSION} (${BUILD_NUMBER}); project=${PROJECT_BUILD_NUMBER}, ASC latest=${ASC_LATEST_BUILD}"
 echo "Release workspace: ${RELEASE_ROOT}"
 
 trap 'mark_failed_step archive' ERR

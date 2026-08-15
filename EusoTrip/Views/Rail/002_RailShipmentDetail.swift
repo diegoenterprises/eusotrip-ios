@@ -274,7 +274,7 @@ private struct RailShipmentDetail: View {
             }
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
         .onAppear { startAmbientLoops() }
         .onChange(of: reduceMotion) { _, _ in startAmbientLoops() }
     }
@@ -297,7 +297,7 @@ private struct RailShipmentDetail: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("✦ SHIPPER · RAIL · INTERMODAL")
+                EusoTripEyebrow(verbatim: "SHIPPER · RAIL · INTERMODAL")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

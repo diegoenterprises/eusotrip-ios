@@ -52,6 +52,10 @@ struct NewsArticleReader: View {
     /// the embedded WKWebView so the top-bar forward chevron can advance
     /// the in-page history after the driver has gone back.
     @State private var webViewGoForward: (() -> Void)? = nil
+    /// Reloads the existing WKWebView instance. Pull/foreground freshness must
+    /// not replace the representable because that would discard page history,
+    /// scroll position, translation state, and the mounted reader itself.
+    @State private var webViewReload: (() -> Void)? = nil
     /// Handler the embedded WKWebView assigns so the reader chrome can
     /// navigate it to a new URL without tearing it down. Used by the
     /// retry button to re-hit the original article URL.
@@ -104,6 +108,10 @@ struct NewsArticleReader: View {
         // Uniform cafe-door entrance — the reader used to fade in flat
         // which broke the pattern every other sheet sets.
         .screenTileRoot()
+        .eusoRefreshHandler {
+            webViewReload?()
+        }
+        .eusoRefreshSurface("modal:news:\(article.id)")
         // Native-translation reader. Only constructible on iOS 17.4+
         // — older devices are routed to the unavailable alert above.
         .fullScreenCover(isPresented: $showTranslationSheet, onDismiss: {
@@ -123,6 +131,7 @@ struct NewsArticleReader: View {
                 )
                 .environment(\.palette, palette)
                 .eusoCloseX()
+                .eusoRefreshSurface("modal:news-translation:\(article.id)")
             } else {
                 // Cover can't present empty — only reached if state was
                 // cleared mid-transition. Gemini translation has no OS
@@ -130,6 +139,7 @@ struct NewsArticleReader: View {
                 TranslationUnavailableView(reason: "Pick a language to translate this article.")
                     .environment(\.palette, palette)
                     .eusoCloseX()
+                    .eusoRefreshSurface("modal:news-translation:\(article.id)")
             }
         }
         // Replaced the old hard "Translation unavailable" alert with an
@@ -168,6 +178,7 @@ struct NewsArticleReader: View {
         .sheet(item: $inAppSafariSession) { sess in
             NewsInAppSafari(url: sess.url)
                 .ignoresSafeArea()
+                .eusoRefreshSurface("modal:news-safari:\(article.id)")
         }
     }
 
@@ -329,6 +340,7 @@ struct NewsArticleReader: View {
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
             .eusoCloseX()
+            .eusoRefreshSurface("modal:news-language:\(article.id)")
         }
     }
 
@@ -452,6 +464,7 @@ struct NewsArticleReader: View {
                     canGoForward: $canGoForward,
                     goBackHandler: $webViewGoBack,
                     goForwardHandler: $webViewGoForward,
+                    reloadHandler: $webViewReload,
                     loadURLHandler: $webViewLoadURL,
                     extractTextHandler: $webViewExtractText
                 )
@@ -687,6 +700,8 @@ private struct ArticleWebView: UIViewRepresentable {
     /// Forward-navigation handler the parent reader's top-bar chevron
     /// drives once the driver has stepped back in the in-page history.
     @Binding var goForwardHandler: (() -> Void)?
+    /// In-place page refresh used by the app-wide current-surface contract.
+    @Binding var reloadHandler: (() -> Void)?
     /// Handler the parent reader assigns so it can push a new URL into
     /// the same WKWebView instance (retry flow).
     @Binding var loadURLHandler: ((URL) -> Void)?
@@ -716,6 +731,7 @@ private struct ArticleWebView: UIViewRepresentable {
         context.coordinator.observeProgress(on: webView)
         goBackHandler = { [weak webView] in webView?.goBack() }
         goForwardHandler = { [weak webView] in webView?.goForward() }
+        reloadHandler = { [weak webView] in webView?.reload() }
         loadURLHandler = { [weak webView] newURL in
             webView?.load(URLRequest(url: newURL))
         }

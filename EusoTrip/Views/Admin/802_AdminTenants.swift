@@ -139,7 +139,7 @@ struct AdminTenants: View {
             .padding(.top, 8)
         }
         .task { await tenants.refresh() }
-        .refreshable { await tenants.refresh() }
+        .eusoRefreshable { await tenants.refresh() }
         .sheet(item: $detailTenantId) { ident in
             // 161st firing · brick 803: real drill-in. The 803 view
             // owns its own `AdminTenantDetailStore`, so this sheet
@@ -170,7 +170,7 @@ struct AdminTenants: View {
                     .clipShape(Circle())
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Image(systemName: "sparkles")
+                        EusoTripBrandMark(size: 12)
                             .font(.system(size: 9, weight: .heavy))
                             .foregroundStyle(LinearGradient.diagonal)
                         Text("ADMIN · TENANTS")
@@ -512,13 +512,11 @@ struct AdminTenantsScreen: View {
 }
 
 private func adminNavLeading_802() -> [NavSlot] {
-    [NavSlot(label: "Home",    systemImage: "house",         isCurrent: false),
-     NavSlot(label: "Tickets", systemImage: "ticket.fill",   isCurrent: false)]
+    AdminNavRoute.leading(current: .tenants)
 }
 
 private func adminNavTrailing_802() -> [NavSlot] {
-    [NavSlot(label: "Tenants", systemImage: "building.2.fill", isCurrent: true),
-     NavSlot(label: "Me",      systemImage: "person",          isCurrent: false)]
+    AdminNavRoute.trailing(current: .tenants)
 }
 
 // MARK: - Previews

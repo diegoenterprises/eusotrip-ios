@@ -90,7 +90,7 @@ struct ShipperAllocations: View {
         }
         .task { await store.load() }
         .onChange(of: store.date) { _, _ in Task { await store.load() } }
-        .refreshable { await store.load() }
+        .eusoRefreshable { await store.load() }
         .sheet(isPresented: $presentingCreate) {
             NewAllocationContractSheet { _ in
                 Task { await store.load() }
@@ -108,7 +108,7 @@ struct ShipperAllocations: View {
                 .overlay(Circle().strokeBorder(palette.borderFaint)).clipShape(Circle())
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Image(systemName: "sparkles").font(.system(size: 9, weight: .heavy))
+                    EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy))
                         .foregroundStyle(LinearGradient.diagonal)
                     Text("SHIPPER · ALLOCATIONS").font(.system(size: 9, weight: .heavy)).tracking(1.0)
                         .foregroundStyle(LinearGradient.diagonal)

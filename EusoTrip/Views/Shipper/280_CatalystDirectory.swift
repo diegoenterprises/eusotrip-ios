@@ -31,7 +31,7 @@ private struct CatalystDirectoryBody: View {
             }
             .padding(.horizontal, 14).padding(.top, 56)
         }
-        .task {
+        .eusoRefreshTask {
             await perf.refresh()
             await loadFavs()
         }

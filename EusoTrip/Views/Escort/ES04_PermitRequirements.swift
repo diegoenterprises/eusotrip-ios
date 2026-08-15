@@ -79,7 +79,7 @@ struct EscortPermitRequirements: View {
             }
             .padding(.horizontal, 14).padding(.top, 8)
         }
-        .task { await load() }
+        .eusoRefreshTask { await load() }
     }
 
     private var header: some View {
@@ -205,14 +205,8 @@ struct EscortPermitRequirementsScreen: View {
             EscortPermitRequirements()
         } nav: {
             BottomNav(
-                leading: [
-                    NavSlot(label: "Home",        systemImage: "house",                  isCurrent: false),
-                    NavSlot(label: "Assignments", systemImage: "shield.lefthalf.filled", isCurrent: false),
-                ],
-                trailing: [
-                    NavSlot(label: "Corridor", systemImage: "map",    isCurrent: false),
-                    NavSlot(label: "Me",       systemImage: "person", isCurrent: true),
-                ],
+                leading: EscortNavRoute.leading(current: .corridor),
+                trailing: EscortNavRoute.trailing(current: .corridor),
                 orbState: .idle
             )
         }

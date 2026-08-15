@@ -9,7 +9,7 @@
 //  the Dpch720 trio covers 403/405/411, not 402).
 //
 //  Surface anatomy (verbatim to the SVG, element order preserved):
-//    · TopBar eyebrow  "✦ DISPATCHER · ME · PROFILE"  +  right "TENURE {n}Y · ID {emp}"
+//    · TopBar EusoTrip mark + "DISPATCHER · ME · PROFILE" + right "TENURE {n}Y · ID {emp}"
 //    · Display name (h1) + subtitle "{title} · {company} · {base}"
 //    · Small initials avatar top-right
 //    · IridescentHairline
@@ -110,10 +110,8 @@ struct DispatcherProfileScreen: View {
     var body: some View {
         Shell(theme: theme) { DispatcherProfileBody() } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home",    systemImage: "house",         isCurrent: false),
-                          NavSlot(label: "Drivers", systemImage: "person.3.fill", isCurrent: false)],
-                trailing: [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
-                           NavSlot(label: "Me",    systemImage: "person.fill",      isCurrent: true)],
+                leading: DispatchNavRoute.leading(current: .me),
+                trailing: DispatchNavRoute.trailing(current: .me),
                 orbState: .idle
             )
         }
@@ -164,7 +162,7 @@ private struct DispatcherProfileBody: View {
         .padding(.horizontal, 20)
         .padding(.top, 8)
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     private var subtitleLine: String {
@@ -179,7 +177,7 @@ private struct DispatcherProfileBody: View {
 
     private var topBar: some View {
         HStack(alignment: .top, spacing: 8) {
-            Text("✦ DISPATCHER · ME · PROFILE")
+            EusoTripEyebrow(verbatim: "DISPATCHER · ME · PROFILE")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer(minLength: 8)
@@ -202,13 +200,13 @@ private struct DispatcherProfileBody: View {
     private func identityCard(_ p: DispatchProfile402) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 18) {
-                // Gold-ringed initials avatar
+                // Gold-ringed authenticated avatar. The shared control owns
+                // PhotosPicker, secure compression, profile.updateAvatar, and
+                // authoritative profile readback so this hero is not a dead
+                // initials illustration.
                 ZStack {
                     Circle().stroke(goldRing, lineWidth: 3).frame(width: 96, height: 96)
-                    Circle().fill(LinearGradient.diagonal).frame(width: 88, height: 88)
-                    Text(p.initials)
-                        .font(.system(size: 30, weight: .heavy)).tracking(1.0)
-                        .foregroundStyle(.white)
+                    EditableProfileAvatar(size: 88)
                 }
                 VStack(alignment: .leading, spacing: 4) {
                     Text(p.name).font(EType.h2).foregroundStyle(palette.textPrimary)

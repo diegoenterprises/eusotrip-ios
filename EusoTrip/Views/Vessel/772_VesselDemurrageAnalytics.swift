@@ -149,7 +149,7 @@ private struct VesselDemurrageAnalyticsBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
         .sheet(isPresented: $showDisputeQueue) { disputeQueueSheet }
     }
 
@@ -207,7 +207,7 @@ private struct VesselDemurrageAnalyticsBody: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("VESSEL OPERATOR · DEMURRAGE").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
                 Spacer()
                 Text(windowLabel).font(.system(size: 9, weight: .heavy)).tracking(1.0).monospaced().foregroundStyle(palette.textTertiary)

@@ -406,7 +406,7 @@ private struct RailEquipmentPositionsBody: View {
             .padding(.top, Space.s3)
         }
         .task { await loadAll() }
-        .refreshable { await loadAll() }
+        .eusoRefreshable { await loadAll() }
         // Arc-sweep on appear + on any data refresh; settles on the REAL fraction.
         .onAppear { settleSweep(to: routeProgress) }
         .onChange(of: routeProgress) { _, new in settleSweep(to: new) }
@@ -430,7 +430,7 @@ private struct RailEquipmentPositionsBody: View {
 
     private var eyebrow: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("✦ RAIL ENGINEER · POSITIONS")
+            EusoTripEyebrow(verbatim: "RAIL ENGINEER · POSITIONS")
                 .font(.system(size: 9, weight: .black)).kerning(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer()

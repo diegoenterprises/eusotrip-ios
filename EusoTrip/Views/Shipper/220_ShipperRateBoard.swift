@@ -216,6 +216,7 @@ struct ShipperRateBoard: View {
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
             Task { await store.refreshFeatured() }
         }
+        .eusoRefreshHandler { await store.refreshFeatured() }
         .onReceive(NotificationCenter.default.publisher(for: .eusoLoadAssigned)) { _ in
             Task { await store.refreshFeatured() }
         }
@@ -256,7 +257,7 @@ struct ShipperRateBoard: View {
 
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("✦ SHIPPER · RATE BOARD")
+            EusoTripEyebrow(verbatim: "SHIPPER · RATE BOARD")
                 .font(EType.micro)
                 .tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)

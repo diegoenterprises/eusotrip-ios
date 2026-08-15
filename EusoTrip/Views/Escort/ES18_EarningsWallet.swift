@@ -240,7 +240,7 @@ struct EscortEarningsWallet: View {
             .padding(.top, 8)
         }
         .task { await load() }
-        .refreshable { await load(force: true) }
+        .eusoRefreshable { await load(force: true) }
         .sheet(isPresented: $showDispute) { disputeSheet }
     }
 
@@ -248,7 +248,7 @@ struct EscortEarningsWallet: View {
 
     private var eyebrowRow: some View {
         HStack {
-            Text("✦ ESCORT · EARNINGS & WALLET")
+            EusoTripEyebrow(verbatim: "ESCORT · EARNINGS & WALLET")
                 .font(EType.micro).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer(minLength: Space.s2)
@@ -785,14 +785,8 @@ struct EscortEarningsWalletScreen: View {
             EscortEarningsWallet()
         } nav: {
             BottomNav(
-                leading: [
-                    NavSlot(label: "Home",        systemImage: "house",                  isCurrent: false),
-                    NavSlot(label: "Assignments", systemImage: "shield.lefthalf.filled", isCurrent: false),
-                ],
-                trailing: [
-                    NavSlot(label: "Corridor", systemImage: "map",    isCurrent: false),
-                    NavSlot(label: "Me",       systemImage: "person", isCurrent: true),
-                ],
+                leading: EscortNavRoute.leading(current: .me),
+                trailing: EscortNavRoute.trailing(current: .me),
                 orbState: .idle
             )
         }

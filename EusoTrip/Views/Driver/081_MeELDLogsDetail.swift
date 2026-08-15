@@ -101,7 +101,7 @@ struct MeELDLogsDetail: View {
             // compliance claim is honest the moment the screen lands.
             await eld.bootstrap()
         }
-        .refreshable {
+        .eusoRefreshable {
             await store.refreshAll()
             await eld.refresh()
         }

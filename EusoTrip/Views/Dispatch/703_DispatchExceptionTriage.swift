@@ -33,10 +33,8 @@ struct DispatchExceptionTriageScreen: View {
     var body: some View {
         Shell(theme: theme) { OperationsAlertsBody() } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home",    systemImage: "house",            isCurrent: false),
-                          NavSlot(label: "Drivers", systemImage: "person.3.fill",    isCurrent: false)],
-                trailing: [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
-                           NavSlot(label: "Me",    systemImage: "person",            isCurrent: true)],
+                leading: DispatchNavRoute.leading(current: .board),
+                trailing: DispatchNavRoute.trailing(current: .board),
                 orbState: .idle
             )
         }
@@ -322,7 +320,7 @@ private struct OperationsAlertsBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await loadAll() }
-        .refreshable { await loadAll() }
+        .eusoRefreshable { await loadAll() }
     }
 
     // MARK: subviews

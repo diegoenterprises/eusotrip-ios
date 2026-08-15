@@ -201,7 +201,7 @@ struct eSangDispatchChat: View {
             quickReplies
             inputBar
         }
-        .task { await hydrateLiveTrip() }
+        .eusoRefreshTask { await hydrateLiveTrip() }
         .onAppear {
             // Hand the real transcript back into the composer. Append so a
             // dictation can extend a half-typed message rather than clobber it.

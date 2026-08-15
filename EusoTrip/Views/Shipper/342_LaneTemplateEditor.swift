@@ -42,7 +42,7 @@ private struct LaneTemplateEditorBody: View {
             }
             .padding(.horizontal, 14).padding(.top, 56)
         }
-        .task { await loadIfExisting() }
+        .eusoRefreshTask { await loadIfExisting() }
     }
 
     private var header: some View {

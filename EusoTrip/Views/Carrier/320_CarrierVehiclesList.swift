@@ -33,10 +33,8 @@ struct CarrierVehiclesListScreen: View {
     var body: some View {
         Shell(theme: theme) { VehiclesBody() } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home", systemImage: "house", isCurrent: false),
-                          NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false)],
-                trailing: [NavSlot(label: "Bids", systemImage: "hand.raised.fill", isCurrent: false),
-                           NavSlot(label: "Me", systemImage: "person", isCurrent: true)],
+                leading: CarrierNavRoute.leading(current: .drivers),
+                trailing: CarrierNavRoute.trailing(current: .drivers),
                 orbState: .idle
             )
         }
@@ -141,7 +139,7 @@ private struct VehiclesBody: View {
             }
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     private var header: some View {

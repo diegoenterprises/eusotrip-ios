@@ -125,7 +125,7 @@ private struct RailMoveSchedulerBody: View {
             }
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
     }
 
     // MARK: - Top bar (eyebrow · back · title · subtitle)
@@ -134,7 +134,7 @@ private struct RailMoveSchedulerBody: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
                 HStack(spacing: 5) {
-                    Image(systemName: "sparkle")
+                    EusoTripBrandMark(size: 12)
                         .font(.system(size: 8, weight: .heavy))
                         .foregroundStyle(LinearGradient.primary)
                     Text("RAIL ENGINEER · SCHEDULER")

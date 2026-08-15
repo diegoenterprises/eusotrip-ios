@@ -16,6 +16,7 @@
 //
 
 import Foundation
+import CryptoKit
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -379,11 +380,16 @@ final class EusoTripAPI: ObservableObject {
         return ok
     }
 
-    /// Underlying URLSession (swap for tests).  Wired to HTTPCookieStorage.shared
+    /// Underlying URLSession (swap for tests). Wired to HTTPCookieStorage.shared
     /// so the JWT cookie set by auth.login persists across requests.
-    /// Cache is explicitly disabled — see comment below.
+    ///
+    /// The transport uses an ephemeral configuration even though auth cookies
+    /// are explicitly shared. Build 201 crashed in CFNetwork's cache-loading
+    /// path while ERG detail work was being canceled and restarted. A private,
+    /// cacheless session keeps API task lifecycle independent from the process-
+    /// wide URLCache used by unrelated image/weather requests.
     lazy var session: URLSession = {
-        let config = URLSessionConfiguration.default
+        let config = URLSessionConfiguration.ephemeral
         config.httpCookieStorage = HTTPCookieStorage.shared
         config.httpCookieAcceptPolicy = .always
         config.httpShouldSetCookies = true
@@ -402,19 +408,12 @@ final class EusoTripAPI: ObservableObject {
         config.timeoutIntervalForRequest = 22
         config.timeoutIntervalForResource = 120
         config.waitsForConnectivity = false
-        // Disable URLCache app-wide. tRPC responses are stateful by
-        // nature (signed-in user / load detail / wallet) and must
-        // never be served from cache. Earlier crashes / "Failed
-        // query" panics from a pre-migration deploy left poisoned
-        // entries in URLCache that kept getting replayed even after
-        // the server was patched, until app reinstall. .none drops
-        // every response straight to disk and out.
+        // tRPC responses are tenant- and session-scoped. Never admit them to a
+        // memory/disk cache and never mutate URLCache.shared from this client:
+        // clearing the global cache while another URLSession is reading it is
+        // precisely the cross-session lifecycle coupling this transport avoids.
         config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         config.urlCache = nil
-        // Also clear any pre-existing cache from prior builds — the
-        // poisoned-entry path is a one-time-on-install problem so we
-        // only need to flush once per launch.
-        URLCache.shared.removeAllCachedResponses()
         return URLSession(configuration: config)
     }()
 
@@ -1515,7 +1514,7 @@ final class EusoTripAPI: ObservableObject {
         if let pushDeviceToken {
             req.setValue(pushDeviceToken, forHTTPHeaderField: "x-push-token")
         }
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await transportData(for: req)
         guard let http = resp as? HTTPURLResponse else {
             throw EusoTripAPIError.httpStatus(0, "No HTTP response")
         }
@@ -1538,17 +1537,17 @@ final class EusoTripAPI: ObservableObject {
     func fetchAuthenticatedData(_ url: URL) async throws -> (Data, HTTPURLResponse) {
         var req = URLRequest(url: url)
         req.httpMethod = "GET"
+        req.httpShouldHandleCookies = isFirstPartyURL(url)
         req.setValue("application/pdf,image/*,application/octet-stream,*/*", forHTTPHeaderField: "Accept")
-        if let token = authToken,
-           let baseHost = baseURL?.host,
-           let urlHost = url.host,
-           urlHost.caseInsensitiveCompare(baseHost) == .orderedSame {
-            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        if isFirstPartyURL(url) {
+            if let token = authToken {
+                req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            }
+            if let pushDeviceToken {
+                req.setValue(pushDeviceToken, forHTTPHeaderField: "x-push-token")
+            }
         }
-        if let pushDeviceToken {
-            req.setValue(pushDeviceToken, forHTTPHeaderField: "x-push-token")
-        }
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await transportData(for: req)
         guard let http = resp as? HTTPURLResponse else {
             throw EusoTripAPIError.httpStatus(0, "No HTTP response")
         }
@@ -1557,6 +1556,58 @@ final class EusoTripAPI: ObservableObject {
                 http.statusCode,
                 String(data: data, encoding: .utf8) ?? ""
             )
+        }
+        return (data, http)
+    }
+
+    /// Fetch a signed Apple Wallet bundle without admitting redirects, stale
+    /// cache entries, or non-Pass content into the PassKit parser. Bearer and
+    /// device headers are attached only to the exact EusoTrip origin; Azure or
+    /// other signed-storage URLs receive no application credential material.
+    func fetchWalletPassData(_ url: URL) async throws -> (Data, HTTPURLResponse) {
+        guard url.scheme?.lowercased() == "https",
+              url.user == nil,
+              url.password == nil,
+              url.fragment == nil,
+              let originalHost = url.host?.lowercased() else {
+            throw EusoTripAPIError.badURL
+        }
+
+        var req = URLRequest(url: url)
+        req.httpMethod = "GET"
+        req.httpShouldHandleCookies = isFirstPartyURL(url)
+        req.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        req.setValue("application/vnd.apple.pkpass", forHTTPHeaderField: "Accept")
+        if isFirstPartyURL(url) {
+            if let token = authToken {
+                req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            }
+            if let pushDeviceToken {
+                req.setValue(pushDeviceToken, forHTTPHeaderField: "x-push-token")
+            }
+        }
+
+        let (data, response) = try await transportData(for: req)
+        guard let http = response as? HTTPURLResponse else {
+            throw EusoTripAPIError.httpStatus(0, "No HTTP response")
+        }
+        guard let finalURL = http.url,
+              finalURL.scheme?.lowercased() == "https",
+              finalURL.host?.lowercased() == originalHost else {
+            throw EusoTripAPIError.badURL
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            throw EusoTripAPIError.httpStatus(
+                http.statusCode,
+                String(data: data.prefix(1_024), encoding: .utf8) ?? ""
+            )
+        }
+        guard http.mimeType?.lowercased() == "application/vnd.apple.pkpass" else {
+            throw EusoTripAPIError.httpStatus(http.statusCode, "Unexpected Wallet pass content type")
+        }
+        let maxPassBytes = 12 * 1_024 * 1_024
+        guard data.count > 0, data.count <= maxPassBytes else {
+            throw EusoTripAPIError.httpStatus(http.statusCode, "Wallet pass size is invalid")
         }
         return (data, http)
     }
@@ -1751,6 +1802,15 @@ final class EusoTripAPI: ObservableObject {
             )
             return true
 
+        case "gamification.postLobbyMessage":
+            struct In: Decodable { let message: String; let idempotencyKey: String? }
+            guard let p = try? dec.decode(Env<In>.self, from: body).json else { return false }
+            OfflineQueue.shared.enqueueHaulMessage(
+                message: p.message,
+                idempotencyKey: p.idempotencyKey
+            )
+            return true
+
         default:
             // Not enqueue-eligible (reads, money mutations, everything else).
             return false
@@ -1758,6 +1818,35 @@ final class EusoTripAPI: ObservableObject {
     }
 
     // MARK: Shared transport
+
+    private func isFirstPartyURL(_ url: URL) -> Bool {
+        guard let baseURL,
+              let baseScheme = baseURL.scheme?.lowercased(),
+              let urlScheme = url.scheme?.lowercased(),
+              let baseHost = baseURL.host?.lowercased(),
+              let urlHost = url.host?.lowercased() else { return false }
+        let basePort = baseURL.port ?? (baseScheme == "https" ? 443 : 80)
+        let urlPort = url.port ?? (urlScheme == "https" ? 443 : 80)
+        return baseScheme == urlScheme && baseHost == urlHost && basePort == urlPort
+    }
+
+    /// One cancellation-aware entry point for every request using the API
+    /// session. The preflight check is important for SwiftUI `.task` callers:
+    /// once their view disappears, an already-canceled task must not create a
+    /// fresh CFNetwork task only to cancel it during setup. The postflight check
+    /// prevents a response that raced dismissal from reaching a dead surface.
+    private func transportData(for original: URLRequest) async throws -> (Data, URLResponse) {
+        try Task.checkCancellation()
+
+        var request = original
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        request.setValue("no-store, no-cache", forHTTPHeaderField: "Cache-Control")
+        request.setValue("no-cache", forHTTPHeaderField: "Pragma")
+
+        let response = try await session.data(for: request)
+        try Task.checkCancellation()
+        return response
+    }
 
     /// `allowRefreshRetry` gates the ONE automatic re-auth + retry on a
     /// 401/403. Public entry points (`query`/`mutation`/…) call `perform`
@@ -1767,7 +1856,7 @@ final class EusoTripAPI: ObservableObject {
         _ req: URLRequest,
         allowRefreshRetry: Bool = true
     ) async throws -> Output {
-        let (respData, resp) = try await session.data(for: req)
+        let (respData, resp) = try await transportData(for: req)
         guard let http = resp as? HTTPURLResponse else {
             throw EusoTripAPIError.httpStatus(0, "No HTTP response")
         }
@@ -3970,35 +4059,6 @@ struct eSangAPI {
         /// dispatch. Passed through so eSang can pull live load + HOS
         /// context server-side.
         let loadId: String?
-        /// ── ESANG vision grounding (autopilot only) ──
-        /// A JPEG screenshot of the live screen, base64-encoded, captured
-        /// ONLY during user-initiated hands-free autopilot turns so ESANG
-        /// can ground a `<<<ACTION:tap:CX x CY>>>` on a visible control.
-        /// `nil` (and OMITTED from the wire payload) for every text / coach
-        /// chat, so those request bodies stay byte-identical to today.
-        let screenB64: String?
-        /// Pixel width of the captured screenshot (origin top-left). Lets
-        /// the server reason about aspect ratio when grounding a tap point.
-        let screenW: Int?
-        /// Pixel height of the captured screenshot. See `screenW`.
-        let screenH: Int?
-
-        enum CodingKeys: String, CodingKey {
-            case currentPage, loadId, screenB64, screenW, screenH
-        }
-
-        /// Custom encode so the three vision keys are OMITTED entirely when
-        /// nil (not encoded as JSON null). A text/coach chat — which never
-        /// sets them — therefore serializes to exactly the prior two-key
-        /// `{ currentPage, loadId }` shape, byte-for-byte.
-        func encode(to encoder: Encoder) throws {
-            var c = encoder.container(keyedBy: CodingKeys.self)
-            try c.encode(currentPage, forKey: .currentPage)
-            try c.encode(loadId, forKey: .loadId)
-            if let screenB64 { try c.encode(screenB64, forKey: .screenB64) }
-            if let screenW { try c.encode(screenW, forKey: .screenW) }
-            if let screenH { try c.encode(screenH, forKey: .screenH) }
-        }
     }
 
     /// Mirror of the backend `ESANGResponse` payload. We only decode the
@@ -4010,6 +4070,16 @@ struct eSangAPI {
         let message: String
         /// Optional quick-reply chips the web uses below each reply.
         let suggestions: [String]?
+        /// Present on the hardened server. Nil remains compatible with the
+        /// build-850 server during a rolling deployment.
+        let available: Bool?
+        let provider: String?
+        let modelUsed: String?
+        let fallbackUsed: Bool?
+        let generatedAt: String?
+        let unavailableReason: String?
+
+        var answerWasGenerated: Bool { available != false }
     }
 
     /// `esang.chat` — POST mutation. Sends the driver's message to the
@@ -4029,23 +4099,34 @@ struct eSangAPI {
         loadId: String? = nil,
         screenB64: String? = nil,
         screenW: Int? = nil,
-        screenH: Int? = nil
+        screenH: Int? = nil,
+        sessionId: String? = nil
     ) async throws -> ChatResponse {
         struct Input: Encodable {
             let message: String
             let context: ChatContext?
+            let screenB64: String?
+            let screenW: Int?
+            let screenH: Int?
+            let sessionId: String?
         }
-        // Build a context object only when at least one hint is present.
-        // The vision keys ride the SAME `context` field — no new endpoint.
+        // Vision fields are top-level members in the server schema. Keeping
+        // them inside context silently discarded the screenshot before the
+        // grounding service could inspect it.
         let hasContext = currentPage != nil || loadId != nil
-            || screenB64 != nil || screenW != nil || screenH != nil
         let ctx: ChatContext? = hasContext
-            ? ChatContext(currentPage: currentPage, loadId: loadId,
-                          screenB64: screenB64, screenW: screenW, screenH: screenH)
+            ? ChatContext(currentPage: currentPage, loadId: loadId)
             : nil
         return try await api.mutation(
             "esang.chat",
-            input: Input(message: message, context: ctx)
+            input: Input(
+                message: message,
+                context: ctx,
+                screenB64: screenB64,
+                screenW: screenW,
+                screenH: screenH,
+                sessionId: sessionId
+            )
         )
     }
 
@@ -4215,6 +4296,8 @@ struct WalletAPI {
 	        let canCreate: Bool
 	        let missingRequirements: [String]
 	        let syncError: String?
+	        let onboardingRequired: Bool?
+	        let onboardingUrl: String?
 	        let treasury: Treasury?
 	        let card: Card?
 
@@ -4244,17 +4327,33 @@ struct WalletAPI {
 	        }
 	    }
 
+	    struct EusoCardOnboardingLink: Decodable, Hashable {
+	        let onboardingRequired: Bool
+	        let onboardingUrl: String?
+	        let setupState: String
+	    }
+
 	    /// `wallet.getEusoCardStatus` — query, no input. Returns the signed-in
 	    /// user's Stripe Treasury + Issuing state with only safe masked fields.
 	    func getEusoCardStatus() async throws -> EusoCardStatus {
 	        try await api.queryNoInput("wallet.getEusoCardStatus")
 	    }
 
+	    /// Returns a fresh, single-use Stripe-hosted onboarding URL. This call
+	    /// never creates a card and keeps the EusoCard account separate from the
+	    /// user's payout Connect account.
+	    func createEusoCardOnboardingLink() async throws -> EusoCardOnboardingLink {
+	        try await api.mutationNoInput("wallet.createEusoCardOnboardingLink")
+	    }
+
 	    /// `wallet.createEusoCard` — creates the real Stripe Treasury
 	    /// FinancialAccount / FinancialAddress plus virtual Issuing card. Server
 	    /// enforces qualifying role, real profile address, idempotency, audit,
 	    /// and never returns raw card or bank account credentials.
-	    func createEusoCard(authorizedUserTermsAccepted: Bool = true) async throws -> EusoCardStatus {
+	    func createEusoCard(
+	        authorizedUserTermsAccepted: Bool = true,
+	        idempotencyKey: String = UUID().uuidString
+	    ) async throws -> EusoCardStatus {
 	        struct Input: Encodable {
 	            let cardType: String
 	            let authorizedUserTermsAccepted: Bool
@@ -4265,7 +4364,7 @@ struct WalletAPI {
 	            input: Input(
 	                cardType: "virtual",
 	                authorizedUserTermsAccepted: authorizedUserTermsAccepted,
-	                idempotencyKey: UUID().uuidString
+	                idempotencyKey: idempotencyKey
 	            )
 	        )
 	    }
@@ -5551,7 +5650,7 @@ struct DriversAPI {
     /// `drivers.getPerformanceMetrics` (frontend/server/routers/drivers.ts:544)
     /// which joins loads + inspections + hosLogs + fuelTransactions
     /// for the named period and emits real metric numerators —
-    /// onTimeDeliveryRate is delivered/total over the window,
+    /// onTimeDeliveryRate uses timestamped on-time/timed deliveries,
     /// hosCompliance is non-violation HOS days / total, fuelEfficiency
     /// is loads.distance / fuelTransactions.gallons. The scorecard
     /// surface (320 Catalyst Driver Performance Scorecard) renders
@@ -5586,12 +5685,26 @@ struct DriversAPI {
         let onTimeRate: PerformanceTrend
     }
 
+    struct PerformanceTracking: Decodable, Equatable {
+        let loads: Bool
+        let mileage: Bool?
+        let onTime: Bool?
+        let safety: Bool
+        let fuel: Bool
+        let hos: Bool
+        let inspections: Bool
+        let customerRating: Bool
+        let rankings: Bool?
+        let trends: Bool?
+    }
+
     struct PerformanceScorecard: Decodable, Equatable {
         let driverId: String
         let period: String
         let metrics: PerformanceMetrics
         let rankings: PerformanceRankings
         let trends: PerformanceTrends
+        let tracked: PerformanceTracking?
     }
 
     enum PerformancePeriod: String, Encodable {
@@ -8155,6 +8268,32 @@ struct GamificationAPI {
         let message: String?
     }
 
+    struct LobbyPostResult: Decodable {
+        let success: Bool
+        let error: String?
+        let messageId: Int?
+        let createdAt: String?
+        let replayed: Bool?
+    }
+
+    private struct LobbyPostInput: Encodable {
+        let message: String
+        let idempotencyKey: String
+    }
+
+    /// Durable, exactly-once Haul-lobby post. The caller keeps this key for
+    /// every retry; the server resolves an already-committed row before rate
+    /// limiting, so a lost response cannot create a duplicate message.
+    func postLobbyMessage(
+        message: String,
+        idempotencyKey: String = UUID().uuidString
+    ) async throws -> LobbyPostResult {
+        try await api.mutation(
+            "gamification.postLobbyMessage",
+            input: LobbyPostInput(message: message, idempotencyKey: idempotencyKey)
+        )
+    }
+
     struct MissionIdInput: Encodable { let missionId: Int }
 
     /// `gamification.startMission` — drops the driver into `in_progress`
@@ -9769,6 +9908,17 @@ struct DocumentManagementAPI {
     /// Swift `Decodable` silently ignores unknown JSON keys, so adding
     /// extra server-side fields later is non-breaking for the app.
     struct Document: Decodable, Identifiable, Equatable {
+        struct ExtractionSummary: Decodable, Equatable {
+            let status: String
+            let classifiedType: String?
+            let classificationConfidence: Double?
+            let fieldConfidence: Double?
+            let fieldsExtracted: Int
+            let grounded: Bool
+            let requiresHumanConfirmation: Bool
+            let confirmedAt: String?
+        }
+
         let id: String
         let name: String
         /// Backend `documentTypeSchema` enum value — e.g. "medical_card",
@@ -9792,6 +9942,9 @@ struct DocumentManagementAPI {
         let expiresAt: String?
         let uploadedAt: String?
         let updatedAt: String?
+        /// Persisted proposal metadata from `document_extractions`. Nil means
+        /// no scanner result has been recorded for this document.
+        let extraction: ExtractionSummary?
     }
 
     struct GetDocumentsResponse: Decodable {
@@ -11215,10 +11368,11 @@ struct ComplianceAPI {
     struct CatalystComplianceInsurance: Decodable, Hashable {
         /// "active" | "expiring" | "expired" | "missing"
         let status: String
-        let coverage: Double
+        let coverage: Double?
         /// `YYYY-MM-DD` projection of the underlying TIMESTAMP, empty
         /// when not on file.
         let expires: String
+        let tracked: Bool?
     }
 
     struct CatalystComplianceOverview: Decodable, Hashable {
@@ -11254,7 +11408,14 @@ struct ComplianceAPI {
         /// "Satisfactory" | "Conditional" | "Unsatisfactory"
         let safetyRating: String
         /// FMCSA CSA composite score; 0 until the SMS feed is wired.
-        let csaScore: Int
+        let csaScore: Int?
+        struct Tracking: Decodable, Hashable {
+            let readiness: Bool?
+            let insurance: Bool?
+            let safetyRating: Bool?
+            let csaScore: Bool?
+        }
+        let tracked: Tracking?
         /// Live company filing statuses derived server-side from companies,
         /// compliance_events, and irp_registrations.
         let filings: Filings?
@@ -17382,7 +17543,7 @@ struct ShipperAPI {
             guard raw >= 1 else { return nil }
             return min(raw, 999)
         }
-        return try await api.mutation(
+        let acknowledgement: PostLoadAck = try await api.mutation(
             "shippers.create",
             input: PostLoadInput(
                 origin: origin,
@@ -17434,6 +17595,14 @@ struct ShipperAPI {
                 portIntelligenceAcknowledged: portIntelligenceAcknowledged
             )
         )
+        guard acknowledgement.success,
+              acknowledgement.id > 0,
+              !acknowledgement.loadNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw EusoTripAPIError.trpcError(
+                "EusoTrip did not confirm the new load. Refresh Drafts and Active Loads before trying again."
+            )
+        }
+        return acknowledgement
     }
 
     // ===================================================================
@@ -18774,6 +18943,21 @@ struct EscortAPI {
         let loadId: Int
         let position: String
         let notes: String?
+    }
+
+    struct EscortRequestCapability: Decodable {
+        let canRequest: Bool
+    }
+
+    private struct EscortRequestCapabilityInput: Encodable {
+        let loadId: Int
+    }
+
+    func getRequestCapability(loadId: Int) async throws -> EscortRequestCapability {
+        try await api.query(
+            "escorts.getRequestCapability",
+            input: EscortRequestCapabilityInput(loadId: loadId)
+        )
     }
 
     @discardableResult
@@ -21371,6 +21555,8 @@ struct UsersAPI {
 
     struct AccountDeletionMutationAck: Decodable {
         let success: Bool
+        let requestId: String?
+        let status: String?
         let scheduledFor: String?
     }
 
@@ -21467,8 +21653,15 @@ struct UsersAPI {
         try await api.queryNoInput("users.getAccountDeletionStatus")
     }
 
-    func requestAccountDeletion() async throws -> AccountDeletionMutationAck {
-        try await api.mutationNoInput("users.requestAccountDeletion")
+    func requestAccountDeletion(password: String, reason: String?) async throws -> AccountDeletionMutationAck {
+        struct In: Encodable {
+            let password: String
+            let reason: String?
+        }
+        return try await api.mutation(
+            "users.requestAccountDeletion",
+            input: In(password: password, reason: reason)
+        )
     }
 
     func cancelAccountDeletion() async throws -> AccountDeletionMutationAck {
@@ -21479,15 +21672,26 @@ struct UsersAPI {
     /// names mirror `exportData.manifest` emitted by
     /// server/services/compliance/data-lifecycle.ts.
     struct ExportManifest: Codable {
+        static let schemaName = "com.eusorone.eusotrip.account-export"
+        static let schemaVersion = 3
+        static let requiredSections = [
+            "profile", "notificationPreferences", "wallets", "walletTransactions",
+            "loads", "railShipments", "vesselShipments", "bids", "settlements",
+            "contacts", "documents", "conversations", "messages", "notifications",
+            "gpsBreadcrumbs", "accountDeletionHistory", "dataImportHistory"
+        ]
+
+        let schemaName: String
         let schemaVersion: Int
+        let complete: Bool
+        let requiredSections: [String]
         let exportedAt: String
+        let expiresAt: String
         let sourceUserId: Int
         let sourceCompanyId: Int?
         let sourceEmail: String?
-        let entityCounts: [String: Int]?
+        let entityCounts: [String: Int]
         let contentSha256: String
-        /// Manifest schema v2 expiry. Nil keeps schema v1 archives decodable.
-        let expiresAt: String?
         let signature: String?
     }
 
@@ -21503,28 +21707,34 @@ struct UsersAPI {
     /// and parks a pending-approval record with the source-account owner.
     func requestDataImport(manifest: ExportManifest, signature: String) async throws -> ImportRequestAck {
         struct ManifestBody: Encodable {
+            let schemaName: String
             let schemaVersion: Int
+            let complete: Bool
+            let requiredSections: [String]
             let exportedAt: String
+            let expiresAt: String
             let sourceUserId: Int
             let sourceCompanyId: Int?
             let sourceEmail: String?
-            let entityCounts: [String: Int]?
+            let entityCounts: [String: Int]
             let contentSha256: String
-            let expiresAt: String?
         }
         struct In: Encodable {
             let manifest: ManifestBody
             let signature: String
         }
         let body = ManifestBody(
+            schemaName: manifest.schemaName,
             schemaVersion: manifest.schemaVersion,
+            complete: manifest.complete,
+            requiredSections: manifest.requiredSections,
             exportedAt: manifest.exportedAt,
+            expiresAt: manifest.expiresAt,
             sourceUserId: manifest.sourceUserId,
             sourceCompanyId: manifest.sourceCompanyId,
             sourceEmail: manifest.sourceEmail,
             entityCounts: manifest.entityCounts,
-            contentSha256: manifest.contentSha256,
-            expiresAt: manifest.expiresAt
+            contentSha256: manifest.contentSha256
         )
         return try await api.mutation("users.requestDataImport", input: In(manifest: body, signature: signature))
     }
@@ -21565,14 +21775,14 @@ struct UsersAPI {
     /// `users.approveDataImport` — source-owner only. Server re-keys
     /// contacts + eligible personal/unbound documents to the target account
     /// in one transaction. Operational records remain on the source account.
-    func approveDataImport(importId: String) async throws -> ImportDecisionAck {
-        struct In: Encodable { let importId: String }
-        return try await api.mutation("users.approveDataImport", input: In(importId: importId))
+    func approveDataImport(importId: String, password: String) async throws -> ImportDecisionAck {
+        struct In: Encodable { let importId: String; let password: String }
+        return try await api.mutation("users.approveDataImport", input: In(importId: importId, password: password))
     }
     /// `users.rejectDataImport` — source-owner only. Nothing moves.
-    func rejectDataImport(importId: String) async throws -> ImportDecisionAck {
-        struct In: Encodable { let importId: String }
-        return try await api.mutation("users.rejectDataImport", input: In(importId: importId))
+    func rejectDataImport(importId: String, password: String) async throws -> ImportDecisionAck {
+        struct In: Encodable { let importId: String; let password: String }
+        return try await api.mutation("users.rejectDataImport", input: In(importId: importId, password: password))
     }
 }
 
@@ -22628,12 +22838,20 @@ struct ShipperComplianceAPI {
     /// projection at `compliance.ts:2561`.
     struct GeneralLiability: Decodable, Hashable {
         let status: String       // "active" | "expiring" | "missing"
-        let coverage: Double     // dollars (e.g. 1_000_000)
+        let coverage: Double?
         let expires: String      // YYYY-MM-DD or empty
+        let tracked: Bool?
     }
 
     /// Compliance summary envelope.
     struct Summary: Decodable, Hashable {
+        struct Tracking: Decodable, Hashable {
+            let score: Bool?
+            let businessVerification: Bool?
+            let credit: Bool?
+            let insuranceCoverage: Bool?
+        }
+
         let score: Int
         let businessVerified: Bool
         let creditApproved: Bool
@@ -22642,6 +22860,7 @@ struct ShipperComplianceAPI {
         let paymentTerms: String
         let creditRating: String
         let generalLiability: GeneralLiability
+        let tracked: Tracking?
     }
 
     /// One row in the shipper's document vault. Server-side this
@@ -25953,16 +26172,9 @@ struct CarrierVettingAPI {
 // stub):
 //   • get          fetch an RC + its line items (party-gated)
 //   • listForLoad  newest-first RCs for a load
-//   • signBroker   record the broker/shipper-side in-app signature (FSM)
-//   • signCarrier  record the carrier-side in-app signature (FSM)
-//   • sendDocusign HONEST DocuSign outbound seam — pending outside prod
+//   • reviewSource fetch the immutable booking + exact PDF evidence binding
+//   • sign         commit exact PNG ink + consent + App Attest evidence
 //   • void         void an RC (unless fully signed)
-//
-// In-app signatures are binding under E-SIGN / UETA: the server stamps the
-// signer id + timestamp on the row, which IS the legally-meaningful record.
-// The signature image the pad draws is captured locally; the server FSM
-// advance is what makes the rate-con legally signed. The DocuSign path NEVER
-// fabricates a "sent" envelope outside a provisioned production tenant.
 struct RateConfirmationsAPI {
     unowned let api: EusoTripAPI
 
@@ -25988,6 +26200,49 @@ struct RateConfirmationsAPI {
         }
     }
 
+    struct ReviewSignature: Decodable, Hashable, Identifiable {
+        let side: String
+        let signerUserId: Int
+        let signedAt: String
+        let serverDigestSha256: String
+
+        var id: String { "\(side):\(signerUserId):\(signedAt)" }
+    }
+
+    /// Server-verified immutable source and exact PDF evidence that must be
+    /// reviewed before signing. The signer side is derived from the live
+    /// booking relationship; the client never chooses it.
+    struct ReviewSource: Decodable, Hashable {
+        let id: Int
+        let loadId: Int
+        let loadNumber: String
+        let bookingRevision: String
+        let sourceVersion: Int
+        let sourceHashSha256: String
+        let pdfDocumentId: Int
+        let pdfUrl: String
+        let pdfMimeType: String
+        let pdfFileSizeBytes: Int?
+        let pdfChecksumSha256: String
+        let signerSide: String?
+        let consentVersion: String
+        let consentText: String
+        let signatures: [ReviewSignature]
+    }
+
+    struct SignatureReceipt: Decodable, Hashable {
+        let success: Bool
+        let rateConfirmationId: Int
+        let side: String
+        let signatureId: Int
+        let sourceHashSha256: String
+        let pdfChecksumSha256: String
+        let signatureChecksumSha256: String
+        let serverDigestSha256: String
+        let signedAt: String
+        let idempotentReplay: Bool
+    }
+
     /// Full RC detail from `get` / `signBroker` / `signCarrier` (the row spread
     /// at top level + an appended `lineItems[]` array). `rateAmount` is a
     /// drizzle decimal (string on the wire). Signature timestamps + signer ids
@@ -26000,7 +26255,12 @@ struct RateConfirmationsAPI {
         let rateAmount: Double?
         let currency: String
         let terms: String?
+        let bookingRevision: String?
+        let sourceVersion: Int?
+        let sourceHashSha256: String?
+        let pdfDocumentId: Int?
         let pdfUrl: String?
+        let pdfChecksumSha256: String?
         /// not_sent | pending_docusign_prod | sent | completed
         let docusignStatus: String
         let docusignEnvelopeId: String?
@@ -26012,6 +26272,7 @@ struct RateConfirmationsAPI {
         let voidedAt: String?
         let createdAt: String?
         let lineItems: [LineItem]
+        let signatures: [ReviewSignature]
 
         var isFullySigned: Bool { status == "fully_signed" }
         var isVoid: Bool { status == "void" }
@@ -26025,13 +26286,18 @@ struct RateConfirmationsAPI {
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: InvoicesAPI.DynamicKey.self)
             func k(_ s: String) -> InvoicesAPI.DynamicKey { .init(s) }
-            id                 = (try? c.decode(Int.self, forKey: k("id"))) ?? 0
-            loadId             = (try? c.decode(Int.self, forKey: k("loadId"))) ?? 0
-            status             = (try? c.decode(String.self, forKey: k("status"))) ?? "draft"
+            id                 = try c.decode(Int.self, forKey: k("id"))
+            loadId             = try c.decode(Int.self, forKey: k("loadId"))
+            status             = try c.decode(String.self, forKey: k("status"))
             rateAmount         = InvoicesAPI.flexDoubleOpt(c, k("rateAmount"))
-            currency           = (try? c.decode(String.self, forKey: k("currency"))) ?? "USD"
+            currency           = try c.decode(String.self, forKey: k("currency"))
             terms              = try? c.decode(String.self, forKey: k("terms"))
+            bookingRevision    = try? c.decode(String.self, forKey: k("bookingRevision"))
+            sourceVersion      = try? c.decode(Int.self, forKey: k("sourceVersion"))
+            sourceHashSha256   = try? c.decode(String.self, forKey: k("sourceHashSha256"))
+            pdfDocumentId      = try? c.decode(Int.self, forKey: k("pdfDocumentId"))
             pdfUrl             = try? c.decode(String.self, forKey: k("pdfUrl"))
+            pdfChecksumSha256  = try? c.decode(String.self, forKey: k("pdfChecksumSha256"))
             docusignStatus     = (try? c.decode(String.self, forKey: k("docusignStatus"))) ?? "not_sent"
             docusignEnvelopeId = try? c.decode(String.self, forKey: k("docusignEnvelopeId"))
             brokerSignedBy     = try? c.decode(Int.self, forKey: k("brokerSignedBy"))
@@ -26042,6 +26308,7 @@ struct RateConfirmationsAPI {
             voidedAt           = try? c.decode(String.self, forKey: k("voidedAt"))
             createdAt          = try? c.decode(String.self, forKey: k("createdAt"))
             lineItems          = (try? c.decode([LineItem].self, forKey: k("lineItems"))) ?? []
+            signatures         = (try? c.decode([ReviewSignature].self, forKey: k("signatures"))) ?? []
         }
     }
 
@@ -26068,20 +26335,80 @@ struct RateConfirmationsAPI {
         return try await api.query("rateConfirmations.listForLoad", input: Input(loadId: loadId))
     }
 
-    /// `rateConfirmations.signBroker` — record the broker/shipper-side in-app
-    /// signature and advance the status FSM. Returns the updated RC.
-    @discardableResult
-    func signBroker(id: Int) async throws -> Detail {
+    func reviewSource(id: Int) async throws -> ReviewSource {
         struct Input: Encodable { let id: Int }
-        return try await api.mutation("rateConfirmations.signBroker", input: Input(id: id))
+        return try await api.query("rateConfirmations.reviewSource", input: Input(id: id))
     }
 
-    /// `rateConfirmations.signCarrier` — record the carrier-side in-app
-    /// signature and advance the status FSM. Returns the updated RC.
+    /// Commits the exact reviewed source/PDF version and exact validated PNG
+    /// ink. App Attest is bound to the same canonical JSON payload the server
+    /// reconstructs from its live account and immutable evidence hashes.
     @discardableResult
-    func signCarrier(id: Int) async throws -> Detail {
-        struct Input: Encodable { let id: Int }
-        return try await api.mutation("rateConfirmations.signCarrier", input: Input(id: id))
+    func sign(
+        id: Int,
+        signatureDataURL: String,
+        consentAccepted: Bool,
+        idempotencyKey: UUID,
+        actorUserId: Int,
+        sourceHashSha256: String,
+        pdfChecksumSha256: String
+    ) async throws -> SignatureReceipt {
+        guard consentAccepted else {
+            throw EusoTripAPIError.trpcError("Electronic signature consent is required.")
+        }
+        let marker = "data:image/png;base64,"
+        guard signatureDataURL.hasPrefix(marker),
+              let signatureBytes = Data(base64Encoded: String(signatureDataURL.dropFirst(marker.count))),
+              !signatureBytes.isEmpty else {
+            throw EusoTripAPIError.trpcError("The signature image could not be prepared as PNG evidence.")
+        }
+        let signatureChecksum = SHA256.hash(data: signatureBytes)
+            .map { String(format: "%02x", $0) }
+            .joined()
+        let requestId = idempotencyKey.uuidString.lowercased()
+        let payload: [String: Any] = [
+            "actorUserId": actorUserId,
+            "idempotencyKey": requestId,
+            "operation": "rateConfirmations.sign",
+            "pdfChecksumSha256": pdfChecksumSha256,
+            "rateConfirmationId": id,
+            "signatureChecksumSha256": signatureChecksum,
+            "sourceHashSha256": sourceHashSha256,
+        ]
+        let context = try JSONSerialization.data(
+            withJSONObject: payload,
+            options: [.sortedKeys, .withoutEscapingSlashes]
+        )
+        let attest = await AppAttestClient.attestation(for: context)
+        struct Input: Encodable {
+            let id: Int
+            let signatureBase64: String
+            let consentAccepted: Bool
+            let idempotencyKey: String
+            let _attest: AppAttestClient.AttestEnvelope?
+        }
+        let receipt: SignatureReceipt = try await api.mutation(
+            "rateConfirmations.sign",
+            input: Input(
+                id: id,
+                signatureBase64: signatureDataURL,
+                consentAccepted: true,
+                idempotencyKey: requestId,
+                _attest: attest
+            )
+        )
+        guard receipt.success,
+              receipt.rateConfirmationId == id,
+              receipt.signatureId > 0,
+              receipt.sourceHashSha256 == sourceHashSha256,
+              receipt.pdfChecksumSha256 == pdfChecksumSha256,
+              receipt.signatureChecksumSha256 == signatureChecksum,
+              !receipt.serverDigestSha256.isEmpty else {
+            throw EusoTripAPIError.decodingFailed(
+                "The signature acknowledgement did not match the reviewed evidence."
+            )
+        }
+        return receipt
     }
 
     /// `rateConfirmations.sendDocusign` — request the DocuSign OUTBOUND

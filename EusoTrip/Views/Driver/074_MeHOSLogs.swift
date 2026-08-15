@@ -20,7 +20,7 @@
 //
 //    • No fixture data, no stub clocks. The screen reads straight off
 //      whatever HOSLiveStore has published. First render shows a
-//      graceful skeleton until the `.task { await bootstrap() }`
+//      graceful skeleton until the `.eusoRefreshTask { await bootstrap() }`
 //      round-trip completes — no "can't load" alarm unless the request
 //      genuinely fails, and even then the retry is quiet.
 //
@@ -79,7 +79,7 @@ struct MeHOSLogs: View {
             .padding(.bottom, Space.s8)
         }
         .task { await store.bootstrap() }
-        .refreshable { await store.refreshAll() }
+        .eusoRefreshable { await store.refreshAll() }
         // RealtimeService → live ELD duty-status changes refresh
         // the logs view in place.
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in

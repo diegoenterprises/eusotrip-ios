@@ -130,7 +130,7 @@ private struct VesselTerminalAppointmentBody: View {
             }
             .padding(.horizontal, Space.s5).padding(.top, 8)
         }
-        .task { await loadSlots() }
+        .eusoRefreshTask { await loadSlots() }
         .onChange(of: selectedDate) { _, _ in Task { await loadSlots() } }
     }
 
@@ -142,7 +142,7 @@ private struct VesselTerminalAppointmentBody: View {
                 Image(systemName: "ferry.fill")
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.primary)
-                Text("✦ VESSEL OPERATOR · TERMINAL APPOINTMENT")
+                EusoTripEyebrow(verbatim: "VESSEL OPERATOR · TERMINAL APPOINTMENT")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
             }

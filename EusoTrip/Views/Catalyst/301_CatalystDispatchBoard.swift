@@ -106,10 +106,8 @@ struct CatalystDispatchBoardScreen: View {
     var body: some View {
         Shell(theme: theme) { DispatchBoardBody() } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home",     systemImage: "house",         isCurrent: false),
-                          NavSlot(label: "Dispatch", systemImage: "rectangle.split.3x1.fill", isCurrent: true)],
-                trailing: [NavSlot(label: "Fleet",  systemImage: "truck.box.fill", isCurrent: false),
-                           NavSlot(label: "Me",     systemImage: "person",          isCurrent: false)],
+                leading: CarrierNavRoute.leading(current: .loads),
+                trailing: CarrierNavRoute.trailing(current: .loads),
                 orbState: .idle
             )
         }
@@ -165,7 +163,7 @@ private struct DispatchBoardBody: View {
             }
         }
         .task { await loadAll() }
-        .refreshable { await loadAll() }
+        .eusoRefreshable { await loadAll() }
     }
 
     // MARK: Fleet map hero — one .truck puck per load with a REAL pickup fix
@@ -264,7 +262,7 @@ private struct DispatchBoardBody: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "sparkle")
+                EusoTripBrandMark(size: 12)
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
                 Text("CATALYST · DISPATCH BOARD · LIVE")

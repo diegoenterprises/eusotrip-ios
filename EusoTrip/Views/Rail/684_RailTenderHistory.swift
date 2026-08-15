@@ -768,7 +768,7 @@ private struct RailTenderHistoryBody684: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
         .sheet(isPresented: $showFilter) { filterSheet }
         .sheet(item: $cancelTarget) { line in cancelSheet(line) }
         .overlay(alignment: .bottom) { toastView }
@@ -779,7 +779,7 @@ private struct RailTenderHistoryBody684: View {
     private var headerBlock: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
-                Text("✦ RAIL · TENDER HISTORY · EDI 404 / 990")
+                EusoTripEyebrow(verbatim: "RAIL · TENDER HISTORY · EDI 404 / 990")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                     .lineLimit(1).minimumScaleFactor(0.7)

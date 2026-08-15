@@ -61,13 +61,11 @@ struct CatalystCarrierTierScreen: View {
 }
 
 private func catalystNavLeading_397() -> [NavSlot] {
-    [NavSlot(label: "Home",     systemImage: "house",                          isCurrent: false),
-     NavSlot(label: "Dispatch", systemImage: "shippingbox.and.arrow.backward", isCurrent: false)]
+    CarrierNavRoute.leading(current: .me)
 }
 
 private func catalystNavTrailing_397() -> [NavSlot] {
-    [NavSlot(label: "Fleet",  systemImage: "truck.box.fill",  isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: true)]
+    CarrierNavRoute.trailing(current: .me)
 }
 
 // MARK: - View model (verbatim from Code/ spec)
@@ -145,6 +143,7 @@ private struct CarrierTierBody_397: View {
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
             Task { await reload() }
         }
+        .eusoRefreshHandler { await reload() }
         .sheet(isPresented: $showReachNext) { reachNextSheet }
         .sheet(isPresented: $showAllBenefits) { allBenefitsSheet }
     }
@@ -154,7 +153,7 @@ private struct CarrierTierBody_397: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("✦ CATALYST · NETWORK TIER")
+                EusoTripEyebrow(verbatim: "CATALYST · NETWORK TIER")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

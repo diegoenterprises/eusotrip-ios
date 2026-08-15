@@ -168,7 +168,7 @@ private struct RailBidBoardBody: View {
             .padding(.top, Space.s4)
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
         .sheet(isPresented: $showingQuoteForm) { quoteForm }
     }
 
@@ -196,7 +196,7 @@ private struct RailBidBoardBody: View {
 
     private var eyebrow: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("✦ RAIL ENGINEER · BID BOARD")
+            EusoTripEyebrow(verbatim: "RAIL ENGINEER · BID BOARD")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer()

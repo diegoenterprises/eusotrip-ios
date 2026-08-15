@@ -62,6 +62,7 @@ struct MeVehicle: View {
     @State private var aiScanInflight: Bool = false
     @State private var aiScanResult: VehicleScanResult? = nil
     @State private var aiScanError: String? = nil
+    @State private var showingVehicleAssignment: Bool = false
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -85,14 +86,13 @@ struct MeVehicle: View {
                         maintenanceSection
                     }
                 }
-                disclosureFooter
             }
             .padding(.horizontal, Space.s4)
             .padding(.top, Space.s4)
             .padding(.bottom, Space.s8)
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
         .overlay(alignment: .top) {
             if let err = aiScanError {
                 Text(err)
@@ -179,6 +179,12 @@ struct MeVehicle: View {
                     }
                 }
             }
+        }
+        .sheet(isPresented: $showingVehicleAssignment, onDismiss: {
+            Task { await reload() }
+        }) {
+            DriverTruckPosted()
+                .environment(\.palette, palette)
         }
         .padding(Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -294,6 +300,19 @@ struct MeVehicle: View {
                 .foregroundStyle(palette.textTertiary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
+            Button {
+                showingVehicleAssignment = true
+            } label: {
+                Label("Choose fleet vehicle", systemImage: "truck.box.badge.plus")
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, Space.s3)
+                    .background(LinearGradient.diagonal)
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .padding(.top, Space.s1)
         }
         .frame(maxWidth: .infinity)
         .padding(Space.s4)
@@ -545,38 +564,6 @@ struct MeVehicle: View {
                 .padding(.vertical, 2)
                 .background(Capsule().strokeBorder(palette.borderFaint, lineWidth: 1))
         }
-    }
-
-    // MARK: Disclosure footer
-    //
-    // Honest note on the telematics gap — odometer + fuel level land
-    // when the ELD integration ships. Better than a hardcoded "0 mi".
-
-    private var disclosureFooter: some View {
-        VStack(alignment: .leading, spacing: Space.s1) {
-            HStack(spacing: Space.s2) {
-                Image(systemName: "gauge.with.dots.needle.33percent")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(palette.textTertiary)
-                Text("Live odometer & fuel")
-                    .font(EType.bodyStrong)
-                    .foregroundStyle(palette.textPrimary)
-            }
-            Text("Real-time odometer and fuel-level readings land once the ELD / telematics integration ships. Until then, this screen shows the vehicle identifiers dispatch assigned, no stub numbers.")
-                .font(EType.caption)
-                .foregroundStyle(palette.textTertiary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(Space.s3)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .fill(palette.bgCard.opacity(0.6))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(palette.borderFaint.opacity(0.5), lineWidth: 1)
-        )
     }
 
     // MARK: Helpers

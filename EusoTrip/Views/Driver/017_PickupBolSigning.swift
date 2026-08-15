@@ -146,7 +146,7 @@ struct PickupBolSigning: View {
             .padding(.horizontal, 14)
             .padding(.top, 8)
         }
-        .task { await hydrateLiveTrip() }
+        .eusoRefreshTask { await hydrateLiveTrip() }
         .sheet(item: Binding<BolPdfWrapper?>(
             get: { bolPdfUrl.map { BolPdfWrapper(url: $0) } },
             set: { bolPdfUrl = $0?.url }

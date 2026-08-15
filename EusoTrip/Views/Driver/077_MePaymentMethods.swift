@@ -76,7 +76,7 @@ struct MePaymentMethods: View {
             .padding(.bottom, Space.s8)
         }
         .task { await store.refresh() }
-        .refreshable { await store.refresh() }
+        .eusoRefreshable { await store.refresh() }
         .sheet(isPresented: $showAddSheet, onDismiss: {
             // Coming back from Add-Account — re-fetch so the new
             // method lands in the list without a pull-to-refresh.

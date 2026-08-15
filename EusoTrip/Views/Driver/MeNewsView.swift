@@ -84,7 +84,7 @@ struct MeNewsView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .scrollIndicators(.hidden)
-        .refreshable { await store.refresh() }
+        .eusoRefreshable { await store.refresh() }
         // Set the role BEFORE the first painted frame so the pinned
         // header title reads "Shipper Intel" (not the `.driver` store
         // default) when the shipper Me hub presents this route.

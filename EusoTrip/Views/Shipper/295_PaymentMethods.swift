@@ -47,7 +47,7 @@ private struct PaymentMethodsBody: View {
             .padding(.top, 56)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     private var header: some View {

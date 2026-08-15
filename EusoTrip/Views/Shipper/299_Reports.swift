@@ -76,7 +76,7 @@ private struct ReportsBody: View {
             }
             .padding(.horizontal, 14).padding(.top, 56)
         }
-        .task { await load() }
+        .eusoRefreshTask { await load() }
         .sheet(isPresented: Binding(
             get: { pendingShareItems != nil },
             set: { if !$0 { pendingShareItems = nil } }

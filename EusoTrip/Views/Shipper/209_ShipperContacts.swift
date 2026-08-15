@@ -180,7 +180,7 @@ struct ShipperContacts: View {
             await store.refresh()
             await contactsStore.refresh()
         }
-        .refreshable {
+        .eusoRefreshable {
             await store.refresh()
             await contactsStore.refresh()
         }
@@ -227,7 +227,7 @@ struct ShipperContacts: View {
 
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("✦ SHIPPER · CONTACTS")
+            EusoTripEyebrow(verbatim: "SHIPPER · CONTACTS")
                 .font(EType.micro).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer()

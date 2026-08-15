@@ -134,7 +134,7 @@ private struct VesselContainerTimelineBody: View {
             }
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - Top bar (DETAIL)
@@ -142,7 +142,7 @@ private struct VesselContainerTimelineBody: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("✦ VESSEL OPERATOR · CONTAINER TIMELINE")
+                EusoTripEyebrow(verbatim: "VESSEL OPERATOR · CONTAINER TIMELINE")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

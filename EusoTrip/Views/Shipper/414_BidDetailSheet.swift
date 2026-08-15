@@ -57,7 +57,7 @@ private struct BidDetailBody: View {
             }
             .padding(.horizontal, 14).padding(.top, 56)
         }
-        .task {
+        .eusoRefreshTask {
             bids.setLoadId(loadId)
             await bids.refresh()
             await fetchVettingIfNeeded()

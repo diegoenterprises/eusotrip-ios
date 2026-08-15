@@ -150,7 +150,7 @@ private struct VesselEquipmentHealthBody: View {
             }
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - Top bar (eyebrow + back chevron + title + overflow)
@@ -158,7 +158,7 @@ private struct VesselEquipmentHealthBody: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("✦ VESSEL · EQUIPMENT HEALTH")
+                EusoTripEyebrow(verbatim: "VESSEL · EQUIPMENT HEALTH")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

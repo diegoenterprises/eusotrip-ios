@@ -164,14 +164,14 @@ private struct VesselCustomsISFBody006: View {
             .padding(.horizontal, 20).padding(.top, 8)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: Header
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
-                Text("\u{2726} VESSEL SHIPPER · CUSTOMS · ISF 10+2")
+                EusoTripEyebrow("VESSEL SHIPPER · CUSTOMS · ISF 10+2")
                     .font(.system(size: 9, weight: .heavy)).kerning(1.0).foregroundStyle(LinearGradient.primary)
                 Spacer()
             }

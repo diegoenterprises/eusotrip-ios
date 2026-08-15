@@ -285,7 +285,7 @@ private struct RailTankCarMonitorBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
         .overlay(alignment: .bottom) { toastView }
         .sheet(item: $ackTarget) { target in ackSheet(target) }
         .sheet(isPresented: $showTrend) { trendSheet }

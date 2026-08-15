@@ -53,10 +53,8 @@ struct CatalystCommissionEngineScreen: View {
     var body: some View {
         Shell(theme: theme) { CommissionEngineBody() } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home",  systemImage: "house",            isCurrent: false),
-                          NavSlot(label: "Match", systemImage: "arrow.triangle.merge", isCurrent: false)],
-                trailing: [NavSlot(label: "Drivers", systemImage: "person.3.fill", isCurrent: false),
-                           NavSlot(label: "Me",      systemImage: "person",        isCurrent: true)],
+                leading: CarrierNavRoute.leading(current: .me),
+                trailing: CarrierNavRoute.trailing(current: .me),
                 orbState: .idle
             )
         }
@@ -78,6 +76,7 @@ private struct CommissionEngineBody: View {
     @State private var commodityIndexes: [String: Double] = [:]
     @State private var calculating: Bool = false
     @State private var error: String?
+    @State private var calculationTask: Task<Void, Never>?
 
     private let cargoOptions: [(String, String)] = [
         ("general",   "General"),
@@ -105,7 +104,21 @@ private struct CommissionEngineBody: View {
                 }
                 if let e = error {
                     LifecycleCard(accentDanger: true) {
-                        Text(e).font(EType.caption).foregroundStyle(Brand.danger)
+                        HStack(alignment: .top, spacing: 10) {
+                            Text(e)
+                                .font(EType.caption)
+                                .foregroundStyle(Brand.danger)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 8)
+                            Button {
+                                scheduleCalculation(delayNanoseconds: 0)
+                            } label: {
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.system(size: 13, weight: .bold))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Retry commission calculation")
+                        }
                     }
                 }
                 Color.clear.frame(height: 96)
@@ -113,14 +126,13 @@ private struct CommissionEngineBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await initialLoad() }
-        .refreshable { await initialLoad() }
-        // Recalculate whenever any input changes (debounced via the
-        // server-side computation being cheap).
-        .onChange(of: grossRate)        { _, _ in Task { await calculate() } }
-        .onChange(of: distance)         { _, _ in Task { await calculate() } }
-        .onChange(of: cargoType)        { _, _ in Task { await calculate() } }
-        .onChange(of: hazmatClass)      { _, _ in Task { await calculate() } }
-        .onChange(of: driverScorePct)   { _, _ in Task { await calculate() } }
+        .eusoRefreshable { await initialLoad() }
+        .onChange(of: calculationSignature) { _, _ in scheduleCalculation() }
+        .onDisappear {
+            calculationTask?.cancel()
+            calculationTask = nil
+            calculating = false
+        }
     }
 
     // MARK: subviews
@@ -299,19 +311,46 @@ private struct CommissionEngineBody: View {
 
     // MARK: pipeline
 
+    private var calculationSignature: String {
+        "\(grossRate)|\(distance)|\(cargoType)|\(hazmatClass)|\(driverScorePct)"
+    }
+
+    private func scheduleCalculation(delayNanoseconds: UInt64 = 350_000_000) {
+        calculationTask?.cancel()
+        let expectedSignature = calculationSignature
+        calculationTask = Task {
+            do {
+                if delayNanoseconds > 0 {
+                    try await Task.sleep(nanoseconds: delayNanoseconds)
+                }
+                guard !Task.isCancelled else { return }
+                await calculate(expectedSignature: expectedSignature)
+            } catch is CancellationError {
+                return
+            } catch {
+                return
+            }
+        }
+    }
+
     private func initialLoad() async {
-        async let split: Void = calculate()
+        async let split: Void = calculate(expectedSignature: calculationSignature)
         async let indexes: Void = loadIndexes()
         async let structure: Void = loadFeeStructure()
         _ = await (split, indexes, structure)
     }
 
-    private func calculate() async {
+    private func calculate(expectedSignature: String) async {
+        guard expectedSignature == calculationSignature else { return }
         let gr = Double(grossRate.replacingOccurrences(of: ",", with: "")) ?? 0
         let dm = Double(distance.replacingOccurrences(of: ",", with: "")) ?? 0
-        guard gr > 0 else { return }
+        guard gr > 0 else {
+            result = nil
+            error = nil
+            calculating = false
+            return
+        }
         calculating = true
-        defer { calculating = false }
         struct In: Encodable {
             let grossRate: Double
             let cargoType: String
@@ -330,11 +369,29 @@ private struct CommissionEngineBody: View {
                     hazmatClass: hazmatClass.isEmpty ? nil : hazmatClass
                 )
             )
+            guard !Task.isCancelled, expectedSignature == calculationSignature else { return }
             self.result = r
             self.error = nil
         } catch {
-            self.error = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+            guard !Task.isCancelled, expectedSignature == calculationSignature else { return }
+            self.error = commissionFailureMessage(error)
         }
+        if expectedSignature == calculationSignature {
+            calculating = false
+            calculationTask = nil
+        }
+    }
+
+    private func commissionFailureMessage(_ failure: Error) -> String {
+        let detail = ((failure as? LocalizedError)?.errorDescription ?? failure.localizedDescription).lowercased()
+        if detail.contains("429") || detail.contains("too many requests") || detail.contains("rate limit") {
+            return "Commission pricing is temporarily rate-limited. Wait a moment, then retry."
+        }
+        if let urlError = failure as? URLError,
+           [.notConnectedToInternet, .networkConnectionLost, .timedOut, .cannotConnectToHost].contains(urlError.code) {
+            return "Commission pricing could not reach the live service. Check the connection, then retry."
+        }
+        return "Commission pricing is unavailable right now. No split was accepted as complete; retry when the service returns."
     }
 
     private func loadIndexes() async {

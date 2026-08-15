@@ -33,6 +33,79 @@ private struct ShellNav<Content: View>: View {
 // MARK: 409 Dispatcher Settings
 // MARK: ─────────────────────────────────────────────────────────
 
+private struct DispatcherSettingsPayload: Decodable {
+    let display: Display?
+    let rolePreferences: RolePreferences?
+
+    struct Display: Decodable {
+        let theme: String?
+        let language: String?
+    }
+
+    struct RolePreferences: Decodable {
+        let dispatch: Dispatch?
+    }
+
+    struct Dispatch: Decodable {
+        let notifications: Notifications?
+        let board: Board?
+    }
+
+    struct Notifications: Codable {
+        let hosCriticalAlerts: Bool
+        let tenderExpiringSoon: Bool
+        let esangNudgeFrequency: String
+    }
+
+    struct Board: Codable {
+        let visibleStages: [String]
+        let cardDensity: String
+    }
+}
+
+private struct DispatcherSettingsAck: Decodable {
+    let success: Bool
+    let updatedAt: String?
+}
+
+private enum DispatcherSettingsContractError: LocalizedError {
+    case missingRolePreferences
+
+    var errorDescription: String? {
+        "The dispatcher settings response was incomplete."
+    }
+}
+
+private struct EusoLanguage: Decodable, Identifiable, Hashable {
+    let tag: String
+    let englishName: String
+    let nativeName: String
+    let direction: String
+    var id: String { tag }
+}
+
+private struct EusoLanguageList: Decodable {
+    let items: [EusoLanguage]
+    let total: Int
+}
+
+private struct EusoLocalizationPreference: Decodable {
+    let locale: String
+    let contentLocale: String
+    let timezone: String?
+    let currency: String?
+    let dateFormat: String?
+    let hourCycle: String
+    let measurementSystem: String
+    let translateDynamicContent: Bool
+    let showRegulatedOriginal: Bool
+}
+
+private struct DispatcherBoardStage: Identifiable {
+    let id: String
+    let label: String
+}
+
 struct DispatcherSettingsScreen: View {
     let theme: Theme.Palette
     var body: some View {
@@ -42,100 +115,266 @@ struct DispatcherSettingsScreen: View {
 
 private struct DispatcherSettingsBody: View {
     @Environment(\.palette) private var palette
+    @AppStorage("com.eusorone.EusoTrip.appearance") private var appAppearance = "system"
+    @AppStorage("com.eusorone.EusoTrip.locale") private var appLocale = "en"
+    @SceneStorage("dispatch.settings.expandedSection") private var expandedSection = ""
 
-    @State private var hosAlerts: Bool = true
-    @State private var tenderExpiringPush: Bool = true
-    @State private var esangNudges: String = "medium"
-    @State private var defaultColumns: String = "5 · TENDER · ASSIGNED · PICKUP · IN TRANSIT · DELIVERED"
-    @State private var cardDensity: String = "Compact"
+    @State private var hosAlerts = true
+    @State private var tenderExpiringPush = true
+    @State private var esangNudges = "medium"
+    @State private var visibleStages = ["tender", "assigned", "pickup", "in_transit", "delivered"]
+    @State private var cardDensity = "compact"
+    @State private var selectedTheme = "system"
+    @State private var selectedLanguageTag = "en"
+    @State private var languages: [EusoLanguage] = []
+    @State private var localization: EusoLocalizationPreference?
+    @State private var loading = true
+    @State private var settingsReady = false
+    @State private var saving = false
+    @State private var errorMessage: String?
+    @State private var savedMessage: String?
+    @State private var showLanguagePicker = false
+    @State private var presentingLegal: LegalDoc?
+    @State private var dispatcherSaveTask: Task<Void, Never>?
+
+    private let stages: [DispatcherBoardStage] = [
+        .init(id: "tender", label: "Tender"),
+        .init(id: "assigned", label: "Assigned"),
+        .init(id: "pickup", label: "Pickup"),
+        .init(id: "in_transit", label: "In transit"),
+        .init(id: "delivered", label: "Delivered"),
+    ]
 
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
-                notificationsSection
-                boardViewSection
-                appearanceSection
-                aboutSection
+                if loading {
+                    statusCard(text: "Loading your settings", systemImage: "arrow.triangle.2.circlepath")
+                } else if settingsReady {
+                    if let errorMessage {
+                        statusCard(text: errorMessage, systemImage: "exclamationmark.triangle.fill", tint: Brand.danger)
+                    } else if let savedMessage {
+                        statusCard(text: savedMessage, systemImage: "checkmark.circle.fill", tint: Brand.success)
+                    }
+                    notificationsSection
+                    boardViewSection
+                    appearanceSection
+                    aboutSection
+                } else {
+                    if let errorMessage {
+                        statusCard(text: errorMessage, systemImage: "exclamationmark.triangle.fill", tint: Brand.danger)
+                    }
+                    Button {
+                        Task { await load() }
+                    } label: {
+                        Label("Retry settings", systemImage: "arrow.clockwise")
+                            .font(EType.bodyStrong)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.white)
+                    .background(LinearGradient.diagonal)
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                }
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14).padding(.top, 8)
+        }
+        .task { await load() }
+        .eusoRefreshable { await load() }
+        .onDisappear { flushDispatcherSave() }
+        .sheet(isPresented: $showLanguagePicker) {
+            DispatcherLanguagePicker(
+                languages: languages,
+                selectedTag: selectedLanguageTag,
+                isSaving: saving,
+                onSelect: { language in
+                    Task { await saveLanguage(language) }
+                }
+            )
+            .environment(\.palette, palette)
+        }
+        .sheet(item: $presentingLegal) { doc in
+            LegalDocSheet(doc: doc)
+                .environment(\.palette, palette)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
         }
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("DISPATCHER · ME · SETTINGS").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             Text("Settings").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
-            Text("Employee · no impersonation · v3.4.0").font(EType.caption).foregroundStyle(palette.textSecondary)
+            Text("Employee · no impersonation · v\(appVersion)").font(EType.caption).foregroundStyle(palette.textSecondary)
         }
     }
 
     private var notificationsSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("NOTIFICATIONS").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
-            LifecycleCard {
+        settingsSection(
+            id: "notifications",
+            icon: "bell.badge.fill",
+            title: "Notifications",
+            summary: notificationSummary
+        ) {
+            VStack(alignment: .leading, spacing: 12) {
+                toggleRow(title: "HOS critical alerts", subtitle: "Push + sound when any driver clock is under one hour", value: hosAlerts) { value in
+                    hosAlerts = value
+                    scheduleDispatcherSave()
+                }
+                Divider().overlay(palette.borderFaint)
+                toggleRow(title: "Tender expiring soon", subtitle: "Push under 30 minutes and escalate under 10 minutes", value: tenderExpiringPush) { value in
+                    tenderExpiringPush = value
+                    scheduleDispatcherSave()
+                }
+                Divider().overlay(palette.borderFaint)
                 VStack(alignment: .leading, spacing: 12) {
-                    toggleRow(title: "HOS critical alerts", subtitle: "Push + sound when any driver clock < 1h", binding: $hosAlerts)
-                    Divider().overlay(palette.borderFaint)
-                    toggleRow(title: "Tender expiring soon", subtitle: "Push at < 30m, banner at < 10m", binding: $tenderExpiringPush)
-                    Divider().overlay(palette.borderFaint)
-                    chooserRow(title: "ESang nudges", subtitle: "Frequency · \(esangNudges) · only high-confidence")
+                    Text("ESANG NUDGES").font(EType.micro.weight(.heavy)).foregroundStyle(palette.textTertiary)
+                    Picker("ESANG nudge frequency", selection: Binding(
+                        get: { esangNudges },
+                        set: { esangNudges = $0; scheduleDispatcherSave() }
+                    )) {
+                        Text("Off").tag("off")
+                        Text("Low").tag("low")
+                        Text("Medium").tag("medium")
+                        Text("High").tag("high")
+                    }
+                    .pickerStyle(.segmented)
                 }
             }
         }
     }
 
     private var boardViewSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("BOARD VIEW").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
-            LifecycleCard {
-                VStack(alignment: .leading, spacing: 12) {
-                    chooserRow(title: "Default board columns", subtitle: defaultColumns)
-                    Divider().overlay(palette.borderFaint)
-                    chooserRow(title: "Card density", subtitle: "\(cardDensity) · cargo + driver pebble + amount")
+        settingsSection(
+            id: "board",
+            icon: "rectangle.split.3x1.fill",
+            title: "Board view",
+            summary: "\(visibleStages.count) stages · \(cardDensity.capitalized) cards"
+        ) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("VISIBLE STAGES").font(EType.micro.weight(.heavy)).foregroundStyle(palette.textTertiary)
+                ForEach(stages, id: \.id) { stage in
+                    toggleRow(title: stage.label, subtitle: "Show this workflow stage on the Kanban board", value: visibleStages.contains(stage.id)) { enabled in
+                        setStage(stage.id, enabled: enabled)
+                    }
+                    if stage.id != stages.last?.id {
+                        Divider().overlay(palette.borderFaint)
+                    }
                 }
+                Divider().overlay(palette.borderFaint)
+                Text("CARD DENSITY").font(EType.micro.weight(.heavy)).foregroundStyle(palette.textTertiary)
+                Picker("Card density", selection: Binding(
+                    get: { cardDensity },
+                    set: { cardDensity = $0; scheduleDispatcherSave() }
+                )) {
+                    Text("Compact").tag("compact")
+                    Text("Comfortable").tag("comfortable")
+                }
+                .pickerStyle(.segmented)
             }
         }
     }
 
     private var appearanceSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("APPEARANCE").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
-            LifecycleCard {
-                VStack(alignment: .leading, spacing: 12) {
-                    chooserRow(title: "Theme", subtitle: "System · auto")
-                    Divider().overlay(palette.borderFaint)
-                    chooserRow(title: "Language", subtitle: "English (US)")
+        settingsSection(
+            id: "appearance",
+            icon: "circle.lefthalf.filled",
+            title: "Appearance & language",
+            summary: "\(themeLabel) · \(selectedLanguageName)"
+        ) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("THEME").font(EType.micro.weight(.heavy)).foregroundStyle(palette.textTertiary)
+                Picker("Theme", selection: Binding(
+                    get: { selectedTheme },
+                    set: { newValue in Task { await saveTheme(newValue) } }
+                )) {
+                    Text("System").tag("system")
+                    Text("Night").tag("dark")
+                    Text("Afternoon").tag("light")
                 }
+                .pickerStyle(.segmented)
+                Divider().overlay(palette.borderFaint)
+                Button { showLanguagePicker = true } label: {
+                    chooserRow(title: "Language", subtitle: selectedLanguageName)
+                }
+                .buttonStyle(.plain)
             }
         }
     }
 
     private var aboutSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("ABOUT").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
-            LifecycleCard {
-                VStack(alignment: .leading, spacing: 12) {
-                    chooserRow(title: "App version", subtitle: "v3.4.0 · build 2206")
-                    Divider().overlay(palette.borderFaint)
-                    chooserRow(title: "Privacy policy", subtitle: "Eusorone Technologies")
-                }
+        settingsSection(
+            id: "about",
+            icon: "info.circle.fill",
+            title: "About & legal",
+            summary: "v\(appVersion) · build \(buildNumber)"
+        ) {
+            VStack(alignment: .leading, spacing: 12) {
+                valueRow(title: "App version", subtitle: "v\(appVersion) · build \(buildNumber)")
+                Divider().overlay(palette.borderFaint)
+                Button { presentingLegal = .privacyPolicy } label: {
+                    chooserRow(title: "Privacy policy", subtitle: "Canonical in-app policy")
+                }.buttonStyle(.plain)
+                Divider().overlay(palette.borderFaint)
+                Button { presentingLegal = .termsOfService } label: {
+                    chooserRow(title: "Terms of service", subtitle: "Canonical in-app terms")
+                }.buttonStyle(.plain)
             }
         }
     }
 
-    private func toggleRow(title: String, subtitle: String, binding: Binding<Bool>) -> some View {
+    private func toggleRow(title: String, subtitle: String, value: Bool, onChange: @escaping (Bool) -> Void) -> some View {
         HStack(alignment: .top, spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(EType.body.weight(.semibold)).foregroundStyle(palette.textPrimary)
                 Text(subtitle).font(.caption2).foregroundStyle(palette.textTertiary).fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
-            Toggle("", isOn: binding).labelsHidden()
+            Toggle("", isOn: Binding(get: { value }, set: onChange)).labelsHidden()
+                .disabled(saving)
+        }
+    }
+
+    @ViewBuilder
+    private func settingsSection<Content: View>(id: String, icon: String, title: String, summary: String, @ViewBuilder content: () -> Content) -> some View {
+        let isOpen = expandedSection == id
+        LifecycleCard {
+            Button {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    expandedSection = isOpen ? "" : id
+                }
+            } label: {
+                HStack(spacing: 12) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(LinearGradient.diagonal)
+                            .frame(width: 38, height: 38)
+                        Image(systemName: icon).font(.system(size: 15, weight: .heavy)).foregroundStyle(.white)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(title).font(EType.body.weight(.bold)).foregroundStyle(palette.textPrimary)
+                        Text(summary).font(EType.caption).foregroundStyle(palette.textSecondary).lineLimit(2)
+                    }
+                    Spacer(minLength: 0)
+                    if saving { ProgressView().controlSize(.small) }
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.heavy))
+                        .foregroundStyle(palette.textTertiary)
+                        .rotationEffect(.degrees(isOpen ? 90 : 0))
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            if isOpen {
+                Divider().overlay(palette.borderFaint).padding(.vertical, 6)
+                content().transition(.opacity.combined(with: .move(edge: .top)))
+            }
         }
     }
 
@@ -147,6 +386,266 @@ private struct DispatcherSettingsBody: View {
             }
             Spacer()
             Image(systemName: "chevron.right").font(.caption.weight(.bold)).foregroundStyle(palette.textTertiary)
+        }
+        .contentShape(Rectangle())
+    }
+
+    private func valueRow(title: String, subtitle: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(EType.body.weight(.semibold)).foregroundStyle(palette.textPrimary)
+            Text(subtitle).font(.caption2).foregroundStyle(palette.textTertiary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func statusCard(text: String, systemImage: String, tint: Color = Brand.info) -> some View {
+        HStack(spacing: 8) {
+            if loading { ProgressView().controlSize(.small) }
+            else { Image(systemName: systemImage).foregroundStyle(tint) }
+            Text(text).font(EType.caption).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCardSoft)
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    private var notificationSummary: String {
+        let enabled = [hosAlerts, tenderExpiringPush].filter { $0 }.count
+        return "\(enabled) critical alert groups · ESANG \(esangNudges)"
+    }
+
+    private var themeLabel: String {
+        switch selectedTheme {
+        case "dark": return "Night"
+        case "light": return "Afternoon"
+        default: return "System"
+        }
+    }
+
+    private var selectedLanguageName: String {
+        languages.first(where: { $0.tag == selectedLanguageTag })?.nativeName
+            ?? Locale.current.localizedString(forLanguageCode: selectedLanguageTag)
+            ?? selectedLanguageTag
+    }
+
+    private var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "-"
+    }
+
+    private var buildNumber: String {
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "-"
+    }
+
+    private func load() async {
+        loading = true
+        settingsReady = false
+        errorMessage = nil
+        defer { loading = false }
+        do {
+            async let settingsRequest: DispatcherSettingsPayload = EusoTripAPI.shared.queryNoInput("settings.getSettings")
+            struct LanguageIn: Encodable { let displayLocale: String; let limit: Int; let cursor: Int }
+            async let languagesRequest: EusoLanguageList = EusoTripAPI.shared.query(
+                "localization.listLanguages",
+                input: LanguageIn(displayLocale: appLocale, limit: 250, cursor: 0)
+            )
+            async let localizationRequest: EusoLocalizationPreference? = EusoTripAPI.shared.queryNoInput("localization.getPreferences")
+            let (settings, languageList, storedLocalization) = try await (settingsRequest, languagesRequest, localizationRequest)
+
+            guard let dispatch = settings.rolePreferences?.dispatch,
+                  let notifications = dispatch.notifications,
+                  let board = dispatch.board else {
+                throw DispatcherSettingsContractError.missingRolePreferences
+            }
+            hosAlerts = notifications.hosCriticalAlerts
+            tenderExpiringPush = notifications.tenderExpiringSoon
+            esangNudges = notifications.esangNudgeFrequency
+            visibleStages = board.visibleStages
+            cardDensity = board.cardDensity
+            selectedTheme = settings.display?.theme ?? appAppearance
+            languages = languageList.items
+            localization = storedLocalization
+            selectedLanguageTag = storedLocalization?.locale ?? settings.display?.language ?? appLocale
+            appAppearance = selectedTheme
+            appLocale = selectedLanguageTag
+            settingsReady = true
+        } catch {
+            errorMessage = "Your settings couldn't load. \(error.eusoUserCopy)"
+        }
+    }
+
+    private func scheduleDispatcherSave() {
+        dispatcherSaveTask?.cancel()
+        dispatcherSaveTask = Task {
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
+            await saveDispatcherSettings()
+        }
+    }
+
+    private func flushDispatcherSave() {
+        dispatcherSaveTask?.cancel()
+        guard settingsReady, !loading else { return }
+        dispatcherSaveTask = Task { await saveDispatcherSettings() }
+    }
+
+    private func saveDispatcherSettings() async {
+        struct In: Encodable {
+            let notifications: DispatcherSettingsPayload.Notifications
+            let board: DispatcherSettingsPayload.Board
+        }
+        saving = true
+        errorMessage = nil
+        savedMessage = nil
+        defer { saving = false }
+        do {
+            let ack: DispatcherSettingsAck = try await EusoTripAPI.shared.mutation(
+                "settings.updateDispatcherSettings",
+                input: In(
+                    notifications: .init(
+                        hosCriticalAlerts: hosAlerts,
+                        tenderExpiringSoon: tenderExpiringPush,
+                        esangNudgeFrequency: esangNudges
+                    ),
+                    board: .init(visibleStages: visibleStages, cardDensity: cardDensity)
+                )
+            )
+            guard ack.success else { throw EusoTripAPIError.empty }
+            savedMessage = "Settings saved"
+        } catch {
+            errorMessage = "Your settings weren't saved. \(error.eusoUserCopy)"
+        }
+    }
+
+    private func setStage(_ id: String, enabled: Bool) {
+        if enabled {
+            if !visibleStages.contains(id) { visibleStages.append(id) }
+            visibleStages.sort { left, right in
+                (stages.firstIndex(where: { $0.id == left }) ?? 0) < (stages.firstIndex(where: { $0.id == right }) ?? 0)
+            }
+        } else {
+            guard visibleStages.count > 1 else {
+                errorMessage = "Keep at least one board stage visible."
+                return
+            }
+            visibleStages.removeAll { $0 == id }
+        }
+        scheduleDispatcherSave()
+    }
+
+    private func saveTheme(_ newTheme: String) async {
+        struct In: Encodable { let theme: String }
+        let oldTheme = selectedTheme
+        selectedTheme = newTheme
+        saving = true
+        errorMessage = nil
+        savedMessage = nil
+        defer { saving = false }
+        do {
+            let ack: DispatcherSettingsAck = try await EusoTripAPI.shared.mutation(
+                "settings.updateDisplaySettings", input: In(theme: newTheme)
+            )
+            guard ack.success else { throw EusoTripAPIError.empty }
+            appAppearance = newTheme
+            savedMessage = "Theme saved"
+        } catch {
+            selectedTheme = oldTheme
+            errorMessage = "The theme wasn't changed. \(error.eusoUserCopy)"
+        }
+    }
+
+    private func saveLanguage(_ language: EusoLanguage) async {
+        struct In: Encodable {
+            let locale: String
+            let contentLocale: String
+            let timezone: String
+            let currency: String
+            let dateFormat: String
+            let hourCycle: String
+            let measurementSystem: String
+            let translateDynamicContent: Bool
+            let showRegulatedOriginal: Bool
+        }
+        saving = true
+        errorMessage = nil
+        savedMessage = nil
+        defer { saving = false }
+        let current = localization
+        let input = In(
+            locale: language.tag,
+            contentLocale: language.tag,
+            timezone: current?.timezone ?? TimeZone.current.identifier,
+            currency: current?.currency ?? Locale.current.currency?.identifier ?? "USD",
+            dateFormat: current?.dateFormat ?? "MM/DD/YYYY",
+            hourCycle: current?.hourCycle ?? "locale",
+            measurementSystem: current?.measurementSystem ?? "locale",
+            translateDynamicContent: current?.translateDynamicContent ?? true,
+            showRegulatedOriginal: current?.showRegulatedOriginal ?? true
+        )
+        do {
+            let updated: EusoLocalizationPreference = try await EusoTripAPI.shared.mutation(
+                "localization.updatePreferences", input: input
+            )
+            localization = updated
+            selectedLanguageTag = updated.locale
+            appLocale = updated.locale
+            showLanguagePicker = false
+            savedMessage = "Language saved"
+        } catch {
+            errorMessage = "The language wasn't changed. \(error.eusoUserCopy)"
+        }
+    }
+}
+
+private struct DispatcherLanguagePicker: View {
+    let languages: [EusoLanguage]
+    let selectedTag: String
+    let isSaving: Bool
+    let onSelect: (EusoLanguage) -> Void
+
+    @Environment(\.palette) private var palette
+    @Environment(\.dismiss) private var dismiss
+    @State private var query = ""
+
+    private var filteredLanguages: [EusoLanguage] {
+        let term = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !term.isEmpty else { return languages }
+        return languages.filter {
+            $0.tag.lowercased().contains(term)
+                || $0.englishName.lowercased().contains(term)
+                || $0.nativeName.lowercased().contains(term)
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List(filteredLanguages) { language in
+                Button { onSelect(language) } label: {
+                    HStack(spacing: 10) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(language.nativeName).foregroundStyle(palette.textPrimary)
+                            Text("\(language.englishName) · \(language.tag)")
+                                .font(EType.caption).foregroundStyle(palette.textSecondary)
+                        }
+                        Spacer()
+                        if language.tag == selectedTag {
+                            Image(systemName: "checkmark.circle.fill").foregroundStyle(LinearGradient.diagonal)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(isSaving)
+                .listRowBackground(palette.bgCard)
+            }
+            .scrollContentBackground(.hidden)
+            .background(palette.bgPage)
+            .navigationTitle("Language")
+            .searchable(text: $query, prompt: "Search languages")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
+            }
         }
     }
 }
@@ -206,13 +705,13 @@ private struct WeatherRerouteBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await loadCtx() }
-        .refreshable { await loadCtx() }
+        .eusoRefreshable { await loadCtx() }
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("DISPATCHER · EXCEPTIONS · LIVE").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             Text("Weather Reroute").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
@@ -412,13 +911,13 @@ private struct ReloadOfferBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("DISPATCHER · EXCEPTIONS · LIVE").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             Text("Offer reload").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
@@ -632,13 +1131,13 @@ private struct FuelOverrideBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("DISPATCHER · EXCEPTIONS · LIVE").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             Text("Fuel approval").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)

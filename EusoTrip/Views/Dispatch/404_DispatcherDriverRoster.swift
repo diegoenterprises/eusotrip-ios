@@ -62,6 +62,7 @@ private struct RosterCounts: Decodable, Hashable {
 }
 
 private struct RosterResponse: Decodable {
+    let companyName: String?
     let drivers: [RosterDriver]
     let counts: RosterCounts
 }
@@ -75,10 +76,8 @@ struct DispatcherDriverRosterScreen: View {
     var body: some View {
         Shell(theme: theme) { DispatcherDriverRosterBody() } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home",  systemImage: "house",                  isCurrent: false),
-                          NavSlot(label: "Board", systemImage: "rectangle.split.3x1.fill", isCurrent: true)],
-                trailing: [NavSlot(label: "Comms", systemImage: "bubble.left.and.bubble.right.fill", isCurrent: false),
-                           NavSlot(label: "Me",    systemImage: "person",                isCurrent: false)],
+                leading: DispatchNavRoute.leading(current: .board),
+                trailing: DispatchNavRoute.trailing(current: .board),
                 orbState: .idle
             )
         }
@@ -94,6 +93,7 @@ private struct DispatcherDriverRosterBody: View {
 
     @State private var drivers: [RosterDriver] = []
     @State private var counts: RosterCounts = RosterCounts(total: 0, driving: 0, sleeper: 0, idle: 0, off: 0)
+    @State private var companyName: String?
     @State private var filter: RosterFilter = .all
     @State private var loading: Bool = true
     @State private var actionError: String?
@@ -108,6 +108,11 @@ private struct DispatcherDriverRosterBody: View {
         case .idle:     return drivers.filter { $0.status == "idle" }
         case .off:      return drivers.filter { $0.status == "off" }
         }
+    }
+
+    private var rosterOwnerName: String {
+        let trimmed = companyName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? "Company roster" : trimmed
     }
 
     var body: some View {
@@ -138,14 +143,14 @@ private struct DispatcherDriverRosterBody: View {
             .padding(.horizontal, 20)
             .padding(.top, Space.s5)
         }
-        .task { await load() }
+        .eusoRefreshTask { await load() }
     }
 
     // MARK: Header
 
     private var eyebrowRow: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("✦ DISPATCHER · ROSTER · \(counts.total) DRIVERS")
+            EusoTripEyebrow(verbatim: "DISPATCHER · ROSTER · \(counts.total) DRIVERS")
                 .font(EType.micro).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer(minLength: Space.s2)
@@ -160,7 +165,7 @@ private struct DispatcherDriverRosterBody: View {
             Text("Driver roster")
                 .font(EType.h1).tracking(-0.4)
                 .foregroundStyle(palette.textPrimary)
-            Text("Aurora Freight · sorted by HOS clock · tap to message")
+            Text("\(rosterOwnerName) · sorted by HOS clock · tap to message")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
         }
@@ -332,6 +337,7 @@ private struct DispatcherDriverRosterBody: View {
         actionError = nil
         do {
             let r: RosterResponse = try await EusoTripAPI.shared.queryNoInput("dispatch.getDriverRoster")
+            companyName = r.companyName
             drivers = r.drivers
             counts = r.counts
         } catch {
@@ -548,10 +554,10 @@ private struct DriverRosterRow: View {
     private var hosClock: some View {
         let (caption, footer, tint): (String, String, Color) = {
             switch driver.hosBucket {
-            case "crit":      return ("HOS · 11h", "REMAIN · CRIT", Brand.danger)
-            case "warn":      return ("HOS · 11h", "REMAIN · WARN", Brand.warning)
-            case "fresh":     return ("HOS · 11h", "FRESH",         Brand.success)
-            case "available": return ("HOS · 11h", "AVAILABLE",     Brand.success)
+            case "crit":      return ("DRIVE HOS", "REMAIN · CRIT", Brand.danger)
+            case "warn":      return ("DRIVE HOS", "REMAIN · WARN", Brand.warning)
+            case "fresh":     return ("DRIVE HOS", "FRESH",         Brand.success)
+            case "available": return ("DRIVE HOS", "AVAILABLE",     Brand.success)
             case "reset":     return ("RESET",     "UNTIL DUTY",    Brand.escort)
             default:           return ("HOS",       "-",             palette.textSecondary)
             }

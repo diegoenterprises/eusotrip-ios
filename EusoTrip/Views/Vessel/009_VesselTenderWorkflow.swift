@@ -138,14 +138,14 @@ private struct VesselTenderWorkflowBody: View {
             }
             .padding(.horizontal, Space.s5)
         }
-        .task { await load() }
+        .eusoRefreshTask { await load() }
     }
 
     // MARK: Top bar — back eyebrow + hero + subtitle
 
     @ViewBuilder private var topBar: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("✦ VESSEL SHIPPER · TENDER WORKFLOW")
+            EusoTripEyebrow(verbatim: "VESSEL SHIPPER · TENDER WORKFLOW")
                 .font(.system(size: 9, weight: .heavy))
                 .tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)

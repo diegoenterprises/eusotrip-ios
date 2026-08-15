@@ -259,7 +259,7 @@ struct LifecycleScaffold<Body: View>: View {
             snap.loadId = loadId
             await snap.refresh()
         }
-        .refreshable { await snap.refresh() }
+        .eusoRefreshable { await snap.refresh() }
     }
 
     @ViewBuilder
@@ -291,7 +291,7 @@ struct LifecycleScaffold<Body: View>: View {
     private func header(snapshot live: ShipperAPI.LifecycleSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "sparkles").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text(eyebrow).font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             Text(live.load.loadNumber).font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
@@ -302,7 +302,7 @@ struct LifecycleScaffold<Body: View>: View {
     private var loadingHeader: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "sparkles").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text(eyebrow).font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             Text("Loading…").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)

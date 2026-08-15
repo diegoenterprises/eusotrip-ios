@@ -10,10 +10,8 @@ struct ComplianceOfficerHomeScreen: View {
     var body: some View {
         Shell(theme: theme) { ComplianceHomeBody() } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home", systemImage: "house", isCurrent: true),
-                          NavSlot(label: "Drivers", systemImage: "person.3.fill", isCurrent: false)],
-                trailing: [NavSlot(label: "Audits", systemImage: "doc.text.magnifyingglass", isCurrent: false),
-                           NavSlot(label: "Me", systemImage: "person", isCurrent: false)],
+                leading: ComplianceNavRoute.leading(current: .home),
+                trailing: ComplianceNavRoute.trailing(current: .home),
                 orbState: .idle
             )
         }
@@ -103,10 +101,10 @@ private struct ComplianceHomeBody: View {
             .padding(.horizontal, 14).padding(.top, Space.s4)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
-    // Bespoke hero eyebrow — gradient role chip ("✦ COMPLIANCE · DASHBOARD")
+    // Bespoke hero eyebrow — EusoTrip mark + "COMPLIANCE · DASHBOARD"
     // on the left, a tertiary context-caps line on the right, then the
     // greeting title underneath as a brand-gradient hero. Matches the
     // DriverHome (010) idiom so every role home reads as one family: the
@@ -120,7 +118,7 @@ private struct ComplianceHomeBody: View {
                     Image(systemName: "checkmark.shield.fill")
                         .font(.system(size: 9, weight: .heavy))
                         .foregroundStyle(LinearGradient.diagonal)
-                    Text("✦ COMPLIANCE · DASHBOARD")
+                    EusoTripEyebrow(verbatim: "COMPLIANCE · DASHBOARD")
                         .font(EType.micro).tracking(1.0)
                         .foregroundStyle(LinearGradient.diagonal)
                 }

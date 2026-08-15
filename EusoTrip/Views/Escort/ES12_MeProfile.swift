@@ -272,7 +272,7 @@ struct EscortMeProfile: View {
             .padding(.top, 8)
         }
         .task { await refreshAll() }
-        .refreshable { await refreshAll() }
+        .eusoRefreshable { await refreshAll() }
         .alert("Sign out?", isPresented: $showSignOutConfirm) {
             Button("Sign out", role: .destructive) { Task { await session.signOut() } }
             Button("Cancel", role: .cancel) {}
@@ -286,7 +286,7 @@ struct EscortMeProfile: View {
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
             HStack(spacing: 4) {
-                Image(systemName: "sparkles")
+                EusoTripBrandMark(size: 12)
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
                 Text("ESCORT · ME")
@@ -939,13 +939,11 @@ struct EscortMeProfileScreen: View {
 }
 
 private func escortNavLeading_ES12() -> [NavSlot] {
-    [NavSlot(label: "Trip",  systemImage: "house",                        isCurrent: false),
-     NavSlot(label: "Comms", systemImage: "dot.radiowaves.left.and.right", isCurrent: false)]
+    EscortNavRoute.leading(current: .me)
 }
 
 private func escortNavTrailing_ES12() -> [NavSlot] {
-    [NavSlot(label: "Permit", systemImage: "doc.badge.gearshape", isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person",              isCurrent: true)]
+    EscortNavRoute.trailing(current: .me)
 }
 
 // MARK: - Previews

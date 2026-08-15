@@ -84,9 +84,9 @@ private struct OceanTrackBoard: Decodable {
 
 struct VesselLiveTrackingScreen: View {
     var theme: Theme.Palette = Theme.dark
-    /// The booking being tracked. Real callers pass the selected booking number;
-    /// preview parity uses the wireframe hero VS-48217.
-    var bookingNumber: String = "VS-48217"
+    /// The booking being tracked. An empty value means no route context was
+    /// supplied and renders an honest error without issuing a request.
+    var bookingNumber: String
 
     var body: some View {
         Shell(theme: theme) {
@@ -154,7 +154,7 @@ private struct VesselLiveTrackingBody: View {
             }
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
         .onAppear {
             withAnimation(.easeInOut(duration: 2).repeatForever(autoreverses: true)) { pulse = true }
         }
@@ -165,7 +165,7 @@ private struct VesselLiveTrackingBody: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .center, spacing: Space.s3) {
-                Text("✦ VESSEL SHIPPER · LIVE TRACKING")
+                EusoTripEyebrow(verbatim: "VESSEL SHIPPER · LIVE TRACKING")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()
@@ -501,11 +501,32 @@ private struct VesselLiveTrackingBody: View {
 
     private func load() async {
         loading = true; loadError = nil
+        let cleaned = bookingNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else {
+            board = nil
+            loading = false
+            NotificationCenter.default.post(
+                name: .eusoVesselShipperNavSwap,
+                object: nil,
+                userInfo: ["screenId": "Vesl012"]
+            )
+            return
+        }
         struct BoardIn: Encodable { let bookingNumber: String }
         do {
             let b: OceanTrackBoard = try await EusoTripAPI.shared.query(
                 "vesselShipments.getOceanTrackingBoard",
-                input: BoardIn(bookingNumber: bookingNumber))
+                input: BoardIn(bookingNumber: cleaned))
+            guard b.found else {
+                self.board = nil
+                loading = false
+                NotificationCenter.default.post(
+                    name: .eusoVesselShipperNavSwap,
+                    object: nil,
+                    userInfo: ["screenId": "Vesl012"]
+                )
+                return
+            }
             self.board = b
         } catch {
             loadError = error.eusoUserCopy
@@ -541,8 +562,8 @@ private struct VesselLiveTrackingBody: View {
 }
 
 #Preview("003 · Vessel Live Tracking · Night") {
-    VesselLiveTrackingScreen(theme: Theme.dark).preferredColorScheme(.dark)
+    VesselLiveTrackingScreen(theme: Theme.dark, bookingNumber: "PREVIEW").preferredColorScheme(.dark)
 }
 #Preview("003 · Vessel Live Tracking · Light") {
-    VesselLiveTrackingScreen(theme: Theme.light).preferredColorScheme(.light)
+    VesselLiveTrackingScreen(theme: Theme.light, bookingNumber: "PREVIEW").preferredColorScheme(.light)
 }

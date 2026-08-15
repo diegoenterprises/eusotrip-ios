@@ -212,7 +212,7 @@ private struct VesselSailingScheduleBody: View {
         .padding(.horizontal, Space.s5)
         .padding(.top, Space.s4)
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - Header (eyebrow + service caption + back chevron + title)
@@ -220,7 +220,7 @@ private struct VesselSailingScheduleBody: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("✦ VESSEL OPERATOR · SAILING SCHEDULE")
+                EusoTripEyebrow(verbatim: "VESSEL OPERATOR · SAILING SCHEDULE")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer(minLength: 8)

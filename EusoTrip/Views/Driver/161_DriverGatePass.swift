@@ -273,6 +273,7 @@ struct DriverGatePass_161: View {
         }
         .background(palette.bgPrimary.ignoresSafeArea())
         .task { if !seeded { await load() } }
+        .eusoRefreshHandler { await load() }
     }
 
     // MARK: TopBar (DETAIL grammar)
@@ -280,7 +281,7 @@ struct DriverGatePass_161: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("✦ DRIVER · GATE PASS")
+                EusoTripEyebrow(verbatim: "DRIVER · GATE PASS")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

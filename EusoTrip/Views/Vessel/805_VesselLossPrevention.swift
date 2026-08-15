@@ -17,7 +17,7 @@
 //        {metrics:{totalLosses,lossValue,preventedLosses,preventionSavings,lossRatio,trendDirection},
 //        alerts:[{id,severity,message,lane,createdAt}],topRiskLanes:[{lane,lossCount,totalValue,riskScore}]}).
 //        NOTE alerts/topRiskLanes return empty arrays (web stub) — seeds in #Preview only; the live query
-//        on .task / .refreshable overwrites every value, and the alert feed shows an honest empty state
+//        on .task / .eusoRefreshable overwrites every value, and the alert feed shows an honest empty state
 //        when the server returns no alerts.
 //    freightClaims.getLossPreventionAnalysis (EXISTS freightClaims.ts:1051 · input {groupBy:lane|commodity|
 //        carrier|month, period:month|quarter|year} -> {groupBy,period,data:[{group,claimCount,totalValue,
@@ -111,13 +111,13 @@ private struct VesselLossPreventionBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("VESSEL OPERATOR · LOSS PREVENTION").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
                 Spacer()
                 Text("2026-Q2").font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundStyle(palette.textTertiary)

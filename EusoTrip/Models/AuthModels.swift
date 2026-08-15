@@ -52,6 +52,10 @@ enum EusoRole: String, CaseIterable, Codable, Hashable, Identifiable {
     case vesselBroker   = "VESSEL_BROKER"
     case customsBroker  = "CUSTOMS_BROKER"
 
+    // Additive platform role granted by verified Zeun provider membership.
+    // It is intentionally not exposed by the public registration picker.
+    case serviceProvider = "SERVICE_PROVIDER"
+
     var id: String { rawValue }
 
     /// User-facing display name.
@@ -81,6 +85,7 @@ enum EusoRole: String, CaseIterable, Codable, Hashable, Identifiable {
         case .shipCaptain:   return "Ship Captain"
         case .vesselBroker:  return "Vessel Broker"
         case .customsBroker: return "Customs Broker"
+        case .serviceProvider: return "Repair Service Provider"
         }
     }
 
@@ -96,6 +101,7 @@ enum EusoRole: String, CaseIterable, Codable, Hashable, Identifiable {
         case .terminal: return "I run a terminal / yard / dock."
         case .compliance:return "I own compliance, FMCSA, audits."
         case .safety:   return "I own safety, incidents, training."
+        case .serviceProvider: return "I provide verified roadside and shop repair services."
         default:        return displayName
         }
     }
@@ -111,26 +117,23 @@ enum EusoRole: String, CaseIterable, Codable, Hashable, Identifiable {
         case .terminal:  return "building.2.crop.circle"
         case .compliance:return "checkmark.shield.fill"
         case .safety:    return "cross.case.fill"
+        case .serviceProvider: return "wrench.and.screwdriver.fill"
         default:         return "person.crop.circle"
         }
     }
 
-    /// The full 24-role roster the mobile sign-up picker surfaces —
-    /// full parity with every `/register/{role}` path on the web
-    /// (source: `frontend/client/src/pages/Register.tsx`). Rail +
-    /// vessel + factoring + super-admin roles are included even
-    /// though their backend procs haven't shipped yet; the picker
-    /// presents them the same way the web does, and
-    /// `CreateAccountView` gates the actual form behind
-    /// `isSignupImplemented` so an unimplemented role lands on a
-    /// "coming soon" waitlist card instead of failing silently.
+    /// The 24 public registration journeys. The backend has 25 roles; a
+    /// SERVICE_PROVIDER identity is granted only through verified Zeun
+    /// provider onboarding and is therefore excluded here. The list
+    /// stays in parity with every public `/register/{role}` path on
+    /// the web (source: `frontend/client/src/pages/Register.tsx`).
     ///
     /// ADMIN is included because the backend's `registerAdmin`
     /// rejects every request without a SUPER_ADMIN-issued invite
     /// code, so shipping the form is safe even on App Store builds:
     /// an attacker can't self-provision without the code.
     static var primarySignupRoles: [EusoRole] {
-        // Truck (12)
+        // Public truck/platform registration roles (12)
         [.driver, .catalyst, .shipper, .broker,
          .dispatch, .escort,
          .terminal, .compliance, .safety,
@@ -145,7 +148,7 @@ enum EusoRole: String, CaseIterable, Codable, Hashable, Identifiable {
 
     /// True when the server's `registration.register{Role}` proc is
     /// wired and the iOS RegistrationViewModel has a matching submit
-    /// path. All 24 roles now have server procs (the 14 rail /
+    /// path. All 24 public roles have server procs (the 14 rail /
     /// vessel / factoring / super-admin procs landed on 2026-04-24
     /// using `createSimpleRoleUser` as a baseline pattern over the
     /// same metadata / notifications / gamification rails the
@@ -153,13 +156,13 @@ enum EusoRole: String, CaseIterable, Codable, Hashable, Identifiable {
     /// hardcoding `true` everywhere so a future role-specific
     /// requirement (e.g., a 3rd-party license lookup) can gate just
     /// that role's form without touching every other screen.
-    var isSignupImplemented: Bool { true }
+    var isSignupImplemented: Bool { self != .serviceProvider }
 
     /// Transport modes this role can register against. Mirrors the web
     /// `REGISTRATION_ROLES[].modes` array in `frontend/client/src/pages/Register.tsx`.
     var modes: Set<TransportMode> {
         switch self {
-        case .driver, .catalyst, .broker, .dispatch, .escort, .shipper:
+        case .driver, .catalyst, .broker, .dispatch, .escort, .shipper, .serviceProvider:
             return [.truck]
         case .terminal, .compliance, .safety, .admin, .superAdmin, .factoring:
             return [.truck, .rail, .vessel]
@@ -200,6 +203,7 @@ enum EusoRole: String, CaseIterable, Codable, Hashable, Identifiable {
         case .shipCaptain:   return ["USCG License (MMC)", "STCW Certification", "TWIC", "Medical Certificate"]
         case .vesselBroker:  return ["FMC License", "Surety Bond", "Insurance"]
         case .customsBroker: return ["CBP Customs Broker License", "National Permit", "Surety Bond"]
+        case .serviceProvider: return ["Verified company account", "Business registration", "Service capability evidence", "Insurance"]
         default:             return []
         }
     }
@@ -230,6 +234,7 @@ enum EusoRole: String, CaseIterable, Codable, Hashable, Identifiable {
         case .shipCaptain:   return ["USCG", "STCW", "IMO"]
         case .vesselBroker:  return ["FMC", "CBP"]
         case .customsBroker: return ["CBP", "FMC", "19 CFR"]
+        case .serviceProvider: return ["Business licensing", "Insurance", "Workplace safety"]
         default:             return []
         }
     }
@@ -260,6 +265,7 @@ enum EusoRole: String, CaseIterable, Codable, Hashable, Identifiable {
         case .shipCaptain:   return "Licensed mariners — STCW certified masters"
         case .vesselBroker:  return "Ocean freight forwarders and vessel brokers"
         case .customsBroker: return "Licensed customs brokers — CBP entry processing"
+        case .serviceProvider: return "Verified roadside, mobile and shop repair businesses"
         default:             return displayName
         }
     }

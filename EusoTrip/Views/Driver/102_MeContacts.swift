@@ -60,7 +60,7 @@ struct MeContacts: View {
             .padding(.bottom, Space.s8)
         }
         .task { await store.refresh() }
-        .refreshable { await store.refresh() }
+        .eusoRefreshable { await store.refresh() }
         .onChange(of: store.typeFilter) { _, _ in Task { await store.refresh() } }
         .onChange(of: store.favoritesOnly) { _, _ in Task { await store.refresh() } }
         // RealtimeService → contacts refresh when new partners onboard

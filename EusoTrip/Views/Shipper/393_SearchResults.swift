@@ -20,9 +20,53 @@ private struct SearchEnvelope: Decodable, Hashable {
         let title: String
         let subtitle: String?
         let screenId: String
+
+        private enum CodingKeys: String, CodingKey {
+            case id, kind, type, title, subtitle, screenId
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = try container.decode(String.self, forKey: .id)
+            title = try container.decode(String.self, forKey: .title)
+            subtitle = try container.decodeIfPresent(String.self, forKey: .subtitle)
+
+            let rawKind = try container.decodeIfPresent(String.self, forKey: .kind)
+                ?? container.decodeIfPresent(String.self, forKey: .type)
+                ?? "unknown"
+            switch rawKind.lowercased() {
+            case "load":
+                kind = "load"
+                screenId = try container.decodeIfPresent(String.self, forKey: .screenId) ?? "205"
+            case "driver", "catalyst", "carrier", "company", "user":
+                kind = "carrier"
+                screenId = try container.decodeIfPresent(String.self, forKey: .screenId) ?? "224"
+            case "settlement", "invoice":
+                kind = "settlement"
+                screenId = try container.decodeIfPresent(String.self, forKey: .screenId) ?? "206"
+            case "document", "doc", "agreement", "rate_sheet":
+                kind = "doc"
+                screenId = try container.decodeIfPresent(String.self, forKey: .screenId) ?? "226"
+            default:
+                kind = rawKind.lowercased()
+                screenId = try container.decodeIfPresent(String.self, forKey: .screenId) ?? "200"
+            }
+        }
     }
     let hits: [Hit]
     let total: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case hits, results, total
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        hits = try container.decodeIfPresent([Hit].self, forKey: .hits)
+            ?? container.decodeIfPresent([Hit].self, forKey: .results)
+            ?? []
+        total = try container.decodeIfPresent(Int.self, forKey: .total) ?? hits.count
+    }
 }
 
 private struct ResultsBody: View {
@@ -49,7 +93,7 @@ private struct ResultsBody: View {
             }
             .padding(.horizontal, 14).padding(.top, 56)
         }
-        .task { await load() }
+        .eusoRefreshTask { await load() }
     }
 
     private var header: some View {
@@ -100,7 +144,7 @@ private struct ResultsBody: View {
             let hits = (env?.hits ?? []).filter { filter == "all" || $0.kind == filter }
             ForEach(hits) { hit in
                 Button {
-                    NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": hit.screenId, "id": hit.id])
+                    open(hit)
                 } label: {
                     LifecycleCard {
                         HStack {
@@ -138,9 +182,9 @@ private struct ResultsBody: View {
             return
         }
         loading = true; loadError = nil
-        struct In: Encodable { let q: String }
+        struct In: Encodable { let query: String }
         do {
-            let e: SearchEnvelope = try await EusoTripAPI.shared.query("search.global", input: In(q: q))
+            let e: SearchEnvelope = try await EusoTripAPI.shared.query("search.global", input: In(query: q))
             env = e
         } catch {
             // Founder feedback #14: the shared humanize() prefixes a
@@ -149,6 +193,18 @@ private struct ResultsBody: View {
             loadError = "We couldn't run that search. Check your connection and try again."
         }
         loading = false
+    }
+
+    private func open(_ hit: SearchEnvelope.Hit) {
+        var payload: [String: Any] = ["screenId": hit.screenId]
+        if hit.kind == "load" {
+            payload["loadId"] = hit.id
+        }
+        NotificationCenter.default.post(
+            name: .eusoShipperNavSwap,
+            object: nil,
+            userInfo: payload
+        )
     }
 }
 

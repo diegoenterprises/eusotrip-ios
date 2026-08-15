@@ -89,26 +89,19 @@ public final class ESangContextProvider: ObservableObject {
 
     // MARK: - Mutators
 
-    /// Bind ESang to a new shipment. Drops the previous shipment's
-    /// thought-signature cache so the next voice turn doesn't replay
-    /// stale reasoning across loads. (Watch + phone both call this.)
+    /// Bind ESang to a shipment. Voice continuity is isolated by the
+    /// shipment-derived session ID used by `ESangVoiceClient`.
     public func enterShipment(
         _ shipmentId: String,
         vertical: Vertical? = nil,
         fsmState: LoadState? = nil
     ) async {
-        if let prev = current.activeShipmentId, prev != shipmentId {
-            await ESangVoiceClient.shared.forgetSignature(for: prev)
-        }
         current.activeShipmentId = shipmentId
         if let vertical { current.activeVertical = vertical }
         if let fsmState { current.lastFsmState = fsmState }
     }
 
     public func exitShipment() async {
-        if let id = current.activeShipmentId {
-            await ESangVoiceClient.shared.forgetSignature(for: id)
-        }
         current.activeShipmentId = nil
         current.activeVertical = nil
         current.lastFsmState = nil

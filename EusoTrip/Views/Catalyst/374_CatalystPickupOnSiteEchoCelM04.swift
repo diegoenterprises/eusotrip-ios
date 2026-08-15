@@ -91,13 +91,11 @@ struct CatalystPickupOnSiteEchoCelM04Screen: View {
 }
 
 private func catalystNavLeading_374() -> [NavSlot] {
-    [NavSlot(label: "Home",     systemImage: "house",                          isCurrent: false),
-     NavSlot(label: "Dispatch", systemImage: "shippingbox.and.arrow.backward", isCurrent: true)]
+    CarrierNavRoute.leading(current: .loads)
 }
 
 private func catalystNavTrailing_374() -> [NavSlot] {
-    [NavSlot(label: "My Loads", systemImage: "shippingbox.fill", isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person",      isCurrent: false)]
+    CarrierNavRoute.trailing(current: .loads)
 }
 
 // MARK: - Theme (file-private, suffixed)
@@ -469,7 +467,7 @@ private struct CatalystPickupOnSiteEchoCelM04View: View {
             VStack(alignment: .leading, spacing: 14) {
                 // TopBar eyebrow (single ✦)
                 HStack {
-                    Text("✦ CATALYST · DISPATCH · PICKUP · ON-SITE")
+                    EusoTripEyebrow(verbatim: "CATALYST · DISPATCH · PICKUP · ON-SITE")
                         .font(.system(size: 9, weight: .heavy)).kerning(1).foregroundStyle(Theme374.gradient)
                     Spacer()
                     Text("\(vm.loadNumber) · §387 · PICKUP · \(vm.quartetPosition) · CEL ON-SITE")
@@ -498,7 +496,7 @@ private struct CatalystPickupOnSiteEchoCelM04View: View {
             .padding(20)
             .padding(.top, 44)
         }
-        .task { await fetch() }
+        .eusoRefreshTask { await fetch() }
         .sheet(isPresented: $showLoadDetail) {
             CatalystLoadDetailScreen(theme: palette, loadId: vm.loadId)
         }

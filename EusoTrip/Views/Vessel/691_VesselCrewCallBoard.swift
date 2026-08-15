@@ -307,7 +307,7 @@ private struct VesselCrewCallBoardBody691: View {
             .padding(.top, Space.s4)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
         .sheet(isPresented: $showCerts) {
             CrewCertSheet691(certs: certs, crew: crew).environment(\.palette, palette)
         }
@@ -318,7 +318,7 @@ private struct VesselCrewCallBoardBody691: View {
     private var eyebrow: some View {
         HStack {
             HStack(spacing: 5) {
-                Text("✦").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.primary)
+                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.primary)
                 Text("VESSEL · COMPLIANCE · CREW CALL")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)

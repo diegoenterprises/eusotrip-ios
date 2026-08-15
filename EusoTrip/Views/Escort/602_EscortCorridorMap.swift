@@ -104,7 +104,7 @@ struct EscortCorridorMap: View {
             .padding(.top, 8)
         }
         .task { await refreshAll() }
-        .refreshable { await refreshAll() }
+        .eusoRefreshable { await refreshAll() }
     }
 
     // MARK: - Header
@@ -129,7 +129,7 @@ struct EscortCorridorMap: View {
                     .clipShape(Circle())
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Image(systemName: "sparkles")
+                        EusoTripBrandMark(size: 12)
                             .font(.system(size: 9, weight: .heavy))
                             .foregroundStyle(LinearGradient.diagonal)
                         Text("ESCORT · CORRIDOR MAP")
@@ -1357,13 +1357,11 @@ struct EscortCorridorMapScreen: View {
 }
 
 private func escortNavLeading_602() -> [NavSlot] {
-    [NavSlot(label: "Home",        systemImage: "house",                  isCurrent: false),
-     NavSlot(label: "Assignments", systemImage: "shield.lefthalf.filled", isCurrent: false)]
+    EscortNavRoute.leading(current: .corridor)
 }
 
 private func escortNavTrailing_602() -> [NavSlot] {
-    [NavSlot(label: "Corridor", systemImage: "map",    isCurrent: true),
-     NavSlot(label: "Me",       systemImage: "person", isCurrent: false)]
+    EscortNavRoute.trailing(current: .corridor)
 }
 
 // MARK: - Previews

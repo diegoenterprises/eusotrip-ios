@@ -184,7 +184,7 @@ private struct VesselCargoClaimBody_732: View {
             .padding(.top, 8)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
         .sheet(isPresented: $showEvidenceSheet) { evidenceSheet }
     }
 
@@ -193,7 +193,7 @@ private struct VesselCargoClaimBody_732: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("✦ VESSEL OPERATOR · CARGO CLAIM")
+                EusoTripEyebrow(verbatim: "VESSEL OPERATOR · CARGO CLAIM")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

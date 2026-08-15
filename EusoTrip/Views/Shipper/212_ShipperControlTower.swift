@@ -201,7 +201,7 @@ struct ShipperControlTower: View {
             }
         }
         .task { await store.refresh() }
-        .refreshable { await store.refresh() }
+        .eusoRefreshable { await store.refresh() }
         // RealtimeService → ControlTower is the operational dashboard
         // par excellence; every load event refreshes the exception
         // counts, ETA distributions, and on-time scoring live.
@@ -236,7 +236,7 @@ struct ShipperControlTower: View {
 
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("✦ SHIPPER · CONTROL TOWER · LIVE")
+            EusoTripEyebrow(verbatim: "SHIPPER · CONTROL TOWER · LIVE")
                 .font(EType.micro)
                 .tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)

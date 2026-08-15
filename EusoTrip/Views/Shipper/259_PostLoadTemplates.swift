@@ -47,7 +47,7 @@ private struct TemplatesBody: View {
             }
             .padding(.horizontal, 14).padding(.top, 56)
         }
-        .task { await loadTemplates() }
+        .eusoRefreshTask { await loadTemplates() }
     }
 
     private var header: some View {

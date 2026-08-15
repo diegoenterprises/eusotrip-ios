@@ -49,10 +49,8 @@ struct OnboardingWizard: View {
             OnboardingWizardBody(onClose: onClose)
         } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home",     systemImage: "house",                    isCurrent: false),
-                          NavSlot(label: "Tiers",    systemImage: "square.stack.3d.up.fill",  isCurrent: true)],
-                trailing: [NavSlot(label: "Docs",    systemImage: "doc.text.magnifyingglass", isCurrent: false),
-                           NavSlot(label: "Me",      systemImage: "person",                   isCurrent: false)],
+                leading: ComplianceNavRoute.leading(current: .me),
+                trailing: ComplianceNavRoute.trailing(current: .me),
                 orbState: .idle
             )
         }

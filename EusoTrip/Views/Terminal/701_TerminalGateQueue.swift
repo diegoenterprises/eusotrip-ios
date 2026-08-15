@@ -86,7 +86,7 @@ struct TerminalGateQueue: View {
             .padding(.top, 8)
         }
         .task { await queue.refresh() }
-        .refreshable { await queue.refresh() }
+        .eusoRefreshable { await queue.refresh() }
         // Dock-input sheet — opened by tapping the inline "Assign dock"
         // button on a queue row. Detents `[.medium]` + drag indicator
         // matches the lightweight one-input doctrine.
@@ -111,7 +111,7 @@ struct TerminalGateQueue: View {
                     .clipShape(Circle())
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Image(systemName: "sparkles")
+                        EusoTripBrandMark(size: 12)
                             .font(.system(size: 9, weight: .heavy))
                             .foregroundStyle(LinearGradient.diagonal)
                         Text("TERMINAL · GATE QUEUE")
@@ -548,13 +548,11 @@ struct TerminalGateQueueScreen: View {
 }
 
 private func terminalNavLeading_701() -> [NavSlot] {
-    [NavSlot(label: "Home",      systemImage: "house",            isCurrent: false),
-     NavSlot(label: "Movements", systemImage: "shippingbox.fill", isCurrent: true)]
+    TerminalNavRoute.leading(current: .movements)
 }
 
 private func terminalNavTrailing_701() -> [NavSlot] {
-    [NavSlot(label: "Yard", systemImage: "map",    isCurrent: false),
-     NavSlot(label: "Me",   systemImage: "person", isCurrent: false)]
+    TerminalNavRoute.trailing(current: .movements)
 }
 
 // MARK: - Previews

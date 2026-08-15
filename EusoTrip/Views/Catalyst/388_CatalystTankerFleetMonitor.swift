@@ -51,13 +51,11 @@ struct CatalystTankerFleetMonitorScreen: View {
 }
 
 private func catalystNavLeading_388() -> [NavSlot] {
-    [NavSlot(label: "Home",     systemImage: "house",                          isCurrent: false),
-     NavSlot(label: "Dispatch", systemImage: "shippingbox.and.arrow.backward", isCurrent: false)]
+    CarrierNavRoute.leading(current: .drivers)
 }
 
 private func catalystNavTrailing_388() -> [NavSlot] {
-    [NavSlot(label: "Fleet", systemImage: "truck.box",          isCurrent: true),
-     NavSlot(label: "Me",    systemImage: "person.crop.circle", isCurrent: false)]
+    CarrierNavRoute.trailing(current: .drivers)
 }
 
 // MARK: - Typed telemetry model
@@ -178,7 +176,7 @@ private struct TankerFleetBody_388: View {
             .padding(.top, 56)
         }
         .task { await loadAll() }
-        .refreshable { await loadAll() }
+        .eusoRefreshable { await loadAll() }
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
             Task { await loadAll() }
         }
@@ -193,7 +191,7 @@ private struct TankerFleetBody_388: View {
     private var topBar_388: some View {
         HStack(alignment: .firstTextBaseline) {
             HStack(spacing: 4) {
-                Image(systemName: "sparkles")
+                EusoTripBrandMark(size: 12)
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.primary)
                 Text(eyebrow)

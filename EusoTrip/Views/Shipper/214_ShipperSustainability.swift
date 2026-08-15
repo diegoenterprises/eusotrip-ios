@@ -218,7 +218,7 @@ struct ShipperSustainability: View {
             }
         }
         .task { await bootstrap() }
-        .refreshable { await bootstrap() }
+        .eusoRefreshable { await bootstrap() }
         .animation(
             reduceMotion ? .easeOut(duration: 0.15) : .easeOut(duration: 0.22),
             value: storeStateKey
@@ -310,7 +310,7 @@ struct ShipperSustainability: View {
 
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("✦ SHIPPER · SUSTAINABILITY")
+            EusoTripEyebrow(verbatim: "SHIPPER · SUSTAINABILITY")
                 .font(EType.micro)
                 .tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)

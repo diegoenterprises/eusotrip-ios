@@ -218,7 +218,7 @@ struct CarrierDispatchBoard: View {
             }
         }
         .task { await refreshAll() }
-        .refreshable { await refreshAll() }
+        .eusoRefreshable { await refreshAll() }
         .screenTileRoot()
     }
 
@@ -241,7 +241,7 @@ struct CarrierDispatchBoard: View {
                 .clipShape(Circle())
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Image(systemName: "sparkles")
+                    EusoTripBrandMark(size: 12)
                         .font(.system(size: 9, weight: .heavy))
                         .foregroundStyle(LinearGradient.diagonal)
                     Text("CARRIER · DISPATCH")
@@ -694,13 +694,11 @@ struct CarrierDispatchBoardScreen: View {
 }
 
 private func carrierNavLeading_303() -> [NavSlot] {
-    [NavSlot(label: "Home",     systemImage: "house",                  isCurrent: false),
-     NavSlot(label: "Dispatch", systemImage: "antenna.radiowaves.left.and.right", isCurrent: true)]
+    CarrierNavRoute.leading(current: .loads)
 }
 
 private func carrierNavTrailing_303() -> [NavSlot] {
-    [NavSlot(label: "Loads",   systemImage: "truck.box.fill",          isCurrent: false),
-     NavSlot(label: "Me",      systemImage: "person",                  isCurrent: false)]
+    CarrierNavRoute.trailing(current: .loads)
 }
 
 // MARK: - Previews

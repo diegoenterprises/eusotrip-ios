@@ -151,7 +151,7 @@ private struct VesselChainOfCustodyBody: View {
             .padding(.horizontal, Space.s5).padding(.top, Space.s2)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - Header (eyebrow · title · getTrail subtitle · hairline)
@@ -159,7 +159,7 @@ private struct VesselChainOfCustodyBody: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "sparkle")
+                EusoTripBrandMark(size: 12)
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.primary)
                 Text("VESSEL OPERATOR · CHAIN OF CUSTODY")

@@ -149,7 +149,7 @@ private struct RailRepairWorkOrderBody: View {
             .padding(.top, Space.s5)
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
         .sheet(isPresented: $showBillSheet) {
             VStack(alignment: .leading, spacing: Space.s3) {
                 Text("Bill Repair").font(EType.h2).foregroundStyle(palette.textPrimary)
@@ -193,7 +193,7 @@ private struct RailRepairWorkOrderBody: View {
 
     private var eyebrowRow: some View {
         HStack(spacing: 0) {
-            Text("✦ CARRIER · RAIL · REPAIR")
+            EusoTripEyebrow(verbatim: "CARRIER · RAIL · REPAIR")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer(minLength: 8)

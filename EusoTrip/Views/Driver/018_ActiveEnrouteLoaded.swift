@@ -313,7 +313,7 @@ struct ActiveEnrouteLoaded: View {
         }
         // Uniform cafe-door entrance.
         .screenTileRoot()
-        .task { await hydrateLiveTrip() }
+        .eusoRefreshTask { await hydrateLiveTrip() }
     }
 
     // MARK: - Live hydration

@@ -405,7 +405,7 @@ private struct VesselPortCallsBody: View {
             .padding(.horizontal, 20).padding(.top, 8)
         }
         .task { await vm.load(threadedImo: imoNumber) }
-        .refreshable { await vm.load(threadedImo: imoNumber) }
+        .eusoRefreshable { await vm.load(threadedImo: imoNumber) }
     }
 
     // MARK: header
@@ -413,7 +413,7 @@ private struct VesselPortCallsBody: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 HStack(spacing: 6) {
-                    Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                    EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                     Text("VESSEL OPERATOR · PORT CALLS").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
                 }
                 Spacer()

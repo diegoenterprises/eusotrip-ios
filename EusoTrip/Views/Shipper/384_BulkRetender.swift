@@ -36,7 +36,7 @@ private struct BulkRetenderBody: View {
             }
             .padding(.horizontal, 14).padding(.top, 56)
         }
-        .task { await loads.refresh() }
+        .eusoRefreshTask { await loads.refresh() }
     }
 
     private var header: some View {

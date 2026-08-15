@@ -160,7 +160,7 @@ struct ShipperHandoffContinuity: View {
 
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("\u{2726} SHIPPER · HANDOFF")
+            EusoTripEyebrow("SHIPPER · HANDOFF")
                 .font(EType.micro)
                 .tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)

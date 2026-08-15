@@ -76,7 +76,7 @@ private struct BiddingBody: View {
             bidFeedCard
             if let err = actionError { errorBanner(err) }
         }
-        .task {
+        .eusoRefreshTask {
             bids.setLoadId(loadId)
             await bids.refresh()
         }

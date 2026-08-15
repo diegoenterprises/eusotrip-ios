@@ -184,7 +184,7 @@ private struct RailCrossBorderComplianceCheckBody: View {
             .padding(.horizontal, Space.s5).padding(.top, 8)
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
     }
 
     // MARK: Header (eyebrow + H1 + crossing tag)
@@ -192,7 +192,7 @@ private struct RailCrossBorderComplianceCheckBody: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Text("✦ RAIL ENGINEER · BORDER CHECK")
+                EusoTripEyebrow(verbatim: "RAIL ENGINEER · BORDER CHECK")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

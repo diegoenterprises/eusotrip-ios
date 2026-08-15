@@ -127,7 +127,7 @@ private struct RailFinancialSummaryBody: View {
             .padding(.top, Space.s4)
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
     }
 
     // MARK: - Header (back-chevron + eyebrow + title 28/-0.4)
@@ -136,7 +136,7 @@ private struct RailFinancialSummaryBody: View {
         VStack(alignment: .leading, spacing: 6) {
             // Eyebrow row: sparkle + "RAIL ENGINEER · FINANCIALS" · "P&L"
             HStack(spacing: 6) {
-                Image(systemName: "sparkle")
+                EusoTripBrandMark(size: 12)
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.primary)
                 Text("RAIL ENGINEER · FINANCIALS")

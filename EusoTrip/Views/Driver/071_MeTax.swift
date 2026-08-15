@@ -80,7 +80,7 @@ struct MeTax: View {
             .padding(.bottom, Space.s8)
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
         .onChange(of: selectedYear) { _, _ in
             Task { await reload() }
         }

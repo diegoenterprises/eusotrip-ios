@@ -1,16 +1,18 @@
 //
 //  RoleIntegrationRegistry.swift
 //  EusoTrip — Typed Swift mirror of the
-//  `role_integration_mapping.md` doctrine. Each of the 24
-//  canonical roles (12 truck + 6 rail + 6 vessel) gets a tailored
-//  list of industry-leading API providers. No skeletons, no stubs —
-//  every entry has the real provider name, function, and docs URL
-//  per the doctrine.
+//  `role_integration_mapping.md` doctrine. The 22 operational roles
+//  represented here (10 truck + 6 rail + 6 vessel) each have a tailored
+//  provider-capability wish list. ADMIN and SUPER_ADMIN are aggregate server
+//  roles and intentionally do not duplicate every row in this Swift registry.
+//
+//  A row and reachable docs URL do not claim an active connector. Executable
+//  status, precise blocked disposition, role/mode eligibility, and connection
+//  state come only from the live `userIntegrations` server contract.
 //
 //  Connection state is owned by the server (`userIntegrationConnections`
-//  table). The iOS layer reads via `integrations.list(role:)` when
-//  wired, falling back to `.requiresCredentials` so the Connect CTA
-//  surfaces honestly: "credentials required — coordinate with admin".
+//  table). This registry is an offline parity/audit input only; it is never a
+//  source of connection state or a fallback provider list in the app.
 //
 //  Powered by ESANG AI™.
 //

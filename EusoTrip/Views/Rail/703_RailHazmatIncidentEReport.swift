@@ -217,7 +217,7 @@ private struct RailHazmatIncidentReportBody: View {
             .padding(.top, Space.s5)
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
         .alert("Written report can't be filed from this device", isPresented: $showFileNotice) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -250,7 +250,7 @@ private struct RailHazmatIncidentReportBody: View {
 
     private var eyebrowRow: some View {
         HStack(spacing: 0) {
-            Text("✦ RAIL ENGINEER · HAZMAT INCIDENT")
+            EusoTripEyebrow(verbatim: "RAIL ENGINEER · HAZMAT INCIDENT")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer(minLength: 8)

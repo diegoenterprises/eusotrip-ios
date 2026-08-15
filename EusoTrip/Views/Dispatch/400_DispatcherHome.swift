@@ -33,10 +33,8 @@ struct DispatcherHomeScreen: View {
     var body: some View {
         Shell(theme: theme) { DispatcherHomeBody() } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home",  systemImage: "house",                 isCurrent: true),
-                          NavSlot(label: "Board", systemImage: "rectangle.split.3x1.fill", isCurrent: false)],
-                trailing: [NavSlot(label: "Comms", systemImage: "bubble.left.and.bubble.right.fill", isCurrent: false),
-                           NavSlot(label: "Me",    systemImage: "person",               isCurrent: false)],
+                leading: DispatchNavRoute.leading(current: .home),
+                trailing: DispatchNavRoute.trailing(current: .home),
                 orbState: .idle
             )
         }
@@ -105,16 +103,12 @@ private struct DispatcherHomeBody: View {
 
     private var dispatcherDisplayName: String {
         let raw = session.user?.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return raw.isEmpty ? "Diego Usoro" : raw
+        return raw.isEmpty ? "Dispatcher" : raw
     }
 
     private var dispatcherFirstName: String {
         let first = dispatcherDisplayName.split(separator: " ").first.map(String.init) ?? ""
-        return first.isEmpty ? "Diego" : first
-    }
-
-    private var dispatcherInitials: String {
-        initials(dispatcherDisplayName)
+        return first.isEmpty ? "Dispatcher" : first
     }
 
     private var dispatchSummaryLine: String {
@@ -133,7 +127,7 @@ private struct DispatcherHomeBody: View {
                 greeting
                 IridescentHairline()
 
-                HomeWeatherWidget()
+                HomeWeatherWidget(includeLaneImpact: (kpi?.activeLoads ?? 0) > 0)
 
                 if loading {
                     LifecycleCard {
@@ -152,19 +146,21 @@ private struct DispatcherHomeBody: View {
                     liveDrivers
                 }
 
-                Color.clear.frame(height: 8)
+                // The shell navigation floats over the scroll surface. Keep
+                // expanded weather and the final driver row fully reachable.
+                Color.clear.frame(height: 112)
             }
             .padding(.horizontal, 20).padding(.top, 12)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: TopBar eyebrow
 
     private var eyebrow: some View {
         HStack(alignment: .top) {
-            Text("✦ DISPATCHER · DESK · LIVE")
+            EusoTripEyebrow("DISPATCHER · DESK · LIVE")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer(minLength: 0)
@@ -191,24 +187,8 @@ private struct DispatcherHomeBody: View {
                     .font(EType.caption).foregroundStyle(palette.textSecondary)
             }
             Spacer(minLength: 0)
-            avatarDisc(dispatcherInitials)
+            EditableProfileAvatar(size: 56)
         }
-    }
-
-    private func avatarDisc(_ initials: String) -> some View {
-        ZStack {
-            Circle().fill(LinearGradient.diagonal)
-            Circle()
-                .fill(RadialGradient(colors: [.white.opacity(0.75), .white.opacity(0)],
-                                     center: .init(x: 0.35, y: 0.30),
-                                     startRadius: 0, endRadius: 30))
-                .frame(width: 28, height: 28)
-                .offset(x: -6, y: -6)
-            Text(initials)
-                .font(.system(size: 14, weight: .heavy)).tracking(0.6)
-                .foregroundStyle(.white)
-        }
-        .frame(width: 56, height: 56)
     }
 
     // MARK: ATTENTION row (gradient-rimmed feature card)
@@ -299,7 +279,11 @@ private struct DispatcherHomeBody: View {
         let idle = drivers.filter { ($0.status ?? "").lowercased().contains("idle") }
         let avg = idle.compactMap { $0.hoursRemaining }.reduce(0, +) / Double(max(idle.count, 1))
         let h = Int(avg); let m = Int((avg - Double(h)) * 60)
-        return idle.isEmpty ? "no idle drivers" : "avg HOS \(h)h \(m)m"
+        if idle.isEmpty {
+            let reported = kpi?.driversIdle ?? 0
+            return reported > 0 ? "\(reported) available" : "none available"
+        }
+        return "avg HOS \(h)h \(m)m"
     }
 
     private func kpiTile(label: String, value: String,

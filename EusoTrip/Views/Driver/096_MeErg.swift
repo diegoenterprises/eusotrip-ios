@@ -61,7 +61,7 @@ struct MeErg: View {
             .padding(.bottom, Space.s8)
         }
         .task { await refreshContacts() }
-        .refreshable {
+        .eusoRefreshable {
             await store.refresh(
                 countryCode: selectedIncidentCountry,
                 force: true
@@ -70,11 +70,11 @@ struct MeErg: View {
         .sheet(
             isPresented: Binding(
                 get: { detailPresented != nil },
-                set: { if !$0 { detailPresented = nil; store.clearDetail() } }
+                set: { if !$0 { detailPresented = nil } }
             )
         ) {
             if let un = detailPresented {
-                ErgDetailSheet(unNumber: un, store: store)
+                ErgDetailSheet(unNumber: un)
                     .eusoSheetX()
             }
         }
@@ -458,13 +458,21 @@ private struct ErgDetailSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.palette) var palette
     let unNumber: String
-    @ObservedObject var store: ErgStore
+
+    // Detail state belongs to the presented surface, not the parent search
+    // store. This makes SwiftUI's structured `.task` cancellation the sole
+    // owner of the network request and prevents a dismissed lookup from
+    // overwriting a different UN entry opened immediately afterward.
+    @State private var detail: ErgAPI.MaterialDetail?
+    @State private var isLoading = true
+    @State private var loadError: Error?
+    @State private var retryAttempt = 0
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: Space.s4) {
-                    if let d = store.detail, d.found == true {
+                    if let d = detail, d.found == true {
                         heroCard(d)
                         // Full structured handbook layout when the
                         // server emits guideFull (every UN since
@@ -484,9 +492,9 @@ private struct ErgDetailSheet: View {
                         if let pd = d.protectiveDistance {
                             protectiveSection(pd)
                         }
-                    } else if store.isDetailLoading {
+                    } else if isLoading {
                         loadingState
-                    } else if let error = store.lastError {
+                    } else if let error = loadError {
                         detailErrorState(error)
                     } else {
                         EusoEmptyState(
@@ -506,11 +514,32 @@ private struct ErgDetailSheet: View {
                     Button("Done") { dismiss() }
                 }
             }
-            .task(id: unNumber) {
-                if store.detail == nil && !store.isDetailLoading {
-                    await store.loadDetail(unNumber: unNumber)
-                }
+            .task(id: retryAttempt) {
+                await loadDetail()
             }
+        }
+    }
+
+    @MainActor
+    private func loadDetail() async {
+        do {
+            try Task.checkCancellation()
+            isLoading = true
+            loadError = nil
+            detail = nil
+
+            let response = try await EusoTripAPI.shared.erg.searchByUN(unNumber)
+            try Task.checkCancellation()
+
+            detail = response
+            isLoading = false
+        } catch is CancellationError {
+            // Sheet dismissal owns cancellation. Do not publish an error or
+            // start replacement work after the presented surface is gone.
+        } catch {
+            guard !Task.isCancelled else { return }
+            loadError = error
+            isLoading = false
         }
     }
 
@@ -592,7 +621,7 @@ private struct ErgDetailSheet: View {
                 .foregroundStyle(palette.textSecondary)
                 .multilineTextAlignment(.center)
             Button {
-                Task { await store.loadDetail(unNumber: unNumber) }
+                retryAttempt &+= 1
             } label: {
                 Label("Retry", systemImage: "arrow.clockwise")
             }

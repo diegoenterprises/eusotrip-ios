@@ -147,10 +147,8 @@ private struct CatalystBackhaulShell<Content: View>: View {
     var body: some View {
         Shell(theme: theme) { content() } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home",  systemImage: "house",          isCurrent: false),
-                          NavSlot(label: "Fleet", systemImage: "truck.box.fill", isCurrent: true)],
-                trailing: [NavSlot(label: "Fleet",  systemImage: "truck.box.fill", isCurrent: false),
-                           NavSlot(label: "Me",     systemImage: "person",          isCurrent: false)],
+                leading: CarrierNavRoute.leading(current: .drivers),
+                trailing: CarrierNavRoute.trailing(current: .drivers),
                 orbState: .idle
             )
         }
@@ -236,13 +234,13 @@ private struct CatalystBackhaulAckBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await loadCtx() }
-        .refreshable { await loadCtx() }
+        .eusoRefreshable { await loadCtx() }
     }
 
     private func header(_ c: CBConfig) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text(c.eyebrow).font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             Text(c.title).font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
@@ -522,7 +520,7 @@ private struct CatalystBackhaulTenderBody357: View {
             .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 20)
         }
         .task { await fetch() }
-        .refreshable { await fetch() }
+        .eusoRefreshable { await fetch() }
         .confirmationDialog(
             "Accept this backhaul tender?",
             isPresented: $showAcceptConfirm,
@@ -554,7 +552,7 @@ private struct CatalystBackhaulTenderBody357: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("✦ CATALYST · DISPATCH · BACKHAUL TENDER")
+                EusoTripEyebrow(verbatim: "CATALYST · DISPATCH · BACKHAUL TENDER")
                     .font(.system(size: 9, weight: .heavy)).kerning(1)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

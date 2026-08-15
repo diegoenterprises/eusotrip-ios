@@ -10,7 +10,7 @@
 //  tap to re-book the next-best voyage.
 //
 //  Layout (matches the SVG verbatim):
-//    · eyebrow  "✦ VESSEL OPERATOR · BLANK SAILING WATCH"  ·  "watch · 7d"
+//    · EusoTrip mark + "VESSEL OPERATOR · BLANK SAILING WATCH" · "watch · 7d"
 //    · back chevron + headline "Blank Sailings" + ellipsis
 //    · iridescent hairline
 //    · hero card (gradient rim) — chips "N cancelled" / "M scheduled",
@@ -303,7 +303,7 @@ private struct VesselBlankSailingWatchBody: View {
             }
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - Derived
@@ -368,7 +368,7 @@ private struct VesselBlankSailingWatchBody: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 HStack(spacing: 5) {
-                    Image(systemName: "sparkle")
+                    EusoTripBrandMark(size: 12)
                         .font(.system(size: 8, weight: .heavy))
                         .foregroundStyle(LinearGradient.primary)
                     Text("VESSEL OPERATOR · BLANK SAILING WATCH")

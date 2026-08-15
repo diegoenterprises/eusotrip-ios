@@ -31,6 +31,7 @@ private struct BHCLoadCtx: Decodable, Hashable {
     // pickup/delivery are nested {city,state} objects (NOT flat city fields).
     let id: String?
     let loadNumber: String?
+    let bolNumber: String?
     let pickupLocation: BHCLoc?
     let deliveryLocation: BHCLoc?
     let rate: String?
@@ -143,6 +144,23 @@ private struct BHCloseBody: View {
     @State private var actionInFlight: Bool = false
     @State private var actionAck: String?
     @State private var actionError: String?
+    @State private var signatureStrokes: [[CGPoint]] = [[]]
+    @State private var bolReview: BHCSignableBOL?
+    @State private var pendingReviewedChecksum: String?
+    @State private var reviewedChecksum: String?
+    @State private var bolPresentation: EusoPDFPresentation?
+
+    private struct BHCSignableBOL: Decodable {
+        let loadId: Int
+        let bolNumber: String
+        let documentId: Int
+        let documentName: String
+        let downloadUrl: String
+        let mimeType: String
+        let sizeBytes: Int
+        let checksumSha256: String
+        let signerCapacity: String
+    }
 
     // MARK: - Dynamic display helpers (live-bound; honest "-" / "—" fallback)
 
@@ -196,46 +214,153 @@ private struct BHCloseBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await loadCtx() }
-        .refreshable { await loadCtx() }
+        .eusoRefreshable { await loadCtx() }
     }
 
     private var signBOLActionRow: some View {
-        Button { Task { await signBOL() } } label: {
-            HStack(spacing: 6) {
-                if actionInFlight { ProgressView().tint(.white).scaleEffect(0.8) }
-                Text(actionInFlight ? "Signing…" : "Sign BOL")
-                    .font(EType.body.weight(.semibold))
+        LifecycleCard(accentGradient: true) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("REVIEW + SIGN")
+                    .font(.system(size: 9, weight: .heavy))
+                    .tracking(0.8)
+                    .foregroundStyle(palette.textTertiary)
+
+                if let source = bolReview {
+                    Button { presentBOL(source) } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: reviewedChecksum == source.checksumSha256 ? "checkmark.shield.fill" : "doc.text.magnifyingglass")
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(reviewedChecksum == source.checksumSha256 ? "BOL reviewed" : "Review exact BOL")
+                                    .font(EType.body.weight(.semibold))
+                                Text("\(source.bolNumber) · SHA-256 \(source.checksumSha256.prefix(12))…")
+                                    .font(.caption2.monospaced())
+                                    .lineLimit(1)
+                            }
+                            Spacer(minLength: 0)
+                            Image(systemName: "chevron.right")
+                        }
+                        .foregroundStyle(reviewedChecksum == source.checksumSha256 ? AnyShapeStyle(Color.green) : AnyShapeStyle(LinearGradient.diagonal))
+                    }
+                    .buttonStyle(.plain)
+
+                    EusoGradientInkCanvas(strokes: $signatureStrokes)
+                        .frame(height: 180)
+                        .background(palette.bgCard)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                                .strokeBorder(palette.borderFaint, lineWidth: 1)
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+
+                    Text("I consent to use this electronic signature on the identified Bill of Lading and confirm that I reviewed the bound source document.")
+                        .font(.caption2)
+                        .foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    HStack(spacing: 10) {
+                        Button { signatureStrokes = [[]] } label: {
+                            Image(systemName: "eraser")
+                                .frame(width: 44, height: 44)
+                                .foregroundStyle(palette.textPrimary)
+                                .background(palette.tintNeutral)
+                                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(actionInFlight || !EusoGradientInkCanvas.hasInk(signatureStrokes))
+
+                        Button { Task { await signBOL() } } label: {
+                            HStack(spacing: 6) {
+                                if actionInFlight { ProgressView().tint(.white).scaleEffect(0.8) }
+                                Text(actionInFlight ? "Signing…" : "Commit signature")
+                                    .font(EType.body.weight(.semibold))
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .foregroundStyle(.white)
+                            .background(LinearGradient.diagonal)
+                            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(
+                            actionInFlight ||
+                            reviewedChecksum != source.checksumSha256 ||
+                            !EusoGradientInkCanvas.hasInk(signatureStrokes)
+                        )
+                    }
+                } else if actionInFlight {
+                    HStack(spacing: 8) {
+                        ProgressView().tint(LinearGradient.diagonal)
+                        Text("Verifying the BOL source…")
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textSecondary)
+                    }
+                } else {
+                    Text("A verified BOL is required before signing.")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
             }
-            .frame(maxWidth: .infinity, minHeight: 48)
-            .foregroundStyle(.white)
-            .background(LinearGradient.diagonal)
-            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
-        .buttonStyle(.plain)
-        .disabled(actionInFlight)
+        .fullScreenCover(item: $bolPresentation, onDismiss: {
+            if let pendingReviewedChecksum {
+                reviewedChecksum = pendingReviewedChecksum
+                self.pendingReviewedChecksum = nil
+            }
+        }) { presentation in
+            EusoPDFViewer(
+                title: presentation.title,
+                subtitle: presentation.subtitle,
+                source: .url(presentation.url),
+                allowSigning: false,
+                loadIdForWalletPass: presentation.loadIdForWalletPass
+            )
+        }
     }
 
     private func signBOL() async {
+        guard let source = bolReview,
+              reviewedChecksum == source.checksumSha256,
+              EusoGradientInkCanvas.hasInk(signatureStrokes) else {
+            actionError = "Review this BOL version and add your signature before committing."
+            return
+        }
         actionInFlight = true; actionAck = nil; actionError = nil
         defer { actionInFlight = false }
-        // The signature hash is the digest of the captured signature. The
-        // server (loads.signBOL) REQUIRES a non-empty signatureHash and
-        // echoes it into the audit row — it is NOT minted server-side. We
-        // compute a real per-tap digest here (no hardcoded literal) and
-        // reference the live load number for the BOL packet. We display
-        // ONLY the value the server returns, never an invented constant.
-        let bolRef = load?.loadNumber ?? loadId
-        let sigHash = "0x" + UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(16)
-        struct In: Encodable { let loadId: String; let bolNumber: String; let signatureHash: String; let signedAtIso: String? }
-        struct Out: Decodable { let success: Bool?; let loadId: String?; let bolNumber: String?; let signatureHash: String?; let signedAt: String? }
+        let signatureBase64 = EusoGradientInkCanvas.renderPNGBase64(
+            signatureStrokes,
+            size: CGSize(width: 600, height: 200)
+        )
+        guard !signatureBase64.isEmpty else {
+            actionError = "The signature image could not be prepared. Clear it and sign again."
+            return
+        }
+        struct In: Encodable {
+            let loadId: String
+            let bolNumber: String
+            let signatureBase64: String
+            let consentAccepted: Bool
+        }
+        struct Out: Decodable {
+            let success: Bool?
+            let loadId: String?
+            let bolNumber: String?
+            let signatureHash: String?
+            let signatureDocumentId: String?
+            let signedAt: String?
+        }
         do {
             let resp: Out = try await EusoTripAPI.shared.mutation(
                 "loads.signBOL",
-                input: In(loadId: loadId, bolNumber: bolRef, signatureHash: String(sigHash), signedAtIso: nil)
+                input: In(
+                    loadId: loadId,
+                    bolNumber: source.bolNumber,
+                    signatureBase64: signatureBase64,
+                    consentAccepted: true
+                )
             )
             if resp.success == true {
                 let sig = resp.signatureHash ?? "—"
-                actionAck = "BOL signed · sig-hash \(sig) committed · paperwork watch armed."
+                actionAck = "BOL \(resp.bolNumber ?? source.bolNumber) signed · SHA-256 \(sig.prefix(16))… committed."
+                signatureStrokes = [[]]
                 await loadCtx()
             } else {
                 actionError = "BOL sign returned no success flag, reload and try again."
@@ -248,7 +373,7 @@ private struct BHCloseBody: View {
     private func header(_ c: BCConfig) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("DRIVER · TRIPS · \(c.eyebrowStage) · \(loadNumberDisplay)")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.diagonal)
@@ -399,7 +524,49 @@ private struct BHCloseBody: View {
 
     private func loadCtx() async {
         struct In: Encodable { let id: String }
-        do { load = try await EusoTripAPI.shared.query("loads.getById", input: In(id: loadId)) } catch { /* */ }
+        do {
+            let loaded: BHCLoadCtx = try await EusoTripAPI.shared.query("loads.getById", input: In(id: loadId))
+            load = loaded
+            if kind == .bolPreSign {
+                await loadBOLForSigning(preferredNumber: loaded.bolNumber)
+            }
+        } catch {
+            actionError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    private func loadBOLForSigning(preferredNumber: String?) async {
+        struct In: Encodable { let loadId: String; let bolNumber: String? }
+        do {
+            let source: BHCSignableBOL = try await EusoTripAPI.shared.query(
+                "loads.getBOLForSigning",
+                input: In(loadId: loadId, bolNumber: preferredNumber)
+            )
+            if bolReview?.checksumSha256 != source.checksumSha256 {
+                reviewedChecksum = nil
+                signatureStrokes = [[]]
+            }
+            bolReview = source
+        } catch {
+            bolReview = nil
+            reviewedChecksum = nil
+            actionError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    private func presentBOL(_ source: BHCSignableBOL) {
+        guard let base = EusoTripAPI.shared.baseURL,
+              let url = URL(string: source.downloadUrl, relativeTo: base)?.absoluteURL else {
+            actionError = "The verified BOL URL is unavailable."
+            return
+        }
+        pendingReviewedChecksum = source.checksumSha256
+        bolPresentation = EusoPDFPresentation(
+            url: url,
+            title: source.documentName,
+            subtitle: "BOL \(source.bolNumber) · SHA-256 \(source.checksumSha256.prefix(12))…",
+            loadIdForWalletPass: loadId
+        )
     }
 
     /// Format the load's rate (decimal string from server) as a

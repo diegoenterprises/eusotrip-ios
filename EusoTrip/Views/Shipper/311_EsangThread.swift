@@ -100,7 +100,7 @@ private struct eSangThreadBody: View {
             }
             composer
         }
-        .task {
+        .eusoRefreshTask {
             // Resolve conversationId first — the registry constructs
             // 311 with an empty conversationId, so we have to drain
             // LoadConversationContext (set by 218 Dispatch Control

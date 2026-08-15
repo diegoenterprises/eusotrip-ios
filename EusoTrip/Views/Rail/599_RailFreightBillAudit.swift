@@ -185,14 +185,14 @@ private struct RailFreightBillAuditBody: View {
             .padding(.top, Space.s5)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - Top bar (eyebrow + invoice id)
 
     private var topBar: some View {
         HStack {
-            Text("✦ RAIL ENGINEER · BILL AUDIT")
+            EusoTripEyebrow(verbatim: "RAIL ENGINEER · BILL AUDIT")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer()

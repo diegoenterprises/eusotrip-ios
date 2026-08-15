@@ -74,7 +74,7 @@ struct MeHotZones: View {
             .padding(.bottom, Space.s8)
         }
         .task { await store.bootstrap() }
-        .refreshable { await store.refresh() }
+        .eusoRefreshable { await store.refresh() }
         // RealtimeService → refresh hot-zone heatmap when surface
         // events fire (load assignments shift demand, market pulse
         // ticks update zone scoring).

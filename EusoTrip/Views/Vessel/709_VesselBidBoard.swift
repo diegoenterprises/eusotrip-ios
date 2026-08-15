@@ -138,14 +138,14 @@ private struct VesselBidBoardBody: View {
             .padding(.horizontal, 20).padding(.top, 8)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: TopBar
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("✦ VESSEL OPERATOR · BID BOARD")
+                EusoTripEyebrow(verbatim: "VESSEL OPERATOR · BID BOARD")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(eusoPrimary)
                 Spacer()

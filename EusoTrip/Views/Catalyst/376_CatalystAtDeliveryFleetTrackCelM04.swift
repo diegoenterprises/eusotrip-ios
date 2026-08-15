@@ -171,13 +171,11 @@ struct CatalystAtDeliveryFleetTrackCelM04Screen: View {
 }
 
 private func catalystNavLeading_376() -> [NavSlot] {
-    [NavSlot(label: "Home",     systemImage: "house",                          isCurrent: false),
-     NavSlot(label: "Dispatch", systemImage: "shippingbox.and.arrow.backward", isCurrent: true)]
+    CarrierNavRoute.leading(current: .loads)
 }
 
 private func catalystNavTrailing_376() -> [NavSlot] {
-    [NavSlot(label: "My Loads", systemImage: "shippingbox.fill", isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person",      isCurrent: false)]
+    CarrierNavRoute.trailing(current: .loads)
 }
 
 // MARK: - StatusPill (AtDeliveryFleetTrackCatalystPill_376 · DELIVERY-stage catalyst pill)
@@ -660,6 +658,7 @@ struct CatalystAtDeliveryFleetTrackCelM04View: View {
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
             Task { await fetch() }
         }
+        .eusoRefreshHandler { await fetch() }
         .sheet(isPresented: $showLoadDetail) {
             if !resolvedLoadId.isEmpty {
                 CatalystLoadDetailScreen(theme: palette, loadId: resolvedLoadId)
@@ -675,7 +674,7 @@ struct CatalystAtDeliveryFleetTrackCelM04View: View {
 
     private var topBar: some View {
         HStack {
-            Text("✦ CATALYST · DISPATCH · AT-DELIVERY · FLEET-TRACK")
+            EusoTripEyebrow(verbatim: "CATALYST · DISPATCH · AT-DELIVERY · FLEET-TRACK")
                 .font(.system(size: 9, weight: .heavy)).kerning(1).foregroundStyle(Theme376.gradient)
             Spacer()
             Text("\(loadNumberDisplay) · §399 · DELIVERY · 2/4")

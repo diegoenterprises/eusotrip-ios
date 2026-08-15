@@ -60,72 +60,99 @@ private struct RailCrewHOSRow: Decodable {
     let lastRestHours: Double?
 }
 
+private struct RailSettingsPayload: Decodable {
+    struct OperationalPreferences: Decodable {
+        let distanceUnit: String
+        let esangVoiceEnabled: Bool
+    }
+    let operationalPreferences: OperationalPreferences
+}
+
+private struct RailNotificationPreferences: Decodable {
+    let pushNotifications: Bool
+}
+
+private struct RailSettingsMutationAck: Decodable {
+    let success: Bool?
+}
+
 private struct RailEngineerAccountBody: View {
     @Environment(\.palette) private var palette
+    @EnvironmentObject private var session: EusoTripSession
     @State private var me: RailAccountProfile? = nil
     @State private var credentials: [RailCredential] = []
     @State private var hos: RailCrewHOSRow? = nil
-    @State private var notificationsOn = true
+    @State private var hosError: String? = nil
+    @State private var notificationsOn = false
     @State private var voiceOn = true
+    @State private var distanceUnit = "miles"
+    @State private var preferencesLoaded = false
+    @State private var preferencesError: String? = nil
     @State private var loading = true
     @State private var loadError: String? = nil
     @State private var saveError: String? = nil
+    @State private var showSignOutConfirm = false
 
     /// Which hub cards are expanded. Consolidation: the operations surface
     /// crammed 15 always-open sections (~103 rows) into one endless scroll.
     /// Rebuilt into 5 bespoke collapsible hubs by canonical taxonomy —
     /// Operations, Money & Commercial, Compliance & Documents, Equipment &
     /// Crew, Customs & Intermodal. Operations starts expanded; the rest collapse.
-    @State private var expandedHubs: Set<String> = ["operations"]
+    @SceneStorage("rail.engineer.me.expandedHub") private var expandedHubId: String = "operations"
+    @SceneStorage("rail.engineer.me.returnAnchor") private var returnAnchor: String = ""
 
     private var displayName: String {
         let n = me?.name?.trimmingCharacters(in: .whitespaces) ?? ""
-        return n.isEmpty ? "___" : n
-    }
-    private var personaPending: Bool {
-        (me?.name?.trimmingCharacters(in: .whitespaces) ?? "").isEmpty
+        return n.isEmpty ? "Rail Engineer" : n
     }
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: Space.s4) {
-                header
-                if loading {
-                    LifecycleCard { Text("Loading account…").font(EType.caption).foregroundStyle(palette.textSecondary) }
-                } else if let err = loadError {
-                    LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) }
-	                } else {
-	                    identityCard
-	                    EusoCardIssuePanel(
-	                        title: "EusoCard",
-	                        subtitle: "Rail spend card backed by EusoWallet Treasury"
-	                    )
-	                    operationsHub
-                    moneyCommercialHub
-                    complianceDocsHub
-                    equipmentCrewHub
-                    customsIntermodalHub
-                    credentialsCard
-                    dutyCard
-                    preferencesCard
-                    signOut
+        ScrollViewReader { proxy in
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Space.s4) {
+                    header
+                    if loading {
+                        LifecycleCard { Text("Loading account…").font(EType.caption).foregroundStyle(palette.textSecondary) }
+                    } else if let err = loadError {
+                        LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) }
+                    } else {
+                        identityCard
+                        EusoCardIssuePanel(
+                            title: "EusoCard",
+                            subtitle: "Rail spend card backed by EusoWallet Treasury"
+                        )
+                        operationsHub
+                        moneyCommercialHub
+                        complianceDocsHub
+                        equipmentCrewHub
+                        customsIntermodalHub
+                        accountPreferencesHub
+                        signOut
+                    }
+                    Color.clear.frame(height: 96)
                 }
-                Color.clear.frame(height: 96)
+                .padding(.horizontal, 14).padding(.top, 8)
             }
-            .padding(.horizontal, 14).padding(.top, 8)
+            .task {
+                await load()
+                restorePosition(using: proxy)
+            }
+            .eusoRefreshable { await load() }
         }
-        .task { await load() }
-        .refreshable { await load() }
         .alert("Settings", isPresented: Binding(
             get: { saveError != nil }, set: { if !$0 { saveError = nil } })) {
             Button("OK", role: .cancel) { saveError = nil }
         } message: { Text(saveError ?? "") }
+        .confirmationDialog("Sign out?", isPresented: $showSignOutConfirm, titleVisibility: .visible) {
+            Button("Sign out", role: .destructive) { Task { await session.signOut() } }
+            Button("Cancel", role: .cancel) {}
+        }
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("RAIL ENGINEER · MY ACCOUNT")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
@@ -138,24 +165,18 @@ private struct RailEngineerAccountBody: View {
     private var identityCard: some View {
         LifecycleCard(accentGradient: true) {
             HStack(spacing: 14) {
-                ZStack {
-                    Circle().fill(palette.bgCardSoft).frame(width: 68, height: 68)
-                    Image(systemName: "person.fill").font(.system(size: 26)).foregroundStyle(palette.textTertiary)
-                }
+                EditableProfileAvatar(size: 68)
                 VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 8) {
-                        Text(displayName).font(.system(size: 20, weight: .heavy)).foregroundStyle(palette.textPrimary)
-                        if personaPending {
-                            Text("PROPOSED").font(.system(size: 9, weight: .heavy)).tracking(0.4)
-                                .foregroundStyle(Brand.warning)
-                                .padding(.horizontal, 8).padding(.vertical, 3)
-                                .background(Capsule().fill(Brand.warning.opacity(0.16)))
-                        }
-                    }
-                    Text("RAIL ENGINEER · \(me?.companyName ?? "___ CARRIER (PROPOSED)")")
+                    Text(displayName).font(.system(size: 20, weight: .heavy)).foregroundStyle(palette.textPrimary)
+                    Text(["RAIL ENGINEER", me?.companyName]
+                        .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                        .filter { !$0.isEmpty }
+                        .joined(separator: " · "))
                         .font(EType.caption).foregroundStyle(palette.textSecondary)
-                    Text("crew id \(me?.crewId ?? "-") · FRA cert active")
-                        .font(.system(size: 11)).monospaced().foregroundStyle(palette.textTertiary)
+                    if let crewId = me?.crewId?.trimmingCharacters(in: .whitespacesAndNewlines), !crewId.isEmpty {
+                        Text("Crew ID \(crewId)")
+                            .font(.system(size: 11)).monospaced().foregroundStyle(palette.textTertiary)
+                    }
                 }
                 Spacer(minLength: 0)
             }
@@ -353,11 +374,12 @@ private struct RailEngineerAccountBody: View {
                                         summary: String,
                                         rowCount: Int,
                                         @ViewBuilder content: () -> Content) -> some View {
-        let isOpen = expandedHubs.contains(id)
+        let isOpen = expandedHubId == id
         LifecycleCard {
             Button {
                 withAnimation(.easeOut(duration: 0.22)) {
-                    if isOpen { expandedHubs.remove(id) } else { expandedHubs.insert(id) }
+                    expandedHubId = isOpen ? "" : id
+                    returnAnchor = "hub-\(id)"
                 }
             } label: {
                 HStack(spacing: 12) {
@@ -401,6 +423,7 @@ private struct RailEngineerAccountBody: View {
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
+        .id("hub-\(id)")
     }
 
     @ViewBuilder
@@ -410,8 +433,12 @@ private struct RailEngineerAccountBody: View {
             LifecycleCard {
                 VStack(spacing: 0) {
                     ForEach(Array(rows.enumerated()), id: \.offset) { idx, r in
-                        Button { openOps(r.id) } label: { opsRow(icon: r.icon, title: r.title, subtitle: r.sub) }
+                        Button {
+                            returnAnchor = "row-\(r.id)"
+                            openOps(r.id)
+                        } label: { opsRow(icon: r.icon, title: r.title, subtitle: r.sub) }
                             .buttonStyle(.plain)
+                            .id("row-\(r.id)")
                         if idx < rows.count - 1 {
                             Rectangle().fill(palette.borderFaint).frame(height: 1).padding(.leading, 44)
                         }
@@ -446,68 +473,144 @@ private struct RailEngineerAccountBody: View {
         NotificationCenter.default.post(name: .eusoRailNavSwap, object: nil, userInfo: ["screenId": screenId])
     }
 
-    private var credentialsCard: some View {
+    private var accountPreferencesHub: some View {
+        hubCard(
+            id: "account",
+            icon: "person.crop.circle",
+            title: "Credentials & Preferences",
+            summary: "Credentials · Duty telemetry · Notifications · Units · Voice",
+            rowCount: 3
+        ) {
+            credentialsContent
+            sectionDivider
+            dutyContent
+            sectionDivider
+            preferencesContent
+        }
+    }
+
+    private var credentialsContent: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
-            Text("CREDENTIALS · on file").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
-            LifecycleCard {
-                VStack(spacing: Space.s2) {
-                    ForEach(credentials) { c in
-                        HStack {
-                            Text(c.title).font(EType.body).foregroundStyle(palette.textPrimary)
-                            Spacer()
-                            Text(c.statusLabel ?? "-").font(.system(size: 11, weight: .bold))
-                                .foregroundStyle((c.expiring ?? false) ? Brand.warning : Brand.success)
-                        }
+            Text("CREDENTIALS · ON FILE")
+                .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                .foregroundStyle(palette.textTertiary)
+            if credentials.isEmpty {
+                Text("No credential records were returned.")
+                    .font(EType.caption).foregroundStyle(palette.textSecondary)
+            } else {
+                ForEach(credentials) { credential in
+                    HStack {
+                        Text(credential.title).font(EType.body).foregroundStyle(palette.textPrimary)
+                        Spacer()
+                        Text(credential.statusLabel ?? "Status unavailable")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(
+                                credential.expiring == true
+                                    ? Brand.warning
+                                    : (credential.statusLabel == nil ? palette.textTertiary : Brand.success)
+                            )
                     }
                 }
             }
         }
     }
 
-    private var dutyCard: some View {
-        let onDuty = hos?.onDutyHours ?? 6.5
-        let limit = hos?.limitHours ?? 12
-        return VStack(alignment: .leading, spacing: Space.s2) {
-            Text("DUTY · HOURS OF SERVICE · live").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
-            LifecycleCard {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text("On duty \(onDuty, specifier: "%.1f")h · \(max(limit - onDuty, 0), specifier: "%.1f")h to limit")
-                            .font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-                        Spacer()
-                        Text("\(Int(limit))h cap").font(EType.bodyStrong).monospacedDigit().foregroundStyle(Brand.success)
-                    }
-                    ProgressView(value: onDuty, total: max(limit, 1)).tint(LinearGradient.primary)
-                    Text("Hours of Service Act compliant · last rest \(Int(hos?.lastRestHours ?? 10))h")
+    @ViewBuilder
+    private var dutyContent: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            Text("DUTY · HOURS OF SERVICE")
+                .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                .foregroundStyle(palette.textTertiary)
+            if let hos, let onDuty = hos.onDutyHours, let limit = hos.limitHours {
+                HStack {
+                    Text("On duty \(onDuty, specifier: "%.1f")h · \(max(limit - onDuty, 0), specifier: "%.1f")h to recorded limit")
+                        .font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+                    Spacer()
+                    Text("\(limit, specifier: "%.1f")h")
+                        .font(EType.bodyStrong).monospacedDigit().foregroundStyle(Brand.info)
+                }
+                ProgressView(value: onDuty, total: max(limit, 1)).tint(LinearGradient.primary)
+                if let lastRest = hos.lastRestHours {
+                    Text("Last recorded rest · \(lastRest, specifier: "%.1f")h")
                         .font(EType.caption).foregroundStyle(palette.textSecondary)
                 }
+            } else {
+                Text(hosError ?? "No current crew HOS telemetry was returned.")
+                    .font(EType.caption).foregroundStyle(hosError == nil ? palette.textSecondary : Brand.warning)
             }
         }
     }
 
-    private var preferencesCard: some View {
-        VStack(alignment: .leading, spacing: Space.s2) {
-            Text("PREFERENCES · saved to your profile").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
-            LifecycleCard {
-                VStack(spacing: Space.s3) {
-                    Toggle(isOn: $notificationsOn) {
-                        Text("Push notifications").font(EType.body).foregroundStyle(palette.textPrimary)
-                    }
-                    .tint(Brand.info)
-                    .onChange(of: notificationsOn) { _, v in Task { await savePref("notifications", v) } }
-                    HStack { Text("Distance units").font(EType.body).foregroundStyle(palette.textPrimary); Spacer(); Text("miles ›").font(.system(size: 12, weight: .bold)).foregroundStyle(palette.textSecondary) }
-                    HStack { Text("ESANG AI voice").font(EType.body).foregroundStyle(palette.textPrimary); Spacer(); Text(voiceOn ? "on ›" : "off ›").font(.system(size: 12, weight: .bold)).foregroundStyle(Brand.info) }
-                }
+    private var preferencesContent: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            Text("PREFERENCES · SAVED TO YOUR ACCOUNT")
+                .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                .foregroundStyle(palette.textTertiary)
+            if let preferencesError {
+                Text(preferencesError).font(EType.caption).foregroundStyle(Brand.warning)
             }
+            Toggle(isOn: Binding(
+                get: { notificationsOn },
+                set: { value in
+                    guard preferencesLoaded else { return }
+                    let previous = notificationsOn
+                    notificationsOn = value
+                    Task { await saveNotifications(value, previous: previous) }
+                }
+            )) {
+                Text("Push notifications").font(EType.body).foregroundStyle(palette.textPrimary)
+            }
+            .tint(Brand.info)
+            .disabled(!preferencesLoaded)
+
+            Picker("Distance units", selection: Binding(
+                get: { distanceUnit },
+                set: { value in
+                    guard preferencesLoaded else { return }
+                    let previous = distanceUnit
+                    distanceUnit = value
+                    Task { await saveOperationalPreference(distanceUnit: value, previousDistanceUnit: previous) }
+                }
+            )) {
+                Text("Miles").tag("miles")
+                Text("Kilometers").tag("kilometers")
+                Text("Nautical miles").tag("nautical_miles")
+            }
+            .pickerStyle(.menu)
+            .disabled(!preferencesLoaded)
+
+            Toggle(isOn: Binding(
+                get: { voiceOn },
+                set: { value in
+                    guard preferencesLoaded else { return }
+                    let previous = voiceOn
+                    voiceOn = value
+                    Task { await saveOperationalPreference(esangVoiceEnabled: value, previousVoice: previous) }
+                }
+            )) {
+                Text("ESANG AI voice").font(EType.body).foregroundStyle(palette.textPrimary)
+            }
+            .tint(Brand.info)
+            .disabled(!preferencesLoaded)
         }
+    }
+
+    private var sectionDivider: some View {
+        Rectangle().fill(palette.borderFaint.opacity(0.5)).frame(height: 1).padding(.vertical, 4)
     }
 
     private var signOut: some View {
-        CTAButton(title: "Sign out", leadingIcon: "rectangle.portrait.and.arrow.right")
+        CTAButton(
+            title: "Sign out",
+            action: { showSignOutConfirm = true },
+            leadingIcon: "rectangle.portrait.and.arrow.right"
+        )
     }
 
     private func load() async {
-        loading = true; loadError = nil
+        loading = true
+        loadError = nil
+        hosError = nil
         struct Empty: Encodable {}
         struct ProfileOut: Decodable {
             let credentials: [RailCredential]?
@@ -531,38 +634,88 @@ private struct RailEngineerAccountBody: View {
             if let crewHOS = p.crewHOS {
                 self.hos = crewHOS
             } else {
-                self.hos = try? await EusoTripAPI.shared.query("railShipments.getCrewHOS", input: Empty())
+                do {
+                    self.hos = try await EusoTripAPI.shared.query("railShipments.getCrewHOS", input: Empty())
+                } catch {
+                    self.hos = nil
+                    self.hosError = error.eusoUserCopy
+                }
             }
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
+        await loadPreferences()
         loading = false
     }
 
-    private func savePref(_ key: String, _ value: Bool) async {
-        // Was pointed at users.updateProfile with {key,value} — that endpoint's
-        // Zod schema has no such fields, so it stripped them and persisted
-        // nothing (the toggle was dead). Notification prefs live on the
-        // dedicated users.updateNotificationPreferences endpoint + the
-        // notificationPreferences table. (the-oath 2026-05-28 §6, FIX 3.)
-        struct PrefIn: Encodable { let pushNotifications: Bool }
-        struct Out: Decodable { let success: Bool? }
-        guard key == "notifications" else { return }
+    private func loadPreferences() async {
+        struct Empty: Encodable {}
+        preferencesLoaded = false
+        preferencesError = nil
         do {
-            let out: Out = try await EusoTripAPI.shared.mutation(
+            async let settingsRequest: RailSettingsPayload = EusoTripAPI.shared.query(
+                "settings.getSettings", input: Empty()
+            )
+            async let notificationsRequest: RailNotificationPreferences = EusoTripAPI.shared.query(
+                "users.getNotificationPreferences", input: Empty()
+            )
+            let (settings, notifications) = try await (settingsRequest, notificationsRequest)
+            distanceUnit = settings.operationalPreferences.distanceUnit
+            voiceOn = settings.operationalPreferences.esangVoiceEnabled
+            notificationsOn = notifications.pushNotifications
+            preferencesLoaded = true
+        } catch {
+            preferencesError = error.eusoUserCopy
+        }
+    }
+
+    private func saveNotifications(_ value: Bool, previous: Bool) async {
+        struct PrefIn: Encodable { let pushNotifications: Bool }
+        do {
+            let out: RailSettingsMutationAck = try await EusoTripAPI.shared.mutation(
                 "users.updateNotificationPreferences",
                 input: PrefIn(pushNotifications: value))
             if out.success != true {
-                // Persisted nothing — revert the toggle so the UI reflects
-                // truth, and surface the failure instead of silently lying.
-                notificationsOn = !value
+                notificationsOn = previous
                 saveError = "Couldn't save notification preference."
             }
         } catch {
-            notificationsOn = !value
-            saveError = (error as? EusoTripAPIError)?.errorDescription
-                ?? "Couldn't save notification preference."
+            notificationsOn = previous
+            saveError = error.eusoUserCopy
         }
+    }
+
+    private func saveOperationalPreference(
+        distanceUnit newDistanceUnit: String? = nil,
+        esangVoiceEnabled: Bool? = nil,
+        previousDistanceUnit: String? = nil,
+        previousVoice: Bool? = nil
+    ) async {
+        struct Input: Encodable {
+            let distanceUnit: String?
+            let esangVoiceEnabled: Bool?
+        }
+        do {
+            let out: RailSettingsMutationAck = try await EusoTripAPI.shared.mutation(
+                "settings.updateOperationalPreferences",
+                input: Input(distanceUnit: newDistanceUnit, esangVoiceEnabled: esangVoiceEnabled)
+            )
+            guard out.success == true else {
+                throw EusoTripAPIError.trpcError("The preference was not saved.")
+            }
+        } catch {
+            if let previousDistanceUnit { distanceUnit = previousDistanceUnit }
+            if let previousVoice { voiceOn = previousVoice }
+            saveError = error.eusoUserCopy
+        }
+    }
+
+    private func restorePosition(using proxy: ScrollViewProxy) {
+        eusoRestoreScrollPosition(
+            using: proxy,
+            anchor: returnAnchor,
+            fallback: "hub-\(expandedHubId.isEmpty ? "operations" : expandedHubId)"
+        )
     }
 }
 

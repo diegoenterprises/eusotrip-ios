@@ -163,14 +163,14 @@ private struct RailCrewCallBoardBody: View {
             .padding(.horizontal, Space.s4)
             .padding(.top, Space.s3)
         }
-        .task { await loadAll() }
+        .eusoRefreshTask { await loadAll() }
     }
 
     // MARK: Eyebrow + headline
 
     private var eyebrow: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("✦ RAIL ENGINEER · CREW CALL")
+            EusoTripEyebrow(verbatim: "RAIL ENGINEER · CREW CALL")
                 .font(.system(size: 9, weight: .black))
                 .kerning(1.0)
                 .foregroundStyle(LinearGradient.primary)

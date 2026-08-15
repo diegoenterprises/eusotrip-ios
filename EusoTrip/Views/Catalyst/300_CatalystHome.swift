@@ -166,10 +166,8 @@ struct CatalystOwnerOpHome: View {
             CHBody()
         } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home",     systemImage: "house",                 isCurrent: true),
-                          NavSlot(label: "Dispatch", systemImage: "rectangle.stack.fill",  isCurrent: false)],
-                trailing: [NavSlot(label: "Fleet",  systemImage: "truck.box.fill",       isCurrent: false),
-                           NavSlot(label: "Me",     systemImage: "person",                isCurrent: false)],
+                leading: CarrierNavRoute.leading(current: .home),
+                trailing: CarrierNavRoute.trailing(current: .home),
                 orbState: .idle
             )
         }
@@ -231,7 +229,7 @@ private struct CHBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await refresh() }
-        .refreshable { await refresh() }
+        .eusoRefreshable { await refresh() }
     }
 
     // MARK: header / drive-mode
@@ -239,7 +237,7 @@ private struct CHBody: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "sparkle")
+                EusoTripBrandMark(size: 12)
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
                 Text("CATALYST · HOME · \(displayCompany.uppercased())")

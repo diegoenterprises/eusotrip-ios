@@ -127,7 +127,7 @@ private struct RailTagSwapScanBody: View {
             .padding(.top, Space.s5)
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
         .alert("No suspect car to flag", isPresented: $showFlagNotice) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -137,7 +137,7 @@ private struct RailTagSwapScanBody: View {
 
     private var eyebrowRow: some View {
         HStack(spacing: 0) {
-            Text("✦ CARRIER · RAIL · TAG-SWAP ENGINE")
+            EusoTripEyebrow(verbatim: "CARRIER · RAIL · TAG-SWAP ENGINE")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer(minLength: 8)

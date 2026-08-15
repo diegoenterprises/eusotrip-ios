@@ -73,7 +73,7 @@ struct AccessControllerScannerView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack {
-                Text("✦ TERMINAL · ACCESS CONTROL")
+                EusoTripEyebrow(verbatim: "TERMINAL · ACCESS CONTROL")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.diagonal)
                 Spacer(minLength: Space.s2)
@@ -333,14 +333,8 @@ struct TerminalAccessScanScreen: View {
             AccessControllerScannerView()
         } nav: {
             BottomNav(
-                leading: [
-                    NavSlot(label: "Home",      systemImage: "house.fill",       isCurrent: false),
-                    NavSlot(label: "Movements", systemImage: "shippingbox.fill",  isCurrent: false),
-                ],
-                trailing: [
-                    NavSlot(label: "Yard", systemImage: "map",    isCurrent: false),
-                    NavSlot(label: "Me",   systemImage: "person", isCurrent: false),
-                ],
+                leading: TerminalNavRoute.leading(current: .movements),
+                trailing: TerminalNavRoute.trailing(current: .movements),
                 orbState: .idle
             )
         }

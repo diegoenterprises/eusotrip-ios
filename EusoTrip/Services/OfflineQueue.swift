@@ -18,6 +18,7 @@
 //      • geofenceEvent     — facility fence ENTER/EXIT (ON-SITE / departed
 //                            flip + detention clock; dead zones at the dock
 //                            must not lose it)
+//      • postHaulMessage   — moderated global Haul-lobby message
 //
 //  What NEVER goes in the queue:
 //
@@ -62,7 +63,7 @@ import Network
 
 /// One durable, idempotent driver mutation awaiting replay.
 ///
-/// Deliberately a closed set — only the five enqueue-eligible driver
+/// Deliberately a closed set — only explicitly enqueue-eligible driver
 /// mutations are representable. Reads and money mutations have no case
 /// here, so they physically cannot enter the outbox.
 enum QueuedAction: Codable, Equatable {
@@ -84,6 +85,9 @@ enum QueuedAction: Codable, Equatable {
     case geofenceEvent(geofenceId: Int, action: String, lat: Double, lng: Double,
                        timestamp: String, loadId: Int?, geofenceType: String?,
                        at: Date, key: String)
+    /// Global, moderated Haul-lobby post. The server deduplicates this key
+    /// inside the authenticated user's scope before rate limiting.
+    case postHaulMessage(message: String, at: Date, key: String)
 
     /// Stable idempotency key — generated at enqueue, persisted, and
     /// echoed to the server so a re-send collapses instead of duplicating.
@@ -95,6 +99,7 @@ enum QueuedAction: Codable, Equatable {
         case .executeTransition(_, _, _, let k):     return k
         case .acceptLoad(_, _, let k):               return k
         case .geofenceEvent(_, _, _, _, _, _, _, _, let k): return k
+        case .postHaulMessage(_, _, let k):                  return k
         }
     }
 
@@ -107,6 +112,7 @@ enum QueuedAction: Codable, Equatable {
         case .executeTransition(_, _, let at, _):     return at
         case .acceptLoad(_, let at, _):               return at
         case .geofenceEvent(_, _, _, _, _, _, _, let at, _): return at
+        case .postHaulMessage(_, let at, _):                  return at
         }
     }
 
@@ -119,6 +125,7 @@ enum QueuedAction: Codable, Equatable {
         case .executeTransition: return "Load update"
         case .acceptLoad:        return "Load accept"
         case .geofenceEvent:     return "Arrival update"
+        case .postHaulMessage:   return "Haul message"
         }
     }
 }
@@ -136,6 +143,7 @@ final class OfflineQueue: ObservableObject {
     /// True while a `flush()` pass is in flight — keeps the path monitor
     /// edge and a manual flush from stomping on each other.
     @Published private(set) var isFlushing: Bool = false
+    private var scheduledRetry: Task<Void, Never>?
 
     /// File-backed persistence in Application Support so queued actions
     /// survive a cold relaunch (the dead-spot → force-quit → coverage
@@ -229,6 +237,14 @@ final class OfflineQueue: ObservableObject {
         return k
     }
 
+    @discardableResult
+    func enqueueHaulMessage(message: String, idempotencyKey: String? = nil) -> String {
+        let k = idempotencyKey ?? key()
+        guard !pending.contains(where: { $0.key == k }) else { return k }
+        append(.postHaulMessage(message: message, at: Date(), key: k))
+        return k
+    }
+
     private func append(_ action: QueuedAction) {
         pending.append(action)
         pending.sort { $0.enqueuedAt < $1.enqueuedAt }
@@ -259,6 +275,15 @@ final class OfflineQueue: ObservableObject {
         return nil
     }
 
+    func keyForPendingHaulMessage(content: String) -> String? {
+        for action in pending.reversed() {
+            if case let .postHaulMessage(body, _, key) = action, body == content {
+                return key
+            }
+        }
+        return nil
+    }
+
     // MARK: Flush / replay
     //
     // Replays queued actions against the live EusoTripAPI, oldest-first.
@@ -272,6 +297,24 @@ final class OfflineQueue: ObservableObject {
     /// Public alias mirroring the wrist's `flushAll`. Safe to call any
     /// time — no-ops when the queue is empty or no bearer is set.
     func replay() async { await flush() }
+
+    /// A provider can be temporarily unavailable while the phone still has a
+    /// healthy network path. Reachability will not emit a reconnect edge in
+    /// that case, so schedule a bounded replay instead of leaving the action
+    /// parked until the next radio transition.
+    func scheduleReplay(after delay: TimeInterval = 4) {
+        guard scheduledRetry == nil, OfflineReachabilityHub.shared.isOnline else { return }
+        let bounded = min(max(delay, 1), 60)
+        scheduledRetry = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(bounded * 1_000_000_000))
+            guard let self, !Task.isCancelled else { return }
+            self.scheduledRetry = nil
+            await self.flush()
+            if !self.pending.isEmpty, OfflineReachabilityHub.shared.isOnline {
+                self.scheduleReplay(after: min(bounded * 2, 60))
+            }
+        }
+    }
 
     func flush() async {
         guard !isFlushing else { return }
@@ -302,6 +345,14 @@ final class OfflineQueue: ObservableObject {
                     // Still offline — stop the pass, keep the entry, retry
                     // on the next satisfied edge.
                     break
+                } else if Self.isRetryableFailure(error) {
+                    // The phone is online but this service is temporarily
+                    // unavailable (5xx, lock timeout, rate limit, etc.). Keep
+                    // the original durable action and stable key. Continue the
+                    // pass so a Haul outage cannot block a legal HOS/POD event,
+                    // then retry the retained action on a bounded backoff.
+                    scheduleReplay()
+                    continue
                 } else {
                     // A real server-side rejection. Don't loop on it
                     // forever; drop it (the idempotency key already
@@ -310,10 +361,17 @@ final class OfflineQueue: ObservableObject {
                     print("[OfflineQueue] dropping \(action.label) after non-network failure: \(error)")
                     #endif
                     remove(key: action.key)
+                    if case let .postHaulMessage(message, _, key) = action {
+                        preserveFailedHaulDraft(message: message, key: key)
+                    }
                     NotificationCenter.default.post(
                         name: .eusoOutboxReplayFailed,
                         object: nil,
-                        userInfo: ["key": action.key]
+                        userInfo: [
+                            "key": action.key,
+                            "message": Self.recoverableMessage(in: action) as Any,
+                            "reason": error.localizedDescription,
+                        ]
                     )
                 }
             }
@@ -323,6 +381,61 @@ final class OfflineQueue: ObservableObject {
 
     private func remove(key: String) {
         pending.removeAll { $0.key == key }
+    }
+
+    struct FailedHaulDraft: Codable, Equatable {
+        let key: String
+        let message: String
+        let failedAt: Date
+    }
+
+    /// Separate recovery file for terminally rejected Haul posts. It is an
+    /// array, not a single preference value, so two moderation decisions in
+    /// one replay pass cannot overwrite each other. Entries remain here until
+    /// the composer successfully sends or requeues that exact key.
+    private let failedHaulURL: URL = {
+        let dir = FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask)
+            .first
+            ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("eusotrip_failed_haul_drafts.json")
+    }()
+
+    private func failedHaulDrafts() -> [FailedHaulDraft] {
+        guard let data = try? Data(contentsOf: failedHaulURL),
+              let drafts = try? JSONDecoder().decode([FailedHaulDraft].self, from: data)
+        else { return [] }
+        return drafts.sorted { $0.failedAt < $1.failedAt }
+    }
+
+    private func persistFailedHaulDrafts(_ drafts: [FailedHaulDraft]) {
+        guard let data = try? JSONEncoder().encode(drafts) else { return }
+        try? data.write(to: failedHaulURL, options: .atomic)
+    }
+
+    private func preserveFailedHaulDraft(message: String, key: String) {
+        var drafts = failedHaulDrafts()
+        guard !drafts.contains(where: { $0.key == key }) else { return }
+        drafts.append(FailedHaulDraft(key: key, message: message, failedAt: Date()))
+        persistFailedHaulDrafts(drafts)
+    }
+
+    func firstFailedHaulDraft() -> FailedHaulDraft? {
+        failedHaulDrafts().first
+    }
+
+    func failedHaulDraft(key: String) -> FailedHaulDraft? {
+        failedHaulDrafts().first { $0.key == key }
+    }
+
+    func discardFailedHaulDraft(key: String) {
+        persistFailedHaulDrafts(failedHaulDrafts().filter { $0.key != key })
+    }
+
+    private static func recoverableMessage(in action: QueuedAction) -> String? {
+        if case let .postHaulMessage(message, _, _) = action { return message }
+        return nil
     }
 
     /// Dispatch one queued action to its real EusoTripAPI method, passing
@@ -385,6 +498,14 @@ final class OfflineQueue: ObservableObject {
                 geofenceId: geofenceId, action: action, lat: lat, lng: lng,
                 timestamp: timestamp, loadId: loadId,
                 geofenceType: geofenceType, facilityName: nil)
+        case .postHaulMessage(let message, _, let key):
+            let result = try await api.gamification.postLobbyMessage(
+                message: message,
+                idempotencyKey: key
+            )
+            guard result.success else {
+                throw EusoTripAPIError.trpcError(result.error ?? "The Haul rejected this message.")
+            }
         }
     }
 
@@ -411,6 +532,34 @@ final class OfflineQueue: ObservableObject {
         default:
             return false
         }
+    }
+
+    /// Infrastructure and throttling failures are continuation states, not
+    /// terminal outcomes. These stay in the durable queue with the same key.
+    nonisolated static func isRetryableFailure(_ error: Error) -> Bool {
+        if isNetworkUnreachable(error) { return true }
+        guard let apiError = error as? EusoTripAPIError else { return false }
+        switch apiError {
+        case .httpStatus(let status, _):
+            return status == 408 || status == 425 || status == 429 || status >= 500
+        case .trpcError(let message):
+            return isRetryableServerMessage(message)
+        case .queuedForOfflineReplay:
+            return true
+        default:
+            return false
+        }
+    }
+
+    nonisolated static func isRetryableServerMessage(_ message: String) -> Bool {
+        let value = message.lowercased()
+        return value.contains("reconnecting")
+            || value.contains("temporarily unavailable")
+            || value.contains("service unavailable")
+            || value.contains("try again in a moment")
+            || value.contains("please wait a moment before posting again")
+            || value.contains("rate limit")
+            || value.contains("too many requests")
     }
 }
 

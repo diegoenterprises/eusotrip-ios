@@ -193,7 +193,7 @@ struct LoadingInProgress: View {
             .padding(.horizontal, 14)
             .padding(.top, 8)
         }
-        .task { await hydrateLiveTrip() }
+        .eusoRefreshTask { await hydrateLiveTrip() }
         .onChange(of: targetFraction) { _, newValue in
             settleFill(to: newValue)
         }

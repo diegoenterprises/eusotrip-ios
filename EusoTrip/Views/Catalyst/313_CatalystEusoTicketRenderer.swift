@@ -105,13 +105,11 @@ struct CatalystEusoTicketRendererScreen: View {
 // because the EusoTicket renderer lives under the dispatch flow
 // (BOL/POD/run-ticket/haul-receipt are the dispatch document set).
 private func catalystNavLeading_313() -> [NavSlot] {
-    [NavSlot(label: "Home",     systemImage: "house",                   isCurrent: false),
-     NavSlot(label: "Dispatch", systemImage: "shippingbox.and.arrow.backward", isCurrent: true)]
+    CarrierNavRoute.leading(current: .loads)
 }
 
 private func catalystNavTrailing_313() -> [NavSlot] {
-    [NavSlot(label: "My Loads", systemImage: "shippingbox.fill", isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person",      isCurrent: false)]
+    CarrierNavRoute.trailing(current: .loads)
 }
 
 // MARK: - Body
@@ -174,7 +172,7 @@ private struct CatalystEusoTicketRenderer: View {
             await fetchLoad()
             joinLoadRoom()
         }
-        .refreshable { await fetchLoad() }
+        .eusoRefreshable { await fetchLoad() }
         .onDisappear { leaveLoadRoom() }
         // RealtimeService → re-fetch the EusoTicket render the moment
         // the underlying load record changes upstream so the catalyst
@@ -222,7 +220,7 @@ private struct CatalystEusoTicketRenderer: View {
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
             HStack(spacing: 4) {
-                Image(systemName: "sparkles")
+                EusoTripBrandMark(size: 12)
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
                 Text("CATALYST · EUSOTICKET")

@@ -6,6 +6,10 @@ const targets = [
     mutations: 2,
     resultType: "DispatcherMutationResult",
     dropGuard: "guard shifting == nil else { return false }",
+    validationCalls: [
+      "try response.validateStatus(loadId: l.id, status: next)",
+      "try response.validateUnassignment(loadId: l.id)",
+    ],
   },
   {
     path: "EusoTrip/Views/Components/AppointmentSchedulerSheet.swift",
@@ -97,26 +101,36 @@ for (const target of targets) {
     const mutationAt = source.indexOf(mutationNeedle, cursor);
     const catchAt = source.indexOf("} catch", mutationAt);
     const nextMutationAt = source.indexOf(mutationNeedle, mutationAt + mutationNeedle.length);
-    const guardAt = source.indexOf(".failureMessage(", mutationAt);
+    const guardAt = target.validationCalls
+      ? source.indexOf("try response.validate", mutationAt)
+      : source.indexOf(".failureMessage(", mutationAt);
     if (catchAt < 0 || guardAt < 0 || guardAt > catchAt || (nextMutationAt >= 0 && guardAt > nextMutationAt)) {
       failures.push(`${target.path}: mutation ${index + 1} is not guarded before its success path`);
     }
     cursor = mutationAt + mutationNeedle.length;
   }
 
-  const falseBranches = [...source.matchAll(
-    /if let failure = [A-Za-z0-9_.]+\.failureMessage\([\s\S]*?\n\s*\) \{([\s\S]*?)\n\s*\} else \{/g,
-  )];
-  if (falseBranches.length !== target.mutations) {
-    failures.push(`${target.path}: expected ${target.mutations} explicit false branch(es), found ${falseBranches.length}`);
-  }
-  for (const [index, match] of falseBranches.entries()) {
-    const branch = match[1];
-    if (!branch.includes("actionError = failure")) {
-      failures.push(`${target.path}: false branch ${index + 1} does not surface the server failure`);
+  if (target.validationCalls) {
+    for (const validation of target.validationCalls) {
+      if (!source.includes(validation)) {
+        failures.push(`${target.path}: missing typed acknowledgement validation (${validation})`);
+      }
     }
-    if (!/await load(?:All)?\(\)/.test(branch)) {
-      failures.push(`${target.path}: false branch ${index + 1} does not reload authoritative state`);
+  } else {
+    const falseBranches = [...source.matchAll(
+      /if let failure = [A-Za-z0-9_.]+\.failureMessage\([\s\S]*?\n\s*\) \{([\s\S]*?)\n\s*\} else \{/g,
+    )];
+    if (falseBranches.length !== target.mutations) {
+      failures.push(`${target.path}: expected ${target.mutations} explicit false branch(es), found ${falseBranches.length}`);
+    }
+    for (const [index, match] of falseBranches.entries()) {
+      const branch = match[1];
+      if (!branch.includes("actionError = failure")) {
+        failures.push(`${target.path}: false branch ${index + 1} does not surface the server failure`);
+      }
+      if (!/await load(?:All)?\(\)/.test(branch)) {
+        failures.push(`${target.path}: false branch ${index + 1} does not reload authoritative state`);
+      }
     }
   }
 }

@@ -531,8 +531,10 @@ enum eSangRoleDispatcher {
     /// typed `eSangRoute` through `ContentView.handleeSangAction`.
     private static func navSwap(for role: EusoRole) -> (name: Notification.Name, home: String)? {
         switch role {
-        case .shipper, .railShipper, .vesselShipper:
+        case .shipper, .railShipper:
             return (.eusoShipperNavSwap, "200")
+        case .vesselShipper:
+            return (.eusoVesselShipperNavSwap, "Vesl001")
         case .catalyst, .railCatalyst:
             return (.eusoCarrierNavSwap, "300")
         case .broker, .railBroker, .vesselBroker, .customsBroker:
@@ -564,8 +566,10 @@ enum eSangRoleDispatcher {
     /// the shared `.eusoRoleNavBack`.
     private static func backNotification(for role: EusoRole) -> Notification.Name? {
         switch role {
-        case .shipper, .railShipper, .vesselShipper:
+        case .shipper, .railShipper:
             return .eusoShipperNavBack
+        case .vesselShipper:
+            return .eusoVesselShipperNavBack
         case .catalyst, .railCatalyst, .broker, .railBroker, .vesselBroker,
              .customsBroker, .escort, .terminal, .portMaster, .admin,
              .superAdmin, .dispatch, .compliance, .railEngineer, .vesselOperator:
@@ -706,7 +710,20 @@ enum eSangRoleDispatcher {
             // Route a load-open through the role's load-open path where
             // one exists; otherwise resolve `/load/:id` against the
             // registry. Shipper has a dedicated load-open notification.
-            if role == .shipper || role == .railShipper || role == .vesselShipper {
+            if role == .vesselShipper {
+                let reference = id.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !reference.isEmpty else { return true }
+                dismissSheet()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.40) {
+                    NotificationCenter.default.post(
+                        name: .eusoVesselShipperNavSwap,
+                        object: nil,
+                        userInfo: ["screenId": "Vesl003", "bookingNumber": reference]
+                    )
+                }
+                return true
+            }
+            if role == .shipper || role == .railShipper {
                 NotificationCenter.default.post(
                     name: .eusoShipperLoadOpen, object: nil,
                     userInfo: ["loadId": id]
@@ -797,7 +814,7 @@ enum eSangRoleDispatcher {
         // the full `segs` so it can special-case these routes by purpose.
         let surface = segs.first ?? "home"
         let homeIds: [EusoRole: String] = [
-            .shipper: "200", .railShipper: "200", .vesselShipper: "200",
+            .shipper: "200", .railShipper: "200", .vesselShipper: "Vesl001",
             .catalyst: "300", .railCatalyst: "300",
             .broker: "400", .railBroker: "400", .vesselBroker: "400", .customsBroker: "400",
             .escort: "600", .terminal: "700", .portMaster: "700",
@@ -812,8 +829,10 @@ enum eSangRoleDispatcher {
         }
 
         switch role {
-        case .shipper, .railShipper, .vesselShipper:
+        case .shipper, .railShipper:
             return shipperScreen(for: surface, segs: segs)
+        case .vesselShipper:
+            return vesselShipperScreen(for: surface, segs: segs)
         case .catalyst, .railCatalyst:
             return carrierScreen(for: surface, segs: segs)
         case .broker, .railBroker, .vesselBroker, .customsBroker:
@@ -982,6 +1001,26 @@ enum eSangRoleDispatcher {
         case "me", "account", "profile",
              "settings":                    return "Vesl656"
         default:                            return nil
+        }
+    }
+
+    private static func vesselShipperScreen(for s: String, segs: [String]) -> String? {
+        if isCreateLoadRoute(segs) { return "Vesl010" }
+        switch s {
+        case "create-booking", "new-booking", "create-load", "post-load",
+             "post-a-load", "create", "new": return "Vesl010"
+        case "shipments", "bookings", "booking", "loads", "marketplace":
+            return "Vesl011"
+        case "tracking", "live-tracking", "track", "position":
+            return "Vesl012"
+        case "compliance", "customs", "isf":
+            return "Vesl006"
+        case "me", "account", "profile", "settings":
+            return "320"
+        case "wallet", "eusowallet", "payments":
+            return "290"
+        default:
+            return nil
         }
     }
 

@@ -243,7 +243,7 @@ struct ShipperCarPlayDashboard: View {
                 .padding(.top, Space.s4)
                 .padding(.bottom, Space.s5)
         }
-        .task { await load() }
+        .eusoRefreshTask { await load() }
     }
 
     /// Hero slot — live tile, or honest loading / empty / error card.
@@ -298,7 +298,7 @@ struct ShipperCarPlayDashboard: View {
 
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("\u{2726} SHIPPER · CARPLAY · LIVE")
+            EusoTripEyebrow("SHIPPER · CARPLAY · LIVE")
                 .font(EType.micro)
                 .tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)

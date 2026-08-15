@@ -426,14 +426,14 @@ private struct VesselTerminalGateLogBody744: View {
             .padding(.top, Space.s4)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: Header
 
     private var eyebrow: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("✦ VESSEL · GATE LOG · TURN TIME")
+            EusoTripEyebrow(verbatim: "VESSEL · GATE LOG · TURN TIME")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer(minLength: Space.s2)

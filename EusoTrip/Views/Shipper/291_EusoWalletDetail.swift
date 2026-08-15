@@ -199,7 +199,7 @@ private struct EusoWalletDetailBody: View {
             .padding(.horizontal, 14).padding(.top, 56)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: Header

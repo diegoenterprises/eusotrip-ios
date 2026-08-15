@@ -29,28 +29,66 @@ extension Notification.Name {
     static let eusoEscorteSangTapped = Notification.Name("eusoEscorteSangTapped")
 }
 
+enum EscortNavTab {
+    case home, assignments, corridor, me, none
+}
+
 /// `Assignments` resolves to 601 Assignment Detail (which boards the
 /// active assignment when present, empty-states when not — the only
 /// "list" surface the escort track has today is hidden inside the
 /// home dashboard, so 601 doubles as the assignments surface). `Me`
-/// routes to 600 home until the escort Me brick lands.
+/// resolves to the dedicated 620 Escort Me hub.
 enum EscortNavRoute {
-    static let map: [String: String] = [
-        "home":        "600",
-        "assignments": "601",
-        "corridor":    "602",
-        "me":          "620",
+    enum Destination: String {
+        case home = "600"
+        case assignments = "601"
+        case corridor = "602"
+        case me = "620"
+        case comms = "603"
+        case permits = "607"
+    }
+
+    private static let map: [String: Destination] = [
+        "home": .home,
+        "assignments": .assignments,
+        "corridor": .corridor,
+        "me": .me,
+        // New-wave Escort screens retained these established labels. They
+        // now resolve inside the Escort registry instead of silently dying.
+        "trip": .assignments,
+        "comms": .comms,
+        "permit": .permits,
     ]
 
-    static let orbLabels: Set<String> = ["esang", "orb"]
+    private static let orbLabels: Set<String> = ["esang", "orb"]
+
+    static func screenId(for label: String) -> String? {
+        map[normalize(label)]?.rawValue
+    }
+
+    static func isOrb(_ label: String) -> Bool {
+        orbLabels.contains(normalize(label))
+    }
+
+    private static func normalize(_ label: String) -> String {
+        label.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    static func leading(current: EscortNavTab = .none) -> [NavSlot] {
+        [NavSlot(label: "Home", systemImage: "house", isCurrent: current == .home),
+         NavSlot(label: "Assignments", systemImage: "shield.lefthalf.filled", isCurrent: current == .assignments)]
+    }
+
+    static func trailing(current: EscortNavTab = .none) -> [NavSlot] {
+        [NavSlot(label: "Corridor", systemImage: "map", isCurrent: current == .corridor),
+         NavSlot(label: "Me", systemImage: "person", isCurrent: current == .me)]
+    }
 }
 
 @MainActor
 enum EscortNavDispatcher {
     static func handle(_ label: String) {
-        let key = label.lowercased()
-
-        if EscortNavRoute.orbLabels.contains(key) {
+        if EscortNavRoute.isOrb(label) {
             NotificationCenter.default.post(
                 name: .eusoEscorteSangTapped,
                 object: nil
@@ -58,7 +96,7 @@ enum EscortNavDispatcher {
             return
         }
 
-        guard let screenId = EscortNavRoute.map[key] else { return }
+        guard let screenId = EscortNavRoute.screenId(for: label) else { return }
         NotificationCenter.default.post(
             name: .eusoEscortNavSwap,
             object: nil,

@@ -435,18 +435,18 @@ private struct VesselParticularsBody699: View {
             }
         }
         .padding(.horizontal, Space.s5)
-        .task { await load() }
+        .eusoRefreshTask { await load() }
         .sheet(isPresented: $showPortPicker) { portPickerSheet }
         .sheet(isPresented: $showBinder)     { binderSheet }
         .sheet(isPresented: $showPSC)        { pscSheet }
     }
 
-    // MARK: header · one sparkle · DRAWN staleness breadcrumb
+    // MARK: header · brand mark · DRAWN staleness breadcrumb
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top) {
-                Text("\u{2726} VESSEL · COMPLIANCE")
+                EusoTripEyebrow("VESSEL · COMPLIANCE")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer(minLength: Space.s3)

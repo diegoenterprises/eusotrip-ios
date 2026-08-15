@@ -186,18 +186,12 @@ struct CatalystAssetFinancialsScreen: View {
 /// HOME · DISPATCH — labels resolve through `CarrierNavRoute.map`
 /// (CarrierNavController.swift:70-84) so the real dispatcher moves the surface.
 private func catalystNavLeading_405() -> [NavSlot] {
-    [NavSlot(label: "Home",     systemImage: "house",
-             isCurrent: false, onTap: { Task { @MainActor in CarrierNavDispatcher.handle("Home") } }),
-     NavSlot(label: "Dispatch", systemImage: "shippingbox.and.arrow.backward",
-             isCurrent: false, onTap: { Task { @MainActor in CarrierNavDispatcher.handle("Dispatch") } })]
+    CarrierNavRoute.leading(current: .drivers)
 }
 
 /// FLEET is the current tab — this screen lives under it.
 private func catalystNavTrailing_405() -> [NavSlot] {
-    [NavSlot(label: "Fleet", systemImage: "truck.box",
-             isCurrent: true,  onTap: { Task { @MainActor in CarrierNavDispatcher.handle("Fleet") } }),
-     NavSlot(label: "Me",    systemImage: "person",
-             isCurrent: false, onTap: { Task { @MainActor in CarrierNavDispatcher.handle("Me") } })]
+    CarrierNavRoute.trailing(current: .drivers)
 }
 
 // MARK: - Body (1:1 with the SVG, block for block)
@@ -241,7 +235,7 @@ private struct AssetFinancialsBody_405: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("✦ CATALYST · ASSET FINANCIALS")
+                EusoTripEyebrow(verbatim: "CATALYST · ASSET FINANCIALS")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

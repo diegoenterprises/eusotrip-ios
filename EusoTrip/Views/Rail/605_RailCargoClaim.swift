@@ -225,7 +225,7 @@ private struct RailCargoClaimBody: View {
             }
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
     }
 
     // MARK: - Top bar
@@ -233,7 +233,7 @@ private struct RailCargoClaimBody: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: Space.s3) {
             HStack {
-                Text("✦ RAIL ENGINEER · CARGO CLAIM")
+                EusoTripEyebrow(verbatim: "RAIL ENGINEER · CARGO CLAIM")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

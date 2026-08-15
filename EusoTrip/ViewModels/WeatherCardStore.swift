@@ -23,6 +23,21 @@
 import Foundation
 import SwiftUI
 
+private enum AmbientWeatherSourcePolicy {
+    static func attribution(for raw: String?) -> String? {
+        switch (raw ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() {
+        case "weatherkit":
+            return "Apple WeatherKit"
+        case "openweather":
+            return "OpenWeather fallback"
+        default:
+            return nil
+        }
+    }
+}
+
 @MainActor
 final class WeatherCardStore: ObservableObject {
 
@@ -34,6 +49,7 @@ final class WeatherCardStore: ObservableObject {
     @Published private(set) var hourly: [HourPoint] = []        // ribbon
     @Published private(set) var daily: [DayPoint] = []          // 7-day chips
     @Published private(set) var alert: AlertBar?                // hero alert bar
+    @Published private(set) var forecastSourceAttribution: String?
     @Published private(set) var lastUpdated: Date?
     @Published private(set) var isStale: Bool = false           // last refresh failed → show staleness chip
     @Published private(set) var errorText: String?
@@ -65,7 +81,11 @@ final class WeatherCardStore: ObservableObject {
                 async let al: [WeatherAlertRow] = Self.fetchAlerts(
                     lat: lat, lon: lon, state: state, country: Self.country(forState: state))
                 let (timelines, alerts) = await (tl, al)
-                if let timelines { self.hourly = timelines.hourPoints; self.daily = timelines.dayPoints }
+                if let timelines {
+                    self.hourly = timelines.hourPoints
+                    self.daily = timelines.dayPoints
+                    self.forecastSourceAttribution = timelines.sourceAttribution
+                }
                 self.alert = alerts.compactMap(AlertBar.init).max(by: { $0.severityRank < $1.severityRank })
             }
 
@@ -107,7 +127,13 @@ final class WeatherCardStore: ObservableObject {
 
     private static func fetchTimelines(lat: Double, lon: Double) async -> WeatherTimelines? {
         struct In: Encodable { let lat: Double; let lon: Double }
-        return try? await EusoTripAPI.shared.query("weather.timelines", input: In(lat: lat, lon: lon))
+        guard let result: WeatherTimelines = try? await EusoTripAPI.shared.query(
+            "weather.timelines",
+            input: In(lat: lat, lon: lon)
+        ), result.available != false, result.sourceAttribution != nil else {
+            return nil
+        }
+        return result
     }
 
     /// `state` + `country` scope the server read: the state applies the
@@ -120,9 +146,10 @@ final class WeatherCardStore: ObservableObject {
             let lat: Double; let lon: Double
             let state: String?; let country: String?
         }
-        return (try? await EusoTripAPI.shared.query(
+        let rows: [WeatherAlertRow] = (try? await EusoTripAPI.shared.query(
             "weather.getAlerts",
             input: In(lat: lat, lon: lon, state: state, country: country))) ?? []
+        return rows.filter { AmbientWeatherSourcePolicy.attribution(for: $0.source) != nil }
     }
 
     /// "Laredo, TX" → "TX". Nil when the endpoint name carries no trailing
@@ -178,6 +205,8 @@ struct AlertBar: Hashable {
     let title: String
     let severity: String   // "severe" | "extreme" | ...
     let untilDisplay: String?
+    let issuingSource: String?
+    let detailsURL: URL?
     var severityRank: Int {
         switch severity.lowercased() { case "extreme": return 4; case "severe": return 3; case "moderate": return 2; case "minor": return 1; default: return 0 }
     }
@@ -185,6 +214,8 @@ struct AlertBar: Hashable {
         guard let t = row.headline ?? row.eventType else { return nil }
         self.title = t
         self.severity = row.severity ?? "unknown"
+        self.issuingSource = row.issuingSource
+        self.detailsURL = row.detailsUrl.flatMap(URL.init(string:))
         if let iso = row.expiresAt, let d = ISO8601DateFormatter().date(from: iso) {
             let f = DateFormatter(); f.setLocalizedDateFormatFromTemplate("ha")
             self.untilDisplay = "until \(f.string(from: d))"
@@ -205,14 +236,21 @@ struct WeatherTimelines: Decodable {
     //   daily:  [{ d, hi, lo, weatherCode, condition }]
     struct Hour: Decodable { let t: String?; let temp: Double?; let precipPct: Int?; let weatherCode: Int?; let condition: String? }
     struct Day: Decodable { let d: String?; let hi: Double?; let lo: Double?; let weatherCode: Int?; let condition: String? }
+    let source: String?
+    let available: Bool?
+    let fetchedAt: String?
     let hourly: [Hour]?
     let daily: [Day]?
+
+    var sourceAttribution: String? {
+        AmbientWeatherSourcePolicy.attribution(for: source)
+    }
 
     private static let iso = ISO8601DateFormatter()
     var hourPoints: [HourPoint] {
         (hourly ?? []).map {
             HourPoint(time: $0.t.flatMap(Self.iso.date(from:)),
-                      tempF: $0.temp.map { Int($0.rounded()) },
+                      tempF: WeatherNumeric.roundedInt($0.temp, allowed: WeatherNumeric.temperatureF),
                       weatherCode: $0.weatherCode ?? 0,
                       precipPct: $0.precipPct)
         }
@@ -220,8 +258,8 @@ struct WeatherTimelines: Decodable {
     var dayPoints: [DayPoint] {
         (daily ?? []).map {
             DayPoint(day: $0.d.flatMap(Self.iso.date(from:)),
-                     highF: $0.hi.map { Int($0.rounded()) },
-                     lowF: $0.lo.map { Int($0.rounded()) },
+                     highF: WeatherNumeric.roundedInt($0.hi, allowed: WeatherNumeric.temperatureF),
+                     lowF: WeatherNumeric.roundedInt($0.lo, allowed: WeatherNumeric.temperatureF),
                      weatherCode: $0.weatherCode ?? 0)
         }
     }
@@ -237,5 +275,8 @@ struct WeatherAlertRow: Decodable {
     let description: String?
     let onsetAt: String?
     let expiresAt: String?
+    let detailsUrl: String?
+    let issuingSource: String?
+    let responseActions: [String]?
     let govFeedGap: Bool?
 }

@@ -380,10 +380,11 @@ struct HomeWidgetGrid: View {
             }
         }
         .sheet(isPresented: $showAddSheet) { addSheet }
-        .task {
-            guard !hydrated else { return }
-            hydrated = true
-            order = canonicalOrder
+        .eusoRefreshTask {
+            if !hydrated {
+                hydrated = true
+                order = canonicalOrder
+            }
             await hydrate()
         }
     }
@@ -954,14 +955,11 @@ struct DriverHome: View {
                         // own fetch + honest empty states so it never
                         // disappears. Lane-aware: passes the active load's
                         // HERE lane weather through to the card's lane strip.
-                        // Destination-hero policy: while a load is active,
-                        // vm.weather carries the HERE destination snapshot
-                        // (refreshWeatherForUpcomingLoad) — pass it as the
-                        // preferred hero so the card adapts to where the
-                        // truck is GOING, not where it's parked.
+                        // WeatherKit owns the ambient hero. HERE active-load
+                        // endpoint conditions render only in the lane strip.
                         HomeWeatherWidget(
                             lane: vm.laneWeather,
-                            preferredSnapshot: vm.laneWeather != nil ? vm.weather : nil
+                            onSnapshot: { vm.acceptLocalWeatherSnapshot($0) }
                         )
                         // Pre-trip DVIR status — 49 CFR 396.11. Only
                         // surfaces when the driver actually has an
@@ -1013,7 +1011,7 @@ struct DriverHome: View {
             // load card, metric tiles, and recent section. `vm.load()`
             // is the same async loader used on first appearance, so the
             // refresh is a real reload, not a stub.
-            .refreshable {
+            .eusoRefreshable {
                 await vm.load()
                 await suggestedLoadsStore.refresh()
             }
@@ -1203,7 +1201,7 @@ struct DriverHome: View {
 
     // MARK: TopBar
 
-    // Figma 212:444 / SVG 010 — bespoke eyebrow chip ("✦ DRIVER · DASHBOARD"
+    // Figma 212:444 / SVG 010 — branded eyebrow (EusoTrip mark + DRIVER · DASHBOARD
     // gradient, live status · CITY tertiary on the right), then a two-line
     // display greeting left, uppercase right-column label, chat round button
     // with magenta iridescent badge dot. The eyebrow is the SVG's defining
@@ -1214,7 +1212,7 @@ struct DriverHome: View {
             // live status · location, matching the Dark-SVG header and
             // the Shipper-200 idiom so the role homes read as one family.
             HStack {
-                Text("✦ DRIVER · DASHBOARD")
+                EusoTripEyebrow(verbatim: "DRIVER · DASHBOARD")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer(minLength: Space.s2)
@@ -2173,7 +2171,7 @@ struct NotificationsWidget: View {
             .eusoCard(radius: Radius.lg)
         }
         .buttonStyle(.plain)
-        .task { await load() }
+        .eusoRefreshTask { await load() }
     }
 
     private func load() async {
@@ -2879,7 +2877,7 @@ struct MileageTrackerWidget: View {
         // ambient glow (dark) replacing the flat bgCard + faint-border
         // washout, bringing this tile up to the SVG card language.
         .eusoCard(radius: Radius.lg)
-        .task { await load() }
+        .eusoRefreshTask { await load() }
     }
 
     private func load() async {
@@ -2890,8 +2888,8 @@ struct MileageTrackerWidget: View {
             let sc = try await EusoTripAPI.shared.drivers.getPerformanceMetrics(
                 driverId: userId, period: .month
             )
-            monthlyMiles = sc.metrics.totalMiles
-            totalLoads = sc.metrics.totalLoads
+            monthlyMiles = sc.tracked?.mileage == true ? sc.metrics.totalMiles : nil
+            totalLoads = sc.tracked?.loads == true ? sc.metrics.totalLoads : nil
             loading = false
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
@@ -3011,7 +3009,7 @@ struct WalletActivityWidget: View {
         .padding(Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)
         .eusoCard(radius: Radius.lg)
-        .task { await load() }
+        .eusoRefreshTask { await load() }
     }
 
     private func load() async {
@@ -3109,7 +3107,7 @@ struct FuelEconomyWidget: View {
         .padding(Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)
         .eusoCard(radius: Radius.lg)
-        .task { await load() }
+        .eusoRefreshTask { await load() }
     }
 
     private func load() async {
@@ -3120,8 +3118,8 @@ struct FuelEconomyWidget: View {
             let sc = try await EusoTripAPI.shared.drivers.getPerformanceMetrics(
                 driverId: userId, period: .month
             )
-            mpg = sc.metrics.fuelEfficiency
-            miles = sc.metrics.totalMiles
+            mpg = sc.tracked?.fuel == true ? sc.metrics.fuelEfficiency : nil
+            miles = sc.tracked?.mileage == true ? sc.metrics.totalMiles : nil
             loading = false
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
@@ -3224,7 +3222,7 @@ struct VehicleHealthWidget: View {
         // ambient glow (dark) replacing the flat bgCard + faint-border
         // washout, bringing this tile up to the SVG card language.
         .eusoCard(radius: Radius.lg)
-        .task { await load() }
+        .eusoRefreshTask { await load() }
     }
 
     private func load() async {
@@ -3251,10 +3249,12 @@ struct PerformanceScoreWidget: View {
     @EnvironmentObject private var session: EusoTripSession
 
     private struct Snapshot {
-        let safetyScore: Double
-        let onTimeRate: Double
-        let rank: Int
+        let safetyScore: Double?
+        let onTimeRate: Double?
+        let rank: Int?
         let totalDrivers: Int
+
+        var hasEvidence: Bool { safetyScore != nil || onTimeRate != nil }
     }
 
     @State private var snap: Snapshot? = nil
@@ -3271,8 +3271,8 @@ struct PerformanceScoreWidget: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(LinearGradient.diagonal)
                 Spacer(minLength: 0)
-                if let s = snap {
-                    Text("#\(s.rank) of \(s.totalDrivers)")
+                if let s = snap, let rank = s.rank {
+                    Text("#\(rank) of \(s.totalDrivers)")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                         .foregroundStyle(palette.textTertiary)
                 }
@@ -3288,9 +3288,9 @@ struct PerformanceScoreWidget: View {
                     .font(EType.caption)
                     .foregroundStyle(Brand.danger)
                     .lineLimit(2)
-            } else if let s = snap {
+            } else if let s = snap, s.hasEvidence {
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text(String(format: "%.0f", s.safetyScore))
+                    Text(s.safetyScore.map { String(format: "%.0f", $0) } ?? "—")
                         .font(.system(size: 36, weight: .heavy))
                         .foregroundStyle(LinearGradient.diagonal)
                         .monospacedDigit()
@@ -3298,13 +3298,17 @@ struct PerformanceScoreWidget: View {
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
                     Spacer(minLength: 0)
-                    Text("SAFETY SCORE")
+                    Text(s.safetyScore == nil ? "NOT TRACKED" : "SAFETY SCORE")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                         .foregroundStyle(palette.textTertiary)
                 }
                 HStack(spacing: 12) {
-                    Label(String(format: "%.0f%%", s.onTimeRate), systemImage: "checkmark.circle.fill")
-                    Text("on-time")
+                    if let onTimeRate = s.onTimeRate {
+                        Label(String(format: "%.0f%%", onTimeRate), systemImage: "checkmark.circle.fill")
+                        Text("on-time")
+                    } else {
+                        Text("On-time delivery is not tracked yet.")
+                    }
                 }
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(palette.textSecondary)
@@ -3322,7 +3326,7 @@ struct PerformanceScoreWidget: View {
         // ambient glow (dark) replacing the flat bgCard + faint-border
         // washout, bringing this tile up to the SVG card language.
         .eusoCard(radius: Radius.lg)
-        .task { await load() }
+        .eusoRefreshTask { await load() }
     }
 
     private func load() async {
@@ -3334,9 +3338,11 @@ struct PerformanceScoreWidget: View {
                 driverId: userId, period: .month
             )
             snap = Snapshot(
-                safetyScore: sc.metrics.safetyScore,
-                onTimeRate: sc.metrics.onTimeDeliveryRate,
-                rank: sc.rankings.overall,
+                safetyScore: sc.tracked?.safety == true ? sc.metrics.safetyScore : nil,
+                onTimeRate: sc.tracked?.onTime == true ? sc.metrics.onTimeDeliveryRate : nil,
+                rank: sc.tracked?.rankings == true && sc.rankings.overall > 0
+                    ? sc.rankings.overall
+                    : nil,
                 totalDrivers: sc.rankings.totalDrivers
             )
             loading = false
@@ -3442,7 +3448,7 @@ struct RestAreasWidget: View {
         // ambient glow (dark) replacing the flat bgCard + faint-border
         // washout, bringing this tile up to the SVG card language.
         .eusoCard(radius: Radius.lg)
-        .task { await load() }
+        .eusoRefreshTask { await load() }
     }
 
     private func load() async {
@@ -3564,7 +3570,7 @@ struct FuelStationsWidget: View {
         // ambient glow (dark) replacing the flat bgCard + faint-border
         // washout, bringing this tile up to the SVG card language.
         .eusoCard(radius: Radius.lg)
-        .task { await load() }
+        .eusoRefreshTask { await load() }
     }
 
     private func load() async {
@@ -3654,7 +3660,7 @@ struct NearMeLoadIntelWidget: View {
         // Bespoke EusoCard surface — iridescent blue→magenta outline +
         // ambient glow, matching the sibling driver-home tiles.
         .eusoCard(radius: Radius.lg)
-        .task { await load() }
+        .eusoRefreshTask { await load() }
         .onAppear {
             // Re-fetch on every reappear (not just first mount) so a
             // driver who moved sees fresh near-me intel — same cadence

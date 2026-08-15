@@ -548,7 +548,7 @@ private struct RailDemurrageDetailBody004: View {
             .padding(.top, Space.s5)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
         .overlay(alignment: .bottom) { toastView }
         .sheet(isPresented: $showDispute) { disputeSheet }
     }
@@ -557,7 +557,7 @@ private struct RailDemurrageDetailBody004: View {
 
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("✦ SHIPPER · RAIL · DEMURRAGE")
+            EusoTripEyebrow(verbatim: "SHIPPER · RAIL · DEMURRAGE")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer(minLength: Space.s2)

@@ -136,7 +136,7 @@ private struct RailIntermodalDashboardBody: View {
             .padding(.horizontal, 20).padding(.top, 8)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: Header
@@ -145,7 +145,7 @@ private struct RailIntermodalDashboardBody: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 HStack(spacing: 6) {
-                    Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(eusoPrimary)
+                    EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(eusoPrimary)
                     Text("RAIL ENGINEER · INTERMODAL")
                         .font(.system(size: 9, weight: .heavy)).kerning(1.0)
                         .foregroundStyle(eusoPrimary)

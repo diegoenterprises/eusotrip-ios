@@ -149,7 +149,7 @@ struct EscortAssignmentDetail: View {
             .padding(.top, 8)
         }
         .task { await refreshAll() }
-        .refreshable { await refreshAll() }
+        .eusoRefreshable { await refreshAll() }
         // Corridor-map sheet — opened by tapping the "View corridor →"
         // drill-in CTA. Detents `[.large]` mirrors the Me sub-route
         // pattern in MeDetailScreens. The corridor screen reads from
@@ -201,7 +201,7 @@ struct EscortAssignmentDetail: View {
                     .clipShape(Circle())
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Image(systemName: "sparkles")
+                        EusoTripBrandMark(size: 12)
                             .font(.system(size: 9, weight: .heavy))
                             .foregroundStyle(LinearGradient.diagonal)
                         Text("ESCORT · ASSIGNMENT DETAIL")
@@ -1309,13 +1309,11 @@ struct EscortAssignmentDetailScreen: View {
 }
 
 private func escortNavLeading_601() -> [NavSlot] {
-    [NavSlot(label: "Home",        systemImage: "house",                    isCurrent: false),
-     NavSlot(label: "Assignments", systemImage: "shield.lefthalf.filled",   isCurrent: true)]
+    EscortNavRoute.leading(current: .assignments)
 }
 
 private func escortNavTrailing_601() -> [NavSlot] {
-    [NavSlot(label: "Corridor", systemImage: "map", isCurrent: false),
-     NavSlot(label: "Me",       systemImage: "person", isCurrent: false)]
+    EscortNavRoute.trailing(current: .assignments)
 }
 
 // MARK: - Previews

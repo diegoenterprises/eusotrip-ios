@@ -102,7 +102,7 @@ private struct RailHazmatDGRulesBody: View {
             .padding(.top, Space.s5)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - Eyebrow (RAIL ENGINEER · DG RULES   ·   49 CFR · TDG · NOM)
@@ -110,7 +110,7 @@ private struct RailHazmatDGRulesBody: View {
     private var eyebrow: some View {
         HStack {
             HStack(spacing: 5) {
-                Text("✦")
+                EusoTripBrandMark(size: 12)
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.primary)
                 Text("RAIL ENGINEER · DG RULES")

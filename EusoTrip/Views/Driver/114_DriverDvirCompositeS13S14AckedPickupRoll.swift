@@ -185,7 +185,7 @@ private struct DVCBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await refresh() }
-        .refreshable { await refresh() }
+        .eusoRefreshable { await refresh() }
     }
 
     // MARK: header

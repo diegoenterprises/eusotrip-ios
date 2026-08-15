@@ -168,7 +168,7 @@ struct EscortConvoyComms: View {
             .padding(.top, 8)
         }
         .task { await refreshAll() }
-        .refreshable { await refreshAll() }
+        .eusoRefreshable { await refreshAll() }
         .sheet(isPresented: $showComposer) { composerSheet }
         .overlay(alignment: .bottom) {
             if let msg = sendConfirmation {
@@ -213,7 +213,7 @@ struct EscortConvoyComms: View {
 
     private var eyebrowRow: some View {
         HStack {
-            Text("✦ ESCORT · CONVOY COMMS")
+            EusoTripEyebrow(verbatim: "ESCORT · CONVOY COMMS")
                 .font(EType.micro).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer(minLength: Space.s2)
@@ -1039,13 +1039,11 @@ struct EscortConvoyCommsScreen: View {
 }
 
 private func escortNavLeading_603() -> [NavSlot] {
-    [NavSlot(label: "Home",        systemImage: "house",                  isCurrent: false),
-     NavSlot(label: "Assignments", systemImage: "shield.lefthalf.filled", isCurrent: true)]
+    EscortNavRoute.leading(current: .assignments)
 }
 
 private func escortNavTrailing_603() -> [NavSlot] {
-    [NavSlot(label: "Corridor", systemImage: "map",    isCurrent: false),
-     NavSlot(label: "Me",       systemImage: "person", isCurrent: false)]
+    EscortNavRoute.trailing(current: .assignments)
 }
 
 // MARK: - Previews

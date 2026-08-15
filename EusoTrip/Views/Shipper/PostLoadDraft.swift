@@ -373,9 +373,15 @@ final class PostLoadDraft: ObservableObject {
     @Published var hydrateError: String? = nil
     @Published var hydratedDraftId: String? = nil
 
+    private var serverDraftHydrationTask: Task<ServerDraft, Error>? = nil
+    private var serverDraftHydrationId: String? = nil
+    private var serverDraftHydrationGeneration: UInt64 = 0
+
     /// Server-emitted `LD-` number once the load lands. Cleared when
     /// the user starts a new draft.
     func reset() {
+        cancelServerDraftHydration()
+        mode = .truck; originCountry = .US; destinationCountry = .US
         origin = ""; destination = ""; pickupDate = nil; deliveryDate = nil
         // Clear the geocoded coordinates too — otherwise "Post another" inherits
         // the previous load's lat/lng under a blank origin/destination field.
@@ -561,22 +567,117 @@ final class PostLoadDraft: ObservableObject {
     }
 
     func hydrateFromServerDraft(id draftId: String) async {
-        if hydratedDraftId == draftId { return }
-        isHydratingDraft = true
-        hydrateError = nil
-        struct In: Encodable { let id: String }
-        do {
-            let row: ServerDraft = try await EusoTripAPI.shared.query(
-                "loads.getDraft",
-                input: In(id: draftId)
-            )
-            apply(serverDraft: row)
-            hydratedDraftId = draftId
-        } catch {
-            hydrateError = (error as? EusoTripAPIError)?.errorDescription
-                ?? error.localizedDescription
+        let canonicalId = draftId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !canonicalId.isEmpty else {
+            hydrateError = "That saved draft has no usable identifier. Return to Drafts and refresh."
+            return
         }
+        if hydratedDraftId == canonicalId { return }
+
+        let generation: UInt64
+        let request: Task<ServerDraft, Error>
+        if serverDraftHydrationId == canonicalId,
+           let inFlight = serverDraftHydrationTask {
+            // Concurrent Retry / SwiftUI `.task` callers await the one network
+            // request. The request closure never calls this method, so this is
+            // coalescing rather than a task awaiting itself.
+            generation = serverDraftHydrationGeneration
+            request = inFlight
+        } else {
+            cancelServerDraftHydration()
+            serverDraftHydrationGeneration &+= 1
+            generation = serverDraftHydrationGeneration
+            serverDraftHydrationId = canonicalId
+            isHydratingDraft = true
+            hydrateError = nil
+
+            struct In: Encodable { let id: String }
+            let started = Task<ServerDraft, Error> {
+                try Task.checkCancellation()
+                let row: ServerDraft = try await EusoTripAPI.shared.query(
+                    "loads.getDraft",
+                    input: In(id: canonicalId)
+                )
+                try Task.checkCancellation()
+                return row
+            }
+            serverDraftHydrationTask = started
+            request = started
+        }
+
+        do {
+            let row = try await request.value
+            try Task.checkCancellation()
+            guard generation == serverDraftHydrationGeneration,
+                  serverDraftHydrationId == canonicalId else { return }
+            guard row.id == canonicalId else {
+                throw DraftHydrationError.identityMismatch(
+                    expected: canonicalId,
+                    received: row.id
+                )
+            }
+            try validateSupportedValues(in: row)
+            // A second waiter may resume after the first already applied and
+            // cleared this generation. Apply once, and only while still current.
+            guard hydratedDraftId != canonicalId else { return }
+            apply(serverDraft: row)
+            hydratedDraftId = canonicalId
+            hydrateError = nil
+        } catch is CancellationError {
+            // Leaving Step 1 is not a user-visible load failure. A new resume
+            // starts a fresh generation and cannot be overwritten by this one.
+        } catch {
+            guard generation == serverDraftHydrationGeneration,
+                  serverDraftHydrationId == canonicalId else { return }
+            hydrateError = error.eusoUserCopy
+        }
+
+        if generation == serverDraftHydrationGeneration,
+           serverDraftHydrationId == canonicalId {
+            serverDraftHydrationTask = nil
+            serverDraftHydrationId = nil
+            isHydratingDraft = false
+        }
+    }
+
+    func cancelServerDraftHydration(for draftId: String? = nil) {
+        if let draftId,
+           serverDraftHydrationId != draftId.trimmingCharacters(in: .whitespacesAndNewlines) {
+            return
+        }
+        serverDraftHydrationGeneration &+= 1
+        serverDraftHydrationTask?.cancel()
+        serverDraftHydrationTask = nil
+        serverDraftHydrationId = nil
         isHydratingDraft = false
+        hydrateError = nil
+    }
+
+    private enum DraftHydrationError: LocalizedError {
+        case identityMismatch(expected: String, received: String)
+        case unsupportedValue(field: String, value: String)
+
+        var errorDescription: String? {
+            switch self {
+            case .identityMismatch:
+                return "EusoTrip returned a different saved draft. Nothing was applied; return to Drafts and refresh."
+            case .unsupportedValue(let field, let value):
+                return "This saved draft uses an unsupported \(field) (\(value)). Nothing was applied; update EusoTrip or edit the draft on the web platform."
+            }
+        }
+    }
+
+    private func validateSupportedValues(in row: ServerDraft) throws {
+        if let rawCargo = row.cargoType?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !rawCargo.isEmpty,
+           CargoType(rawValue: rawCargo) == nil {
+            throw DraftHydrationError.unsupportedValue(field: "cargo type", value: rawCargo)
+        }
+        if let rawMode = row.transportMode?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !rawMode.isEmpty,
+           Mode(rawValue: rawMode) == nil {
+            throw DraftHydrationError.unsupportedValue(field: "transport mode", value: rawMode)
+        }
     }
 
     private func apply(serverDraft row: ServerDraft) {
@@ -588,28 +689,21 @@ final class PostLoadDraft: ObservableObject {
         destLng = row.destination?.lng
         pickupDate = row.pickupDate.flatMap(Self.parseISODate)
         deliveryDate = row.deliveryDate.flatMap(Self.parseISODate)
-        if let cargo = row.cargoType, let resolved = CargoType(rawValue: cargo) {
-            cargoType = resolved
-        }
+        cargoType = row.cargoType.flatMap(CargoType.init(rawValue:)) ?? .general
         rate = row.rate
         weight = row.weight
         notes = row.notes ?? ""
-        if let mode = row.transportMode, let resolved = Mode(rawValue: mode) {
-            self.mode = resolved
-        }
-        if let trailer = row.trailer, let resolved = TrailerCode(rawValue: trailer) {
+        mode = row.transportMode.flatMap(Mode.init(rawValue:)) ?? .truck
+        trailer = nil
+        equipmentType = ""
+        if let trailer = row.trailer,
+           let resolved = TrailerCode(rawValue: trailer) {
             self.trailer = resolved
             equipmentType = resolved.rawValue
         }
-        if let vertical = row.vertical, let resolved = Vertical(rawValue: vertical) {
-            self.vertical = resolved
-        }
-        if let docs = row.attachedDocuments {
-            attachedDocuments = Set(docs.compactMap(DocumentType.init(rawValue:)))
-        }
-        if let locked = row.ePodLockEnabled {
-            ePodLockOverride = locked
-        }
+        vertical = row.vertical.flatMap(Vertical.init(rawValue:))
+        attachedDocuments = Set((row.attachedDocuments ?? []).compactMap(DocumentType.init(rawValue:)))
+        ePodLockOverride = row.ePodLockEnabled
     }
 
     private static func parseISODate(_ raw: String) -> Date? {

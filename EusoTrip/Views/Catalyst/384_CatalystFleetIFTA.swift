@@ -9,7 +9,7 @@
 //  compliance screens read as one family.
 //
 //  Layout (section-by-section against the SVG):
-//    • Header — eyebrow "✦ CATALYST · IFTA" (gradient) + "{Q} · {YYYY}" (mono);
+//    • Header — EusoTrip mark + "CATALYST · IFTA" + "{Q} · {YYYY}" (mono);
 //      back-chevron orb; title "Fleet IFTA" (22/700); subtitle
 //      "{n} jurisdictions · {Q}"; right rail "{carrier} · USDOT {dot}" +
 //      "synced …"; IridescentHairline.
@@ -180,7 +180,7 @@ struct CatalystFleetIFTA: View {
             .padding(.bottom, Space.s8)
         }
         .task { await store.refresh() }
-        .refreshable { await store.refresh() }
+        .eusoRefreshable { await store.refresh() }
     }
 
     // MARK: Header
@@ -190,7 +190,7 @@ struct CatalystFleetIFTA: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack {
-                Text("✦ CATALYST · IFTA")
+                EusoTripEyebrow(verbatim: "CATALYST · IFTA")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.diagonal)
                 Spacer()
@@ -585,12 +585,10 @@ struct CatalystFleetIFTAScreen: View {
     }
 }
 private func catalystNavLeading_384() -> [NavSlot] {
-    [NavSlot(label: "Home", systemImage: "house", isCurrent: false),
-     NavSlot(label: "Dispatch", systemImage: "shippingbox.and.arrow.backward", isCurrent: false)]
+    CarrierNavRoute.leading(current: .me)
 }
 private func catalystNavTrailing_384() -> [NavSlot] {
-    [NavSlot(label: "Fleet", systemImage: "truck.box", isCurrent: false),
-     NavSlot(label: "Me", systemImage: "person.crop.circle", isCurrent: true)]
+    CarrierNavRoute.trailing(current: .me)
 }
 
 #if DEBUG

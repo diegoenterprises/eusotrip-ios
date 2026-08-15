@@ -542,7 +542,7 @@ private struct RailAtInterchangeNotificationBody695: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
         // The emit this screen fires lands on RealtimeService.swift:601 and
         // re-broadcasts as .esangRefreshSurface — so the board self-heals.
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
@@ -559,7 +559,7 @@ private struct RailAtInterchangeNotificationBody695: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
                 // The single ✦ eyebrow for this screen.
-                Text("✦ CARRIER · RAIL · NOTIFY")
+                EusoTripEyebrow(verbatim: "CARRIER · RAIL · NOTIFY")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.diagonal)
                 Spacer(minLength: 8)

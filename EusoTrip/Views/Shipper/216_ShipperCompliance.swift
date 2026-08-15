@@ -313,7 +313,7 @@ struct ShipperCompliance: View {
             }
         }
         .task { await store.refresh() }
-        .refreshable { await store.refresh() }
+        .eusoRefreshable { await store.refresh() }
         // RealtimeService → compliance status shifts when carrier
         // documents land, certificates expire, or audit findings clear.
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
@@ -332,7 +332,7 @@ struct ShipperCompliance: View {
 
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("✦ SHIPPER · COMPLIANCE")
+            EusoTripEyebrow(verbatim: "SHIPPER · COMPLIANCE")
                 .font(EType.micro)
                 .tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
@@ -790,6 +790,7 @@ struct ShipperCompliance: View {
     }
 
     private func creditCard(_ s: ShipperComplianceAPI.Summary) -> some View {
+        let creditTracked = s.tracked?.credit == true
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack(spacing: 6) {
                 Image(systemName: "creditcard.fill")
@@ -799,17 +800,17 @@ struct ShipperCompliance: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(0.9)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text(s.creditApproved ? "APPROVED" : "PENDING")
+                Text(creditTracked ? (s.creditApproved ? "APPROVED" : "NOT APPROVED") : "UNTRACKED")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.5)
-                    .foregroundStyle(s.creditApproved ? Brand.success : Brand.warning)
+                    .foregroundStyle(creditTracked ? (s.creditApproved ? Brand.success : Brand.warning) : palette.textTertiary)
                     .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(Capsule().fill((s.creditApproved ? Brand.success : Brand.warning).opacity(0.18)))
+                    .background(Capsule().fill((creditTracked ? (s.creditApproved ? Brand.success : Brand.warning) : palette.textTertiary).opacity(0.18)))
             }
             HStack(spacing: Space.s3) {
-                kpiCol(label: "RATING",     value: s.creditRating.isEmpty ? "—" : s.creditRating)
-                kpiCol(label: "LIMIT",      value: formatMoney(s.creditLimit))
-                kpiCol(label: "AVAILABLE",  value: formatMoney(s.availableCredit), accent: Brand.success)
-                kpiCol(label: "TERMS",      value: s.paymentTerms.isEmpty ? "—" : s.paymentTerms)
+                kpiCol(label: "RATING",     value: creditTracked && !s.creditRating.isEmpty ? s.creditRating : "—")
+                kpiCol(label: "LIMIT",      value: creditTracked ? formatMoney(s.creditLimit) : "—")
+                kpiCol(label: "AVAILABLE",  value: creditTracked ? formatMoney(s.availableCredit) : "—", accent: creditTracked ? Brand.success : nil)
+                kpiCol(label: "TERMS",      value: creditTracked && !s.paymentTerms.isEmpty ? s.paymentTerms : "—")
             }
         }
         .padding(Space.s3)
@@ -855,7 +856,7 @@ struct ShipperCompliance: View {
                     .background(Capsule().fill(chipColor.opacity(0.18)))
             }
             HStack(spacing: Space.s3) {
-                kpiCol(label: "GENERAL LIABILITY", value: formatMoney(lib.coverage))
+                kpiCol(label: "GENERAL LIABILITY", value: lib.coverage.map(formatMoney) ?? "—")
                 kpiCol(label: "EXPIRES", value: lib.expires.isEmpty ? "—" : lib.expires)
             }
         }

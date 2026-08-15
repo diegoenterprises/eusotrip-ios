@@ -192,7 +192,7 @@ struct MeDetailContainer: View {
                 // Tax, DVIR, Availability, Missions, Badges, Referrals,
                 // ZEUN, Haul, Settings). One stub now; routeBody can
                 // wire its own refetch later.
-                .refreshable {
+                .eusoRefreshable {
                     try? await Task.sleep(nanoseconds: 700_000_000)
                 }
             }
@@ -1985,7 +1985,7 @@ struct MeEldView: View {
     // MARK: Body
 
     var body: some View {
-        // Wrapped in Group so the live-data modifiers (.task, .refreshable,
+        // Wrapped in Group so the live-data modifiers (.task, .eusoRefreshable,
         // .alert, .overlay toast) attach to a single view instead of the
         // implicit TupleView. The parent MeDetailContainer stacks each
         // slot in its own scroll view, so the Group's children lay out
@@ -2036,7 +2036,7 @@ struct MeEldView: View {
             await store.bootstrap()
             await eldStore.bootstrap()
         }
-        .refreshable {
+        .eusoRefreshable {
             await store.refreshAll()
             await eldStore.refresh()
         }
@@ -2725,6 +2725,9 @@ struct HaulLobbyTab: View {
     @State private var draft: String = ""
     @State private var isPosting: Bool = false
     @State private var postError: String?
+    @State private var postNotice: String?
+    @State private var queuedKey: String?
+    @State private var recoveredDraftKey: String?
 
     private var liveMessages: [MessagingMessage] {
         store.items
@@ -2809,7 +2812,10 @@ struct HaulLobbyTab: View {
                 }
             }
         }
-        .task { await store.refresh() }
+        .task {
+            await store.refresh()
+            restoreNextFailedDraftIfNeeded()
+        }
 
         // ─── Composer ────────────────────────────────────────────────
         if let err = postError {
@@ -2817,6 +2823,17 @@ struct HaulLobbyTab: View {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(Brand.warning)
                 Text(err)
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                Spacer()
+            }
+            .padding(.horizontal, Space.s3)
+        }
+        if let notice = postNotice {
+            HStack(spacing: 4) {
+                Image(systemName: queuedKey == nil ? "checkmark.circle.fill" : "arrow.triangle.2.circlepath")
+                    .foregroundStyle(queuedKey == nil ? Brand.success : Brand.info)
+                Text(notice)
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                 Spacer()
@@ -2858,42 +2875,99 @@ struct HaulLobbyTab: View {
             .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isPosting)
         }
         .padding(.top, Space.s2)
+        .onReceive(NotificationCenter.default.publisher(for: .eusoOutboxReplayed)) { note in
+            guard let key = note.userInfo?["key"] as? String,
+                  key == queuedKey else { return }
+            queuedKey = nil
+            postError = nil
+            postNotice = "Sent to the Haul."
+            OfflineQueue.shared.discardFailedHaulDraft(key: key)
+            recoveredDraftKey = nil
+            Task {
+                await store.refresh()
+                restoreNextFailedDraftIfNeeded()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoOutboxReplayFailed)) { note in
+            guard let key = note.userInfo?["key"] as? String,
+                  key == queuedKey else { return }
+            let recovery = OfflineQueue.shared.failedHaulDraft(key: key)
+            let message = recovery?.message ?? (note.userInfo?["message"] as? String)
+            if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+               let message {
+                draft = message
+            }
+            recoveredDraftKey = key
+            queuedKey = nil
+            postNotice = nil
+            postError = (note.userInfo?["reason"] as? String)
+                ?? "Review this message and send it again. Your text was restored."
+        }
     }
 
     private func send() async {
         let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         postError = nil
+        postNotice = nil
         isPosting = true
         defer { isPosting = false }
-        // The Haul lobby is the global driver chat backed by the
-        // gamification router — `gamification.postLobbyMessage` (input
-        // `{ message }`, MCP-verified at
-        // frontend/server/routers/gamification.ts:1363). The previous
-        // implementation posted to the company `messaging.sendLobbyMessage`
-        // (conversationId = "driver-lobby" string token), which the
-        // server's parseInt rejected with "Invalid conversation ID" — so
-        // every lobby post failed silently. The gamification endpoint also
-        // runs content moderation and can return `{ success: false, error }`
-        // on a 200 response (muted / blocked / rate-limited), which we
-        // surface to the composer rather than treating as a clean send.
-        struct In: Encodable { let message: String }
-        struct Out: Decodable { let success: Bool; let error: String? }
+        let idempotencyKey = recoveredDraftKey ?? UUID().uuidString
         do {
-            let out: Out = try await EusoTripAPI.shared.mutation(
-                "gamification.postLobbyMessage",
-                input: In(message: trimmed)
+            let out = try await EusoTripAPI.shared.gamification.postLobbyMessage(
+                message: trimmed,
+                idempotencyKey: idempotencyKey
             )
             if out.success {
+                OfflineQueue.shared.discardFailedHaulDraft(key: idempotencyKey)
                 draft = ""
+                recoveredDraftKey = nil
+                queuedKey = nil
+                postNotice = out.replayed == true ? "Already sent; no duplicate was created." : "Sent to the Haul."
                 await store.refresh()
+                restoreNextFailedDraftIfNeeded()
+            } else if OfflineQueue.isRetryableServerMessage(out.error ?? "") {
+                queueForDelivery(message: trimmed, key: idempotencyKey)
             } else {
-                postError = out.error ?? "Message couldn't be posted."
+                // A moderation or access decision needs the user's attention,
+                // so keep the exact draft visible and editable.
+                postError = out.error ?? "Review this message before sending again."
             }
         } catch {
-            postError = (error as? LocalizedError)?.errorDescription
-                ?? "Couldn't post, try again in a moment."
+            if let apiError = error as? EusoTripAPIError,
+               case .queuedForOfflineReplay = apiError {
+                queueForDelivery(message: trimmed, key: idempotencyKey)
+            } else if OfflineQueue.isRetryableFailure(error) {
+                queueForDelivery(message: trimmed, key: idempotencyKey)
+            } else {
+                // Auth, role, and policy failures are not infrastructure
+                // retries. Leave the text in place with the server's remedy.
+                postError = (error as? LocalizedError)?.errorDescription
+                    ?? "Review this message before sending again."
+            }
         }
+    }
+
+    private func queueForDelivery(message: String, key: String) {
+        OfflineQueue.shared.enqueueHaulMessage(message: message, idempotencyKey: key)
+        OfflineQueue.shared.scheduleReplay()
+        OfflineQueue.shared.discardFailedHaulDraft(key: key)
+        draft = ""
+        recoveredDraftKey = nil
+        queuedKey = key
+        postError = nil
+        postNotice = "Queued securely; sends automatically when the service reconnects."
+    }
+
+    private func restoreNextFailedDraftIfNeeded() {
+        guard queuedKey == nil,
+              draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let recovery = OfflineQueue.shared.firstFailedHaulDraft()
+        else { return }
+        draft = recovery.message
+        recoveredDraftKey = recovery.key
+        postNotice = nil
+        postError = "Your unsent message was restored for review."
     }
 
     // MARK: - Rendering helpers
@@ -3525,32 +3599,22 @@ struct MeSettingsView: View {
     @Environment(\.palette) var palette
     @EnvironmentObject var session: EusoTripSession
     @EnvironmentObject var profile: DriverProfileStore
-    @State private var pushOn = true
-    @State private var soundsOn = true
-    @State private var hapticsOn = true
-    @State private var biometricOn = true
     @State private var signingOut = false
     /// Presents ProfileEditView over the Settings sheet. Sheet-over-sheet
     /// keeps the outer drag-to-dismiss behavior intact while giving the
     /// driver a focused surface for editing avatar + identity + contact.
     @State private var showEditProfile = false
     @State private var showPasskeys = false
-
-    // ── Pulse (Apple Watch) settings ──────────────────────────────
-    //
-    // Every toggle persists to WatchAuthBridge (UserDefaults) AND
-    // propagates to the wrist via WCSession updateApplicationContext
-    // on change, so the watch honors the phone's choices without a
-    // relaunch. Initial values are seeded from `currentSettings()`
-    // in `.onAppear` so re-opening the sheet shows the live state.
-    @State private var pulseTurnByTurn: Bool = true
-    @State private var pulseVoiceWake: Bool = false
-    @State private var pulseDrivingAutoDetect: Bool = true
-    @State private var pulseHapticsIntensity: String = "standard"
-    @State private var pulseComplicationStyle: String = "orb"
-    @State private var pulseLastSync: Date? = nil
-    @State private var pulseResyncing: Bool = false
-    @State private var pulseResyncToast: String? = nil
+    // Retained only for the private legacy Pulse renderer below. The reachable
+    // settings journeys now use RoleSettingsCenter's server-backed controls.
+    @State private var pulseTurnByTurn = true
+    @State private var pulseVoiceWake = false
+    @State private var pulseDrivingAutoDetect = true
+    @State private var pulseHapticsIntensity = "standard"
+    @State private var pulseComplicationStyle = "orb"
+    @State private var pulseLastSync: Date?
+    @State private var pulseResyncing = false
+    @State private var pulseResyncToast: String?
 
     var body: some View {
         Button {
@@ -3587,42 +3651,13 @@ struct MeSettingsView: View {
                 .environmentObject(profile)
         }
 
-        VStack(alignment: .leading, spacing: Space.s2) {
-            Text("Notifications".uppercased())
-                .font(EType.micro).tracking(0.6)
-                .foregroundStyle(palette.textTertiary)
-            VStack(spacing: 0) {
-                toggleRow(title: "Push notifications",
-                          sub: "Load offers, HOS alerts, payouts",
-                          isOn: $pushOn)
-                Divider().overlay(palette.borderFaint).padding(.leading, 56)
-                toggleRow(title: "In-app sounds",
-                          sub: "Alert tones + chat pings",
-                          isOn: $soundsOn)
-                Divider().overlay(palette.borderFaint).padding(.leading, 56)
-                toggleRow(title: "Haptics",
-                          sub: "Buttons, confirmations, ESANG",
-                          isOn: $hapticsOn)
-            }
-            .eusoCard(radius: Radius.lg)
-        }
+        RoleSettingsAccessCard()
 
         VStack(alignment: .leading, spacing: Space.s2) {
             Text("Security".uppercased())
                 .font(EType.micro).tracking(0.6)
                 .foregroundStyle(palette.textTertiary)
             VStack(spacing: 0) {
-                toggleRow(title: "Face ID unlock",
-                          sub: "Required on cold launch",
-                          isOn: $biometricOn)
-                Divider().overlay(palette.borderFaint).padding(.leading, 56)
-                linkRow(title: "Change password", sub: "Last rotated 42 days ago")
-                Divider().overlay(palette.borderFaint).padding(.leading, 56)
-                linkRow(title: "Sessions + devices", sub: "2 trusted devices")
-                Divider().overlay(palette.borderFaint).padding(.leading, 56)
-                // Passkeys — Settings management surface for the
-                // WebAuthn credentials shipped in bb237cc. Tap opens
-                // the full list (add / revoke / lastUsedAt).
                 Button { showPasskeys = true } label: {
                     linkRow(title: "Passkeys", sub: "Face ID sign-in · iCloud Keychain")
                 }
@@ -3635,17 +3670,6 @@ struct MeSettingsView: View {
                 .environment(\.palette, palette)
                 .environmentObject(session)
         }
-
-        // ── PULSE · APPLE WATCH ──────────────────────────────────
-        //
-        // The settings section that backs the EusoTrip Pulse wrist
-        // companion. Every control here reflects real WCSession
-        // state (pair status + reachability pulled live from
-        // `WatchAuthBridge.pairStatus`) or writes to the shared
-        // preferences that the wrist reads from
-        // applicationContext["pulseSettings"]. No mock toggles.
-        pulseSection
-            .onAppear { loadPulseState() }
 
         // Sign out — wired to EusoTripSession.signOut() (Wave-5, 2026-04-20).
         // Flipping `session.phase` to .signedOut drops the user back to the

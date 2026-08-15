@@ -239,7 +239,7 @@ struct ShipperLiveTracking: View {
                 Color.clear.frame(height: 96)
             }
         }
-        .refreshable {
+        .eusoRefreshable {
             await store.refresh()
             await loadBorderWaits()
         }
@@ -268,7 +268,7 @@ struct ShipperLiveTracking: View {
 
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("✦ SHIPPER · LIVE TRACKING · TELEMETRY")
+            EusoTripEyebrow(verbatim: "SHIPPER · LIVE TRACKING · TELEMETRY")
                 .font(EType.micro)
                 .tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
@@ -1153,7 +1153,7 @@ struct ShipperLiveTrackingDetail: View {
         }
         .background(palette.bgPage)
         .task { await fetch() }
-        .refreshable { await fetch() }
+        .eusoRefreshable { await fetch() }
     }
 
     private var hero: some View {

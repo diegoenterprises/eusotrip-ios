@@ -10,10 +10,8 @@ struct DispatchRouteOptimizationScreen: View {
     var body: some View {
         Shell(theme: theme) { RouteBody() } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home", systemImage: "house", isCurrent: false),
-                          NavSlot(label: "Drivers", systemImage: "person.3.fill", isCurrent: false)],
-                trailing: [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: true),
-                           NavSlot(label: "Me", systemImage: "person", isCurrent: false)],
+                leading: DispatchNavRoute.leading(current: .board),
+                trailing: DispatchNavRoute.trailing(current: .board),
                 orbState: .thinking
             )
         }
@@ -118,7 +116,7 @@ private struct RouteBody: View {
             .padding(.top, 58)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     private var header: some View {

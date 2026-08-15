@@ -88,7 +88,7 @@ struct MeTraining: View {
             .padding(.bottom, Space.s8)
         }
         .task { await reloadAll() }
-        .refreshable { await reloadAll() }
+        .eusoRefreshable { await reloadAll() }
     }
 
     private func reloadAll() async {

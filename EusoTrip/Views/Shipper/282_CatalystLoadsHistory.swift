@@ -33,7 +33,7 @@ private struct CatalystLoadsHistoryBody: View {
             }
             .padding(.horizontal, 14).padding(.top, 56)
         }
-        .task { await store.refresh() }
+        .eusoRefreshTask { await store.refresh() }
     }
 
     private var header: some View {

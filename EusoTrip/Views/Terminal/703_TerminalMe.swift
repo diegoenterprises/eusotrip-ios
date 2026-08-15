@@ -21,26 +21,28 @@ struct TerminalMeScreen: View {
     @EnvironmentObject private var session: EusoTripSession
     @Environment(\.palette) private var palette
     @State private var showSignOutConfirm: Bool = false
+    @SceneStorage("terminal.me.expandedCategory") private var expandedCategory: String = ""
+    @SceneStorage("terminal.me.returnAnchor") private var returnAnchor: String = ""
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: Space.s4) {
-                topBar
-                titleBlock
-                iridescentHairline
-                identityHero
-                accessCardSection
-                EusoCardIssuePanel(
-                    title: "Terminal EusoCard",
-                    subtitle: "Virtual card for terminal operations spend"
-                )
-                operationsSection
-                supportSection
-                signOutButton
-                Color.clear.frame(height: 96)
+        ScrollViewReader { proxy in
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Space.s4) {
+                    topBar
+                    titleBlock
+                    iridescentHairline
+                    identityHero
+                    accessCardSection
+                    walletSection
+                    operationsSection
+                    supportSection
+                    signOutButton
+                    Color.clear.frame(height: 96)
+                }
+                .padding(.horizontal, 14)
+                .padding(.top, 8)
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 8)
+            .onAppear { restoreScrollPosition(using: proxy) }
         }
         .alert("Sign out?", isPresented: $showSignOutConfirm) {
             Button("Sign out", role: .destructive) {
@@ -57,7 +59,7 @@ struct TerminalMeScreen: View {
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
             HStack(spacing: 4) {
-                Image(systemName: "sparkles")
+                EusoTripBrandMark(size: 12)
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
                 Text("TERMINAL · ME")
@@ -110,15 +112,9 @@ struct TerminalMeScreen: View {
     private var identityHero: some View {
         let user = session.user
         let displayName = user?.name ?? "Terminal user"
-        let monogram = monogramFor(displayName)
         return LifecycleCard(accentGradient: true) {
             HStack(alignment: .center, spacing: 10) {
-                Text(monogram)
-                    .font(.system(size: 18, weight: .heavy))
-                    .foregroundStyle(.white)
-                    .frame(width: 56, height: 56)
-                    .background(LinearGradient.diagonal)
-                    .clipShape(Circle())
+                EditableProfileAvatar(size: 56)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(displayName)
                         .font(.system(size: 18, weight: .heavy))
@@ -144,21 +140,16 @@ struct TerminalMeScreen: View {
         }
     }
 
-    private func monogramFor(_ s: String) -> String {
-        let parts = s.split(separator: " ").prefix(2)
-        let initials = parts.compactMap { $0.first.map(String.init) }.joined().uppercased()
-        return initials.isEmpty ? "?" : String(initials.prefix(2))
-    }
-
     // MARK: - Sections (LifecycleCard chrome — visual parity with 350)
     //
     // Pure nav hub. Each id below maps to a registered Terminal surface
     // screen (701 gate queue, 702 yard map).
 
     private var operationsSection: some View {
-        sectionCard(title: "OPERATIONS", icon: "shippingbox") {
+        sectionCard(key: "operations", title: "OPERATIONS", icon: "shippingbox") {
             row(label: "Gate queue", icon: "arrow.left.arrow.right", to: "701")
             row(label: "Yard map",   icon: "map",                    to: "702")
+            row(label: "Register container", icon: "shippingbox.fill", to: "TerminalVesselWrites")
         }
     }
 
@@ -174,13 +165,17 @@ struct TerminalMeScreen: View {
     //     leaf via .eusoTerminalNavSwap → "TerminalAccessScan".
 
     private var accessCardSection: some View {
-        sectionCard(title: "ACCESS CARD", icon: "lock.shield") {
+        sectionCard(key: "access", title: "ACCESS CARD", icon: "lock.shield") {
             // Holder side — the AddAccessCardButton owns the picker-sheet.
             AddAccessCardButton {
                 accessRowChrome(label: "Add access card to Wallet",
                                 icon: "wallet.pass",
                                 trailingSystemImage: "plus.circle")
             }
+            .simultaneousGesture(TapGesture().onEnded {
+                returnAnchor = rowAnchor("access-wallet")
+            })
+            .id(rowAnchor("access-wallet"))
             // Controller side — push the scanner/verify surface.
             row(label: "Access control · scan", icon: "qrcode.viewfinder", to: "TerminalAccessScan")
         }
@@ -209,8 +204,25 @@ struct TerminalMeScreen: View {
     }
 
     private var supportSection: some View {
-        sectionCard(title: "SUPPORT", icon: "lifepreserver") {
+        sectionCard(key: "support", title: "SUPPORT", icon: "lifepreserver") {
             eSangRow
+        }
+    }
+
+    private var walletSection: some View {
+        VStack(spacing: Space.s3) {
+            LifecycleCard {
+                categoryHeader(key: "wallet", title: "WALLET", icon: "creditcard")
+            }
+            .id(categoryAnchor("wallet"))
+
+            if expandedCategory == "wallet" {
+                EusoCardIssuePanel(
+                    title: "Terminal EusoCard",
+                    subtitle: "Virtual card for terminal operations spend"
+                )
+                .id("terminal-me-row-eusocard")
+            }
         }
     }
 
@@ -237,27 +249,47 @@ struct TerminalMeScreen: View {
     // MARK: - Section + row primitives (LifecycleCard parity)
 
     @ViewBuilder
-    private func sectionCard<Content: View>(title: String,
+    private func sectionCard<Content: View>(key: String,
+                                            title: String,
                                             icon: String,
                                             @ViewBuilder content: () -> Content) -> some View {
         LifecycleCard {
-            HStack(spacing: 6) {
+            categoryHeader(key: key, title: title, icon: icon)
+            if expandedCategory == key {
+                Divider().overlay(palette.borderFaint)
+                VStack(spacing: 6) {
+                    content()
+                }
+            }
+        }
+        .id(categoryAnchor(key))
+    }
+
+    private func categoryHeader(key: String, title: String, icon: String) -> some View {
+        Button(action: { toggleCategory(key) }) {
+            HStack(spacing: 8) {
                 Image(systemName: icon)
                     .font(.system(size: 11, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
                 Text(title)
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textPrimary)
+                Spacer(minLength: 0)
+                Image(systemName: expandedCategory == key ? "chevron.up" : "chevron.down")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(palette.textTertiary)
             }
-            .padding(.bottom, 2)
-            VStack(spacing: 6) {
-                content()
-            }
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .accessibilityValue(expandedCategory == key ? "Expanded" : "Collapsed")
     }
 
     private func row(label: String, icon: String, to screenId: String) -> some View {
-        Button(action: { swap(to: screenId) }) {
+        Button(action: {
+            returnAnchor = rowAnchor(screenId)
+            swap(to: screenId)
+        }) {
             HStack(spacing: 12) {
                 ZStack {
                     Circle().fill(LinearGradient.diagonal).frame(width: 36, height: 36)
@@ -276,10 +308,12 @@ struct TerminalMeScreen: View {
             .padding(.vertical, 4)
         }
         .buttonStyle(.plain)
+        .id(rowAnchor(screenId))
     }
 
     private var eSangRow: some View {
         Button(action: {
+            returnAnchor = rowAnchor("esang")
             NotificationCenter.default.post(
                 name: .eusoTerminaleSangTapped,
                 object: nil
@@ -303,6 +337,31 @@ struct TerminalMeScreen: View {
             .padding(.vertical, 4)
         }
         .buttonStyle(.plain)
+        .id(rowAnchor("esang"))
+    }
+
+    private func toggleCategory(_ key: String) {
+        returnAnchor = ""
+        withAnimation(.easeInOut(duration: 0.2)) {
+            expandedCategory = expandedCategory == key ? "" : key
+        }
+    }
+
+    private func categoryAnchor(_ key: String) -> String {
+        "terminal-me-category-\(key)"
+    }
+
+    private func rowAnchor(_ key: String) -> String {
+        "terminal-me-row-\(key)"
+    }
+
+    private func restoreScrollPosition(using proxy: ScrollViewProxy) {
+        guard !expandedCategory.isEmpty, !returnAnchor.isEmpty else { return }
+        eusoRestoreScrollPosition(
+            using: proxy,
+            anchor: returnAnchor,
+            fallback: categoryAnchor(expandedCategory)
+        )
     }
 
     private func swap(to screenId: String) {

@@ -80,7 +80,7 @@ struct ShipperSettlements: View {
             }
         }
         .task { await store.refresh() }
-        .refreshable { await store.refresh() }
+        .eusoRefreshable { await store.refresh() }
         // RealtimeService → settlement records refresh as POD lands,
         // payables clear, or carrier-side claims resolve.
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
@@ -126,7 +126,7 @@ struct ShipperSettlements: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("✦ SHIPPER · SETTLEMENTS")
+                EusoTripEyebrow(verbatim: "SHIPPER · SETTLEMENTS")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

@@ -27,30 +27,34 @@ struct CarrierMeScreen: View {
     /// bodies open on tap, so the default view is a clean stack of hub headers.
     /// Account starts expanded; the rest collapse. Every destination is
     /// preserved — nothing was orphaned to "workspace".
-    @State private var expandedHubs: Set<String> = ["account"]
+    @SceneStorage("carrier.me.expandedHub") private var expandedHubId: String = "account"
+    @SceneStorage("carrier.me.returnAnchor") private var returnAnchor: String = ""
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: Space.s4) {
-                topBar
-                titleBlock
-                iridescentHairline
-                identityHero
-                EusoCardIssuePanel(
-                    title: "EusoCard",
-                    subtitle: "Carrier spend card backed by EusoWallet Treasury"
-                )
-                accountHub
-                complianceHub
-                moneyHub
-                fleetHub
-                operationsHub
-                settingsHub
-                signOutButton
-                Color.clear.frame(height: 96)
+        ScrollViewReader { proxy in
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Space.s4) {
+                    topBar
+                    titleBlock
+                    iridescentHairline
+                    identityHero
+                    EusoCardIssuePanel(
+                        title: "EusoCard",
+                        subtitle: "Carrier spend card backed by EusoWallet Treasury"
+                    )
+                    accountHub
+                    complianceHub
+                    moneyHub
+                    fleetHub
+                    operationsHub
+                    settingsHub
+                    signOutButton
+                    Color.clear.frame(height: 96)
+                }
+                .padding(.horizontal, 14)
+                .padding(.top, 8)
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 8)
+            .onAppear { restorePosition(using: proxy) }
         }
         .alert("Sign out?", isPresented: $showSignOutConfirm) {
             Button("Sign out", role: .destructive) {
@@ -67,7 +71,7 @@ struct CarrierMeScreen: View {
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
             HStack(spacing: 4) {
-                Image(systemName: "sparkles")
+                EusoTripBrandMark(size: 12)
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
                 Text("CARRIER · ME")
@@ -120,15 +124,9 @@ struct CarrierMeScreen: View {
     private var identityHero: some View {
         let user = session.user
         let displayName = user?.name ?? "Catalyst user"
-        let monogram = monogramFor(displayName)
         return LifecycleCard(accentGradient: true) {
             HStack(alignment: .center, spacing: 10) {
-                Text(monogram)
-                    .font(.system(size: 18, weight: .heavy))
-                    .foregroundStyle(.white)
-                    .frame(width: 56, height: 56)
-                    .background(LinearGradient.diagonal)
-                    .clipShape(Circle())
+                EditableProfileAvatar(size: 56)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(displayName)
                         .font(.system(size: 18, weight: .heavy))
@@ -152,12 +150,6 @@ struct CarrierMeScreen: View {
                 Spacer(minLength: 0)
             }
         }
-    }
-
-    private func monogramFor(_ s: String) -> String {
-        let parts = s.split(separator: " ").prefix(2)
-        let initials = parts.compactMap { $0.first.map(String.init) }.joined().uppercased()
-        return initials.isEmpty ? "?" : String(initials.prefix(2))
     }
 
     // MARK: - Hubs (bespoke collapsible cards — canonical H1–H7 taxonomy)
@@ -301,11 +293,12 @@ struct CarrierMeScreen: View {
                                         summary: String,
                                         rowCount: Int,
                                         @ViewBuilder content: () -> Content) -> some View {
-        let isOpen = expandedHubs.contains(id)
+        let isOpen = expandedHubId == id
         LifecycleCard {
             Button {
                 withAnimation(.easeOut(duration: 0.22)) {
-                    if isOpen { expandedHubs.remove(id) } else { expandedHubs.insert(id) }
+                    expandedHubId = isOpen ? "" : id
+                    returnAnchor = "hub-\(id)"
                 }
             } label: {
                 HStack(spacing: 12) {
@@ -349,10 +342,14 @@ struct CarrierMeScreen: View {
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
+        .id("hub-\(id)")
     }
 
     private func row(label: String, icon: String, to screenId: String) -> some View {
-        Button(action: { swap(to: screenId) }) {
+        Button(action: {
+            returnAnchor = "row-\(screenId)"
+            swap(to: screenId)
+        }) {
             HStack(spacing: 12) {
                 ZStack {
                     Circle().fill(LinearGradient.diagonal).frame(width: 36, height: 36)
@@ -371,6 +368,7 @@ struct CarrierMeScreen: View {
             .padding(.vertical, 4)
         }
         .buttonStyle(.plain)
+        .id("row-\(screenId)")
     }
 
     private func swap(to screenId: String) {
@@ -378,6 +376,14 @@ struct CarrierMeScreen: View {
             name: .eusoCarrierNavSwap,
             object: nil,
             userInfo: ["screenId": screenId]
+        )
+    }
+
+    private func restorePosition(using proxy: ScrollViewProxy) {
+        eusoRestoreScrollPosition(
+            using: proxy,
+            anchor: returnAnchor,
+            fallback: "hub-\(expandedHubId.isEmpty ? "account" : expandedHubId)"
         )
     }
 }

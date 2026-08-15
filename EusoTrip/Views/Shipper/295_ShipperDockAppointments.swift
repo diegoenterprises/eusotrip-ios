@@ -290,7 +290,7 @@ struct ShipperDockAppointments: View {
                 .padding(.horizontal, Space.s5)
                 .padding(.top, Space.s4)
             }
-            .refreshable { await store.load() }
+            .eusoRefreshable { await store.load() }
             .task { await store.load() }
         }
     }
@@ -300,7 +300,7 @@ struct ShipperDockAppointments: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: Space.s1) {
             HStack(alignment: .firstTextBaseline) {
-                Text("✦ SHIPPER · DOCK APPOINTMENTS")
+                EusoTripEyebrow(verbatim: "SHIPPER · DOCK APPOINTMENTS")
                     .font(EType.micro)
                     .tracking(0.6)
                     .foregroundStyle(palette.textTertiary)

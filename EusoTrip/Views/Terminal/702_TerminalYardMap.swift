@@ -97,7 +97,7 @@ struct TerminalYardMap: View {
             .padding(.top, 8)
         }
         .task { await yard.refresh() }
-        .refreshable { await yard.refresh() }
+        .eusoRefreshable { await yard.refresh() }
         // Release-confirmation sheet — opened by tapping the per-slot
         // "Release" CTA. Detents `[.medium]` + drag indicator matches
         // the lightweight one-action confirmation doctrine.
@@ -122,7 +122,7 @@ struct TerminalYardMap: View {
                     .clipShape(Circle())
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Image(systemName: "sparkles")
+                        EusoTripBrandMark(size: 12)
                             .font(.system(size: 9, weight: .heavy))
                             .foregroundStyle(LinearGradient.diagonal)
                         Text("TERMINAL · YARD MAP")
@@ -764,13 +764,11 @@ struct TerminalYardMapScreen: View {
 }
 
 private func terminalNavLeading_702() -> [NavSlot] {
-    [NavSlot(label: "Home",      systemImage: "house",            isCurrent: false),
-     NavSlot(label: "Movements", systemImage: "shippingbox.fill", isCurrent: false)]
+    TerminalNavRoute.leading(current: .yard)
 }
 
 private func terminalNavTrailing_702() -> [NavSlot] {
-    [NavSlot(label: "Yard", systemImage: "map",    isCurrent: true),
-     NavSlot(label: "Me",   systemImage: "person", isCurrent: false)]
+    TerminalNavRoute.trailing(current: .yard)
 }
 
 // MARK: - Previews

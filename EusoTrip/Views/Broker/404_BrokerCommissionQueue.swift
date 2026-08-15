@@ -57,10 +57,8 @@ struct BrokerCommissionQueueScreen: View {
     var body: some View {
         Shell(theme: theme) { CommissionQueueBody() } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home", systemImage: "house", isCurrent: false),
-                          NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false)],
-                trailing: [NavSlot(label: "Carriers", systemImage: "person.3.fill", isCurrent: false),
-                           NavSlot(label: "Me", systemImage: "person", isCurrent: true)],
+                leading: BrokerNavRoute.leading(current: .me),
+                trailing: BrokerNavRoute.trailing(current: .me),
                 orbState: .idle
             )
         }
@@ -141,7 +139,7 @@ private struct CommissionQueueBody: View {
             }
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
         .alert("Sign out?", isPresented: $showSignOutConfirm) {
             Button("Sign out", role: .destructive) { Task { await session.signOut() } }
             Button("Cancel", role: .cancel) {}

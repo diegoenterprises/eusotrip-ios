@@ -89,7 +89,7 @@ private struct FmcsaBody: View {
             // overlay. Founder report 2026-05-06.
             .padding(.horizontal, 14).padding(.top, 56)
         }
-        .task { await load() }
+        .eusoRefreshTask { await load() }
     }
 
     /// Gemini-driven safety analysis card. Calls

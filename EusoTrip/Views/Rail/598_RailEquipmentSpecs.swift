@@ -186,7 +186,7 @@ private struct RailEquipmentSpecsBody: View {
             .padding(.horizontal, 20).padding(.top, 8)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - Header (eyebrow · mono ID · back chevron · title 28/-0.4)
@@ -194,7 +194,7 @@ private struct RailEquipmentSpecsBody: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 0) {
-                Text("✦ RAIL ENGINEER · EQUIP SPECS")
+                EusoTripEyebrow(verbatim: "RAIL ENGINEER · EQUIP SPECS")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

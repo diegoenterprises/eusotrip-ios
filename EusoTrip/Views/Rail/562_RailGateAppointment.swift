@@ -114,7 +114,7 @@ private struct RailGateAppointmentBody: View {
             }
             .padding(.horizontal, Space.s5).padding(.top, 8)
         }
-        .task { await loadSlots() }
+        .eusoRefreshTask { await loadSlots() }
         .onChange(of: selectedDate) { _, _ in Task { await loadSlots() } }
     }
 

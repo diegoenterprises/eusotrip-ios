@@ -17,11 +17,50 @@ struct DraftsListScreen: View {
     }
 }
 
+private struct DraftLocation: Decodable, Hashable {
+    let displayText: String
+
+    private struct Fields: Decodable {
+        let address: String?
+        let city: String?
+        let state: String?
+        let zipCode: String?
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let text = try? container.decode(String.self) {
+            if let data = text.data(using: .utf8),
+               let fields = try? JSONDecoder().decode(Fields.self, from: data) {
+                displayText = Self.format(fields)
+            } else {
+                displayText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            return
+        }
+        displayText = Self.format(try container.decode(Fields.self))
+    }
+
+    private static func format(_ fields: Fields) -> String {
+        let address = fields.address?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let cityState = [fields.city, fields.state]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: ", ")
+        let locality = [cityState, fields.zipCode?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""]
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        if address.isEmpty { return locality }
+        if locality.isEmpty || (!cityState.isEmpty && address.localizedCaseInsensitiveContains(cityState)) { return address }
+        return "\(address), \(locality)"
+    }
+}
+
 private struct DraftRow: Decodable, Identifiable, Hashable {
     let id: String
     let loadNumber: String?
-    let origin: String?
-    let destination: String?
+    let origin: DraftLocation?
+    let destination: DraftLocation?
     let cargoType: String?
     let createdAt: String?
 }
@@ -36,6 +75,8 @@ private struct DraftsListBody: View {
     @State private var lastDeleted: String? = nil
     @State private var dropHover: Bool = false
     @State private var draggingDraftId: String? = nil
+    @State private var resumingDraftId: String? = nil
+    @State private var listRequestGeneration: UInt64 = 0
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -58,7 +99,9 @@ private struct DraftsListBody: View {
             .padding(.horizontal, 14).padding(.top, 56)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
+        .onAppear { resumingDraftId = nil }
+        .onDisappear { listRequestGeneration &+= 1 }
     }
 
     private var header: some View {
@@ -163,17 +206,27 @@ private struct DraftsListBody: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(dashIfEmpty(row.loadNumber)).font(EType.bodyStrong).foregroundStyle(palette.textPrimary).lineLimit(1)
-                    Text("\(dashIfEmpty(row.origin)) → \(dashIfEmpty(row.destination))").font(EType.caption).foregroundStyle(palette.textSecondary).lineLimit(1)
+                    Text("\(dashIfEmpty(row.origin?.displayText)) → \(dashIfEmpty(row.destination?.displayText))").font(EType.caption).foregroundStyle(palette.textSecondary).lineLimit(1)
                     Text("\(dashIfEmpty(row.cargoType?.uppercased())) · \(humanISO(row.createdAt))").font(EType.mono(.micro)).tracking(0.4).foregroundStyle(palette.textTertiary)
                 }
                 Spacer(minLength: 0)
                 Button {
-                    NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": "250", "draftId": row.id])
+                    resume(row)
                 } label: {
-                    Text("Resume").font(.system(size: 9, weight: .heavy)).tracking(0.6).foregroundStyle(.white)
-                        .padding(.horizontal, 8).padding(.vertical, 4)
-                        .background(LinearGradient.diagonal).clipShape(Capsule())
-                }.buttonStyle(.plain)
+                    Group {
+                        if resumingDraftId == row.id {
+                            ProgressView().tint(.white)
+                        } else {
+                            Text("Resume").font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                        }
+                    }
+                    .foregroundStyle(.white)
+                    .frame(minWidth: 52, minHeight: 24)
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(LinearGradient.diagonal).clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(resumingDraftId != nil || deleting != nil)
                 Button { Task { await delete(row.id) } } label: {
                     if deleting == row.id { ProgressView().tint(Brand.danger).frame(width: 22, height: 22) }
                     else { Image(systemName: "trash").foregroundStyle(Brand.danger) }
@@ -183,36 +236,82 @@ private struct DraftsListBody: View {
     }
 
     private func load() async {
-        loading = true; loadError = nil
+        listRequestGeneration &+= 1
+        let generation = listRequestGeneration
+        loading = true
+        loadError = nil
         do {
-            let r: [DraftRow] = try await EusoTripAPI.shared.queryNoInput("loads.listDrafts")
-            rows = r
+            let response = try await fetchDrafts()
+            guard generation == listRequestGeneration, !Task.isCancelled else { return }
+            rows = response
+        } catch is CancellationError {
+            return
         } catch {
+            guard generation == listRequestGeneration else { return }
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
-        loading = false
+        if generation == listRequestGeneration { loading = false }
     }
 
     private func delete(_ id: String) async {
         await MainActor.run { deleting = id; actionError = nil }
         let label = rows.first(where: { $0.id == id })?.loadNumber ?? "draft \(id)"
         struct In: Encodable { let id: String }
-        struct Out: Decodable { let success: Bool? }
+        struct Out: Decodable { let success: Bool }
         do {
-            let _: Out = try await EusoTripAPI.shared.mutation("loads.deleteDraft", input: In(id: id))
-            await MainActor.run {
-                lastDeleted = "\(label) → DELETED"
-                draggingDraftId = nil
+            let acknowledgement: Out = try await EusoTripAPI.shared.mutation("loads.deleteDraft", input: In(id: id))
+            guard acknowledgement.success else {
+                throw DraftListError.deleteRejected
             }
-            await load()
+            let refreshed = try await fetchDrafts()
+            guard !refreshed.contains(where: { $0.id == id }) else {
+                throw DraftListError.deleteReadbackFailed
+            }
+            rows = refreshed
+            lastDeleted = "\(label) → DELETED"
+            draggingDraftId = nil
         } catch {
-            await MainActor.run {
+            if !(error is CancellationError) {
                 actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
-                draggingDraftId = nil
-                dropHover = false
+            }
+            draggingDraftId = nil
+            dropHover = false
+        }
+        deleting = nil
+        dropHover = false
+    }
+
+    private func fetchDrafts() async throws -> [DraftRow] {
+        try Task.checkCancellation()
+        let response: [DraftRow] = try await EusoTripAPI.shared.queryNoInput("loads.listDrafts")
+        try Task.checkCancellation()
+        return response
+    }
+
+    private func resume(_ row: DraftRow) {
+        guard resumingDraftId == nil,
+              deleting == nil,
+              !row.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        resumingDraftId = row.id
+        NotificationCenter.default.post(
+            name: .eusoShipperNavSwap,
+            object: nil,
+            userInfo: ["screenId": "250", "draftId": row.id]
+        )
+    }
+
+    private enum DraftListError: LocalizedError {
+        case deleteRejected
+        case deleteReadbackFailed
+
+        var errorDescription: String? {
+            switch self {
+            case .deleteRejected:
+                return "EusoTrip did not confirm the deletion. The draft remains available."
+            case .deleteReadbackFailed:
+                return "The deletion could not be confirmed. The draft list was left unchanged; pull to refresh."
             }
         }
-        await MainActor.run { deleting = nil; dropHover = false }
     }
 }
 

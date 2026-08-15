@@ -285,7 +285,7 @@ struct ShipperCatalystScorecard: View {
             }
         }
         .task { await store.refresh() }
-        .refreshable { await store.refresh() }
+        .eusoRefreshable { await store.refresh() }
         // RealtimeService → catalyst scorecards refresh when their
         // load activity moves (acceptance rate, on-time delivery, etc).
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
@@ -307,7 +307,7 @@ struct ShipperCatalystScorecard: View {
 
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("✦ SHIPPER · CATALYST SCORECARDS")
+            EusoTripEyebrow(verbatim: "SHIPPER · CATALYST SCORECARDS")
                 .font(EType.micro)
                 .tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)

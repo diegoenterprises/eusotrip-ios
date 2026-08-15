@@ -60,10 +60,8 @@ private struct DispatcherM04KanbanShell<Content: View>: View {
     var body: some View {
         Shell(theme: theme) { content() } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home", systemImage: "house", isCurrent: false),
-                          NavSlot(label: "Board", systemImage: "rectangle.stack.fill", isCurrent: true)],
-                trailing: [NavSlot(label: "ESANG", systemImage: "sparkles", isCurrent: false),
-                           NavSlot(label: "Me",    systemImage: "person",   isCurrent: false)],
+                leading: DispatchNavRoute.leading(current: .board),
+                trailing: DispatchNavRoute.trailing(current: .board),
                 orbState: .idle
             )
         }
@@ -125,7 +123,7 @@ private struct DispatcherM04KanbanBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await loadCtx() }
-        .refreshable { await loadCtx() }
+        .eusoRefreshable { await loadCtx() }
     }
 
     // MARK: Phase labels (structural, not fabricated)
@@ -197,7 +195,7 @@ private struct DispatcherM04KanbanBody: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("DISPATCHER · BOARD · \(eyebrowPhase) · \(loadNumberDisplay)")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }

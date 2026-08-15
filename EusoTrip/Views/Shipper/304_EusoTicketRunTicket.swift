@@ -72,7 +72,7 @@ private struct ShipperEusoTicketRunTicketBody: View {
             await fetch()
             joinLoadRoom()
         }
-        .refreshable { await fetch() }
+        .eusoRefreshable { await fetch() }
         .onDisappear { leaveLoadRoom() }
         // RealtimeService → re-fetch when status / accessorials /
         // carrier change so the run ticket reflects what's actually
@@ -113,7 +113,7 @@ private struct ShipperEusoTicketRunTicketBody: View {
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
             HStack(spacing: 4) {
-                Image(systemName: "sparkles").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("SHIPPER · EUSOTICKET · RUN TICKET")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }

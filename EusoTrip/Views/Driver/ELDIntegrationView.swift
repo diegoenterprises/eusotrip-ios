@@ -79,7 +79,7 @@ struct ELDIntegrationView: View {
                 }
             }
             .task { await store.bootstrap() }
-            .refreshable { await store.refresh() }
+            .eusoRefreshable { await store.refresh() }
             .overlay(alignment: .top) { bannerOverlay }
         }
         // Outer screen-surface fade so the whole sheet lands with the

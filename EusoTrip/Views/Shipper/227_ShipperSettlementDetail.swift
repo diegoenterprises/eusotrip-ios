@@ -212,7 +212,7 @@ struct ShipperSettlementDetail: View {
             }
         }
         .task { await store.load() }
-        .refreshable { await store.load() }
+        .eusoRefreshable { await store.load() }
         // RealtimeService → settlement state mutates when payable
         // approves clear, disputes resolve, or dispute responses
         // arrive from the carrier-side claim review.
@@ -253,7 +253,7 @@ struct ShipperSettlementDetail: View {
 
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("✦ SHIPPER · SETTLEMENT DETAIL")
+            EusoTripEyebrow(verbatim: "SHIPPER · SETTLEMENT DETAIL")
                 .font(EType.micro)
                 .tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)

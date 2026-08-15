@@ -268,7 +268,7 @@ struct EscortConvoyFormationMap: View {
             .padding(.top, 8)
         }
         .task { await refreshAll() }
-        .refreshable { await refreshAll() }
+        .eusoRefreshable { await refreshAll() }
     }
 
     // MARK: - Chrome
@@ -276,7 +276,7 @@ struct EscortConvoyFormationMap: View {
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
             HStack(spacing: 4) {
-                Image(systemName: "sparkles")
+                EusoTripBrandMark(size: 12)
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
                 Text("ESCORT · FORMATION")
@@ -1052,13 +1052,11 @@ struct EscortConvoyFormationMapScreen: View {
 }
 
 private func escortNavLeading_ES11() -> [NavSlot] {
-    [NavSlot(label: "Trip",  systemImage: "house",                  isCurrent: true),
-     NavSlot(label: "Comms", systemImage: "dot.radiowaves.left.and.right", isCurrent: false)]
+    EscortNavRoute.leading(current: .assignments)
 }
 
 private func escortNavTrailing_ES11() -> [NavSlot] {
-    [NavSlot(label: "Permit", systemImage: "doc.badge.gearshape", isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person",              isCurrent: false)]
+    EscortNavRoute.trailing(current: .assignments)
 }
 
 // MARK: - Previews

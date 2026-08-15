@@ -267,7 +267,7 @@ struct ShipperWeeklyAllocations: View {
             }
         }
         .task { await store.load() }
-        .refreshable { await store.load() }
+        .eusoRefreshable { await store.load() }
     }
 
     // MARK: Content (loading / error / empty / rows)
@@ -349,7 +349,7 @@ struct ShipperWeeklyAllocations: View {
             return "\(rows.count) ALLOCATED · \(atRisk) AT-RISK"
         }()
         return HStack(alignment: .firstTextBaseline) {
-            Text("✦ SHIPPER · ALLOCATIONS")
+            EusoTripEyebrow(verbatim: "SHIPPER · ALLOCATIONS")
                 .font(EType.micro)
                 .tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)

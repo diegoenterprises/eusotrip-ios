@@ -130,7 +130,7 @@ struct ShipperReports: View {
             }
         }
         .task { await refreshAll() }
-        .refreshable { await refreshAll() }
+        .eusoRefreshable { await refreshAll() }
         .sheet(isPresented: Binding(
             get: { pendingShareItems != nil },
             set: { if !$0 { pendingShareItems = nil } }
@@ -228,7 +228,7 @@ struct ShipperReports: View {
 
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("✦ SHIPPER · REPORTS")
+            EusoTripEyebrow(verbatim: "SHIPPER · REPORTS")
                 .font(EType.micro).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer()

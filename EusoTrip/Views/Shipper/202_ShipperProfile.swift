@@ -90,7 +90,7 @@ struct ShipperProfile: View {
             }
         }
         .task { await refreshAll() }
-        .refreshable { await refreshAll() }
+        .eusoRefreshable { await refreshAll() }
         .alert("Sign out?", isPresented: $showSignOutConfirm) {
             Button("Sign out", role: .destructive) {
                 Task { await session.signOut() }
@@ -126,7 +126,7 @@ struct ShipperProfile: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("✦ SHIPPER · ME · PROFILE")
+                EusoTripEyebrow(verbatim: "SHIPPER · ME · PROFILE")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()
@@ -780,7 +780,7 @@ struct ShipperProfile: View {
             switch gl.status {
             case "active", "expiring":
                 var parts: [String] = []
-                if gl.coverage > 0 { parts.append("GL \(dollars(gl.coverage))") }
+                if let coverage = gl.coverage, coverage > 0 { parts.append("GL \(dollars(coverage))") }
                 if !gl.expires.isEmpty { parts.append("exp \(gl.expires)") }
                 return parts.isEmpty ? "On file" : parts.joined(separator: " · ")
             default:
@@ -1297,7 +1297,7 @@ struct ShipperFmcsaDetailSheet: View {
         .padding(Space.s5)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(palette.bgSheet.ignoresSafeArea())
-        .task { await load() }
+        .eusoRefreshTask { await load() }
     }
 
     private func load() async {
@@ -1317,7 +1317,7 @@ struct ShipperFmcsaDetailSheet: View {
     private var sheetHeader: some View {
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("✦ FMCSA · SAFER RECORD")
+                EusoTripEyebrow(verbatim: "FMCSA · SAFER RECORD")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Text("DOT \(dotNumber)")
@@ -1506,7 +1506,7 @@ struct ShipperInsuranceDocsSheet: View {
         .padding(Space.s5)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(palette.bgSheet.ignoresSafeArea())
-        .task {
+        .eusoRefreshTask {
             // Parent screen normally hydrates the store; self-heal when
             // the sheet is the first surface to need it.
             if case .loading = store.state { await store.refresh() }
@@ -1516,7 +1516,7 @@ struct ShipperInsuranceDocsSheet: View {
     private var sheetHeader: some View {
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("✦ INSURANCE · DOCUMENTS")
+                EusoTripEyebrow(verbatim: "INSURANCE · DOCUMENTS")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Text("Coverage on file")
@@ -1630,7 +1630,7 @@ struct ShipperInsuranceDocsSheet: View {
     private func glDetail(_ gl: ShipperComplianceAPI.GeneralLiability) -> String {
         guard gl.status == "active" || gl.status == "expiring" else { return "Not on file" }
         var parts: [String] = []
-        if gl.coverage > 0 { parts.append("Coverage \(dollars(gl.coverage))") }
+        if let coverage = gl.coverage, coverage > 0 { parts.append("Coverage \(dollars(coverage))") }
         if !gl.expires.isEmpty { parts.append("expires \(gl.expires)") }
         return parts.isEmpty ? "On file" : parts.joined(separator: " · ")
     }

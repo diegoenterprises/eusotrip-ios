@@ -145,7 +145,7 @@ struct ShipperAtDock: View {
         }
         .background(palette.bgPage.ignoresSafeArea())
         .task { await store.load() }
-        .refreshable { await store.load() }
+        .eusoRefreshable { await store.load() }
     }
 
     // MARK: - Bound accessors (em-dash when no live source)
@@ -255,7 +255,7 @@ struct ShipperAtDock: View {
 
     private var topBar: some View {
         HStack(alignment: .top) {
-            Text("✦ SHIPPER · LOADS · IN TRANSIT · AT DOCK")
+            EusoTripEyebrow(verbatim: "SHIPPER · LOADS · IN TRANSIT · AT DOCK")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer(minLength: 8)

@@ -115,7 +115,7 @@ struct MeAgreements: View {
             .padding(.bottom, Space.s8)
         }
         .task { await store.refresh() }
-        .refreshable { await store.refresh() }
+        .eusoRefreshable { await store.refresh() }
         .onChange(of: store.statusFilter) { _, _ in Task { await store.refresh() } }
         // RealtimeService → refresh agreements when carrier-issued
         // agreements land or load assignment triggers a new sign-up.

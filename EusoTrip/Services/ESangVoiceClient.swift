@@ -10,14 +10,11 @@
 //    - Model identifier + thinking_level are owned server-side via
 //      `GeminiConfig.primaryModel()` (P0-1). Client never picks a
 //      model, only an intent.
-//    - Thought-signature replay (P0-3) is centralised here: every
-//      multi-turn voice flow caches the encrypted signature returned
-//      with the previous turn and replays it on the follow-up so the
-//      model resumes the conversation in ~40% the latency of a
-//      cold-start re-reason.
-//    - The feature flag `gemini_3_5_flash_voice` is mirrored from
-//      `esang.getFlags` so a single server env (`GEMINI_MODEL`) flips
-//      this entire client without an iOS rebuild.
+//    - Multi-turn continuity is keyed by `sessionId`; the server owns
+//      persisted visible-turn history and provider/model selection.
+//    - The server's `GEMINI_MODEL` configuration can change the model
+//      without an iOS rebuild, and the reply reports the model that
+//      actually answered.
 //    - Foundation enums (`ESangIntent`, `Vertical`, `LoadState`) are
 //      mandatory at the API boundary — no raw strings cross the wire.
 //
@@ -37,14 +34,16 @@ public struct ESangVoiceRequest: Encodable, Hashable, Sendable {
     /// Active vertical (escalates `medium` intents on hazmat/tanker/
     /// heavy-haul lanes). Server cross-checks against the load row.
     public let vertical: Vertical?
-    /// Encrypted thought signature returned by the previous turn.
-    /// When present the server skips the re-reason phase and resumes
-    /// the conversation; this is the P0-3 latency win.
+    /// Legacy compatibility field. Current continuity uses `sessionId`;
+    /// no hidden model reasoning is sent across this boundary.
     public let prevThoughtSignature: String?
     /// Optional FSM target — required when `intent.triggersFsmTransition`
     /// is true. Server uses this to verify the suggested action lands
     /// on a valid LoadState (T-014 ECPO chain).
     public let fsmTarget: LoadState?
+    /// Stable conversation key. Keeps two voice threads for the same user
+    /// from sharing model history on the server.
+    public let sessionId: String?
 
     public init(
         utterance: String,
@@ -53,7 +52,8 @@ public struct ESangVoiceRequest: Encodable, Hashable, Sendable {
         shipmentId: String? = nil,
         vertical: Vertical? = nil,
         prevThoughtSignature: String? = nil,
-        fsmTarget: LoadState? = nil
+        fsmTarget: LoadState? = nil,
+        sessionId: String? = nil
     ) {
         self.utterance = utterance
         self.intent = intent
@@ -62,16 +62,14 @@ public struct ESangVoiceRequest: Encodable, Hashable, Sendable {
         self.vertical = vertical
         self.prevThoughtSignature = prevThoughtSignature
         self.fsmTarget = fsmTarget
+        self.sessionId = sessionId
     }
 }
 
 /// One server reply. Mirrors the server's `VoiceActionReply` shape.
 public struct ESangVoiceReply: Decodable, Hashable, Sendable {
     public let textReply: String
-    /// Encrypted reasoning state the server returned for multi-turn
-    /// replay. Nil for single-turn intents. Cache this and pass it
-    /// back as `prevThoughtSignature` on the very next request to
-    /// take the P0-3 latency path.
+    /// Legacy compatibility field. Nil unless an older server supplies it.
     public let thoughtSignature: String?
     /// Server's confidence the intent classification was correct.
     /// Surface this in the UI so a low-confidence reply gets a
@@ -82,10 +80,13 @@ public struct ESangVoiceReply: Decodable, Hashable, Sendable {
     /// fired the transition. We surface it here so the UI can update
     /// optimistically while the websocket catches up.
     public let resultingFsmState: LoadState?
-    /// Model that actually answered (gemini-3.5-flash on the happy
-    /// path, gemini-2.5-flash if the fallback fired). Useful in the
-    /// debug HUD + cost telemetry post-mortems.
+    /// Model that actually answered. Nil means no model generated a reply.
     public let modelUsed: String?
+    public let available: Bool?
+    public let provider: String?
+    public let fallbackUsed: Bool?
+    public let generatedAt: String?
+    public let unavailableReason: String?
     /// Latency observed server-side (model time + tRPC overhead).
     public let serverLatencyMs: Int?
 
@@ -95,6 +96,11 @@ public struct ESangVoiceReply: Decodable, Hashable, Sendable {
         confidence: Double? = nil,
         resultingFsmState: LoadState? = nil,
         modelUsed: String? = nil,
+        available: Bool? = nil,
+        provider: String? = nil,
+        fallbackUsed: Bool? = nil,
+        generatedAt: String? = nil,
+        unavailableReason: String? = nil,
         serverLatencyMs: Int? = nil
     ) {
         self.textReply = textReply
@@ -102,39 +108,12 @@ public struct ESangVoiceReply: Decodable, Hashable, Sendable {
         self.confidence = confidence
         self.resultingFsmState = resultingFsmState
         self.modelUsed = modelUsed
+        self.available = available
+        self.provider = provider
+        self.fallbackUsed = fallbackUsed
+        self.generatedAt = generatedAt
+        self.unavailableReason = unavailableReason
         self.serverLatencyMs = serverLatencyMs
-    }
-}
-
-/// Per-conversation thought-signature cache (P0-3). Owned by the
-/// view-model that hosts the conversation thread; not a singleton.
-public actor ESangThoughtSignatureCache {
-    private var byShipment: [String: String] = [:]
-    private var lastUpdate: [String: Date] = [:]
-    /// 5-minute TTL per the IO 2026 doc — older signatures get dropped
-    /// because the underlying shipment state has likely changed.
-    private let ttl: TimeInterval = 5 * 60
-
-    public init() {}
-
-    public func remember(_ signature: String, for shipmentId: String) {
-        byShipment[shipmentId] = signature
-        lastUpdate[shipmentId] = Date()
-    }
-
-    public func recall(for shipmentId: String) -> String? {
-        guard let stamp = lastUpdate[shipmentId] else { return nil }
-        if Date().timeIntervalSince(stamp) > ttl {
-            byShipment.removeValue(forKey: shipmentId)
-            lastUpdate.removeValue(forKey: shipmentId)
-            return nil
-        }
-        return byShipment[shipmentId]
-    }
-
-    public func forget(_ shipmentId: String) {
-        byShipment.removeValue(forKey: shipmentId)
-        lastUpdate.removeValue(forKey: shipmentId)
     }
 }
 
@@ -146,14 +125,12 @@ public actor ESangThoughtSignatureCache {
 public final class ESangVoiceClient: @unchecked Sendable {
     public static let shared = ESangVoiceClient()
 
-    private let signatureCache = ESangThoughtSignatureCache()
-
     public init() {}
 
     /// Dispatch one voice turn to the server. The intent + vertical
     /// determine the server-side thinking_level + model thinking budget.
-    /// Caller doesn't pick the model — the server does, based on the
-    /// `gemini_3_5_flash_voice` flag mirrored from `GEMINI_MODEL`.
+    /// Caller doesn't pick the model; the server resolves it from its
+    /// current provider configuration and reports the actual responder.
     public func dispatch(
         utterance: String,
         intent: ESangIntent? = nil,
@@ -162,34 +139,19 @@ public final class ESangVoiceClient: @unchecked Sendable {
         fsmTarget: LoadState? = nil
     ) async throws -> ESangVoiceReply {
         let resolvedIntent = intent ?? ESangIntent.bestGuess(from: utterance)
-        let prev: String? = if let shipmentId {
-            await signatureCache.recall(for: shipmentId)
-        } else {
-            nil
-        }
         let req = ESangVoiceRequest(
             utterance: utterance,
             intent: resolvedIntent,
             shipmentId: shipmentId,
             vertical: vertical,
-            prevThoughtSignature: prev,
-            fsmTarget: fsmTarget
+            prevThoughtSignature: nil,
+            fsmTarget: fsmTarget,
+            sessionId: shipmentId.map { "shipment:\($0)" }
         )
         let reply: ESangVoiceReply = try await EusoTripAPI.shared.mutation(
             "esang.voice.dispatch",
             input: req
         )
-        // Cache the new thought signature for the next turn.
-        if let shipmentId, let sig = reply.thoughtSignature {
-            await signatureCache.remember(sig, for: shipmentId)
-        }
         return reply
-    }
-
-    /// Drop the cached signature for a shipment — call this on
-    /// AT_PICKUP / AT_DELIVERY / POD_SIGNED / SETTLED so we don't
-    /// replay stale reasoning into a different lifecycle phase.
-    public func forgetSignature(for shipmentId: String) async {
-        await signatureCache.forget(shipmentId)
     }
 }

@@ -164,7 +164,7 @@ struct MeEusoTicketsView: View {
             .padding(.bottom, Space.s8)
         }
         .task { await store.refresh() }
-        .refreshable { await store.refresh() }
+        .eusoRefreshable { await store.refresh() }
         // RealtimeService → re-fetch the EusoTickets list the moment a
         // load is assigned/reassigned or any surface-refresh event
         // fires (new BOL, new run ticket, POD-driven haul receipt).

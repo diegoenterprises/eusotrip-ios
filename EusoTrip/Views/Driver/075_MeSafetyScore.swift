@@ -114,7 +114,7 @@ struct MeSafetyScore: View {
             .padding(.bottom, Space.s8)
         }
         .task { await seedAndRefresh() }
-        .refreshable { await seedAndRefresh() }
+        .eusoRefreshable { await seedAndRefresh() }
         .onChange(of: session.user?.id) { _, newId in
             guard newId != nil else { return }
             Task { await store.refresh() }

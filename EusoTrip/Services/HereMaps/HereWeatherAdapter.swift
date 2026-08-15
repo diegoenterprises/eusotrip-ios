@@ -1,21 +1,11 @@
 //
 //  HereWeatherAdapter.swift
 //  EusoTrip — Converts HERE Destination Weather responses into the
-//  `WeatherSnapshot` shape the existing `WeatherCard` on 010 Home
-//  already renders.
+//  route/lane `WeatherSnapshot` shape used by the active-load strip.
 //
-//  Routing policy (2026-04-24, user direction):
-//    "keep weather kit only switching to destination weather only
-//     when its an active load or upcoming load."
-//
-//  So the Home dashboard stays on WeatherKit for "where I'm parked
-//  right now" when the driver is between loads, and switches to
-//  HERE Destination Weather only when an active / upcoming load
-//  means the driver cares about the route or destination
-//  conditions more than the local rooftop. This adapter is the
-//  bridge — it takes a `HereWeatherPlace` for the destination coord
-//  and returns a `WeatherSnapshot` the existing card renders
-//  verbatim.
+//  Locked authority split: HERE owns route endpoints, corridor hazards, and
+//  ETA impact. It never replaces the ambient WeatherKit current/hourly/daily/
+//  alerts/solar hero. This adapter supplies only the route-aware lane strip.
 //
 //  Powered by ESANG AI™.
 //
@@ -31,47 +21,46 @@ extension WeatherSnapshot {
     /// have a clean display string (the load's delivery-city field)
     /// and HERE's address block skips over state short-codes for
     /// some international addresses.
-    /// `latitude` is the queried coordinate's latitude (the caller has the
-    /// pickup/delivery lat at the call site) — threads the sky-engine
-    /// geometry so the destination scene picks the right season/hemisphere.
+    /// `latitude`/`longitude` are the queried coordinate (the caller has the
+    /// pickup/delivery pair at the call site). They let a retained HERE
+    /// observation recompute the destination's present solar state after the
+    /// provider daylight hint ages, without consulting the device timezone.
     static func fromHereWeather(
         _ place: HereWeatherPlace,
         city: String,
-        latitude: Double? = nil
+        latitude: Double? = nil,
+        longitude: Double? = nil
     ) -> WeatherSnapshot? {
         guard let obs = place.observations?.current else { return nil }
         // A partial HERE payload can carry an observation block with a NULL
         // temperature; without a real reading we return nil rather than
         // fabricating tempF=0 — a fake 0° would poison downstream freeze/ambient
         // peril flags (REEFER · FREEZE RISK 0°) on temp-controlled loads.
-        guard obs.temperatureFahrenheit != nil || obs.temperature != nil else { return nil }
-
         // Temperature — HereWeatherClient requests `units=imperial`.
         // The live v3 payload usually places Fahrenheit in `temperature`
         // and omits `temperatureFahrenheit`, so do not convert the fallback.
-        let tempF: Int = {
-            if let f = obs.temperatureFahrenheit {
-                return Int(f.rounded())
-            }
-            if let f = obs.temperature {
-                return Int(f.rounded())
-            }
-            return 0
-        }()
+        guard let tempF = WeatherNumeric.roundedInt(
+            obs.temperatureFahrenheit ?? obs.temperature,
+            allowed: WeatherNumeric.temperatureF
+        ) else { return nil }
 
         // Wind — with `units=imperial`, live v3 reports mph in
         // `windSpeed` and often omits `windSpeedMph`.
-        guard let windMph: Int = {
-            if let mph = obs.windSpeedMph { return Int(mph.rounded()) }
-            if let mph = obs.windSpeed { return Int(mph.rounded()) }
-            if let kmh = obs.windSpeedKmh { return Int((kmh * 0.621371).rounded()) }
-            return nil
-        }() else { return nil }
+        let rawWindMph = obs.windSpeedMph
+            ?? obs.windSpeed
+            ?? obs.windSpeedKmh.map { $0 * 0.621371 }
+        guard let windMph = WeatherNumeric.roundedInt(
+            rawWindMph,
+            allowed: WeatherNumeric.windMph
+        ) else { return nil }
 
         // Visibility — HERE returns miles in en-US, km otherwise. Nil when
         // the observation omitted it (em-dash doctrine — a fabricated 0
         // falsely tripped the LOW VIS hazard).
-        let visibilityMi: Int? = obs.visibility.map { Int($0.rounded()) }
+        let visibilityMi = WeatherNumeric.roundedInt(
+            obs.visibility,
+            allowed: WeatherNumeric.visibilityMi
+        )
 
         // Condition + SF Symbol pairing. HERE doesn't ship SF
         // Symbols directly — we map the icon id / description string
@@ -94,9 +83,11 @@ extension WeatherSnapshot {
                 }
             }
             if let d0 = place.dailyForecasts?.forecasts.first,
-               let hi = d0.highTemperatureFahrenheit,
-               let lo = d0.lowTemperatureFahrenheit {
-                return "today · H \(Int(hi.rounded()))° / L \(Int(lo.rounded()))°"
+               let hi = d0.highTemperatureFahrenheit ?? d0.highTemperature ?? d0.temperature,
+               let lo = d0.lowTemperatureFahrenheit ?? d0.lowTemperature,
+               let highF = WeatherNumeric.roundedInt(hi, allowed: WeatherNumeric.temperatureF),
+               let lowF = WeatherNumeric.roundedInt(lo, allowed: WeatherNumeric.temperatureF) {
+                return "today · H \(highF)° / L \(lowF)°"
             }
             return nil
         }()
@@ -110,7 +101,9 @@ extension WeatherSnapshot {
                     event: (a.type ?? "Weather alert").capitalized,
                     severity: WeatherSnapshot.AlertSeverity(capString: a.severity),
                     headline: a.description,
-                    endsAt: a.validUntilTimeLocal.flatMap { iso.date(from: $0) }
+                    endsAt: a.validUntilTimeLocal.flatMap { iso.date(from: $0) },
+                    source: "National Weather Service via HERE",
+                    detailsURL: nil
                 )
             }
             .sorted { $0.severity.rank > $1.severity.rank }
@@ -130,12 +123,14 @@ extension WeatherSnapshot {
 
         // Feels-like ("comfort" in HERE vocabulary) + humidity. Like
         // temperature, the imperial payload often uses `comfort`.
-        let feelsLikeF: Int? = {
-            if let f = obs.comfortFahrenheit { return Int(f.rounded()) }
-            if let f = obs.comfort { return Int(f.rounded()) }
-            return nil
-        }()
-        let humidityPct: Int? = obs.humidity.map { Int($0.rounded()) }
+        let feelsLikeF = WeatherNumeric.roundedInt(
+            obs.comfortFahrenheit ?? obs.comfort,
+            allowed: WeatherNumeric.temperatureF
+        )
+        let humidityPct = WeatherNumeric.roundedInt(
+            obs.humidity,
+            allowed: WeatherNumeric.percent
+        )
 
         // Next-12-hours band from `forecastHourly` — same product the
         // platform's hereMaps.weatherAt proc normalises server-side.
@@ -151,18 +146,23 @@ extension WeatherSnapshot {
                     let date = iso.date(from: ts),
                     date >= cutoff
                 else { continue }
-                let tempF: Int? = {
-                    if let f = h.temperatureFahrenheit { return Int(f.rounded()) }
-                    if let f = h.temperature { return Int(f.rounded()) }
-                    return nil
-                }()
-                guard let tempF else { continue }
+                guard let tempF = WeatherNumeric.roundedInt(
+                    h.temperatureFahrenheit ?? h.temperature,
+                    allowed: WeatherNumeric.temperatureF
+                ) else { continue }
                 out.append(WeatherSnapshot.HourlyForecast(
                     date: date,
                     tempF: tempF,
                     symbol: Self.dailySymbol(for: h.iconName ?? h.description ?? ""),
-                    precipChancePct: h.precipitationProbability.map { Int($0.rounded()) },
-                    windMph: (h.windSpeedMph ?? h.windSpeed).map { Int($0.rounded()) }
+                    precipChancePct: WeatherNumeric.roundedInt(
+                        h.precipitationProbability,
+                        allowed: WeatherNumeric.percent
+                    ),
+                    windMph: WeatherNumeric.roundedInt(
+                        h.windSpeedMph ?? h.windSpeed,
+                        allowed: WeatherNumeric.windMph
+                    ),
+                    isDaylightHint: Self.daylightHint(h.daylight)
                 ))
             }
             return out
@@ -179,15 +179,9 @@ extension WeatherSnapshot {
             let fallback = DateFormatter()
             fallback.dateFormat = "yyyy-MM-dd"
             for (i, d) in src.enumerated() {
-                let date: Date = {
-                    if let s = d.date {
-                        if let d1 = iso.date(from: s) { return d1 }
-                        if let d2 = fallback.date(from: s) { return d2 }
-                    }
-                    return Calendar.current.date(
-                        byAdding: .day, value: i, to: Date()
-                    ) ?? Date()
-                }()
+                guard let rawDate = d.date,
+                      let date = iso.date(from: rawDate) ?? fallback.date(from: rawDate)
+                else { continue }
                 let label: String = {
                     if i == 0 { return "Today" }
                     if let w = d.weekday, !w.isEmpty {
@@ -197,10 +191,14 @@ extension WeatherSnapshot {
                     f.dateFormat = "EEE"
                     return f.string(from: date)
                 }()
-                guard let high = d.highTemperatureFahrenheit ?? d.highTemperature ?? d.temperature else { continue }
-                let low = d.lowTemperatureFahrenheit ?? d.lowTemperature ?? high
-                let hi = Int(high.rounded())
-                let lo = Int(low.rounded())
+                guard
+                    let high = d.highTemperatureFahrenheit ?? d.highTemperature ?? d.temperature,
+                    let low = d.lowTemperatureFahrenheit ?? d.lowTemperature
+                else { continue }
+                guard
+                    let hi = WeatherNumeric.roundedInt(high, allowed: WeatherNumeric.temperatureF),
+                    let lo = WeatherNumeric.roundedInt(low, allowed: WeatherNumeric.temperatureF)
+                else { continue }
                 let sym = Self.dailySymbol(for: d.iconName ?? d.description ?? "")
                 out.append(
                     DailyForecast(
@@ -210,7 +208,10 @@ extension WeatherSnapshot {
                         lowF: lo,
                         symbol: sym,
                         condition: d.description ?? "—",
-                        precipChance: d.precipitationProbability.map { $0 / 100.0 }
+                        precipChance: WeatherNumeric.roundedInt(
+                            d.precipitationProbability,
+                            allowed: WeatherNumeric.percent
+                        ).map { Double($0) / 100.0 }
                     )
                 )
             }
@@ -233,20 +234,29 @@ extension WeatherSnapshot {
             hourly: hourly,
             alerts: alerts
         )
-        // Adaptive-card wiring (weather-audit 2026-07-09): without these the
-        // hero card went NON-adaptive exactly when a load was active — the
-        // glyph/sky engine key off `weatherCode` (0 = unknown-cloud), the
-        // attribution read "live source", "updated Nm ago" vanished, and the
-        // sky scene lost its season/hemisphere geometry. Mirrors the NWS
-        // composer's tail.
+        // Route-card wiring. Coordinates allow solar geometry to be recomputed
+        // without borrowing the device timezone; freshness is provider-issued
+        // only and remains nil if HERE omitted its timestamp.
         snap.weatherCode = WeatherIcons.code(forSymbol: symbol)
         snap.dataSource = .here
-        snap.observedAt = Date()
+        snap.observedAt = Self.providerDate(obs.utcTime)
         snap.latitude = latitude
+        snap.longitude = longitude
+        snap.isNightHint = Self.daylightHint(obs.daylight).map { !$0 }
+            ?? WeatherIcons.daylightHint(forSymbol: symbol).map { !$0 }
         return snap
     }
 
     // MARK: - Symbol mapping
+
+    private static func providerDate(_ raw: String?) -> Date? {
+        guard let raw else { return nil }
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let plain = ISO8601DateFormatter()
+        plain.formatOptions = [.withInternetDateTime]
+        return fractional.date(from: raw) ?? plain.date(from: raw)
+    }
 
     /// Maps a HERE observation into the closest SF Symbol. HERE's
     /// `iconName` strings follow their own vocabulary ("sunny",
@@ -256,27 +266,41 @@ extension WeatherSnapshot {
     private static func symbol(for obs: HereWeatherObservation) -> String {
         let key = (obs.iconName ?? obs.description ?? "").lowercased()
         if key.isEmpty { return "cloud.sun.fill" }
+        let isNight = key.contains("night") || key.contains("moon")
         if key.contains("thunder") || key.contains("storm") { return "cloud.bolt.rain.fill" }
         if key.contains("snow") || key.contains("blizzard") || key.contains("sleet") { return "snowflake" }
         if key.contains("rain") || key.contains("shower") { return "cloud.rain.fill" }
         if key.contains("fog") || key.contains("mist") || key.contains("haze") { return "cloud.fog.fill" }
         if key.contains("windy") || key.contains("breezy") { return "wind" }
         if key.contains("mostly_cloudy") || key.contains("mostly cloudy") { return "cloud.fill" }
-        if key.contains("partly") { return "cloud.sun.fill" }
+        if key.contains("partly") { return isNight ? "cloud.moon.fill" : "cloud.sun.fill" }
         if key.contains("cloudy") || key.contains("overcast") { return "cloud.fill" }
+        if isNight { return "moon.fill" }
         if key.contains("sunny") || key.contains("clear") { return "sun.max.fill" }
-        if key.contains("night") || key.contains("moon") { return "moon.fill" }
         return "cloud.sun.fill"
     }
 
     private static func dailySymbol(for hint: String) -> String {
         let key = hint.lowercased()
+        let isNight = key.contains("night") || key.contains("moon")
         if key.contains("thunder") { return "cloud.bolt.fill" }
         if key.contains("snow") { return "snowflake" }
         if key.contains("rain") { return "cloud.rain.fill" }
-        if key.contains("partly") { return "cloud.sun.fill" }
+        if key.contains("partly") { return isNight ? "cloud.moon.fill" : "cloud.sun.fill" }
         if key.contains("cloud") { return "cloud.fill" }
+        if isNight { return "moon.fill" }
         if key.contains("sunny") || key.contains("clear") { return "sun.max.fill" }
         return "cloud.sun.fill"
+    }
+
+    /// HERE Destination Weather uses a compact daylight discriminator. Be
+    /// deliberately strict: unknown/new provider values stay nil and fall
+    /// through to coordinate-based solar calculation instead of guessing.
+    private static func daylightHint(_ raw: String?) -> Bool? {
+        switch raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "d", "day", "daylight", "true", "1": return true
+        case "n", "night", "nighttime", "false", "0": return false
+        default: return nil
+        }
     }
 }

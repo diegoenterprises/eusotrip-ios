@@ -87,7 +87,7 @@ struct TheHaulBadges: View {
                 .padding(.top, Space.s4)
                 .padding(.bottom, Space.s8)
             }
-            .refreshable {
+            .eusoRefreshable {
                 await store.refresh()
                 if let e = store.lastError { showToast(e.localizedDescription) }
             }

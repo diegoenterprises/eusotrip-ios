@@ -15,10 +15,8 @@ struct DispatchReportsHubScreen: View {
     var body: some View {
         Shell(theme: theme) { ReportsBody() } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home", systemImage: "house", isCurrent: false),
-                          NavSlot(label: "Drivers", systemImage: "person.3.fill", isCurrent: false)],
-                trailing: [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
-                           NavSlot(label: "Me", systemImage: "person", isCurrent: true)],
+                leading: DispatchNavRoute.leading(current: .me),
+                trailing: DispatchNavRoute.trailing(current: .me),
                 orbState: .idle
             )
         }
@@ -55,7 +53,7 @@ private struct ReportsBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     private var header: some View {

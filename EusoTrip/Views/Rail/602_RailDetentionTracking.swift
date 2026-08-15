@@ -116,14 +116,14 @@ private struct RailDetentionTrackingBody: View {
         }
         .padding(.horizontal, 20)
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - Eyebrow row (y72)
 
     private var eyebrow: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("✦ RAIL ENGINEER · DETENTION")
+            EusoTripEyebrow(verbatim: "RAIL ENGINEER · DETENTION")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer()

@@ -50,10 +50,8 @@ struct DispatcherM04ClosedKanbanScreen: View {
             DCKBody(loadId: loadId)
         } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home",  systemImage: "house",                isCurrent: false),
-                          NavSlot(label: "Board", systemImage: "rectangle.stack.fill", isCurrent: true)],
-                trailing: [NavSlot(label: "ESANG", systemImage: "sparkles", isCurrent: false),
-                           NavSlot(label: "Me",    systemImage: "person",   isCurrent: false)],
+                leading: DispatchNavRoute.leading(current: .board),
+                trailing: DispatchNavRoute.trailing(current: .board),
                 orbState: .idle
             )
         }
@@ -103,13 +101,13 @@ private struct DCKBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await loadCtx() }
-        .refreshable { await loadCtx() }
+        .eusoRefreshable { await loadCtx() }
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "sparkle")
+                EusoTripBrandMark(size: 12)
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
                 Text("DISPATCHER · BOARD · CLOSED · \(loadNumberDisplay)")

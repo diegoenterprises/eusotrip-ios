@@ -161,7 +161,7 @@ private struct VesselBerthWindowBody: View {
             .padding(.top, Space.s5)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - Status bar spacer
@@ -174,7 +174,7 @@ private struct VesselBerthWindowBody: View {
 
     private var topBar: some View {
         HStack {
-            Text("✦ VESSEL OPERATOR · BERTH WINDOW")
+            EusoTripEyebrow(verbatim: "VESSEL OPERATOR · BERTH WINDOW")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer()

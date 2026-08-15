@@ -89,7 +89,7 @@ public struct CrossBorderShippingView: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - Sections

@@ -35,10 +35,8 @@ struct DispatcherBHBolSigned523Screen: View {
             BH523Body(loadId: loadId)
         } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home",  systemImage: "house",                    isCurrent: false),
-                          NavSlot(label: "Board", systemImage: "rectangle.split.3x1.fill", isCurrent: true)],
-                trailing: [NavSlot(label: "Comms", systemImage: "bubble.left.and.bubble.right.fill", isCurrent: false),
-                           NavSlot(label: "Me",    systemImage: "person",                  isCurrent: false)],
+                leading: DispatchNavRoute.leading(current: .board),
+                trailing: DispatchNavRoute.trailing(current: .board),
                 orbState: .idle
             )
         }
@@ -88,7 +86,7 @@ private struct BH523Body: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await refresh() }
-        .refreshable { await refresh() }
+        .eusoRefreshable { await refresh() }
         .sheet(isPresented: $showDocSheet) { BH523DocSheet(doc: docDetail) }
     }
 
@@ -97,7 +95,7 @@ private struct BH523Body: View {
     private var eyebrowRow: some View {
         HStack {
             HStack(spacing: 6) {
-                Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("DISPATCHER · BACKHAUL · BOL SIGNED")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }

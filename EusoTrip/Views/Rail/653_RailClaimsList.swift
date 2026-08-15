@@ -104,7 +104,7 @@ private struct RailClaimsListBody: View {
         .padding(.horizontal, 20)
         .padding(.top, 8)
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
     }
 
     // MARK: - Eyebrow ( ✦ RAIL ENGINEER · CLAIMS  /  23 OPEN )
@@ -112,7 +112,7 @@ private struct RailClaimsListBody: View {
     private var eyebrow: some View {
         HStack(alignment: .firstTextBaseline) {
             HStack(spacing: 5) {
-                Image(systemName: "sparkle")
+                EusoTripBrandMark(size: 12)
                     .font(.system(size: 8, weight: .heavy))
                     .foregroundStyle(LinearGradient.primary)
                 Text("RAIL ENGINEER · CLAIMS")

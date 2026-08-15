@@ -70,13 +70,11 @@ struct CatalystLoadDetailScreen: View {
 }
 
 private func catalystNavLeading_305() -> [NavSlot] {
-    [NavSlot(label: "Home",     systemImage: "house",                          isCurrent: false),
-     NavSlot(label: "Dispatch", systemImage: "shippingbox.and.arrow.backward", isCurrent: true)]
+    CarrierNavRoute.leading(current: .loads)
 }
 
 private func catalystNavTrailing_305() -> [NavSlot] {
-    [NavSlot(label: "My Loads", systemImage: "shippingbox.fill", isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person",      isCurrent: false)]
+    CarrierNavRoute.trailing(current: .loads)
 }
 
 // MARK: - 8-stage lifecycle
@@ -145,11 +143,11 @@ private struct CatalystLoadDetail: View {
     @State private var showEusoTicketRenderer: Bool = false
     @State private var eusoTicketInitialDoc: String = "BOL"
     @State private var showRateConSheet: Bool = false
+    @State private var showRateConSigning: Bool = false
     @State private var rateConLoading: Bool = false
     @State private var rateConRows: [RateConfirmationsAPI.Detail] = []
     @State private var docActionError: String? = nil
     @State private var pdfPresentation: EusoPDFPresentation? = nil
-    @State private var signingRateConIds: Set<Int> = []
     /// RIOS §12 — set true when a load party fails a HARD sanctions gate.
     /// Blocks the carrier's lifecycle-advance CTA until resolved.
     @State private var gateLocked: Bool = false
@@ -207,6 +205,7 @@ private struct CatalystLoadDetail: View {
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
             Task { await fetch() }
         }
+        .eusoRefreshHandler { await fetch() }
         .onReceive(NotificationCenter.default.publisher(for: .eusoLoadReassigned)) { _ in
             Task { await fetch() }
         }
@@ -242,6 +241,12 @@ private struct CatalystLoadDetail: View {
             rateConSheet
                 .environment(\.palette, palette)
         }
+        .sheet(isPresented: $showRateConSigning, onDismiss: {
+            Task { if let load { await loadRateConfirmations(load) } }
+        }) {
+            RateConSigningSheet(loadId: loadId)
+                .environment(\.palette, palette)
+        }
         .sheet(item: $pdfPresentation) { pres in
             EusoPDFViewer(
                 title: pres.title,
@@ -259,7 +264,7 @@ private struct CatalystLoadDetail: View {
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
             HStack(spacing: 4) {
-                Image(systemName: "sparkles")
+                EusoTripBrandMark(size: 12)
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
                 Text(eyebrowLabel)
@@ -1193,8 +1198,7 @@ private struct CatalystLoadDetail: View {
     }
 
     private func rateConRow(_ rc: RateConfirmationsAPI.Detail) -> some View {
-        let busy = signingRateConIds.contains(rc.id)
-        return VStack(alignment: .leading, spacing: Space.s3) {
+        VStack(alignment: .leading, spacing: Space.s3) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("RC #\(rc.id)")
@@ -1211,9 +1215,6 @@ private struct CatalystLoadDetail: View {
                     }
                 }
                 Spacer()
-                if busy {
-                    ProgressView().tint(Brand.blue)
-                }
             }
             HStack(spacing: Space.s2) {
                 Button {
@@ -1230,7 +1231,11 @@ private struct CatalystLoadDetail: View {
                 .opacity(absoluteURL(rc.pdfUrl) == nil ? 0.45 : 1)
                 if !rc.isVoid && !rc.carrierHasSigned {
                     Button {
-                        Task { await signCarrierRateCon(rc) }
+                        showRateConSheet = false
+                        Task { @MainActor in
+                            try? await Task.sleep(nanoseconds: 200_000_000)
+                            showRateConSigning = true
+                        }
                     } label: {
                         Text("Sign")
                             .font(.system(size: 13, weight: .semibold))
@@ -1240,7 +1245,6 @@ private struct CatalystLoadDetail: View {
                             .overlay(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous).strokeBorder(palette.borderFaint))
                     }
                     .buttonStyle(.plain)
-                    .disabled(busy)
                 }
             }
         }
@@ -1307,18 +1311,6 @@ private struct CatalystLoadDetail: View {
             subtitle: load?.loadNumber,
             loadIdForWalletPass: load?.id
         )
-    }
-
-    private func signCarrierRateCon(_ rc: RateConfirmationsAPI.Detail) async {
-        docActionError = nil
-        signingRateConIds.insert(rc.id)
-        defer { signingRateConIds.remove(rc.id) }
-        do {
-            _ = try await EusoTripAPI.shared.rateConfirmations.signCarrier(id: rc.id)
-            if let l = load { await loadRateConfirmations(l) }
-        } catch {
-            docActionError = "Couldn't sign rate confirmation #\(rc.id): \(surfaceMessage(error))"
-        }
     }
 
     private func absoluteURL(_ raw: String?) -> URL? {

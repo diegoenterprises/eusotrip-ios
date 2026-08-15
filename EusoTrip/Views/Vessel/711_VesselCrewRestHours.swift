@@ -175,14 +175,14 @@ private struct VesselCrewRestHoursBody: View {
             }
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - Eyebrow
 
     private var eyebrow: some View {
         HStack {
-            Text("✦ VESSEL OPERATOR · CREW REST")
+            EusoTripEyebrow(verbatim: "VESSEL OPERATOR · CREW REST")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer()

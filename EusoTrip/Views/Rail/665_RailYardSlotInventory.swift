@@ -670,7 +670,7 @@ private struct RailYardSlotInventoryBody665: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await bootstrap() }
-        .refreshable { await reloadBoard() }
+        .eusoRefreshable { await reloadBoard() }
         .overlay(alignment: .bottom) { toastView }
         .sheet(isPresented: $showAssign) { assignSheet }
     }
@@ -680,7 +680,7 @@ private struct RailYardSlotInventoryBody665: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack {
-                Text("✦ RAIL ENGINEER · YARD SLOTS")
+                EusoTripEyebrow(verbatim: "RAIL ENGINEER · YARD SLOTS")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer(minLength: 8)

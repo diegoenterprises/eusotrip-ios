@@ -71,13 +71,11 @@ struct CatalystDriverComplianceScreen: View {
 }
 
 private func catalystNavLeading_326() -> [NavSlot] {
-    [NavSlot(label: "Home",     systemImage: "house",                          isCurrent: false),
-     NavSlot(label: "Dispatch", systemImage: "shippingbox.and.arrow.backward", isCurrent: true)]
+    CarrierNavRoute.leading(current: .drivers)
 }
 
 private func catalystNavTrailing_326() -> [NavSlot] {
-    [NavSlot(label: "My Loads", systemImage: "shippingbox.fill", isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person",      isCurrent: false)]
+    CarrierNavRoute.trailing(current: .drivers)
 }
 
 // MARK: - Federal compliance axis
@@ -214,6 +212,7 @@ private struct CatalystDriverCompliance: View {
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
             Task { await loadAll() }
         }
+        .eusoRefreshHandler { await loadAll() }
         .sheet(isPresented: $showDriverProfile) {
             CatalystDriverProfileScreen(theme: palette, driverId: resolvedDriverId)
                 .environmentObject(EusoTripSession())
@@ -233,7 +232,7 @@ private struct CatalystDriverCompliance: View {
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
             HStack(spacing: 4) {
-                Image(systemName: "sparkles")
+                EusoTripBrandMark(size: 12)
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
                 Text("CATALYST · DRIVER · COMPLIANCE")
@@ -823,40 +822,33 @@ private struct CatalystDriverCompliance: View {
             // Resolve driverId from initial param or roster default.
             if !initialDriverId.isEmpty {
                 resolvedDriverId = initialDriverId
-                let roster = (try? await EusoTripAPI.shared.catalyst.getMyDrivers(limit: 50)) ?? []
+                let roster = try await EusoTripAPI.shared.catalyst.getMyDrivers(limit: 50)
                 resolvedDriverName = roster.first { $0.id == initialDriverId }?.name ?? ""
             } else {
                 let roster = try await EusoTripAPI.shared.catalyst.getMyDrivers(limit: 50)
-                guard let primary = roster.first else { return }
+                guard let primary = roster.first else {
+                    loadError = "No drivers are available for this company."
+                    return
+                }
                 resolvedDriverId = primary.id
                 resolvedDriverName = primary.name
             }
 
             // Parallel fetch all five compliance data sources.
-            async let complianceList: ComplianceAPI.DriverComplianceList? = {
-                try? await EusoTripAPI.shared.compliance.getDriverComplianceList(limit: 100)
-            }()
-            async let overview: DriverQualificationAPI.Overview? = {
-                try? await EusoTripAPI.shared.dq.getOverview(driverId: resolvedDriverId)
-            }()
-            async let docs: [DriverQualificationAPI.DQDocument] = {
-                (try? await EusoTripAPI.shared.dq.getDocuments(driverId: resolvedDriverId))?.documents ?? []
-            }()
-            async let expiring: [DriverQualificationAPI.ExpiringItem] = {
-                (try? await EusoTripAPI.shared.dq.getExpiringItems(daysAhead: 90)) ?? []
-            }()
-            async let perf: DriversAPI.PerformanceScorecard? = {
-                try? await EusoTripAPI.shared.drivers.getPerformanceMetrics(driverId: resolvedDriverId, period: .quarter)
-            }()
+            async let complianceList = EusoTripAPI.shared.compliance.getDriverComplianceList(limit: 100)
+            async let overview = EusoTripAPI.shared.dq.getOverview(driverId: resolvedDriverId)
+            async let docs = EusoTripAPI.shared.dq.getDocuments(driverId: resolvedDriverId)
+            async let expiring = EusoTripAPI.shared.dq.getExpiringItems(daysAhead: 90)
+            async let perf = EusoTripAPI.shared.drivers.getPerformanceMetrics(driverId: resolvedDriverId, period: .quarter)
 
-            let (cl, ov, ds, ex, p) = await (complianceList, overview, docs, expiring, perf)
+            let (cl, ov, documentResponse, ex, p) = try await (complianceList, overview, docs, expiring, perf)
 
-            self.complianceRow = cl?.drivers.first { $0.id == resolvedDriverId }
+            self.complianceRow = cl.drivers.first { $0.id == resolvedDriverId }
             self.dqOverview = ov
-            self.dqDocuments = ds
+            self.dqDocuments = documentResponse.documents
             let driverIdInt = Int(resolvedDriverId) ?? -1
             self.dqExpiring = ex.filter { $0.driverId == driverIdInt }
-            self.perfMetrics = p?.metrics
+            self.perfMetrics = p.metrics
         } catch {
             self.loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }

@@ -182,7 +182,7 @@ private struct BulkUploadShellBody: View {
             }
             .padding(.horizontal, 14).padding(.top, 56)
         }
-        .task { await loadEntityTypes(); await loadHistory() }
+        .eusoRefreshTask { await loadEntityTypes(); await loadHistory() }
         // Founder ask 2026-05-07: shippers, brokers, dispatchers
         // need bulk upload from the file formats they actually use.
         // Server expects CSV/JSON in the payload string; XLSX +

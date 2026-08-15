@@ -205,7 +205,7 @@ struct ShipperPartnerDirectory: View {
             }
         }
         .task { await store.load() }
-        .refreshable { await store.load() }
+        .eusoRefreshable { await store.load() }
         // RealtimeService → partner directory refreshes when carrier
         // performance metrics shift, new partners onboard, or roster
         // updates land.
@@ -221,7 +221,7 @@ struct ShipperPartnerDirectory: View {
 
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("✦ SHIPPER · PARTNER DIRECTORY")
+            EusoTripEyebrow(verbatim: "SHIPPER · PARTNER DIRECTORY")
                 .font(EType.micro)
                 .tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)

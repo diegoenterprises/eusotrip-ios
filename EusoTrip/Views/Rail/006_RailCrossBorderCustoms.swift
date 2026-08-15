@@ -149,7 +149,7 @@ struct RailCrossBorderCustoms_006: View {
             }
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
         .sheet(isPresented: $showDocs) { docsSheet }
     }
 
@@ -158,7 +158,7 @@ struct RailCrossBorderCustoms_006: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("✦ SHIPPER · RAIL · CROSS-BORDER · US→MX")
+                EusoTripEyebrow(verbatim: "SHIPPER · RAIL · CROSS-BORDER · US→MX")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()

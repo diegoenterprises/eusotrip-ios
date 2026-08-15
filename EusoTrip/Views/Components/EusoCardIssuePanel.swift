@@ -11,6 +11,7 @@ import SwiftUI
 
 struct EusoCardIssuePanel: View {
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
 
     var title: String = "EusoCard"
     var subtitle: String = "Virtual card backed by EusoWallet"
@@ -20,6 +21,7 @@ struct EusoCardIssuePanel: View {
     @State private var busy = false
     @State private var acceptedTerms = false
     @State private var actionError: String?
+    @State private var issuanceIdempotencyKey = UUID().uuidString
 
     var body: some View {
         Group {
@@ -34,6 +36,7 @@ struct EusoCardIssuePanel: View {
             }
         }
         .task { await refresh() }
+        .eusoRefreshHandler { await refresh() }
     }
 
     private var skeleton: some View {
@@ -82,6 +85,8 @@ struct EusoCardIssuePanel: View {
                 missingRequirements(status.missingRequirements)
             }
 
+            recoveryControls(status)
+
             if status.canCreate {
                 Toggle(isOn: $acceptedTerms) {
                     Text("I accept the Stripe Issuing authorized-user terms for this virtual EusoCard.")
@@ -89,6 +94,12 @@ struct EusoCardIssuePanel: View {
                         .foregroundStyle(palette.textSecondary)
                 }
                 .toggleStyle(.switch)
+
+                Link(destination: URL(string: "https://stripe.com/legal/issuing")!) {
+                    Label("Review Stripe Issuing terms", systemImage: "arrow.up.right.square")
+                        .font(EType.caption.weight(.semibold))
+                        .foregroundStyle(Brand.blue)
+                }
 
                 Button {
                     Task { await createCard() }
@@ -100,7 +111,7 @@ struct EusoCardIssuePanel: View {
                             Image(systemName: "plus.circle.fill")
                                 .font(.system(size: 15, weight: .heavy))
                         }
-                        Text("Create EusoCard")
+                        Text(status.setupState == "setup_required" ? "Start secure setup" : "Create EusoCard")
                             .font(EType.bodyStrong)
                     }
                     .frame(maxWidth: .infinity)
@@ -121,8 +132,17 @@ struct EusoCardIssuePanel: View {
     private func statusPill(_ status: WalletAPI.EusoCardStatus) -> some View {
         let label: String = {
             if let cardStatus = status.card?.status, !cardStatus.isEmpty { return cardStatus.uppercased() }
-            if status.canCreate { return "READY" }
-            return status.setupState.uppercased().replacingOccurrences(of: "_", with: " ")
+            switch status.setupState {
+            case "setup_required": return "SETUP REQUIRED"
+            case "ready_to_issue": return "READY TO ISSUE"
+            case "onboarding_required": return "VERIFY IDENTITY"
+            case "verification_pending": return "UNDER REVIEW"
+            case "treasury_pending": return "ACTIVATING"
+            case "needs_profile": return "PROFILE REQUIRED"
+            case "not_qualified": return "UNAVAILABLE"
+            case "refresh_required": return "REFRESH REQUIRED"
+            default: return status.setupState.uppercased().replacingOccurrences(of: "_", with: " ")
+            }
         }()
         return Text(label)
             .font(EType.micro)
@@ -185,16 +205,107 @@ struct EusoCardIssuePanel: View {
         .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCardSoft))
     }
 
+    @ViewBuilder
+    private func recoveryControls(_ status: WalletAPI.EusoCardStatus) -> some View {
+        if status.onboardingRequired == true {
+            setupCallout(
+                title: "Secure setup required",
+                message: "Stripe needs the account owner to finish identity and business verification before EusoCard can be issued.",
+                buttonTitle: "Continue Stripe setup",
+                icon: "arrow.up.right.square"
+            ) {
+                await resumeOnboarding()
+            }
+        } else if ["verification_pending", "treasury_pending", "refresh_required", "unavailable"].contains(status.setupState) {
+            setupCallout(
+                title: status.setupState == "treasury_pending"
+                    ? "Treasury activation pending"
+                    : status.setupState == "unavailable" ? "EusoCard status unavailable" : "Verification in progress",
+                message: status.setupState == "treasury_pending"
+                    ? "Stripe is activating the financial-account features required for card issuing."
+                    : "Refresh after Stripe finishes reviewing the submitted account information.",
+                buttonTitle: "Refresh status",
+                icon: "arrow.clockwise"
+            ) {
+                await refresh()
+            }
+        } else if status.card?.status == "pending" || status.card?.status == "inactive" {
+            setupCallout(
+                title: "Card activation pending",
+                message: "Stripe has the card record. Refresh to retrieve its current activation state.",
+                buttonTitle: "Refresh status",
+                icon: "arrow.clockwise"
+            ) {
+                await refresh()
+            }
+        }
+    }
+
+    private func setupCallout(
+        title: String,
+        message: String,
+        buttonTitle: String,
+        icon: String,
+        action: @escaping () async -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            Text(title)
+                .font(EType.caption.weight(.semibold))
+                .foregroundStyle(palette.textPrimary)
+            Text(message)
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button {
+                Task { await action() }
+            } label: {
+                HStack(spacing: 7) {
+                    if busy {
+                        ProgressView().tint(.white)
+                    } else {
+                        Image(systemName: icon)
+                    }
+                    Text(buttonTitle)
+                        .font(EType.caption.weight(.semibold))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .foregroundStyle(Color.white)
+                .background(LinearGradient.diagonal)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .disabled(busy)
+            .opacity(busy ? 0.55 : 1)
+        }
+        .padding(Space.s3)
+        .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCardSoft))
+    }
+
     private func errorCard(_ error: String) -> some View {
         LifecycleCard(accentDanger: true) {
-            HStack(spacing: Space.s2) {
-                Image(systemName: "creditcard.trianglebadge.exclamationmark")
-                    .foregroundStyle(Brand.danger)
-                Text(error)
-                    .font(EType.caption)
-                    .foregroundStyle(Brand.danger)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
+            VStack(alignment: .leading, spacing: Space.s3) {
+                HStack(alignment: .top, spacing: Space.s2) {
+                    Image(systemName: "creditcard.trianglebadge.exclamationmark")
+                        .foregroundStyle(Brand.danger)
+                    Text(error)
+                        .font(EType.caption)
+                        .foregroundStyle(Brand.danger)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }
+                Button {
+                    Task { await refresh() }
+                } label: {
+                    Label("Retry EusoCard", systemImage: "arrow.clockwise")
+                        .font(EType.caption.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 9)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.white)
+                .background(LinearGradient.diagonal)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
         }
     }
@@ -215,9 +326,35 @@ struct EusoCardIssuePanel: View {
         busy = true
         defer { busy = false }
         do {
-            status = try await EusoTripAPI.shared.wallet.createEusoCard(authorizedUserTermsAccepted: true)
+            let fresh = try await EusoTripAPI.shared.wallet.createEusoCard(
+                authorizedUserTermsAccepted: true,
+                idempotencyKey: issuanceIdempotencyKey
+            )
+            status = fresh
             actionError = nil
-            acceptedTerms = false
+            if let rawURL = fresh.onboardingUrl, let url = URL(string: rawURL) {
+                openURL(url)
+            }
+            if fresh.card?.cardId != nil {
+                acceptedTerms = false
+                issuanceIdempotencyKey = UUID().uuidString
+            }
+        } catch {
+            actionError = friendly(error)
+        }
+    }
+
+    private func resumeOnboarding() async {
+        busy = true
+        defer { busy = false }
+        do {
+            let link = try await EusoTripAPI.shared.wallet.createEusoCardOnboardingLink()
+            actionError = nil
+            if let rawURL = link.onboardingUrl, let url = URL(string: rawURL) {
+                openURL(url)
+            } else {
+                await refresh()
+            }
         } catch {
             actionError = friendly(error)
         }
@@ -241,7 +378,7 @@ struct EusoCardIssuePanel: View {
     }
 
     private func cents(_ cents: Int?) -> String {
-        guard let cents else { return "$0.00" }
+        guard let cents else { return "Unavailable" }
         return (Double(cents) / 100).formatted(.currency(code: "USD"))
     }
 

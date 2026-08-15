@@ -118,7 +118,7 @@ struct BrokerTenders: View {
             tenders.limit = 50
             await tenders.refresh()
         }
-        .refreshable {
+        .eusoRefreshable {
             tenders.limit = 50
             await tenders.refresh()
         }
@@ -137,7 +137,7 @@ struct BrokerTenders: View {
                 .clipShape(Circle())
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Image(systemName: "sparkles")
+                    EusoTripBrandMark(size: 12)
                         .font(.system(size: 9, weight: .heavy))
                         .foregroundStyle(LinearGradient.diagonal)
                     Text("BROKER · TENDERS")
@@ -513,13 +513,11 @@ struct BrokerTendersScreen: View {
 }
 
 private func brokerNavLeading_401() -> [NavSlot] {
-    [NavSlot(label: "Home",    systemImage: "house",                isCurrent: false),
-     NavSlot(label: "Tenders", systemImage: "doc.badge.gearshape",  isCurrent: true)]
+    BrokerNavRoute.leading(current: .tenders)
 }
 
 private func brokerNavTrailing_401() -> [NavSlot] {
-    [NavSlot(label: "Carriers", systemImage: "person.2", isCurrent: false),
-     NavSlot(label: "Me",       systemImage: "person",   isCurrent: false)]
+    BrokerNavRoute.trailing(current: .tenders)
 }
 
 // MARK: - Previews

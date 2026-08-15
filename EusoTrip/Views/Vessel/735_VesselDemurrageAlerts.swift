@@ -327,7 +327,7 @@ private struct VesselDemurrageAlertsBody735: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .task { await model.load() }
-        .refreshable { await model.load() }
+        .eusoRefreshable { await model.load() }
         .onDisappear { model.stop() }
     }
 
@@ -348,7 +348,7 @@ private struct VesselDemurrageAlertsBody735: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("VESSEL OPERATOR · D&D WATCH").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
                 Spacer()
                 Text(model.degraded ? "DEGRADED" : "LIVE · USD").font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundStyle(palette.textTertiary)

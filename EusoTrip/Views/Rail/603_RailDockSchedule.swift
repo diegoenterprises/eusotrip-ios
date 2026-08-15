@@ -312,7 +312,7 @@ private struct RailDockScheduleBody: View {
             .padding(.top, Space.s4)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
     }
 
     // MARK: - Eyebrow
@@ -320,7 +320,7 @@ private struct RailDockScheduleBody: View {
     private var eyebrow: some View {
         HStack(spacing: 0) {
             HStack(spacing: 5) {
-                Image(systemName: "sparkle")
+                EusoTripBrandMark(size: 12)
                     .font(.system(size: 8, weight: .heavy))
                     .foregroundStyle(LinearGradient.primary)
                 Text("RAIL ENGINEER · DOCK SCHEDULE")

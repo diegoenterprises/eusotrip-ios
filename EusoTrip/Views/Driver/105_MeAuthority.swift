@@ -150,7 +150,7 @@ struct MeAuthority: View {
         .padding(.horizontal, Space.s4)
         .padding(.top, Space.s3)
         .task { await store.bootstrap() }
-        .refreshable { await store.refresh() }
+        .eusoRefreshable { await store.refresh() }
         // RealtimeService → authority status refreshes on FMCSA
         // safety/insurance updates and SAFER status changes.
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in

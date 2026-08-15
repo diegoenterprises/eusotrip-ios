@@ -78,6 +78,9 @@ struct LoadDetailSheet: View {
     /// (rendered as the "no escort assigned" card so the driver knows
     /// they're hauling solo, not that the request silently failed).
     @State private var escorts: [LoadsAPI.EscortAssignment]?
+    @State private var escortAssignmentError: String?
+    @State private var escortRequestCapability: Bool?
+    @State private var escortCapabilityError: String?
     /// Counter-offer sheet — driver proposes a different rate on the
     /// posted tender. Backed by `drivers.counterOffer`. The "Bid a
     /// different rate" footer button now flips this true instead of
@@ -287,17 +290,27 @@ struct LoadDetailSheet: View {
             }
         }
         .task(id: load.id) {
-            // Escort context — separate task so a slow / failing escort
-            // call doesn't block the broker card from rendering. The
-            // escort card collapses to its "loading" state when the
-            // optional `escorts` is still nil; on error we fall through
-            // to the same `[]` empty case (silent fail beats a red
-            // toast on a fast-moving sheet).
+            escortAssignmentError = nil
+            escortCapabilityError = nil
+            escortRequestCapability = nil
+            let loadRef = load.backendLoadId.map(String.init) ?? load.id
             do {
                 escorts = try await EusoTripAPI.shared.loads
-                    .getEscortAssignment(loadId: load.id)
+                    .getEscortAssignment(loadId: loadRef)
             } catch {
                 escorts = []
+                escortAssignmentError = error.eusoUserCopy
+            }
+
+            guard let backendId = load.backendLoadId else {
+                escortRequestCapability = false
+                return
+            }
+            do {
+                escortRequestCapability = try await EusoTripAPI.shared.escort
+                    .getRequestCapability(loadId: backendId).canRequest
+            } catch {
+                escortCapabilityError = error.eusoUserCopy
             }
         }
         .task(id: load.id) {
@@ -1003,7 +1016,21 @@ struct LoadDetailSheet: View {
     @ViewBuilder
     private var escortCard: some View {
         sectionCard(title: "ESCORT", subtitle: nil) {
-            switch escorts {
+            if let escortAssignmentError {
+                VStack(alignment: .leading, spacing: Space.s2) {
+                    Label("Escort details unavailable", systemImage: "exclamationmark.triangle")
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(Brand.warning)
+                    Text(escortAssignmentError)
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("Pull to refresh and try again.")
+                        .font(EType.micro)
+                        .foregroundStyle(palette.textTertiary)
+                }
+            } else {
+                switch escorts {
             case .none:
                 HStack(spacing: Space.s2) {
                     ProgressView()
@@ -1030,13 +1057,29 @@ struct LoadDetailSheet: View {
                         }
                         Spacer(minLength: 0)
                     }
-                    escortRequestButton
+                    if escortRequestCapability == true {
+                        escortRequestButton
+                    } else if escortRequestCapability == nil, escortCapabilityError == nil {
+                        HStack(spacing: Space.s2) {
+                            ProgressView().scaleEffect(0.7)
+                            Text("Checking request access…")
+                                .font(EType.caption)
+                                .foregroundStyle(palette.textSecondary)
+                        }
+                    }
+                    if escortCapabilityError != nil {
+                        Text("Request access is unavailable. Pull to refresh before requesting an escort.")
+                            .font(EType.caption)
+                            .foregroundStyle(Brand.warning)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             case .some(let rows):
                 VStack(alignment: .leading, spacing: Space.s2) {
                     ForEach(rows) { row in
                         escortRow(row)
                     }
+                }
                 }
             }
         }
@@ -1128,25 +1171,25 @@ struct LoadDetailSheet: View {
     /// route as 053 dispatch chat) as a non-blocking human-readable courtesy.
     private func requestEscort() async {
         guard escortRequestState != .requesting else { return }
-        escortRequestState = .requesting
+        guard escortRequestCapability == true else {
+            escortRequestState = .failed("Request access changed. Pull to refresh before trying again.")
+            return
+        }
+        guard let backendId = load.backendLoadId else {
+            escortRequestState = .failed("This load isn't synced yet. Try again once it's posted.")
+            return
+        }
 
-        let loadRef = load.backendLoadId.map(String.init) ?? load.id
+        escortRequestState = .requesting
+        let loadRef = String(backendId)
         let concept = mode.escortConcept
 
-        // MeAction — haptic + surface notification.
         MeAction.fire("loaddetail.request-escort", userInfo: [
             "loadId": loadRef,
             "mode": mode.rawValue,
             "escortConcept": concept,
         ])
 
-        // PRIMARY: raise a REAL escort demand. Flips loads.requiresEscort on
-        // the backend so the load surfaces in the escort marketplace
-        // (escorts.getAvailableJobs). Needs the canonical backend load id.
-        guard let backendId = load.backendLoadId else {
-            escortRequestState = .failed("This load isn't synced yet. Try again once it's posted.")
-            return
-        }
         do {
             _ = try await EusoTripAPI.shared.escort.requestEscort(
                 loadId: backendId,
