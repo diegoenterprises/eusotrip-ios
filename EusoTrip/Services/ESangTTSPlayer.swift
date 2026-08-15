@@ -52,20 +52,39 @@ public final class ESangTTSPlayer: NSObject, @unchecked Sendable {
     public func speak(_ text: String, serverAudioBase64: String? = nil) async {
         stop()
         guard !text.isEmpty else { return }
+        guard UserVoicePreference.shared.isVoiceEnabled else { return }
 
         // ─── Path A: server-shipped audio ──────────────────────────
-        if let b64 = serverAudioBase64, !b64.isEmpty,
-           let data = Data(base64Encoded: b64, options: .ignoreUnknownCharacters) {
+        if let b64 = serverAudioBase64, playAudio(base64: b64) {
+            return
+        }
+
+        // The shared server profile is authoritative for the selected Kokoro
+        // voice. A network or TTS outage falls through to the device voice.
+        if serverAudioBase64 == nil {
+            struct Input: Encodable {
+                let text: String
+                let voiceId: String?
+            }
+            struct Output: Decodable {
+                let audio: String?
+                let voiceName: String
+                let voiceId: String
+                let error: String?
+            }
             do {
-                try Self.activateAudioSession()
-                let player = try AVAudioPlayer(data: data)
-                player.delegate = self
-                player.prepareToPlay()
-                isSpeaking = player.play()
-                self.audioPlayer = player
-                return
+                let reply: Output = try await EusoTripAPI.shared.mutation(
+                    "esangVoice.speak",
+                    input: Input(
+                        text: String(text.prefix(2_000)),
+                        voiceId: UserVoicePreference.shared.selectedVoiceProfile
+                    )
+                )
+                if let audio = reply.audio, playAudio(base64: audio) {
+                    return
+                }
             } catch {
-                // Fall through to synthesizer path on decode/playback fail.
+                // Device speech below is the explicit degraded provider state.
             }
         }
 
@@ -88,6 +107,26 @@ public final class ESangTTSPlayer: NSObject, @unchecked Sendable {
         synthesizer.delegate = self
         synthesizer.speak(utterance)
         isSpeaking = true
+    }
+
+    @MainActor
+    private func playAudio(base64: String) -> Bool {
+        guard !base64.isEmpty,
+              let data = Data(base64Encoded: base64, options: .ignoreUnknownCharacters) else {
+            return false
+        }
+        do {
+            try Self.activateAudioSession()
+            let player = try AVAudioPlayer(data: data)
+            player.delegate = self
+            player.prepareToPlay()
+            guard player.play() else { return false }
+            audioPlayer = player
+            isSpeaking = true
+            return true
+        } catch {
+            return false
+        }
     }
 
     /// Stop both pipelines immediately. Idempotent.

@@ -271,6 +271,27 @@ struct eSangMark: View {
     }
 }
 
+// MARK: - EusoTripBrandMark
+
+/// Compact EusoTrip identity mark for screen eyebrow and header rows.
+/// Decorative sparkles remain reserved for actions that are actually AI-led.
+struct EusoTripBrandMark: View {
+    var size: CGFloat = 12
+
+    var body: some View {
+        Image("EusoTripLogo")
+            .resizable()
+            .renderingMode(.original)
+            .aspectRatio(contentMode: .fit)
+            .frame(width: size, height: size)
+            .scaleEffect(1.45)
+            .offset(y: size * 0.10)
+            .frame(width: size, height: size)
+            .clipped()
+            .accessibilityHidden(true)
+    }
+}
+
 // MARK: - GradientLogo
 
 /// Centered EusoTrip lockup — flame/teardrop brand mark stacked above the wordmark.

@@ -121,6 +121,12 @@ public final class UserVoicePreference: ObservableObject {
 
     /// Storage key for the local-only cache (used at cold boot).
     private static let storageKey = "eusotrip.user_voice_dialect"
+    private static let voiceProfileKey = "eusotrip.esang.voice_profile"
+    private static let voiceEnabledKey = "eusotrip.esang.voice_enabled"
+    private static let pushEnabledKey = "eusotrip.esang.push_enabled"
+    private static let dndEnabledKey = "eusotrip.esang.dnd_enabled"
+    private static let dndStartKey = "eusotrip.esang.dnd_start"
+    private static let dndEndKey = "eusotrip.esang.dnd_end"
 
     @Published public private(set) var current: VoiceDialect
 
@@ -131,6 +137,43 @@ public final class UserVoicePreference: ObservableObject {
         } else {
             self.current = .system
         }
+    }
+
+    public var selectedVoiceProfile: String? {
+        UserDefaults.standard.string(forKey: Self.voiceProfileKey)
+    }
+
+    public var isVoiceEnabled: Bool {
+        let defaults = UserDefaults.standard
+        return defaults.object(forKey: Self.voiceEnabledKey) == nil
+            ? true
+            : defaults.bool(forKey: Self.voiceEnabledKey)
+    }
+
+    /// Apply a server-verified preference snapshot to the offline cache. This
+    /// method never invents a dialect: unsupported values leave the current
+    /// device dialect untouched while the caller surfaces the contract error.
+    public func applyAuthoritativeSettings(
+        voiceProfile: String,
+        dialect rawDialect: String,
+        voiceEnabled: Bool,
+        pushEnabled: Bool,
+        dndEnabled: Bool,
+        dndStart: String,
+        dndEnd: String
+    ) {
+        let defaults = UserDefaults.standard
+        defaults.set(voiceProfile, forKey: Self.voiceProfileKey)
+        defaults.set(voiceEnabled, forKey: Self.voiceEnabledKey)
+        defaults.set(pushEnabled, forKey: Self.pushEnabledKey)
+        defaults.set(dndEnabled, forKey: Self.dndEnabledKey)
+        defaults.set(dndStart, forKey: Self.dndStartKey)
+        defaults.set(dndEnd, forKey: Self.dndEndKey)
+
+        guard let dialect = VoiceDialect(rawValue: rawDialect) else { return }
+        current = dialect
+        defaults.set(dialect.rawValue, forKey: Self.storageKey)
+        ESangContextProvider.shared.setVoiceDialect(dialect.rawValue)
     }
 
     /// Set the dialect locally, push to server, and propagate to
