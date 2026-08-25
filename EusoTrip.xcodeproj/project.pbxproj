@@ -696,6 +696,7 @@
 		D2R0900000000000000ABF3 /* 419_ExceptionResponse.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2R0900000000000000ACF3 /* 419_ExceptionResponse.swift */; };
 		D2RATPV0000000000001 /* RatingPromptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RATPV0000000000002 /* RatingPromptView.swift */; };
 		D2RHIN000000000000ABDS /* RoleHomeIntro.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RHIN000000000000ACDS /* RoleHomeIntro.swift */; };
+		HWSY20260825000000000001 /* HomeWidgetSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = HWSY20260825000000000002 /* HomeWidgetSystem.swift */; };
 		D2RIOSBLD110000000000000 /* 1100_IDVLivenessSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RIOSREF110000000000000 /* 1100_IDVLivenessSheet.swift */; };
 		D2RIOSBLD110100000000000 /* 1101_TaxIDValidationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RIOSREF110100000000000 /* 1101_TaxIDValidationSheet.swift */; };
 		D2RIOSBLD110200000000000 /* 1102_OperatingAuthoritySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RIOSREF110200000000000 /* 1102_OperatingAuthoritySheet.swift */; };
@@ -2058,6 +2059,7 @@
 		D2R0900000000000000ACF3 /* 419_ExceptionResponse.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 419_ExceptionResponse.swift; path = EusoTrip/Views/Shipper/419_ExceptionResponse.swift; sourceTree = SOURCE_ROOT; };
 		D2RATPV0000000000002 /* RatingPromptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RatingPromptView.swift; path = EusoTrip/Views/Components/RatingPromptView.swift; sourceTree = SOURCE_ROOT; };
 		D2RHIN000000000000ACDS /* RoleHomeIntro.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RoleHomeIntro.swift; path = EusoTrip/Views/Components/RoleHomeIntro.swift; sourceTree = SOURCE_ROOT; };
+		HWSY20260825000000000002 /* HomeWidgetSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HomeWidgetSystem.swift; path = EusoTrip/Views/Components/HomeWidgetSystem.swift; sourceTree = SOURCE_ROOT; };
 		D2RIOSREF110000000000000 /* 1100_IDVLivenessSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 1100_IDVLivenessSheet.swift; path = EusoTrip/Views/Compliance/1100_IDVLivenessSheet.swift; sourceTree = SOURCE_ROOT; };
 		D2RIOSREF110100000000000 /* 1101_TaxIDValidationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 1101_TaxIDValidationSheet.swift; path = EusoTrip/Views/Compliance/1101_TaxIDValidationSheet.swift; sourceTree = SOURCE_ROOT; };
 		D2RIOSREF110200000000000 /* 1102_OperatingAuthoritySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 1102_OperatingAuthoritySheet.swift; path = EusoTrip/Views/Compliance/1102_OperatingAuthoritySheet.swift; sourceTree = SOURCE_ROOT; };
@@ -3929,6 +3931,7 @@
 				B1A1F600000000000000AF02 /* PerLoadWeatherCard.swift */,
 				B1A11111111111111111AA0B /* WeatherIcons.swift */,
 				D2RHIN000000000000ACDS /* RoleHomeIntro.swift */,
+				HWSY20260825000000000002 /* HomeWidgetSystem.swift */,
 				SPRK20260521000002 /* SparkBriefCard.swift */,
 				EQPR20260521000002 /* EquipmentRecommenderWidget.swift */,
 				ACSH20260521000002 /* AstraCaptureSheet.swift */,
@@ -5262,6 +5265,7 @@
 				B1A1F600000000000000AF01 /* PerLoadWeatherCard.swift in Sources */,
 				B1A11111111111111111AA0A /* WeatherIcons.swift in Sources */,
 				D2RHIN000000000000ABDS /* RoleHomeIntro.swift in Sources */,
+				HWSY20260825000000000001 /* HomeWidgetSystem.swift in Sources */,
 				SPRK20260521000001 /* SparkBriefCard.swift in Sources */,
 				EQPR20260521000001 /* EquipmentRecommenderWidget.swift in Sources */,
 				ACSH20260521000001 /* AstraCaptureSheet.swift in Sources */,

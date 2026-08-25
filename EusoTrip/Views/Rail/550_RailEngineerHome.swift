@@ -91,6 +91,12 @@ private struct RailEngineerHomeBody: View {
                 // top-to-bottom (scale 0.92 + blur 5pt + 50 ms stagger) once
                 // per cold launch; settled on re-visit. Reduce-Motion → fade.
                 StaggeredEntranceStack(alignment: .leading, spacing: Space.s4) {
+                    HomeWidgetGrid(
+                        canonicalOrder: canonicalOrder,
+                        role: "RAIL_ENGINEER",
+                        storageKey: widgetLayoutKey,
+                        render: { id in widgetRender(id) }
+                    )
                     RoleHomeIntro()
                     ModeAssetAvailabilityLaunchCard(mode: .rail)
                     if loading {
@@ -104,12 +110,6 @@ private struct RailEngineerHomeBody: View {
                     } else if let d = dash {
                         hero(d)
                         statStrip(d)
-                        HomeWidgetGrid(
-                            canonicalOrder: canonicalOrder,
-                            role: "RAIL_ENGINEER",
-                            storageKey: widgetLayoutKey,
-                            render: { id in widgetRender(id) }
-                        )
                     }
                     Color.clear.frame(height: 96)
                 }

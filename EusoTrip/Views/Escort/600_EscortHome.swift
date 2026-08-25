@@ -92,15 +92,14 @@ struct EscortHome: View {
             // per cold launch; settled on re-visit. Reduce-Motion → fade.
             StaggeredEntranceStack(alignment: .leading, spacing: Space.s4) {
                 header
-                HomeWeatherWidget()
-                kpiStrip
-                attentionStrip
                 HomeWidgetGrid(
                     canonicalOrder: escortCanonicalOrder,
                     role: "ESCORT",
                     storageKey: widgetLayoutKey,
                     render: { id in escortHomeRender(id) }
                 )
+                kpiStrip
+                attentionStrip
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14)

@@ -85,15 +85,14 @@ struct CarrierHome: View {
             // per cold launch; settled on re-visit. Reduce-Motion → fade.
             StaggeredEntranceStack(alignment: .leading, spacing: Space.s4) {
                 header
-                weatherSection
-                kpiStrip
-                collapsibleAttentionStrip
                 HomeWidgetGrid(
                     canonicalOrder: carrierCanonicalOrder,
                     role: "CARRIER",
                     storageKey: widgetLayoutKey,
                     render: { id in carrierHomeRender(id) }
                 )
+                kpiStrip
+                collapsibleAttentionStrip
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14)

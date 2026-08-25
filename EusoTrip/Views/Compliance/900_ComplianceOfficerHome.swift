@@ -62,7 +62,7 @@ private struct ComplianceHomeBody: View {
     private func complianceHomeRender(_ id: String) -> AnyView {
         switch id {
         case "expiringDocs":
-            if let e = topExpiring { AnyView(expiringWidget(e)) } else { AnyView(EmptyView()) }
+            AnyView(expiringDocsWidget)
         case "violations_overview":
             AnyView(violationsOverviewWidget)
         case "driver_compliance":
@@ -74,6 +74,25 @@ private struct ComplianceHomeBody: View {
         }
     }
 
+    @ViewBuilder
+    private var expiringDocsWidget: some View {
+        if loading {
+            LifecycleCard {
+                Text("Loading expiration register…")
+                    .font(EType.caption).foregroundStyle(palette.textSecondary)
+            }
+        } else if let loadError {
+            LifecycleCard(accentDanger: true) {
+                Text(loadError).font(EType.caption).foregroundStyle(Brand.danger)
+            }
+        } else if let item = topExpiring {
+            expiringWidget(item)
+        } else {
+            EusoEmptyState(systemImage: "doc.badge.clock", title: "No upcoming expirations",
+                           subtitle: "The compliance expiration query returned no items.")
+        }
+    }
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             // First-load unlock cascade: top-level sections spring in
@@ -81,6 +100,12 @@ private struct ComplianceHomeBody: View {
             // per cold launch; settled on re-visit. Reduce-Motion → fade.
             StaggeredEntranceStack(alignment: .leading, spacing: Space.s5) {
                 header
+                HomeWidgetGrid(
+                    canonicalOrder: complianceCanonicalOrder,
+                    role: "COMPLIANCE_OFFICER",
+                    storageKey: widgetLayoutKey,
+                    render: { id in complianceHomeRender(id) }
+                )
                 // Canonical lead: morning brief → weather. Driver 010 is the
                 // baseline; every role home opens with these two cards.
                 RoleHomeIntro()
@@ -89,12 +114,6 @@ private struct ComplianceHomeBody: View {
                 else if let d = dash {
                     hero(d)
                     statsGrid(d)
-                    HomeWidgetGrid(
-                        canonicalOrder: complianceCanonicalOrder,
-                        role: "COMPLIANCE_OFFICER",
-                        storageKey: widgetLayoutKey,
-                        render: { id in complianceHomeRender(id) }
-                    )
                 }
                 Color.clear.frame(height: 96)
             }

@@ -107,21 +107,24 @@ struct AdminHome: View {
         }
     }
 
+    private var widgetRole: String {
+        session.user?.role == "SUPER_ADMIN" ? "SUPER_ADMIN" : "ADMIN"
+    }
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s5) {
                 header
-                HomeWeatherWidget()
+                HomeWidgetGrid(
+                    canonicalOrder: adminCanonicalOrder,
+                    role: widgetRole,
+                    storageKey: widgetLayoutKey,
+                    render: { id in adminHomeRender(id) }
+                )
                 kpiStrip
                 controlTowerLink
                 tenantsLink
                 attentionStrip
-                HomeWidgetGrid(
-                    canonicalOrder: adminCanonicalOrder,
-                    role: "ADMIN",
-                    storageKey: widgetLayoutKey,
-                    render: { id in adminHomeRender(id) }
-                )
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, Space.s4)
