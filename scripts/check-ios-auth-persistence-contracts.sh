@@ -16,6 +16,7 @@ session="$repo_root/EusoTrip/Services/EusoTripSession.swift"
 app="$repo_root/EusoTrip/EusoTripApp.swift"
 watch_handler="$repo_root/EusoTrip/Services/WatchCommandHandler.swift"
 convoy_bridge="$repo_root/EusoTrip/Services/ConvoyPhoneBridge.swift"
+sign_in="$repo_root/EusoTrip/Views/Auth/001_SignIn.swift"
 
 grep -q 'renewSession' "$api"
 grep -q '"auth.refreshSession"' "$api"
@@ -79,6 +80,19 @@ fi
 
 if grep -q 'oldPhase == .background' "$app"; then
   echo "FAIL: brittle background -> active comparison remains" >&2
+  exit 1
+fi
+
+if ! sed -n '/Developer-only walkthrough/,+7p' "$sign_in" | grep -q '#if DEBUG'; then
+  echo "FAIL: fabricated preview identity is available in release sign-in" >&2
+  exit 1
+fi
+if ! awk '
+  previous ~ /#if DEBUG/ && /Offline demo sign-in/ { found = 1 }
+  { previous = $0 }
+  END { exit(found ? 0 : 1) }
+' "$session"; then
+  echo "FAIL: fabricated demo session is compiled into release builds" >&2
   exit 1
 fi
 

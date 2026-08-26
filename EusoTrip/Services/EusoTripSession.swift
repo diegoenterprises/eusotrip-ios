@@ -667,7 +667,8 @@ final class EusoTripSession: ObservableObject {
         self.phase = .signedOut
     }
 
-    // MARK: Offline demo sign-in (simulator + TestFlight without backend)
+    #if DEBUG
+    // MARK: Offline demo sign-in (developer simulator only)
     //
     // Wires AppRoot → SignInView → ContentView without requiring a live
     // `auth.login` round-trip. Uses a synthetic AuthUser so downstream
@@ -714,6 +715,7 @@ final class EusoTripSession: ObservableObject {
         // clear so the wrist stays honestly on its pairing state.
         WatchAuthBridge.shared.clear()
     }
+    #endif
 }
 
 // MARK: - Keychain shim (minimal)
