@@ -27,6 +27,13 @@ for token in [
     'euso.home.widgets.v3.\\(userID).\\(role)',
     'configuredIdentity == requestIdentity',
     'revision == requestRevision',
+    '@Published private(set) var cloudAuthorityReady = false',
+    '@Published private(set) var unavailableWidgetIDs: [String] = []',
+    'cloudAuthorityReady && unavailableWidgetIDs.isEmpty',
+    'guard canEdit',
+    'case .blocked(let message)',
+    'Do not cache the sanitized subset',
+    '.disabled(!store.canEdit)',
     'let destination = from < to ? to - 1 : to',
     '.accessibilityAction(named: "Move up")',
     '.accessibilityAction(named: "Move down")',
@@ -58,6 +65,27 @@ if 'struct ShipperWidgetBoard' in (root / 'EusoTrip/Views/Shipper/200_ShipperHom
 admin = (root / 'EusoTrip/Views/Admin/800_AdminHome.swift').read_text()
 if 'SUPER_ADMIN' not in admin or 'role: widgetRole' not in admin:
     failures.append('ADMIN and SUPER_ADMIN do not use distinct role keys')
+
+carrier = (root / 'EusoTrip/Views/Carrier/300_CarrierHome.swift').read_text()
+if 'role: "CATALYST"' not in carrier or 'role: "CARRIER"' in carrier:
+    failures.append('carrier home does not use the authenticated CATALYST role key')
+
+router = (root / 'EusoTrip/Views/RoleSurfaceRouter.swift').read_text()
+for token in [
+    'RailShipperHomeScreen(theme: palette)',
+    'VesselShipperHomeScreen(theme: palette)',
+    'session.user?.role == "SERVICE_PROVIDER"',
+    'ServiceProviderHomeScreen',
+    'zeunMechanics.getMyProviderAccount',
+    'zeunMechanics.listWorkOrders',
+    'role: "SERVICE_PROVIDER"',
+]:
+    if token not in router:
+        failures.append(f'missing native role-home contract token: {token}')
+if 'case .railShipper:\n            WebContinuationSurface' in router:
+    failures.append('rail shipper still routes to a web continuation')
+if 'case .vesselShipper:\n            WebContinuationSurface' in router:
+    failures.append('vessel shipper still routes to a web continuation')
 
 if failures:
     print('\n'.join(f'FAIL: {failure}' for failure in failures), file=sys.stderr)

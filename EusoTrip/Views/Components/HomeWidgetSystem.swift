@@ -335,11 +335,21 @@ struct HomeWidgetSlot: Codable, Hashable, Identifiable {
 @MainActor
 final class HomeWidgetLayoutStore: ObservableObject {
     enum SyncState: Equatable {
-        case idle, loading, saving, synced(Date), saved(Date), failed(String)
+        case idle, loading, saving, synced(Date), saved(Date), failed(String), blocked(String)
     }
 
     @Published private(set) var layout: [HomeWidgetSlot] = []
     @Published private(set) var syncState: SyncState = .idle
+    /// A device cache is display context, not layout authority. Editing stays
+    /// locked until the authenticated server read has succeeded for this exact
+    /// user + role. This prevents an offline launch from overwriting a newer
+    /// cloud arrangement when connectivity returns.
+    @Published private(set) var cloudAuthorityReady = false
+    /// A saved server layout may contain a widget introduced by a newer app.
+    /// Silently deleting it and saving the supported subset would destroy the
+    /// user's layout. Keep the visible subset read-only until this client can
+    /// render every saved slot.
+    @Published private(set) var unavailableWidgetIDs: [String] = []
 
     let role: String
     let defaults: [String]
@@ -351,6 +361,10 @@ final class HomeWidgetLayoutStore: ObservableObject {
     private var savedRevision = 0
     private var saveTask: Task<Void, Never>?
     private var loadFailed = false
+
+    var canEdit: Bool {
+        cloudAuthorityReady && unavailableWidgetIDs.isEmpty
+    }
 
     init(role: String, defaults: [String], renderableIDs: Set<String>) {
         self.role = role
@@ -371,6 +385,8 @@ final class HomeWidgetLayoutStore: ObservableObject {
         configuredIdentity = identity
         syncState = .loading
         loadFailed = false
+        cloudAuthorityReady = false
+        unavailableWidgetIDs = []
 
         let cached = loadCache()
         if let cached { layout = sanitize(cached) }
@@ -392,22 +408,39 @@ final class HomeWidgetLayoutStore: ObservableObject {
             guard revision == requestRevision else { return }
             // nil = never customized. [] = explicitly removed everything.
             if let remote = output.layout {
-                layout = sanitize(remote.map {
+                let remoteSlots = remote.map {
                     HomeWidgetSlot(widgetId: $0.widgetId, x: $0.x ?? 0, y: $0.y ?? 0, w: $0.w ?? 12, h: $0.h ?? 8)
-                })
+                }
+                let unsupported = Self.unique(
+                    remoteSlots.map(\.widgetId).filter { !renderableIDs.contains($0) }
+                )
+                layout = sanitize(remoteSlots)
+                if !unsupported.isEmpty {
+                    unavailableWidgetIDs = unsupported
+                    syncState = .blocked(
+                        unsupported.count == 1
+                            ? "Update EusoTrip to edit this layout; one saved widget is unavailable in this build."
+                            : "Update EusoTrip to edit this layout; \(unsupported.count) saved widgets are unavailable in this build."
+                    )
+                    // Do not cache the sanitized subset. A later save from an
+                    // older client must never erase newer widget identifiers.
+                    return
+                }
                 cache()
             }
+            cloudAuthorityReady = true
             syncState = .synced(Date())
         } catch {
             guard configuredIdentity == requestIdentity, !Task.isCancelled,
                   revision == requestRevision else { return }
             loadFailed = true
-            syncState = .failed("Layout is stored on this device. Retry cloud sync.")
+            cloudAuthorityReady = false
+            syncState = .failed("Saved layout could not be verified. Widgets are read-only until cloud sync succeeds.")
         }
     }
 
     func add(_ id: String) {
-        guard renderableIDs.contains(id), !layout.contains(where: { $0.widgetId == id }) else { return }
+        guard canEdit, renderableIDs.contains(id), !layout.contains(where: { $0.widgetId == id }) else { return }
         let span = HomeWidgetCatalog.definition(for: id, role: role).defaultSpan
         let grid = span.grid
         layout.append(HomeWidgetSlot(widgetId: id, x: 0, y: 0, w: grid.w, h: grid.h))
@@ -415,12 +448,13 @@ final class HomeWidgetLayoutStore: ObservableObject {
     }
 
     func remove(_ id: String) {
+        guard canEdit else { return }
         layout.removeAll { $0.widgetId == id }
         changed()
     }
 
     func move(_ id: String, before target: String) {
-        guard id != target, let from = layout.firstIndex(where: { $0.widgetId == id }),
+        guard canEdit, id != target, let from = layout.firstIndex(where: { $0.widgetId == id }),
               let to = layout.firstIndex(where: { $0.widgetId == target }) else { return }
         let destination = from < to ? to - 1 : to
         guard from != destination else { return }
@@ -430,7 +464,7 @@ final class HomeWidgetLayoutStore: ObservableObject {
     }
 
     func move(_ id: String, delta: Int) {
-        guard let from = layout.firstIndex(where: { $0.widgetId == id }) else { return }
+        guard canEdit, let from = layout.firstIndex(where: { $0.widgetId == id }) else { return }
         let to = min(max(0, from + delta), layout.count - 1)
         guard from != to else { return }
         let slot = layout.remove(at: from)
@@ -439,7 +473,7 @@ final class HomeWidgetLayoutStore: ObservableObject {
     }
 
     func resize(_ id: String, to span: HomeWidgetSpan) {
-        guard let index = layout.firstIndex(where: { $0.widgetId == id }) else { return }
+        guard canEdit, let index = layout.firstIndex(where: { $0.widgetId == id }) else { return }
         let grid = span.grid
         layout[index].w = grid.w
         layout[index].h = grid.h
@@ -447,12 +481,13 @@ final class HomeWidgetLayoutStore: ObservableObject {
     }
 
     func reset() {
+        guard canEdit else { return }
         layout = slots(from: defaults)
         changed()
     }
 
     func retry() {
-        if loadFailed {
+        if loadFailed || !unavailableWidgetIDs.isEmpty || !cloudAuthorityReady {
             configuredIdentity = ""
             let currentUserID = userID
             Task { await configure(userID: currentUserID) }
@@ -462,9 +497,13 @@ final class HomeWidgetLayoutStore: ObservableObject {
         startSaveLoopIfNeeded(force: true)
     }
 
-    func flush() { startSaveLoopIfNeeded(force: true) }
+    func flush() {
+        guard canEdit else { return }
+        startSaveLoopIfNeeded(force: true)
+    }
 
     private func changed() {
+        guard canEdit else { return }
         revision += 1
         layout = repacked(layout)
         cache()
@@ -472,7 +511,7 @@ final class HomeWidgetLayoutStore: ObservableObject {
     }
 
     private func startSaveLoopIfNeeded(force: Bool) {
-        guard !userID.isEmpty else { return }
+        guard canEdit, !userID.isEmpty else { return }
         if revision == 0 && force { revision = 1 }
         guard saveTask == nil else { return }
         saveTask = Task { [weak self] in await self?.saveLoop(skipDelay: force) }
@@ -481,6 +520,7 @@ final class HomeWidgetLayoutStore: ObservableObject {
     private func saveLoop(skipDelay: Bool) async {
         var first = true
         while savedRevision < revision, !Task.isCancelled {
+            guard canEdit else { break }
             if !(skipDelay && first) {
                 try? await Task.sleep(nanoseconds: 350_000_000)
             }
@@ -646,6 +686,12 @@ struct HomeWidgetGrid: View {
             }
         }
         .task(id: identity) { await store.configure(userID: session.user?.id ?? "signed-out") }
+        .onChange(of: store.canEdit) { _, canEdit in
+            if !canEdit {
+                editing = false
+                showLibrary = false
+            }
+        }
         .sheet(isPresented: $showLibrary) { library }
     }
 
@@ -682,6 +728,7 @@ struct HomeWidgetGrid: View {
                     .background(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(editing ? Brand.blue : palette.borderFaint))
             }
             .buttonStyle(.plain)
+            .disabled(!store.canEdit)
             .accessibilityHint(editing ? "Ends editing and saves the layout" : "Shows move, resize, remove, and add controls")
 
             if editing {
@@ -710,6 +757,9 @@ struct HomeWidgetGrid: View {
             case .failed(let message):
                 HStack { Label(message, systemImage: "exclamationmark.icloud"); Spacer(); Button("Retry") { store.retry() }.fontWeight(.bold).frame(minWidth: 44, minHeight: 44) }
                     .foregroundStyle(Brand.warning)
+            case .blocked(let message):
+                HStack { Label(message, systemImage: "exclamationmark.arrow.triangle.2.circlepath"); Spacer(); Button("Check again") { store.retry() }.fontWeight(.bold).frame(minWidth: 44, minHeight: 44) }
+                    .foregroundStyle(Brand.warning)
             case .idle:
                 EmptyView()
             }
@@ -727,6 +777,7 @@ struct HomeWidgetGrid: View {
             Button("Open widget library") { showLibrary = true }
                 .font(EType.caption.weight(.bold))
                 .frame(minHeight: 44)
+                .disabled(!store.canEdit)
         }
         .padding(Space.s4).frame(maxWidth: .infinity, alignment: .leading).eusoCard()
     }
@@ -826,7 +877,7 @@ struct HomeWidgetGrid: View {
                 }
                 Spacer(); Image(systemName: "plus.circle.fill").foregroundStyle(Brand.blue)
             }
-        }.buttonStyle(.plain)
+        }.buttonStyle(.plain).disabled(!store.canEdit)
     }
 
     private var roleDisplayName: String {
