@@ -83,6 +83,9 @@ struct EusoTripApp: App {
     /// signature pads). Privacy hardening per audit (2026-04-25).
     @Environment(\.scenePhase) private var scenePhase
     @State private var isResigning = false
+    /// Carries the fact that this scene entered background across iOS's
+    /// normal intermediate `.inactive` phase on return.
+    @State private var sessionReturnGate = EusoSessionReturnGate()
 
     var body: some Scene {
         WindowGroup {
@@ -194,6 +197,15 @@ struct EusoTripApp: App {
                     EusoRefreshCoordinator.shared.appBecameInactive()
                 }
 
+                // ScenePhase normally returns background -> inactive -> active.
+                // Keep that transition as explicit auth evidence instead of
+                // relying on `oldPhase == .background`, which misses the normal
+                // intermediate inactive phase.
+                let shouldRevalidate = sessionReturnGate.consumeTransition(
+                    isBackground: newPhase == .background,
+                    isActive: newPhase == .active
+                )
+
                 if newPhase == .active && oldPhase != .active {
                     let now = Date()
                     let currentDay = Calendar.autoupdatingCurrent.startOfDay(for: now)
@@ -206,17 +218,23 @@ struct EusoTripApp: App {
                     let needsFreshData = EusoRefreshCoordinator.shared.consumeStaleActivation()
                         || crossedCalendarDay
 
-                    // Preserve the existing session self-heal on every real
-                    // background return. A long inactive interval receives the
-                    // same protection before its data refresh starts.
-                    guard oldPhase == .background || needsFreshData else { return }
+                    guard shouldRevalidate || needsFreshData else { return }
                     Task {
-                        await session.revalidate()
+                        // Auth authority always resolves before the operational
+                        // refresh. A transient renewal failure retains the last
+                        // known screen instead of fanning a wall of 401 errors
+                        // through every role store.
+                        let sessionIsLive = await session.revalidate()
+                        guard sessionIsLive, session.phase == .signedIn else { return }
                         if needsFreshData {
                             await EusoRefreshCoordinator.shared.requestRefresh(
                                 reason: .staleForeground
                             )
                         }
+                        NotificationCenter.default.post(
+                            name: .esangRefreshSurface,
+                            object: nil
+                        )
                     }
                 }
             }

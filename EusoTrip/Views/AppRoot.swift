@@ -68,6 +68,7 @@ struct AppRoot: View {
 // MARK: - Boot splash
 
 private struct BootSplash: View {
+    @EnvironmentObject private var session: EusoTripSession
     @Environment(\.palette) var palette
     @State private var pulse = false
 
@@ -86,6 +87,23 @@ private struct BootSplash: View {
                     Text("by Eusorone Technologies · ESANG AI™".uppercased())
                         .font(EType.micro).tracking(0.8)
                         .foregroundStyle(palette.textTertiary)
+                }
+                if session.recoveryUnavailable {
+                    VStack(spacing: Space.s3) {
+                        Text("Your session is saved. EusoTrip is waiting for a secure connection before opening your workspace.")
+                            .font(EType.caption)
+                            .multilineTextAlignment(.center)
+                            .foregroundStyle(palette.textSecondary)
+                            .frame(maxWidth: 310)
+                        Button {
+                            Task { await session.boot() }
+                        } label: {
+                            Label("Retry secure connection", systemImage: "arrow.clockwise")
+                                .font(EType.bodyStrong)
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                    .transition(.opacity)
                 }
             }
         }
