@@ -3,10 +3,10 @@
 //  EusoTrip — Carrier · Counter-response inbox.
 //
 //  Cross-role chain (closes the counter-bid loop):
-//    Shipper.counterBid (offer countered + emits BID_COUNTERED)
-//      → THIS SCREEN reads via catalysts.getMyCounteredBids
-//      → catalysts.respondToCounter (accept/reject + emits BID_AWARDED/DECLINED)
-//      → Shipper.getLifecycleSnapshot refresh
+//    loadBidding.counter (append-only counter evidence)
+//      → THIS SCREEN reads loadBidding.getMyBids + getBidChain
+//      → loadBidding.accept / reject (atomic award or decline)
+//      → durable notification, audit outbox, and counterpart readback
 //
 //  Without this surface the carrier never sees the shipper's counter
 //  and the loop dies. Every counter-bid flow on the platform routes
@@ -17,7 +17,7 @@
 //  stat-tile-drop-zone shape, with pure drop tiles since this
 //  surface has no live stats card). Drag a pending counter card
 //  up onto either tile to fire the canonical
-//  catalysts.respondToCounter mutation in one gesture. Per-card
+//  loadBidding.accept / loadBidding.reject mutation in one gesture. Per-card
 //  Accept / Reject buttons stay as tap fallback.
 //
 
@@ -36,14 +36,18 @@ struct CarrierCounterResponseScreen: View {
     }
 }
 
-private struct CounteredBid: Decodable, Identifiable, Hashable {
-    let bidId: String
-    let loadId: String
-    let originalAmount: Double
-    let notes: String
-    let status: String
-    let createdAt: String?
-    var id: String { bidId }
+private struct CounteredBid: Identifiable {
+    let original: LoadBiddingAPI.MyBid
+    let counter: LoadBiddingAPI.ChainRow
+
+    var id: String { counter.opaqueID }
+    var bidId: String { counter.opaqueID }
+    var loadId: String { counter.opaqueLoadID }
+    var originalAmount: Double? { original.bidAmount.flatMap(Double.init) }
+    var counterAmount: Double? { counter.bidAmount.flatMap(Double.init) }
+    var notes: String? { counter.conditions }
+    var status: String { counter.status ?? "" }
+    var createdAt: String? { counter.createdAt }
 }
 
 private struct CounterResponseBody: View {
@@ -52,9 +56,9 @@ private struct CounterResponseBody: View {
     @State private var loading = true
     @State private var loadError: String? = nil
     @State private var responding: String? = nil
-    @State private var counterRates: [String: Double] = [:]
     @State private var actionError: String? = nil
     @State private var lastAction: String? = nil
+    @State private var requestKeys: [String: String] = [:]
     /// Drop-target highlight state. `"accept"` / `"reject"` when a card
     /// is hovering over the matching tile; nil otherwise.
     @State private var dragHoverTile: String? = nil
@@ -95,7 +99,7 @@ private struct CounterResponseBody: View {
             dropTile(
                 id: "reject",
                 label: "REJECT COUNTER",
-                hint: "Stay at your original bid",
+                hint: "Decline this counter",
                 icon: "xmark.octagon.fill",
                 tint: Brand.danger
             )
@@ -147,7 +151,7 @@ private struct CounterResponseBody: View {
                 Text("CARRIER · COUNTER-OFFERS").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             Text("Pending counters").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
-            Text("Shippers countered these bids. Accept the new rate or reject and stay at your original.").font(EType.caption).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
+            Text("Review the persisted counter round. Accept to award the load to your company, or decline the counter.").font(EType.caption).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -170,17 +174,18 @@ private struct CounterResponseBody: View {
     }
 
     private func counterCard(_ bid: CounteredBid) -> some View {
-        LifecycleCard(accentGradient: true) {
+            LifecycleCard(accentGradient: true) {
             LifecycleSection(label: bid.bidId.uppercased(), icon: "doc.text")
             LifecycleRow(label: "Load",            value: bid.loadId)
-            LifecycleRow(label: "Original amount",  value: usd(bid.originalAmount))
+            LifecycleRow(label: "Original amount", value: bid.originalAmount.map(usd) ?? "Not recorded")
+            LifecycleRow(label: "Counter rate",    value: bid.counterAmount.map(usd) ?? "Not recorded")
+            LifecycleRow(label: "Round",           value: bid.counter.bidRound.map(String.init) ?? "Not recorded")
             LifecycleRow(label: "Status",           value: bid.status.uppercased())
             LifecycleRow(label: "Submitted",        value: humanISO(bid.createdAt))
-            if let counter = parseCounter(bid.notes) {
-                LifecycleRow(label: "Counter rate", value: usd(counter))
+            if let notes = bid.notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text("CONDITIONS").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary).padding(.top, 6)
+                Text(notes).font(EType.mono(.micro)).tracking(0.4).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
             }
-            Text("NOTES").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary).padding(.top, 6)
-            Text(bid.notes).font(EType.mono(.micro)).tracking(0.4).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
                 Button { Task { await respond(bid: bid, accept: true) } } label: {
                     HStack {
@@ -201,24 +206,27 @@ private struct CounterResponseBody: View {
         }
     }
 
-    /// Parse `[COUNTERED 2026-... AT $1900, '...']` from notes to surface
-    /// the counter rate cleanly. Falls back to nil if the marker isn't
-    /// in the format we control (server controls this format, so this
-    /// is a best-effort display optimization).
-    private func parseCounter(_ notes: String) -> Double? {
-        guard let range = notes.range(of: "AT $"), range.upperBound < notes.endIndex else { return nil }
-        let after = notes[range.upperBound...]
-        let digits = after.prefix { $0.isNumber || $0 == "." }
-        return Double(digits)
-    }
-
     private func load() async {
         loading = true; loadError = nil
         do {
-            let r: [CounteredBid] = try await EusoTripAPI.shared.queryNoInput("catalysts.getMyCounteredBids")
-            rows = r
+            let envelope = try await EusoTripAPI.shared.loadBidding.getMyBids(
+                status: "countered",
+                limit: 100
+            )
+            var resolved: [CounteredBid] = []
+            for original in envelope.bids {
+                let chain = try await EusoTripAPI.shared.loadBidding.getBidChain(
+                    loadId: original.opaqueLoadID
+                )
+                guard let counter = chain.last(where: {
+                    $0.parentBidId.map(String.init) == original.opaqueID
+                        && $0.status?.lowercased() == "pending"
+                }) else { continue }
+                resolved.append(CounteredBid(original: original, counter: counter))
+            }
+            rows = resolved
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = EusoTripAPIError.bidActionMessage(for: error, noun: "counter list")
         }
         loading = false
     }
@@ -228,21 +236,38 @@ private struct CounterResponseBody: View {
             responding = bid.bidId + (accept ? ":a" : ":r")
             actionError = nil
         }
-        struct In: Encodable { let bidId: String; let accept: Bool; let counterRate: Double?; let note: String? }
-        struct Out: Decodable { let success: Bool? }
-        let cr = parseCounter(bid.notes)
+        let requestKey = requestKeys[bid.bidId] ?? UUID().uuidString.lowercased()
+        requestKeys[bid.bidId] = requestKey
         do {
-            let _: Out = try await EusoTripAPI.shared.mutation(
-                "catalysts.respondToCounter",
-                input: In(bidId: bid.bidId, accept: accept, counterRate: accept ? cr : nil, note: nil)
-            )
+            let ack: LoadBiddingAPI.SubmitAck
+            if accept {
+                ack = try await EusoTripAPI.shared.loadBidding.accept(
+                    bidId: bid.bidId,
+                    requestKey: requestKey
+                )
+            } else {
+                ack = try await EusoTripAPI.shared.loadBidding.reject(
+                    bidId: bid.bidId,
+                    reason: "Carrier declined the counter-offer",
+                    requestKey: requestKey
+                )
+            }
+            let expectedStatus = accept ? "accepted" : "rejected"
+            guard ack.confirmedStatus?.lowercased() == expectedStatus,
+                  ack.opaqueID == bid.bidId,
+                  ack.opaqueLoadID == bid.loadId else {
+                throw EusoTripAPIError.decodingFailed(
+                    "Counter response did not match the persisted bid chain."
+                )
+            }
             await MainActor.run {
-                lastAction = "\(bid.bidId) → \(accept ? "ACCEPTED COUNTER" : "REJECTED · STAYED AT ORIGINAL")"
+                requestKeys.removeValue(forKey: bid.bidId)
+                lastAction = "Load \(bid.loadId) · counter \(accept ? "accepted and booked" : "declined")"
             }
             await load()
         } catch {
             await MainActor.run {
-                actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+                actionError = EusoTripAPIError.bidActionMessage(for: error, noun: "counter response")
             }
         }
         await MainActor.run { responding = nil }

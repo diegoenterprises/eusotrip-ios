@@ -721,6 +721,20 @@ enum ScreenRegistry {
         list.append(.init(id: "225", title: "Shipper · Hot Zones",       role: .shipper) { p in AnyView(MarketHubScreen(theme: p, initialTab: .hotZones)) })
         list.append(.init(id: "226", title: "Shipper · Document Center", role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .me) { ShipperDocumentCenter() }) })
         list.append(.init(id: "227", title: "Shipper · Settlement Detail", role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .none) { ShipperSettlementDetail() }) })
+        // 2026-07-10 — Commodity + cross-border post-load addenda ports
+        // (204D/E/F/G/H · 216C/E/G). Off-ring detail surfaces drilled from
+        // the load (204·205) / cross-border (216B) context; registered so
+        // the Shipper surface + ESANG/deep-link nav can route to each.
+        // currentSlot: .none — none of the four bottom-nav slots is active
+        // on an off-ring detail (same pattern as 227 Settlement Detail).
+        list.append(.init(id: "204D", title: "Shipper · Oversize Permit & Escort",     role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .none) { ShipperOversizePermitEscort() }) })
+        list.append(.init(id: "204E", title: "Shipper · Livestock 28-Hour Clock",      role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .none) { ShipperLivestock28HourClock() }) })
+        list.append(.init(id: "204F", title: "Shipper · Auto-Transport VIN & Condition", role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .none) { ShipperAutoTransportVINCondition() }) })
+        list.append(.init(id: "204G", title: "Shipper · HHG Chain of Custody",         role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .none) { ShipperHHGChainOfCustody() }) })
+        list.append(.init(id: "204H", title: "Shipper · Flatbed Cargo Securement",     role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .none) { ShipperFlatbedCargoSecurement() }) })
+        list.append(.init(id: "216C", title: "Shipper · Carta Porte CFDI",             role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .none) { ShipperCartaPorteCFDI() }) })
+        list.append(.init(id: "216E", title: "Shipper · VUCEM Pedimento",              role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .none) { ShipperVUCEMPedimento() }) })
+        list.append(.init(id: "216G", title: "Shipper · MX Landed Cost",               role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .none) { ShipperMXLandedCost() }) })
         list.append(.init(id: "228", title: "Shipper · BOLs",            role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .me) { ShipperBOLs() }) })
         list.append(.init(id: "229", title: "Shipper · Allocations",     role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .loads) { ShipperAllocations() }) })
         // 2026-06-09 registry dedup: Market Intelligence was registered as
@@ -970,6 +984,12 @@ enum ScreenRegistry {
         // 2026-05-30 — the-oath §46/§52 shipper ports (id-prefixed; bare 297/298 are taken above).
         list.append(.init(id: "Ship297Ins", title: "Shipper · Cargo Insurance",  role: .shipper) { p in AnyView(ShipperCargoInsurance().environment(\.palette, p)) })
         list.append(.init(id: "Ship298Det", title: "Shipper · Detention Exposure", role: .shipper) { p in AnyView(ShipperDetentionExposureScreen(theme: p)) })
+        // ios/port-shipper-4 — the final eleven Shipper wireframes (286-294 echo
+        // family reuse ShipperEchoKit & route through shipperEchoNavSwap; the two
+        // standalone boards register id-prefixed like the Ship297/298 precedent
+        // since bare 298B/299 numeric ids are taken above).
+        list.append(.init(id: "Ship298BDet", title: "Shipper · Detention Auto-Clock", role: .shipper) { p in AnyView(ShipperDetentionAutoClockScreen(theme: p)) })
+        list.append(.init(id: "Ship299Tank", title: "Shipper · Tank Inventory",       role: .shipper) { p in AnyView(ShipperTankInventoryScreen(theme: p)) })
 
         // 360-369 — Platform / permissions / error states. These are
         // mostly transient surfaces presented over the role surface
@@ -1348,6 +1368,15 @@ enum ScreenRegistry {
         list.append(.init(id: "Cat401", title: "Catalyst · Crew Wellness",       role: .catalyst) { p in AnyView(CatalystCrewWellnessScreen(theme: p)) })
         list.append(.init(id: "Cat402", title: "Catalyst · Capacity Planner",    role: .catalyst) { p in AnyView(CatalystCapacityPlannerScreen(theme: p)) })
         list.append(.init(id: "Cat403", title: "Catalyst · Fleet Carbon",        role: .catalyst) { p in AnyView(CatalystFleetCarbonScreen(theme: p)) })
+        // 2026-08-25 — eusotrip-killers-elite :01 §20 · Catalyst asset band 404-406.
+        // These three shipped fully built (Light SVG + Dark SVG + catalog Swift +
+        // integrated view) but carried NO registry route — their screen structs were
+        // referenced only from their own `#Preview`, so no user could reach them.
+        // Numeric 404/405/406 are Broker slots, so these take role-prefixed
+        // Cat404-Cat406 ids, matching the Cat383-Cat403 convention above.
+        list.append(.init(id: "Cat404", title: "Catalyst · Asset Procurement",   role: .catalyst) { p in AnyView(CatalystAssetProcurementScreen(theme: p)) })
+        list.append(.init(id: "Cat405", title: "Catalyst · Asset Financials",    role: .catalyst) { p in AnyView(CatalystAssetFinancialsScreen(theme: p)) })
+        list.append(.init(id: "Cat406", title: "Catalyst · Registration & Permit Renewals", role: .catalyst) { p in AnyView(CatalystRegistrationPermitRenewalsScreen(theme: p)) })
         // 2026-05-29 — Catalyst fleet/finance band 383-390 (port wave 12).
         // Bespoke ports of `03 Catalyst/Code/` canonical bricks, wired to real
         // routers (csaScores, ifta, dataqs, fuelMgmt, shipperFreightClaims) with
@@ -1737,6 +1766,57 @@ enum ScreenRegistry {
         list.append(.init(id: "610", title: "Escort · Cert Reciprocity", role: .escort) { p in AnyView(EscortCertReciprocityScreen(theme: p)) })  // ES-08 iOS peer of the live web cert-reciprocity page (spine already live)
         list.append(.init(id: "607", title: "Escort · Permit & Requirements", role: .escort) { p in AnyView(EscortPermitRequirementsScreen(theme: p)) })  // ES-04 per-state OS/OW matrix from escorts.getStateRequirements
 
+        // 2026-08-17 — New Wave 07-Escort band, second cohort: ES-09…ES-20
+        // plus ES-24 and ES-26 (iOS 611-619, 621-625). These fourteen ports
+        // shipped to Views/Escort with all three other artifacts (Light SVG,
+        // Dark SVG, catalog Swift) but with NO registry entry, so every one
+        // of them was a dead drop — the files existed and nothing in the app
+        // could reach them. That is the fourth artifact, and it lands here.
+        // Pushed surfaces reached from the Escort Me hub (620) rows, same as
+        // 603-610; they are not tab roots, so EscortNavRoute/tabRoots are
+        // untouched. Numbering skips 620, which is the legacy Me hub.
+        //
+        // Two initialisers take more than `theme:` and both are deliberate:
+        //   611/612  ES-10 takes `jobId` and resolves the active assignment
+        //            when it is "0" — the same convention 605/606/608/609 use.
+        //   621      ES-18 takes a NON-DEFAULTED `authorityBadge` because the
+        //            operating-authority number used to be a hardcoded literal
+        //            on the live path (standing GAP-9). No escort procedure
+        //            emits it today, so the honest value is nil and the badge
+        //            draws nothing. When a real source lands, it is supplied
+        //            here and the compiler guarantees nobody forgets.
+        list.append(.init(id: "611", title: "Escort · Home (New Wave)", role: .escort) { p in AnyView(EscortHomeES09Screen(theme: p)) })  // ES-09 bespoke escort dashboard; 600 remains the legacy home surface
+        list.append(.init(id: "612", title: "Escort · Assignment Detail (New Wave)", role: .escort) { p in AnyView(EscortAssignmentDetailES10Screen(theme: p, jobId: "0")) })  // ES-10 offer→active→completed spine; resolves the active assignment when id is "0"
+        list.append(.init(id: "613", title: "Escort · Convoy Formation Map", role: .escort) { p in AnyView(EscortConvoyFormationMapScreen(theme: p)) })  // ES-11 longitudinal gap ladder over the convoy spine
+        list.append(.init(id: "614", title: "Escort · Me — Profile & Settings", role: .escort) { p in AnyView(EscortMeProfileScreen(theme: p)) })  // ES-12 credential ladder + equipment preview
+        list.append(.init(id: "615", title: "Escort · Job Marketplace", role: .escort) { p in AnyView(EscortJobMarketplaceScreen(theme: p)) })  // ES-13 ranked demand leaderboard; board lights on poll, not push (escort:jobs room unjoined on iOS)
+        list.append(.init(id: "616", title: "Escort · My Jobs", role: .escort) { p in AnyView(EscortMyJobsScreen(theme: p)) })  // ES-14 own book on a stage pipeline
+        list.append(.init(id: "617", title: "Escort · Schedule & Availability", role: .escort) { p in AnyView(EscortScheduleScreen(theme: p)) })  // ES-15 month lattice + hour ruler; untimed moves render TIME TBD rather than a synthesized clock
+        list.append(.init(id: "618", title: "Escort · Active Trip Console", role: .escort) { p in AnyView(EscortActiveTripConsoleScreen(theme: p)) })  // ES-16 live-move console; every cached measurement wears a CACHED tag
+        list.append(.init(id: "619", title: "Escort · Incidents & Claims", role: .escort) { p in AnyView(EscortIncidentsClaimsScreen(theme: p)) })  // ES-17 severity-banded ledger with the claims packet folded into the open row
+        list.append(.init(id: "621", title: "Escort · Earnings & Wallet", role: .escort) { p in AnyView(EscortEarningsWalletScreen(theme: p, authorityBadge: nil)) })  // ES-18 money surface; all three wallet figures are live-or-blank, never cached under an ONLINE-ONLY chip
+        list.append(.init(id: "622", title: "Escort · Team", role: .escort) { p in AnyView(EscortTeamScreen(theme: p)) })  // ES-19 team roster + certified pool on one surface, two densities
+        list.append(.init(id: "623", title: "Escort · Onboarding & Registration", role: .escort) { p in AnyView(EscortOnboardingRegistrationScreen(theme: p)) })  // ES-20 0→solo wizard; the rail's geometry encodes which gates block
+        list.append(.init(id: "624", title: "Escort · Hazmat Watch", role: .escort) { p in AnyView(EscortHazmatWatchScreen(theme: p)) })  // ES-24 instrument panel; sample staleness is pinned to the 30-min statutory interval, never a derived one
+        list.append(.init(id: "625", title: "Escort · Emergency & Replacement", role: .escort) { p in AnyView(EscortEmergencyReplacementES26Screen(theme: p)) })  // ES-26 exception spine; the legality verdict fails closed when load width is not on the wire
+
+        // escort-killers :21 §4 (2026-08-17) — the remaining NEW band, ES-21…ES-31.
+        // Landed here in ONE serialized write by the fire lead rather than by the nine
+        // parallel build agents: §2 and §3 both deferred this shared edit and died before
+        // making it, leaving fourteen finished ports as dead drops with no call site for
+        // six days. Under §R counting law the fourth artifact is *integrated*, and a file
+        // nothing can open is not integrated. Every agent independently proposed id "626";
+        // ids are assigned 626–634 in catalog order to resolve that nine-way collision.
+        list.append(.init(id: "626", title: "Escort · Training Center", role: .escort) { p in AnyView(EscortTrainingCenterES21Screen(theme: p)) })  // ES-21 renewal runway with the seeded 5-module curriculum placed inside it; renders the real course, not the scenario narrative's 7 modules
+        list.append(.init(id: "627", title: "Escort · Supervised Ride & Mentorship", role: .escort) { p in AnyView(EscortSupervisedRideES22Screen(theme: p)) })  // ES-22 dual-column divergence sheet; ships UNFED — convoyMembers.role has no supervisory seat, so no grade write and no submit control exists (shape filed in ES-22_MENTORSHIP_PROCEDURE_SHAPES.md)
+        list.append(.init(id: "628", title: "Escort · Move Plan & Coordination", role: .escort) { p in AnyView(EscortMovePlanES23Screen(theme: p, assignmentId: 0, state: "")) })  // ES-23 T-minus swimlane board; resolves the active assignment when id is 0. Utility and signal lanes are drawn real and unplaced — the platform does not track them
+        list.append(.init(id: "629", title: "Escort · High-Security Convoy", role: .escort) { p in AnyView(EscortHighSecurityConvoyES25Screen(theme: p)) })  // ES-25 containment envelope + seal column; calls none of the three ungated convoy reads and renders ESC-CP-CONVOYGATE as a first-class element
+        list.append(.init(id: "630", title: "Escort · Performance Scorecard", role: .escort) { p in AnyView(EscortPerformanceScorecardES27Screen(theme: p)) })  // ES-27 contribution waterfall; the composite is an interval because 45 of 100 points have no writer — absent inputs are gaps, never summed as zero
+        list.append(.init(id: "631", title: "Escort · Duty & Fatigue", role: .escort) { p in AnyView(ES28Screen(theme: p)) })  // ES-28 7-day accumulator against a 60-hour ceiling; never prints a remaining-hours figure it cannot prove, and the 14-hour gauge wears its under-report on the instrument
+        list.append(.init(id: "632", title: "Escort · Multi-Day Campaign", role: .escort) { p in AnyView(EscortMultiDayCampaignES29Screen(theme: p)) })  // ES-29 distance-proportional leg concertina; the day register is drawn empty and marked NOT MODELLED because no day model exists
+        list.append(.init(id: "633", title: "Escort · Vehicle & Equipment Registry", role: .escort) { p in AnyView(EscortVehicleRegistryES30Screen(theme: p)) })  // ES-30 exploded elevation over the real inspection archive; persistent registry, NOT the per-move check — that stays 608
+        list.append(.init(id: "634", title: "Escort · Notifications & Alerts", role: .escort) { p in AnyView(EscortNotificationsAlertsScreen(theme: p)) })  // ES-31 delivery-path board; the inbox reader is wired for real and each broken emit path is drawn to the station where it dies
+
         // 2026-05-01 — lifted Terminal 700-702 + Admin 800-803 OUT
         // of the previous `#if DEBUG` block. Both role tracks have
         // shipped real bricks against real backend procedures
@@ -2012,10 +2092,38 @@ enum ScreenRegistry {
             .init(id: "Dpch823", title: "Dispatch · M-04 Delivery Kanban",role: .dispatch) { p in AnyView(DispatcherM04AtDeliveryKanbanScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
             .init(id: "Dpch824", title: "Dispatch · M-04 Paper Kanban",   role: .dispatch) { p in AnyView(DispatcherM04PaperworkKanbanScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
             .init(id: "531",     title: "Dispatch · M-04 Closed Kanban",  role: .dispatch) { p in AnyView(DispatcherM04ClosedKanbanScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            // 2026-08-26 — Dispatcher desk quintet (SVG 546-550). These five catalog
+            // identities were the ONLY Dispatcher screens with no Swift port anywhere in
+            // the tree; they sat in `_PORT_STAGING/ke15_546_550_20260817` for nine days.
+            // Ported to the design system and registered here. Registry uses the Dpch8xx
+            // band because the iOS Dispatch surface numbers independently of the SVG 5xx
+            // catalog — see the Dpch720 header for the same offset convention.
+            .init(id: "Dpch830", title: "Dispatch · Shift Handover",      role: .dispatch) { p in AnyView(DispatcherShiftHandoverScreen(theme: p)) },
+            .init(id: "Dpch831", title: "Dispatch · Training Simulator",  role: .dispatch) { p in AnyView(DispatcherTrainingSimulatorScreen(theme: p)) },
+            // 832 takes Int? where BrokerNavContext.latestLoadId is String ("0" default, and
+            // "load_1077" forms exist). Int(...) is nil on any non-numeric id, which is this
+            // screen's documented "resolve the first active load off the board" path — never
+            // a fabricated load. Do not force-unwrap or default this to 0.
+            .init(id: "Dpch832", title: "Dispatch · Multi-Stop Run",      role: .dispatch) { p in AnyView(DispatcherMultiStopRunBuilderScreen(theme: p, loadId: Int(BrokerNavContext.latestLoadId))) },
+            .init(id: "Dpch833", title: "Dispatch · Trailer Pool",        role: .dispatch) { p in AnyView(DispatcherTrailerPoolBoardScreen(theme: p)) },
+            .init(id: "Dpch834", title: "Dispatch · Performance Review",  role: .dispatch) { p in AnyView(DispatcherPerformanceReviewScreen(theme: p)) },
             .init(id: "532",     title: "Dispatch · M-05 Assign Driver",  role: .dispatch) { p in AnyView(DispatcherM05AssignDriverScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
             // 2026-05-30 — the-oath §44/§50 dispatcher ports.
             .init(id: "533",     title: "Dispatch · AI Dispatch Assist",   role: .dispatch) { p in AnyView(DispatcherAIDispatchAssistScreen(theme: p)) },
             .init(id: "539",     title: "Dispatch · Carrier Scorecard",     role: .dispatch) { p in AnyView(DispatcherCarrierScorecardScreen(theme: p)) },
+            // 2026-07-10 — Dispatcher wireframe ports 410/534/535/537 (native, honest-wired).
+            .init(id: "410",     title: "Dispatch · Exception Triage",      role: .dispatch) { p in AnyView(DispatcherExceptionTriageScreen(theme: p)) },
+            .init(id: "534",     title: "Dispatch · Dock Coordination",     role: .dispatch) { p in AnyView(DispatcherDockCoordinationScreen(theme: p)) },
+            .init(id: "535",     title: "Dispatch · Driver Availability",   role: .dispatch) { p in AnyView(DispatcherDriverAvailabilityScreen(theme: p)) },
+            .init(id: "537",     title: "Dispatch · Opportunities Board",   role: .dispatch) { p in AnyView(DispatcherOpportunitiesBoardScreen(theme: p)) },
+            // 2026-07-11 — Dispatcher revenue-assurance band ports 538/540-545 (native, honest-wired · completes the role).
+            .init(id: "538",     title: "Dispatch · Cash & Factoring",       role: .dispatch) { p in AnyView(DispatcherCashAndFactoringScreen(theme: p)) },
+            .init(id: "540",     title: "Dispatch · Accessorial Recovery",   role: .dispatch) { p in AnyView(DispatcherAccessorialRecoveryScreen(theme: p)) },
+            .init(id: "541",     title: "Dispatch · Margin Bridge",          role: .dispatch) { p in AnyView(DispatcherMarginBridgeScreen(theme: p)) },
+            .init(id: "542",     title: "Dispatch · Credentials Watchtower", role: .dispatch) { p in AnyView(DispatcherCredentialsWatchtowerScreen(theme: p)) },
+            .init(id: "543",     title: "Dispatch · Rate Negotiation",       role: .dispatch) { p in AnyView(DispatcherRateNegotiationScreen(theme: p)) },
+            .init(id: "544",     title: "Dispatch · Demand Map",             role: .dispatch) { p in AnyView(DispatcherDemandMapScreen(theme: p)) },
+            .init(id: "545",     title: "Dispatch · Maintenance Due",        role: .dispatch) { p in AnyView(DispatcherMaintenanceDueScreen(theme: p)) },
             // 2026-05-21 — Catalyst Vehicle B-variant deep-drill octet (SVG 330B-337B).
             .init(id: "CV330B", title: "Catalyst · Vehicle Score Axis",   role: .catalyst) { p in AnyView(CatalystVehicleScoreAxisScreen(theme: p)) },
             // 2026-05-31 — Rescue land: bespoke pixel-faithful 330B scorecard axis detail (full port).
@@ -2175,6 +2283,31 @@ enum ScreenRegistry {
             .init(id: "Rail704", title: "Rail Engineer · Trust Verdict", role: .railEngineer) { p in AnyView(RailTrustVerdictScreen(theme: p, loadId: "0")) },  // loadId accepts "1077" or "load_1077"; pass the real tender id when opened from a shipment context
             .init(id: "Rail705", title: "Rail Engineer · SCAC Mark Check", role: .railEngineer) { p in AnyView(RailScacMarkCheckScreen(theme: p)) },  // optional enteredMark: pre-fills the mark when opened from a tender
             .init(id: "Rail706", title: "Rail Engineer · Tag-Swap Scan", role: .railEngineer) { p in AnyView(RailTagSwapScanScreen(theme: p)) },
+            // 2026-07-11 — 05 Rail port-batch (ios/port-rail-5): 690-708, the
+            // carrier-side movement / fraud-trust / money band that COMPLETES the
+            // Rail role. Ids "Rail690"…"Rail708" are collision-free; the numbers
+            // 691/692/707/708 that clash with Vessel screens carry Rail-specific
+            // type names (RailLiveTelematicsScreen etc.), so no type collision.
+            .init(id: "Rail690", title: "Rail Engineer · AEI Tag Trail", role: .railEngineer) { p in AnyView(RailAEITagTrailScreen(theme: p)) },  // railcarNumber pre-fills when opened from a car context
+            .init(id: "Rail691", title: "Rail Engineer · Live Telematics", role: .railEngineer) { p in AnyView(RailLiveTelematicsScreen(theme: p)) },
+            .init(id: "Rail692", title: "Rail Engineer · Clearance Check", role: .railEngineer) { p in AnyView(RailClearanceCheckScreen(theme: p, shipmentId: 0)) },  // pass the real shipmentId to gate its route legs
+            .init(id: "Rail693", title: "Rail Engineer · Slow Orders", role: .railEngineer) { p in AnyView(RailSlowOrdersScreen(theme: p, shipmentId: 0)) },
+            .init(id: "Rail698", title: "Rail Engineer · Interline Settlement", role: .railEngineer) { p in AnyView(RailInterlineSettlementScreen(theme: p, shipmentId: 0, shipmentNumber: "")) },
+            .init(id: "Rail707", title: "Rail Engineer · Verified Receiver Gate", role: .railEngineer) { p in AnyView(RailVerifiedReceiverGateScreen(theme: p)) },  // PIH car/UN/consignee/shipmentId pre-fill from the hazmat context
+            .init(id: "Rail708", title: "Rail Engineer · Seal Hash Check", role: .railEngineer) { p in AnyView(RailSealHashCheckScreen(theme: p)) },  // railcarNumber pre-fills when opened from a car context
+            // 2026-07-11 — 05 Rail port-batch (ios/port-rail-3): 674-681, the
+            // carrier-side departure-readiness + movement-planning band
+            // (consist mass · air-brake · PTC · bad-order · deadhead · Part 228
+            // HOS · hp/ton · interchange dwell). Ids "Rail674"…"Rail681" are
+            // collision-free; the Vessel 679 uses "Vesl679" + a distinct type.
+            .init(id: "Rail674", title: "Rail Engineer · Consist Mass & Dynamic-Brake", role: .railEngineer) { p in AnyView(RailConsistMassDynamicBrakeScreen(theme: p)) },
+            .init(id: "Rail675", title: "Rail Engineer · Air-Brake Test Log", role: .railEngineer) { p in AnyView(RailAirBrakeTestLogScreen(theme: p)) },
+            .init(id: "Rail676", title: "Rail Engineer · PTC Route Qualification", role: .railEngineer) { p in AnyView(RailPTCRouteQualificationScreen(theme: p)) },
+            .init(id: "Rail677", title: "Rail Engineer · Bad-Order Tagging", role: .railEngineer) { p in AnyView(RailBadOrderTaggingScreen(theme: p)) },
+            .init(id: "Rail678", title: "Rail Engineer · Deadhead Positioning", role: .railEngineer) { p in AnyView(RailDeadheadPositioningScreen(theme: p)) },
+            .init(id: "Rail679", title: "Rail Engineer · FRA Part 228 HOS Audit", role: .railEngineer) { p in AnyView(RailFRAPart228HOSAuditScreen(theme: p)) },
+            .init(id: "Rail680", title: "Rail Engineer · Locomotive HP-per-Ton", role: .railEngineer) { p in AnyView(RailLocomotiveHPPerTonScreen(theme: p)) },
+            .init(id: "Rail681", title: "Rail Engineer · Interchange Dwell-SLA", role: .railEngineer) { p in AnyView(RailInterchangeDwellSLAScreen(theme: p)) },
             .init(id: "Rail639", title: "Rail Engineer · Yard Directory", role: .railEngineer) { p in AnyView(RailYardDirectoryScreen(theme: p)) },
             .init(id: "Rail672", title: "Rail Engineer · Layover Tracking", role: .railEngineer) { p in AnyView(RailLayoverTrackingScreen(theme: p)) },
             .init(id: "Rail568", title: "Rail Engineer · Equipment Lease", role: .railEngineer) { p in AnyView(RailEquipmentLeaseScreen(theme: p)) },
@@ -2251,6 +2384,10 @@ enum ScreenRegistry {
             // Phase B wave 6 — Rail engineer + ramp-ops NEW screens (verbatim ports, theme-only inits).
             .init(id: "Rail598", title: "Rail Engineer · Equipment Specs",      role: .railEngineer) { p in AnyView(RailEquipmentSpecsScreen(theme: p)) },
             .init(id: "Rail599", title: "Rail Engineer · Freight Bill Audit",   role: .railEngineer) { p in AnyView(RailFreightBillAuditScreen(theme: p)) },
+            // 2026-07-10 — Rail wireframe ports 003/004/009/010 (shipper) + 614/615/657/658 (rail engineer).
+            .init(id: "Rail615", title: "Rail Engineer · Cross-Dock Plan",    role: .railEngineer) { p in AnyView(RailCrossDockPlanScreen(theme: p)) },
+            .init(id: "Rail657", title: "Rail Engineer · Dispute Resolution", role: .railEngineer) { p in AnyView(RailDisputeResolutionScreen(theme: p)) },
+            .init(id: "Rail658", title: "Rail Engineer · Dispute Mediation",  role: .railEngineer) { p in AnyView(RailDisputeMediationScreen(theme: p)) },
             .init(id: "Rail600", title: "Rail Engineer · Ramp Ops Console",     role: .railEngineer) { p in AnyView(RailRampOperationsConsoleScreen(theme: p)) },
             .init(id: "Rail601", title: "Rail Engineer · Chassis Pool",         role: .railEngineer) { p in AnyView(RailChassisPoolScreen(theme: p)) },
             .init(id: "Rail602", title: "Rail Engineer · Detention Tracking",   role: .railEngineer) { p in AnyView(RailDetentionTrackingScreen(theme: p)) },
@@ -2302,6 +2439,33 @@ enum ScreenRegistry {
             .init(id: "Rail688", title: "Rail Engineer · Consist Board · Cut",      role: .railEngineer) { p in AnyView(RailConsistBoard_688(theme: p)) },
             .init(id: "Rail695", title: "Rail Engineer · At-Interchange Notify",    role: .railEngineer) { p in AnyView(RailAtInterchangeNotification_695(theme: p, shipmentId: 0)) },
             .init(id: "Rail696", title: "Rail Engineer · Junction Detention Billing",role: .railEngineer) { p in AnyView(RailJunctionDetentionBilling_696(theme: p)) },
+            // ── The absorbed-nowhere vantages (rail lane, 2026-08-17) ───────────────
+            // 709–712 are the CONDUCTOR's cab surfaces, 713 the RAIL_DISPATCHER's
+            // gateway map, 714/715 the yard-master work surfaces, 716 carrier fuel/MGA.
+            // Server-side these gate on RAIL_CONDUCTOR / RAIL_DISPATCHER (trpc.ts:33/22);
+            // ScreenRegistry.Role has no case for either, and every rail operational
+            // screen 550–708 already registers under `.railEngineer`, so these follow
+            // that established convention rather than widening a shared enum this lane
+            // cannot compile-check. The vantage is carried in the title.
+            // Counter-party filed: RAIL-CP-ROLE-ENUM-CONDUCTOR-DISPATCH → the-oath-apply
+            // (it holds the Swift toolchain) to add the two Role cases and re-key these.
+            .init(id: "Rail709", title: "Rail Conductor · Cab Run",                  role: .railEngineer) { p in AnyView(RailConductorCabRunScreen(theme: p)) },
+            .init(id: "Rail710", title: "Rail Conductor · Train Orders & Warrants",  role: .railEngineer) { p in AnyView(RailConductorTrainOrdersScreen(theme: p)) },
+            .init(id: "Rail711", title: "Rail Conductor · Set-Out & Pick-Up",        role: .railEngineer) { p in AnyView(RailConductorSetOutPickUpScreen(theme: p)) },
+            .init(id: "Rail712", title: "Rail Conductor · Job Briefing & Tie-Up",    role: .railEngineer) { p in AnyView(RailConductorJobBriefingTieUpScreen(theme: p)) },
+            .init(id: "Rail713", title: "Rail Dispatcher · Gateway Map",             role: .railEngineer) { p in AnyView(RailDispatcherGatewayMapScreen(theme: p)) },
+            .init(id: "Rail714", title: "Rail Yard · Blocking Plan",                 role: .railEngineer) { p in AnyView(RailYardBlockingPlanScreen(theme: p)) },
+            .init(id: "Rail715", title: "Rail Yard · Switchlist",                    role: .railEngineer) { p in AnyView(RailSwitchlistScreen(theme: p)) },
+            .init(id: "Rail716", title: "Rail Carrier · Fuel & MGA",                 role: .railEngineer) { p in AnyView(RailCarrierFuelMGAScreen(theme: p)) },
+            .init(id: "Rail682", title: "Rail Shipper · RFP Multi-Carrier",     role: .shipper)      { p in AnyView(RailRFPMultiCarrierScreen(theme: p)) },
+            .init(id: "Rail683", title: "Rail Shipper · Tender Failover Queue",  role: .shipper)      { p in AnyView(RailTenderFailoverQueueScreen(theme: p)) },
+            .init(id: "Rail686", title: "Rail Shipper · STCC Validation",        role: .shipper)      { p in AnyView(RailSTCCCommodityValidationScreen(theme: p)) },
+            .init(id: "Rail687", title: "Rail Shipper · Rate-Card vs Spot",      role: .shipper)      { p in AnyView(RailRateCardVsSpotScreen(theme: p)) },
+            .init(id: "Rail689", title: "Rail Engineer · Equipment Spec",        role: .railEngineer) { p in AnyView(RailEquipmentSpecSheetScreen(theme: p)) },
+            .init(id: "Rail659", title: "Rail Engineer · Claims Analytics",        role: .railEngineer) { p in AnyView(RailClaimsAnalyticsScreen(theme: p)) },
+            .init(id: "Rail660", title: "Rail Engineer · Claim Report",            role: .railEngineer) { p in AnyView(RailClaimReportScreen(theme: p)) },
+            .init(id: "Rail664", title: "Rail Engineer · Trailer Detail",          role: .railEngineer) { p in AnyView(RailTrailerDetailScreen(theme: p)) },
+            .init(id: "Rail666", title: "Rail Engineer · Intermodal Booking",      role: .railEngineer) { p in AnyView(RailIntermodalBookingScreen(theme: p)) },
             // 688 is NOT a second 555. 555 is the fleet kanban of consists ("where are my cuts?");
             // 688 is one cut's head-to-rear switch list ("what is in it, is it legal to leave?").
             // The two SVGs were read head-to-head before either was built, and 555's own
@@ -2319,7 +2483,7 @@ enum ScreenRegistry {
             .init(id: "Vesl012", title: "Vessel Shipper · Tracking",       role: .shipper) { p in AnyView(VesselShipperTrackingLookupScreen(theme: p)) },
             .init(id: "Vesl651", title: "Vessel Operator · Shipments",  role: .vesselOperator) { p in AnyView(VesselShipmentsScreen(theme: p)) },
             .init(id: "Vesl652", title: "Vessel Operator · Compliance", role: .vesselOperator) { p in AnyView(VesselComplianceScreen(theme: p)) },
-            .init(id: "Vesl822", title: "Vessel · Create & Register", role: .vesselOperator) { p in AnyView(VesselWriteCenterScreen(theme: p)) },
+            .init(id: "VeslOperationsLedger", title: "Vessel · Create & Register", role: .vesselOperator) { p in AnyView(VesselWriteCenterScreen(theme: p)) },
             .init(id: "Vesl757", title: "Vessel · Detention Letters", role: .vesselOperator) { p in AnyView(VesselDetentionLettersScreen(theme: p)) },
             .init(id: "Vesl815", title: "Vessel · Demurrage Charge Approval", role: .vesselOperator) { p in AnyView(VesselDemurrageChargeApprovalScreen(theme: p)) },
             .init(id: "Vesl669", title: "Vessel · Booking Amendment", role: .vesselOperator) { p in AnyView(VesselBookingAmendmentScreen(theme: p)) },
@@ -2332,6 +2496,14 @@ enum ScreenRegistry {
             .init(id: "Vesl801", title: "Vessel · Claims List", role: .vesselOperator) { p in AnyView(VesselClaimsListScreen(theme: p)) },
             .init(id: "Vesl808", title: "Vessel · Claim Workflow", role: .vesselOperator) { p in AnyView(VesselClaimWorkflowScreen(theme: p)) },
             .init(id: "Vesl732", title: "Vessel · Cargo Claim", role: .vesselOperator) { p in AnyView(VesselCargoClaimScreen(theme: p)) },
+            .init(id: "Vesl762", title: "Vessel · Surcharge Transparency", role: .vesselOperator) { p in AnyView(VesselSurchargeTransparencyScreen(theme: p)) },
+            .init(id: "Vesl763", title: "Vessel · B/L Duplicate Detection", role: .vesselOperator) { p in AnyView(VesselBLDuplicateDetectionScreen(theme: p)) },
+            .init(id: "Vesl764", title: "Vessel · Reefer Plug Request", role: .vesselOperator) { p in AnyView(VesselReeferPlugRequestScreen(theme: p)) },
+            .init(id: "Vesl765", title: "Vessel · Letter of Credit", role: .vesselOperator) { p in AnyView(VesselLetterOfCreditScreen(theme: p)) },
+            .init(id: "Vesl766", title: "Vessel · Letter of Indemnity", role: .vesselOperator) { p in AnyView(VesselLetterOfIndemnityScreen(theme: p)) },
+            .init(id: "Vesl767", title: "Vessel · Sea Waybill", role: .vesselOperator) { p in AnyView(VesselSeaWaybillScreen(theme: p)) },
+            .init(id: "Vesl768", title: "Vessel · Master & House B/L", role: .vesselOperator) { p in AnyView(VesselMasterHouseBLScreen(theme: p)) },
+            .init(id: "Vesl769", title: "Vessel · NVOCC FMC Tariff & Bond", role: .vesselOperator) { p in AnyView(VesselNVOCCFMCTariffBondScreen(theme: p)) },
             .init(id: "Vesl006", title: "Vessel Shipper · Customs ISF", role: .shipper) { p in AnyView(VesselCustomsISFScreen(theme: p)) },
             .init(id: "Vesl814", title: "Vessel · Customs Entry Filing", role: .vesselOperator) { p in AnyView(VesselCustomsEntryFilingScreen(theme: p)) },
             .init(id: "Vesl789", title: "Vessel · Customs Status Update", role: .vesselOperator) { p in AnyView(VesselCustomsStatusUpdateScreen(theme: p)) },
@@ -2351,6 +2523,15 @@ enum ScreenRegistry {
             .init(id: "Vesl674", title: "Vessel · Cost Breakdown", role: .vesselOperator) { p in AnyView(VesselCostBreakdownScreen(theme: p)) },
             .init(id: "Vesl696", title: "Vessel · Settlement Batch", role: .vesselOperator) { p in AnyView(VesselSettlementBatchScreen(theme: p)) },
             .init(id: "Vesl784", title: "Vessel · Detention Tracking", role: .vesselOperator) { p in AnyView(VesselDetentionTrackingScreen(theme: p)) },
+            // ── Detention / demurrage cluster (port-vessel-10) ──
+            .init(id: "Vesl783", title: "Vessel · CFS Warehouse Receipt", role: .vesselOperator) { p in AnyView(VesselCFSWarehouseReceiptScreen(theme: p)) },
+            .init(id: "Vesl785", title: "Vessel · Demurrage Tracking", role: .vesselOperator) { p in AnyView(VesselDemurrageTrackingScreen(theme: p)) },
+            .init(id: "Vesl786", title: "Vessel · Accessorial Disputes", role: .vesselOperator) { p in AnyView(VesselAccessorialDisputesScreen(theme: p)) },
+            .init(id: "Vesl787", title: "Vessel · Detention Billing Batch", role: .vesselOperator) { p in AnyView(VesselDetentionBillingBatchScreen(theme: p)) },
+            .init(id: "Vesl788", title: "Vessel · Auto-Detention Rules", role: .vesselOperator) { p in AnyView(VesselAutoDetentionRulesScreen(theme: p)) },
+            .init(id: "Vesl790", title: "Vessel · Detention Dashboard", role: .vesselOperator) { p in AnyView(VesselDetentionDashboardScreen(theme: p)) },
+            .init(id: "Vesl791", title: "Vessel · Active Detentions", role: .vesselOperator) { p in AnyView(VesselActiveDetentionsScreen(theme: p)) },
+            .init(id: "Vesl793", title: "Vessel · Detention by Facility", role: .vesselOperator) { p in AnyView(VesselDetentionByFacilityScreen(theme: p)) },
             .init(id: "Vesl810", title: "Vessel · Dispute Mediation", role: .vesselOperator) { p in AnyView(VesselDisputeMediationScreen(theme: p)) },
             .init(id: "Vesl811", title: "Vessel · Claims Analytics", role: .vesselOperator) { p in AnyView(VesselClaimsAnalyticsScreen(theme: p)) },
             .init(id: "Vesl812", title: "Vessel · Claim Templates", role: .vesselOperator) { p in AnyView(VesselClaimTemplatesScreen(theme: p)) },
@@ -2363,6 +2544,15 @@ enum ScreenRegistry {
             .init(id: "Vesl697", title: "Vessel · Port Operations", role: .vesselOperator) { p in AnyView(VesselPortOperationsScreen(theme: p)) },
             .init(id: "Vesl730", title: "Vessel · Blank Sailing Watch", role: .vesselOperator) { p in AnyView(VesselBlankSailingWatchScreen(theme: p)) },
             .init(id: "Vesl731", title: "Vessel · Accessorial Charges", role: .vesselOperator) { p in AnyView(VesselAccessorialChargesScreen(theme: p)) },
+            // Port wave 5 ( EI-prefix pbxproj) — Vessel Operator bespoke ports.
+            .init(id: "Vesl734", title: "Vessel · EDI Messages", role: .vesselOperator) { p in AnyView(VesselEDIMessagesScreen(theme: p)) },
+            .init(id: "Vesl736", title: "Vessel · Chassis Pool", role: .vesselOperator) { p in AnyView(VesselChassisPoolScreen(theme: p)) },
+            .init(id: "Vesl739", title: "Vessel · Terminal Analytics", role: .vesselOperator) { p in AnyView(VesselTerminalAnalyticsScreen(theme: p)) },
+            .init(id: "Vesl740", title: "Vessel · Free Time · LFD", role: .vesselOperator) { p in AnyView(VesselFreeTimeLFDScreen(theme: p)) },
+            .init(id: "Vesl741", title: "Vessel · Per Diem", role: .vesselOperator) { p in AnyView(VesselPerDiemTrackingScreen(theme: p)) },
+            .init(id: "Vesl742", title: "Vessel · Mode Optimization", role: .vesselOperator) { p in AnyView(VesselModeOptimizationScreen(theme: p)) },
+            .init(id: "Vesl743", title: "Vessel · Cold-Chain FSMA Attestation", role: .vesselOperator) { p in AnyView(VesselColdChainFSMAScreen(theme: p)) },
+            .init(id: "Vesl744", title: "Vessel · Terminal Gate Log", role: .vesselOperator) { p in AnyView(VesselTerminalGateLogScreen(theme: p)) },
             .init(id: "Vesl738", title: "Vessel · VGM Declaration", role: .vesselOperator) { p in AnyView(VesselVGMDeclarationScreen(theme: p)) },
             .init(id: "Vesl653", title: "Vessel Operator · Booking Detail",      role: .vesselOperator) { p in AnyView(VesselBookingDetailCarrierScreen(theme: p, shipmentId: 0)) },
             .init(id: "Vesl654", title: "Vessel Operator · Crew Certifications",  role: .vesselOperator) { p in AnyView(VesselCrewCertificationsScreen(theme: p)) },
@@ -2390,14 +2580,44 @@ enum ScreenRegistry {
             // 2026-07-03 — 06 Vessel freshest trio: 675 Carrier Scorecard (LEAGUE/COMPARISON).
             .init(id: "Vesl675", title: "Vessel Operator · Carrier League",        role: .vesselOperator) { p in AnyView(VesselCarrierScorecard_675(theme: p)) },
             .init(id: "Vesl683", title: "Vessel Operator · Fleet Health",          role: .vesselOperator) { p in AnyView(VesselFleetHealthScreen(theme: p)) },
+            // 2026-07-11 — 06 Vessel port-batch (ios/port-vessel-2): 692/693/694/695/699/703/704/707.
+            // 692·693·699·707 are 1:1 ports of their Dark-SVGs; 694·695·703·704 are purpose-built to
+            // the golden bar (their catalog SVGs ship empty) from the real router blueprints.
+            .init(id: "Vesl692", title: "Vessel Operator · Transshipment Connection", role: .vesselOperator) { p in AnyView(VesselTransshipmentConnectionScreen(theme: p)) },
+            .init(id: "Vesl693", title: "Vessel Operator · Document Ingest",          role: .vesselOperator) { p in AnyView(VesselDocumentIngestScreen(theme: p)) },
+            .init(id: "Vesl694", title: "Vessel Operator · Consignee Tracking Link",  role: .vesselOperator) { p in AnyView(VesselConsigneeTrackingLinkScreen(theme: p)) },
+            .init(id: "Vesl695", title: "Vessel Operator · Forwarder Portal",         role: .vesselOperator) { p in AnyView(VesselForwarderPortalScreen(theme: p)) },
+            .init(id: "Vesl699", title: "Vessel Operator · Vessel Particulars",       role: .vesselOperator) { p in AnyView(VesselParticularsScreen(theme: p)) },
+            .init(id: "Vesl703", title: "Vessel Operator · Port Lineup",              role: .vesselOperator) { p in AnyView(VesselPortLineupScreen(theme: p)) },
+            .init(id: "Vesl704", title: "Vessel Operator · Bay Plan",                 role: .vesselOperator) { p in AnyView(VesselBayPlanScreen(theme: p)) },
+            .init(id: "Vesl707", title: "Vessel Operator · Container Movement Log",   role: .vesselOperator) { p in AnyView(VesselContainerMovementLogScreen(theme: p)) },
+            // 2026-07-11 — 06 Vessel trade/terminal band (ios/port-vessel-9): 771/773/774/775/776/777/780/781.
+            // Purpose-built to the golden bar from real router blueprints (loadConsolidation · vesselShipments
+            // cross-border/duty/clearance/port · yardManagement). Shared chrome in VesselTradeKit.swift.
+            .init(id: "Vesl771", title: "Vessel Operator · Consolidation Suggestions", role: .vesselOperator) { p in AnyView(VesselConsolidationSuggestionsScreen(theme: p)) },
+            .init(id: "Vesl773", title: "Vessel Operator · Trade Agreements",          role: .vesselOperator) { p in AnyView(VesselTradeAgreementsScreen(theme: p)) },
+            .init(id: "Vesl774", title: "Vessel Operator · Clearance Estimate",        role: .vesselOperator) { p in AnyView(VesselClearanceEstimateScreen(theme: p)) },
+            .init(id: "Vesl775", title: "Vessel Operator · Port Intelligence",         role: .vesselOperator) { p in AnyView(VesselPortIntelligenceScreen(theme: p)) },
+            .init(id: "Vesl776", title: "Vessel Operator · Trade Lane Docs · CA",      role: .vesselOperator) { p in AnyView(VesselTradeLaneDocumentsCAImportScreen(theme: p)) },
+            .init(id: "Vesl777", title: "Vessel Operator · Trade Lane Docs · MX",      role: .vesselOperator) { p in AnyView(VesselTradeLaneDocumentsMXImportScreen(theme: p)) },
+            .init(id: "Vesl780", title: "Vessel Operator · Terminal Move Queue",       role: .vesselOperator) { p in AnyView(VesselTerminalMoveQueueScreen(theme: p)) },
+            .init(id: "Vesl781", title: "Vessel Operator · Drop Yard Operations",      role: .vesselOperator) { p in AnyView(VesselDropYardOperationsScreen(theme: p)) },
             // Phase B wave 2 — Vessel operator NEW screens (verbatim ports). Required ids defaulted for registry construction.
             .init(id: "Vesl662", title: "Vessel Operator · Exceptions & Holds",     role: .vesselOperator) { p in AnyView(VesselExceptionsHoldsScreen(theme: p)) },
             .init(id: "Vesl663", title: "Vessel Operator · CBP Entry Detail",       role: .vesselOperator) { p in AnyView(VesselCBPEntryDetailScreen(theme: p, entryNumber: "", importerId: "")) },
             .init(id: "Vesl664", title: "Vessel Operator · Terminal Appointment",   role: .vesselOperator) { p in AnyView(VesselTerminalAppointmentScreen(theme: p)) },
+            // 2026-08-26 vessel lane — orphan reachability repair. 665 / 672 / 679 had Swift ports on
+            // disk in Views/Vessel since the 2026-06 port wave but no registry row, so no role surface
+            // could reach them: three catalog identities present as files and absent as screens. Ports
+            // unchanged; only the registry rows were missing. Inits are theme-only (all other stored
+            // properties carry defaults), matching every sibling row in this block.
+            .init(id: "Vesl665", title: "Vessel Operator · Demurrage Dispute",      role: .vesselOperator) { p in AnyView(VesselDemurrageDisputeScreen(theme: p)) },
             .init(id: "Vesl671", title: "Vessel Operator · Marine Weather Routing", role: .vesselOperator) { p in AnyView(VesselMarineWeatherRoutingScreen(theme: p)) },
+            .init(id: "Vesl672", title: "Vessel Operator · USCG Port Entry",        role: .vesselOperator) { p in AnyView(VesselUSCGPortEntryScreen(theme: p)) },
             .init(id: "Vesl673", title: "Vessel Operator · Container Lease",        role: .vesselOperator) { p in AnyView(VesselContainerLeaseScreen(theme: p)) },
             .init(id: "Vesl677", title: "Vessel Operator · Carrier Tender Workflow",role: .vesselOperator) { p in AnyView(VesselCarrierTenderWorkflowScreen(theme: p, shipmentId: 0)) },
             .init(id: "Vesl678", title: "Vessel Operator · Port State Control",     role: .vesselOperator) { p in AnyView(VesselPortStateControlScreen(theme: p)) },
+            .init(id: "Vesl679", title: "Vessel Operator · Telex Release",          role: .vesselOperator) { p in AnyView(VesselTelexReleaseScreen(theme: p)) },
             .init(id: "Vesl680", title: "Vessel Operator · Intermodal Segment Board",role: .vesselOperator) { p in AnyView(VesselIntermodalSegmentBoardScreen(theme: p, shipmentId: 0)) },
             // Phase B wave 3 — Vessel operator NEW screens (verbatim ports, theme-only inits).
             .init(id: "Vesl684", title: "Vessel Operator · Settlement",          role: .vesselOperator) { p in AnyView(VesselSettlementScreen(theme: p)) },
@@ -2415,6 +2635,101 @@ enum ScreenRegistry {
             .init(id: "Vesl712", title: "Vessel Operator · Financial Summary",role: .vesselOperator) { p in AnyView(VesselFinancialSummaryScreen(theme: p)) },
             .init(id: "Vesl659", title: "Vessel Operator · Bunker FSC", role: .vesselOperator) { p in AnyView(VesselBunkerFSCScreen(theme: p)) },
 
+            .init(id: "Vesl004", title: "Vessel Shipper · Demurrage & Detention", role: .shipper) { p in AnyView(VesselDemurrageDetentionScreen(theme: p)) },
+            .init(id: "Vesl002", title: "Vessel Shipper · Booking Detail", role: .shipper) { p in AnyView(VesselBookingDetailScreen(theme: p, shipmentId: 48217)) },
+            .init(id: "Vesl003", title: "Vessel Shipper · Live Tracking",  role: .shipper) { p in AnyView(VesselLiveTrackingScreen(theme: p, bookingNumber: "VS-48217")) },
+            // 2026-08-18 · vessel §17 — VSL-033 cure, and it was broader than filed.
+            // 005, 007 and 010 all had ZERO references outside their own files: the
+            // three most complete screens in the Shipper band were dead code. Note the
+            // id collision — "Vesl010" is already held above by the legacy Create
+            // Booking surface and is referenced four times in RoleSurfaceRouter, so the
+            // 010 catalog identity lands on "Vesl013" rather than re-keying a live
+            // route mid-fire. The re-key is filed for :01 renumber triage.
+            .init(id: "Vesl005", title: "Vessel Shipper · Bill of Lading",     role: .shipper) { p in AnyView(VesselBillOfLading_005(theme: p, bolNumber: "OOLU-MBL-48217")) },
+            .init(id: "Vesl007", title: "Vessel Shipper · Confirm & Book",     role: .shipper) { p in AnyView(VesselNewBooking_007(theme: p, originPortId: 528, destinationPortId: 642)) },
+            .init(id: "Vesl013", title: "Vessel Shipper · Freight Bill Audit", role: .shipper) { p in AnyView(VesselShipperFreightBillAuditScreen(theme: p, shipmentId: 48217, invoiceRef: "MAEU-72104")) },
+            .init(id: "Vesl794", title: "Vessel Operator · Accessorial Rate Config", role: .vesselOperator) { p in AnyView(VesselAccessorialRateConfigScreen(theme: p)) },
+            .init(id: "Vesl795", title: "Vessel Operator · Detention History",       role: .vesselOperator) { p in AnyView(VesselDetentionHistoryScreen(theme: p)) },
+            .init(id: "Vesl796", title: "Vessel Operator · Detention by Customer",    role: .vesselOperator) { p in AnyView(VesselDetentionByCustomerScreen(theme: p)) },
+            .init(id: "Vesl797", title: "Vessel Operator · Fuel Surcharge Tracking",  role: .vesselOperator) { p in AnyView(VesselFuelSurchargeTrackingScreen(theme: p)) },
+            .init(id: "Vesl798", title: "Vessel Operator · Multimodal CO2",           role: .vesselOperator) { p in AnyView(VesselMultimodalCO2Screen(theme: p)) },
+            .init(id: "Vesl799", title: "Vessel Operator · Reefer Temp Log",          role: .vesselOperator) { p in AnyView(VesselReeferTempLogScreen(theme: p)) },
+            .init(id: "Vesl803", title: "Vessel Operator · Freight Audit",            role: .vesselOperator) { p in AnyView(VesselFreightAuditScreen(theme: p)) },
+            .init(id: "Vesl806", title: "Vessel Operator · Tank Container Monitor",   role: .vesselOperator) { p in AnyView(VesselTankContainerMonitorScreen(theme: p)) },
+            .init(id: "Vesl826", title: "Vessel Operator · VSA Slot Allocation",      role: .vesselOperator) { p in AnyView(VesselSlotAllocationScreen(theme: p)) },
+            .init(id: "Vesl827", title: "Vessel Operator · Out-of-Gauge Booking",     role: .vesselOperator) { p in AnyView(VesselOutOfGaugeBookingScreen(theme: p)) },
+            .init(id: "Vesl828", title: "Vessel Operator · Bonded Warehouse FTZ",     role: .vesselOperator) { p in AnyView(VesselBondedWarehouseFTZScreen(theme: p)) },
+            .init(id: "Vesl829", title: "Vessel Operator · In-Bond Movement",         role: .vesselOperator) { p in AnyView(VesselInBondMovementScreen(theme: p)) },
+            .init(id: "Vesl830", title: "Vessel Operator · General Order",            role: .vesselOperator) { p in AnyView(VesselGeneralOrderScreen(theme: p)) },
+            .init(id: "Vesl831", title: "Vessel Operator · CBP Cargo Exam Station",   role: .vesselOperator) { p in AnyView(VesselCBPExamStationScreen(theme: p)) },
+            .init(id: "Vesl832", title: "Vessel Operator · Three-Way Match Ingest",   role: .vesselOperator) { p in AnyView(VesselThreeWayMatchAutoIngestScreen(theme: p)) },
+            .init(id: "Vesl833", title: "Vessel Operator · Lashing & Securing Plan",  role: .vesselOperator) { p in AnyView(VesselLashingSecuringPlanScreen(theme: p)) },
+            .init(id: "Vesl834", title: "Vessel Operator · Stowage Stability & Stress", role: .vesselOperator) { p in AnyView(VesselStabilityStressScreen(theme: p)) },
+            .init(id: "Vesl835", title: "Vessel Operator · Load & Discharge Sequence",  role: .vesselOperator) { p in AnyView(VesselCraneSequenceScreen(theme: p)) },
+            .init(id: "Vesl836", title: "Vessel Operator · Laytime & Statement of Facts", role: .vesselOperator) { p in AnyView(VesselLaytimeSOFScreen(theme: p)) },
+            .init(id: "Vesl837", title: "Vessel Operator · Container M&R EOR",          role: .vesselOperator) { p in AnyView(VesselContainerEORScreen(theme: p)) },
+            .init(id: "Vesl838", title: "Vessel Operator · AMS 24-Hour Manifest",       role: .vesselOperator) { p in AnyView(VesselAMSManifestScreen(theme: p)) },
+            .init(id: "Vesl839", title: "Vessel Operator · Pilotage & Marine Services", role: .vesselOperator) { p in AnyView(VesselMarineServicesScreen(theme: p)) },
+            .init(id: "Vesl840", title: "Vessel Operator · ISPS Security & DoS",        role: .vesselOperator) { p in AnyView(VesselISPSSecurityScreen(theme: p)) },
+            .init(id: "Vesl841", title: "Vessel Operator · Note of Protest",            role: .vesselOperator) { p in AnyView(VesselNoteOfProtestScreen(theme: p)) },
+            .init(id: "Vesl842", title: "Vessel Operator · Bunkering & BDN",            role: .vesselOperator) { p in AnyView(VesselBunkeringScreen(theme: p)) },
+            .init(id: "Vesl843", title: "Vessel Operator · Ballast Water Management",   role: .vesselOperator) { p in AnyView(VesselBallastWaterScreen(theme: p)) },
+            // 2026-08-18 · vessel §17 — PORT-FORMALITIES & RECORD-BOOKS BAND (844-853).
+            // The last ten catalog identities that carried Light + Dark + a Swift port
+            // but no Views/Vessel integration. Registering both halves here and in
+            // VesselOperatorNavRoute.deepMap, because 834-843 above were given a
+            // registry row and never a route key — the unreachable-orphan class the
+            // B/L band was cured of on 2026-08-17. Filed separately for 834-843.
+            .init(id: "Vesl844", title: "Vessel Operator · Oil Record Book",            role: .vesselOperator) { p in AnyView(VesselOilRecordBookScreen(theme: p)) },
+            .init(id: "Vesl845", title: "Vessel Operator · Garbage Record Book",        role: .vesselOperator) { p in AnyView(VesselGarbageRecordBookScreen(theme: p)) },
+            .init(id: "Vesl846", title: "Vessel Operator · Crew Change & Sign-Off",     role: .vesselOperator) { p in AnyView(VesselCrewChangeScreen(theme: p)) },
+            .init(id: "Vesl847", title: "Vessel Operator · Hours of Rest",              role: .vesselOperator) { p in AnyView(VesselHoursOfRestScreen(theme: p)) },
+            .init(id: "Vesl848", title: "Vessel Operator · Maritime Single Window",     role: .vesselOperator) { p in AnyView(VesselMaritimeSingleWindowScreen(theme: p)) },
+            .init(id: "Vesl849", title: "Vessel Operator · General Declaration",        role: .vesselOperator) { p in AnyView(VesselGeneralDeclarationScreen(theme: p)) },
+            .init(id: "Vesl850", title: "Vessel Operator · Ship's Stores & Crew Effects", role: .vesselOperator) { p in AnyView(VesselShipStoresScreen(theme: p)) },
+            .init(id: "Vesl851", title: "Vessel Operator · Inward / Outward Clearance", role: .vesselOperator) { p in AnyView(VesselClearanceScreen(theme: p)) },
+            .init(id: "Vesl852", title: "Vessel Operator · Port Disbursement Account",  role: .vesselOperator) { p in AnyView(VesselDisbursementAccountScreen(theme: p)) },
+            .init(id: "Vesl853", title: "Vessel Operator · Tidal Departure Window",     role: .vesselOperator) { p in AnyView(VesselTidalDepartureWindowScreen(theme: p)) },
+            .init(id: "Vesl713", title: "Vessel Operator · Multi-Carrier RFQ",      role: .vesselOperator) { p in AnyView(VesselMultiCarrierRFQScreen(theme: p)) },
+            .init(id: "Vesl714", title: "Vessel Operator · Shipping Instructions",  role: .vesselOperator) { p in AnyView(VesselShippingInstructionsScreen(theme: p)) },
+            .init(id: "Vesl715", title: "Vessel Operator · B/L Draft Approval",     role: .vesselOperator) { p in AnyView(VesselBLDraftApprovalScreen(theme: p)) },
+            .init(id: "Vesl716", title: "Vessel Operator · AIS Integrity",          role: .vesselOperator) { p in AnyView(VesselAisIntegrityScreen(theme: p)) },
+            .init(id: "Vesl717", title: "Vessel Operator · General Average",        role: .vesselOperator) { p in AnyView(VesselGeneralAverageScreen(theme: p)) },
+            .init(id: "Vesl718", title: "Vessel Operator · Cargo Release",          role: .vesselOperator) { p in AnyView(VesselCargoReleaseScreen(theme: p)) },
+            .init(id: "Vesl719", title: "Vessel Operator · DCSA eBL",               role: .vesselOperator) { p in AnyView(VesselEBLScreen(theme: p)) },
+            .init(id: "Vesl720", title: "Vessel Operator · PGA Holds",              role: .vesselOperator) { p in AnyView(VesselPGAHoldsScreen(theme: p)) },
+            .init(id: "Vesl721", title: "Vessel Operator · EU ETS & FuelEU",        role: .vesselOperator) { p in AnyView(VesselEUETSFuelEUScreen(theme: p)) },
+            .init(id: "Vesl723", title: "Vessel Operator · Allocation & MQC",        role: .vesselOperator) { p in AnyView(VesselAllocationMQCScreen(theme: p)) },
+            .init(id: "Vesl725", title: "Vessel Operator · Ocean Factoring",         role: .vesselOperator) { p in AnyView(VesselOceanFactoringScreen(theme: p)) },
+            .init(id: "Vesl726", title: "Vessel Operator · DCSA Feed Health",        role: .vesselOperator) { p in AnyView(VesselFeedHealthScreen(theme: p)) },
+            .init(id: "Vesl727", title: "Vessel Operator · MARPOL Record Book",      role: .vesselOperator) { p in AnyView(VesselMarpolRecordBookScreen(theme: p)) },
+            .init(id: "Vesl728", title: "Vessel Operator · Three-Way Match",         role: .vesselOperator) { p in AnyView(VesselThreeWayMatchScreen(theme: p)) },
+            .init(id: "Vesl729", title: "Vessel Operator · HS Dual-Use Screening",   role: .vesselOperator) { p in AnyView(VesselDualUseScreeningScreen(theme: p)) },
+            .init(id: "Vesl733", title: "Vessel Operator · Cargo Insurance",         role: .vesselOperator) { p in AnyView(VesselCargoInsuranceScreen(theme: p)) },
+            .init(id: "Vesl745", title: "Vessel · CFS Transload Inventory",  role: .vesselOperator) { p in AnyView(VesselCFSTransloadInventoryScreen(theme: p)) },
+            .init(id: "Vesl746", title: "Vessel · CFS Deconsolidation Plan",  role: .vesselOperator) { p in AnyView(VesselCFSDeconsolidationPlanScreen(theme: p)) },
+            .init(id: "Vesl747", title: "Vessel · Cabotage Rules",            role: .vesselOperator) { p in AnyView(VesselCabotageRulesScreen(theme: p)) },
+            .init(id: "Vesl748", title: "Vessel · Cross-Border Clearance",    role: .vesselOperator) { p in AnyView(VesselCrossBorderClearanceScreen(theme: p)) },
+            .init(id: "Vesl749", title: "Vessel · Trade Lane Documents",      role: .vesselOperator) { p in AnyView(VesselTradeLaneDocumentsScreen(theme: p)) },
+            .init(id: "Vesl750", title: "Vessel · Cross-Border Ports",        role: .vesselOperator) { p in AnyView(VesselCrossBorderPortsScreen(theme: p)) },
+            .init(id: "Vesl751", title: "Vessel · ISF Requirements",          role: .vesselOperator) { p in AnyView(VesselISFRequirementsScreen(theme: p)) },
+            .init(id: "Vesl752", title: "Vessel · Container Move Entry",      role: .vesselOperator) { p in AnyView(VesselContainerMoveEntryScreen(theme: p)) },
+            .init(id: "Vesl753", title: "Vessel · Transit Time Comparison",   role: .vesselOperator) { p in AnyView(VesselTransitTimeComparisonScreen(theme: p)) },
+            .init(id: "Vesl754", title: "Vessel · Cost by Mode",              role: .vesselOperator) { p in AnyView(VesselCostByModeScreen(theme: p)) },
+            .init(id: "Vesl755", title: "Vessel · Multimodal Analytics",      role: .vesselOperator) { p in AnyView(VesselMultimodalAnalyticsScreen(theme: p)) },
+            .init(id: "Vesl756", title: "Vessel · Transshipment Transfers",   role: .vesselOperator) { p in AnyView(VesselTransshipmentTransfersScreen(theme: p)) },
+            .init(id: "Vesl758", title: "Vessel · Accessorial Analytics",     role: .vesselOperator) { p in AnyView(VesselAccessorialAnalyticsScreen(theme: p)) },
+            .init(id: "Vesl759", title: "Vessel · Trusted Trader Fast-Lane",  role: .vesselOperator) { p in AnyView(VesselTrustedTraderFastLaneScreen(theme: p)) },
+            .init(id: "Vesl760", title: "Vessel · Agentic Booking",           role: .vesselOperator) { p in AnyView(VesselAgenticBookingScreen(theme: p)) },
+            .init(id: "Vesl761", title: "Vessel · Rate Validity Lock",        role: .vesselOperator) { p in AnyView(VesselRateValidityLockScreen(theme: p)) },
+            .init(id: "Vesl813", title: "Vessel · Claim Report",              role: .vesselOperator) { p in AnyView(VesselClaimReportScreen(theme: p)) },
+            .init(id: "Vesl817", title: "Vessel · Hazmat Bay Assignment",     role: .vesselOperator) { p in AnyView(VesselHazmatBayAssignmentScreen(theme: p)) },
+            .init(id: "Vesl818", title: "Vessel · Reefer Manual Reading",     role: .vesselOperator) { p in AnyView(VesselReeferManualReadingScreen(theme: p)) },
+            .init(id: "Vesl819", title: "Vessel · Container Decon Schedule",  role: .vesselOperator) { p in AnyView(VesselContainerDeconScheduleScreen(theme: p)) },
+            .init(id: "Vesl822", title: "Vessel · DG Segregation",            role: .vesselOperator) { p in AnyView(VesselDGSegregationScreen(theme: p)) },
+            .init(id: "Vesl823", title: "Vessel · Reefer IoT Live Feed",      role: .vesselOperator) { p in AnyView(VesselReeferIoTLiveFeedScreen(theme: p)) },
+            .init(id: "Vesl824", title: "Vessel · Risk Profile",              role: .vesselOperator) { p in AnyView(VesselRiskProfileScreen(theme: p)) },
+            .init(id: "Vesl825", title: "Vessel · Empty Repositioning",       role: .vesselOperator) { p in AnyView(VesselEmptyRepositioningScreen(theme: p)) },
             // 2026-08-11 vessel :04 fire §16 — PORT & TERMINAL GROUND-OPERATIONS band.
             // Ten catalog identities reconstructed to purpose-built archetypes and
             // integrated here as the 4th artifact. Each is a distinct geometric family
@@ -2425,14 +2740,6 @@ enum ScreenRegistry {
             // the registry can open them without threading an id.
             .init(id: "Vesl690", title: "Vessel Operator · Terminal Status",        role: .vesselOperator) { p in AnyView(VesselTerminalStatusScreen(theme: p)) },
             .init(id: "Vesl691", title: "Vessel Operator · Crew Call Board",        role: .vesselOperator) { p in AnyView(VesselCrewCallBoardScreen(theme: p)) },
-            .init(id: "Vesl692", title: "Vessel Operator · Transshipment Connection",role: .vesselOperator) { p in AnyView(VesselTransshipmentConnectionScreen(theme: p)) },
-            .init(id: "Vesl699", title: "Vessel Operator · Vessel Particulars",     role: .vesselOperator) { p in AnyView(VesselParticularsScreen(theme: p)) },
-            .init(id: "Vesl703", title: "Vessel Operator · Port Lineup",            role: .vesselOperator) { p in AnyView(VesselPortLineupScreen(theme: p)) },
-            .init(id: "Vesl704", title: "Vessel Operator · Bay Plan",               role: .vesselOperator) { p in AnyView(VesselBayPlanScreen(theme: p)) },
-            .init(id: "Vesl707", title: "Vessel Operator · Container Movement Log", role: .vesselOperator) { p in AnyView(VesselContainerMovementLogScreen(theme: p)) },
-            .init(id: "Vesl744", title: "Vessel Operator · Terminal Gate Log",      role: .vesselOperator) { p in AnyView(VesselTerminalGateLogScreen(theme: p)) },
-            .init(id: "Vesl780", title: "Vessel Operator · Terminal Move Queue",    role: .vesselOperator) { p in AnyView(VesselTerminalMoveQueueScreen(theme: p)) },
-            .init(id: "Vesl781", title: "Vessel Operator · Drop Yard Operations",   role: .vesselOperator) { p in AnyView(VesselDropYardOperationsScreen(theme: p)) },
         ])
 
         return list
@@ -2551,11 +2858,10 @@ struct ContentView: View {
     }
 
     /// The signed-in user's role drives every dispatch decision in this
-    /// view. Read once per render, then routed through
-    /// `RoleSurfaceRouter` for non-driver roles. Defaults to .driver
-    /// only as a transient fallback during sign-out — `AppRoot` blocks
-    /// `phase != .signedIn` from reaching ContentView, so by the time
-    /// this evaluates the user is non-nil in the steady state.
+    /// view. Read once per render, then routed through the single exhaustive
+    /// `RoleSurfaceRouter` entry contract. A missing user during
+    /// a sign-out transition renders no role surface; it never inherits
+    /// Driver navigation or data by default.
     @EnvironmentObject private var session: EusoTripSession
 #if DEBUG
     // Dev-chrome-only state. In Release builds these have no representation
@@ -2636,6 +2942,11 @@ struct ContentView: View {
     /// backgrounds to decide whether the traffic/weather overlays render.
     @AppStorage("com.eusorone.EusoTrip.map.layersVisible") private var mapLayersVisible: Bool = true
 
+    /// Dedicated guidance presentation. This is deliberately separate from
+    /// `trip.phase`: opening or closing navigation must not advance freight
+    /// lifecycle state or write a false arrival transition.
+    @State private var turnByTurnActive: Bool = false
+
     /// Driver-surface sheet→push detail layer (push-nav mandate,
     /// 2026-06-09 / audit M25). The non-driver roles each mount their own
     /// `RoleDetailLayer` inside `RoleSurfaceRouter`; the Driver surface is
@@ -2708,30 +3019,25 @@ struct ContentView: View {
             // pill stays visible and the env-routed tap handler keeps the
             // user able to flip back to Home at any point.
             //
-            // Non-driver roles still render the ScreenRegistry placeholder
-            // untouched, preserving the existing chrome-walk behavior.
+            // Every supported role now resolves to its native role-owned
+            // surface; DEBUG chrome remains separate from this login path.
             Group {
-                // Production role-aware dispatch (replaces the previous
-                // Driver-only hardcode + DEBUG-chrome role walker).
-                // `session.user.roleEnum` decides which surface
-                // mounts. The Driver branch stays inline because it
-                // owns this view's `nav` / `trip` `@StateObject`s,
-                // sheet presenters, and orb state machine — moving
-                // it to a separate type would unwire all of that.
-                // Every other role goes through `RoleSurfaceRouter`,
-                // which also handles RBAC + the web-continuation
-                // landing for roles whose native iOS surface ships
-                // in a later release.
-                let role = session.user?.roleEnum ?? .driver
-                if role == .driver {
-                    driverSurface
-                        .environment(\.roleDockContract, driverRoleDock)
-                        .modifier(EusoEdgeSwipeBack(
-                            isEnabled: driverPushedDetail == nil
-                                && nav.currentTab == .home
-                                && trip.phase.happyPathPrev != nil,
-                            onBack: { trip.stepBack() }
-                        ))
+                // `session.user.roleEnum` decides exactly one native surface.
+                // Driver keeps its state in ContentView, but its existing
+                // production surface is injected into the same exhaustive
+                // RoleSurfaceRouter switch used by the other 24 roles. This
+                // prevents split routing and leaves no constructible login
+                // fallback or web continuation.
+                if let role = session.user?.roleEnum {
+                    RoleSurfaceRouter(role: role, palette: register.palette) {
+                        driverSurface
+                            .environment(\.roleDockContract, driverRoleDock)
+                            .modifier(EusoEdgeSwipeBack(
+                                isEnabled: driverPushedDetail == nil
+                                    && nav.currentTab == .home
+                                    && trip.phase.happyPathPrev != nil,
+                                onBack: { trip.stepBack() }
+                            ))
                         // Push-nav mandate (2026-06-09 / audit M25): the
                         // shared sheet→push detail layer, identical to
                         // every RoleSurfaceRouter surface. Injects
@@ -2757,10 +3063,9 @@ struct ContentView: View {
                                 }
                             }
                         }
-                } else {
-                    RoleSurfaceRouter(palette: register.palette)
-                        .id("role-\(role.rawValue)")
-                        .transition(.opacity)
+                    }
+                    .id("role-\(role.rawValue)")
+                    .transition(.opacity)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -2881,6 +3186,9 @@ struct ContentView: View {
             // hygiene pass surfaced and fixed).
             .environment(\.driverNavBack) {
                 trip.stepBack()
+            }
+            .environment(\.driverOpenTurnByTurn) {
+                turnByTurnActive = true
             }
             // MARK: - 49th firing · 10 ambient driver env handlers
             //
@@ -3064,6 +3372,22 @@ struct ContentView: View {
                 .preferredColorScheme(register.preferredColorScheme)
             }
 
+            .fullScreenCover(isPresented: $turnByTurnActive) {
+                EnRouteDriveScreen(theme: register.palette)
+                    .environment(\.palette, register.palette)
+                    .environment(\.lifecycleExit) {
+                        turnByTurnActive = false
+                    }
+                    .environment(\.driverNavBack) {
+                        turnByTurnActive = false
+                    }
+                    .environment(\.driverToggleVoiceMute) {
+                        voiceCoachMuted.toggle()
+                    }
+                    .environmentObject(session)
+                    .preferredColorScheme(register.preferredColorScheme)
+            }
+
             // No visible dev-chrome puck. The top-right "slider.horizontal.3"
             // button was removed per user directive 2026-04-19 — it was
             // leaking the role walker / register pin / prev-next chrome
@@ -3190,11 +3514,13 @@ struct ContentView: View {
         // `eSangRoleDispatcher`. Floats above the current surface + the
         // BottomNav. See `EusoAutopilotMount` below this struct.
         .overlay(alignment: .top) {
-            EusoAutopilotMount(
-                role: session.user?.roleEnum ?? .driver,
-                onDriverAction: { action in handleeSangAction(action) }
-            )
-            .environment(\.palette, register.palette)
+            if let role = session.user?.roleEnum {
+                EusoAutopilotMount(
+                    role: role,
+                    onDriverAction: { action in handleeSangAction(action) }
+                )
+                .environment(\.palette, register.palette)
+            }
         }
 #if DEBUG
         .sheet(isPresented: $showChrome) {
@@ -3367,7 +3693,7 @@ struct ContentView: View {
         let loadNumber = (note.userInfo?["loadNumber"] as? String)
             ?? (note.userInfo?["loadId"] as? String)
 
-        let role = session.user?.roleEnum ?? .driver
+        guard let role = session.user?.roleEnum else { return }
         if role == .shipper {
             LoadConversationContext.shared.pendingConversationId = conversationId
             LoadConversationContext.shared.pendingLoadNumber = loadNumber

@@ -98,8 +98,8 @@ private struct VesselOperatorAccountBody: View {
     /// Which hub cards are expanded. Consolidation: the Me tab rendered 17
     /// always-open ops groups (~74 rows) in one scroll. Rebuilt into 5 bespoke
     /// collapsible hubs by canonical taxonomy — every destination preserved.
-    /// Bookings & Tenders starts expanded; the rest collapse.
-    @SceneStorage("vessel.operator.me.expandedHub") private var expandedHubId: String = "bookings"
+    /// Every hub starts collapsed until the user opens it.
+    @SceneStorage("vessel.operator.me.expandedHub") private var expandedHubId: String = ""
     @SceneStorage("vessel.operator.me.returnAnchor") private var returnAnchor: String = ""
 
     private var displayName: String {
@@ -200,7 +200,7 @@ private struct VesselOperatorAccountBody: View {
                 title: "Bookings & Tenders",
                 summary: "Bids · Bookings · Shipments · Intermodal", rowCount: 12) {
             opsGroup("CREATE & REGISTER", [
-                ("Vesl822", "plus.rectangle.on.folder", "Operations ledger", "Rates · voyages · manifests · bunker · containers"),
+                ("VeslOperationsLedger", "plus.rectangle.on.folder", "Operations ledger", "Rates · voyages · manifests · bunker · containers"),
             ])
             opsGroup("BIDS & TENDERS", [
                 ("Vesl709", "sailboat.fill", "Bid board", "Award open lanes by rate"),
@@ -228,7 +228,7 @@ private struct VesselOperatorAccountBody: View {
     private var trackingTerminalHub: some View {
         hubCard(id: "tracking", icon: "point.3.connected.trianglepath.dotted",
                 title: "Tracking & Terminal",
-                summary: "Tracking · Timeline · Berth · D&D · Reefer", rowCount: 22) {
+                summary: "Tracking · Timeline · Berth · D&D · Reefer", rowCount: 34) {
             opsGroup("TRACKING & ANALYTICS", [
                 ("Vesl770", "point.topleft.down.curvedto.point.bottomright.up", "ETA prediction", "Arrival confidence cone"),
                 ("Vesl782", "chart.bar.doc.horizontal", "Dwell analysis", "Free-time exposure by terminal"),
@@ -278,6 +278,18 @@ private struct VesselOperatorAccountBody: View {
                 ("Vesl780", "arrow.up.arrow.down.square", "Terminal move queue", "Queue depth + when it drains"),
                 ("Vesl781", "dollarsign.square", "Drop yard operations", "Per-diem burn past free time"),
             ])
+            // 2026-08-25 vessel fire — the alongside band. 835/839/836 were
+            // DESIGN_CLEARED on 08-17 with all four artifacts on disk, yet every
+            // one was referenced ONLY by the ContentView registry that declares
+            // it: registered, compiled, shipped in the binary, and reachable by
+            // nobody. Same class as the routeless BrokerDashboard. Grouped by the
+            // port call's actual sequence — pilot aboard, cargo worked, time
+            // recorded — not by catalog number.
+            opsGroup("ALONGSIDE & PORT TIME", [
+                ("Vesl839", "water.waves", "Pilotage & marine services", "Order pilot, tugs and linesmen for a call"),
+                ("Vesl835", "square.stack.3d.up.fill", "Load & discharge sequence", "Plan the crane split and move order"),
+                ("Vesl836", "stopwatch", "Laytime & statement of facts", "Port time on the clock that bills"),
+            ])
         }
     }
 
@@ -285,10 +297,13 @@ private struct VesselOperatorAccountBody: View {
     private var customsComplianceHub: some View {
         hubCard(id: "customs", icon: "checkmark.shield.fill",
                 title: "Customs & Compliance",
-                summary: "Customs · Port state · IMDG · Crew · Emissions", rowCount: 13) {
+                summary: "Customs · Port state · IMDG · Crew · Emissions", rowCount: 17) {
             opsGroup("CUSTOMS", [
                 ("Vesl814", "doc.badge.plus", "Customs entry filing", "File the CBP 7501 entry"),
                 ("Vesl789", "clock.arrow.circlepath", "Customs status update", "Advance customs disposition"),
+                // 2026-08-25 — AMS is the 24h-before-lading filing; it belongs
+                // beside the entry filing it precedes, not in a band of its own.
+                ("Vesl838", "doc.plaintext", "AMS 24-hour manifest", "Lodge cargo 24h before lading"),
             ])
             opsGroup("CUSTOMS & COMPLIANCE", [
                 ("Vesl662", "exclamationmark.octagon", "Exceptions & holds", "Active blocks on your boxes"),
@@ -308,6 +323,10 @@ private struct VesselOperatorAccountBody: View {
             // 2026-08-11 vessel :04 fire §16 — statutory ship's registry card.
             opsGroup("SHIP & CERTIFICATES", [
                 ("Vesl699", "ruler", "Vessel particulars", "Dimensions vs port limits + cert horizon"),
+                // 2026-08-25 — two statutory instruments the master signs and a
+                // port state inspects. Both were catalog-only until this fire.
+                ("Vesl840", "lock.shield", "ISPS security & DoS", "Security level and declaration of security"),
+                ("Vesl843", "drop.triangle", "Ballast water management", "Exchange or treatment against the plan"),
             ])
         }
     }
@@ -316,7 +335,7 @@ private struct VesselOperatorAccountBody: View {
     private var claimsRecoveryHub: some View {
         hubCard(id: "claims", icon: "doc.text.magnifyingglass",
                 title: "Claims & Recovery",
-                summary: "Claims · Disputes · Overcharge recovery", rowCount: 11) {
+                summary: "Claims · Disputes · Overcharge recovery", rowCount: 12) {
             opsGroup("CLAIMS", [
                 ("Vesl800", "doc.text.magnifyingglass", "Claims dashboard", "Open / pending / resolved + aging"),
                 ("Vesl801", "list.bullet.clipboard", "Claims list", "Filter & search all claims"),
@@ -324,6 +343,10 @@ private struct VesselOperatorAccountBody: View {
                 ("Vesl732", "shippingbox.and.arrow.backward", "Cargo claim", "File loss & damage on a load"),
                 ("Vesl811", "chart.pie", "Claims analytics", "Loss trend & recovery rate"),
                 ("Vesl812", "doc.on.doc", "Claim templates", "Pre-built claim forms"),
+                // 2026-08-25 — the note of protest is filed BEFORE a claim exists,
+                // to preserve the right to bring one. It sits with claims because
+                // that is what it protects, and it was unreachable until this fire.
+                ("Vesl841", "exclamationmark.bubble", "Note of protest", "Reserve the claim before discharge"),
             ])
             opsGroup("DISPUTE & RECOVERY", [
                 ("Vesl802", "creditcard", "Claim payments", "Reconcile claim payouts"),
@@ -339,13 +362,16 @@ private struct VesselOperatorAccountBody: View {
     private var financeFleetHub: some View {
         hubCard(id: "finance", icon: "dollarsign.circle",
                 title: "Finance & Fleet",
-                summary: "Position · Settlement · Billing · Equipment", rowCount: 17) {
+                summary: "Position · Settlement · Billing · Equipment", rowCount: 19) {
             opsGroup("POSITION & FINANCE", [
                 ("Vesl660", "dot.radiowaves.up.forward", "Live position", "AIS track + ETA to berth"),
                 ("Vesl661", "point.3.connected.trianglepath.dotted", "Port calls", "Rotation & berth schedule"),
                 ("Vesl674", "list.bullet.rectangle.portrait", "Cost breakdown", "Per-move charge detail"),
                 ("Vesl696", "banknote", "Settlement batch", "Approve carrier payouts"),
                 ("Vesl670", "fuelpump", "Bunker prices", "VLSFO/MGO regional trend"),
+                // 2026-08-25 — the delivered-quantity record, next to the price
+                // curve it settles against. Catalog-only until this fire.
+                ("Vesl842", "fuelpump.fill", "Bunkering & BDN", "Delivered quantity and grade on the note"),
                 ("Vesl708", "leaf", "Shipment CO₂", "CII rating + GHG statement"),
             ])
             opsGroup("COMMERCIAL & BILLING", [
@@ -359,6 +385,9 @@ private struct VesselOperatorAccountBody: View {
             ])
             opsGroup("EQUIPMENT & FLEET", [
                 ("Vesl673", "doc.text.below.ecg", "Container lease", "Box / chassis leases"),
+                // 2026-08-25 — the EOR is the estimate that turns box damage into
+                // a cost, so it belongs with the equipment it prices.
+                ("Vesl837", "wrench.and.screwdriver", "Container M&R EOR", "Estimate of repair before the box moves"),
                 ("Vesl676", "heart.text.square", "Equipment health", "Reefer & box condition"),
                 ("Vesl683", "waveform.path.ecg", "Fleet health", "Fleet-wide condition"),
                 ("Vesl702", "thermometer.snowflake", "Reefer monitoring", "Live reefer telemetry"),

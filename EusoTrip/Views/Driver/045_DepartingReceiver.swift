@@ -24,9 +24,10 @@
 //    • home-yard note "HOS window has 2h 48m left, covers the run
 //      clean…" — now the live drive-remaining from `HOSLiveStore`
 //      (`status.drivingRemainingDisplay`), else em-dash "-".
-//  The home-yard name / miles / ETA / route-preview chart already had
-//  honest empty fallbacks ("-") — there is no home-yard coordinate on
-//  the wire to HERE-route a return leg, so those stay honest.
+//  The home-yard name / miles / ETA already had honest empty fallbacks
+//  ("-"). There is no home-yard coordinate or canonical return-route plan
+//  on the wire, so this screen states that gap and never draws a decorative
+//  yard path or a made-up return-route preview.
 //
 //  Powered by ESANG AI™.
 //
@@ -91,7 +92,9 @@ struct DepartingReceiver: View {
     /// `HOSLiveStore` dashboard snapshot, else the honest em-dash.
     /// Never the seeded "HOS window has 2h 48m left …".
     private var homeNoteText: String {
-        guard let d = hos.status?.drivingRemainingDisplay, !d.isEmpty else { return dash }
+        guard let status = hos.status, status.hasCurrentObservation() else { return dash }
+        let d = status.drivingRemainingDisplay
+        guard d != "—" else { return dash }
         return "HOS drive window: \(d) remaining."
     }
 
@@ -232,28 +235,26 @@ struct DepartingReceiver: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                     .foregroundStyle(palette.textTertiary)
             }
-            ZStack {
-                RoundedRectangle(cornerRadius: Radius.md).fill(Color.black.opacity(0.7))
-                GeometryReader { geo in
-                    Path { p in
-                        p.move(to: CGPoint(x: geo.size.width * 0.05, y: geo.size.height * 0.7))
-                        p.addLine(to: CGPoint(x: geo.size.width * 0.45, y: geo.size.height * 0.7))
-                        p.addLine(to: CGPoint(x: geo.size.width * 0.55, y: geo.size.height * 0.4))
-                        p.addLine(to: CGPoint(x: geo.size.width * 0.95, y: geo.size.height * 0.4))
-                    }
-                    .stroke(LinearGradient.diagonal, style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: [4, 4]))
-                    Circle()
-                        .fill(LinearGradient.diagonal)
-                        .frame(width: 10, height: 10)
-                        .position(x: geo.size.width * 0.55, y: geo.size.height * 0.4)
+            HStack(spacing: Space.s3) {
+                Image(systemName: "door.left.hand.open")
+                    .font(.system(size: 19, weight: .semibold))
+                    .foregroundStyle(Brand.success)
+                    .frame(width: 36, height: 36)
+                    .background(Brand.success.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Receiver exit recorded")
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                    Text("Yard route geometry is not supplied by this lifecycle read.")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                Text("ROUTE PICK")
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                    .foregroundStyle(.white.opacity(0.7))
-                    .frame(maxHeight: .infinity, alignment: .top)
-                    .padding(.top, 8)
+                Spacer(minLength: 0)
             }
-            .frame(height: 80)
+            .padding(Space.s3)
+            .background(palette.bgCardSoft)
             .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
         .padding(Space.s3)
@@ -334,30 +335,29 @@ struct DepartingReceiver: View {
     private var routePreview: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text("ROUTE PREVIEW · \(fallbackHomeMiles) MI · \(fallbackHomeEta)")
+                Text("RETURN ROUTE · UNAVAILABLE")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("EXPAND")
+                Text("RETURN ROUTE NEEDED")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                    .foregroundStyle(palette.textSecondary)
-                Image(systemName: "arrow.up.right.square")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(palette.textSecondary)
+                    .foregroundStyle(Brand.warning)
             }
-            // Simple stepped chart
-            GeometryReader { geo in
-                Path { p in
-                    p.move(to: CGPoint(x: 0, y: geo.size.height * 0.7))
-                    p.addLine(to: CGPoint(x: geo.size.width * 0.30, y: geo.size.height * 0.7))
-                    p.addLine(to: CGPoint(x: geo.size.width * 0.30, y: geo.size.height * 0.40))
-                    p.addLine(to: CGPoint(x: geo.size.width * 0.65, y: geo.size.height * 0.40))
-                    p.addLine(to: CGPoint(x: geo.size.width * 0.65, y: geo.size.height * 0.55))
-                    p.addLine(to: CGPoint(x: geo.size.width * 1.0, y: geo.size.height * 0.55))
+            HStack(spacing: Space.s3) {
+                Image(systemName: "point.topleft.down.to.point.bottomright.curvepath")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(palette.textTertiary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("No canonical return geometry")
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                    Text("Add a home yard and confirm the return route before viewing it.")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .stroke(LinearGradient.diagonal, style: StrokeStyle(lineWidth: 2, lineCap: .round))
             }
-            .frame(height: 40)
+            .padding(.vertical, Space.s2)
         }
         .padding(Space.s3)
         .background(palette.bgCard)
@@ -366,6 +366,8 @@ struct DepartingReceiver: View {
                 .strokeBorder(palette.borderFaint)
         )
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Return route unavailable. No canonical return geometry was supplied.")
     }
 
     private var footerActions: some View {

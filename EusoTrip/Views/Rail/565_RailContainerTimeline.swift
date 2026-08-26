@@ -12,6 +12,31 @@
 //    railShipments.trackIntermodalContainer (EXISTS railShipments.ts:770)  → container metadata + events
 //    intermodal.getIntermodalTracking       (EXISTS intermodal.ts:269)     → nextRampEta + rampDwell
 //
+//  OFFLINE POLICY (§W): READ_CACHED(10m).
+//    · READ_CACHED(10m) — the milestone history is append-only, so a milestone
+//      already stamped stays true and is safe to re-show. A permanently visible
+//      monospaced staleness line sits in the header register and flips to
+//      Brand.warning past the 10m TTL.
+//    · The LIVE POSITION / ETA carries its OWN freshness, separately from the
+//      milestone log: the hero drops its gradient live treatment and reads
+//      "last fix Nm ago (degraded)" the moment the read ages out or the device
+//      drops offline. A stale fix is never drawn as a live one — this is the
+//      degraded state this screen's own contract names.
+//    · Nothing on this screen writes, so nothing queues. No cold-launch disk
+//      cache is claimed: offline with nothing read this session the screen
+//      shows its real load error rather than an invented position.
+//
+//  ESANG: esangCoach.forScreen EXISTS (esangCoach.ts:264) but its SCREEN_ENUM
+//    (esangCoach.ts:112) is a driver in-cab list — home / trips / earnings /
+//    tax / dvir / availability / missions / badges / referrals / zeun / haul /
+//    active-trip — with no rail or container key, and its system prompt speaks
+//    HOS and DVIR. Calling it from a container timeline would return the wrong
+//    entity, so the ESANG row below is derived on device from the milestones and
+//    ramp figures already decoded here and says so on its face. Same call 559
+//    and 665 made.
+//
+//  Author: Mike "Diego" Usoro / Eusorone Technologies, Inc
+//
 
 import SwiftUI
 
@@ -29,6 +54,13 @@ struct RailContainerTimelineScreen: View {
                            NavSlot(label: "Me",          systemImage: "person",          isCurrent: false)],
                 orbState: .idle
             )
+        }
+        // Real top back affordance for this pushed Rail Engineer surface. Fixed
+        // leading slot → never overlaps the eyebrow/title; posts the shared
+        // NavBack that RailEngineerSurface pops on
+        // (RoleSurfaceRouter.swift:4813), so context is preserved on the way out.
+        .injectBespokeBackBar(title: nil) {
+            NotificationCenter.default.post(name: .eusoRoleNavBack, object: nil)
         }
     }
 }
@@ -169,6 +201,7 @@ private struct FloodFlag565: Decodable {
 
 private struct RailContainerTimelineBody: View {
     @Environment(\.palette) private var palette
+    @ObservedObject private var reach = OfflineReachabilityHub.shared
     let containerNumber: String
     let shipmentId: Int
 
@@ -177,6 +210,50 @@ private struct RailContainerTimelineBody: View {
     @State private var intermodal: IntermodalTracking565? = nil
     @State private var loading = true
     @State private var loadError: String? = nil
+    /// §W READ_CACHED(10m) clock — stamped when the tracking + container reads land.
+    @State private var lastReadAt: Date? = nil
+
+    // MARK: §W READ_CACHED(10m) staleness
+
+    private static let readTTL: TimeInterval = 600
+
+    private var readAge: TimeInterval? {
+        guard let at = lastReadAt else { return nil }
+        return Date().timeIntervalSince(at)
+    }
+
+    private var readIsStale: Bool {
+        guard let age = readAge else { return true }
+        return age > Self.readTTL
+    }
+
+    /// Milestone-log freshness. The log is append-only, so an aged log is still
+    /// a true log — it just has to say how old it is.
+    private var stalenessLine: String {
+        guard let age = readAge else { return "not read yet" }
+        if age < 60 { return "read · just now" }
+        if age < 3600 { return "read · \(Int(age / 60))m ago" }
+        return "read · \(Int(age / 3600))h ago"
+    }
+
+    /// The live position / ETA may only read as live when the device is online
+    /// AND the fix is still inside the 10m TTL.
+    private var positionIsLive: Bool {
+        reach.isOnline && lastReadAt != nil && !readIsStale
+    }
+
+    /// The position's OWN freshness line, separate from the milestone log. When
+    /// degraded it states the age of the last fix; it never presents a stale fix
+    /// as a live one.
+    private var fixFreshnessLine: String {
+        guard let age = readAge else { return "no fix received" }
+        if positionIsLive {
+            return age < 60 ? "live fix · just now" : "live fix · \(Int(age / 60))m ago"
+        }
+        if age < 60 { return "last fix under a minute ago (degraded)" }
+        if age < 3600 { return "last fix \(Int(age / 60))m ago (degraded)" }
+        return "last fix \(Int(age / 3600))h ago (degraded)"
+    }
 
     // MARK: Derived state
 
@@ -313,6 +390,7 @@ private struct RailContainerTimelineBody: View {
                     kpiStrip
                     if floodActive { floodCrossingMarker }
                     milestoneList
+                    esangRow
                     ctaPair
                 }
                 Color.clear.frame(height: 96)
@@ -344,12 +422,27 @@ private struct RailContainerTimelineBody: View {
                     .font(.system(size: 28, weight: .heavy))
                     .kerning(-0.4)
                     .foregroundStyle(palette.textPrimary)
+                    .accessibilityAddTraits(.isHeader)
                 Spacer()
                 Image(systemName: "ellipsis")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(palette.textTertiary)
+                    .accessibilityHidden(true)
+            }
+            HStack(alignment: .firstTextBaseline) {
+                Text("Milestone log · append-only")
+                    .font(EType.caption).foregroundStyle(palette.textSecondary)
+                    .lineLimit(1).minimumScaleFactor(0.8)
+                Spacer(minLength: 8)
+                // §W READ_CACHED(10m) staleness — always visible, warns past TTL.
+                Text(stalenessLine)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(readIsStale ? Brand.warning : palette.textTertiary)
+                    .fixedSize()
+                    .accessibilityLabel("Milestone log \(stalenessLine)")
             }
             IridescentHairline()
+                .accessibilityHidden(true)
         }
     }
 
@@ -373,9 +466,12 @@ private struct RailContainerTimelineBody: View {
             HStack(alignment: .bottom, spacing: 0) {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        // §W: a degraded fix loses the live gradient treatment.
                         Text(liveSpeedInt)
                             .font(.system(size: 34, weight: .heavy)).monospacedDigit()
-                            .foregroundStyle(LinearGradient.diagonal)
+                            .foregroundStyle(positionIsLive
+                                             ? AnyShapeStyle(LinearGradient.diagonal)
+                                             : AnyShapeStyle(palette.textTertiary))
                         Text("mph \(liveHeading)")
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(palette.textSecondary)
@@ -400,6 +496,19 @@ private struct RailContainerTimelineBody: View {
                         .foregroundStyle(palette.textSecondary)
                 }
             }
+            // §W: the live position / ETA carries its OWN freshness, separate
+            // from the append-only milestone log in the header register above.
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(positionIsLive ? Brand.success : Brand.warning)
+                    .frame(width: 6, height: 6)
+                    .accessibilityHidden(true)
+                Text(fixFreshnessLine)
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(positionIsLive ? Brand.success : Brand.warning)
+                    .lineLimit(1).minimumScaleFactor(0.85)
+                Spacer(minLength: 0)
+            }
         }
         .padding(18)
         .background(
@@ -410,6 +519,25 @@ private struct RailContainerTimelineBody: View {
             RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
                 .strokeBorder(LinearGradient.diagonal, lineWidth: 1.5)
         )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(heroAccessibilityLabel)
+    }
+
+    /// Spoken form of the hero. The fix's freshness is part of the sentence, so
+    /// a degraded position is never read aloud as a live one.
+    private var heroAccessibilityLabel: String {
+        var s = "\(containerStatus), \(containerLabel)."
+        s += " Speed \(liveSpeedLabel)."
+        if locationLabel == "-" {
+            s += " No position reported."
+        } else {
+            s += " Position \(locationLabel)."
+        }
+        s += " \(fixFreshnessLine)."
+        if etaHoursLabel != "-" {
+            s += " \(destAbbrev) \(etaHoursLabel), \(etaDateLabel)."
+        }
+        return s
     }
 
     // MARK: - KPI strip
@@ -420,6 +548,8 @@ private struct RailContainerTimelineBody: View {
             MetricTile(label: "MILESTONES",  value: "\(events.count)")
             MetricTile(label: "CLEARED",     value: "\(clearedCount)", gradientNumeral: clearedCount > 0)
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Ramp dwell \(rampDwellLabel). \(events.count) milestone\(events.count == 1 ? "" : "s"), \(clearedCount) cleared.")
     }
 
     // MARK: - Milestone list
@@ -479,6 +609,19 @@ private struct RailContainerTimelineBody: View {
             stateWord(state)
         }
         .padding(16)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(evt.description ?? evt.eventType?.replacingOccurrences(of: "_", with: " ").capitalized ?? "Milestone")
+        .accessibilityValue("\(stateVoice(state)). \(evt.details ?? evt.location ?? evt.timestamp ?? "no detail reported")")
+    }
+
+    /// Spoken form of the right-hand state word, so VoiceOver never reads the
+    /// lowercase "eta" glyph as a word.
+    private func stateVoice(_ state: MilestoneState) -> String {
+        switch state {
+        case .done: return "Done"
+        case .now:  return "Now"
+        case .eta:  return "Estimated"
+        }
     }
 
     @ViewBuilder
@@ -640,13 +783,160 @@ private struct RailContainerTimelineBody: View {
         .frame(minWidth: 96, alignment: .leading)
     }
 
+    // MARK: - ESANG row (derived on device — see the ESANG note in the header)
+
+    private var esangRow: some View {
+        HStack(alignment: .top, spacing: Space.s3) {
+            ZStack {
+                Circle().fill(LinearGradient.diagonal).frame(width: 30, height: 30)
+                Image(systemName: "tram.fill")
+                    .font(.system(size: 12, weight: .heavy))
+                    .foregroundStyle(.white)
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                Text("ESANG · TIMELINE READ")
+                    .font(.system(size: 9, weight: .black)).kerning(1.0)
+                    .foregroundStyle(LinearGradient.primary)
+                Text(esangHeadline)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(palette.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(esangDetail)
+                    .font(.system(size: 11))
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("DERIVED ON DEVICE FROM THIS TIMELINE · NOT AN ASSISTANT")
+                    .font(.system(size: 7.5, weight: .heavy)).tracking(0.5)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            Spacer(minLength: 4)
+        }
+        .padding(.vertical, 12).padding(.horizontal, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+            .strokeBorder(palette.borderFaint, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Timeline read, derived on this device. \(esangHeadline) \(esangDetail)")
+    }
+
+    /// One sentence off the decoded feed. No rail next-best-action source is on
+    /// the wire, so this states what the server actually returned and never a
+    /// fabricated gate-in instruction or saved-hours figure.
+    private var esangHeadline: String {
+        if let name = intermodal?.nextRampName, !name.isEmpty {
+            if let h = intermodal?.nextRampEtaHours {
+                return "Next ramp \(name) in \(Int(h))h."
+            }
+            return "Next ramp \(name); no ETA published yet."
+        }
+        if events.isEmpty { return "No milestones have been stamped for this box yet." }
+        return "\(clearedCount) of \(events.count) milestones cleared; no next ramp published yet."
+    }
+
+    private var esangDetail: String {
+        var bits: [String] = []
+        if intermodal?.rampDwellHours != nil { bits.append("ramp dwell \(rampDwellLabel)") }
+        bits.append("\(clearedCount) of \(events.count) cleared")
+        bits.append(fixFreshnessLine)
+        return bits.joined(separator: " · ")
+    }
+
     // MARK: - CTA pair
 
     private var ctaPair: some View {
         HStack(spacing: Space.s2) {
-            CTAButton(title: "View shipment detail", leadingIcon: "shippingbox.fill")
-            CTAButton(title: "Share", leadingIcon: "square.and.arrow.up")
+            // DEAD-PRIMARY CURE (§18) #1: this slot shipped as a bare CTAButton
+            // titled "View shipment detail" with a shippingbox leading icon and
+            // with neither an action argument nor a trailing closure, so it
+            // inherited the control's empty-closure default
+            // (Theme/DesignSystem.swift:1486) — a full-gradient primary that was
+            // permanently inert. It is deliberately NOT re-pointed at the Rail553
+            // carrier detail screen: that registry entry is constructed with a
+            // hard-coded `shipmentId: 0` (ContentView.swift:2232), so a swap
+            // there would open a DIFFERENT shipment than the box on this
+            // timeline — context lost, not preserved. Re-cut instead to the
+            // band's own cure for inert secondaries
+            // (Views/Rail/RailSecondaryActionButton.swift:12, the same control
+            // 566 and 586 use) over the shipment facts ALREADY decoded here.
+            RailSecondaryActionButton(
+                title: "View shipment detail",
+                sheetTitle: "Shipment detail",
+                lines: shipmentDetailLines,
+                width: 176,
+                systemImage: "shippingbox.fill"
+            )
+            .accessibilityLabel("View shipment detail")
+            .accessibilityHint("Opens the container, train, position and next-ramp figures this timeline is built from.")
+
+            // DEAD-PRIMARY CURE (§18) #2: shipped as a bare CTAButton titled
+            // "Share" with a square-and-arrow-up leading icon — same missing
+            // action, same empty-closure default, same inert result. Re-cut to the house
+            // ShareLink idiom (Views/Rail/003_RailLiveTracking.swift:1348) over a
+            // payload built ONLY from decoded fields — and it names its own
+            // freshness, so a degraded fix can never be forwarded as a live one.
+            ShareLink(item: shareTimelineText) {
+                Text("Share")
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                    .frame(width: 116, height: 48)
+                    .background(palette.bgCard)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                            .strokeBorder(palette.borderFaint)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            }
+            .accessibilityLabel("Share container timeline")
+            .accessibilityHint("Shares the decoded milestones, position and next-ramp ETA, each stamped with how fresh it is.")
         }
+    }
+
+    /// Shipment / container facts already decoded on this screen. Every line is
+    /// a live server field or is omitted entirely — nothing is substituted.
+    private var shipmentDetailLines: [String] {
+        var lines: [String] = []
+        lines.append("Container \(container?.containerNumber ?? containerNumber)")
+        if let size = container?.containerSize { lines.append("Size \(size)") }
+        if let rr = container?.railroadCode { lines.append("Railroad \(rr)") }
+        if let st = container?.status { lines.append("Status \(st)") }
+        if let loc = tracking?.currentLocation { lines.append("Position \(loc) · \(fixFreshnessLine)") }
+        if let train = tracking?.trainId { lines.append("Train \(train)") }
+        if let ramp = intermodal?.nextRampName { lines.append("Next ramp \(ramp)") }
+        if let h = intermodal?.nextRampEtaHours { lines.append("Next ramp ETA \(Int(h))h") }
+        if let d = intermodal?.nextRampEtaDateStr { lines.append("ETA date \(d)") }
+        if intermodal?.rampDwellHours != nil { lines.append("Ramp dwell \(rampDwellLabel)") }
+        lines.append("\(clearedCount) of \(events.count) milestones cleared · \(stalenessLine)")
+        return lines
+    }
+
+    /// Share payload — decoded fields only, each carrying its own freshness.
+    private var shareTimelineText: String {
+        var lines: [String] = []
+        lines.append("Container \(container?.containerNumber ?? containerNumber)")
+        if let st = container?.status { lines.append("Status: \(st)") }
+        if let loc = tracking?.currentLocation {
+            lines.append("Position: \(loc) (\(fixFreshnessLine))")
+        } else {
+            lines.append("Position: no fix received")
+        }
+        if let ramp = intermodal?.nextRampName {
+            if let h = intermodal?.nextRampEtaHours {
+                lines.append("Next ramp: \(ramp) in \(Int(h))h")
+            } else {
+                lines.append("Next ramp: \(ramp), ETA not published")
+            }
+        }
+        lines.append("Milestones: \(clearedCount) of \(events.count) cleared (\(stalenessLine))")
+        for evt in events.prefix(8) {
+            let title = evt.description
+                ?? evt.eventType?.replacingOccurrences(of: "_", with: " ").capitalized
+                ?? "milestone"
+            let sub = evt.location ?? evt.timestamp ?? ""
+            lines.append(sub.isEmpty ? "· \(title)" : "· \(title) — \(sub)")
+        }
+        return lines.joined(separator: "\n")
     }
 
     // MARK: - Load
@@ -664,6 +954,9 @@ private struct RailContainerTimelineBody: View {
             let (tr, cr) = try await (trackResult, containerResult)
             self.tracking   = tr
             self.container  = cr
+            // §W READ_CACHED(10m): stamp the fix + milestone read. Everything
+            // above ages against this stamp; the position degrades on its own.
+            self.lastReadAt = Date()
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }

@@ -42,6 +42,7 @@ private struct ReviewBody: View {
                 documentsRequiredCard   // T-009 · 2026-05-20
                 ePodLockCard            // T-011 · 2026-05-20
                 pricingCard
+                if draft.mode == .truck { truckDetentionTermsCard }
                 if draft.cargoType == .hazmat { hazmatCard }
                 if draft.cargoType == .refrigerated { reeferCard }
                 if !draft.stops.isEmpty { stopsCard }
@@ -101,7 +102,13 @@ private struct ReviewBody: View {
             lines.append("Vertical: \(v.displayName)")
         }
         if let r = draft.rate {
-            lines.append(String(format: "Rate: $%.0f", r))
+            let currency = draft.truckDetentionTermsDraft.currency?.rawValue
+            lines.append("Rate: \(currency.map { "\($0) " } ?? "")\(r.formatted(.number.precision(.fractionLength(0...2))))")
+        }
+        if let terms = draft.truckDetentionTermsDraft.negotiatedTerms,
+           draft.mode == .truck {
+            lines.append("Detention: \(terms.freeTimeDisplay) free · \(terms.rateDisplay)")
+            lines.append("Suspension: \(terms.suspensionDisplay)")
         }
         if draft.ePodLockEnabled {
             lines.append("ePOD lock: ON (settlement waits for verified POD)")
@@ -484,13 +491,41 @@ private struct ReviewBody: View {
     private var pricingCard: some View {
         LifecycleCard {
             LifecycleSection(label: "PRICING", icon: "dollarsign.circle")
-            LifecycleRow(label: "Target rate", value: usd(draft.rate))
+            LifecycleRow(label: "Target rate", value: targetRateDisplay)
             LifecycleRow(label: "FSC %",       value: draft.fuelSurchargeRate.map { String(format: "%.1f%%", $0) } ?? "-")
             if !draft.accessorialsAllowed.isEmpty {
                 LifecycleRow(label: "Accessorials", value: draft.accessorialsAllowed.joined(separator: ", "))
             }
             if !draft.notes.isEmpty {
                 LifecycleRow(label: "Notes", value: draft.notes)
+            }
+        }
+    }
+
+    private var targetRateDisplay: String {
+        guard let rate = draft.rate else { return "-" }
+        guard draft.mode == .truck else {
+            return rate.formatted(.number.precision(.fractionLength(0...2)))
+        }
+        guard let currency = draft.truckDetentionTermsDraft.currency else {
+            return "Currency not set"
+        }
+        return "\(currency.rawValue) \(rate.formatted(.number.precision(.fractionLength(0...2))))"
+    }
+
+    private var truckDetentionTermsCard: some View {
+        LifecycleCard(accentWarning: draft.truckDetentionTermsDraft.negotiatedTerms == nil) {
+            LifecycleSection(label: "TRUCK DETENTION · COMMERCIAL TERMS", icon: "clock.badge.checkmark")
+            if let terms = draft.truckDetentionTermsDraft.negotiatedTerms {
+                TruckDetentionTermsSummary(terms: terms, context: "WILL BE SIGNED WITH THIS LOAD")
+            } else {
+                Label(
+                    draft.truckDetentionTermsDraft.validationMessage ?? "Detention terms are unavailable.",
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                .font(.caption)
+                .foregroundStyle(Brand.warning)
+                .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -586,6 +621,9 @@ private struct ReviewBody: View {
     private var canSubmit: Bool {
         // 2026-08-07 — no attestation, no post. The label below names it.
         guard draft.classificationBlockReason == nil else { return false }
+        guard draft.mode != .truck || draft.truckDetentionTermsDraft.negotiatedTerms != nil else {
+            return false
+        }
         guard draft.canPostMarketplace, !draft.isAssessingIndustry else { return false }
         guard draft.industrySectorId != nil else { return true }
         guard draft.industryAssessmentId != nil else { return false }
@@ -610,6 +648,9 @@ private struct ReviewBody: View {
         }
         if draft.classificationBlockReason != nil {
             return "Complete cargo classification"
+        }
+        if draft.mode == .truck && draft.truckDetentionTermsDraft.negotiatedTerms == nil {
+            return "Complete detention terms"
         }
         if draft.vertical == nil { return "Pick vertical on Step 2" }
         if draft.isAssessingIndustry { return "Checking workflow…" }

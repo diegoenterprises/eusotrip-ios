@@ -31,6 +31,42 @@
 
 import SwiftUI
 
+// MARK: - Shipper metric presentation
+
+/// One formatting boundary for the money and rate values shared by Shipper
+/// Home and Profile. The server contracts currently denominate these sums in
+/// USD; passing the code explicitly keeps that basis visible to localized
+/// formatters instead of relying on a device-region default.
+enum ShipperMetricFormatting {
+    static let ratePerMileLabel = "Rate\u{00A0}/\u{00A0}mi"
+
+    static func wholeCurrency(
+        _ amount: Double?,
+        currencyCode: String = "USD",
+        locale: Locale = .autoupdatingCurrent
+    ) -> String {
+        guard let amount, amount.isFinite else { return "—" }
+        return amount.formatted(
+            .currency(code: currencyCode)
+                .precision(.fractionLength(0))
+                .locale(locale)
+        )
+    }
+
+    static func ratePerMile(
+        _ amount: Double?,
+        currencyCode: String = "USD",
+        locale: Locale = .autoupdatingCurrent
+    ) -> String {
+        guard let amount, amount.isFinite, amount > 0 else { return "—" }
+        return amount.formatted(
+            .currency(code: currencyCode)
+                .precision(.fractionLength(2))
+                .locale(locale)
+        )
+    }
+}
+
 // MARK: - Screen root
 
 struct ShipperHome: View {
@@ -38,6 +74,7 @@ struct ShipperHome: View {
     @Environment(\.weatherRequestContext) private var weatherRequestContext
     @Environment(\.openURL) private var openURL
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @EnvironmentObject private var session: EusoTripSession
 
     @StateObject private var dashboard = ShipperDashboardStore()
@@ -756,7 +793,7 @@ struct ShipperHome: View {
         // weighted on-time). Dashboard value still wins if the server ever
         // starts emitting a non-zero figure.
         Group {
-            if horizontalSizeClass == .regular {
+            if horizontalSizeClass == .regular && !dynamicTypeSize.isAccessibilitySize {
                 HStack(spacing: Space.s2) {
                     primaryStatTiles(s)
                 }
@@ -776,10 +813,11 @@ struct ShipperHome: View {
         statTile(label: "Bids pending", value: "\(s.pendingBids)",
                  trail: "awaiting award",
                  trailColor: palette.textSecondary)
-        statTile(label: "Rate / mi", value: rateValue(resolvedRatePerMile(s)),
+        statTile(label: ShipperMetricFormatting.ratePerMileLabel,
+                 value: rateValue(resolvedRatePerMile(s)),
                  trail: "avg",
                  trailColor: palette.textSecondary,
-                 gradientNumeral: true, valueSize: 22)
+                 gradientNumeral: true, valueTextStyle: .title3)
         statTile(label: "On-time", value: percentValue(resolvedOnTimeRate(s)),
                  trail: "delivery rate",
                  trailColor: palette.textSecondary,
@@ -787,7 +825,10 @@ struct ShipperHome: View {
     }
 
     private var compactMetricColumns: [GridItem] {
-        [
+        if dynamicTypeSize.isAccessibilitySize {
+            return [GridItem(.flexible(minimum: 0), alignment: .topLeading)]
+        }
+        return [
             GridItem(.flexible(minimum: 0), spacing: Space.s2, alignment: .topLeading),
             GridItem(.flexible(minimum: 0), spacing: Space.s2, alignment: .topLeading),
         ]
@@ -812,7 +853,7 @@ struct ShipperHome: View {
 
     private var statSkeleton: some View {
         Group {
-            if horizontalSizeClass == .regular {
+            if horizontalSizeClass == .regular && !dynamicTypeSize.isAccessibilitySize {
                 HStack(spacing: Space.s2) {
                     statSkeletonTiles
                 }
@@ -828,7 +869,7 @@ struct ShipperHome: View {
         ForEach(0..<4, id: \.self) { _ in
             RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                 .fill(palette.bgCardSoft)
-                .frame(height: 104)
+                .frame(height: dynamicTypeSize.isAccessibilitySize ? 132 : 112)
                 .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                             .strokeBorder(palette.borderFaint))
         }
@@ -837,11 +878,14 @@ struct ShipperHome: View {
     private func statTile(label: String, value: String,
                           trail: String, trailColor: Color,
                           gradientNumeral: Bool = false,
-                          valueSize: CGFloat = 28) -> some View {
+                          valueTextStyle: Font.TextStyle = .title2) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(label.uppercased())
-                .font(EType.micro).tracking(0.6)
+                .font(.caption2.weight(.semibold))
+                .tracking(0.4)
                 .foregroundStyle(palette.textTertiary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
             Group {
                 if gradientNumeral {
                     Text(value).foregroundStyle(LinearGradient.diagonal)
@@ -849,17 +893,21 @@ struct ShipperHome: View {
                     Text(value).foregroundStyle(palette.textPrimary)
                 }
             }
-            .font(.system(size: valueSize, weight: .semibold).monospacedDigit())
+            .font(.system(valueTextStyle, design: .default, weight: .semibold).monospacedDigit())
             .lineLimit(1)
-            .minimumScaleFactor(0.52)
+            .allowsTightening(true)
             Text(trail)
-                .font(EType.caption)
+                .font(.caption)
                 .foregroundStyle(trailColor)
-                .lineLimit(1)
-                .minimumScaleFactor(0.65)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(Space.s3)
-        .frame(maxWidth: .infinity, minHeight: 104, alignment: .leading)
+        .frame(
+            maxWidth: .infinity,
+            minHeight: dynamicTypeSize.isAccessibilitySize ? 132 : 112,
+            alignment: .leading
+        )
         // Bespoke EusoCard surface — iridescent rim + glow per stat tile,
         // matching the SVG's lit stat strip and the DriverHome metric idiom.
         .eusoCard(radius: Radius.lg)
@@ -1167,7 +1215,7 @@ struct ShipperHome: View {
     /// when no real rate is present we render a neutral, honest prompt.
     private var esangHeadline: String {
         if let s = dashboard.state.value ?? nil, s.ratePerMile > 0 {
-            return "Ask eSang to source carriers under your \(dollarsPerMile(s.ratePerMile))/mi target"
+            return "Ask eSang to source carriers under your \(ShipperMetricFormatting.ratePerMile(s.ratePerMile))/mi target"
         }
         return "Ask eSang for carrier and rate insights"
     }
@@ -1330,17 +1378,12 @@ struct ShipperHome: View {
     }
 
     private func dollars(_ v: Double) -> String {
-        let f = NumberFormatter()
-        f.numberStyle = .currency
-        f.maximumFractionDigits = 0
-        f.currencyCode = "USD"
-        return f.string(from: NSNumber(value: v)) ?? "$\(Int(v))"
+        ShipperMetricFormatting.wholeCurrency(v)
     }
-    private func dollarsPerMile(_ v: Double) -> String { String(format: "$%.2f", v) }
     private func percent(_ v: Double) -> String { String(format: "%.1f%%", v * 100) }
     /// Honest rate/mi: renders the real value when the server has a non-zero
     /// rate, else an em-dash sentinel (no rate computed yet) rather than "$0.00".
-    private func rateValue(_ v: Double) -> String { v > 0 ? dollarsPerMile(v) : "—" }
+    private func rateValue(_ v: Double) -> String { ShipperMetricFormatting.ratePerMile(v) }
     /// Honest on-time percent: real value when present, else em-dash sentinel.
     private func percentValue(_ v: Double) -> String { v > 0 ? percent(v) : "—" }
 
@@ -1379,28 +1422,38 @@ struct ShipperHome: View {
         // source has data — the previous `percent(0)` printed a
         // fabricated-looking "0.0%" on every fresh account.
         if span == .compact {
-            // Condensed glance row — single lit card with the three numbers
-            // inline, so the widget shrinks to a one-line height.
-            HStack(spacing: Space.s4) {
-                compactStat(value: dollars(s.totalSpendThisMonth), label: "spend", gradient: true)
-                Divider().frame(height: 22).overlay(palette.borderFaint)
-                compactStat(value: "\(s.pendingBids)", label: "bids", gradient: false)
-                Divider().frame(height: 22).overlay(palette.borderFaint)
-                compactStat(value: percentValue(resolvedOnTimeRate(s)), label: "on-time", gradient: true)
-                Spacer(minLength: 0)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: Space.s2) {
+                    compactStat(value: dollars(s.totalSpendThisMonth), label: "spend · USD", gradient: true, expands: false)
+                        .fixedSize(horizontal: true, vertical: false)
+                    Divider().frame(height: 28).overlay(palette.borderFaint)
+                    compactStat(value: "\(s.pendingBids)", label: "bids", gradient: false, expands: false)
+                        .fixedSize(horizontal: true, vertical: false)
+                    Divider().frame(height: 28).overlay(palette.borderFaint)
+                    compactStat(value: percentValue(resolvedOnTimeRate(s)), label: "on-time", gradient: true, expands: false)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+
+                VStack(alignment: .leading, spacing: Space.s2) {
+                    compactStat(value: dollars(s.totalSpendThisMonth), label: "spend · USD", gradient: true)
+                    Divider().overlay(palette.borderFaint)
+                    compactStat(value: "\(s.pendingBids)", label: "bids", gradient: false)
+                    Divider().overlay(palette.borderFaint)
+                    compactStat(value: percentValue(resolvedOnTimeRate(s)), label: "on-time", gradient: true)
+                }
             }
             .padding(Space.s3)
             .eusoCard(radius: Radius.lg)
         } else {
-            if horizontalSizeClass == .regular {
+            if horizontalSizeClass == .regular && !dynamicTypeSize.isAccessibilitySize {
                 HStack(spacing: Space.s2) {
                     spendStatTiles(s)
                 }
             } else {
                 VStack(spacing: Space.s2) {
-                    statTile(label: "This month", value: dollars(s.totalSpendThisMonth),
+                    statTile(label: "This month · USD", value: dollars(s.totalSpendThisMonth),
                              trail: "total spend", trailColor: palette.textSecondary,
-                             gradientNumeral: true, valueSize: 22)
+                             gradientNumeral: true, valueTextStyle: .title3)
                     HStack(spacing: Space.s2) {
                         statTile(label: "Bids open", value: "\(s.pendingBids)",
                                  trail: "awaiting award", trailColor: palette.textSecondary)
@@ -1415,9 +1468,9 @@ struct ShipperHome: View {
 
     @ViewBuilder
     private func spendStatTiles(_ s: ShipperAPI.DashboardStats) -> some View {
-        statTile(label: "This month", value: dollars(s.totalSpendThisMonth),
+        statTile(label: "This month · USD", value: dollars(s.totalSpendThisMonth),
                  trail: "total spend", trailColor: palette.textSecondary,
-                 gradientNumeral: true, valueSize: 18)
+                 gradientNumeral: true, valueTextStyle: .headline)
         statTile(label: "Bids open", value: "\(s.pendingBids)",
                  trail: "awaiting award", trailColor: palette.textSecondary)
         statTile(label: "On-time", value: percentValue(resolvedOnTimeRate(s)),
@@ -1426,17 +1479,22 @@ struct ShipperHome: View {
     }
 
     /// Inline number+label used by the `.compact` spend strip.
-    private func compactStat(value: String, label: String, gradient: Bool) -> some View {
+    private func compactStat(value: String, label: String, gradient: Bool, expands: Bool = true) -> some View {
         VStack(alignment: .leading, spacing: 1) {
             Group {
                 if gradient { Text(value).foregroundStyle(LinearGradient.diagonal) }
                 else { Text(value).foregroundStyle(palette.textPrimary) }
             }
-            .font(.system(size: 16, weight: .semibold).monospacedDigit())
+            .font(.headline.weight(.semibold).monospacedDigit())
+            .lineLimit(1)
+            .allowsTightening(true)
             Text(label.uppercased())
-                .font(EType.micro).tracking(0.6)
+                .font(.caption2.weight(.semibold)).tracking(0.4)
                 .foregroundStyle(palette.textTertiary)
+                .lineLimit(1)
         }
+        .frame(maxWidth: expands ? .infinity : nil, alignment: .leading)
+        .layoutPriority(gradient ? 1 : 0)
     }
 
     // MARK: - Attention alerts widget

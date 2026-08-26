@@ -79,10 +79,13 @@ private struct RailCrewAvailabilityBody: View {
 
     // Derived crew tallies. CloudMoyo returns totals; total crew is the
     // sum of every roster line (available + on-duty + resting).
-    private var availableCount: Int { board?.totalAvailable ?? 0 }
-    private var onDutyCount:    Int { board?.totalOnDuty ?? 0 }
-    private var restedOutCount: Int { board?.totalResting ?? 0 }
-    private var totalCrew:      Int { availableCount + onDutyCount + restedOutCount }
+    private var availableCount: Int? { board?.totalAvailable }
+    private var onDutyCount: Int? { board?.totalOnDuty }
+    private var restedOutCount: Int? { board?.totalResting }
+    private var totalCrew: Int? {
+        guard let availableCount, let onDutyCount, let restedOutCount else { return nil }
+        return availableCount + onDutyCount + restedOutCount
+    }
 
     private var yardLabel: String { board?.yardName ?? yardId }
 
@@ -160,7 +163,7 @@ private struct RailCrewAvailabilityBody: View {
     }
 
     private var syncedLabel: String {
-        guard let asOf = board?.asOf, let date = parseDate(asOf) else { return "synced 5m ago" }
+        guard let asOf = board?.asOf, let date = parseDate(asOf) else { return "sync time unavailable" }
         let mins = max(0, Int(-date.timeIntervalSinceNow / 60))
         if mins < 1  { return "synced just now" }
         if mins < 60 { return "synced \(mins)m ago" }
@@ -179,7 +182,7 @@ private struct RailCrewAvailabilityBody: View {
                         .foregroundStyle(palette.textPrimary)
                         .padding(.horizontal, 14).padding(.vertical, 5)
                         .background(Capsule().fill(Color.white.opacity(0.08)))
-                    Text("staffed")
+                    Text(staffedKeyword.lowercased())
                         .font(.system(size: 11, weight: .bold)).tracking(0.5)
                         .foregroundStyle(Color(hex: 0x34D8A6))
                         .padding(.horizontal, 14).padding(.vertical, 5)
@@ -190,12 +193,12 @@ private struct RailCrewAvailabilityBody: View {
                 HStack(alignment: .top) {
                     // Lead figure + caption.
                     HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
-                        Text("\(availableCount)")
+                        Text(availableCount.map(String.init) ?? "—")
                             .font(.system(size: 30, weight: .bold))
                             .monospacedDigit()
                             .foregroundStyle(LinearGradient.diagonal)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("of \(totalCrew) crew")
+                            Text(totalCrew.map { "of \($0) crew" } ?? "crew total unavailable")
                                 .font(.system(size: 11, weight: .semibold))
                                 .foregroundStyle(palette.textSecondary)
                             Text("\(yardLabel) · next call in \(nextCallLabel)")
@@ -219,11 +222,13 @@ private struct RailCrewAvailabilityBody: View {
 
                 // Progress bar — availability fraction of total crew.
                 GeometryReader { geo in
-                    let frac = totalCrew > 0 ? CGFloat(availableCount) / CGFloat(totalCrew) : 0
                     ZStack(alignment: .leading) {
                         Capsule().fill(Color.white.opacity(0.08))
-                        Capsule().fill(LinearGradient.diagonal)
-                            .frame(width: max(6, geo.size.width * frac))
+                        if let totalCrew, totalCrew > 0, let availableCount {
+                            let frac = CGFloat(availableCount) / CGFloat(totalCrew)
+                            Capsule().fill(LinearGradient.diagonal)
+                                .frame(width: max(6, geo.size.width * frac))
+                        }
                     }
                 }
                 .frame(height: 6)
@@ -231,8 +236,19 @@ private struct RailCrewAvailabilityBody: View {
         }
     }
 
-    private var staffedKeyword: String { availableCount > 0 ? "STAFFED" : "SHORT" }
-    private var staffedColor: Color { availableCount > 0 ? Color(hex: 0x34D8A6) : Brand.warning }
+    private var staffedKeyword: String {
+        guard hasCurrentBoardEvidence, let availableCount else { return "UNVERIFIED" }
+        return availableCount > 0 ? "STAFFED" : "SHORT"
+    }
+    private var staffedColor: Color {
+        guard hasCurrentBoardEvidence, let availableCount else { return palette.textTertiary }
+        return availableCount > 0 ? Color(hex: 0x34D8A6) : Brand.warning
+    }
+    private var hasCurrentBoardEvidence: Bool {
+        guard let asOf = board?.asOf, let date = parseDate(asOf) else { return false }
+        let age = Date().timeIntervalSince(date)
+        return age >= -60 && age <= 15 * 60
+    }
 
     // MARK: - KPI strip (3 cells, cell-1 gradient fill)
 
@@ -243,7 +259,7 @@ private struct RailCrewAvailabilityBody: View {
                 Text("CREW")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(Color.white.opacity(0.85))
-                Text("\(totalCrew)")
+                Text(totalCrew.map(String.init) ?? "—")
                     .font(.system(size: 22, weight: .semibold))
                     .monospacedDigit()
                     .foregroundStyle(.white)
@@ -253,7 +269,7 @@ private struct RailCrewAvailabilityBody: View {
             .background(LinearGradient.diagonal)
             .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
 
-            kpiCell(label: "AVAIL", value: "\(availableCount)", valueColor: Color(hex: 0x34D8A6))
+            kpiCell(label: "AVAIL", value: availableCount.map(String.init) ?? "—", valueColor: Color(hex: 0x34D8A6))
             kpiCell(label: "NEXT",  value: nextCallShort,       valueColor: Color(hex: 0xF5B544))
         }
     }
@@ -297,37 +313,37 @@ private struct RailCrewAvailabilityBody: View {
                     chipTint: Brand.success.opacity(0.20),
                     glyphColor: Color(hex: 0x34D8A6),
                     title: "Available · ready",
-                    sub: "\(availableCount) crew · within HOS limits",
-                    pillText: "READY",
+                    sub: availableCount.map { "\($0) crew reported · verify HOS before assignment" } ?? "availability not reported",
+                    pillText: hasCurrentBoardEvidence ? "REPORTED" : "UNVERIFIED",
                     pillTint: Brand.success.opacity(0.22),
                     pillColor: Color(hex: 0x34D8A6),
-                    value: "\(availableCount)",
+                    value: availableCount.map(String.init) ?? "—",
                     valueColor: Color(hex: 0x34D8A6))
                 Divider().overlay(palette.borderFaint)
                 statusRow(
                     chipTint: Brand.info.opacity(0.20),
                     glyphColor: Color(hex: 0x5BB0F5),
                     title: "On duty · assigned",
-                    sub: "\(onDutyCount) crew · linehaul + yard",
+                    sub: onDutyCount.map { "\($0) crew reported · linehaul + yard" } ?? "on-duty count not reported",
                     pillText: "ON DUTY",
                     pillTint: Brand.info.opacity(0.22),
                     pillColor: Color(hex: 0x5BB0F5),
-                    value: "\(onDutyCount)",
+                    value: onDutyCount.map(String.init) ?? "—",
                     valueColor: Color(hex: 0x5BB0F5))
                 Divider().overlay(palette.borderFaint)
                 statusRow(
                     chipTint: Brand.danger.opacity(0.18),
                     glyphColor: Color(hex: 0xFF6B5E),
                     title: "Rested-out · HOS",
-                    sub: "\(restedOutCount) crew · 49 CFR 228",
+                    sub: restedOutCount.map { "\($0) crew reported · 49 CFR 228" } ?? "rested-out count not reported",
                     pillText: "HOS",
                     pillTint: Brand.danger.opacity(0.22),
                     pillColor: Color(hex: 0xFF6B5E),
-                    value: "\(restedOutCount)",
+                    value: restedOutCount.map(String.init) ?? "—",
                     valueColor: Color(hex: 0xFF6B5E))
 
                 HStack {
-                    Text("+ Deadheading 0 crew en route · \(totalCrew) crew yard total · next call \(nextCallLabel)")
+                    Text("Deadheading count unavailable · \(totalCrew.map { "\($0) crew yard total" } ?? "yard total unavailable") · next call \(nextCallLabel)")
                         .font(.system(size: 10))
                         .foregroundStyle(palette.textTertiary)
                     Spacer()
@@ -452,7 +468,7 @@ private struct RailCrewAvailabilityBody: View {
     }
 
     private var nextCallLabel: String {
-        guard let d = nextCallDate else { return "-" }
+        guard let d = nextCallDate else { return "—" }
         let secs = max(0, Int(d.timeIntervalSinceNow))
         let h = secs / 3600, m = (secs % 3600) / 60
         if h > 0 { return "\(h)h \(m)m" }
@@ -460,7 +476,7 @@ private struct RailCrewAvailabilityBody: View {
     }
 
     private var nextCallShort: String {
-        guard let d = nextCallDate else { return "-" }
+        guard let d = nextCallDate else { return "—" }
         let secs = max(0, Int(d.timeIntervalSinceNow))
         let h = secs / 3600, m = (secs % 3600) / 60
         if h > 0 { return "\(h)h" }
@@ -497,7 +513,7 @@ private struct RailCrewAvailabilityBody: View {
         // PORT-GAP: railShipments.callCrew (no crew-call mutation on the rail
         // router; CloudMoyoCrewService.reportDutyStatus is per-crew only and
         // is not exposed as a board-level "call crew" tRPC procedure).
-        loadError = "Crew-call dispatch is not yet wired for \(yardLabel)."
+        loadError = "No authorized crew-call channel is configured for \(yardLabel)."
         callingCrew = false
     }
 }

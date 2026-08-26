@@ -46,8 +46,8 @@ private struct RailYard560: Decodable {
     /// Real yard anchor from the rail_yards catalog (`coordinates`
     /// JSON {lat,lng}) — getRailShipmentDetail returns the FULL yard
     /// row; the decode just never asked for it (Wave B, 2026-06-10).
-    /// Feeds the AEI-fix route interpolation so the arc stops parking
-    /// at a milestone bucket for a thousand miles.
+    /// Used only as a labeled reference pin. It never substitutes for the
+    /// server-owned EusoRail graph or route geometry.
     let coordinates: Coord560?
 }
 
@@ -160,6 +160,9 @@ private struct RailLiveTrackingBody: View {
     @State private var detail: RailShipmentDetail560? = nil
     @State private var tracking: RailTracking560? = nil
     @State private var liveData: LiveTrack560? = nil
+    @State private var canonicalRouteLines: [[HereLatLng]] = []
+    @State private var canonicalRouteStatus: String? = nil
+    @State private var canonicalRouteVersion: Int? = nil
     @State private var loading = true
     @State private var loadError: String? = nil
 
@@ -169,9 +172,11 @@ private struct RailLiveTrackingBody: View {
     /// returned a real, non-null-island coordinate — we never plot (0,0).
     private var liveCarPoint: HereLatLng? {
         guard let c = tracking?.currentLocation,
-              let la = c.lat, let lo = c.lng,
-              !(la == 0 && lo == 0) else { return nil }
-        return HereLatLng(la, lo)
+              let coordinate = LatLongParser.validatedCoordinate(
+                  latitude: c.lat,
+                  longitude: c.lng
+              ) else { return nil }
+        return HereLatLng(coordinate.latitude, coordinate.longitude)
     }
 
     /// The scan trail: every tracking event that carries a real lat/lng,
@@ -179,16 +184,24 @@ private struct RailLiveTrackingBody: View {
     private var liveTrailPoints: [HereLatLng] {
         (tracking?.events ?? [])
             .compactMap { e -> (String, HereLatLng)? in
-                guard let la = e.location?.lat, let lo = e.location?.lng,
-                      !(la == 0 && lo == 0) else { return nil }
-                return (e.timestamp ?? "", HereLatLng(la, lo))
+                guard let coordinate = LatLongParser.validatedCoordinate(
+                    latitude: e.location?.lat,
+                    longitude: e.location?.lng
+                ) else { return nil }
+                return (
+                    e.timestamp ?? "",
+                    HereLatLng(coordinate.latitude, coordinate.longitude)
+                )
             }
             .sorted { $0.0 < $1.0 }
             .map { $0.1 }
     }
 
-    /// True when the AEI chain has at least one real coordinate to plot.
-    private var hasLiveGeo: Bool { liveCarPoint != nil || !liveTrailPoints.isEmpty }
+    /// The map may render an exact route without a live fix, or authorized
+    /// observation evidence without a released route. Neither implies the other.
+    private var hasMapGeo: Bool {
+        liveCarPoint != nil || !liveTrailPoints.isEmpty || !canonicalRouteLines.isEmpty
+    }
 
     private var originLabel: String {
         guard let y = detail?.originYard else { return "-" }
@@ -204,112 +217,9 @@ private struct RailLiveTrackingBody: View {
             ?? "En route"
     }
 
-    /// Real journey progress (0…1) — origin yard → destination yard.
-    ///
-    /// Strongest signal (Wave B, 2026-06-10) is REAL geometry: when the
-    /// latest AEI fix carries coordinates AND both yards resolve real
-    /// catalog anchors, the fraction is interpolated by route distance
-    /// (origin→fix over origin→fix→destination) — the arc rides the
-    /// actual scan position instead of parking at a 0.50 milestone
-    /// bucket for a thousand miles. The event-chain milestone ladder is
-    /// the fallback when geometry is incomplete; the status ladder is
-    /// the floor when the event feed is empty. Never a hardcoded
-    /// position.
-    private var journeyProgress: Double {
-        // 0) Route-distance interpolation off the latest real AEI fix.
-        if let f = interpolatedRouteFraction { return f }
-        // 1) Event-chain milestone — pick the furthest-along event type seen.
-        if let events = tracking?.events, !events.isEmpty {
-            var best = 0.04 // booked but tracked
-            for e in events {
-                let t = e.eventType.lowercased()
-                let v: Double
-                switch t {
-                case "arrival", "arrived",
-                     "spotted", "unloading", "delivered":      v = 1.0
-                case "interchange", "at_interchange":          v = 0.62
-                case "scan", "aei_scan":                       v = 0.50
-                case "departure", "departed":                  v = 0.14
-                case "hold", "on_hold", "derailment_hold",
-                     "exception", "hazmat_exception":          v = max(best, 0.30) // holds don't rewind
-                default:                                       v = best
-                }
-                best = max(best, v)
-            }
-            return min(max(best, 0), 1)
-        }
-        // 2) Status fallback when the event feed is empty — the full
-        //    rail consist FSM (updateRailShipmentStatus transitions),
-        //    each stage at its honest fraction.
-        switch (detail?.status ?? "").lowercased() {
-        case "delivered", "completed", "arrived", "unloaded",
-             "empty_returned", "invoiced", "settled":          return 1.0
-        case "unloading":                                      return 0.95
-        case "spotted", "at_destination":                      return 0.9
-        case "in_yard":                                        return 0.8
-        case "in_transit", "in-transit", "enroute", "en_route": return 0.5
-        case "interchange", "at_interchange", "interchange_delay": return 0.62
-        case "departed", "released":                           return 0.14
-        case "in_consist":                                     return 0.10
-        case "pending", "scheduled", "booked", "requested",
-             "car_ordered", "car_placed", "loading", "loaded": return 0.04
-        case "on_hold", "derailment_hold", "hazmat_exception",
-             "cancelled":                                      return 0.04
-        default:
-            // Zero-fallback doctrine: an unmapped consist status must
-            // not fabricate a mid-route arc. DEBUG-loud, honest
-            // origin-side floor in release (the 003 pattern).
-            assertionFailure("RailLiveTracking.journeyProgress: unmapped consist status '\(detail?.status ?? "nil")' — add it to the ramp")
-            return 0.04
-        }
-    }
-
-    /// Latest position fix with real coordinates — the live AEI fix
-    /// first, then the newest tracking event that carries a location.
-    private var latestFix560: (lat: Double, lng: Double)? {
-        if let c = tracking?.currentLocation,
-           let la = c.lat, let ln = c.lng, !(la == 0 && ln == 0) {
-            return (la, ln)
-        }
-        let dated = (tracking?.events ?? []).compactMap { e -> (String, Double, Double)? in
-            guard let l = e.location, let la = l.lat, let ln = l.lng,
-                  !(la == 0 && ln == 0) else { return nil }
-            return (e.timestamp ?? "", la, ln)
-        }
-        // ISO-8601 strings sort lexicographically — newest fix wins.
-        guard let newest = dated.max(by: { $0.0 < $1.0 }) else { return nil }
-        return (newest.1, newest.2)
-    }
-
-    /// Route-distance fraction between the REAL yard anchors. nil when
-    /// either yard lacks catalog coordinates or no fix exists — the
-    /// milestone/status ladders then take over (honest degradation).
-    private var interpolatedRouteFraction: Double? {
-        guard let o = detail?.originYard?.coordinates,
-              let d = detail?.destinationYard?.coordinates,
-              let ola = o.lat, let oln = o.lng,
-              let dla = d.lat, let dln = d.lng,
-              !(ola == 0 && oln == 0), !(dla == 0 && dln == 0),
-              let fix = latestFix560 else { return nil }
-        let toFix  = Self.haversineMi(ola, oln, fix.lat, fix.lng)
-        let toDest = Self.haversineMi(fix.lat, fix.lng, dla, dln)
-        let total = toFix + toDest
-        guard total > 0.5 else { return nil }   // co-located anchors — no geometry
-        // Clamp inside the pins so the marker never overpaints a yard
-        // node it hasn't actually reached/left.
-        return min(max(toFix / total, 0.02), 0.98)
-    }
-
-    private static func haversineMi(_ lat1: Double, _ lng1: Double,
-                                    _ lat2: Double, _ lng2: Double) -> Double {
-        let r = 3958.8
-        let dLat = (lat2 - lat1) * .pi / 180
-        let dLng = (lng2 - lng1) * .pi / 180
-        let a = sin(dLat / 2) * sin(dLat / 2)
-            + cos(lat1 * .pi / 180) * cos(lat2 * .pi / 180)
-            * sin(dLng / 2) * sin(dLng / 2)
-        return r * 2 * atan2(sqrt(a), sqrt(1 - a))
-    }
+    // A shipment status, an AEI milestone, and a straight line between yard
+    // anchors are not route progress. Progress stays absent until the server
+    // projects an authorized observation onto the exact bound EusoRail plan.
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -381,7 +291,7 @@ private struct RailLiveTrackingBody: View {
                         RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                             .strokeBorder(palette.borderFaint, lineWidth: 1)
                     )
-                if hasLiveGeo {
+                if hasMapGeo {
                     railLiveMap
                 } else {
                     railLocationPending
@@ -391,9 +301,9 @@ private struct RailLiveTrackingBody: View {
                     HStack {
                         HStack(spacing: 6) {
                             Circle()
-                                .fill(hasLiveGeo ? Brand.success : palette.textTertiary)
+                                .fill(liveCarPoint != nil ? Brand.success : palette.textTertiary)
                                 .frame(width: 7, height: 7)
-                            Text(hasLiveGeo ? "LIVE · \(currentPositionLabel)" : "LOCATION PENDING")
+                            Text(liveCarPoint != nil ? "OBSERVED · \(currentPositionLabel)" : "LOCATION PENDING")
                                 .font(.system(size: 10, weight: .bold))
                                 .foregroundStyle(palette.textPrimary)
                         }
@@ -438,29 +348,70 @@ private struct RailLiveTrackingBody: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    /// In-house HERE map of the live AEI position. The scan trail (events with
-    /// real coords) draws as the route line; the live car fix is the truck
-    /// puck. Built only when `hasLiveGeo` — every coordinate is server-real
-    /// and null-island guarded upstream, so nothing is ever fabricated.
+    /// In-house HERE map of the exact EusoRail route plus separate AEI/CLM
+    /// observation evidence. A scan chain never becomes track geometry.
     private var railLiveMap: some View {
         let trail = liveTrailPoints
         let car = liveCarPoint
         // Route line = trail, with the live car appended as the leading edge.
         var line = trail
         if let car, line.last != car { line.append(car) }
-        let center = car ?? trail.last ?? HereLatLng(39.5, -98.35)
+        let center = car ?? trail.last ?? canonicalRouteLines.lazy.compactMap(\.first).first
+            ?? HereLatLng(39.5, -98.35)
         var markers: [HereMarker] = trail.map { HereMarker(at: $0, kind: .stop) }
-        if let car { markers.append(HereMarker(at: car, kind: .truck, label: currentPositionLabel)) }
-        var layers: [HereMapLayer] = []
-        if line.count >= 2 { layers.append(.route(polyline: line, colorHex: "#1473FF")) }
+        if let car {
+            markers.append(HereMarker(
+                at: car,
+                kind: .rail,
+                label: currentPositionLabel,
+                observationState: .degraded,
+                sourceLabel: "Rail event feed",
+                accessibilityLabel: "Rail consist at \(currentPositionLabel); freshness not classified"
+            ))
+        }
+        var layers: [HereMapLayer] = canonicalRouteLines.enumerated().map { index, routeLine in
+            .eusoRoute(
+                polyline: routeLine,
+                state: .active,
+                label: index == 0
+                    ? "Eusorone rail route plan version \(canonicalRouteVersion ?? 0)"
+                    : nil
+            )
+        }
+        if line.count >= 2 {
+            layers.append(.observationTrail(points: line, label: "AEI position history"))
+        }
         layers.append(.markers(markers))
         return HereVectorMapView(
             center: center,
             zoom: trail.count >= 2 || car != nil ? 6 : 9,
             interactive: true,
             tilt: 0,
-            layers: layers
+            layers: layers,
+            activeJob: true,
+            mapModeContext: .primary(.rail),
+            liveOperationsStatus: .init(
+                availability: car == nil ? .empty : .degraded,
+                sourceLabel: "Rail event feed",
+                detail: car == nil
+                    ? "No authorized live feed"
+                    : "Observation available; freshness not classified",
+                observationCount: car == nil ? 0 : 1
+            )
         )
+        .overlay(alignment: .bottomLeading) {
+            if let canonicalRouteStatus {
+                Text(canonicalRouteStatus)
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(palette.textSecondary)
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(palette.bgCard.opacity(0.92))
+                    .overlay(Capsule().strokeBorder(Brand.warning.opacity(0.45)))
+                    .clipShape(Capsule())
+                    .padding(8)
+                    .accessibilityLabel(canonicalRouteStatus)
+            }
+        }
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
@@ -573,8 +524,8 @@ private struct RailLiveTrackingBody: View {
     private var trackingShareLines: [String] {
         [
             "\(detail?.shipmentNumber ?? "Shipment") · \(originLabel) → \(destLabel)",
-            "Current \(currentPositionLabel) · progress \(Int((journeyProgress * 100).rounded()))%",
-            "Live geo \(hasLiveGeo ? "available" : "pending") · events \(tracking?.events.count ?? 0)"
+            "Current \(currentPositionLabel) · canonical route progress pending server projection",
+            "Live geo \(liveCarPoint != nil ? "available" : "pending") · events \(tracking?.events.count ?? 0)"
         ]
     }
 
@@ -590,6 +541,7 @@ private struct RailLiveTrackingBody: View {
 
     private func load() async {
         loading = true; loadError = nil
+        await refreshCanonicalRoute()
         struct DetailIn: Encodable { let id: Int }
         struct TrackIn: Encodable { let shipmentId: Int }
         do {
@@ -612,6 +564,54 @@ private struct RailLiveTrackingBody: View {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
         loading = false
+    }
+
+    @MainActor
+    private func refreshCanonicalRoute() async {
+        canonicalRouteLines = []
+        canonicalRouteStatus = nil
+        canonicalRouteVersion = nil
+        do {
+            let result = try await CanonicalRoutePlanClient.shared.planRailShipment(
+                id: shipmentId,
+                purpose: .activeJob
+            )
+            switch result {
+            case .persisted(let persisted):
+                applyCanonicalRoute(persisted.route)
+            case .pending(let pending):
+                canonicalRouteStatus = pending.blockers.first?.message
+                    ?? "EusoRail route pending verified graph authority"
+                await readExistingCanonicalRoute()
+            }
+        } catch {
+            canonicalRouteStatus = error.eusoUserCopy
+            await readExistingCanonicalRoute()
+        }
+    }
+
+    @MainActor
+    private func readExistingCanonicalRoute() async {
+        do {
+            applyCanonicalRoute(
+                try await CanonicalRoutePlanClient.shared.getBoundRailShipment(id: shipmentId)
+            )
+        } catch {
+            if canonicalRouteStatus == nil { canonicalRouteStatus = error.eusoUserCopy }
+        }
+    }
+
+    @MainActor
+    private func applyCanonicalRoute(_ route: CanonicalRoutePlanClient.BoundRoutePlan) {
+        guard let payload = route.rendererPayload else {
+            canonicalRouteLines = []
+            canonicalRouteVersion = nil
+            canonicalRouteStatus = "EusoRail route exists but is not released for rendering"
+            return
+        }
+        canonicalRouteLines = payload.lines
+        canonicalRouteVersion = payload.identity.version
+        canonicalRouteStatus = nil
     }
 
     // MARK: Helpers

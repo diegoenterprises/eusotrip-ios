@@ -9,81 +9,12 @@
 //
 //  Author: Mike "Diego" Usoro / Eusorone Technologies, Inc.
 //
-//  MONEY archetype — a per-asset total-cost-of-ownership ledger, NOT a per-load
-//  settlement and NOT a KPI-tile wall. The body is a $/mi cost hero read against
-//  revenue per loaded mile, a five-segment cost stack with a tabular $/mi legend
-//  ledger, a per-unit ledger carrying utilization + unit CPM + financed balance +
-//  a signed margin verdict, and a fleet equity / owed / next-payment band.
-//  Aurora sees which unit earns and which bleeds before year-end close.
-//
-//  ────────────────────────────────────────────────────────────────────────────
-//  tRPC WIRING MANIFEST (every path grepped on disk this fire)
-//  ────────────────────────────────────────────────────────────────────────────
-//  ONE-CALL PATH (proposed, not yet on disk):
-//    • whole surface            → catalysts.assetFinancials.summary   STUB · named gap
-//    • per-unit rows            → catalysts.assetFinancials.perAsset  STUB · named gap
-//    • financing / debt / due   → catalysts.assetFinancials.financing STUB · named gap
-//
-//  LIVE PATH (line-confirmed today — what `composeFromLiveProcedures()` calls):
-//    • hero CPM, equity, per-unit TCO, unit CPM, book value, annual miles
-//                               → fleetMaintenance.getVehicleLifecycle  (fleetMaintenance.ts:1278)
-//    • utilization % + revenue/mi per unit
-//                               → fleetMaintenance.getFleetUtilization  (fleetMaintenance.ts:2039)
-//    • maintenance segment      → fleetMaintenance.getMaintenanceCostAnalysis (fleetMaintenance.ts:1693)
-//    • fuel segment             → fuelManagement.getFuelDashboard       (fuelManagement.ts:67)
-//                                 advancedFinancials.getFuelCardTransactions (advancedFinancials.ts:618)
-//    • insurance segment        → insurance.getSummary                  (insurance.ts:571 · annualPremium)
-//    • depreciation segment     → fleetMaintenance.getVehicleValuation  (fleetMaintenance.ts:1358)
-//    • expense cross-check      → advancedFinancials.getExpenseCategories (advancedFinancials.ts:1264)
-//    • unit roster              → catalysts.getVehicles                 (catalysts.ts:1746)
-//    • "Export cost report"     → accounting.exportData                 (accounting.ts:645 · mutation)
-//    • "Payments"               → wallet.getFinancialAccount            (wallet.ts:3543)
-//                                 then catalysts.assetFinancials.payInstallment STUB (money write)
-//    • ESang row                → esangCoach.forScreen                  (esangCoach.ts:264)
-//      NAMED GAP: its SCREEN_ENUM (esangCoach.ts:112) is driver-scoped and has no
-//      carrier member, so "catalyst-asset-financials" must be added before the
-//      coach line resolves. Until then the row renders the honest fleet delta
-//      derived from getVehicleLifecycle, never a fabricated coach sentence.
-//
-//  PERSIST / AUDIT / REALTIME: every read here is a pure query and writes nothing.
-//  The only write in the flow is payInstallment (STUB) — it must post the
-//  installment ledger row, insert a blockchainAuditTrail row, and broadcast on
-//  WS_CHANNELS.FLEET(companyId) (shared/websocket-events.ts:576) with
-//  WALLET_BALANCE_UPDATE (shared/websocket-events.ts:310). The maintenance leg
-//  already refreshes on VEHICLE_MAINTENANCE_COMPLETED (shared/websocket-events.ts:90).
-//
-//  RBAC: carrier-side. Cost reads gate on financialProcedure =
-//  roleProcedure("CATALYST","BROKER","SHIPPER","DISPATCH","FACTORING","ADMIN",
-//  "SUPER_ADMIN") (advancedFinancials.ts:20); the new assetFinancials namespace
-//  and the payInstallment write gate on catalystProcedure =
-//  roleProcedure(ROLES.CATALYST) (_core/trpc.ts:208), company-scoped via
-//  ctx.user.companyId exactly as every vehicles query already is.
-//
-//  MODE + COUNTRY: transportMode=truck; country=US — USD tabular money, USDOT
-//  3 482 119 / MC-942 008 authority, IRP apportioned plate and IFTA fuel tax fold
-//  into the fuel segment; detectLoadCountry swaps the CA (NSC / CVOR) and MX (SCT)
-//  cost bases for a cross-border-domiciled unit.
-//
-//  OFFLINE (Encyclopedia v2): READ_CACHED(24h). The surface is a derived cost read,
-//  so a stale render is useful and the hero carries a visible staleness line
-//  ("cached · 12m ago") whenever the payload did not come from this session's
-//  network hit. "Payments" is ONLINE_ONLY(money movement) — it never queues; when
-//  OfflineReachabilityHub reports offline the button is disabled and says why.
-//
-//  LIVE SUPER-INTELLIGENCE FUSION: omitted with reason — static financial surface.
-//  No position, route, ETA or geofence is drawn, so no HERE Maps / device
-//  geolocation / customer geofence tick is consumed.
-//
-//  PERSONA: Aurora Freight Lines · USDOT 3 482 119 · MC-942 008 · Cedar Rapids IA.
-//  Bottom nav (real CarrierNavDispatcher): HOME · DISPATCH · [orb] · FLEET · ME,
-//  FLEET current. No EquipmentAnimation on this screen — no vehicle is depicted;
-//  units are addressed by their coded chips, never by a hand-drawn silhouette.
-//
-//  0 STUBS IN THE UI · 0 MOCK DATA · 0 PLACEHOLDERS — every value binds to the
-//  procedures above. Where a procedure does not exist yet the slot renders an
-//  honest unavailable state; nothing is invented inline.
-//
-//  Powered by ESANG AI™.
+//  Canonical contract audit (backend origin/main): company identity and vehicle
+//  roster are read directly; fuel, maintenance, and insurance contribute only
+//  values their ledgers actually measure. The backend has no asset financing,
+//  acquisition-value, depreciation, per-asset revenue, or installment contract,
+//  so those slots remain explicitly untracked and no payment/export action is
+//  presented as an asset-financial write.
 //
 
 import SwiftUI
@@ -123,16 +54,17 @@ struct AssetLedgerRow_405: Identifiable {
 }
 
 struct AssetFinancialsVM_405 {
+    let companyLine: String
     // hero
     let costPerMile: String          // "$1.87"
     let monthlyFleetCost: String     // "$63,240"
     let planDelta: String            // "−$1,480 vs plan"
     let planDeltaFavourable: Bool
     let spread: String               // "+$0.54/mi spread"
-    let spreadFavourable: Bool
+    let spreadFavourable: Bool?
     let costOfRevenue: Double        // 0.776 — cost fill against the revenue track
     let heroCaption: String          // "$1.87 of $2.41 revenue per loaded mi"
-    let staleness: String            // "cached · 12m ago" / "live · just now"
+    let staleness: String            // latest refresh and partial-source status
     let isCached: Bool
 
     // cost stack
@@ -149,17 +81,19 @@ struct AssetFinancialsVM_405 {
     let nextPayment: String          // "$3,412 in 6 d"
     let hasFinancing: Bool           // false → owed/next-payment render as "not financed"
 
-    // esang
-    let coachTitle: String
-    let coachSub: String
+    // source coverage
+    let coverageTitle: String
+    let coverageSub: String
 
     static let unavailable = AssetFinancialsVM_405(
+        companyLine: "Company identity unavailable",
         costPerMile: "—", monthlyFleetCost: "—", planDelta: "", planDeltaFavourable: true,
-        spread: "", spreadFavourable: true, costOfRevenue: 0,
+        spread: "", spreadFavourable: nil, costOfRevenue: 0,
         heroCaption: "No cost history yet for this fleet", staleness: "", isCached: false,
         loadedMiles: "—", segments: [], ledgerCount: "0 units", rows: [],
         fleetEquity: "—", owed: "—", nextPayment: "—", hasFinancing: false,
-        coachTitle: "", coachSub: ""
+        coverageTitle: "Measured cost coverage",
+        coverageSub: "No cost ledgers returned data"
     )
 }
 
@@ -219,7 +153,7 @@ private struct AssetFinancialsBody_405: View {
                 ctaPair
                 if let actionNote { noteLine(actionNote) }
                 if let loadError { noteLine(loadError) }
-                esangRow
+                sourceCoverageRow
             }
             .padding(.horizontal, Space.s5)
             .padding(.top, Space.s5)
@@ -228,6 +162,7 @@ private struct AssetFinancialsBody_405: View {
         .task {
             if let preloaded { vm = preloaded } else { await reload() }
         }
+        .eusoRefreshable { await reload() }
     }
 
     // MARK: eyebrow · title · subline  (SVG y72 / y116 / y140)
@@ -239,7 +174,7 @@ private struct AssetFinancialsBody_405: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()
-                Text("\(vm.ledgerCountTotal) UNITS · TCO")
+                Text("\(vm.ledgerCountTotal) UNITS · COSTS")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
             }
@@ -269,7 +204,7 @@ private struct AssetFinancialsBody_405: View {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 0) {
-                        Text("FLEET COST PER MILE · 30 D")
+                        Text("RECORDED OPERATING COST / MILE · LATEST")
                             .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                             .foregroundStyle(palette.textTertiary)
                         HStack(alignment: .firstTextBaseline, spacing: Space.s4) {
@@ -292,7 +227,7 @@ private struct AssetFinancialsBody_405: View {
                             .foregroundStyle(palette.textPrimary)
                         Text(vm.planDelta)
                             .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(vm.planDeltaFavourable ? Brand.success : Brand.danger)
+                                .foregroundStyle(palette.textSecondary)
                     }
                 }
 
@@ -307,7 +242,9 @@ private struct AssetFinancialsBody_405: View {
                     .frame(height: 8)
                     Text(vm.spread)
                         .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(vm.spreadFavourable ? Brand.success : Brand.danger)
+                        .foregroundStyle(vm.spreadFavourable.map {
+                            $0 ? Brand.success : Brand.danger
+                        } ?? palette.textSecondary)
                         .fixedSize()
                 }
                 .padding(.top, Space.s3)
@@ -318,7 +255,7 @@ private struct AssetFinancialsBody_405: View {
                         .foregroundStyle(palette.textSecondary)
                         .lineLimit(1).minimumScaleFactor(0.85)
                     Spacer(minLength: Space.s2)
-                    // OFFLINE — READ_CACHED(24h) staleness line, always visible.
+                    // Age/coverage of the latest in-memory refresh.
                     Text(vm.staleness)
                         .font(EType.mono(.micro))
                         .foregroundStyle(palette.textTertiary)
@@ -447,7 +384,7 @@ private struct AssetFinancialsBody_405: View {
     private var ledgerCard: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("PER-ASSET LEDGER · CPM")
+                Text("MAINTENANCE BY ASSET · LATEST")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
@@ -537,7 +474,7 @@ private struct AssetFinancialsBody_405: View {
     private var equityBand: some View {
         HStack(alignment: .top, spacing: 0) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("FLEET EQUITY")
+                Text("ACQUISITION VALUE")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Text(vm.fleetEquity)
@@ -547,7 +484,7 @@ private struct AssetFinancialsBody_405: View {
             Spacer(minLength: Space.s3)
             Rectangle().fill(palette.borderSoft).frame(width: 1, height: 36)
             VStack(alignment: .leading, spacing: 4) {
-                Text("OWED · FINANCED")
+                Text("FINANCING BALANCE")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Text(vm.owed)
@@ -581,19 +518,19 @@ private struct AssetFinancialsBody_405: View {
 
     private var ctaPair: some View {
         HStack(spacing: Space.s2) {
-            Button { Task { await exportCostReport() } } label: {
-                Text("Export cost report")
+            Button { Task { await reload() } } label: {
+                Text("Refresh costs")
                     .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity, minHeight: 48)
                     .background(Capsule().fill(LinearGradient.primary))
             }
             .buttonStyle(.plain)
-            .disabled(loading || vm.segments.isEmpty)
-            .accessibilityLabel("Export the fleet cost report")
+            .disabled(loading)
+            .accessibilityLabel("Refresh recorded fleet costs")
 
             Button { openPayments() } label: {
-                Text("Payments")
+                Text("Open wallet")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(reach.isOnline ? palette.textPrimary : palette.textTertiary)
                     .frame(width: 132).frame(minHeight: 48)
@@ -603,17 +540,14 @@ private struct AssetFinancialsBody_405: View {
             .buttonStyle(.plain)
             // ONLINE_ONLY(money movement) — an installment write never queues.
             .disabled(!reach.isOnline)
-            .accessibilityLabel(reach.isOnline ? "Open equipment payments"
-                                               : "Payments needs a connection")
+            .accessibilityLabel(reach.isOnline ? "Open wallet"
+                                               : "Wallet needs a connection")
         }
     }
 
-    // MARK: ESang row  (SVG 786…842)
+    // MARK: Measured source coverage
 
-    private var esangRow: some View {
-        Button {
-            NotificationCenter.default.post(name: .eusoCarriereSangTapped, object: nil)
-        } label: {
+    private var sourceCoverageRow: some View {
             HStack(spacing: Space.s3) {
                 ZStack {
                     Circle().fill(LinearGradient.diagonal)
@@ -623,19 +557,16 @@ private struct AssetFinancialsBody_405: View {
                 }
                 .frame(width: 32, height: 32)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(vm.coachTitle.isEmpty ? "ESang is reading your unit costs" : vm.coachTitle)
+                    Text(vm.coverageTitle)
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(palette.textPrimary)
                         .lineLimit(1).minimumScaleFactor(0.85)
-                    Text(vm.coachSub.isEmpty ? "A verdict lands once two months of cost history exist" : vm.coachSub)
+                    Text(vm.coverageSub)
                         .font(.system(size: 11))
                         .foregroundStyle(palette.textSecondary)
                         .lineLimit(1).minimumScaleFactor(0.85)
                 }
                 Spacer(minLength: Space.s2)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(palette.textSecondary)
             }
             .padding(Space.s3)
             .frame(height: 56)
@@ -643,8 +574,6 @@ private struct AssetFinancialsBody_405: View {
             .background(palette.bgCard)
             .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).strokeBorder(palette.borderFaint))
             .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
-        }
-        .buttonStyle(.plain)
     }
 
     private func noteLine(_ text: String) -> some View {
@@ -659,176 +588,99 @@ private struct AssetFinancialsBody_405: View {
     // ────────────────────────────────────────────────────────────────────────
 
     private struct EmptyInput_405: Encodable {}
-    private struct LifecycleInput_405: Encodable { let page = 1; let limit = 200 }
-    private struct UtilizationInput_405: Encodable { let periodDays = 30 }
-    private struct MaintCostInput_405: Encodable { let periodMonths = 1; let groupBy = "category" }
+    private struct VehicleInput_405: Encodable { let limit = 200 }
+    private struct MaintCostInput_405: Encodable { let periodMonths = 1; let groupBy = "vehicle" }
+    private struct FuelInput_405: Encodable { let period = "month" }
 
     // ---- wire shapes (mirror the server projections exactly) ----
 
-    private struct LifecycleWire_405: Decodable {
-        struct Item: Decodable {
-            let id: Int
-            let unit: String
-            let type: String
-            let make: String
-            let model: String
-            let year: Int
-            let acquisitionCost: Double
-            let currentValue: Double
-            let totalMaintenanceCost: Double
-            let tco: Double
-            let costPerMile: Double
-            let currentMiles: Double
-            let annualMiles: Double
-            let ageYears: Double
-            let lifecyclePhase: String
-            let status: String
-        }
-        struct FleetSummary: Decodable {
-            let totalAssetValue: Double
-            let totalAcquisitionCost: Double
-            let avgAge: Double
-            let avgCostPerMile: Double
-            let endOfLifeCount: Int
-        }
-        let items: [Item]
-        let total: Int
-        let fleetSummary: FleetSummary
+    private struct CompanyWire_405: Decodable {
+        let name: String
+        let dotNumber: String?
     }
 
-    private struct UtilizationWire_405: Decodable {
-        struct Vehicle: Decodable {
-            let vehicleId: Int
-            let vehicleUnit: String
-            let utilizationRate: Double
-            let totalMiles: Double
-            let revenue: Double
-            let revenuePerMile: Double
-        }
-        let vehicles: [Vehicle]
-        let fleetAvgUtilization: Double
-        let totalRevenue: Double
-        let totalMiles: Double
+    private struct VehicleWire_405: Decodable {
+        let id: String
+        let make: String
+        let model: String
+        let year: Int
+        let licensePlate: String
+        let vehicleType: String?
+        let status: String?
+        let isActive: Bool?
     }
 
     private struct MaintenanceCostWire_405: Decodable {
         struct Month: Decodable { let month: String; let total: Double }
-        let monthlyData: [Month]
+        struct Vehicle: Decodable {
+            let vehicleUnit: String
+            let vehicleId: Int?
+            let amount: Double
+        }
+        let totalCost: Double
+        let avgMonthlyCost: Double
+        let monthlyTrend: [Month]
+        let byVehicle: [Vehicle]
     }
 
-    private struct InsuranceSummaryWire_405: Decodable { let annualPremium: Double }
+    private struct InsuranceSummaryWire_405: Decodable {
+        let totalPolicies: Int
+        let annualPremium: Double
+    }
 
     private struct FuelDashboardWire_405: Decodable {
-        let totalSpend: Double?
-        let monthlySpend: Double?
+        struct Month: Decodable { let month: String; let amount: Double }
+        let totalSpend: Double
+        let totalMiles: Double
+        let transactionCount: Int
+        let monthlySpend: [Month]
     }
 
-    /// Proposed one-call envelope. Decoded when
-    /// `catalysts.assetFinancials.summary` lands; until then the call throws and
-    /// `composeFromLiveProcedures()` carries the screen on line-confirmed reads.
-    private struct AssetFinancialsWire_405: Decodable {
-        struct Segment: Decodable {
-            let kind: String; let monthly: Double; let perMile: Double
-            let share: Double; let detail: String
-        }
-        struct Unit: Decodable {
-            let vehicleId: Int; let unit: String; let spec: String
-            let utilizationRate: Double; let costPerMile: Double
-            let revenuePerMile: Double; let monthlyCost: Double
-            let financedBalance: Double?; let financeKind: String?
-        }
-        struct Financing: Decodable {
-            let debtOutstanding: Double
-            let nextPaymentAmount: Double
-            let nextPaymentDueInDays: Int
-            let nextPaymentUnit: String
-        }
-        let costPerMile: Double
-        let revenuePerMile: Double
-        let monthlyFleetCost: Double
-        let planVariance: Double
-        let loadedMiles: Double
-        let equity: Double
-        let generatedAt: String
-        let segments: [Segment]
-        let units: [Unit]
-        let financing: Financing?
+    private struct AccountingSummaryWire_405: Decodable {
+        let currency: String
     }
 
     private func reload() async {
         loading = true
         loadError = nil
-        defer { loading = false }
-
-        // 1 — one-call path (STUB today).
-        if let wire: AssetFinancialsWire_405 = try? await EusoTripAPI.shared.query(
-            "catalysts.assetFinancials.summary", input: EmptyInput_405()) {
-            vm = Self.build(from: wire)
-            return
-        }
-
-        // 2 — live path on line-confirmed procedures.
-        await composeFromLiveProcedures()
-    }
-
-    private func composeFromLiveProcedures() async {
-        do {
-            async let lifecycleTask: LifecycleWire_405 = EusoTripAPI.shared.query(
-                "fleetMaintenance.getVehicleLifecycle", input: LifecycleInput_405())
-            async let utilTask: UtilizationWire_405 = EusoTripAPI.shared.query(
-                "fleetMaintenance.getFleetUtilization", input: UtilizationInput_405())
-
-            let lifecycle = try await lifecycleTask
-            let util = try await utilTask
-
-            // Segments that have their own line-confirmed source. Any source that
-            // is unreachable drops its segment rather than inventing a number.
-            let maint: MaintenanceCostWire_405? = try? await EusoTripAPI.shared.query(
-                "fleetMaintenance.getMaintenanceCostAnalysis", input: MaintCostInput_405())
-            let ins: InsuranceSummaryWire_405? = try? await EusoTripAPI.shared.query(
-                "insurance.getSummary", input: EmptyInput_405())
-            let fuel: FuelDashboardWire_405? = try? await EusoTripAPI.shared.query(
-                "fuelManagement.getFuelDashboard", input: EmptyInput_405())
-            let financing: AssetFinancialsWire_405.Financing? = try? await EusoTripAPI.shared.query(
-                "catalysts.assetFinancials.financing", input: EmptyInput_405())
-
-            vm = Self.compose(lifecycle: lifecycle, util: util, maint: maint,
-                              insurance: ins, fuel: fuel, financing: financing)
-        } catch {
-            vm = .unavailable
-            loadError = "Couldn't reach the fleet cost ledger — pull to retry."
-        }
-    }
-
-    private func exportCostReport() async {
         actionNote = nil
-        struct ExportInput: Encodable {
-            struct Range: Encodable { let start: String; let end: String }
-            let reportType = "expenses"
-            let format = "csv"
-            let dateRange: Range
-        }
-        struct ExportWire: Decodable { let filename: String? }
-        let now = Date()
-        let start = Calendar.current.date(byAdding: .day, value: -30, to: now) ?? now
-        let iso = ISO8601DateFormatter()
+        defer { loading = false }
+        let api = EusoTripAPI.shared
+        var company: CompanyWire_405?
+        var vehicles: [VehicleWire_405] = []
+        var maintenance: MaintenanceCostWire_405?
+        var insurance: InsuranceSummaryWire_405?
+        var fuel: FuelDashboardWire_405?
+        var accounting: AccountingSummaryWire_405?
+        var failures: [String] = []
+
+        do { company = try await api.queryNoInput("companies.getMyCompany") }
+        catch { failures.append("Company identity: \(error.eusoUserCopy)") }
         do {
-            let out: ExportWire = try await EusoTripAPI.shared.mutation(
-                "accounting.exportData",
-                input: ExportInput(dateRange: .init(start: iso.string(from: start),
-                                                    end: iso.string(from: now))))
-            actionNote = out.filename.map { "Cost report ready · \($0)" } ?? "Cost report queued for download"
-        } catch {
-            actionNote = "Export didn't complete — retry."
-        }
+            vehicles = try await api.query("catalysts.getVehicles", input: VehicleInput_405())
+        } catch { failures.append("Fleet roster: \(error.eusoUserCopy)") }
+        do {
+            maintenance = try await api.query(
+                "fleetMaintenance.getMaintenanceCostAnalysis", input: MaintCostInput_405())
+        } catch { failures.append("Maintenance costs: \(error.eusoUserCopy)") }
+        do {
+            fuel = try await api.query("fuelManagement.getFuelDashboard", input: FuelInput_405())
+        } catch { failures.append("Fuel costs: \(error.eusoUserCopy)") }
+        do { insurance = try await api.queryNoInput("insurance.getSummary") }
+        catch { failures.append("Insurance costs: \(error.eusoUserCopy)") }
+        do { accounting = try await api.queryNoInput("accounting.getSummary") }
+        catch { failures.append("Currency context: \(error.eusoUserCopy)") }
+
+        vm = Self.compose(company: company, vehicles: vehicles, maintenance: maintenance,
+                          insurance: insurance, fuel: fuel,
+                          currencyCode: accounting?.currency ?? "USD",
+                          sourceFailureCount: failures.count)
+        loadError = failures.isEmpty ? nil : failures.joined(separator: " ")
     }
 
-    /// ONLINE_ONLY(money movement). Routes to the carrier wallet surface; the
-    /// installment write itself is `catalysts.assetFinancials.payInstallment`
-    /// (STUB) and must never be queued offline.
     private func openPayments() {
         guard reach.isOnline else {
-            actionNote = "Payments needs a connection — money movement never queues."
+            actionNote = "Wallet needs a live connection."
             return
         }
         Task { @MainActor in CarrierNavDispatcher.handle("Wallet") }
@@ -838,163 +690,116 @@ private struct AssetFinancialsBody_405: View {
     // MARK: - VM construction (pure; no data invented)
     // ────────────────────────────────────────────────────────────────────────
 
-    private static func build(from w: AssetFinancialsWire_405) -> AssetFinancialsVM_405 {
-        let segs: [AssetCostSegment_405] = w.segments.compactMap { s in
-            guard let kind = AssetCostSegment_405.Kind(rawValue: s.kind) else { return nil }
-            return AssetCostSegment_405(
-                kind: kind, title: kind.display,
-                sub: "\(money0(s.monthly)) /mo · \(s.detail)",
-                share: s.share, perMile: money2(s.perMile))
-        }
-        let rows: [AssetLedgerRow_405] = w.units.map { u in
-            let spreadValue = u.revenuePerMile - u.costPerMile
-            return AssetLedgerRow_405(
-                id: String(u.vehicleId),
-                code: unitCode(u.unit),
-                classPrefix: unitPrefix(u.unit),
-                title: "\(u.unit) · \(u.spec)",
-                metrics: "util \(Int(u.utilizationRate.rounded()))% · CPM \(money2(u.costPerMile)) · \(financeLabel(u.financedBalance, u.financeKind))",
-                margin: signedPerMile(spreadValue),
-                verdict: u.revenuePerMile <= 0 ? .unknown : (spreadValue >= 0 ? .earns : .bleeds),
-                monthlyCost: money0(u.monthlyCost))
-        }
-        let spread = w.revenuePerMile - w.costPerMile
-        return AssetFinancialsVM_405(
-            costPerMile: money2(w.costPerMile),
-            monthlyFleetCost: money0(w.monthlyFleetCost),
-            planDelta: "\(signedMoney0(w.planVariance)) vs plan",
-            planDeltaFavourable: w.planVariance <= 0,
-            spread: "\(signedPerMile(spread)) spread",
-            spreadFavourable: spread >= 0,
-            costOfRevenue: w.revenuePerMile > 0 ? min(1, w.costPerMile / w.revenuePerMile) : 0,
-            heroCaption: "\(money2(w.costPerMile)) of \(money2(w.revenuePerMile)) revenue per loaded mi",
-            staleness: staleLine(w.generatedAt),
-            isCached: isStale(w.generatedAt),
-            loadedMiles: "\(int0(w.loadedMiles)) loaded mi",
-            segments: segs,
-            ledgerCount: "\(rows.count) of \(w.units.count) units",
-            rows: rows,
-            fleetEquity: money0(w.equity),
-            owed: w.financing.map { money0($0.debtOutstanding) } ?? "not financed",
-            nextPayment: w.financing.map { "\(money0($0.nextPaymentAmount)) in \($0.nextPaymentDueInDays) d" } ?? "none due",
-            hasFinancing: w.financing != nil,
-            coachTitle: coachTitle(rows: rows, fleetCPM: w.costPerMile),
-            coachSub: coachSub(rows: rows, fleetCPM: w.costPerMile))
-    }
-
-    private static func compose(lifecycle: LifecycleWire_405,
-                                util: UtilizationWire_405,
-                                maint: MaintenanceCostWire_405?,
+    private static func compose(company: CompanyWire_405?,
+                                vehicles: [VehicleWire_405],
+                                maintenance: MaintenanceCostWire_405?,
                                 insurance: InsuranceSummaryWire_405?,
                                 fuel: FuelDashboardWire_405?,
-                                financing: AssetFinancialsWire_405.Financing?) -> AssetFinancialsVM_405 {
+                                currencyCode: String,
+                                sourceFailureCount: Int) -> AssetFinancialsVM_405 {
 
-        guard !lifecycle.items.isEmpty else { return .unavailable }
-
-        let utilByUnit = Dictionary(uniqueKeysWithValues:
-            util.vehicles.map { ($0.vehicleId, $0) })
-
-        let monthlyMiles = max(1, lifecycle.items.reduce(0) { $0 + $1.annualMiles } / 12)
-        let fleetCPM = lifecycle.fleetSummary.avgCostPerMile
-        let revenuePerMile = util.totalMiles > 0 ? util.totalRevenue / util.totalMiles : 0
-
-        // Monthly dollars per segment from the sources that answered.
-        let maintMonthly   = maint?.monthlyData.last?.total
-        let insMonthly     = insurance.map { $0.annualPremium / 12 }
-        let fuelMonthly    = fuel?.monthlySpend ?? fuel?.totalSpend
-        let deprMonthly    = lifecycle.items.reduce(0) { $0 + ($1.acquisitionCost - $1.currentValue) }
-                             / max(1, lifecycle.fleetSummary.avgAge * 12)
-        let financeMonthly = financing.map { $0.nextPaymentAmount } // one cycle
+        let maintenanceMonthly = maintenance?.avgMonthlyCost ?? 0
+        let insuranceMonthly = (insurance?.annualPremium ?? 0) / 12
+        let fuelMonthly = fuel?.totalSpend ?? 0
+        let measuredMiles = fuel?.totalMiles ?? 0
 
         let raw: [(kind: AssetCostSegment_405.Kind, monthly: Double, detail: String)] = [
-            (kind: .financing,    monthly: financeMonthly ?? 0, detail: "\(lifecycle.items.count) units"),
-            (kind: .fuel,         monthly: fuelMonthly ?? 0,    detail: "fuel + DEF"),
-            (kind: .maintenance,  monthly: maintMonthly ?? 0,   detail: "work orders"),
-            (kind: .insurance,    monthly: insMonthly ?? 0,     detail: "liability+cargo"),
-            (kind: .depreciation, monthly: deprMonthly,         detail: "declining bal."),
+            (kind: .fuel, monthly: fuelMonthly,
+             detail: "\(fuel?.transactionCount ?? 0) transactions"),
+            (kind: .maintenance, monthly: maintenanceMonthly, detail: "maintenance ledger"),
+            (kind: .insurance, monthly: insuranceMonthly, detail: "annual premium / 12"),
         ].filter { $0.monthly > 0 }
 
         let monthlyTotal = raw.reduce(0) { $0 + $1.monthly }
         let segments: [AssetCostSegment_405] = monthlyTotal <= 0 ? [] : raw.map { entry in
             AssetCostSegment_405(
                 kind: entry.kind, title: entry.kind.display,
-                sub: "\(money0(entry.monthly)) /mo · \(entry.detail)",
+                sub: "\(money0(entry.monthly, currencyCode)) /mo · \(entry.detail)",
                 share: entry.monthly / monthlyTotal,
-                perMile: money2(entry.monthly / monthlyMiles))
+                perMile: measuredMiles > 0
+                    ? money2(entry.monthly / measuredMiles, currencyCode) : "—")
         }
 
-        let rows: [AssetLedgerRow_405] = lifecycle.items.prefix(3).map { v in
-            let u = utilByUnit[v.id]
-            let rpm = u?.revenuePerMile ?? 0
-            let spreadValue = rpm - v.costPerMile
-            let utilText = u.map { "util \(Int($0.utilizationRate.rounded()))%" } ?? "util —"
+        let vehiclesById = Dictionary(uniqueKeysWithValues: vehicles.map { ($0.id, $0) })
+        let rows: [AssetLedgerRow_405] = (maintenance?.byVehicle ?? [])
+            .filter { $0.amount > 0 }
+            .prefix(50)
+            .map { item in
+            let id = item.vehicleId.map(String.init) ?? item.vehicleUnit
+            let vehicle = vehiclesById[id]
+            let unit = vehicle?.licensePlate.isEmpty == false
+                ? vehicle!.licensePlate : item.vehicleUnit
+            var specParts: [String] = []
+            if let make = vehicle?.make, !make.isEmpty { specParts.append(make) }
+            if let model = vehicle?.model, !model.isEmpty { specParts.append(model) }
+            if let year = vehicle?.year, year > 0 { specParts.append(String(year)) }
+            let spec = specParts.joined(separator: " ")
+            let status = vehicle?.status?.replacingOccurrences(of: "_", with: " ") ?? "status unavailable"
             return AssetLedgerRow_405(
-                id: String(v.id),
-                code: unitCode(v.unit),
-                classPrefix: unitPrefix(v.unit),
-                title: "\(v.unit) · \(v.model) ’\(String(v.year).suffix(2))",
-                metrics: "\(utilText) · CPM \(money2(v.costPerMile)) · book \(moneyK(v.currentValue))",
-                margin: rpm > 0 ? signedPerMile(spreadValue) : "cpm only",
-                verdict: rpm > 0 ? (spreadValue >= 0 ? .earns : .bleeds) : .unknown,
-                monthlyCost: money0(v.costPerMile * (v.annualMiles / 12)))
+                id: id,
+                code: unitCode(unit),
+                classPrefix: unitPrefix(unit),
+                title: spec.isEmpty ? unit : "\(unit) · \(spec)",
+                metrics: "\(status) · recorded maintenance",
+                margin: "recorded",
+                verdict: .unknown,
+                monthlyCost: money0(item.amount, currencyCode))
         }
 
-        let spread = revenuePerMile - fleetCPM
+        var companyParts: [String] = []
+        if let name = company?.name, !name.isEmpty { companyParts.append(name) }
+        if let dot = company?.dotNumber, !dot.isEmpty { companyParts.append("USDOT \(dot)") }
+        let companyLine = (companyParts + ["\(vehicles.count) units"]).joined(separator: " · ")
+        let measuredCPM = measuredMiles > 0 ? monthlyTotal / measuredMiles : 0
+        let coverage = [
+            (fuel?.transactionCount ?? 0) > 0 ? "fuel" : nil,
+            ((maintenance?.monthlyTrend.isEmpty == false)
+                || (maintenance?.byVehicle.isEmpty == false)) ? "maintenance" : nil,
+            (insurance?.totalPolicies ?? 0) > 0 ? "insurance" : nil,
+        ].compactMap { $0 }
+        let hasMeasuredSources = !coverage.isEmpty
+
         return AssetFinancialsVM_405(
-            costPerMile: money2(fleetCPM),
-            monthlyFleetCost: money0(monthlyTotal),
-            planDelta: "\(lifecycle.total) units on the book",
+            companyLine: companyLine,
+            costPerMile: measuredMiles > 0 ? money2(measuredCPM, currencyCode) : "—",
+            monthlyFleetCost: hasMeasuredSources ? money0(monthlyTotal, currencyCode) : "—",
+            planDelta: "\(coverage.count) measured cost sources",
             planDeltaFavourable: true,
-            spread: revenuePerMile > 0 ? "\(signedPerMile(spread)) spread" : "revenue/mi pending",
-            spreadFavourable: spread >= 0,
-            costOfRevenue: revenuePerMile > 0 ? min(1, fleetCPM / revenuePerMile) : 0,
-            heroCaption: revenuePerMile > 0
-                ? "\(money2(fleetCPM)) of \(money2(revenuePerMile)) revenue per loaded mi"
-                : "\(money2(fleetCPM)) true cost per mile · \(lifecycle.total) units",
-            staleness: "live · just now",
+            spread: "Revenue not measured",
+            spreadFavourable: nil,
+            costOfRevenue: 0,
+            heroCaption: !hasMeasuredSources ? "No measured cost records were returned"
+                : measuredMiles > 0
+                ? "\(money0(monthlyTotal, currencyCode)) across \(int0(measuredMiles)) recorded load miles"
+                : "\(money0(monthlyTotal, currencyCode)) recorded; mileage unavailable",
+            staleness: sourceFailureCount == 0 ? "updated · just now" : "updated · partial sources",
             isCached: false,
-            loadedMiles: "\(int0(monthlyMiles)) loaded mi",
+            loadedMiles: measuredMiles > 0 ? "\(int0(measuredMiles)) loaded mi" : "mileage unavailable",
             segments: segments,
-            ledgerCount: "\(rows.count) of \(lifecycle.total) units",
+            ledgerCount: "\(rows.count) of \(vehicles.count) units",
             rows: rows,
-            fleetEquity: money0(lifecycle.fleetSummary.totalAssetValue
-                                - (financing?.debtOutstanding ?? 0)),
-            owed: financing.map { money0($0.debtOutstanding) } ?? "not financed",
-            nextPayment: financing.map { "\(money0($0.nextPaymentAmount)) in \($0.nextPaymentDueInDays) d" } ?? "none due",
-            hasFinancing: financing != nil,
-            coachTitle: coachTitle(rows: rows, fleetCPM: fleetCPM),
-            coachSub: coachSub(rows: rows, fleetCPM: fleetCPM))
-    }
-
-    // ---- coach line (derived, never fabricated) ----
-
-    private static func coachTitle(rows: [AssetLedgerRow_405], fleetCPM: Double) -> String {
-        guard let worst = rows.first(where: { $0.verdict == .bleeds }) else { return "" }
-        return "ESang: \(worst.title.prefix(8)) runs over fleet cost"
-    }
-
-    private static func coachSub(rows: [AssetLedgerRow_405], fleetCPM: Double) -> String {
-        guard rows.contains(where: { $0.verdict == .bleeds }) else { return "" }
-        return "Fleet cost per mile is \(money2(fleetCPM)) · review trade or refinance"
+            fleetEquity: "Not tracked",
+            owed: "Not tracked",
+            nextPayment: "Not tracked",
+            hasFinancing: false,
+            coverageTitle: "Measured cost coverage",
+            coverageSub: coverage.isEmpty
+                ? "No cost ledgers returned records"
+                : coverage.joined(separator: ", ").capitalized)
     }
 
     // ---- formatting ----
 
-    private static func money0(_ v: Double) -> String { currency(v, fraction: 0) }
-    private static func money2(_ v: Double) -> String { currency(v, fraction: 2) }
-    private static func moneyK(_ v: Double) -> String {
-        v >= 1000 ? String(format: "$%.1fk", v / 1000) : currency(v, fraction: 0)
+    private static func money0(_ v: Double, _ code: String = "USD") -> String {
+        currency(v, fraction: 0, code: code)
     }
-    private static func signedMoney0(_ v: Double) -> String {
-        (v < 0 ? "−" : "+") + currency(abs(v), fraction: 0)
+    private static func money2(_ v: Double, _ code: String = "USD") -> String {
+        currency(v, fraction: 2, code: code)
     }
-    private static func signedPerMile(_ v: Double) -> String {
-        (v < 0 ? "−" : "+") + currency(abs(v), fraction: 2) + "/mi"
-    }
-    private static func currency(_ v: Double, fraction: Int) -> String {
+    private static func currency(_ v: Double, fraction: Int, code: String = "USD") -> String {
         let f = NumberFormatter()
         f.numberStyle = .currency
-        f.currencyCode = "USD"
+        f.currencyCode = code
         f.minimumFractionDigits = fraction
         f.maximumFractionDigits = fraction
         return f.string(from: NSNumber(value: v)) ?? "$\(v)"
@@ -1008,21 +813,6 @@ private struct AssetFinancialsBody_405: View {
     }
     private static func unitPrefix(_ unit: String) -> String {
         String(unit.split(separator: "-").first ?? "TRK").uppercased().prefix(3).description
-    }
-    private static func financeLabel(_ balance: Double?, _ kind: String?) -> String {
-        guard let balance, balance > 0 else { return "paid off" }
-        return "\(kind ?? "loan") \(moneyK(balance))"
-    }
-    private static func isStale(_ iso: String) -> Bool {
-        guard let d = ISO8601DateFormatter().date(from: iso) else { return true }
-        return Date().timeIntervalSince(d) > 90
-    }
-    private static func staleLine(_ iso: String) -> String {
-        guard let d = ISO8601DateFormatter().date(from: iso) else { return "cached" }
-        let secs = Int(Date().timeIntervalSince(d))
-        if secs < 90 { return "live · just now" }
-        if secs < 3600 { return "cached · \(secs / 60)m ago" }
-        return "cached · \(secs / 3600)h ago"
     }
 }
 
@@ -1045,18 +835,19 @@ private extension AssetCostSegment_405 {
 }
 
 private extension AssetFinancialsVM_405 {
-    /// "8 UNITS · TCO" eyebrow counter and the subline both read the same source.
+    /// The unit counter and subline both read the same live roster.
     var ledgerCountTotal: String {
         ledgerCount.split(separator: " ").dropFirst(2).first.map(String.init) ?? "0"
     }
     var subline: String {
-        "Aurora Freight Lines · \(ledgerCountTotal) units · USDOT 3 482 119"
+        companyLine
     }
 }
 
 // MARK: - Previews (fixture mirrors the SVG verbatim; production loads live)
 
 private let previewAssetFinancials_405 = AssetFinancialsVM_405(
+    companyLine: "Aurora Freight Lines · 8 units · USDOT 3 482 119",
     costPerMile: "$1.87",
     monthlyFleetCost: "$63,240",
     planDelta: "−$1,480 vs plan",
@@ -1065,7 +856,7 @@ private let previewAssetFinancials_405 = AssetFinancialsVM_405(
     spreadFavourable: true,
     costOfRevenue: 0.776,
     heroCaption: "$1.87 of $2.41 revenue per loaded mi",
-    staleness: "cached · 12m ago",
+    staleness: "updated · 12m ago",
     isCached: true,
     loadedMiles: "33,818 loaded mi",
     segments: [
@@ -1099,8 +890,8 @@ private let previewAssetFinancials_405 = AssetFinancialsVM_405(
     owed: "$196,340",
     nextPayment: "$3,412 in 6 d",
     hasFinancing: true,
-    coachTitle: "ESang: TRK-0117 runs $0.65/mi over fleet",
-    coachSub: "Trade at 720k mi · cuts $2,840 /mo of true cost"
+    coverageTitle: "Measured cost coverage",
+    coverageSub: "Fuel, maintenance and insurance records"
 )
 
 #Preview("405 Catalyst Asset Financials · Light") {

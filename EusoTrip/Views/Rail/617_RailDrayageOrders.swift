@@ -14,14 +14,39 @@
 //  gate cutoff so containers do not sit and accrue detention.
 //
 //  Web parity: app/(rail)/drayage/orders/page.tsx
-//  tRPC: multiModal.getDrayageManagement EXISTS · server/routers/multiModal.ts:682
+//  tRPC: multiModal.getDrayageManagement EXISTS · server/routers/multiModal.ts:887
 //        ({type,status,portCode,page,limit,search} → {orders,total,stats}).
-//  PORT-GAP: multiModal.dispatchDrayage — no such mutation exists. The desc
-//            proposes multiModal.dispatchDrayage({drayageOrderId,carrierId,
-//            appointmentTime}); until it lands the "Dispatch dray" CTA surfaces
-//            a real "not wired" error instead of fabricating a success.
-//  RBAC: protectedProcedure (companyId-scoped). transportMode=rail (drayage
-//        child legs are truck-mode). Single-country US (Corwith · BNSF · IL).
+//        dispatch.getAvailableDrivers EXISTS · server/routers/dispatch.ts:1127
+//        ({loadId?,…} → [{id,userId,name,status,twicCard,…}]) — `id` is
+//        drivers.id, which is exactly what dispatchDrayage resolves against.
+//        multiModal.dispatchDrayage EXISTS · server/routers/multiModal.ts:1250
+//        ({loadId,driverId,vehicleId?,notes?,idempotencyKey?} → {success,id,
+//        loadId,orderNumber,driverId,status,dispatchedAt,idempotentReplay}).
+//
+//  PORT-GAP CLOSED 2026-08-17 (the-oath §6). The header used to read
+//  "multiModal.dispatchDrayage — no such mutation exists" and dispatchDray()
+//  was a local string setter. That claim was TRUE when it was written and is
+//  FALSE now: the mutation shipped with a TWIC compliance gate, a hard role
+//  allowlist, a FOR UPDATE commit with idempotent replay, a co-transacted
+//  hash-chain audit row, a blockchainAuditTrail row, a driver notification and
+//  a three-way WS fan-out — and had ZERO callers on either client. It was
+//  PARITY §3 dead-air row #15: the rail↔truck seam's only dispatch verb, fully
+//  built and unreachable, so no dray driver was ever assigned from the app.
+//  This screen is the missing half.
+//
+//  RBAC: getDrayageManagement is protectedProcedure (companyId-scoped).
+//        dispatchDrayage is isolatedApprovedProcedure + an in-handler role
+//        allowlist (DISPATCH · RAIL_DISPATCHER · CATALYST · BROKER ·
+//        TERMINAL_MANAGER + admin). RAIL_DISPATCHER owns this desk, so the
+//        rail engineer viewing this board may not be permitted to commit —
+//        the CTA surfaces the server's FORBIDDEN copy verbatim rather than
+//        pre-judging the session's role on the client.
+//        transportMode=rail (drayage child legs are truck-mode).
+//        Single-country US (Corwith · BNSF · IL).
+//
+//  §W OFFLINE: ONLINE_ONLY. Dispatching sends a human into an MTSA secure area
+//        behind a TWIC check and a carrier-vetting gate; it is never queued and
+//        never optimistic. The board itself is READ_CACHED(none) — it reloads.
 //
 
 import SwiftUI
@@ -97,6 +122,34 @@ private struct DrayageManagement: Decodable {
     let stats: DrayageStats?
 }
 
+/// `dispatch.getAvailableDrivers` row (dispatch.ts:1127). `id` is `drivers.id`
+/// — the key `multiModal.dispatchDrayage` resolves to `drivers.userId` before
+/// binding `loads.driverId` (multiModal.ts:1272). Sending `userId` here would
+/// silently assign the move to a stranger, which is why the server does the
+/// lookup and this screen sends the drivers.id it was given.
+private struct DrayDispatchCandidate: Decodable, Identifiable {
+    let id: String
+    let name: String?
+    let status: String?
+    let phone: String?
+    let twicCard: Bool?
+    let hazmatEndorsement: Bool?
+    let onTimeRate: Int?
+    let completedLoads: Int?
+}
+
+/// `multiModal.dispatchDrayage` return literal, field-for-field (multiModal.ts:1793).
+private struct DrayDispatchAck: Decodable {
+    let success: Bool?
+    let id: String?
+    let loadId: Int?
+    let orderNumber: String?
+    let driverId: Int?
+    let status: String?
+    let dispatchedAt: String?
+    let idempotentReplay: Bool?
+}
+
 // MARK: - Body
 
 private struct RailDrayageOrdersBody: View {
@@ -107,7 +160,33 @@ private struct RailDrayageOrdersBody: View {
     @State private var total: Int = 0
     @State private var loading = true
     @State private var loadError: String? = nil
+    /// Warning-tone line (refusals, gaps). Kept for the failure path.
     @State private var dispatchNotice: String? = nil
+    /// Success-tone line — a real committed dispatch, never a fabricated ack.
+    @State private var dispatchConfirmation: String? = nil
+
+    // Dispatch sheet state.
+    @State private var showDispatchSheet = false
+    @State private var candidates: [DrayDispatchCandidate] = []
+    @State private var candidatesLoading = false
+    @State private var candidatesError: String? = nil
+    @State private var pickedOrderId: String? = nil
+    @State private var pickedDriverId: String? = nil
+    @State private var dispatching = false
+    /// Stable across retries of the SAME intent so a network retry replays
+    /// rather than double-notifying the driver. Regenerated per sheet opening.
+    @State private var dispatchIdempotencyKey = UUID().uuidString
+
+    /// Orders a dispatch can legally target: no driver bound yet. The server
+    /// re-checks (CONFLICT if taken, CONFLICT if the status is past dispatch),
+    /// so this is a courtesy filter, not the gate.
+    private var dispatchableOrders: [DrayageOrder] {
+        orders.filter { ($0.driver?.id ?? "").isEmpty }
+    }
+    private var pickedOrder: DrayageOrder? {
+        guard let id = pickedOrderId else { return nil }
+        return orders.first { $0.id == id }
+    }
 
     // Filter chips. `nil` status = All. Maps directly onto the server enum so
     // the chip selection drives the real query input.
@@ -150,6 +229,12 @@ private struct RailDrayageOrdersBody: View {
                     openDrayageSection
                     capacityGuardSection
                     ctaRow
+                    if let confirmation = dispatchConfirmation {
+                        Label(confirmation, systemImage: "checkmark.seal.fill")
+                            .font(EType.caption)
+                            .foregroundStyle(Brand.success)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                     if let notice = dispatchNotice {
                         Text(notice)
                             .font(EType.caption)
@@ -165,6 +250,7 @@ private struct RailDrayageOrdersBody: View {
         .task { await reload() }
         .eusoRefreshable { await reload() }
         .onChange(of: filter) { _, _ in Task { await reload() } }
+        .sheet(isPresented: $showDispatchSheet) { dispatchSheet }
     }
 
     // MARK: - Eyebrow (RAIL ENGINEER · DRAYAGE  /  CORWITH · BNSF)
@@ -483,7 +569,7 @@ private struct RailDrayageOrdersBody: View {
     private var ctaRow: some View {
         HStack(spacing: 8) {
             Button {
-                dispatchDray()
+                openDispatchSheet()
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "box.truck")
@@ -499,7 +585,7 @@ private struct RailDrayageOrdersBody: View {
             .buttonStyle(.plain)
 
             Button {
-                dispatchDray()
+                openDispatchSheet()
             } label: {
                 Text("Assign")
                     .font(.system(size: 15, weight: .semibold))
@@ -511,6 +597,150 @@ private struct RailDrayageOrdersBody: View {
             }
             .buttonStyle(.plain)
         }
+    }
+
+    // MARK: - Dispatch sheet (order → driver → commit)
+
+    @ViewBuilder private var dispatchSheet: some View {
+        NavigationStack {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Space.s5) {
+                    Text("Pick the drayage order, then the driver. The commit binds the driver to the move, flips the order to dispatched and notifies them.")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    // 1 · Order
+                    VStack(alignment: .leading, spacing: Space.s2) {
+                        Text("ORDER")
+                            .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                            .foregroundStyle(LinearGradient.primary)
+                        if dispatchableOrders.isEmpty {
+                            Text("Every order on this board already has a driver. Nothing to dispatch.")
+                                .font(EType.caption).foregroundStyle(palette.textSecondary)
+                        } else {
+                            ForEach(dispatchableOrders) { o in
+                                pickRow(title: o.orderNumber ?? o.id,
+                                        subtitle: [o.containerNumber, o.terminal, o.pickupLocation]
+                                            .compactMap { $0 }.joined(separator: " · "),
+                                        selected: pickedOrderId == o.id) { pickedOrderId = o.id }
+                            }
+                        }
+                    }
+
+                    // 2 · Driver
+                    VStack(alignment: .leading, spacing: Space.s2) {
+                        HStack {
+                            Text("DRIVER")
+                                .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                                .foregroundStyle(LinearGradient.primary)
+                            Spacer()
+                            if candidatesLoading { ProgressView().controlSize(.small) }
+                        }
+                        if let err = candidatesError {
+                            Text(err).font(EType.caption).foregroundStyle(Brand.danger)
+                                .fixedSize(horizontal: false, vertical: true)
+                        } else if candidates.isEmpty && !candidatesLoading {
+                            Text("No eligible drivers are available for this company. Drivers assigned to active loads are excluded.")
+                                .font(EType.caption).foregroundStyle(palette.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        } else {
+                            ForEach(candidates) { d in
+                                pickRow(title: d.name ?? "Driver \(d.id)",
+                                        subtitle: driverSubtitle(d),
+                                        selected: pickedDriverId == d.id) { pickedDriverId = d.id }
+                            }
+                        }
+                    }
+
+                    // TWIC is a server-side gate; naming it here is an honesty
+                    // aid, not a client-side authorisation. The server refuses
+                    // on an expired card regardless of what this screen shows.
+                    if let d = candidates.first(where: { $0.id == pickedDriverId }), d.twicCard != true {
+                        Label("No TWIC on file for this driver. Marine-terminal drayage will be refused by the compliance gate.",
+                              systemImage: "exclamationmark.shield.fill")
+                            .font(EType.caption)
+                            .foregroundStyle(Brand.warning)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    if let err = dispatchNotice {
+                        Text(err).font(EType.caption).foregroundStyle(Brand.danger)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Button {
+                        Task { await commitDispatch() }
+                    } label: {
+                        HStack(spacing: 8) {
+                            if dispatching { ProgressView().tint(.white) }
+                            Text(dispatching ? "Dispatching…" : "Dispatch")
+                                .font(.system(size: 15, weight: .bold))
+                        }
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity, minHeight: 48)
+                        .background(LinearGradient.primary)
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                        .opacity(canCommitDispatch ? 1 : 0.45)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!canCommitDispatch)
+
+                    Color.clear.frame(height: 24)
+                }
+                .padding(Space.s5)
+            }
+            .navigationTitle("Dispatch dray")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { showDispatchSheet = false }
+                }
+            }
+        }
+    }
+
+    private var canCommitDispatch: Bool {
+        !dispatching && pickedOrderId != nil && pickedDriverId != nil
+    }
+
+    private func driverSubtitle(_ d: DrayDispatchCandidate) -> String {
+        var parts: [String] = []
+        if let s = d.status, !s.isEmpty { parts.append(s.uppercased()) }
+        parts.append(d.twicCard == true ? "TWIC" : "no TWIC")
+        if let r = d.onTimeRate { parts.append("\(r)% on-time") }
+        if let c = d.completedLoads, c > 0 { parts.append("\(c) loads") }
+        return parts.joined(separator: " · ")
+    }
+
+    @ViewBuilder private func pickRow(title: String, subtitle: String,
+                                      selected: Bool, tap: @escaping () -> Void) -> some View {
+        Button(action: tap) {
+            HStack(spacing: Space.s3) {
+                Image(systemName: selected ? "largecircle.fill.circle" : "circle")
+                    .font(.system(size: 18, weight: .regular))
+                    .foregroundStyle(selected ? Brand.blue : palette.textTertiary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(palette.textPrimary)
+                    if !subtitle.isEmpty {
+                        Text(subtitle)
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textSecondary)
+                            .lineLimit(2)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(Space.s3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: Radius.md)
+                .fill(selected ? Brand.blue.opacity(0.14) : palette.bgCard)
+                .overlay(RoundedRectangle(cornerRadius: Radius.md)
+                    .strokeBorder(selected ? Brand.blue.opacity(0.5) : palette.borderFaint)))
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Derived presentation helpers
@@ -662,20 +892,90 @@ private struct RailDrayageOrdersBody: View {
             self.stats = res.stats
             self.total = res.total ?? (res.orders?.count ?? 0)
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
 
-    // MARK: - Dispatch dray (PORT-GAP)
+    // MARK: - Dispatch dray (multiModal.dispatchDrayage — PARITY §3 dead-air #15)
 
-    private func dispatchDray() {
-        // PORT-GAP: multiModal.dispatchDrayage({drayageOrderId, carrierId,
-        // appointmentTime}) — proposed in 617's <desc>, not yet shipped on the
-        // server. No mutation to call, so surface the real gap rather than
-        // fabricate a success ack. Once the mutation lands (with
-        // blockchainAuditTrail insert + WS broadcast), wire it here.
-        dispatchNotice = "Dispatch is not yet wired - multiModal.dispatchDrayage has not shipped. (PORT-GAP)"
+    private func openDispatchSheet() {
+        dispatchNotice = nil
+        dispatchConfirmation = nil
+        pickedDriverId = nil
+        // One dispatchable order → preselect it. Several → make the desk choose.
+        pickedOrderId = dispatchableOrders.count == 1 ? dispatchableOrders.first?.id : nil
+        // A new intent gets a new key; retries WITHIN this intent reuse it, so
+        // the server's replay guard can tell "again" from "another".
+        dispatchIdempotencyKey = UUID().uuidString
+        showDispatchSheet = true
+        Task { await loadCandidates() }
+    }
+
+    /// Real driver source. `dispatch.getAvailableDrivers` (dispatch.ts:1127)
+    /// scopes to the caller's company and already excludes drivers sitting on
+    /// an active load, so the board never offers someone who is mid-move.
+    private func loadCandidates() async {
+        candidatesLoading = true; candidatesError = nil
+        defer { candidatesLoading = false }
+        struct DriversIn: Encodable { let equipmentType: String? }
+        do {
+            let rows: [DrayDispatchCandidate] = try await EusoTripAPI.shared.query(
+                "dispatch.getAvailableDrivers", input: DriversIn(equipmentType: nil))
+            self.candidates = rows
+        } catch {
+            self.candidates = []
+            candidatesError = "Couldn't load available drivers. " + error.eusoUserCopy
+        }
+    }
+
+    /// The commit. Sends `drivers.id` (the server resolves it to `users.id`
+    /// before binding `loads.driverId` — multiModal.ts:1272) and a stable
+    /// idempotency key.
+    ///
+    /// Honest failure handling: every refusal path on this verb is a real
+    /// TRPCError with copy written for the person reading it — FORBIDDEN names
+    /// the permitted roles, PRECONDITION_FAILED names the failed compliance
+    /// check (TWIC, CDL, insurance), CONFLICT names the driver who already has
+    /// the move or the status that blocks it. Those are surfaced verbatim.
+    /// Nothing here fabricates a success and nothing swallows an error.
+    private func commitDispatch() async {
+        guard let orderId = pickedOrderId, let driverId = pickedDriverId else {
+            dispatchNotice = "Pick an order and a driver first."; return
+        }
+        dispatchNotice = nil; dispatching = true
+        defer { dispatching = false }
+
+        struct DispatchIn: Encodable {
+            let loadId: String
+            let driverId: String
+            let vehicleId: String?
+            let notes: String?
+            let idempotencyKey: String
+        }
+        do {
+            let ack: DrayDispatchAck = try await EusoTripAPI.shared.mutation(
+                "multiModal.dispatchDrayage",
+                input: DispatchIn(loadId: orderId,
+                                  driverId: driverId,
+                                  vehicleId: pickedOrder?.truck?.id,
+                                  notes: "Dispatched from the rail drayage board (617).",
+                                  idempotencyKey: dispatchIdempotencyKey))
+
+            if ack.success == true {
+                let who = candidates.first { $0.id == driverId }?.name ?? "the driver"
+                let order = ack.orderNumber ?? pickedOrder?.orderNumber ?? orderId
+                dispatchConfirmation = ack.idempotentReplay == true
+                    ? "Order \(order) was already dispatched to \(who). Nothing changed."
+                    : "Order \(order) dispatched to \(who). They have been notified."
+                showDispatchSheet = false
+                await reload()
+            } else {
+                dispatchNotice = "The dispatch was not committed. Order \(pickedOrder?.orderNumber ?? orderId) is unchanged and no driver was assigned."
+            }
+        } catch {
+            dispatchNotice = error.eusoUserCopy
+        }
     }
 }
 

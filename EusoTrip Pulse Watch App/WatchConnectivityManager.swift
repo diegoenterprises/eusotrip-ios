@@ -814,11 +814,21 @@ extension WatchConnectivityManager: WCSessionDelegate {
             }
         case "hos.update":
             Task { @MainActor in
+                guard (ctx["tracked"] as? Bool) == true,
+                      let status = ctx["status"] as? String,
+                      let driveRemainingMinutes = ctx["driveRemainingMinutes"] as? Int,
+                      let windowRemainingMinutes = ctx["windowRemainingMinutes"] as? Int,
+                      let cycleRemainingMinutes = ctx["cycleRemainingMinutes"] as? Int,
+                      let source = ctx["source"] as? String,
+                      let freshness = ctx["freshness"] as? String else { return }
                 HOSStore.shared.applyRemote(
-                    status: ctx["status"] as? String ?? "off",
-                    driveRemainingMinutes: ctx["driveRemainingMinutes"] as? Int ?? 0,
-                    windowRemainingMinutes: ctx["windowRemainingMinutes"] as? Int ?? 0,
-                    cycleRemainingMinutes: ctx["cycleRemainingMinutes"] as? Int ?? 0
+                    status: status,
+                    driveRemainingMinutes: driveRemainingMinutes,
+                    windowRemainingMinutes: windowRemainingMinutes,
+                    cycleRemainingMinutes: cycleRemainingMinutes,
+                    tracked: true,
+                    source: source,
+                    freshness: freshness
                 )
             }
         case "messaging.unread":

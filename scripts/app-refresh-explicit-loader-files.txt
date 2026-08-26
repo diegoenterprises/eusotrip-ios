@@ -1,6 +1,5 @@
 # App refresh explicit-loader migration
 # Generated 2026-08-14; existing native refresh callbacks now register with and route native pulls through the current surface coordinator.
-EusoTrip/ViewModels/LiveDataStores.swift
 EusoTrip/Views/Admin/800_AdminHome.swift
 EusoTrip/Views/Admin/801_AdminControlTower.swift
 EusoTrip/Views/Admin/802_AdminTenants.swift
@@ -199,7 +198,7 @@ EusoTrip/Views/Driver/DriverComplianceDashboard.swift
 EusoTrip/Views/Driver/DriverConversationView.swift
 EusoTrip/Views/Driver/DriverCounterInboxView.swift
 EusoTrip/Views/Driver/DriverTabPanes.swift
-EusoTrip/Views/Driver/ELDIntegrationView.swift
+EusoTrip/Views/Shipper/346_ConnectedApps.swift
 EusoTrip/Views/Driver/HotZonesWidget.swift
 EusoTrip/Views/Driver/MeDetailScreens.swift
 EusoTrip/Views/Driver/MeNewsView.swift
@@ -337,7 +336,6 @@ EusoTrip/Views/Rail/663_RailGateCheckIn.swift
 EusoTrip/Views/Rail/665_RailYardSlotInventory.swift
 EusoTrip/Views/Rail/669_RailOverchargeRecovery.swift
 EusoTrip/Views/Rail/670_RailShortageClaims.swift
-EusoTrip/Views/Rail/671_RailClaimTemplates.swift
 EusoTrip/Views/Rail/672_RailLayoverTracking.swift
 EusoTrip/Views/Rail/673_RailIntermodalDashboard.swift
 EusoTrip/Views/Rail/684_RailTenderHistory.swift
@@ -353,6 +351,7 @@ EusoTrip/Views/Rail/702_RailWaysideDetectors.swift
 EusoTrip/Views/Rail/703_RailHazmatIncidentEReport.swift
 EusoTrip/Views/Rail/704_RailTrustVerdict.swift
 EusoTrip/Views/Rail/706_RailTagSwapScan.swift
+EusoTrip/Views/Settings/VoiceDialectPicker.swift
 EusoTrip/Views/Shipper/200_ShipperHome.swift
 EusoTrip/Views/Shipper/201_ShipperLoads.swift
 EusoTrip/Views/Shipper/202_ShipperProfile.swift
@@ -407,6 +406,7 @@ EusoTrip/Views/Shipper/413_ArchivedLoads.swift
 EusoTrip/Views/Shipper/421_LoadConsolidation.swift
 EusoTrip/Views/Shipper/426_DemurrageCharges.swift
 EusoTrip/Views/Shipper/430_IndustryVerticals.swift
+EusoTrip/Views/Shipper/433_RecurringLoadsComposer.swift
 EusoTrip/Views/Shipper/435_PartnerAgreements.swift
 EusoTrip/Views/Shipper/437_ShipperInvoices.swift
 EusoTrip/Views/Shipper/LifecycleScaffold.swift
@@ -510,7 +510,6 @@ EusoTrip/Views/Vessel/808_VesselClaimWorkflow.swift
 EusoTrip/Views/Vessel/809_VesselDisputeResolution.swift
 EusoTrip/Views/Vessel/810_VesselDisputeMediation.swift
 EusoTrip/Views/Vessel/811_VesselClaimsAnalytics.swift
-EusoTrip/Views/Vessel/812_VesselClaimTemplates.swift
 EusoTrip/Views/Vessel/814_VesselCustomsEntryFiling.swift
 EusoTrip/Views/Vessel/815_VesselDemurrageChargeApproval.swift
 EusoTrip/Views/Vessel/816_VesselTopShippers.swift

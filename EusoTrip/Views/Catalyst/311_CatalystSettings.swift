@@ -127,8 +127,8 @@ struct CatalystSettingsScreen: View {
 
 private struct SettingsBody: View {
     @Environment(\.palette) private var palette
-    @SceneStorage("catalyst.settings.expandedSection") private var expandedSection = "notifications"
-    @SceneStorage("catalyst.settings.returnAnchor") private var returnAnchor = "section-notifications"
+    @SceneStorage("catalyst.settings.expandedSection") private var expandedSection = ""
+    @SceneStorage("catalyst.settings.returnAnchor") private var returnAnchor = ""
     @State private var settings: AppSettings?
     @State private var presets: [DispatchPreset] = []
     @State private var tenderAwarded: Bool = true
@@ -678,9 +678,9 @@ private struct SettingsBody: View {
                 dvirHosAlerts: dvirHosAlerts
             )
             applyingServerSettings = true
-            tenderAwarded = snapshot.tenderAwarded
-            lifecycleStage = snapshot.lifecycleStage
-            dvirHosAlerts = snapshot.dvirHosAlerts
+            self.tenderAwarded = snapshot.tenderAwarded
+            self.lifecycleStage = snapshot.lifecycleStage
+            self.dvirHosAlerts = snapshot.dvirHosAlerts
             persistedNotifications = snapshot
             applyingServerSettings = false
             notificationError = nil

@@ -31,12 +31,12 @@ struct HOSTimelineProvider: TimelineProvider {
     }
 
     func getSnapshot(in context: Context, completion: @escaping (HOSComplicationEntry) -> Void) {
-        let hos = loadFromDisk() ?? .placeholder
+        let hos = loadFromDisk() ?? .empty
         completion(HOSComplicationEntry(date: Date(), hos: hos))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<HOSComplicationEntry>) -> Void) {
-        let hos = loadFromDisk() ?? .placeholder
+        let hos = loadFromDisk() ?? .empty
         let now = Date()
         // Project forward one entry every 15 min for the next 2 hours so
         // the countdown ring updates even when the app isn't in foreground.
@@ -44,7 +44,7 @@ struct HOSTimelineProvider: TimelineProvider {
         for minuteStep in stride(from: 0, through: 120, by: 15) {
             let futureDate = now.addingTimeInterval(Double(minuteStep) * 60)
             var projected = hos
-            if hos.status == .driving {
+            if hos.hasCurrentObservation(at: futureDate), hos.status == .driving {
                 projected.driveRemainingMinutes = max(0, hos.driveRemainingMinutes - minuteStep)
                 projected.windowRemainingMinutes = max(0, hos.windowRemainingMinutes - minuteStep)
             }
@@ -73,45 +73,60 @@ struct HOSComplicationView: View {
     @Environment(\.widgetFamily) var family
     let entry: HOSComplicationEntry
 
+    @ViewBuilder
     var body: some View {
-        switch family {
-        case .accessoryCircular:
-            ZStack {
-                Circle()
-                    .stroke(Color.esangBorder, lineWidth: 2)
-                Circle()
-                    .trim(from: 0, to: entry.hos.drivePct)
-                    .stroke(
-                        LinearGradient.esangPrimary,
-                        style: StrokeStyle(lineWidth: 3, lineCap: .round)
-                    )
-                    .rotationEffect(.degrees(-90))
-                VStack(spacing: 0) {
-                    Text(formatMinutes(entry.hos.driveRemainingMinutes))
-                        .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    Text("DRV")
-                        .font(.system(size: 8, weight: .medium))
-                        .foregroundStyle(.secondary)
+        if entry.hos.hasCurrentObservation(at: entry.date) {
+            switch family {
+            case .accessoryCircular:
+                ZStack {
+                    Circle()
+                        .stroke(Color.esangBorder, lineWidth: 2)
+                    Circle()
+                        .trim(from: 0, to: entry.hos.drivePct)
+                        .stroke(
+                            LinearGradient.esangPrimary,
+                            style: StrokeStyle(lineWidth: 3, lineCap: .round)
+                        )
+                        .rotationEffect(.degrees(-90))
+                    VStack(spacing: 0) {
+                        Text(formatMinutes(entry.hos.driveRemainingMinutes))
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        Text("DRV")
+                            .font(.system(size: 8, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    }
                 }
-            }
-        case .accessoryRectangular:
-            HStack(spacing: 6) {
-                Image(systemName: entry.hos.status.symbol)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.primary)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(entry.hos.driveHoursText)
-                        .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    Text("\(entry.hos.status.short) · win \(entry.hos.windowHoursText)")
-                        .font(.system(size: 9))
-                        .foregroundStyle(.secondary)
+            case .accessoryRectangular:
+                HStack(spacing: 6) {
+                    Image(systemName: entry.hos.status.symbol)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.primary)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(entry.hos.driveHoursText)
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        Text("\(entry.hos.status.short) · win \(entry.hos.windowHoursText)")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.secondary)
+                    }
                 }
+            case .accessoryInline:
+                Text("HOS \(entry.hos.driveHoursText) drive")
+                    .font(.system(size: 12, weight: .medium))
+            default:
+                Text(entry.hos.driveHoursText)
             }
-        case .accessoryInline:
-            Text("HOS \(entry.hos.driveHoursText) drive")
-                .font(.system(size: 12, weight: .medium))
-        default:
-            Text(entry.hos.driveHoursText)
+        } else {
+            switch family {
+            case .accessoryCircular:
+                Text("—").font(.system(size: 16, weight: .semibold))
+            case .accessoryRectangular:
+                Label("HOS unavailable", systemImage: "questionmark.circle")
+                    .font(.system(size: 11, weight: .semibold))
+            case .accessoryInline:
+                Text("HOS unavailable")
+            default:
+                Text("—")
+            }
         }
     }
 

@@ -362,6 +362,9 @@ final class PostLoadDraft: ObservableObject {
     @Published var targetRate:   Double? = nil
     /// Auction window in hours (web default = 24).
     @Published var biddingDurationHours: Int = 24
+    /// Explicit, negotiated commercial authority required for every truck
+    /// load. Starts empty; no market-rate or grace-period defaults are applied.
+    @Published var truckDetentionTermsDraft = TruckDetentionTermsDraft()
 
     // MARK: - Submit state
 
@@ -416,6 +419,7 @@ final class PostLoadDraft: ObservableObject {
         pricingStrategy = "auction"
         bookNowRate = nil; minimumBid = nil; targetRate = nil
         biddingDurationHours = 24
+        truckDetentionTermsDraft = TruckDetentionTermsDraft()
         isPosting = false; postError = nil
         postedLoadNumber = nil; postedLoadId = nil
         isHydratingDraft = false; hydrateError = nil; hydratedDraftId = nil
@@ -521,11 +525,12 @@ final class PostLoadDraft: ObservableObject {
         let vertical: String?
         let attachedDocuments: [String]?
         let ePodLockEnabled: Bool?
+        let truckDetentionTerms: TruckDetentionNegotiatedTerms?
 
         private enum CodingKeys: String, CodingKey {
             case id, loadNumber, origin, destination, cargoType, rate, weight, notes
             case pickupDate, deliveryDate, transportMode, trailer, vertical
-            case attachedDocuments, ePodLockEnabled
+            case attachedDocuments, ePodLockEnabled, truckDetentionTerms
         }
 
         init(from decoder: Decoder) throws {
@@ -544,6 +549,10 @@ final class PostLoadDraft: ObservableObject {
             trailer = try c.decodeIfPresent(String.self, forKey: .trailer)
             vertical = try c.decodeIfPresent(String.self, forKey: .vertical)
             attachedDocuments = try c.decodeIfPresent([String].self, forKey: .attachedDocuments)
+            truckDetentionTerms = try c.decodeIfPresent(
+                TruckDetentionNegotiatedTerms.self,
+                forKey: .truckDetentionTerms
+            )
             if let decodedBool = try c.decodeIfPresent(Bool.self, forKey: .ePodLockEnabled) {
                 ePodLockEnabled = decodedBool
             } else if let decodedInt = try c.decodeIfPresent(Int.self, forKey: .ePodLockEnabled) {
@@ -704,6 +713,8 @@ final class PostLoadDraft: ObservableObject {
         vertical = row.vertical.flatMap(Vertical.init(rawValue:))
         attachedDocuments = Set((row.attachedDocuments ?? []).compactMap(DocumentType.init(rawValue:)))
         ePodLockOverride = row.ePodLockEnabled
+        truckDetentionTermsDraft = row.truckDetentionTerms.map(TruckDetentionTermsDraft.init(terms:))
+            ?? TruckDetentionTermsDraft()
     }
 
     private static func parseISODate(_ raw: String) -> Date? {
@@ -720,6 +731,7 @@ final class PostLoadDraft: ObservableObject {
         case missingOrigin, missingDestination, missingPickup
         case hazmatFieldsRequired
         case reeferTempRequired
+        case truckDetentionTermsRequired(String)
         var errorDescription: String? {
             switch self {
             case .missingOrigin:       return "Origin is required."
@@ -727,6 +739,7 @@ final class PostLoadDraft: ObservableObject {
             case .missingPickup:       return "Pickup date is required."
             case .hazmatFieldsRequired: return "Hazmat loads require UN, class and proper shipping name."
             case .reeferTempRequired:  return "Reefer loads require a setpoint range."
+            case .truckDetentionTermsRequired(let reason): return reason
             }
         }
     }
@@ -750,6 +763,9 @@ final class PostLoadDraft: ObservableObject {
             if reeferTempLow == nil || reeferTempHigh == nil {
                 throw ValidationError.reeferTempRequired
             }
+        }
+        if mode == .truck, let reason = truckDetentionTermsDraft.validationMessage {
+            throw ValidationError.truckDetentionTermsRequired(reason)
         }
     }
 
@@ -1087,6 +1103,10 @@ final class PostLoadDraft: ObservableObject {
             // shipper can't accidentally post UN-coded freight to a
             // non-hazmat catalyst.
             let resolvedHazmatAuth = hazmatAuthRequired || cargoType == .hazmat
+            // L09-1 · reefer band is only meaningful on the refrigerated
+            // path — matches composedNotes()'s `[REEFER]` gate so a dry-van
+            // post never ships a temperature band.
+            let isReefer = cargoType == .refrigerated
 
             struct In: Encodable {
                 let origin: String; let destination: String; let cargoType: String
@@ -1104,8 +1124,6 @@ final class PostLoadDraft: ObservableObject {
                 let packagingType: String?
                 let subsidiaryHazards: [String]?
                 let unNumber: String?; let hazmatClass: String?
-                let tempMin: Double?; let tempMax: Double?; let tempUnit: String?
-                let preCoolRequired: Bool?; let continuousMonitoring: Bool?
                 let rate: Double?; let weight: Double?; let notes: String?; let pickupDate: String?
                 // `shippers.create` classifies against `quantity ?? weight`
                 // with `quantityUnit ?? weightUnit`. This wizard's cargo
@@ -1169,6 +1187,21 @@ final class PostLoadDraft: ObservableObject {
                 // at DELIVERED. Auto-true for cross-border / hazmat /
                 // rate > $5k / heavy-haul; shipper can override.
                 let ePodLockEnabled:      Bool?
+                // L09-1 · 2026-07-09 — reefer setpoint band (web PR #144:
+                // `shippers.create` now persists the temperature band).
+                // STRUCTURED fields alongside the existing `[REEFER]`
+                // composedNotes() line, not a replacement. Sent ONLY on the
+                // refrigerated cargo path (mirrors composedNotes()'s
+                // `cargoType == .refrigerated` gate); nil on every other path
+                // so a dry-van / hazmat / tanker post omits them. `tempUnit`
+                // is "F" — the wizard captures setpoints in °F (composedNotes
+                // renders "°F"); the server accepts 'F' | 'C'.
+                let tempMin:              Double?
+                let tempMax:              Double?
+                let tempUnit:             String?
+                let preCoolRequired:      Bool?
+                let continuousMonitoring: Bool?
+                let truckDetentionTerms: TruckDetentionNegotiatedTerms?
             }
             struct Out: Decodable {
                 let success: Bool; let id: Int; let loadNumber: String
@@ -1195,11 +1228,6 @@ final class PostLoadDraft: ObservableObject {
                     subsidiaryHazards: classification.wireSubsidiaryHazards,
                     unNumber: classification.wireUnNumber,
                     hazmatClass: classification.wireHazmatClass,
-                    tempMin: reeferTempLow,
-                    tempMax: reeferTempHigh,
-                    tempUnit: (reeferTempLow != nil || reeferTempHigh != nil) ? "F" : nil,
-                    preCoolRequired: preCoolRequired ? true : nil,
-                    continuousMonitoring: continuousMode ? true : nil,
                     rate: rate,
                     weight: weight,
                     notes: composedNotes().isEmpty ? nil : composedNotes(),
@@ -1241,7 +1269,15 @@ final class PostLoadDraft: ObservableObject {
                             ? industryReviewAcknowledged
                             : nil,
                     attachedDocuments:     attachedDocuments.isEmpty ? nil : attachedDocuments.map(\.rawValue),
-                    ePodLockEnabled:       ePodLockEnabled ? true : nil
+                    ePodLockEnabled:       ePodLockEnabled ? true : nil,
+                    tempMin:               isReefer ? reeferTempLow  : nil,
+                    tempMax:               isReefer ? reeferTempHigh : nil,
+                    tempUnit:              isReefer ? "F" : nil,
+                    preCoolRequired:       isReefer ? preCoolRequired : nil,
+                    continuousMonitoring:  isReefer ? continuousMode : nil,
+                    truckDetentionTerms:   mode == .truck
+                        ? truckDetentionTermsDraft.negotiatedTerms
+                        : nil
                 )
             )
             postedLoadNumber = result.loadNumber

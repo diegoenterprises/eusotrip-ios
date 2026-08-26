@@ -106,7 +106,6 @@ private struct AvailableDriverRow: Decodable, Hashable, Identifiable {
     let status: String?
     let currentCity: String?
     let currentState: String?
-    let hosRemainingMin: Int?
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -115,11 +114,10 @@ private struct AvailableDriverRow: Decodable, Hashable, Identifiable {
         status = try? c.decode(String.self, forKey: .status)
         currentCity = try? c.decode(String.self, forKey: .currentCity)
         currentState = try? c.decode(String.self, forKey: .currentState)
-        hosRemainingMin = try? c.decode(Int.self, forKey: .hosRemainingMin)
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, status, currentCity, currentState, hosRemainingMin
+        case id, name, status, currentCity, currentState
     }
 
     private static func flexString(_ c: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys) -> String? {
@@ -137,6 +135,8 @@ private struct CommandCenterBody: View {
     @State private var autopilot: AutopilotStatus?
     @State private var loads: [UnifiedLoadRow] = []
     @State private var drivers: [AvailableDriverRow] = []
+    @State private var hosEvidence: [HOSFleetDriver] = []
+    @State private var hosWarning: String?
     @State private var loading: Bool = true
     @State private var error: String?
 
@@ -147,6 +147,11 @@ private struct CommandCenterBody: View {
                 if let a = autopilot { autopilotCard(a) }
                 statsRow
                 if !drivers.isEmpty { driverSection }
+                if let hosWarning {
+                    LifecycleCard(accentDanger: true) {
+                        Text(hosWarning).font(EType.caption).foregroundStyle(Brand.warning)
+                    }
+                }
                 if !loads.isEmpty { loadSection }
                 if let err = error {
                     LifecycleCard(accentDanger: true) {
@@ -208,7 +213,7 @@ private struct CommandCenterBody: View {
 
     private var driverSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("AVAILABLE DRIVERS").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
+            Text("ASSIGNABLE DRIVERS · CURRENT HOS").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
             ForEach(drivers.prefix(8)) { d in
                 LifecycleCard {
                     HStack {
@@ -217,8 +222,14 @@ private struct CommandCenterBody: View {
                             Text("\(d.currentCity ?? "-"), \(d.currentState ?? "-")").font(.caption).foregroundStyle(palette.textSecondary)
                         }
                         Spacer()
-                        if let h = d.hosRemainingMin {
-                            Text("\(h)m HOS").font(.caption.monospacedDigit().weight(.semibold))
+                        if let hos = evidence(for: d.id),
+                           let hours = hos.hoursAvailable?.drivingRemaining {
+                            Text("\(HOSStatus.formatHours(hours)) · \(hos.source ?? "source unavailable")")
+                                .font(.caption.monospacedDigit().weight(.semibold))
+                        } else {
+                            Text("HOS unavailable")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(Brand.warning)
                         }
                     }
                 }
@@ -270,9 +281,34 @@ private struct CommandCenterBody: View {
     private func loadDrivers() async {
         struct In: Encodable { let limit: Int }
         do {
-            let r: [AvailableDriverRow] = try await EusoTripAPI.shared.query("dispatch.getAvailableDrivers", input: In(limit: 25))
-            drivers = r
-        } catch { /* optional */ }
+            async let roster: [AvailableDriverRow] = EusoTripAPI.shared.query(
+                "dispatch.getAvailableDrivers",
+                input: In(limit: 25)
+            )
+            async let evidenceRows: [HOSFleetDriver] = EusoTripAPI.shared.queryNoInput("hos.getFleetHOS")
+            let (driverRows, currentEvidence) = try await (roster, evidenceRows)
+            hosEvidence = currentEvidence
+            drivers = driverRows.filter { driver in
+                evidence(in: currentEvidence, for: driver.id)?.assignmentEligibility() == .eligible
+            }
+            hosWarning = drivers.isEmpty && !driverRows.isEmpty
+                ? "No driver has complete, current HOS evidence for assignment."
+                : nil
+        } catch {
+            drivers = []
+            hosEvidence = []
+            hosWarning = "Current company HOS evidence could not refresh. Driver assignment is held."
+        }
+    }
+
+    private func evidence(for driverId: String) -> HOSFleetDriver? {
+        evidence(in: hosEvidence, for: driverId)
+    }
+
+    private func evidence(in rows: [HOSFleetDriver], for driverId: String) -> HOSFleetDriver? {
+        rows.first { row in
+            row.driverId == driverId || row.userId.map { String($0) } == driverId
+        }
     }
 }
 
@@ -355,9 +391,11 @@ private struct FleetMapBody: View {
     /// longitude}`. nil when either coord is absent or it resolves to null
     /// island — so a puck only ever draws on a real fix (no fabricated coords).
     private func fix(_ p: FleetPosition) -> HereLatLng? {
-        guard let lat = p.latitude, let lng = p.longitude,
-              !(lat == 0 && lng == 0) else { return nil }
-        return HereLatLng(lat, lng)
+        guard let coordinate = LatLongParser.validatedCoordinate(
+            latitude: p.latitude,
+            longitude: p.longitude
+        ) else { return nil }
+        return HereLatLng(coordinate.latitude, coordinate.longitude)
     }
 
     /// Truck pucks for every real fix. id = the driver/position id so a tap on
@@ -398,7 +436,14 @@ private struct FleetMapBody: View {
                     center: mapCenter,
                     zoom: 4,
                     baseLayers: trafficLayers + [.markers(truckMarkers)],
-                    addOns: .shipperTracking
+                    addOns: .shipperTracking,
+                    mapModeContext: .primary(.truck),
+                    liveOperationsStatus: .init(
+                        availability: .degraded,
+                        sourceLabel: "Fleet telemetry",
+                        detail: "Road fleet positions available; freshness not supplied",
+                        observationCount: truckMarkers.count
+                    )
                 )
                 .frame(height: 240)
                 .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
@@ -543,12 +588,16 @@ private struct FleetMapBody: View {
             outer: for result in flows {
                 guard let severity = Self.severity(for: result.currentFlow) else { continue }
                 for link in result.location?.shape?.links ?? [] {
-                    let pts = (link.points ?? []).filter {
-                        $0.lat.isFinite && $0.lng.isFinite && !($0.lat == 0 && $0.lng == 0)
+                    let pts: [HereLatLng] = (link.points ?? []).compactMap { point -> HereLatLng? in
+                        guard let coordinate = LatLongParser.validatedCoordinate(
+                            latitude: point.lat,
+                            longitude: point.lng
+                        ) else { return nil }
+                        return HereLatLng(coordinate)
                     }
                     guard pts.count >= 2 else { continue }
                     segs.append(HereTrafficSegment(
-                        polyline: pts.map { HereLatLng($0.lat, $0.lng) },
+                        polyline: pts,
                         severity: severity
                     ))
                     // Perf cap — the canvas culls, but there's no need to

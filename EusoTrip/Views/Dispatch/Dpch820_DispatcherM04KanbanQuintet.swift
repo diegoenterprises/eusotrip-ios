@@ -74,6 +74,8 @@ private struct DispatcherM04KanbanBody: View {
 
     @Environment(\.palette) private var palette
     @State private var load: DKLoadCtx?
+    @State private var loading = true
+    @State private var loadError: String?
 
     // MARK: Bound derivations (honest — "-" / "—" when no live source)
 
@@ -113,11 +115,28 @@ private struct DispatcherM04KanbanBody: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
-                pill
-                boardPill
-                identityRow
-                kpiGrid
-                nextStepCard
+                if loading {
+                    LifecycleCard {
+                        HStack(spacing: Space.s2) {
+                            ProgressView()
+                            Text("Loading load state…")
+                                .font(EType.caption)
+                                .foregroundStyle(palette.textSecondary)
+                        }
+                    }
+                } else if let loadError {
+                    LifecycleCard(accentDanger: true) {
+                        Text(loadError)
+                            .font(EType.caption)
+                            .foregroundStyle(Brand.danger)
+                    }
+                } else {
+                    pill
+                    boardPill
+                    identityRow
+                    kpiGrid
+                    nextStepCard
+                }
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14).padding(.top, 8)
@@ -322,7 +341,19 @@ private struct DispatcherM04KanbanBody: View {
 
     private func loadCtx() async {
         struct In: Encodable { let id: String }
-        do { load = try await EusoTripAPI.shared.query("loads.getById", input: In(id: loadId)) } catch { /* read-only screen, tolerate */ }
+        loading = true
+        loadError = nil
+        do {
+            load = try await EusoTripAPI.shared.query("loads.getById", input: In(id: loadId))
+        } catch {
+            if error is CancellationError {
+                loading = false
+                return
+            }
+            load = nil
+            loadError = error.eusoUserCopy
+        }
+        loading = false
     }
 }
 

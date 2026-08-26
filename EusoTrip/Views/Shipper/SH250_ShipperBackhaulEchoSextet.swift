@@ -271,14 +271,14 @@ private struct ShipperBackhaulEchoBody: View {
                 return [
                     ("STATE",   c.echoState,    "echo state",            .green),
                     ("ETA",     "-",            "no live source",        .blue),
-                    ("HOS",     "-",            "no live source",        .green),
+                    ("HOS",     "—",            "no live source",        .gray),
                     ("LEDGER",  "SEALED",       "your chain · closed",   .green),
                 ]
             case .delivery:
                 return [
                     ("STATE",   c.echoState,    "echo state",            .green),
                     ("ETA",     "-",            "no live source",        .blue),
-                    ("HOS",     "-",            "no live source",        .green),
+                    ("HOS",     "—",            "no live source",        .gray),
                     ("LEDGER",  "SEALED",       "your chain · closed",   .green),
                 ]
             }

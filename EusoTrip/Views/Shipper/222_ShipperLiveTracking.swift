@@ -449,7 +449,9 @@ struct ShipperLiveTracking: View {
                 center: liveMapCenter,
                 zoom: liveMapZoom,
                 baseLayers: liveMapLayers,
-                addOns: .shipperTracking
+                addOns: .shipperTracking,
+                mapModeContext: .intermodal(activeSegment: nil),
+                liveOperationsStatus: mapLiveOperationsStatus
             )
                 .frame(height: 380)
                 .clipped()
@@ -473,9 +475,11 @@ struct ShipperLiveTracking: View {
         filteredLoads.compactMap { l in
             guard let id = l.driverId,
                   let p = store.positions[id],
-                  let lat = p.lat, let lng = p.lng,
-                  !(lat == 0 && lng == 0) else { return nil }
-            return (l, HereLatLng(lat, lng))
+                  let coordinate = LatLongParser.validatedCoordinate(
+                      latitude: p.lat,
+                      longitude: p.lng
+                  ) else { return nil }
+            return (l, HereLatLng(coordinate.latitude, coordinate.longitude))
         }
     }
 
@@ -483,15 +487,52 @@ struct ShipperLiveTracking: View {
     /// is the load id so a tap routes back to that load (HereLiveMapView marks
     /// id-carrying base pins actionable → `onSelectMarker`).
     private var liveMapLayers: [HereMapLayer] {
-        let pins = pinnedLive.map { entry in
-            HereMarker(
+        let pins: [HereMarker] = pinnedLive.map { entry -> HereMarker in
+            let position = entry.load.driverId.flatMap { store.positions[$0] }
+            let observationState: HereObservationState = position?.stale == true ? .stale : .current
+            return HereMarker(
                 at: entry.coord,
                 kind: .truck,
                 label: "\(entry.load.origin) → \(entry.load.destination)",
-                id: entry.load.id
+                id: entry.load.id,
+                observationState: observationState,
+                sourceLabel: "Driver telemetry",
+                accessibilityLabel: "Truck for load \(entry.load.id), \(observationState.displayName.lowercased()) driver position"
             )
         }
         return pins.isEmpty ? [] : [.markers(pins)]
+    }
+
+    /// Source and freshness are derived only from caller-owned telemetry.
+    /// An empty or failed response stays explicit; the map never substitutes
+    /// demonstration markers or claims a feed exists.
+    private var mapLiveOperationsStatus: HereLiveOperationsStatus {
+        if case .error = store.phase {
+            return .noAuthorizedFeed
+        }
+        guard !pinnedLive.isEmpty else {
+            return .init(
+                availability: .empty,
+                sourceLabel: "Driver telemetry",
+                detail: "No authorized live feed"
+            )
+        }
+        let current = pinnedLive.reduce(into: 0) { count, entry in
+            if let driverID = entry.load.driverId,
+               store.positions[driverID]?.stale == false {
+                count += 1
+            }
+        }
+        let stale = pinnedLive.count - current
+        return .init(
+            availability: current > 0 ? .live : .stale,
+            sourceLabel: "Driver telemetry",
+            freshnessLabel: freshestPingSec.map { "\($0) sec old" },
+            detail: stale > 0
+                ? "\(current) current · \(stale) stale positions"
+                : "Authorized driver positions",
+            observationCount: pinnedLive.count
+        )
     }
 
     /// Camera center = centroid of the live fixes; CONUS when none yet.
@@ -937,8 +978,11 @@ struct ShipperLiveTracking: View {
     /// coordinate-less pings never expose the coordinate face (nothing honest
     /// to show), so the toggle simply isn't offered.
     private func hasRealGPS(_ pos: ShipperTelemetryAPI.LiveLocation?) -> Bool {
-        guard let pos, !pos.stale, pos.lat != nil, pos.lng != nil else { return false }
-        return true
+        guard let pos, !pos.stale else { return false }
+        return LatLongParser.validatedCoordinate(
+            latitude: pos.lat,
+            longitude: pos.lng
+        ) != nil
     }
 
     /// Default face — the lane shorthand, with the live motion cue appended
@@ -957,8 +1001,11 @@ struct ShipperLiveTracking: View {
 
     /// Coordinate face — only ever reached when `hasRealGPS` is true.
     private func coordinateLabel(_ pos: ShipperTelemetryAPI.LiveLocation?) -> String {
-        guard let lat = pos?.lat, let lng = pos?.lng else { return "—" }
-        return String(format: "%.4f°, %.4f°", lat, lng)
+        guard let coordinate = LatLongParser.validatedCoordinate(
+            latitude: pos?.lat,
+            longitude: pos?.lng
+        ) else { return "—" }
+        return LatLongParser.displayString(coordinate)
     }
 
     /// Trim a free-form "City, ST" / "City, ST 30301" to a compact token so the
@@ -1316,8 +1363,11 @@ struct ShipperLiveTrackingDetail: View {
     }
 
     private func coordsLabel(_ p: ShipperTelemetryAPI.LiveLocation) -> String {
-        guard let lat = p.lat, let lng = p.lng else { return "- · -" }
-        return String(format: "%.4f° · %.4f°", lat, lng)
+        guard let coordinate = LatLongParser.validatedCoordinate(
+            latitude: p.lat,
+            longitude: p.lng
+        ) else { return "Not recorded" }
+        return LatLongParser.displayString(coordinate)
     }
 
     private func speedLabel(_ s: Double?) -> String {
@@ -1356,15 +1406,21 @@ private struct BreadcrumbSparkline: View {
         GeometryReader { geo in
             let w = geo.size.width
             let h = geo.size.height
-            if points.count >= 2 {
-                let lats = points.map { $0.lat }
-                let lngs = points.map { $0.lng }
-                let minLat = lats.min() ?? 0, maxLat = lats.max() ?? 1
-                let minLng = lngs.min() ?? 0, maxLng = lngs.max() ?? 1
+            let validPoints = points.filter {
+                LatLongParser.validatedCoordinate(
+                    latitude: $0.lat,
+                    longitude: $0.lng
+                ) != nil
+            }
+            let lats = validPoints.map { $0.lat }
+            let lngs = validPoints.map { $0.lng }
+            if validPoints.count >= 2,
+               let minLat = lats.min(), let maxLat = lats.max(),
+               let minLng = lngs.min(), let maxLng = lngs.max() {
                 let dLat = max(maxLat - minLat, 0.0001)
                 let dLng = max(maxLng - minLng, 0.0001)
                 Path { p in
-                    for (i, pt) in points.enumerated() {
+                    for (i, pt) in validPoints.enumerated() {
                         let x = w * ((pt.lng - minLng) / dLng)
                         let y = h - h * ((pt.lat - minLat) / dLat)
                         if i == 0 { p.move(to: CGPoint(x: x, y: y)) }
@@ -1373,7 +1429,7 @@ private struct BreadcrumbSparkline: View {
                 }
                 .stroke(LinearGradient.diagonal,
                         style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-                if let last = points.last {
+                if let last = validPoints.last {
                     let x = w * ((last.lng - minLng) / dLng)
                     let y = h - h * ((last.lat - minLat) / dLat)
                     Circle().fill(Brand.success).frame(width: 8, height: 8)

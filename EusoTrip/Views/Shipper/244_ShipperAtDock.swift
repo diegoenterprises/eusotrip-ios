@@ -99,8 +99,8 @@ final class ShipperAtDockStore: ObservableObject {
             let loc = try await api.shipperTelemetry.getLiveLocation(driverId: driverId)
             // STUB · named-gap — controlTower has no pin-write mutation.
             trackingResult = loc.stale
-                ? "Live pin is stale · pin-to-control-tower not yet wired (STUB)"
-                : "Live pin acquired · pin-to-control-tower not yet wired (STUB)"
+                ? "Live pin is stale · refresh location before sharing"
+                : "Live pin acquired · control-tower sharing unavailable"
             trackingInFlight = false
         } catch {
             trackingInFlight = false

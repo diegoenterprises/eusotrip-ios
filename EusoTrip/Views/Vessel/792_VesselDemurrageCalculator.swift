@@ -5,28 +5,20 @@
 //  Faithful 1:1 port of "792 Vessel Demurrage Calculator.svg" (Light + Dark), RECONSTRUCTED to a
 //  TIER-LADDER calculator archetype — DISTINCT from the detention dashboards (790/793/795/796).
 //  Composition mirrors the SVG: a computed-total gradient figure headline, an INPUTS summary card
-//  (arrival/departure/free-time/cargo), a 3-tile strip (EST. TOTAL highlighted), and an escalation
-//  ladder card with per-tier hours/rate/subtotal + proportional fill bars + a total row, CTA pair.
+//  (start/end/free-time/status), a 3-tile strip (ACCRUAL highlighted), and a commercial-terms
+//  ladder card with persisted days/rate/subtotal + proportional fill bars + a total row, CTA pair.
 //  Nav anchored to VesselOperatorNavController (HOME · SHIPMENTS · [orb] · COMPLIANCE[current] · ME) —
 //  the same Shell + BottomNav wrapper the registered vessel siblings 664/680/757 ship. COMPLIANCE is
 //  inked because demurrage/detention is a D&D-compliance surface.
 //
 //  Data / wiring:
-//    detentionAccessorials.getDemurrageTracking resolves the current company-scoped demurrage claims
-//      and supplies the live source claim/container/load/timing context for this calculator.
-//    detentionAccessorials.calculateDetention (EXISTS frontend/server/routers/detentionAccessorials.ts ·
-//      query · input {arrivalTime, departureTime?, freeTimeMinutes=120, cargoType="general", customRatePerHour?}
-//      -> {totalMinutes, freeTimeMinutes, billableMinutes, billableHours, totalCharge,
-//          tierBreakdown:[{tier,hours,rate,subtotal}], cargoType, arrivalTime, departureTime}).
-//      DETENTION_TIERS escalation rates by tier. Seeds the headline, EST. TOTAL tile, BILLABLE tile,
-//      subline, and every ladder row. departureTime omitted -> server uses now().
-//    detentionAccessorials.createClaim bills the selected real source claim into detention_claims with
-//      tenant ownership checks, audit trail, and company realtime fan-out.
-//    "Recalculate" re-runs the query with the current inputs.
-//    "Bill it" promotes the selected live claim to the billing ledger instead of reloading.
+//    vesselShipments.getVesselDemurrage returns the actor's company-scoped vessel_demurrage book.
+//    vesselShipments.calculateVesselDemurrage recomputes one selected shipment from its persisted
+//      discharge/gate-out event trail and awarded free-time/rate terms, then records the accrual.
+//    No truck detention claim, platform rate ladder, implicit departure time, or auto-approval is used.
 //
 //  0 mock data on load · honest empty/error states — every value renders from decoded response rows.
-//  KpiTile792 / LadderTier792 / SecondaryButton792 / ESangRow792 / EmptyInput792 are file-scoped
+//  KpiTile792 / LadderTier792 / SecondaryButton792 / EmptyInput792 are file-scoped
 //  bespoke helpers (the canonical port's KpiTile/Money/DurFmt/SecondaryButton/ESangRow are not shared
 //  app symbols), built from the same grammar the registered siblings use to preserve the wireframe look.
 //
@@ -66,7 +58,7 @@ private struct VesselDemurrageCalculatorBody: View {
     @Environment(\.palette) private var palette
     @State private var loading = true
     @State private var loadError: String? = nil
-    @State private var selectedClaim: DemurrageContainer792? = nil
+    @State private var selectedClaim: VesselDemurrageRow792? = nil
     @State private var actionMessage: String? = nil
     @State private var actionError: String? = nil
     @State private var actionInFlight = false
@@ -78,13 +70,12 @@ private struct VesselDemurrageCalculatorBody: View {
     @State private var estTotal = "$0"
     @State private var tiers: [LadderTier792] = []
 
-    private var arrivalDisplay: String { displayDate792(selectedClaim?.arrivalDate) }
-    private var departureDisplay: String { selectedClaim?.lastFreeDay.map(displayDate792) ?? "now · live" }
-    private var activeFreeTimeMinutes: Int { selectedClaim?.freeTimeMinutes ?? 120 }
-    private var freeTimeDisplay: String { "\(activeFreeTimeMinutes) min" }
-    private var cargoType: String { selectedClaim?.cargoType?.lowercased() ?? "general" }
-    private var cargoDisplay: String { "\(cargoType) · tiered" }
-    private var containerLabel: String { selectedClaim?.containerNumber ?? "LIVE CLAIM" }
+    private var arrivalDisplay: String { displayDate792(selectedClaim?.startDate) }
+    private var departureDisplay: String { displayDate792(selectedClaim?.endDate) }
+    private var activeFreeTimeDays: Int? { selectedClaim?.freeTimeDays }
+    private var freeTimeDisplay: String { activeFreeTimeDays.map { "\($0) days" } ?? "unknown" }
+    private var statusDisplay: String { selectedClaim?.status?.replacingOccurrences(of: "_", with: " ").uppercased() ?? "UNKNOWN" }
+    private var containerLabel: String { selectedClaim?.containerNumber ?? selectedClaim?.bookingNumber ?? "VESSEL D&D" }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -100,26 +91,26 @@ private struct VesselDemurrageCalculatorBody: View {
                     LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) }
                 } else if selectedClaim == nil {
                     EusoEmptyState(systemImage: "shippingbox.and.arrow.backward",
-                                   title: "No billable demurrage claim",
-                                   subtitle: "No demurrage claim of yours carries both a live load and an arrival time. Billing opens when a real claim exists.")
+                                   title: "No recalculable vessel demurrage",
+                                   subtitle: "No company-scoped vessel accrual is tied to a shipment in an accruing or disputed state.")
                 } else {
                     inputsCard
                     HStack(spacing: 8) {
-                        KpiTile792(caption: "FREE USED",  value: freeUsed, footnote: "of \(activeFreeTimeMinutes)m",  highlighted: false)
+                        KpiTile792(caption: "FREE USED",  value: freeUsed, footnote: "of \(freeTimeDisplay)", highlighted: false)
                         KpiTile792(caption: "BILLABLE",   value: billable, footnote: "over free", highlighted: false)
-                        KpiTile792(caption: "EST. TOTAL", value: estTotal, footnote: "per box",   highlighted: true)
+                        KpiTile792(caption: "ACCRUAL", value: estTotal, footnote: selectedClaim?.currency ?? "unknown currency", highlighted: true)
                     }
-                    Text("ESCALATION LADDER · PER BOX · PER HOUR").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
+                    Text("COMMERCIAL TERMS · PER CONTAINER · PER DAY").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
                     if tiers.isEmpty {
                         EusoEmptyState(systemImage: "function",
                                        title: "Within free time",
-                                       subtitle: "No billable tiers came back — the box is still inside its \(freeTimeDisplay) free window. Nothing to escalate.")
+                                       subtitle: "The persisted vessel record has no chargeable day beyond its \(freeTimeDisplay) free window.")
                     } else {
                         ladderCard
                     }
                     HStack(spacing: 8) {
-                        CTAButton(title: "Recalculate", action: { Task { await load() } }, trailingIcon: "arrow.clockwise")
-                        SecondaryButton792(title: actionInFlight ? "Billing…" : "Bill it") { Task { await billIt() } }
+                        CTAButton(title: "Refresh", action: { Task { await load() } }, trailingIcon: "arrow.clockwise")
+                        SecondaryButton792(title: actionInFlight ? "Recalculating…" : "Recalculate") { Task { await recalculate() } }
                     }
                     if let error = actionError {
                         LifecycleCard(accentDanger: true) {
@@ -130,8 +121,13 @@ private struct VesselDemurrageCalculatorBody: View {
                             Text(message).font(EType.caption).foregroundStyle(Brand.success)
                         }
                     }
-                    ESangRow792(title: "ESang: \(containerLabel) can move into billing at \(estTotal)",
-                                subtitle: "source claim \(selectedClaim?.id ?? 0) · load \(selectedClaim?.loadId ?? 0) · audit trail writes on Bill it")
+                    LifecycleCard {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("PROVENANCE · VESSEL DEMURRAGE").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
+                            Text("Shipment \(selectedClaim?.shipmentId ?? 0) · charge \(selectedClaim?.id ?? 0) · \(statusDisplay.lowercased())")
+                                .font(EType.caption).foregroundStyle(palette.textSecondary)
+                        }
+                    }
                 }
                 Color.clear.frame(height: 96)
             }
@@ -158,14 +154,14 @@ private struct VesselDemurrageCalculatorBody: View {
     private var inputsCard: some View {
         LifecycleCard {
             VStack(alignment: .leading, spacing: 10) {
-                Text("INPUTS · detention math").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
+                Text("INPUTS · persisted vessel accrual").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
                 HStack(spacing: 0) {
                     field("Arrival",   arrivalDisplay)
                     field("Departure", departureDisplay)
                 }
                 HStack(spacing: 0) {
                     field("Free time", freeTimeDisplay)
-                    field("Cargo",     cargoDisplay)
+                    field("Status",    statusDisplay)
                 }
             }
         }
@@ -182,9 +178,9 @@ private struct VesselDemurrageCalculatorBody: View {
         LifecycleCard {
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
-                    Text("TIER").font(.system(size: 9, weight: .heavy)).tracking(0.6).foregroundStyle(palette.textTertiary)
+                    Text("BASIS").font(.system(size: 9, weight: .heavy)).tracking(0.6).foregroundStyle(palette.textTertiary)
                     Spacer()
-                    Text("HOURS").font(.system(size: 9, weight: .heavy)).tracking(0.6).foregroundStyle(palette.textTertiary)
+                    Text("DAYS").font(.system(size: 9, weight: .heavy)).tracking(0.6).foregroundStyle(palette.textTertiary)
                     Text("RATE").font(.system(size: 9, weight: .heavy)).tracking(0.6).foregroundStyle(palette.textTertiary).frame(width: 52, alignment: .trailing)
                     Text("SUBTOTAL").font(.system(size: 9, weight: .heavy)).tracking(0.6).foregroundStyle(palette.textTertiary).frame(width: 64, alignment: .trailing)
                 }
@@ -205,7 +201,7 @@ private struct VesselDemurrageCalculatorBody: View {
                                 }
                             }.frame(height: 5)
                         }
-                        Text("\(t.hours)h").font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundStyle(palette.textPrimary)
+                        Text(t.hours).font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundStyle(palette.textPrimary)
                         Text(t.rate).font(.system(size: 12, design: .monospaced)).foregroundStyle(palette.textSecondary).frame(width: 52, alignment: .trailing)
                         Text(t.subtotal).font(.system(size: 13, weight: .bold, design: .monospaced)).foregroundStyle(palette.textPrimary).frame(width: 64, alignment: .trailing)
                     }
@@ -224,82 +220,84 @@ private struct VesselDemurrageCalculatorBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let tracking: DemurrageTrackingResp792 = try await EusoTripAPI.shared.query(
-                "detentionAccessorials.getDemurrageTracking",
-                input: DemurrageTrackingInput792(limit: 25))
-            let row = (tracking.containers ?? []).first { c in
-                guard (c.loadId ?? 0) > 0, (c.arrivalDate ?? "").isEmpty == false else { return false }
-                let status = (c.status ?? "").lowercased()
-                return !["disputed", "denied", "voided", "invoiced", "paid", "reimbursed"].contains(status)
+            let rows: [VesselDemurrageRow792] = try await EusoTripAPI.shared.query(
+                "vesselShipments.getVesselDemurrage",
+                input: EmptyInput792())
+            let row = rows.first { candidate in
+                guard (candidate.shipmentId ?? 0) > 0 else { return false }
+                return ["accruing", "disputed"].contains((candidate.status ?? "").lowercased())
             }
-            guard let row, let arrival = row.arrivalDate else {
+            guard let row else {
                 selectedClaim = nil
                 tiers = []
                 total = "$0"
                 estTotal = "$0"
-                billable = "0.0h"
-                freeUsed = "0m"
-                subline = "no live demurrage claim to calculate"
+                billable = "—"
+                freeUsed = "—"
+                subline = "no recalculable vessel demurrage record"
                 loading = false
                 return
             }
             selectedClaim = row
-            let r: CalcDetentionResp792 = try await EusoTripAPI.shared.query(
-                "detentionAccessorials.calculateDetention",
-                input: CalcDetentionInput792(arrivalTime: arrival,
-                                             departureTime: row.lastFreeDay,
-                                             freeTimeMinutes: row.freeTimeMinutes ?? 120,
-                                             cargoType: row.cargoType ?? "general"))
-            total    = usd792(r.totalCharge ?? 0)
-            estTotal = usd792(r.totalCharge ?? 0)
-            billable = String(format: "%.1fh", r.billableHours ?? 0)
-            freeUsed = hm792(min(r.totalMinutes ?? 0, row.freeTimeMinutes ?? 120))
-            subline  = "billable \(hm792(r.billableMinutes ?? 0)) over free time · \(r.tierBreakdown.count) tiers · USD"
-            let tones = [Brand.success, Brand.warning, Brand.danger]
-            let bands = ["0–24h", "24–48h", "48h+"]
-            let maxHours = max(1.0, r.tierBreakdown.map { $0.hours ?? 0 }.max() ?? 1)
-            tiers = r.tierBreakdown.enumerated().map { i, t -> LadderTier792 in
-                LadderTier792(name: t.tier ?? "Tier \(i + 1)",
-                              band: bands[min(i, bands.count - 1)],
-                              hours: String(format: "%.1f", t.hours ?? 0),
-                              rate: "$\(Int(t.rate ?? 0))",
-                              subtotal: usd792(t.subtotal ?? 0),
-                              frac: (t.hours ?? 0) / maxHours,
-                              tone: tones[min(i, tones.count - 1)])
-            }
+            apply(row)
         } catch {
             loadError = error.eusoUserCopy
         }
         loading = false
     }
 
-    private func billIt() async {
+    private func apply(_ row: VesselDemurrageRow792) {
+        let currency = row.currency
+        let amount = row.totalCharge?.value
+        let days = row.chargeableDays
+        if let amount, let currency, currency.isEmpty == false {
+            total = money792(amount, currency: currency)
+        } else if let amount {
+            total = "\(moneyNumber792(amount)) · currency unknown"
+        } else {
+            total = "unknown"
+        }
+        estTotal = total
+        billable = days.map { "\($0)d" } ?? "—"
+        let dwellDays = persistedDwellDays792(start: row.startDate, end: row.endDate)
+        freeUsed = dwellDays.map { "\(min($0, row.freeTimeDays ?? $0))d" } ?? "—"
+        subline = [row.bookingNumber, row.portLabel, row.status, currency ?? "currency unavailable"].compactMap { value in
+            guard let value, value.isEmpty == false else { return nil }
+            return value
+        }.joined(separator: " · ")
+        if let chargeableDays = days,
+           chargeableDays > 0,
+           let rate = row.ratePerDay?.value,
+           let amount {
+            let rateCurrency = currency ?? "currency unknown"
+            tiers = [LadderTier792(
+                name: "Persisted accrual",
+                band: "\(row.containerCount ?? 1) container(s) · awarded terms",
+                hours: "\(chargeableDays)d",
+                rate: "\(rateCurrency) \(moneyNumber792(rate))/d",
+                subtotal: currency.map { money792(amount, currency: $0) } ?? "\(moneyNumber792(amount)) · currency unknown",
+                frac: 1,
+                tone: row.status == "disputed" ? Brand.warning : Brand.danger
+            )]
+        } else {
+            tiers = []
+        }
+    }
+
+    private func recalculate() async {
         guard !actionInFlight else { return }
         actionMessage = nil; actionError = nil
-        guard let claim = selectedClaim, let arrival = claim.arrivalDate else {
-            actionError = "Open a live demurrage claim before billing."
+        guard let claim = selectedClaim, let shipmentId = claim.shipmentId, shipmentId > 0 else {
+            actionError = "Open a vessel demurrage record tied to a shipment before recalculating."
             return
         }
         actionInFlight = true
         do {
-            let result: CreateClaimResp792 = try await EusoTripAPI.shared.mutation(
-                "detentionAccessorials.createClaim",
-                input: CreateClaimInput792(sourceClaimId: claim.id,
-                                           claimType: "demurrage",
-                                           facilityName: claim.facilityName,
-                                           containerNumber: claim.containerNumber,
-                                           description: "Demurrage billed from vessel calculator for \(claim.containerNumber ?? "container")",
-                                           arrivalTime: arrival,
-                                           departureTime: claim.lastFreeDay,
-                                           freeTimeMinutes: claim.freeTimeMinutes ?? 120,
-                                           status: "approved"))
-            if result.success == true {
-                let finalized = result.alreadyFinalized == true ? "already finalized" : "ready for billing"
-                actionMessage = "Claim \(result.claimId ?? claim.id) \(finalized) · \(usd792(result.totalAmount ?? 0))."
-                await load()
-            } else {
-                actionError = "Billing did not confirm. Reopen the claim and try again."
-            }
+            let result: VesselDemurrageCalculation792 = try await EusoTripAPI.shared.mutation(
+                "vesselShipments.calculateVesselDemurrage",
+                input: VesselShipmentInput792(shipmentId: shipmentId))
+            actionMessage = "Accrual recorded from the vessel event trail · \(money792(result.demurrage, currency: result.currency))."
+            await load()
         } catch {
             actionError = error.eusoUserCopy
         }
@@ -307,96 +305,66 @@ private struct VesselDemurrageCalculatorBody: View {
     }
 }
 
-// MARK: - Data shapes (mirror detentionAccessorials.getDemurrageTracking/createClaim/calculateDetention)
+// MARK: - Data shapes (mirror vesselShipments.get/calculateVesselDemurrage)
 
-private struct DemurrageTrackingInput792: Encodable { let limit: Int }
+private struct FlexDouble792: Decodable {
+    let value: Double
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let number = try? container.decode(Double.self) { value = number; return }
+        if let text = try? container.decode(String.self), let number = Double(text) { value = number; return }
+        throw DecodingError.typeMismatch(Double.self, .init(codingPath: decoder.codingPath, debugDescription: "Expected a decimal number or numeric string"))
+    }
+}
 
-private struct DemurrageContainer792: Decodable, Identifiable {
+private struct VesselDemurrageRow792: Decodable, Identifiable {
     let id: Int
-    let loadId: Int?
+    let shipmentId: Int?
     let containerNumber: String?
-    let facilityName: String?
-    let arrivalDate: String?
-    let lastFreeDay: String?
-    let freeTimeMinutes: Int?
-    let totalDwellMinutes: Int?
-    let billableMinutes: Int?
-    let perDiemRate: Double?
-    let totalCharge: Double?
+    let bookingNumber: String?
+    let portLabel: String?
+    let currency: String?
+    let chargeType: String?
+    let freeTimeDays: Int?
+    let chargeableDays: Int?
+    let ratePerDay: FlexDouble792?
+    let totalCharge: FlexDouble792?
+    let startDate: String?
+    let endDate: String?
     let status: String?
-    let shipperName: String?
-    let cargoType: String?
+    let containerCount: Int?
 }
 
-private struct DemurrageTrackingResp792: Decodable {
-    let containers: [DemurrageContainer792]?
-}
+private struct VesselShipmentInput792: Encodable { let shipmentId: Int }
 
-private struct CreateClaimInput792: Encodable {
-    let sourceClaimId: Int
-    let claimType: String
-    let facilityName: String?
-    let containerNumber: String?
-    let description: String
-    let arrivalTime: String
-    let departureTime: String?
-    let freeTimeMinutes: Int
-    let status: String
-}
-
-private struct CreateClaimResp792: Decodable {
-    let success: Bool?
-    let claimId: Int?
-    let loadId: Int?
-    let status: String?
-    let alreadyFinalized: Bool?
-    let totalAmount: Double?
-    let billableMinutes: Int?
-}
-
-private struct CalcDetentionInput792: Encodable {
-    let arrivalTime: String
-    let departureTime: String?
-    let freeTimeMinutes: Int
-    let cargoType: String
-}
-
-private struct CalcDetentionTier792: Decodable {
-    let tier: String?
-    let hours: Double?
-    let rate: Double?
-    let subtotal: Double?
-}
-
-private struct CalcDetentionResp792: Decodable {
-    let totalMinutes: Int?
-    let billableMinutes: Int?
-    let billableHours: Double?
-    let totalCharge: Double?
-    let tierBreakdown: [CalcDetentionTier792]
+private struct VesselDemurrageCalculation792: Decodable {
+    let demurrage: Double
+    let currency: String
+    let dwellDays: Double
+    let freeTimeDays: Int
+    let chargeableDays: Int
+    let ratePerDay: Double
+    let containerCount: Int
 }
 
 private struct EmptyInput792: Encodable {}
 
 // MARK: - File-scoped formatters (the canonical port's Money/DurFmt are not shared app symbols)
 
-private func usd792(_ amount: Double) -> String {
+private func money792(_ amount: Double, currency: String) -> String {
     let f = NumberFormatter()
     f.numberStyle = .currency
-    f.currencyCode = "USD"
+    f.currencyCode = currency
     f.maximumFractionDigits = (amount.truncatingRemainder(dividingBy: 1) == 0) ? 0 : 2
-    return f.string(from: NSNumber(value: amount)) ?? "$\(Int(amount))"
+    return f.string(from: NSNumber(value: amount)) ?? "\(currency) \(moneyNumber792(amount))"
 }
 
-private func hm792(_ minutes: Int) -> String {
-    let h = minutes / 60, m = minutes % 60
-    if h > 0 && m > 0 { return "\(h)h \(m)m" }
-    if h > 0 { return "\(h)h" }
-    return "\(m)m"
+private func moneyNumber792(_ amount: Double) -> String {
+    String(format: amount.rounded() == amount ? "%.0f" : "%.2f", amount)
 }
 
 private func displayDate792(_ raw: String?) -> String {
-    guard let raw, raw.isEmpty == false else { return "—" }
+    guard let raw, raw.isEmpty == false else { return "unknown" }
     let compact = raw.replacingOccurrences(of: "T", with: " ")
         .replacingOccurrences(of: "Z", with: "")
     if compact.count >= 16 {
@@ -405,6 +373,16 @@ private func displayDate792(_ raw: String?) -> String {
         return String(compact[monthDayStart..<monthDayEnd])
     }
     return compact
+}
+
+private func persistedDwellDays792(start: String?, end: String?) -> Int? {
+    guard let start, let end else { return nil }
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    let startDate = formatter.date(from: start) ?? ISO8601DateFormatter().date(from: start)
+    let endDate = formatter.date(from: end) ?? ISO8601DateFormatter().date(from: end)
+    guard let startDate, let endDate, endDate >= startDate else { return nil }
+    return Int(ceil(endDate.timeIntervalSince(startDate) / 86_400))
 }
 
 // MARK: - File-scoped bespoke helpers (preserve the canonical wireframe look)
@@ -461,43 +439,6 @@ private struct SecondaryButton792: View {
                 )
         }
         .buttonStyle(.plain)
-    }
-}
-
-/// ESang advisory row — the canonical port's `ESangRow` is not a shared app
-/// symbol, so we render the same sparkle + advisory grammar file-scoped (mirror 757).
-private struct ESangRow792: View {
-    @Environment(\.palette) private var palette
-    let title: String
-    let subtitle: String
-    var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(LinearGradient.diagonal.opacity(0.14))
-                    .frame(width: 34, height: 34)
-                Image(systemName: "sparkles")
-                    .font(.system(size: 14, weight: .heavy))
-                    .foregroundStyle(LinearGradient.diagonal)
-            }
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(palette.textPrimary)
-                Text(subtitle)
-                    .font(.system(size: 11))
-                    .foregroundStyle(palette.textSecondary)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(Space.s3)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(palette.bgCardSoft)
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(palette.borderFaint)
-        )
     }
 }
 

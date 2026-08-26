@@ -81,6 +81,7 @@ struct ShipperReports: View {
     /// row. nil → honest em-dash row, never the old fabricated
     /// "$3,820 · 4 claims" figures (audit M13).
     @State private var detention: DetentionAPI.Dashboard?
+    @State private var detentionReadFailed = false
 
     @State private var selectedPeriod: ShipperAPI.SpendingPeriod = .month
     @State private var activeMetricChips: Set<String> = ["spend"]
@@ -217,7 +218,13 @@ struct ShipperReports: View {
     }
 
     private func refreshDetention() async {
-        detention = try? await EusoTripAPI.shared.detention.getDashboard()
+        do {
+            detention = try await EusoTripAPI.shared.detention.getDashboard()
+            detentionReadFailed = false
+        } catch {
+            detention = nil
+            detentionReadFailed = true
+        }
     }
 
     private var liveSpend: ShipperAPI.SpendingAnalytics? {
@@ -430,8 +437,13 @@ struct ShipperReports: View {
             return "—"
         }()
         let detentionSub: String
-        if let d = detention {
-            detentionSub = "\(currency(d.totalCharges)) in detention · \(d.totalEvents) claims · 30d window"
+        if detentionReadFailed {
+            detentionSub = "detention unavailable · pull to refresh"
+        } else if let d = detention {
+            let amountState = d.totalCharges == nil
+                ? "detention amount unavailable"
+                : "detention amount available · currency unavailable"
+            detentionSub = "\(amountState) · \(d.totalEvents) claims · 30d window"
         } else {
             detentionSub = "detention — · claims — · 30d window"
         }

@@ -119,9 +119,13 @@ private final class RotationVM_661: ObservableObject {
     /// ⇒ lower zoom. Coarse buckets matched to the great-circle register.
     var mapZoom: Int {
         let pts = mappableCalls.compactMap { $0.coord }
-        guard pts.count > 1 else { return 6 }
-        let latSpan = (pts.map(\.lat).max() ?? 0) - (pts.map(\.lat).min() ?? 0)
-        let lngSpan = (pts.map(\.lng).max() ?? 0) - (pts.map(\.lng).min() ?? 0)
+        guard pts.count > 1,
+              let minimumLatitude = pts.map(\.lat).min(),
+              let maximumLatitude = pts.map(\.lat).max(),
+              let minimumLongitude = pts.map(\.lng).min(),
+              let maximumLongitude = pts.map(\.lng).max() else { return 6 }
+        let latSpan = maximumLatitude - minimumLatitude
+        let lngSpan = maximumLongitude - minimumLongitude
         let span = max(latSpan, lngSpan)
         switch span {
         case ..<2:    return 7
@@ -206,7 +210,13 @@ private final class RotationVM_661: ObservableObject {
                 // are skipped from the map below; they remain in the schedule list.
                 let geo: HereLatLng? = (c.unlocode.flatMap { uc in
                     PortDirectory.find(unlocode: uc.uppercased())
-                }).map { HereLatLng($0.lat, $0.lng) }
+                }).flatMap { port in
+                    guard let coordinate = LatLongParser.validatedCoordinate(
+                        latitude: port.lat,
+                        longitude: port.lng
+                    ) else { return nil }
+                    return HereLatLng(coordinate)
+                }
 
                 mapped.append(PortCall_661(
                     port: port,
@@ -501,6 +511,7 @@ private struct VesselPortCallsBody: View {
                     tilt: 0,
                     layers: rotationLayers,
                     styleHint: .ocean,
+                    mapModeContext: .primary(.vessel),
                     onSelectMarker: { _ in }     // informational pins — no handler nav
                 )
                 .frame(height: 230)

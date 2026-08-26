@@ -17,10 +17,11 @@
 //      `js.api.here.com` (HERE's own CDN, which is not whitelisted and
 //      403'd every tile → blank map).
 //
-//   2. SUPPORTED BASE LAYERS. Uses `Platform.createDefaultLayers`, matching
-//      HERE's maintained JavaScript examples. Day uses the labeled vector
-//      layer; dark uses the labeled raster night layer at `ppi=200`.
-//      No private style URL or hand-built OMV provider.
+//   2. CUSTOM BASE LAYERS. Operational, Navigation, and Terrain resolve the
+//      exact Truck/Rail/Vessel x light/dark artifact from the 18-outcome
+//      content-addressed registry. Pending artifacts stay behind the visual-
+//      review gate. A failure uses only the matching HERE family/theme and is
+//      surfaced as degraded; route, camera, and overlay state are preserved.
 //
 //   3. SDK VERSION — this is load-bearing, do not "simplify" it back to 3.1.
 //      2026-07-28: every map surface in the app rendered "Map unavailable"
@@ -51,7 +52,7 @@
 //  (_MAP_DESIGN_LANGUAGE_2026-06-09): the Google-style teardrop pins and
 //  the Tailwind palette are gone — concentric endpoint discs, the 013
 //  glass-pill destination flag, the live-ping puck, Brand-accent POI
-//  discs, the eusoPrimary route sweep with dashed remaining, §3c dashed
+//  discs, one continuous eusoPrimary route sweep, §3c dashed
 //  geofence rings (+ pulse + breach node), and §2 traffic-flow ribbons.
 //
 //  Powered by ESANG AI™.
@@ -77,13 +78,10 @@ public struct HereLatLng: Hashable, Codable, Sendable {
         self.lat = c.latitude; self.lng = c.longitude; self.weight = weight
     }
 
-    /// Only real WGS-84 coordinates may reach the map renderer. `(0,0)` is
-    /// treated as the platform's missing-geocode sentinel, never a place.
+    /// Only complete, finite WGS-84 coordinates may reach the renderer.
+    /// Zero is data on either axis, including the valid coordinate `(0,0)`.
     var isUsableCoordinate: Bool {
-        lat.isFinite && lng.isFinite
-            && (-90...90).contains(lat)
-            && (-180...180).contains(lng)
-            && !(lat == 0 && lng == 0)
+        LatLongParser.validatedCoordinate(latitude: lat, longitude: lng) != nil
     }
 }
 
@@ -94,9 +92,153 @@ public struct HereMarker: Hashable, Codable, Sendable {
     /// Optional stable identity passed back through `onSelectMarker` when
     /// the pin is tapped (e.g. a load id on the board). nil = not tappable.
     public let id: String?
-    public enum Kind: String, Codable, Sendable { case truck, pickup, delivery, stop, fuel, charger, parking, alert, weather, mission, adZone, truckStop, weigh, camera, hotZone }
-    public init(at: HereLatLng, kind: Kind, label: String? = nil, id: String? = nil) {
-        self.at = at; self.kind = kind; self.label = label; self.id = id
+    /// Truthful observation state supplied by the caller. The renderer uses
+    /// pattern/silhouette in addition to color so stale and degraded remain
+    /// distinguishable with color-vision deficiencies.
+    public let observationState: HereObservationState
+    public let sourceLabel: String?
+    public let accessibilityLabel: String?
+    public let clusterCount: Int?
+    public enum Kind: String, Codable, Sendable {
+        case truck, rail, vessel, cluster
+        case pickup, delivery, stop, fuel, charger, parking, alert, weather
+        case mission, adZone, truckStop, weigh, camera, hotZone
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case at, kind, label, id, observationState, sourceLabel
+        case accessibilityLabel, clusterCount
+    }
+
+    public init(
+        at: HereLatLng,
+        kind: Kind,
+        label: String? = nil,
+        id: String? = nil,
+        observationState: HereObservationState? = nil,
+        sourceLabel: String? = nil,
+        accessibilityLabel: String? = nil,
+        clusterCount: Int? = nil
+    ) {
+        self.at = at
+        self.kind = kind
+        self.label = label
+        self.id = id
+        if let observationState {
+            self.observationState = observationState
+        } else {
+            switch kind {
+            case .truck, .rail, .vessel, .cluster:
+                // A mode marker without caller-supplied freshness must never
+                // silently claim to be current.
+                self.observationState = .degraded
+            default:
+                self.observationState = .current
+            }
+        }
+        self.sourceLabel = sourceLabel
+        self.accessibilityLabel = accessibilityLabel
+        self.clusterCount = clusterCount.map { max(2, $0) }
+    }
+
+    /// Older cached marker payloads predate observation truth fields. Decode
+    /// them fail-soft: mode markers become degraded, while static POIs retain
+    /// their non-observation current default.
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            at: try values.decode(HereLatLng.self, forKey: .at),
+            kind: try values.decode(Kind.self, forKey: .kind),
+            label: try values.decodeIfPresent(String.self, forKey: .label),
+            id: try values.decodeIfPresent(String.self, forKey: .id),
+            observationState: try values.decodeIfPresent(
+                HereObservationState.self,
+                forKey: .observationState
+            ),
+            sourceLabel: try values.decodeIfPresent(String.self, forKey: .sourceLabel),
+            accessibilityLabel: try values.decodeIfPresent(
+                String.self,
+                forKey: .accessibilityLabel
+            ),
+            clusterCount: try values.decodeIfPresent(Int.self, forKey: .clusterCount)
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(at, forKey: .at)
+        try values.encode(kind, forKey: .kind)
+        try values.encodeIfPresent(label, forKey: .label)
+        try values.encodeIfPresent(id, forKey: .id)
+        try values.encode(observationState, forKey: .observationState)
+        try values.encodeIfPresent(sourceLabel, forKey: .sourceLabel)
+        try values.encodeIfPresent(accessibilityLabel, forKey: .accessibilityLabel)
+        try values.encodeIfPresent(clusterCount, forKey: .clusterCount)
+    }
+}
+
+public enum HereObservationState: String, CaseIterable, Codable, Hashable, Sendable {
+    case current
+    case stale
+    case degraded
+    case offline
+
+    public var displayName: String {
+        switch self {
+        case .current: return "Current"
+        case .stale: return "Stale"
+        case .degraded: return "Degraded"
+        case .offline: return "Offline"
+        }
+    }
+}
+
+/// Caller-owned source/freshness truth for the native Live Operations chrome.
+/// This contract never fetches or synthesizes observations.
+public struct HereLiveOperationsStatus: Hashable, Sendable {
+    public enum Availability: String, Hashable, Sendable {
+        case live, stale, degraded, empty, unavailable
+    }
+
+    public let availability: Availability
+    public let sourceLabel: String?
+    public let freshnessLabel: String?
+    public let detail: String
+    public let observationCount: Int
+
+    public init(
+        availability: Availability,
+        sourceLabel: String? = nil,
+        freshnessLabel: String? = nil,
+        detail: String,
+        observationCount: Int = 0
+    ) {
+        self.availability = availability
+        self.sourceLabel = sourceLabel?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.freshnessLabel = freshnessLabel?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.detail = detail.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.observationCount = max(0, observationCount)
+    }
+
+    public static let noAuthorizedFeed = HereLiveOperationsStatus(
+        availability: .unavailable,
+        detail: "No authorized live feed"
+    )
+}
+
+public enum HereRouteVisualState: String, CaseIterable, Codable, Hashable, Sendable {
+    case planned, active, completed, rerouting, stale, hazard, offRoute
+
+    public var displayName: String {
+        switch self {
+        case .planned: return "Planned"
+        case .active: return "Active"
+        case .completed: return "Completed"
+        case .rerouting: return "Rerouting"
+        case .stale: return "Stale"
+        case .hazard: return "Hazard"
+        case .offRoute: return "Off Route"
+        }
     }
 }
 
@@ -135,7 +277,16 @@ public struct HereTrafficSegment: Hashable, Codable, Sendable {
 public enum HereMapLayer: Hashable {
     case heatmap(points: [HereLatLng])
     case markers([HereMarker])
+    /// Deprecated non-canonical route input. Shared renderers fail this case
+    /// closed; callers must provide server-bound `.eusoRoute` geometry.
     case route(polyline: [HereLatLng], colorHex: String)
+    /// Canonical EusoTrip route overlay. The renderer owns its blue-violet-
+    /// purple sweep; state remains accessible through width and label without
+    /// adding a casing, halo, dash, outline, or alternate route stroke.
+    case eusoRoute(polyline: [HereLatLng], state: HereRouteVisualState, label: String?)
+    /// Raw GNSS/AEI/AIS history. It is deliberately a neutral dotted trail,
+    /// never a route core and never evidence of completed route progress.
+    case observationTrail(points: [HereLatLng], label: String)
     /// Sponsored ad-zone polygons (monetization) — HERE `adZonesInBbox`.
     case adZones([HerePolygon])
     /// Gamified mission pins (Haul Missions) — geofence-anchored.
@@ -150,28 +301,38 @@ public enum HereMapLayer: Hashable {
 // MARK: - SwiftUI entry point
 
 /// The live labeled HERE map every surface should use. Its public name is
-/// retained for source compatibility; the supported HERE default layer stack
-/// selects vector day or raster night cartography by appearance.
+/// retained for source compatibility; the canonical registry selects one of
+/// 18 mode/family/theme exports without coupling mode to user role.
 ///
 /// ```swift
 /// HereVectorMapView(
 ///     center: .init(29.76, -95.37),
 ///     zoom: 6,
-///     layers: [ .route(polyline: pts, colorHex: "#1473FF"),
+///     layers: [ .eusoRoute(polyline: pts, state: .planned, label: "Route"),
 ///               .markers([.init(at: .init(29.76,-95.37), kind: .pickup)]) ]
 /// )
 /// ```
 public struct HereVectorMapView: View {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
+    @AppStorage(EusoTripMapFamilyPreference.storageKey)
+    private var persistedMapFamilyRawValue = ""
 
     let center: HereLatLng
     let zoom: Int
     let interactive: Bool
     let tilt: Double
     let layers: [HereMapLayer]
-    /// Cartography hint retained for non-UIKit previews. Production iOS uses
-    /// HERE's base layer plus the declared live overlays.
+    /// Legacy canvas hint retained for non-UIKit previews. `.nav` and
+    /// `.geothermal` also map to Navigation and Terrain when no explicit family
+    /// is supplied, so production no longer discards the caller's intent.
     let styleHint: BespokeMapStyleHint
+    let mapFamily: EusoTripMapFamily?
+    let activeJob: Bool
+    let mapModeContext: EusoTripMapModeContext
+    let showsMapFamilyControl: Bool
+    let liveOperationsStatus: HereLiveOperationsStatus?
+    let endpointLabelToggle: Bool
     let onSelectMarker: ((String) -> Void)?
 
     public init(
@@ -181,6 +342,12 @@ public struct HereVectorMapView: View {
         tilt: Double = 0,
         layers: [HereMapLayer] = [],
         styleHint: BespokeMapStyleHint = .auto,
+        mapFamily: EusoTripMapFamily? = nil,
+        activeJob: Bool = false,
+        mapModeContext: EusoTripMapModeContext = .unknown,
+        showsMapFamilyControl: Bool = true,
+        liveOperationsStatus: HereLiveOperationsStatus? = nil,
+        endpointLabelToggle: Bool = false,
         onSelectMarker: ((String) -> Void)? = nil
     ) {
         self.center = center
@@ -189,37 +356,106 @@ public struct HereVectorMapView: View {
         self.tilt = tilt
         self.layers = layers
         self.styleHint = styleHint
+        self.mapFamily = mapFamily
+        self.activeJob = activeJob
+        self.mapModeContext = mapModeContext
+        self.showsMapFamilyControl = showsMapFamilyControl
+        self.liveOperationsStatus = liveOperationsStatus
+        self.endpointLabelToggle = endpointLabelToggle
         self.onSelectMarker = onSelectMarker
     }
 
     public var body: some View {
-        #if canImport(UIKit)
-        // Live HERE OMV is the production renderer. It supplies the road,
-        // highway, street, city, state, and country labels that an abstract
-        // canvas cannot truthfully reproduce from route endpoints alone.
-        HereMapWebViewRepresentable(
-            center: resolvedCenter,
-            zoom: zoom,
-            interactive: interactive,
-            tilt: tilt,
-            isDark: colorScheme == .dark,
-            layers: layers,
-            onSelectMarker: onSelectMarker
+        ZStack(alignment: .topTrailing) {
+            Group {
+                #if canImport(UIKit)
+                // Live HERE OMV is the production renderer. It supplies the
+                // labeled global cartography beneath EusoTrip's mode grammar.
+                HereMapWebViewRepresentable(
+                    center: resolvedCenter,
+                    zoom: zoom,
+                    interactive: interactive,
+                    tilt: tilt,
+                    isDark: colorScheme == .dark,
+                    mapFamily: mapFamilyResolution.family,
+                    familySelectionSource: mapFamilyResolution.source,
+                    mapModeContext: mapModeContext,
+                    reducedMotion: accessibilityReduceMotion,
+                    layers: layers,
+                    endpointLabelToggle: endpointLabelToggle,
+                    onSelectMarker: onSelectMarker
+                )
+                #else
+                BespokeMapCanvas(
+                    center: resolvedCenter,
+                    zoom: zoom,
+                    interactive: interactive,
+                    tilt: tilt,
+                    isDark: colorScheme == .dark,
+                    layers: layers,
+                    style: styleHint,
+                    onSelectMarker: onSelectMarker
+                )
+                #endif
+            }
+
+            VStack(alignment: .trailing, spacing: 8) {
+                if interactive, showsMapFamilyControl, mapFamily == nil {
+                    EusoTripMapFamilyMenu(selection: mapFamilyBinding)
+                }
+                if !routeStateSummaries.isEmpty {
+                    EusoTripRouteStateControl(routes: routeStateSummaries)
+                }
+                if let liveOperationsStatus {
+                    EusoTripLiveOperationsControl(
+                        status: liveOperationsStatus,
+                        mode: styleResolution.descriptor?.mode,
+                        observations: accessibleObservations,
+                        onSelectMarker: onSelectMarker
+                    )
+                }
+            }
+            .padding(8)
+
+            if let message = styleResolution.unavailableMessage {
+                EusoTripMapModeUnavailablePill(message: message)
+                    .padding(8)
+                    .frame(
+                        maxWidth: .infinity,
+                        maxHeight: .infinity,
+                        alignment: .bottomTrailing
+                    )
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Freight map")
+        .accessibilityValue(
+            "\(mapFamilyResolution.family.displayName), \(mapModeAccessibilityValue)"
         )
-        #else
-        // SwiftUI previews on hosts without UIKit retain the deterministic
-        // native renderer; production iOS never takes this branch.
-        BespokeMapCanvas(
-            center: resolvedCenter,
-            zoom: zoom,
-            interactive: interactive,
-            tilt: tilt,
-            isDark: colorScheme == .dark,
-            layers: layers,
-            style: styleHint,
-            onSelectMarker: onSelectMarker
+    }
+
+    private var surfaceDefaultMapFamily: EusoTripMapFamily {
+        switch styleHint {
+        case .nav: return .navigation
+        case .geothermal: return .terrain
+        case .auto, .ocean, .rail, .portApproach: return .operational
+        }
+    }
+
+    private var mapFamilyResolution: EusoTripMapFamilyResolution {
+        EusoTripMapFamilyPreference.resolve(
+            explicitFamily: mapFamily,
+            persistedRawValue: persistedMapFamilyRawValue,
+            activeJob: activeJob,
+            surfaceDefault: surfaceDefaultMapFamily
         )
-        #endif
+    }
+
+    private var mapFamilyBinding: Binding<EusoTripMapFamily> {
+        Binding(
+            get: { mapFamilyResolution.family },
+            set: { persistedMapFamilyRawValue = $0.rawValue }
+        )
     }
 
     /// Prefer the caller's real camera, then the first usable layer point.
@@ -229,7 +465,8 @@ public struct HereVectorMapView: View {
         if center.isUsableCoordinate { return center }
         for layer in layers {
             switch layer {
-            case .heatmap(let points), .route(let points, _):
+            case .heatmap(let points), .route(let points, _), .eusoRoute(let points, _, _),
+                 .observationTrail(let points, _):
                 if let point = points.first(where: \.isUsableCoordinate) { return point }
             case .markers(let markers), .missionPins(let markers):
                 if let point = markers.map(\.at).first(where: \.isUsableCoordinate) { return point }
@@ -247,6 +484,377 @@ public struct HereVectorMapView: View {
         }
         return HereLatLng(20, 0)
     }
+
+    private var styleResolution: EusoTripMapStyleResolution {
+        EusoTripMapStyleRegistry.resolve(
+            context: mapModeContext,
+            family: mapFamilyResolution.family,
+            theme: colorScheme == .dark ? .dark : .light
+        )
+    }
+
+    private var mapModeAccessibilityValue: String {
+        if let mode = styleResolution.descriptor?.mode {
+            return "\(mode.displayName) mode"
+        }
+        return styleResolution.unavailableMessage ?? "mode unavailable"
+    }
+
+    private var accessibleObservations: [HereMarker] {
+        layers.flatMap { layer -> [HereMarker] in
+            switch layer {
+            case .markers(let markers), .missionPins(let markers): return markers
+            default: return []
+            }
+        }
+    }
+
+    private var routeStateSummaries: [EusoTripRouteStateSummary] {
+        var summaries: [EusoTripRouteStateSummary] = []
+        for layer in layers {
+            switch layer {
+            case .route:
+                // A legacy/reference line is deliberately not promoted into
+                // the canonical route key. Only `.eusoRoute` carries owned
+                // route-plan state and the Eusorone gradient.
+                break
+            case .eusoRoute(_, let state, let label):
+                let normalized = label?.trimmingCharacters(in: .whitespacesAndNewlines)
+                summaries.append(
+                    .init(
+                        index: summaries.count,
+                        state: state,
+                        label: normalized?.isEmpty == false ? normalized : nil
+                    )
+                )
+            default:
+                break
+            }
+        }
+        return summaries
+    }
+}
+
+private struct EusoTripRouteStateSummary: Identifiable {
+    let index: Int
+    let state: HereRouteVisualState
+    let label: String?
+    var id: String { "\(index):\(state.rawValue):\(label ?? "")" }
+}
+
+private struct EusoTripMapFamilyMenu: View {
+    @Binding var selection: EusoTripMapFamily
+
+    var body: some View {
+        Menu {
+            ForEach(EusoTripMapFamily.allCases) { family in
+                Button {
+                    selection = family
+                } label: {
+                    Label(
+                        family == selection ? "\(family.displayName), selected" : family.displayName,
+                        systemImage: family == selection ? "checkmark.circle.fill" : icon(for: family)
+                    )
+                }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: icon(for: selection))
+                    .font(.system(size: 14, weight: .bold))
+                Text(selection.displayName)
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .heavy))
+            }
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 12)
+            .frame(minHeight: 44)
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay(alignment: .bottom) {
+                Capsule()
+                    .fill(EusoTripMapChrome.gradient)
+                    .frame(height: 3)
+                    .padding(.horizontal, 5)
+                    .padding(.bottom, 3)
+            }
+            .overlay(Capsule().stroke(.white.opacity(0.34), lineWidth: 1))
+            .shadow(color: .black.opacity(0.13), radius: 7, y: 3)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Map family")
+        .accessibilityValue(selection.displayName)
+        .accessibilityHint("Choose Operational, Navigation, or Terrain")
+    }
+
+    private func icon(for family: EusoTripMapFamily) -> String {
+        switch family {
+        case .operational: return "map"
+        case .navigation: return "arrow.triangle.turn.up.right.diamond"
+        case .terrain: return "mountain.2"
+        }
+    }
+}
+
+private enum EusoTripMapChrome {
+    static let gradient = LinearGradient(
+        colors: [
+            Color(red: 20 / 255, green: 115 / 255, blue: 1),
+            Color(red: 129 / 255, green: 63 / 255, blue: 245 / 255),
+            Color(red: 190 / 255, green: 1 / 255, blue: 1),
+        ],
+        startPoint: .leading,
+        endPoint: .trailing
+    )
+}
+
+private struct EusoTripMapModeUnavailablePill: View {
+    let message: String
+
+    var body: some View {
+        Label(message, systemImage: "exclamationmark.triangle.fill")
+            .font(.system(size: 11, weight: .semibold, design: .rounded))
+            .foregroundStyle(.primary)
+            .lineLimit(3)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 11)
+            .padding(.vertical, 9)
+            .frame(maxWidth: 250, alignment: .leading)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .stroke(Color.orange.opacity(0.62), style: .init(lineWidth: 1, dash: [4, 3]))
+            )
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Map mode unavailable. \(message)")
+    }
+}
+
+private struct EusoTripLiveOperationsControl: View {
+    let status: HereLiveOperationsStatus
+    let mode: EusoTripMapProductMode?
+    let observations: [HereMarker]
+    let onSelectMarker: ((String) -> Void)?
+
+    var body: some View {
+        Menu {
+            Section("Live Operations") {
+                Label(status.detail, systemImage: statusIcon)
+                if let source = status.sourceLabel, !source.isEmpty {
+                    Label("Source: \(source)", systemImage: "antenna.radiowaves.left.and.right")
+                }
+                if let freshness = status.freshnessLabel, !freshness.isEmpty {
+                    Label("Freshness: \(freshness)", systemImage: "clock")
+                }
+            }
+            if observations.isEmpty {
+                Text("No authorized live feed")
+            } else {
+                Section("Observations") {
+                    ForEach(Array(observations.prefix(20).enumerated()), id: \.offset) { _, marker in
+                        Button {
+                            if let id = marker.id, !id.isEmpty { onSelectMarker?(id) }
+                        } label: {
+                            Label(observationLabel(marker), systemImage: markerIcon(marker.kind))
+                        }
+                        .disabled(marker.id?.isEmpty != false)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: statusIcon)
+                    .font(.system(size: 13, weight: .heavy))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("LIVE OPS")
+                        .font(.system(size: 9, weight: .heavy, design: .rounded))
+                        .tracking(0.8)
+                    Text(statusLabel)
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .lineLimit(1)
+                }
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .heavy))
+            }
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 11)
+            .frame(minHeight: 44)
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay(alignment: .leading) {
+                Capsule()
+                    .fill(EusoTripMapChrome.gradient)
+                    .frame(width: 4)
+                    .padding(.vertical, 5)
+                    .padding(.leading, 3)
+            }
+            .overlay(Capsule().stroke(statusBorder, style: statusStroke))
+            .shadow(color: .black.opacity(0.13), radius: 7, y: 3)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Live Operations")
+        .accessibilityValue(accessibilityValue)
+        .accessibilityHint("Shows source, freshness, status, and selectable observations")
+    }
+
+    private var statusLabel: String {
+        switch status.availability {
+        case .live: return "\(status.observationCount) current"
+        case .stale: return "Stale · \(status.observationCount)"
+        case .degraded: return "Degraded"
+        case .empty, .unavailable: return "No authorized feed"
+        }
+    }
+
+    private var statusIcon: String {
+        switch status.availability {
+        case .live: return modeIcon
+        case .stale: return "clock.badge.exclamationmark"
+        case .degraded: return "exclamationmark.triangle.fill"
+        case .empty: return "tray"
+        case .unavailable: return "antenna.radiowaves.left.and.right.slash"
+        }
+    }
+
+    private var modeIcon: String {
+        switch mode {
+        case .truck: return "truck.box.fill"
+        case .rail: return "train.side.front.car"
+        case .vessel: return "ferry.fill"
+        case nil: return "location.fill.viewfinder"
+        }
+    }
+
+    private var statusBorder: Color {
+        switch status.availability {
+        case .live: return Color.blue.opacity(0.55)
+        case .stale, .degraded: return Color.orange.opacity(0.65)
+        case .empty, .unavailable: return Color.secondary.opacity(0.48)
+        }
+    }
+
+    private var statusStroke: StrokeStyle {
+        switch status.availability {
+        case .live: return .init(lineWidth: 1)
+        case .stale: return .init(lineWidth: 1.2, dash: [4, 3])
+        case .degraded: return .init(lineWidth: 1.2, dash: [2, 2])
+        case .empty, .unavailable: return .init(lineWidth: 1)
+        }
+    }
+
+    private var accessibilityValue: String {
+        let source = status.sourceLabel.map { ", source \($0)" } ?? ""
+        let freshness = status.freshnessLabel.map { ", freshness \($0)" } ?? ""
+        return "\(status.availability.rawValue), \(status.detail)\(source)\(freshness)"
+    }
+
+    private func observationLabel(_ marker: HereMarker) -> String {
+        if let accessibilityLabel = marker.accessibilityLabel, !accessibilityLabel.isEmpty {
+            return accessibilityLabel
+        }
+        let label = marker.label?.isEmpty == false ? marker.label! : marker.kind.rawValue.capitalized
+        let source = marker.sourceLabel.map { ", source \($0)" } ?? ""
+        return "\(label), \(marker.observationState.displayName)\(source)"
+    }
+
+    private func markerIcon(_ kind: HereMarker.Kind) -> String {
+        switch kind {
+        case .truck: return "truck.box.fill"
+        case .rail: return "train.side.front.car"
+        case .vessel: return "ferry.fill"
+        case .cluster: return "circle.grid.3x3.fill"
+        case .pickup: return "circle.circle.fill"
+        case .delivery: return "flag.checkered"
+        case .alert: return "exclamationmark.triangle.fill"
+        default: return "mappin.circle.fill"
+        }
+    }
+}
+
+private struct EusoTripRouteStateControl: View {
+    let routes: [EusoTripRouteStateSummary]
+
+    var body: some View {
+        Menu {
+            Section("Route key") {
+                ForEach(routes) { route in
+                    Label(
+                        "\(route.label ?? "Route") · \(route.state.displayName)",
+                        systemImage: icon(for: route.state)
+                    )
+                }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: icon(for: primary.state))
+                    .font(.system(size: 12, weight: .heavy))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("ROUTE")
+                        .font(.system(size: 9, weight: .heavy, design: .rounded))
+                        .tracking(0.8)
+                    Text(primary.state.displayName)
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                }
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .heavy))
+            }
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 11)
+            .frame(minHeight: 44)
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay(alignment: .bottom) {
+                Capsule()
+                    .fill(EusoTripMapChrome.gradient)
+                    .frame(height: 3)
+                    .padding(.horizontal, 5)
+                    .padding(.bottom, 3)
+            }
+            .overlay(Capsule().stroke(borderColor, style: strokeStyle))
+            .shadow(color: .black.opacity(0.13), radius: 7, y: 3)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Route key")
+        .accessibilityValue(
+            routes.map { "\($0.label ?? "Route"), \($0.state.displayName)" }
+                .joined(separator: "; ")
+        )
+        .accessibilityHint("Shows route state labels and pattern key")
+    }
+
+    private var primary: EusoTripRouteStateSummary {
+        routes.first ?? .init(index: 0, state: .planned, label: "Route")
+    }
+
+    private var borderColor: Color {
+        switch primary.state {
+        case .hazard: return Color.red.opacity(0.68)
+        case .rerouting, .offRoute, .stale: return Color.orange.opacity(0.68)
+        case .completed: return Color.secondary.opacity(0.52)
+        case .planned, .active: return Color.blue.opacity(0.56)
+        }
+    }
+
+    private var strokeStyle: StrokeStyle {
+        switch primary.state {
+        case .active: return .init(lineWidth: 1.2)
+        case .completed: return .init(lineWidth: 1.2, dash: [10, 3])
+        case .rerouting: return .init(lineWidth: 1.4, dash: [8, 3, 2, 3])
+        case .stale: return .init(lineWidth: 1.2, dash: [4, 5])
+        case .hazard: return .init(lineWidth: 1.4, dash: [2, 4])
+        case .offRoute: return .init(lineWidth: 1.4, dash: [8, 4])
+        case .planned: return .init(lineWidth: 1.2, dash: [2, 8])
+        }
+    }
+
+    private func icon(for state: HereRouteVisualState) -> String {
+        switch state {
+        case .planned: return "circle.dotted"
+        case .active: return "location.fill"
+        case .completed: return "checkmark.circle.fill"
+        case .rerouting: return "arrow.triangle.2.circlepath"
+        case .stale: return "clock.badge.exclamationmark"
+        case .hazard: return "exclamationmark.triangle.fill"
+        case .offRoute: return "arrow.triangle.branch"
+        }
+    }
 }
 
 #if canImport(UIKit)
@@ -259,7 +867,12 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
     let interactive: Bool
     let tilt: Double
     let isDark: Bool
+    let mapFamily: EusoTripMapFamily
+    let familySelectionSource: EusoTripMapFamilySelectionSource
+    let mapModeContext: EusoTripMapModeContext
+    let reducedMotion: Bool
     let layers: [HereMapLayer]
+    let endpointLabelToggle: Bool
     let onSelectMarker: ((String) -> Void)?
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -281,18 +894,38 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
         webView.backgroundColor = .clear
         webView.scrollView.isScrollEnabled = interactive
         context.coordinator.webView = webView
-        context.coordinator.lastIsDark = isDark
+        let resolution = EusoTripMapStyleRegistry.resolve(
+            context: mapModeContext,
+            family: mapFamily,
+            theme: isDark ? .dark : .light
+        )
+        let customStylesRequested = HereMapsConfig.customMapStylesEnabled
+        let customStylesEnabled = customStylesRequested
+            && (resolution.descriptor?.isProductionEligible == true)
+        context.coordinator.lastStyleKey = Self.styleKey(
+            resolution: resolution,
+            customStylesEnabled: customStylesEnabled,
+            mapModeContext: mapModeContext
+        )
         context.coordinator.lastCameraKey = Self.cameraKey(
             center: center, zoom: zoom, tilt: tilt)
 
         let html = Self.buildHTML(
             apiKey: HereMapsConfig.jsApiKey,
-            isDark: isDark,
+            styleConfigurationJSON: Self.styleConfigurationJSON(
+                resolution: resolution,
+                customStylesEnabled: customStylesEnabled,
+                customStylesRequested: customStylesRequested,
+                familySelectionSource: familySelectionSource,
+                mapModeContext: mapModeContext
+            ),
             interactive: interactive,
             centerLat: center.lat,
             centerLng: center.lng,
             zoom: zoom,
-            tilt: tilt
+            tilt: tilt,
+            reducedMotion: reducedMotion,
+            endpointLabelToggle: endpointLabelToggle
         )
         // THE FIX: origin = a HERE-portal trusted domain (not js.api.here.com).
         webView.loadHTMLString(html, baseURL: URL(string: HereMapsConfig.jsTrustedReferrerOrigin))
@@ -301,11 +934,40 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
 
     func updateUIView(_ webView: WKWebView, context: Context) {
         context.coordinator.onSelectMarker = onSelectMarker
-        // Re-style if the color scheme flipped.
-        if context.coordinator.lastIsDark != isDark {
-            context.coordinator.lastIsDark = isDark
-            webView.evaluateJavaScript("window.__setDark && window.__setDark(\(isDark ? "true" : "false"));")
+        let resolution = EusoTripMapStyleRegistry.resolve(
+            context: mapModeContext,
+            family: mapFamily,
+            theme: isDark ? .dark : .light
+        )
+        let customStylesRequested = HereMapsConfig.customMapStylesEnabled
+        let customStylesEnabled = customStylesRequested
+            && (resolution.descriptor?.isProductionEligible == true)
+        let styleKey = Self.styleKey(
+            resolution: resolution,
+            customStylesEnabled: customStylesEnabled,
+            mapModeContext: mapModeContext
+        )
+        if context.coordinator.lastStyleKey != styleKey {
+            context.coordinator.lastStyleKey = styleKey
+            let configuration = Self.styleConfigurationJSON(
+                resolution: resolution,
+                customStylesEnabled: customStylesEnabled,
+                customStylesRequested: customStylesRequested,
+                familySelectionSource: familySelectionSource,
+                mapModeContext: mapModeContext
+            )
+            let styleJS = "window.__setMapStyle && window.__setMapStyle(\(configuration));"
+            context.coordinator.pendingStyleJS = styleJS
+            if context.coordinator.mapReady {
+                webView.evaluateJavaScript(styleJS)
+            }
         }
+        webView.evaluateJavaScript(
+            "window.__setEndpointLabelToggle && window.__setEndpointLabelToggle(\(endpointLabelToggle ? "true" : "false"));"
+        )
+        webView.evaluateJavaScript(
+            "window.__setReducedMotion && window.__setReducedMotion(\(reducedMotion ? "true" : "false"));"
+        )
         let cameraKey = Self.cameraKey(center: center, zoom: zoom, tilt: tilt)
         if context.coordinator.lastCameraKey != cameraKey {
             context.coordinator.lastCameraKey = cameraKey
@@ -332,7 +994,8 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
     final class Coordinator: NSObject, WKScriptMessageHandler {
         weak var webView: WKWebView?
         var mapReady = false
-        var lastIsDark: Bool?
+        var lastStyleKey: String?
+        var pendingStyleJS: String?
         var lastCameraKey: String?
         var pendingCameraJS: String?
         var pendingLayerJSON = "{}"
@@ -342,6 +1005,9 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
             switch message.name {
             case "mapReady":
                 mapReady = true
+                if let pendingStyleJS {
+                    webView?.evaluateJavaScript(pendingStyleJS)
+                }
                 if let pendingCameraJS {
                     webView?.evaluateJavaScript(pendingCameraJS)
                 }
@@ -363,12 +1029,66 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
         "\(center.lat),\(center.lng),\(zoom),\(tilt)"
     }
 
+    private static func styleKey(
+        resolution: EusoTripMapStyleResolution,
+        customStylesEnabled: Bool,
+        mapModeContext: EusoTripMapModeContext
+    ) -> String {
+        let selection = resolution.descriptor?.id
+            ?? "unavailable.\(resolution.unavailableReason?.rawValue ?? "unknown")"
+        return "\(selection):\(mapModeContext.sourceTransportMode.rawValue):\(customStylesEnabled ? "custom" : "standard")"
+    }
+
+    private static func styleConfigurationJSON(
+        resolution: EusoTripMapStyleResolution,
+        customStylesEnabled: Bool,
+        customStylesRequested: Bool,
+        familySelectionSource: EusoTripMapFamilySelectionSource,
+        mapModeContext: EusoTripMapModeContext
+    ) -> String {
+        let origin = HereMapsConfig.jsTrustedReferrerOrigin
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let descriptor = resolution.descriptor
+        let foundation = resolution.foundation
+        var object: [String: Any] = [
+            "family": foundation.family.rawValue,
+            "theme": foundation.theme.rawValue,
+            "displayName": descriptor?.assetName ?? foundation.hereDefaultFallbackName,
+            "artifactURL": descriptor.map { "\(origin)\($0.artifactPath)" } ?? "",
+            "artifactSHA256": descriptor?.artifactSHA256 ?? "",
+            "fallbackIdentity": foundation.hereDefaultStyleIdentity,
+            "omvContent": foundation.omvContent,
+            "transportMode": mapModeContext.sourceTransportMode.rawValue,
+            "productMode": descriptor?.mode.rawValue ?? "",
+            "familySelectionSource": familySelectionSource.rawValue,
+            "customStylesRequested": customStylesRequested,
+            "customStylesEnabled": customStylesEnabled,
+            "resolutionState": descriptor == nil ? "unavailable" : "resolved",
+            "visualReviewState": descriptor?.visualReviewState.rawValue
+                ?? EusoTripMapIdentityContract.visualReviewState.rawValue,
+            "visualReviewNote": descriptor?.visualReviewNote
+                ?? "Product mode unresolved; matching stock family is shown without claiming product styling.",
+        ]
+        if let reason = resolution.unavailableReason {
+            object["unavailableReason"] = reason.rawValue
+        }
+        if let message = resolution.unavailableMessage {
+            object["unavailableMessage"] = message
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: object),
+              let json = String(data: data, encoding: .utf8) else {
+            return "{}"
+        }
+        return json
+    }
+
     // MARK: Layer JSON
 
     static func encodeLayers(_ layers: [HereMapLayer]) -> String {
         var heatmap: [[String: Any]] = []
         var markers: [[String: Any]] = []
         var routes: [[String: Any]] = []
+        var observationTrails: [[String: Any]] = []
         var polygons: [[String: Any]] = []
         var fences: [[String: Any]] = []
         var traffic: [[String: Any]] = []
@@ -385,14 +1105,44 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
                     // caller didn't supply one (kind + rounded coords).
                     let mid = (m.id?.isEmpty == false)
                         ? m.id!
-                        : "\(m.kind.rawValue):\(String(format: "%.5f", m.at.lat)),\(String(format: "%.5f", m.at.lng))"
-                    return ["lat": m.at.lat, "lng": m.at.lng, "kind": m.kind.rawValue,
-                            "label": m.label ?? "", "id": mid]
+                        : "\(m.kind.rawValue):\(m.at.lat),\(m.at.lng)"
+                    return [
+                        "lat": m.at.lat,
+                        "lng": m.at.lng,
+                        "kind": m.kind.rawValue,
+                        "label": m.label ?? "",
+                        "id": mid,
+                        "observationState": m.observationState.rawValue,
+                        "sourceLabel": m.sourceLabel ?? "",
+                        "accessibilityLabel": m.accessibilityLabel ?? "",
+                        "clusterCount": m.clusterCount ?? 0,
+                        "coordinateLabel": LatLongParser.displayString(
+                            CLLocationCoordinate2D(latitude: m.at.lat, longitude: m.at.lng)
+                        ),
+                    ]
                 })
-            case .route(let poly, let hex):
+            case .route:
+                // Legacy/static route-like geometry is not a separate visual
+                // grammar. It fails closed until the caller supplies exact,
+                // server-bound `.eusoRoute` geometry and state.
+                break
+            case .eusoRoute(let poly, let state, let label):
+                // A filtered/reconnected line is not the server-authored
+                // geometry. Fail the whole member closed on any bad point.
+                if poly.count >= 2, poly.allSatisfy(\.isUsableCoordinate) {
+                    routes.append([
+                        "state": state.rawValue,
+                        "label": label ?? state.rawValue.capitalized,
+                        "pts": poly.map { ["lat": $0.lat, "lng": $0.lng] },
+                    ])
+                }
+            case .observationTrail(let poly, let label):
                 let points = poly.filter(\.isUsableCoordinate)
                 if points.count >= 2 {
-                    routes.append(["color": hex, "pts": points.map { ["lat": $0.lat, "lng": $0.lng] }])
+                    observationTrails.append([
+                        "label": label,
+                        "pts": points.map { ["lat": $0.lat, "lng": $0.lng] },
+                    ])
                 }
             case .adZones(let polys):
                 polygons.append(contentsOf: polys.compactMap { p in
@@ -425,8 +1175,15 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
                 })
             }
         }
-        let obj: [String: Any] = ["heatmap": heatmap, "markers": markers, "routes": routes,
-                                  "polygons": polygons, "fences": fences, "traffic": traffic]
+        let obj: [String: Any] = [
+            "heatmap": heatmap,
+            "markers": markers,
+            "routes": routes,
+            "observationTrails": observationTrails,
+            "polygons": polygons,
+            "fences": fences,
+            "traffic": traffic,
+        ]
         guard let data = try? JSONSerialization.data(withJSONObject: obj),
               let s = String(data: data, encoding: .utf8) else { return "{}" }
         return s
@@ -436,19 +1193,21 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
 
     static func buildHTML(
         apiKey: String?,
-        isDark: Bool,
+        styleConfigurationJSON: String,
         interactive: Bool,
         centerLat: Double,
         centerLng: Double,
         zoom: Int,
-        tilt: Double = 0
+        tilt: Double = 0,
+        reducedMotion: Bool = false,
+        endpointLabelToggle: Bool = false
     ) -> String {
         guard let apiKey = apiKey, !apiKey.isEmpty else {
             return """
             <!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"/>
             <style>html,body{margin:0;height:100%;background:#0b0b0f;color:#fff;font:12px -apple-system}
             .e{height:100%;display:flex;align-items:center;justify-content:center;opacity:.6;text-align:center;padding:12px}</style>
-            </head><body><div class="e">HERE JS apiKey not configured.<br/>Set HERE_JS_API_KEY in xcconfig.</div></body></html>
+            </head><body><div class="e">Map unavailable. Everything else on this screen still works.</div></body></html>
             """
         }
         let dragFlags = interactive
@@ -460,33 +1219,67 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
         <meta charset="utf-8"/>
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
         <link rel="stylesheet" href="https://js.api.here.com/v3/3.2.8.0/mapsjs-ui.css"/>
-        <style>html,body,#map{margin:0;padding:0;width:100%;height:100%;background:#0b0b0f;position:relative}</style>
+        <style>
+        html,body,#map{margin:0;padding:0;width:100%;height:100%;background:#0b0b0f;position:relative}
+        #style-status{display:none;position:absolute;right:8px;bottom:8px;z-index:4;max-width:260px;padding:8px 10px;border:1px solid rgba(255,255,255,.24);border-radius:12px;background:rgba(16,24,40,.88);box-shadow:0 5px 16px rgba(0,0,0,.18);color:#f5f5f7;font:600 11px -apple-system;text-align:left}
+        #style-status:before{content:"";display:block;height:3px;margin:-5px -6px 6px;border-radius:999px;background:linear-gradient(90deg,#1473FF 0%,#813FF5 52%,#BE01FF 100%)}
+        #style-status.mode-unavailable{display:block;border-style:dashed;border-color:rgba(255,174,66,.75)}
+        #style-status.unavailable{display:flex;inset:0;right:0;bottom:0;align-items:center;justify-content:center;border-radius:0;padding:18px;background:#111318;font-size:12px}
+        .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+        </style>
         <script src="https://js.api.here.com/v3/3.2.8.0/mapsjs-core.js"></script>
         <script src="https://js.api.here.com/v3/3.2.8.0/mapsjs-service.js"></script>
         <script src="https://js.api.here.com/v3/3.2.8.0/mapsjs-ui.js"></script>
         <script src="https://js.api.here.com/v3/3.2.8.0/mapsjs-data.js"></script>
         <script src="https://js.api.here.com/v3/3.2.8.0/mapsjs-mapevents.js"></script>
-        </head><body><div id="map"></div><script>
+        </head><body><div id="map" role="application" aria-label="EusoTrip freight map"></div><div id="style-status" role="status" aria-live="polite"></div><div id="map-accessibility-summary" class="sr-only" aria-live="polite"></div><script>
         (function(){
           function log(m){ try{ window.webkit.messageHandlers.hzLog.postMessage(String(m)); }catch(e){} }
           var map, behavior, platform, heatLayer=null, objLayer=null;
-          var dark = \(isDark ? "true" : "false");
+          var styleConfiguration = \(styleConfigurationJSON);
+          var styleGeneration = 0;
+          var currentSelection = null;
+          var pendingSelection = null;
+          var endpointLabelToggle = \(endpointLabelToggle ? "true" : "false");
+          var reducedMotion = \(reducedMotion ? "true" : "false");
           var cameraTilt = \(tilt);
           var lastRouteSignature = "";
           // Deliberately does NOT say "check your connection". The base-layer
           // path fails on a provider-contract change far more often than on a
           // dead network, and telling someone with working signal to check
           // their connection sends them to debug the wrong thing.
-          function showError(){
-            var el=document.getElementById("map");
-            if(el){ el.innerHTML='<div style="height:100%;display:flex;align-items:center;justify-content:center;color:#fff;opacity:.72;font:12px -apple-system;text-align:center;padding:18px">Map unavailable. Everything else on this screen still works.</div>'; }
+          function setStyleState(state){
+            var el=document.getElementById("style-status");
+            if(!el) return;
+            el.className="";
+            if(state==="fallback"){
+              el.style.display="block";
+              el.textContent="Standard map · custom styling unavailable";
+            }else if(state==="standard"){
+              el.style.display="block";
+              el.textContent="Standard family · EusoTrip visual review pending";
+            }else if(state==="mode-unavailable"){
+              el.style.display="block";
+              el.className="mode-unavailable";
+              el.textContent="Map mode unresolved · matching standard family retained";
+            }else if(state==="stale"){
+              el.style.display="block";
+              el.textContent="Map type update unavailable · previous map retained";
+            }else if(state==="unavailable"){
+              el.style.display="flex";
+              el.className="unavailable";
+              el.textContent="Map unavailable. Live freight data remains available.";
+            }else{
+              el.style.display="none";
+              el.textContent="";
+            }
           }
           // Animated map fx (fence pulses / breach exitPulse / pilot-ground
           // dashoffset) — one shared timer, rebuilt on every __applyLayers.
           var fx = [], fxTimer = null;
           function stopFx(){ if(fxTimer){ clearInterval(fxTimer); fxTimer=null; } fx = []; }
           function startFx(){
-            if(fxTimer || !fx.length) return;
+            if(reducedMotion || fxTimer || !fx.length) return;
             var t = 0;
             fxTimer = setInterval(function(){
               t += 0.08;
@@ -494,53 +1287,154 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
             }, 80);
           }
 
-          // createDefaultLayers is called through a ladder of progressively
-          // plainer option sets instead of once with a bespoke config.
-          //
-          // The version bump to 3.2 (see header note 3) is the actual fix for
-          // the "Map unavailable" outage — under 3.2, ppi 200 is a legal value
-          // and an illegal one clamps rather than throws. This ladder stays as
-          // defence in depth: it costs nothing on the happy path, and if HERE
-          // reshapes the layer tree again (dl.raster.normal.mapnight and
-          // dl.vector.normal.map have both moved across releases) the map
-          // degrades to a working base layer instead of an error card.
-          //
-          // Each rung is tried in turn and the failure reason is logged, so the
-          // hzLog handler names the real cause instead of the generic banner.
-          function buildBase(d){
-            var rungs = [
-              ["tileSize+ppi", function(){ return platform.createDefaultLayers({tileSize:512,ppi:200}); }],
-              ["tileSize",     function(){ return platform.createDefaultLayers({tileSize:512}); }],
-              ["defaults",     function(){ return platform.createDefaultLayers(); }]
-            ];
-            for(var i=0;i<rungs.length;i++){
-              var name = rungs[i][0];
-              try{
-                var dl = rungs[i][1]();
-                if(!dl){ log("base "+name+": no layers"); continue; }
-                if(d && dl.raster && dl.raster.normal && dl.raster.normal.mapnight){
-                  return dl.raster.normal.mapnight;
-                }
-                if(dl.vector && dl.vector.normal && dl.vector.normal.map){
-                  return dl.vector.normal.map;
-                }
-                if(dl.raster && dl.raster.normal && dl.raster.normal.map){
-                  return dl.raster.normal.map;
-                }
-                log("base "+name+": layers present but no usable base");
-              }catch(e){ log("base "+name+" err "+e); }
+          var contentByFamily = {
+            operational: "default,advanced_roads,advanced_pois,transit",
+            navigation: "default,transit",
+            terrain: "default,hillshade,contours,transit"
+          };
+          var fallbackIdentities = {
+            "logistics.day":true, "logistics.night":true,
+            "topo.day":true, "topo.night":true
+          };
+          function fallbackStyleURL(identity){
+            return "https://js.api.here.com/v3/3.2.8.0/styles/harp/oslo/"+identity+".json";
+          }
+          function createStyleHandle(url,family,onReady,onError){
+            if(!contentByFamily[family]) throw new Error("Unsupported map family");
+            var style = new H.map.render.harp.Style(url);
+            var layer = null, settled = false, disposed = false, timeoutID = null;
+            function settleReady(){
+              if(disposed || settled) return;
+              settled = true;
+              if(timeoutID){ clearTimeout(timeoutID); timeoutID=null; }
+              onReady();
             }
-            return null;
+            function settleError(error){
+              if(disposed || settled) return;
+              settled = true;
+              if(timeoutID){ clearTimeout(timeoutID); timeoutID=null; }
+              onError(error);
+            }
+            function inspect(){
+              if(style.getState() === H.map.render.Style.State.READY) settleReady();
+            }
+            function fail(event){ settleError(event); }
+            style.addEventListener("change", inspect);
+            style.addEventListener("error", fail);
+            var service = platform.getOMVService({ queryParams: { content: contentByFamily[family] } });
+            layer = service.createLayer(style);
+            timeoutID = setTimeout(function(){
+              settleError(new Error("HERE style did not become READY within 20000ms"));
+            }, 20000);
+            Promise.resolve().then(inspect);
+            return {
+              layer:layer,
+              dispose:function(){
+                if(disposed) return;
+                disposed=true;
+                if(timeoutID){ clearTimeout(timeoutID); timeoutID=null; }
+                try{ style.removeEventListener("change",inspect); }catch(e){}
+                try{ style.removeEventListener("error",fail); }catch(e){}
+                try{ if(layer && layer.dispose){ layer.dispose(); } }catch(e){}
+                try{ if(style && style.dispose){ style.dispose(); } }catch(e){}
+                layer=null;
+              }
+            };
+          }
+          function createSelection(cfg,generation,onReady,onFailure){
+            var current=null, disposed=false, selection=null;
+            function fail(reason){
+              if(!disposed){ onFailure(selection,reason); }
+            }
+            function startFallback(reason){
+              if(disposed) return;
+              if(reason){ log(cfg.displayName+" failed; matching fallback: "+reason); }
+              if(!fallbackIdentities[cfg.fallbackIdentity]){
+                fail(new Error("Unsupported matching fallback identity"));
+                return;
+              }
+              if(current){ current.dispose(); current=null; }
+              try{
+                current=createStyleHandle(
+                  fallbackStyleURL(cfg.fallbackIdentity), cfg.family,
+                  function(){
+                    if(!disposed){
+                      onReady(
+                        selection,
+                        cfg.resolutionState==="unavailable"
+                          ? "mode-unavailable"
+                          : (cfg.customStylesEnabled?"fallback":"standard")
+                      );
+                    }
+                  },
+                  function(err){
+                    if(!disposed){ log("fallback style "+err); fail(err); }
+                  }
+                );
+              }catch(err){
+                log("fallback construction "+err);
+                fail(err);
+              }
+            }
+            selection={
+              get layer(){ return current?current.layer:null; },
+              generation:generation,
+              dispose:function(){
+                if(disposed) return;
+                disposed=true;
+                if(current) current.dispose();
+                current=null;
+              }
+            };
+            if(cfg.customStylesEnabled){
+              if(!/\\.tar\\.gz$/.test(cfg.artifactURL)){
+                startFallback("custom style URL must end in .tar.gz");
+              }else{
+                try{
+                  current=createStyleHandle(
+                    cfg.artifactURL, cfg.family,
+                    function(){ if(!disposed){ onReady(selection,"custom"); } },
+                    startFallback
+                  );
+                }catch(err){
+                  log("custom construction "+err);
+                  startFallback(err);
+                }
+              }
+            }else{
+              startFallback(null);
+            }
+            return selection;
           }
 
           try{
             platform = new H.service.Platform({ apikey: "\(apiKey)" });
-            var base = buildBase(dark);
-            if(!base){ showError(); return; }
+            styleGeneration += 1;
+            var selection = createSelection(
+              styleConfiguration,
+              styleGeneration,
+              function(prepared,state){
+                if(prepared!==currentSelection || prepared.generation!==styleGeneration) return;
+                try{
+                  if(map && prepared.layer){ map.setBaseLayer(prepared.layer); }
+                  setStyleState(state);
+                }catch(err){
+                  log("initial style commit "+err);
+                  setStyleState("unavailable");
+                }
+              },
+              function(failed,reason){
+                if(failed!==currentSelection || failed.generation!==styleGeneration) return;
+                log("initial style failed "+reason);
+                setStyleState("unavailable");
+              }
+            );
+            if(!selection.layer){ setStyleState("unavailable"); return; }
 
             var baseOpts = { center:{lat:\(centerLat),lng:\(centerLng)}, zoom:\(zoom), pixelRatio: window.devicePixelRatio||1 };
             var el = document.getElementById("map");
-            map = new H.Map(el, base, baseOpts);
+            map = new H.Map(el, selection.layer, baseOpts);
+            currentSelection = selection;
             window.addEventListener("resize", function(){ map.getViewPort().resize(); });
             behavior = new H.mapevents.Behavior(new H.mapevents.MapEvents(map));
             \(dragFlags)
@@ -549,16 +1443,75 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
             // driver an immersive perspective view of the lane ahead.
             try{ if(\(Int(tilt)) > 0 && map.getViewModel){ map.getViewModel().setLookAtData({ tilt: \(Int(tilt)) }); } }catch(e){ log("tilt "+e); }
 
-            // Dark/light flip without reload — swap the base layer's style.
-            window.__setDark = function(d){
-              try{ dark=d; var nb=buildBase(d); if(nb){ map.setBaseLayer(nb); } }catch(e){ log("setDark "+e); }
+            // Family/theme changes swap only the base layer. Camera, maneuvers,
+            // route objects, overlays, and active guidance remain on this map.
+            window.__setMapStyle = function(cfg){
+              try{
+                styleGeneration += 1;
+                var requestedGeneration=styleGeneration;
+                if(pendingSelection){ pendingSelection.dispose(); pendingSelection=null; }
+                setStyleState("loading");
+                var next = createSelection(
+                  cfg,
+                  requestedGeneration,
+                  function(prepared,state){
+                    if(prepared!==pendingSelection || prepared.generation!==styleGeneration){
+                      prepared.dispose();
+                      return;
+                    }
+                    var previous=currentSelection;
+                    try{
+                      map.setBaseLayer(prepared.layer);
+                      currentSelection=prepared;
+                      pendingSelection=null;
+                      styleConfiguration=cfg;
+                      setStyleState(state);
+                      if(previous) previous.dispose();
+                    }catch(err){
+                      log("style commit "+err);
+                      prepared.dispose();
+                      pendingSelection=null;
+                      setStyleState(previous?"stale":"unavailable");
+                    }
+                  },
+                  function(failed,reason){
+                    if(failed!==pendingSelection || failed.generation!==styleGeneration){
+                      failed.dispose();
+                      return;
+                    }
+                    log("style prepare failed "+reason);
+                    failed.dispose();
+                    pendingSelection=null;
+                    setStyleState(currentSelection?"stale":"unavailable");
+                  }
+                );
+                pendingSelection=next;
+                if(!next.layer){
+                  next.dispose();
+                  pendingSelection=null;
+                  setStyleState(currentSelection?"stale":"unavailable");
+                }
+              }catch(e){
+                log("setMapStyle "+e);
+                setStyleState(currentSelection?"stale":"unavailable");
+              }
+            };
+
+            window.__setEndpointLabelToggle = function(enabled){
+              endpointLabelToggle = Boolean(enabled);
+            };
+
+            window.__setReducedMotion = function(enabled){
+              reducedMotion = Boolean(enabled);
+              if(reducedMotion){ stopFx(); }
+              else{ startFx(); }
             };
 
             window.__setCamera = function(lat,lng,z,t){
               try{
                 cameraTilt = Number(t)||0;
-                map.setCenter({lat:Number(lat),lng:Number(lng)}, true);
-                map.setZoom(Number(z), true);
+                map.setCenter({lat:Number(lat),lng:Number(lng)}, !reducedMotion);
+                map.setZoom(Number(z), !reducedMotion);
                 if(map.getViewModel){ map.getViewModel().setLookAtData({tilt:cameraTilt}); }
               }catch(e){ log("setCamera "+e); }
             };
@@ -580,35 +1533,31 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
                 map.removeObjects(map.getObjects());
                 var grp = new H.map.Group();
 
-                // The live truck pin (when present) splits every route into
-                // traveled / remaining — same rule as BespokeMapCanvas.
-                var live = null;
-                (L.markers||[]).forEach(function(m){ if(!live && m.kind==="truck") live = m; });
-
-                // Route grammar (§2 _MAP_DESIGN_LANGUAGE_2026-06-09):
-                // traveled = solid eusoPrimary sweep (#1473FF→#BE01FF) w4
-                // round caps; remaining = the same sweep @0.70 dash [2,8].
-                // Split at the vertex nearest the live truck pin, else the
-                // authored 0.62 fraction (mirrors BespokeMapCanvas.buildRoute).
-                // r.color is intentionally ignored — law 1: ONE gradient
-                // rules every route.
+                // EusoLine grammar: one slim continuous ROUTE-ORDER ribbon,
+                // origin #1473FF → midpoint #813FF5 → destination #BE01FF.
+                // Raw GNSS, AIS, or rail positions never infer progress. State
+                // remains caller-owned through localized glyphs and accessible
+                // text; it never modifies or adds a route stroke.
                 (L.routes||[]).forEach(function(r){
                   var pts = r.pts||[];
                   if(pts.length<2) return;
-                  var b = routeBounds(pts);
-                  var frac = 0.62;
-                  if(live){
-                    var best=0, bd=Infinity;
-                    for(var i=0;i<pts.length;i++){
-                      var dla=pts[i].lat-live.lat, dlo=pts[i].lng-live.lng;
-                      var d=dla*dla+dlo*dlo;
-                      if(d<bd){ bd=d; best=i; }
-                    }
-                    frac = best/(pts.length-1);
-                  }
-                  var split = Math.max(1, Math.min(pts.length-1, Math.round((pts.length-1)*frac)));
-                  addSweepLine(grp, pts.slice(0, split+1), b, 4, 1.0, null);   // traveled — solid sweep
-                  addSweepLine(grp, pts.slice(split),     b, 4, 0.70, [2,8]); // remaining — dashed @0.70
+                  var spec = routeStateSpec(r.state);
+                  addEusoLine(grp, pts, spec);
+                });
+
+                // Position history is observation evidence, not route
+                // authority. Neutral dotted grammar prevents progress claims.
+                (L.observationTrails||[]).forEach(function(t){
+                  var pts=t.pts||[];
+                  if(pts.length<2) return;
+                  var ls=new H.geo.LineString();
+                  pts.forEach(function(p){ls.pushPoint({lat:p.lat,lng:p.lng});});
+                  grp.addObject(new H.map.Polyline(ls,{style:{
+                    lineWidth:3,
+                    strokeColor:"rgba(96,125,139,.82)",
+                    lineDash:[2,5],
+                    lineCap:"round"
+                  }}));
                 });
 
                 // Traffic-flow ribbons over the road network (536, §2):
@@ -640,13 +1589,31 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
 
                 (L.markers||[]).forEach(function(m){
                   try{
-                    var ic = iconFor(m.kind, m.label);
+                    var ic = iconFor(
+                      m.kind,
+                      m.label,
+                      m.observationState,
+                      m.accessibilityLabel,
+                      m.clusterCount
+                    );
                     var mk = ic ? new H.map.Marker({lat:m.lat,lng:m.lng},{icon:ic})
                                 : new H.map.Marker({lat:m.lat,lng:m.lng});
-                    // Tappable pin → bubble the id back to Swift (onSelectMarker).
-                    if(m.id){
+                    // A destination has one label slot. On detail maps a tap
+                    // replaces the address with the exact coordinate and a
+                    // second tap restores it; the two never overlap.
+                    if(m.id || (m.kind==="delivery" && m.label)){
+                      var showingCoordinate = false;
                       mk.setData(m.id);
                       mk.addEventListener("tap", function(ev){
+                        if(endpointLabelToggle && m.kind==="delivery" && m.label && m.coordinateLabel){
+                          showingCoordinate = !showingCoordinate;
+                          var nextIcon = iconFor(
+                            m.kind,
+                            showingCoordinate ? m.coordinateLabel : m.label
+                          );
+                          if(nextIcon){ ev.target.setIcon(nextIcon); }
+                          return;
+                        }
                         try{ window.webkit.messageHandlers.markerTap.postMessage(String(ev.target.getData())); }catch(e){}
                       });
                     }
@@ -655,13 +1622,29 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
                 });
                 if(grp.getObjects().length){ map.addObject(grp); }
 
+                var a11y=[];
+                (L.routes||[]).forEach(function(r){
+                  a11y.push((r.label||"Route")+", "+(r.state||"planned"));
+                });
+                (L.observationTrails||[]).forEach(function(t){
+                  a11y.push((t.label||"Position history")+", observation trail, not route progress");
+                });
+                (L.markers||[]).forEach(function(m){
+                  var name=m.accessibilityLabel||m.label||m.kind||"observation";
+                  var source=m.sourceLabel ? ", source "+m.sourceLabel : "";
+                  a11y.push(name+", "+(m.observationState||"current")+source);
+                });
+                var a11yEl=document.getElementById("map-accessibility-summary");
+                if(a11yEl){ a11yEl.textContent=a11y.join(". "); }
+
                 // Fit a newly supplied route once. Add-on refreshes reuse the
                 // same signature, so they do not keep stealing the camera
                 // after the user pans or zooms. First-person navigation keeps
                 // its authored camera instead of fitting the whole trip.
                 var routeSig = "";
-                if(L.routes && L.routes.length){
-                  routeSig = L.routes.map(function(r){
+                var fitRoutes=(L.routes||[]);
+                if(fitRoutes.length){
+                  routeSig = fitRoutes.map(function(r){
                     var p=r.pts||[], a=p[0]||{}, b=p[p.length-1]||{};
                     return p.length+":"+a.lat+","+a.lng+":"+b.lat+","+b.lng;
                   }).join("|");
@@ -683,38 +1666,100 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
             }
 
             // ── Route sweep (§2) ─────────────────────────────────────────
-            // HERE JS polylines have no gradient strokes, so the eusoPrimary
-            // sweep is faked per-chunk: lerp #1473FF→#BE01FF along the FIXED
-            // map-space diagonal (bottom-leading → top-trailing) of the full
-            // route bounds — the same gradient frame BespokeMapCanvas uses.
-            function routeBounds(pts){
-              var mnLa=90,mxLa=-90,mnLo=180,mxLo=-180;
-              pts.forEach(function(p){
-                if(p.lat<mnLa)mnLa=p.lat; if(p.lat>mxLa)mxLa=p.lat;
-                if(p.lng<mnLo)mnLo=p.lng; if(p.lng>mxLo)mxLo=p.lng;
-              });
-              return { minLat:mnLa, minLng:mnLo, h:(mxLa-mnLa), w:(mxLo-mnLo) };
-            }
+            // HERE polylines have no gradient stroke, so render deterministic
+            // route-order chunks. Geographic direction cannot invert identity.
+            function mix(a,b,t){ return Math.round(a+(b-a)*t); }
             function sweepColor(t, a){
               t = Math.max(0, Math.min(1, t));
-              var r = Math.round(0x14 + (0xBE-0x14)*t);
-              var g = Math.round(0x73 + (0x01-0x73)*t);
-              return "rgba("+r+","+g+",255,"+a+")";
+              var from,to,local,midpoint=.52;
+              if(t<=midpoint){
+                from=[0x14,0x73,0xFF]; to=[0x81,0x3F,0xF5]; local=t/midpoint;
+              }else{
+                from=[0x81,0x3F,0xF5]; to=[0xBE,0x01,0xFF]; local=(t-midpoint)/(1-midpoint);
+              }
+              return "rgba("+mix(from[0],to[0],local)+","+mix(from[1],to[1],local)+","+mix(from[2],to[2],local)+","+a+")";
             }
-            function addSweepLine(grp, pts, b, width, alpha, dash){
+            function routeStateSpec(state){
+              // Route state belongs to text and localized glyphs. Every state
+              // preserves the same five-point EusoLine with no dash or edge.
+              return {width:5};
+            }
+            function wrappedLngDelta(from,to){
+              var delta=to-from;
+              while(delta>180){delta-=360;}
+              while(delta< -180){delta+=360;}
+              return delta;
+            }
+            function normalizedLng(value){
+              while(value>180){value-=360;}
+              while(value< -180){value+=360;}
+              return value;
+            }
+            // Renderer-local cumulative-distance subdivision. It colors the
+            // exact supplied polyline locus only; it is never route distance,
+            // route progress, ETA, Haul, pricing, or a replacement solver.
+            function eusoLineSegments(pts,budget){
               if(!pts || pts.length<2) return;
-              var chunks = Math.min(16, pts.length-1);
-              var per = Math.max(1, Math.floor((pts.length-1)/chunks));
-              for(var i=0;i<pts.length-1;i+=per){
-                var end = Math.min(pts.length-1, i+per);
+              var weights=[], cumulative=[0], total=0, epsilon=1e-12;
+              for(var i=0;i<pts.length-1;i++){
+                var a=pts[i], b=pts[i+1];
+                var dy=(b.lat-a.lat)*Math.PI/180;
+                var dx=wrappedLngDelta(a.lng,b.lng)*Math.PI/180;
+                var mean=(a.lat+b.lat)*Math.PI/360;
+                var weight=Math.sqrt((dy*dy)+(dx*Math.cos(mean))*(dx*Math.cos(mean)));
+                weights.push(weight); total+=weight; cumulative.push(total);
+              }
+              if(total<=epsilon){ return [{points:pts.slice(),progress:.5}]; }
+              var count=Math.max(1,Math.min(96,Math.floor(budget||72)));
+              function pointAt(distance){
+                if(distance<=0){return {lat:pts[0].lat,lng:pts[0].lng};}
+                if(distance>=total){var last=pts[pts.length-1];return {lat:last.lat,lng:last.lng};}
+                var low=0, high=cumulative.length-1;
+                while(low+1<high){
+                  var middle=Math.floor((low+high)/2);
+                  if(cumulative[middle]<=distance){low=middle;}else{high=middle;}
+                }
+                var edge=Math.min(low,weights.length-1);
+                while(edge<weights.length-1 && weights[edge]<=epsilon){edge++;}
+                var w=weights[edge];
+                if(w<=epsilon){return {lat:pts[edge+1].lat,lng:pts[edge+1].lng};}
+                var local=Math.max(0,Math.min(1,(distance-cumulative[edge])/w));
+                var start=pts[edge], end=pts[edge+1];
+                return {
+                  lat:start.lat+(end.lat-start.lat)*local,
+                  lng:normalizedLng(start.lng+wrappedLngDelta(start.lng,end.lng)*local)
+                };
+              }
+              var segments=[], interior=1;
+              for(var segmentIndex=0;segmentIndex<count;segmentIndex++){
+                var startDistance=total*segmentIndex/count;
+                var endDistance=total*(segmentIndex+1)/count;
+                var segmentPoints=[pointAt(startDistance)];
+                while(interior<pts.length-1 && cumulative[interior]<=startDistance+epsilon){interior++;}
+                while(interior<pts.length-1 && cumulative[interior]<endDistance-epsilon){
+                  segmentPoints.push({lat:pts[interior].lat,lng:pts[interior].lng}); interior++;
+                }
+                segmentPoints.push(pointAt(endDistance));
+                segments.push({
+                  points:segmentPoints,
+                  progress:(startDistance+endDistance)/(2*total)
+                });
+              }
+              return segments;
+            }
+            function addEusoLine(grp,pts,spec){
+              // One gradient ribbon only: no outline, backdrop, casing, or
+              // route halo. State remains available in text and width.
+              addSweepLine(grp,pts,spec.width);
+            }
+            function addSweepLine(grp, pts, width){
+              var segments=eusoLineSegments(pts,72)||[];
+              for(var i=0;i<segments.length;i++){
+                var segment=segments[i];
                 var ls = new H.geo.LineString();
-                for(var j=i;j<=end;j++){ ls.pushPoint({lat:pts[j].lat,lng:pts[j].lng}); }
-                var mid = pts[Math.floor((i+end)/2)];
-                var nx = b.w>0 ? (mid.lng-b.minLng)/b.w : 0.5;
-                var ny = b.h>0 ? (mid.lat-b.minLat)/b.h : 0.5;
-                var style = { lineWidth:width, strokeColor:sweepColor((nx+ny)/2, alpha),
-                              lineCap:"round" };
-                if(dash){ style.lineDash = dash; }
+                segment.points.forEach(function(p){ls.pushPoint({lat:p.lat,lng:p.lng});});
+                var style = { lineWidth:width, strokeColor:sweepColor(segment.progress, 1),
+                              lineCap:"round", lineJoin:"round" };
                 grp.addObject(new H.map.Polyline(ls, { style:style }));
               }
             }
@@ -780,35 +1825,98 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
 
             // ── Canon marker grammar (§3) — NO teardrops ────────────────
             // Three families, mirroring BespokeMapCanvas.paintMarker:
-            //  • endpoints — concentric discs: white shell r6, eusoDiagonal
-            //    core r4 (pickup) / #BE01FF core (delivery); a LABELLED
-            //    delivery gets the 013 glass-pill flag (SF-Mono label +
-            //    12×12 rx2 eusoDiagonal diamond rotated −45°, hung below).
+            //  • endpoints — Truck gets the soft concentric route bloom from
+            //    the authored mockups; Rail gets the exact larger 003 terminal
+            //    shell; Vessel keeps a hollow 003 port ring with ring-only
+            //    bloom. Active navigation never receives an automatic node.
             //  • live truck — the 013 ping: radial halo + white ring +
             //    eusoDiagonal r9 core.
             //  • add-on POIs — tinted disc r7 + white core, in the Brand
             //    accent set (the Tailwind set appears in ZERO wireframes).
-            var EG = '<defs><linearGradient id="eg" x1="0" y1="1" x2="1" y2="0">'
-              + '<stop offset="0" stop-color="#1473FF"/><stop offset="1" stop-color="#BE01FF"/>'
+            var EG = '<defs><linearGradient id="eg" x1="0" y1="0" x2="1" y2="0">'
+              + '<stop offset="0" stop-color="#1473FF"/><stop offset="0.5" stop-color="#813FF5"/><stop offset="1" stop-color="#BE01FF"/>'
               + '</linearGradient></defs>';
             function xmlEsc(s){
               return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
             }
-            function svgEndpoint(coreFill){
-              return '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">' + EG
-                + '<circle cx="12" cy="12" r="6" fill="#FFFFFF" stroke="rgba(13,17,23,0.12)" stroke-width="1"/>'
-                + '<circle cx="12" cy="12" r="4" fill="'+coreFill+'"/></svg>';
+            function endpointMode(){
+              var raw=String(styleConfiguration.productMode||styleConfiguration.transportMode||"").toLowerCase();
+              if(raw.indexOf("vessel")>=0 || raw.indexOf("marine")>=0){return "vessel";}
+              if(raw.indexOf("rail")>=0){return "rail";}
+              return "truck";
             }
-            function svgPuck(){
+            function endpointBloomDefs(tint){
+              return '<defs><radialGradient id="endpointBloom">'
+                + '<stop offset="0" stop-color="'+tint+'" stop-opacity=".22"/>'
+                + '<stop offset=".55" stop-color="'+tint+'" stop-opacity=".09"/>'
+                + '<stop offset="1" stop-color="'+tint+'" stop-opacity="0"/>'
+                + '</radialGradient></defs>';
+            }
+            function svgEndpoint(kind,mode,title){
+              var isDestination=kind==="delivery";
+              var dark=styleConfiguration.theme==="dark";
+              var shell=mode==="rail" ? "#FFFFFF" : (dark ? "#0D0E1A" : "#FFFFFF");
+              var tint=isDestination ? "#BE01FF" : "#1473FF";
+              var safeTitle=xmlEsc(title||(isDestination?"Destination":"Origin"));
+              if(mode==="vessel"){
+                var ring=isDestination ? (dark?"#6E7681":"#8A96A3") : "url(#eg)";
+                var bloom=isDestination ? (dark?"#6E7681":"#8A96A3") : "#1473FF";
+                return '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">'
+                  + '<title>'+safeTitle+'</title>'+EG
+                  + '<circle cx="20" cy="20" r="13" fill="none" stroke="'+bloom+'" stroke-opacity=".12" stroke-width="5"/>'
+                  + '<circle cx="20" cy="20" r="6.5" fill="none" stroke="'+ring+'" stroke-width="3"/></svg>';
+              }
+              var outer=mode==="rail" ? 7.5 : 6;
+              var inner=mode==="rail" ? 5.5 : 4;
+              var bloomRadius=mode==="rail" ? 15 : 16;
+              var core=isDestination ? "#BE01FF" : "url(#eg)";
+              return '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">'
+                + '<title>'+safeTitle+'</title>'+EG+endpointBloomDefs(tint)
+                + '<circle cx="20" cy="20" r="'+bloomRadius+'" fill="url(#endpointBloom)"/>'
+                + '<circle cx="20" cy="20" r="'+outer+'" fill="'+shell+'" stroke="rgba(13,17,23,0.12)" stroke-width="1"/>'
+                + '<circle cx="20" cy="20" r="'+inner+'" fill="'+core+'"/></svg>';
+            }
+            function stateDecoration(state){
+              if(state==="stale"){
+                return '<circle cx="24" cy="24" r="14" fill="none" stroke="#FFA726" stroke-width="2" stroke-dasharray="4 3"/>';
+              }
+              if(state==="degraded"){
+                return '<circle cx="24" cy="24" r="14" fill="none" stroke="#F44336" stroke-width="2" stroke-dasharray="2 2"/>'
+                  + '<path d="M15 15L33 33M33 15L15 33" stroke="#F44336" stroke-width="1.5" opacity=".82"/>';
+              }
+              if(state==="offline"){
+                return '<circle cx="24" cy="24" r="14" fill="none" stroke="#607D8B" stroke-width="2"/>'
+                  + '<path d="M14 34L34 14" stroke="#607D8B" stroke-width="3" stroke-linecap="round"/>';
+              }
+              return '<circle cx="24" cy="24" r="14" fill="none" stroke="#1473FF" stroke-width="1.4"/>';
+            }
+            function modeGlyph(kind,count){
+              if(kind==="rail"){
+                return '<path d="M24 14L33 20V29L24 34L15 29V20Z" fill="url(#eg)" stroke="#fff" stroke-width="1.3"/>'
+                  + '<path d="M20 19V29M28 19V29M19 22H29M19 27H29" stroke="#fff" stroke-width="1.2"/>';
+              }
+              if(kind==="vessel"){
+                return '<path d="M24 13L31 23L29 31Q24 35 19 31L17 23Z" fill="url(#eg)" stroke="#fff" stroke-width="1.3"/>'
+                  + '<path d="M24 14V31M18 23H30" stroke="#fff" stroke-width="1.2"/>';
+              }
+              if(kind==="cluster"){
+                return '<circle cx="24" cy="24" r="11" fill="url(#eg)" stroke="#fff" stroke-width="1.4"/>'
+                  + '<text x="24" y="28" text-anchor="middle" font-size="10" font-weight="800" font-family="-apple-system,sans-serif" fill="#fff">'+xmlEsc(count||"2+")+'</text>';
+              }
+              return '<rect x="14" y="18" width="18" height="12" rx="4" fill="url(#eg)" stroke="#fff" stroke-width="1.3"/>'
+                + '<path d="M18 18V15H27V18M18 30V33M29 30V33" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>';
+            }
+            function svgPuck(kind,state,title,count){
               return '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">'
+                + '<title>'+xmlEsc(title||kind||"Live observation")+'</title>'
                 + '<defs><radialGradient id="halo"><stop offset="0" stop-color="#1473FF" stop-opacity="0.55"/>'
                 + '<stop offset="1" stop-color="#1473FF" stop-opacity="0"/></radialGradient>'
-                + '<linearGradient id="eg" x1="0" y1="1" x2="1" y2="0">'
-                + '<stop offset="0" stop-color="#1473FF"/><stop offset="1" stop-color="#BE01FF"/></linearGradient></defs>'
+                + '<linearGradient id="eg" x1="0" y1="0" x2="1" y2="0">'
+                + '<stop offset="0" stop-color="#1473FF"/><stop offset="0.5" stop-color="#813FF5"/><stop offset="1" stop-color="#BE01FF"/></linearGradient></defs>'
                 + '<circle cx="24" cy="24" r="22" fill="url(#halo)"/>'
-                + '<circle cx="24" cy="24" r="11" fill="#FFFFFF"/>'
-                + '<circle cx="24" cy="24" r="9" fill="url(#eg)"/>'
-                + '<circle cx="24" cy="24" r="11.5" fill="none" stroke="#1473FF" stroke-opacity="0.45" stroke-width="0.5"/>'
+                + '<circle cx="24" cy="24" r="12" fill="rgba(255,255,255,.94)"/>'
+                + modeGlyph(kind,count)
+                + stateDecoration(state)
                 + '</svg>';
             }
             function svgDisc(tint){
@@ -816,14 +1924,35 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
                 + '<circle cx="11" cy="11" r="7" fill="'+tint+'" stroke="rgba(255,255,255,0.85)" stroke-width="1.4"/>'
                 + '<circle cx="11" cy="11" r="3.5" fill="rgba(255,255,255,0.92)"/></svg>';
             }
+            function isCoordinateLabel(label){
+              return /^[-+]?\\d+(?:\\.\\d+)?,\\s*[-+]?\\d+(?:\\.\\d+)?$/.test(String(label));
+            }
+            function flagText(label){
+              return isCoordinateLabel(label)
+                ? String(label)
+                : String(label).toUpperCase().slice(0,28);
+            }
+            function flagWidth(label){
+              var raw = flagText(label);
+              return Math.min(240, Math.max(46, Math.round(raw.length*6.2)+20));
+            }
             function svgFlag(label){
-              var raw = String(label).toUpperCase().slice(0,18);
+              var raw = flagText(label);
               var text = xmlEsc(raw);
-              var w = Math.max(46, Math.round(raw.length*6.2)+20);
+              var w = flagWidth(label);
               var cx = w/2;
-              return '<svg xmlns="http://www.w3.org/2000/svg" width="'+w+'" height="52" viewBox="0 0 '+w+' 52">' + EG
-                + '<rect x="1" y="1" width="'+(w-2)+'" height="22" rx="11" fill="rgba(255,255,255,0.78)" stroke="rgba(13,17,23,0.12)" stroke-width="1"/>'
-                + '<text x="'+cx+'" y="15.5" font-size="9" font-weight="700" letter-spacing="0.4" font-family="ui-monospace,Menlo,monospace" text-anchor="middle" fill="#0D1117">'+text+'</text>'
+              var dark = styleConfiguration.theme==="dark";
+              var fill = dark ? "rgba(13,14,26,0.88)" : "rgba(255,255,255,0.82)";
+              var border = dark ? "rgba(255,255,255,0.12)" : "rgba(13,17,23,0.12)";
+              var ink = dark ? "#F5F5F7" : "#0D1117";
+              var fit = raw.length*6.2 > w-16
+                ? ' textLength="'+(w-16)+'" lengthAdjust="spacingAndGlyphs"'
+                : '';
+              return '<svg xmlns="http://www.w3.org/2000/svg" width="'+w+'" height="56" viewBox="0 0 '+w+' 56">' + EG
+                + endpointBloomDefs("#BE01FF")+'<title>'+text+'</title>'
+                + '<rect x="1" y="1" width="'+(w-2)+'" height="22" rx="11" fill="'+fill+'" stroke="'+border+'" stroke-width="1"/>'
+                + '<text x="'+cx+'" y="15.5" font-size="9" font-weight="700" letter-spacing="0.4" font-family="ui-monospace,Menlo,monospace" text-anchor="middle" fill="'+ink+'"'+fit+'>'+text+'</text>'
+                + '<circle cx="'+cx+'" cy="40" r="15" fill="url(#endpointBloom)"/>'
                 + '<rect x="'+(cx-6)+'" y="34" width="12" height="12" rx="2" fill="url(#eg)" transform="rotate(-45 '+cx+' 40)"/>'
                 + '</svg>';
             }
@@ -835,25 +1964,37 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
               truckStop:"#E8731C", weigh:"#607D8B", camera:"#FFA726", hotZone:"#FF7A00"
             };
             var ICONS = {};
-            function iconFor(kind, label){
-              var key = kind, svg, anchor;
-              if(kind==="delivery" && label){
-                key = "flag:"+label;
+            function iconFor(kind, label, state, accessibilityLabel, clusterCount){
+              var mode=endpointMode();
+              var title=accessibilityLabel||label||kind||"Map marker";
+              var key = kind+":"+(state||"current")+":"+(clusterCount||0)+":"+mode+":"+styleConfiguration.theme+":"+title, svg, anchor;
+              if(kind==="delivery" && label && mode==="truck"){
+                key = "flag:"+styleConfiguration.theme+":"+label;
                 if(ICONS[key]) return ICONS[key];
                 svg = svgFlag(label);
-                var w = Math.max(46, Math.round(Math.min(String(label).length,18)*6.2)+20);
+                var w = flagWidth(label);
                 anchor = { x:w/2, y:40 };   // the diamond marks the geo point
               } else {
                 if(ICONS[key]) return ICONS[key];
-                if(kind==="truck"){ svg = svgPuck(); anchor = {x:24,y:24}; }
-                else if(kind==="pickup"){ svg = svgEndpoint("url(#eg)"); anchor = {x:12,y:12}; }
-                else if(kind==="delivery"){ svg = svgEndpoint("#BE01FF"); anchor = {x:12,y:12}; }
+                if(kind==="truck" || kind==="rail" || kind==="vessel" || kind==="cluster"){
+                  svg = svgPuck(kind,state,accessibilityLabel||label,clusterCount);
+                  anchor = {x:24,y:24};
+                }
+                else if(kind==="pickup" || kind==="delivery"){
+                  svg = svgEndpoint(kind,mode,title); anchor = {x:20,y:20};
+                }
                 else { svg = svgDisc(POI[kind]||"#1473FF"); anchor = {x:11,y:11}; }
               }
               try{ var ic = new H.map.Icon(svg, { anchor:anchor }); ICONS[key]=ic; return ic; }
               catch(e){ return null; }
             }
 
+            window.addEventListener("beforeunload", function(){
+              stopFx();
+              try{ if(pendingSelection){ pendingSelection.dispose(); pendingSelection=null; } }catch(e){}
+              try{ if(currentSelection){ currentSelection.dispose(); currentSelection=null; } }catch(e){}
+              try{ if(map && map.dispose){ map.dispose(); } }catch(e){}
+            });
             try{ window.webkit.messageHandlers.mapReady.postMessage("ok"); }catch(e){}
           }catch(err){ showError(); log("init "+err); }
         })();

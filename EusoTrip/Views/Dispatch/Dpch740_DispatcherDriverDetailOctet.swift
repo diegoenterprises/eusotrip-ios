@@ -167,6 +167,7 @@ private struct DispatcherDriverDetailBody: View {
     @State private var scorecard: DriversAPI.PerformanceScorecard?
     @State private var profile: DriversAPI.DriverProfile?
     @State private var hos: HOSCurrentStatus?
+    @State private var hosLoadError: String?
     @State private var dq: DriverQualificationAPI.Overview?
     @State private var loading: Bool = true
     @State private var resolvedDriverId: String?
@@ -394,6 +395,7 @@ private struct DispatcherDriverDetailBody: View {
         case .hos:
             LifecycleCard {
                 evidenceHeader("ELD CLOCK", "Live hours-of-service posture")
+                evidenceRow("Observation", hosObservationDisplay, hosObservationDetail)
                 evidenceRow("Drive headroom", hosDriveHeadroom, "FMCSA 395 drive window")
                 evidenceRow("Limit free", hosDriveLimitFreePct, "remaining drive window")
                 evidenceRow("HOS compliance", pct(m?.hosCompliance), "scorecard history")
@@ -480,15 +482,34 @@ private struct DispatcherDriverDetailBody: View {
 
     /// "8h 42m" drive headroom from the live ELD limits, or em-dash.
     private var hosDriveHeadroom: String {
-        guard let rem = hos?.limits.driving.remaining else { return "—" }
-        return HOSStatus.formatHours(Double(max(0, rem)) / 60.0)
+        guard hos?.hasCurrentObservation() == true,
+              let rem = hos?.limits.driving.remaining,
+              rem >= 0 else { return "—" }
+        return HOSStatus.formatHours(Double(rem) / 60.0)
     }
 
     /// "+78%" of the 11-hour drive limit still free, or em-dash.
     private var hosDriveLimitFreePct: String {
-        guard let d = hos?.limits.driving, d.limit > 0 else { return "—" }
-        let free = Double(max(0, d.remaining)) / Double(d.limit) * 100
+        guard hos?.hasCurrentObservation() == true,
+              let d = hos?.limits.driving,
+              let remaining = d.remaining,
+              remaining >= 0,
+              d.limit > 0 else { return "—" }
+        let free = Double(remaining) / Double(d.limit) * 100
         return "+\(Int(free.rounded()))%"
+    }
+
+    private var hosObservationDisplay: String {
+        if hosLoadError != nil { return "Unavailable" }
+        guard let hos else { return "Unavailable" }
+        return hos.hasCurrentObservation() ? "Current" : "Not current"
+    }
+
+    private var hosObservationDetail: String {
+        if let hosLoadError { return hosLoadError }
+        guard let hos else { return "No HOS observation returned" }
+        if hos.hasCurrentObservation() { return hos.source ?? "sourced observation" }
+        return hos.assignmentEligibility().reason ?? "HOS observation is not current"
     }
 
     // MARK: - DQ overview helpers
@@ -561,6 +582,7 @@ private struct DispatcherDriverDetailBody: View {
             scorecard = nil
             profile = nil
             hos = nil
+            hosLoadError = nil
             dq = nil
             return
         }
@@ -577,9 +599,13 @@ private struct DispatcherDriverDetailBody: View {
             try? await EusoTripAPI.shared.drivers.getProfileById(driverId: targetDriverId)
         }()
         // Live HOS — only the HOS lens needs it.
-        async let hosTask: HOSCurrentStatus? = {
-            guard kind == .hos else { return nil }
-            return try? await EusoTripAPI.shared.hos.getCurrentStatus(driverId: targetDriverId)
+        async let hosTask: (HOSCurrentStatus?, String?) = {
+            guard kind == .hos else { return (nil, nil) }
+            do {
+                return (try await EusoTripAPI.shared.hos.getCurrentStatus(driverId: targetDriverId), nil)
+            } catch {
+                return (nil, "Current HOS evidence could not refresh.")
+            }
         }()
         // DQ overview — onboarding + compliance lenses.
         async let dqTask: DriverQualificationAPI.Overview? = {
@@ -587,10 +613,11 @@ private struct DispatcherDriverDetailBody: View {
             return try? await EusoTripAPI.shared.dq.getOverview(driverId: targetDriverId)
         }()
 
-        let (s, p, h, d) = await (scoreTask, profileTask, hosTask, dqTask)
+        let (s, p, hosResult, d) = await (scoreTask, profileTask, hosTask, dqTask)
         self.scorecard = s
         self.profile = p
-        self.hos = h
+        self.hos = hosResult.0
+        self.hosLoadError = hosResult.1
         self.dq = d
     }
 

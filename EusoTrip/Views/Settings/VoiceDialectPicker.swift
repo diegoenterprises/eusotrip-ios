@@ -174,6 +174,21 @@ enum RoleSettingsCatalog {
         "/settings", "/factoring/settings",
     ]
 
+    /// Me roots that already render `EditableProfileAvatar` in their native
+    /// identity header. Every other exact Me destination receives the shared
+    /// profile action from `Shell`.
+    static let destinationsWithEditableAvatar: Set<String> = [
+        "me", "320", "350", "404B", "Dpch713", "620", "703", "804",
+        "903", "Rail556", "Vesl656",
+    ]
+
+    static func needsSharedAvatar(for contract: RoleDockContract) -> Bool {
+        guard let me = contract.trailing.last,
+              me.label.caseInsensitiveCompare("Me") == .orderedSame,
+              me.destinationId == contract.activeDestinationId else { return false }
+        return !destinationsWithEditableAvatar.contains(me.destinationId)
+    }
+
     static func needsSharedEntry(for contract: RoleDockContract) -> Bool {
         guard let me = contract.trailing.last,
               me.label.caseInsensitiveCompare("Me") == .orderedSame,
@@ -661,6 +676,111 @@ private enum RoleSettingsFailure: LocalizedError {
     }
 }
 
+/// One disclosure primitive for role Me hubs and settings surfaces. The owner
+/// supplies the persisted expanded identifier; this view owns only presentation
+/// and the single-open-section interaction contract.
+struct RoleDisclosureSection<Content: View>: View {
+    let id: String
+    let systemImage: String
+    let title: String
+    let summary: String
+    let badgeText: String?
+    let anchorID: String
+    let isBusy: Bool
+    let onToggle: ((Bool) -> Void)?
+
+    @Binding private var expandedID: String
+    @Environment(\.palette) private var palette
+    private let content: Content
+
+    init(
+        id: String,
+        systemImage: String,
+        title: String,
+        summary: String,
+        badgeText: String? = nil,
+        anchorID: String? = nil,
+        isBusy: Bool = false,
+        expandedID: Binding<String>,
+        onToggle: ((Bool) -> Void)? = nil,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.id = id
+        self.systemImage = systemImage
+        self.title = title
+        self.summary = summary
+        self.badgeText = badgeText
+        self.anchorID = anchorID ?? "role-disclosure-\(id)"
+        self.isBusy = isBusy
+        self._expandedID = expandedID
+        self.onToggle = onToggle
+        self.content = content()
+    }
+
+    private var isExpanded: Bool { expandedID == id }
+
+    var body: some View {
+        LifecycleCard {
+            Button {
+                let willOpen = !isExpanded
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    expandedID = willOpen ? id : ""
+                }
+                onToggle?(willOpen)
+            } label: {
+                HStack(spacing: Space.s3) {
+                    Circle()
+                        .fill(LinearGradient.diagonal)
+                        .frame(width: 40, height: 40)
+                        .overlay {
+                            Image(systemName: systemImage)
+                                .font(.system(size: 16, weight: .heavy))
+                                .foregroundStyle(.white)
+                        }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(title)
+                            .font(EType.bodyStrong)
+                            .foregroundStyle(palette.textPrimary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.78)
+                        Text(summary)
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textSecondary)
+                            .lineLimit(2)
+                    }
+                    Spacer(minLength: 0)
+                    if isBusy {
+                        ProgressView().controlSize(.small)
+                    } else if let badgeText {
+                        Text(badgeText)
+                            .font(EType.micro.weight(.heavy))
+                            .foregroundStyle(palette.textTertiary)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(Capsule().fill(palette.bgCardSoft))
+                    }
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundStyle(palette.textTertiary)
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+
+            if isExpanded {
+                Divider()
+                    .overlay(palette.borderFaint)
+                    .padding(.vertical, 6)
+                content
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .id(anchorID)
+    }
+}
+
 struct RoleSettingsAccessCard: View {
     @EnvironmentObject private var session: EusoTripSession
     @Environment(\.palette) private var palette
@@ -721,6 +841,8 @@ struct RoleSettingsCenter: View {
     @Environment(\.palette) private var palette
     @StateObject private var store: RoleSettingsStore
     @SceneStorage("euso.role.settings.expandedCategory") private var expandedCategory = ""
+    @SceneStorage("euso.role.settings.returnAnchor") private var returnAnchor = ""
+    @SceneStorage("euso.role.settings.ownerRole") private var storageOwnerRole = ""
 
     init(role: EusoRole) {
         self.role = role
@@ -728,44 +850,53 @@ struct RoleSettingsCenter: View {
     }
 
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: Space.s4) {
-                VStack(alignment: .leading, spacing: Space.s1) {
-                    Text("SETTINGS · \(role.displayName.uppercased())")
-                        .font(EType.micro)
-                        .foregroundStyle(palette.textTertiary)
-                    Text("Your preferences")
-                        .font(EType.h2)
-                        .foregroundStyle(palette.textPrimary)
-                    Text("Open a category to change settings saved to your signed-in account.")
-                        .font(EType.caption)
-                        .foregroundStyle(palette.textSecondary)
-                }
-
-                if store.loading {
-                    HStack(spacing: Space.s2) {
-                        ProgressView()
-                        Text("Loading account settings…")
+        ScrollViewReader { proxy in
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Space.s4) {
+                    VStack(alignment: .leading, spacing: Space.s1) {
+                        Text("SETTINGS · \(role.displayName.uppercased())")
+                            .font(EType.micro)
+                            .foregroundStyle(palette.textTertiary)
+                        Text("Your preferences")
+                            .font(EType.h2)
+                            .foregroundStyle(palette.textPrimary)
+                        Text("Open a category to change settings saved to your signed-in account.")
                             .font(EType.caption)
                             .foregroundStyle(palette.textSecondary)
                     }
-                    .frame(maxWidth: .infinity, minHeight: 72)
-                } else if store.settings != nil, store.notifications != nil {
-                    ForEach(visibleCategories) { category in
-                        categoryCard(category)
+
+                    if store.loading {
+                        HStack(spacing: Space.s2) {
+                            ProgressView()
+                            Text("Loading account settings…")
+                                .font(EType.caption)
+                                .foregroundStyle(palette.textSecondary)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 72)
+                    } else if store.settings != nil, store.notifications != nil {
+                        ForEach(visibleCategories) { category in
+                            categoryCard(category)
+                        }
+                    }
+
+                    if let error = store.errorMessage {
+                        settingsMessage(error, color: Brand.danger, icon: "exclamationmark.triangle.fill")
+                        Button("Retry") { Task { await store.load() } }
+                            .font(EType.bodyStrong)
+                    } else if let saved = store.savedMessage {
+                        settingsMessage(saved, color: Brand.success, icon: "checkmark.circle.fill")
                     }
                 }
-
-                if let error = store.errorMessage {
-                    settingsMessage(error, color: Brand.danger, icon: "exclamationmark.triangle.fill")
-                    Button("Retry") { Task { await store.load() } }
-                        .font(EType.bodyStrong)
-                } else if let saved = store.savedMessage {
-                    settingsMessage(saved, color: Brand.success, icon: "checkmark.circle.fill")
-                }
+                .padding(.horizontal, Space.s4)
+                .padding(.vertical, Space.s5)
             }
-            .padding(.horizontal, Space.s4)
-            .padding(.vertical, Space.s5)
+            .onAppear {
+                synchronizeStoredRole()
+                restorePosition(using: proxy)
+            }
+            .onChange(of: store.loading) { _, isLoading in
+                if !isLoading { restorePosition(using: proxy) }
+            }
         }
         .background(palette.bgPrimary.ignoresSafeArea())
         .navigationTitle("Settings")
@@ -776,6 +907,8 @@ struct RoleSettingsCenter: View {
             }
         }
         .task { await store.load() }
+        .eusoRefreshable { await store.load() }
+        .eusoRefreshSurface("role-settings:\(role.rawValue)")
     }
 
     private var visibleCategories: [RoleSettingsCategoryDefinition] {
@@ -783,51 +916,38 @@ struct RoleSettingsCenter: View {
     }
 
     private func categoryCard(_ category: RoleSettingsCategoryDefinition) -> some View {
-        let isOpen = expandedCategory == category.id.rawValue
-        return VStack(spacing: 0) {
-            Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    expandedCategory = isOpen ? "" : category.id.rawValue
-                }
-            } label: {
-                HStack(spacing: Space.s3) {
-                    Image(systemName: category.systemImage)
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(LinearGradient.diagonal)
-                        .frame(width: 36, height: 36)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(category.title)
-                            .font(EType.bodyStrong)
-                            .foregroundStyle(palette.textPrimary)
-                        Text(category.summary)
-                            .font(EType.caption)
-                            .foregroundStyle(palette.textSecondary)
-                            .lineLimit(2)
-                    }
-                    Spacer(minLength: 0)
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(palette.textTertiary)
-                        .rotationEffect(.degrees(isOpen ? 90 : 0))
-                }
-                .padding(Space.s4)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityValue(isOpen ? "Expanded" : "Collapsed")
-
-            if isOpen {
-                Divider().overlay(palette.borderFaint)
-                categoryControls(category.id)
-                    .padding(Space.s4)
-            }
+        let anchor = "settings-category-\(category.id.rawValue)"
+        return RoleDisclosureSection(
+            id: category.id.rawValue,
+            systemImage: category.systemImage,
+            title: category.title,
+            summary: category.summary,
+            anchorID: anchor,
+            isBusy: store.savingControl != nil,
+            expandedID: $expandedCategory,
+            onToggle: { isOpen in returnAnchor = isOpen ? anchor : "" }
+        ) {
+            categoryControls(category.id)
         }
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(palette.borderFaint)
+    }
+
+    private func synchronizeStoredRole() {
+        guard storageOwnerRole != role.rawValue else { return }
+        storageOwnerRole = role.rawValue
+        expandedCategory = ""
+        returnAnchor = ""
+    }
+
+    private func restorePosition(using proxy: ScrollViewProxy) {
+        guard storageOwnerRole == role.rawValue,
+              !expandedCategory.isEmpty,
+              visibleCategories.contains(where: { $0.id.rawValue == expandedCategory }) else { return }
+        let fallback = "settings-category-\(expandedCategory)"
+        eusoRestoreScrollPosition(
+            using: proxy,
+            anchor: returnAnchor.isEmpty ? fallback : returnAnchor,
+            fallback: fallback
         )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
     @ViewBuilder

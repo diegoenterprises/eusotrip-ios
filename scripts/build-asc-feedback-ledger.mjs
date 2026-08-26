@@ -14,6 +14,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 
 const args = new Map(
   process.argv.slice(2).map((arg) => {
@@ -92,6 +93,26 @@ function readJson(filePath) {
   }
 }
 
+function fileSha256(filePath) {
+  if (!filePath || !fs.existsSync(filePath)) return null;
+  return createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
+}
+
+function priorForRecord(record, isCrash, existingById) {
+  const exact = existingById.get(record.id);
+  if (exact) return exact;
+  if (!isCrash || !record.crashLogFile) return {};
+
+  const incomingSha = fileSha256(record.crashLogFile);
+  if (!incomingSha) return {};
+  return [...existingById.values()].find((item) =>
+    item.kind === "crash" &&
+    String(item.ascId || "").startsWith("local-crash-") &&
+    item.build === record.buildVersion &&
+    fileSha256(item.crashLogFile) === incomingSha
+  ) || {};
+}
+
 function classify(record, isCrash) {
   if (isCrash) return { cluster: "crash-or-freeze", severity: "P0" };
   const text = `${record.comment || ""} ${record.id || ""}`;
@@ -103,7 +124,7 @@ function classify(record, isCrash) {
 
 function normalizeRecord(record, isCrash, existingById) {
   const { cluster, severity } = classify(record, isCrash);
-  const prior = existingById.get(record.id) || {};
+  const prior = priorForRecord(record, isCrash, existingById);
   const effectiveCluster = prior.cluster || cluster;
   const effectiveSeverity = prior.severity || severity;
   const base = {
@@ -138,6 +159,18 @@ function normalizeRecord(record, isCrash, existingById) {
   };
 }
 
+function summarizeItems(items) {
+  const byCluster = {};
+  const bySeverity = {};
+  const byStatus = {};
+  for (const item of items) {
+    byCluster[item.cluster] = (byCluster[item.cluster] || 0) + 1;
+    bySeverity[item.severity] = (bySeverity[item.severity] || 0) + 1;
+    byStatus[item.status] = (byStatus[item.status] || 0) + 1;
+  }
+  return { byCluster, bySeverity, byStatus };
+}
+
 function buildLedger(summary) {
   const existingById = readExistingLedger(outputPath);
   const screenshots = (summary.screenshotFeedback || []).map((record) => normalizeRecord(record, false, existingById));
@@ -148,14 +181,7 @@ function buildLedger(summary) {
     return dateB - dateA;
   });
 
-  const byCluster = {};
-  const bySeverity = {};
-  const byStatus = {};
-  for (const item of items) {
-    byCluster[item.cluster] = (byCluster[item.cluster] || 0) + 1;
-    bySeverity[item.severity] = (bySeverity[item.severity] || 0) + 1;
-    byStatus[item.status] = (byStatus[item.status] || 0) + 1;
-  }
+  const { byCluster, bySeverity, byStatus } = summarizeItems(items);
 
   return {
     generatedAt: new Date().toISOString(),
@@ -169,6 +195,23 @@ function buildLedger(summary) {
       byStatus
     },
     items
+  };
+}
+
+function refreshLedgerSummary(ledger) {
+  const items = Array.isArray(ledger.items) ? ledger.items : [];
+  const { byCluster, bySeverity, byStatus } = summarizeItems(items);
+  return {
+    ...ledger,
+    generatedAt: new Date().toISOString(),
+    counts: {
+      screenshots: items.filter((item) => item.kind === "screenshot").length,
+      crashes: items.filter((item) => item.kind === "crash").length,
+      total: items.length,
+      bySeverity,
+      byCluster,
+      byStatus
+    }
   };
 }
 
@@ -211,7 +254,9 @@ function writeMarkdown(ledger) {
   fs.writeFileSync(markdownPath, `${lines.join("\n")}\n`);
 }
 
-const ledger = fromLedger ? readJson(outputPath) : buildLedger(readJson(inputPath));
+const ledger = fromLedger
+  ? refreshLedgerSummary(readJson(outputPath))
+  : buildLedger(readJson(inputPath));
 
 if ((ledger.counts.total || ledger.items?.length || 0) === 0) {
   throw new Error("ASC feedback summary produced zero ledger items");

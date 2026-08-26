@@ -34,17 +34,18 @@
 //    3. If pkpassUrl present → fetch bytes, parse with `PKPass(data:)`,
 //       present `PKAddPassesViewController` over the topmost view
 //       controller. Apple Wallet UI takes over.
-//    4. If pkpassUrl absent / 404 / sign-fail → return
-//       `.signingUnavailable(qrPayload, shortCode)` so the caller can
-//       render the in-app credential card (the canonical fallback the
-//       web platform uses too).
+//    4. If signing is explicitly not configured → return the real inline
+//       credential. Download, signing, storage, and update failures surface
+//       as failures rather than masquerading as successful fallback.
 //
 //  Powered by ESANG AI™.
 //
 
 import Foundation
+import CryptoKit
 import PassKit
 import UIKit
+import zlib
 
 /// One Add-to-Wallet attempt result. The caller is expected to handle
 /// every case — silent failure is forbidden per [feedback_zero_stubs].
@@ -65,6 +66,25 @@ enum EusoWalletPassResult {
     /// Network / decode / PassKit error. `message` is human-readable,
     /// safe to surface verbatim in a toast.
     case failure(message: String)
+}
+
+enum EusoWalletCredentialKind {
+    case pickup
+    case staffAccess
+
+    func requiredFieldKeys(passStyle: String) -> Set<String> {
+        switch self {
+        case .pickup:
+            let laneKeys: Set<String> = passStyle == "boardingPass"
+                ? ["origin", "destination"]
+                : ["lane"]
+            return Set(["loadId", "eta", "shortCode", "equipment", "carrier",
+                        "escrow", "token", "support"]).union(laneKeys)
+        case .staffAccess:
+            return ["role", "staff", "facility", "accessCode", "expires",
+                    "token", "support"]
+        }
+    }
 }
 
 @MainActor
@@ -92,8 +112,15 @@ final class EusoWalletPassService {
     /// with the id prevents a stale catalog row from silently producing the
     /// wrong art while the picker and server refresh concurrently.
     private struct ThemeSelection {
-        let id: String
+        let theme: WalletCardTheme
         let revision: String
+
+        var id: String { theme.id }
+    }
+
+    struct PreparedPickupCredential {
+        let credential: EusoTripAPI.PickupCredential
+        let selectedTheme: WalletCardTheme
     }
 
     /// Mint a credential and try to add it to Apple Wallet. The tap
@@ -110,43 +137,9 @@ final class EusoWalletPassService {
         //    payload, generates a 5-digit shortCode, and (when the
         //    signing pipeline is healthy) uploads a .pkpass bundle to
         //    Azure Blob and returns its presigned URL.
-        let requestedTheme: ThemeSelection
+        let prepared: PreparedPickupCredential
         do {
-            requestedTheme = try await currentThemeSelection()
-        } catch {
-            return .failure(
-                message: "Couldn't verify your selected Wallet design. Refresh Wallet styles and try again."
-            )
-        }
-        let credential: EusoTripAPI.PickupCredential
-        do {
-            do {
-                credential = try await EusoTripAPI.shared.createPickupCredential(
-                    loadId: resolvedLoadId,
-                    themeId: requestedTheme.id,
-                    themeRevision: requestedTheme.revision
-                )
-            } catch {
-                guard Self.isThemeCatalogConflict(error) else {
-                    throw error
-                }
-                // The catalog may have advanced between the read and mint.
-                // Refresh the exact versioned selection once; never ask the
-                // signer to silently substitute its default design.
-                let refreshedTheme: ThemeSelection
-                do {
-                    refreshedTheme = try await currentThemeSelection()
-                } catch {
-                    throw WalletPassContractError(
-                        message: "Wallet styles changed and couldn't be refreshed. Refresh styles and try again."
-                    )
-                }
-                credential = try await EusoTripAPI.shared.createPickupCredential(
-                    loadId: resolvedLoadId,
-                    themeId: refreshedTheme.id,
-                    themeRevision: refreshedTheme.revision
-                )
-            }
+            prepared = try await preparePickupCredential(forLoadId: resolvedLoadId)
         } catch {
             // The server is the sole credential authority. Surface its real
             // failure; never substitute a locally invented pass or QR token.
@@ -164,6 +157,8 @@ final class EusoWalletPassService {
             } else { msg = error.localizedDescription }
             return .failure(message: msg)
         }
+        let credential = prepared.credential
+        let selectedTheme = prepared.selectedTheme
 
         // 2. If the server didn't ship a .pkpass bundle (signing
         //    pipeline offline, free-tier dev account, etc.), short-
@@ -196,7 +191,8 @@ final class EusoWalletPassService {
         guard credential.passkitStatus == "signed",
               let signedTheme = credential.signedTheme,
               signedTheme == credential.theme,
-              !(credential.manifestDigest ?? "").isEmpty else {
+              Self.matches(signedTheme, selectedTheme: selectedTheme, credentialKind: .pickup),
+              let manifestDigest = Self.nonEmpty(credential.manifestDigest) else {
             return .failure(message: "The signed pass did not match the selected Wallet design.")
         }
         guard let expectedPassType = credential.passTypeIdentifier?.trimmingCharacters(
@@ -213,9 +209,56 @@ final class EusoWalletPassService {
         return await addPass(
             from: url,
             expectedTheme: signedTheme,
+            expectedVisualTheme: selectedTheme,
+            expectedManifestDigest: manifestDigest,
             expectedPassTypeIdentifier: expectedPassType,
-            expectedSerialNumber: expectedSerial
+            expectedSerialNumber: expectedSerial,
+            credentialKind: .pickup
         )
+    }
+
+    /// Resolve the caller's exact versioned selection and mint against that
+    /// revision. A catalog rollover retries once with the refreshed selection;
+    /// a signer response that substitutes another theme is rejected.
+    func preparePickupCredential(forLoadId loadId: String,
+                                 expiresInHours: Int = 24) async throws -> PreparedPickupCredential {
+        let resolvedLoadId = Self.numericLoadId(from: loadId)
+        var selection = try await currentThemeSelection()
+        let credential: EusoTripAPI.PickupCredential
+        do {
+            credential = try await EusoTripAPI.shared.createPickupCredential(
+                loadId: resolvedLoadId,
+                expiresInHours: expiresInHours,
+                themeId: selection.id,
+                themeRevision: selection.revision
+            )
+        } catch {
+            guard Self.isThemeCatalogConflict(error) else { throw error }
+            do {
+                selection = try await currentThemeSelection()
+            } catch {
+                throw WalletPassContractError(
+                    message: "Wallet styles changed and couldn't be refreshed. Refresh styles and try again."
+                )
+            }
+            credential = try await EusoTripAPI.shared.createPickupCredential(
+                loadId: resolvedLoadId,
+                expiresInHours: expiresInHours,
+                themeId: selection.id,
+                themeRevision: selection.revision
+            )
+        }
+
+        guard Self.matches(
+            credential.theme,
+            selectedTheme: selection.theme,
+            credentialKind: .pickup
+        ) else {
+            throw WalletPassContractError(
+                message: "The credential service substituted a different Wallet design. Refresh styles and try again."
+            )
+        }
+        return PreparedPickupCredential(credential: credential, selectedTheme: selection.theme)
     }
 
     /// Download and install an already-minted pass URL. This is shared by the
@@ -223,8 +266,11 @@ final class EusoWalletPassService {
     /// replacement and download security cannot drift between entry points.
     func addPass(from url: URL,
                  expectedTheme: EusoTripAPI.WalletThemeMetadata,
+                 expectedVisualTheme: WalletCardTheme,
+                 expectedManifestDigest: String,
                  expectedPassTypeIdentifier: String,
-                 expectedSerialNumber: String) async -> EusoWalletPassResult {
+                 expectedSerialNumber: String,
+                 credentialKind: EusoWalletCredentialKind) async -> EusoWalletPassResult {
         // Pull through the app's bounded, auth-aware transport. It adds the
         // bearer only for EusoTrip hosts and leaves Azure SAS URLs untouched.
         let data: Data
@@ -232,6 +278,30 @@ final class EusoWalletPassService {
             data = try await EusoTripAPI.shared.fetchBoundedWalletPassData(url)
         } catch {
             return .failure(message: "Couldn't download the wallet pass.")
+        }
+
+        guard Self.matches(
+            expectedTheme,
+            selectedTheme: expectedVisualTheme,
+            credentialKind: credentialKind
+        ) else {
+            return .failure(message: "The signed pass did not match the selected Wallet design.")
+        }
+
+        do {
+            try WalletPassBundleVerifier.verify(
+                data,
+                expectedTheme: expectedTheme,
+                expectedVisualTheme: expectedVisualTheme,
+                expectedManifestDigest: expectedManifestDigest,
+                expectedPassTypeIdentifier: expectedPassTypeIdentifier,
+                expectedSerialNumber: expectedSerialNumber,
+                credentialKind: credentialKind
+            )
+        } catch let error as WalletPassBundleError {
+            return .failure(message: error.userMessage)
+        } catch {
+            return .failure(message: "The signed Wallet pass package could not be verified.")
         }
 
         // 4. Parse with PassKit. `PKPass(data:)` validates the bundle
@@ -302,10 +372,25 @@ final class EusoWalletPassService {
               theme.revision == selected.themeRevision,
               theme.digest == selected.themeDigest,
               theme.manifestVersion == selected.manifestVersion,
-              let revision = theme.revision else {
+              let revision = theme.revision,
+              theme.isVersioned else {
             throw WalletPassSelectionError.catalogMismatch
         }
-        return ThemeSelection(id: theme.id, revision: revision)
+        return ThemeSelection(theme: theme, revision: revision)
+    }
+
+    private static func matches(_ metadata: EusoTripAPI.WalletThemeMetadata,
+                                selectedTheme: WalletCardTheme,
+                                credentialKind: EusoWalletCredentialKind) -> Bool {
+        let expectedPassStyle = credentialKind == .staffAccess
+            ? "eventTicket"
+            : selectedTheme.passStyle
+        return metadata.id == selectedTheme.id
+            && metadata.revision == selectedTheme.revision
+            && metadata.digest == selectedTheme.digest
+            && metadata.manifestVersion == selectedTheme.manifestVersion
+            && metadata.passStyle == expectedPassStyle
+            && metadata.artSlot?.nilIfBlank?.lowercased() == selectedTheme.normalizedArtSlot
     }
 
     private static func matches(_ pass: PKPass,
@@ -315,7 +400,8 @@ final class EusoWalletPassService {
             && pass.userInfo?["walletThemeDigest"] as? String == expectedTheme.digest
             && pass.userInfo?["walletThemeManifestVersion"] as? String == expectedTheme.manifestVersion
             && pass.userInfo?["walletThemePassStyle"] as? String == expectedTheme.passStyle
-            && pass.userInfo?["walletThemeArtSlot"] as? String == expectedTheme.artSlot
+            && (pass.userInfo?["walletThemeArtSlot"] as? String)?.nilIfBlank?.lowercased()
+                == expectedTheme.artSlot?.nilIfBlank?.lowercased()
     }
 
     private static func hasAuthenticatedUpdateChannel(_ pass: PKPass) -> Bool {
@@ -331,6 +417,10 @@ final class EusoWalletPassService {
                 options: .regularExpression
               ) != nil else { return false }
         return true
+    }
+
+    private static func nonEmpty(_ value: String?) -> String? {
+        value?.nilIfBlank
     }
 
     static func signedPassAvailable(status: String, hasPassURL: Bool) throws -> Bool {
@@ -386,6 +476,447 @@ final class EusoWalletPassService {
             top = presented
         }
         return top
+    }
+}
+
+private enum WalletPassBundleError: Error {
+    case malformedPackage
+    case manifestMismatch
+    case visualMismatch
+
+    var userMessage: String {
+        switch self {
+        case .malformedPackage:
+            return "The signed Wallet pass package is malformed and was not added."
+        case .manifestMismatch:
+            return "The downloaded Wallet pass did not match the signed package and was not added."
+        case .visualMismatch:
+            return "The signed Wallet pass artwork or fields did not match your selected design and were not added."
+        }
+    }
+}
+
+/// PassKit verifies Apple's signature. This verifier additionally proves that
+/// the signed archive is the exact visual contract selected in EusoWallet:
+/// manifest digest, pass style, colors, fields, QR, and canonical art bytes.
+private enum WalletPassBundleVerifier {
+    private static let passStyleKeys = [
+        "boardingPass", "coupon", "eventTicket", "generic", "storeCard",
+    ]
+    private static let fieldSections = [
+        "headerFields", "primaryFields", "secondaryFields", "auxiliaryFields", "backFields",
+    ]
+    private static let artSlots = ["background", "strip", "thumbnail"]
+
+    static func verify(_ bundleData: Data,
+                       expectedTheme: EusoTripAPI.WalletThemeMetadata,
+                       expectedVisualTheme: WalletCardTheme,
+                       expectedManifestDigest: String,
+                       expectedPassTypeIdentifier: String,
+                       expectedSerialNumber: String,
+                       credentialKind: EusoWalletCredentialKind) throws {
+        let archive = try WalletZipArchive(data: bundleData)
+        guard let passData = archive.files["pass.json"],
+              let manifestData = archive.files["manifest.json"],
+              archive.files["signature"] != nil else {
+            throw WalletPassBundleError.malformedPackage
+        }
+
+        guard digest(expectedManifestDigest, matches: manifestData) else {
+            throw WalletPassBundleError.manifestMismatch
+        }
+        try verifyManifest(manifestData, archive: archive)
+        try verifyPassJSON(
+            passData,
+            archive: archive,
+            expectedTheme: expectedTheme,
+            expectedVisualTheme: expectedVisualTheme,
+            expectedPassTypeIdentifier: expectedPassTypeIdentifier,
+            expectedSerialNumber: expectedSerialNumber,
+            credentialKind: credentialKind
+        )
+    }
+
+    private static func verifyManifest(_ manifestData: Data,
+                                       archive: WalletZipArchive) throws {
+        let object = try? JSONSerialization.jsonObject(with: manifestData)
+        guard let manifest = object as? [String: String] else {
+            throw WalletPassBundleError.malformedPackage
+        }
+
+        let signedFiles = Set(archive.files.keys).subtracting(["manifest.json", "signature"])
+        guard Set(manifest.keys) == signedFiles else {
+            throw WalletPassBundleError.manifestMismatch
+        }
+        for (name, expectedHash) in manifest {
+            guard let bytes = archive.files[name],
+                  sha1Hex(bytes) == expectedHash.lowercased() else {
+                throw WalletPassBundleError.manifestMismatch
+            }
+        }
+    }
+
+    private static func verifyPassJSON(_ passData: Data,
+                                       archive: WalletZipArchive,
+                                       expectedTheme: EusoTripAPI.WalletThemeMetadata,
+                                       expectedVisualTheme: WalletCardTheme,
+                                       expectedPassTypeIdentifier: String,
+                                       expectedSerialNumber: String,
+                                       credentialKind: EusoWalletCredentialKind) throws {
+        let object = try? JSONSerialization.jsonObject(with: passData)
+        guard let pass = object as? [String: Any],
+              string(pass["passTypeIdentifier"]) == expectedPassTypeIdentifier.nilIfBlank,
+              string(pass["serialNumber"]) == expectedSerialNumber.nilIfBlank,
+              canonicalColor(string(pass["backgroundColor"])) == canonicalColor(expectedVisualTheme.background),
+              canonicalColor(string(pass["foregroundColor"])) == canonicalColor(expectedVisualTheme.foreground),
+              canonicalColor(string(pass["labelColor"])) == canonicalColor(expectedVisualTheme.label) else {
+            throw WalletPassBundleError.visualMismatch
+        }
+
+        let presentStyles = passStyleKeys.filter { pass[$0] != nil }
+        guard presentStyles == [expectedTheme.passStyle],
+              let fields = pass[expectedTheme.passStyle] as? [String: Any] else {
+            throw WalletPassBundleError.visualMismatch
+        }
+
+        var fieldKeys = Set<String>()
+        for section in fieldSections {
+            guard let rows = fields[section] else { continue }
+            guard let values = rows as? [[String: Any]] else {
+                throw WalletPassBundleError.visualMismatch
+            }
+            for value in values {
+                guard let key = string(value["key"]), !key.isEmpty else {
+                    throw WalletPassBundleError.visualMismatch
+                }
+                fieldKeys.insert(key)
+            }
+        }
+        guard credentialKind.requiredFieldKeys(passStyle: expectedTheme.passStyle)
+                .isSubset(of: fieldKeys),
+              hasQRBarcode(pass) else {
+            throw WalletPassBundleError.visualMismatch
+        }
+
+        switch (credentialKind, expectedTheme.passStyle) {
+        case (.pickup, "boardingPass"):
+            guard string(fields["transitType"]) == "PKTransitTypeGeneric" else {
+                throw WalletPassBundleError.visualMismatch
+            }
+        case (.pickup, "eventTicket"), (.staffAccess, "eventTicket"):
+            guard fields["transitType"] == nil else {
+                throw WalletPassBundleError.visualMismatch
+            }
+        default:
+            throw WalletPassBundleError.visualMismatch
+        }
+
+        guard let userInfo = pass["userInfo"] as? [String: Any],
+              string(userInfo["walletThemeId"]) == expectedTheme.id,
+              string(userInfo["walletThemeRevision"]) == expectedTheme.revision,
+              string(userInfo["walletThemeDigest"]) == expectedTheme.digest,
+              string(userInfo["walletThemeManifestVersion"]) == expectedTheme.manifestVersion,
+              string(userInfo["walletThemePassStyle"]) == expectedTheme.passStyle,
+              string(userInfo["walletThemeArtSlot"])?.nilIfBlank?.lowercased()
+                == expectedTheme.artSlot?.nilIfBlank?.lowercased() else {
+            throw WalletPassBundleError.visualMismatch
+        }
+
+        let expectedSlot = expectedTheme.artSlot?.nilIfBlank?.lowercased()
+        guard expectedSlot == expectedVisualTheme.normalizedArtSlot else {
+            throw WalletPassBundleError.visualMismatch
+        }
+        if let expectedSlot {
+            guard artSlots.contains(expectedSlot),
+                  let expectedHashes = expectedVisualTheme.expectedPassArtworkSHA256,
+                  expectedHashes.count == 3 else {
+                throw WalletPassBundleError.visualMismatch
+            }
+            for (index, suffix) in [".png", "@2x.png", "@3x.png"].enumerated() {
+                guard let art = archive.files[expectedSlot + suffix],
+                      art.count > 100,
+                      art.starts(with: [0x89, 0x50, 0x4e, 0x47]),
+                      sha256Hex(art) == expectedHashes[index] else {
+                    throw WalletPassBundleError.visualMismatch
+                }
+            }
+        } else {
+            let unexpectedArt = archive.files.keys.contains { name in
+                artSlots.contains { slot in
+                    name == "\(slot).png" || name == "\(slot)@2x.png" || name == "\(slot)@3x.png"
+                }
+            }
+            guard !unexpectedArt else { throw WalletPassBundleError.visualMismatch }
+        }
+    }
+
+    private static func hasQRBarcode(_ pass: [String: Any]) -> Bool {
+        let values: [[String: Any]]
+        if let barcodes = pass["barcodes"] as? [[String: Any]] {
+            values = barcodes
+        } else if let barcode = pass["barcode"] as? [String: Any] {
+            values = [barcode]
+        } else {
+            return false
+        }
+        return values.contains { barcode in
+            string(barcode["format"]) == "PKBarcodeFormatQR"
+                && !(string(barcode["message"])?.isEmpty ?? true)
+        }
+    }
+
+    private static func digest(_ reported: String, matches data: Data) -> Bool {
+        let value = reported.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if value.hasPrefix("sha256:") {
+            return String(value.dropFirst(7)) == sha256Hex(data)
+        }
+        if value.hasPrefix("sha1:") {
+            return String(value.dropFirst(5)) == sha1Hex(data)
+        }
+        switch value.count {
+        case 64: return value == sha256Hex(data)
+        case 40: return value == sha1Hex(data)
+        default: return false
+        }
+    }
+
+    private static func sha1Hex(_ data: Data) -> String {
+        Insecure.SHA1.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func sha256Hex(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func string(_ value: Any?) -> String? {
+        (value as? String)?.nilIfBlank
+    }
+
+    private static func canonicalColor(_ value: String?) -> String? {
+        value?.lowercased().filter { !$0.isWhitespace }
+    }
+}
+
+/// Minimal bounded ZIP reader for a PassKit bundle. It rejects encryption,
+/// Zip64, path traversal, duplicate names, unsupported compression, and
+/// oversized expansion before any pass content is trusted.
+private struct WalletZipArchive {
+    let files: [String: Data]
+
+    init(data: Data) throws {
+        guard data.count >= 22,
+              let eocd = Self.endOfCentralDirectory(in: data) else {
+            throw WalletPassBundleError.malformedPackage
+        }
+
+        let disk = try data.walletUInt16(at: eocd + 4)
+        let centralDisk = try data.walletUInt16(at: eocd + 6)
+        let diskEntries = try data.walletUInt16(at: eocd + 8)
+        let totalEntries = try data.walletUInt16(at: eocd + 10)
+        let centralSize32 = try data.walletUInt32(at: eocd + 12)
+        let centralOffset32 = try data.walletUInt32(at: eocd + 16)
+        let commentLength = Int(try data.walletUInt16(at: eocd + 20))
+
+        guard disk == 0, centralDisk == 0, diskEntries == totalEntries,
+              totalEntries <= 128,
+              centralSize32 != UInt32.max,
+              centralOffset32 != UInt32.max,
+              eocd + 22 + commentLength == data.count else {
+            throw WalletPassBundleError.malformedPackage
+        }
+
+        let centralOffset = Int(centralOffset32)
+        let centralSize = Int(centralSize32)
+        guard centralOffset >= 0, centralSize >= 0,
+              centralOffset + centralSize <= eocd else {
+            throw WalletPassBundleError.malformedPackage
+        }
+
+        var cursor = centralOffset
+        var decoded: [String: Data] = [:]
+        var expandedBytes = 0
+        for _ in 0..<Int(totalEntries) {
+            guard try data.walletUInt32(at: cursor) == 0x02014b50 else {
+                throw WalletPassBundleError.malformedPackage
+            }
+            let flags = try data.walletUInt16(at: cursor + 8)
+            let method = try data.walletUInt16(at: cursor + 10)
+            let checksum = try data.walletUInt32(at: cursor + 16)
+            let compressedSize32 = try data.walletUInt32(at: cursor + 20)
+            let uncompressedSize32 = try data.walletUInt32(at: cursor + 24)
+            let nameLength = Int(try data.walletUInt16(at: cursor + 28))
+            let extraLength = Int(try data.walletUInt16(at: cursor + 30))
+            let entryCommentLength = Int(try data.walletUInt16(at: cursor + 32))
+            let entryDisk = try data.walletUInt16(at: cursor + 34)
+            let localOffset32 = try data.walletUInt32(at: cursor + 42)
+
+            guard flags & 0x0001 == 0,
+                  method == 0 || method == 8,
+                  entryDisk == 0,
+                  compressedSize32 != UInt32.max,
+                  uncompressedSize32 != UInt32.max,
+                  localOffset32 != UInt32.max else {
+                throw WalletPassBundleError.malformedPackage
+            }
+
+            let nameStart = cursor + 46
+            let nextCursor = nameStart + nameLength + extraLength + entryCommentLength
+            guard nameLength > 0, nextCursor <= centralOffset + centralSize,
+                  let name = String(data: try data.walletSlice(nameStart..<(nameStart + nameLength)),
+                                    encoding: .utf8),
+                  Self.isSafe(name: name),
+                  decoded[name] == nil else {
+                throw WalletPassBundleError.malformedPackage
+            }
+
+            let compressedSize = Int(compressedSize32)
+            let uncompressedSize = Int(uncompressedSize32)
+            expandedBytes += uncompressedSize
+            guard compressedSize <= 12 * 1_024 * 1_024,
+                  uncompressedSize <= 12 * 1_024 * 1_024,
+                  expandedBytes <= 24 * 1_024 * 1_024 else {
+                throw WalletPassBundleError.malformedPackage
+            }
+
+            let localOffset = Int(localOffset32)
+            guard try data.walletUInt32(at: localOffset) == 0x04034b50,
+                  try data.walletUInt16(at: localOffset + 8) == method else {
+                throw WalletPassBundleError.malformedPackage
+            }
+            let localNameLength = Int(try data.walletUInt16(at: localOffset + 26))
+            let localExtraLength = Int(try data.walletUInt16(at: localOffset + 28))
+            let localNameStart = localOffset + 30
+            let localNameData = try data.walletSlice(localNameStart..<(localNameStart + localNameLength))
+            guard String(data: localNameData, encoding: .utf8) == name else {
+                throw WalletPassBundleError.malformedPackage
+            }
+            let bytesStart = localNameStart + localNameLength + localExtraLength
+            let bytesEnd = bytesStart + compressedSize
+            guard bytesStart >= 0, bytesEnd <= centralOffset else {
+                throw WalletPassBundleError.malformedPackage
+            }
+            let compressed = try data.walletSlice(bytesStart..<bytesEnd)
+            let contents: Data
+            if method == 0 {
+                guard compressed.count == uncompressedSize else {
+                    throw WalletPassBundleError.malformedPackage
+                }
+                contents = compressed
+            } else {
+                contents = try Self.inflateRaw(compressed, expectedSize: uncompressedSize)
+            }
+            guard Self.crc32(contents) == checksum else {
+                throw WalletPassBundleError.malformedPackage
+            }
+            decoded[name] = contents
+            cursor = nextCursor
+        }
+
+        guard cursor == centralOffset + centralSize,
+              decoded.count == Int(totalEntries) else {
+            throw WalletPassBundleError.malformedPackage
+        }
+        files = decoded
+    }
+
+    private static func endOfCentralDirectory(in data: Data) -> Int? {
+        let lowerBound = max(0, data.count - 65_557)
+        var offset = data.count - 22
+        while offset >= lowerBound {
+            if (try? data.walletUInt32(at: offset)) == 0x06054b50 { return offset }
+            if offset == lowerBound { break }
+            offset -= 1
+        }
+        return nil
+    }
+
+    private static func isSafe(name: String) -> Bool {
+        guard !name.hasPrefix("/"), !name.hasPrefix("\\"), !name.contains("\0") else {
+            return false
+        }
+        return !name.replacingOccurrences(of: "\\", with: "/")
+            .split(separator: "/", omittingEmptySubsequences: false)
+            .contains("..")
+    }
+
+    private static func inflateRaw(_ compressed: Data,
+                                   expectedSize: Int) throws -> Data {
+        var output = Data(count: max(1, expectedSize))
+        let outputCapacity = output.count
+        var stream = z_stream()
+        let result: Int32 = compressed.withUnsafeBytes { sourceBuffer in
+            output.withUnsafeMutableBytes { destinationBuffer in
+                stream.next_in = UnsafeMutablePointer<Bytef>(
+                    mutating: sourceBuffer.bindMemory(to: Bytef.self).baseAddress
+                )
+                stream.avail_in = uInt(compressed.count)
+                stream.next_out = destinationBuffer.bindMemory(to: Bytef.self).baseAddress
+                stream.avail_out = uInt(outputCapacity)
+                guard inflateInit2_(
+                    &stream,
+                    -MAX_WBITS,
+                    ZLIB_VERSION,
+                    Int32(MemoryLayout<z_stream>.size)
+                ) == Z_OK else { return Z_STREAM_ERROR }
+                defer { inflateEnd(&stream) }
+                return inflate(&stream, Z_FINISH)
+            }
+        }
+        guard result == Z_STREAM_END,
+              Int(stream.total_out) == expectedSize else {
+            throw WalletPassBundleError.malformedPackage
+        }
+        output.count = expectedSize
+        return output
+    }
+
+    private static func crc32(_ data: Data) -> UInt32 {
+        let value: uLong = data.withUnsafeBytes { buffer in
+            zlib.crc32(0, buffer.bindMemory(to: Bytef.self).baseAddress, uInt(data.count))
+        }
+        return UInt32(truncatingIfNeeded: value)
+    }
+}
+
+private extension Data {
+    func walletUInt16(at offset: Int) throws -> UInt16 {
+        guard offset >= 0, offset + 2 <= count else {
+            throw WalletPassBundleError.malformedPackage
+        }
+        return withUnsafeBytes { (bytes: UnsafeRawBufferPointer) in
+            let low = UInt16(bytes[offset])
+            let high = UInt16(bytes[offset + 1]) << 8
+            return low | high
+        }
+    }
+
+    func walletUInt32(at offset: Int) throws -> UInt32 {
+        guard offset >= 0, offset + 4 <= count else {
+            throw WalletPassBundleError.malformedPackage
+        }
+        return withUnsafeBytes { (bytes: UnsafeRawBufferPointer) in
+            let byte0 = UInt32(bytes[offset])
+            let byte1 = UInt32(bytes[offset + 1]) << 8
+            let byte2 = UInt32(bytes[offset + 2]) << 16
+            let byte3 = UInt32(bytes[offset + 3]) << 24
+            return byte0 | byte1 | byte2 | byte3
+        }
+    }
+
+    func walletSlice(_ range: Range<Int>) throws -> Data {
+        guard range.lowerBound >= 0,
+              range.upperBound >= range.lowerBound,
+              range.upperBound <= count else {
+            throw WalletPassBundleError.malformedPackage
+        }
+        return subdata(in: range)
+    }
+}
+
+private extension String {
+    var nilIfBlank: String? {
+        let value = trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
     }
 }
 

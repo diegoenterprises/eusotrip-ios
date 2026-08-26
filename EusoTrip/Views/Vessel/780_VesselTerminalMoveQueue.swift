@@ -788,7 +788,7 @@ private struct VesselTerminalMoveQueueBody780: View {
     private func gapCard(_ text: String) -> some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack(spacing: Space.s2) {
-                StatusPill(text: "Named gap", kind: .warning)
+            StatusPill(text: "Unavailable", kind: .warning)
                 Spacer()
                 Button("Dismiss") { gapNotice = nil }
                     .font(EType.micro).foregroundColor(palette.textSecondary)

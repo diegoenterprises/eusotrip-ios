@@ -1,0 +1,1911 @@
+//
+//  ES28_FatigueDutyHours.swift
+//  EusoTrip — Escort · Duty & Fatigue (ES-28)
+//
+//  ES-28 · Escort Duty & Fatigue — NO web peer route (filed ESC-WEB-28)
+//  Integrated port of the ES-28 twins
+//  ("07 Escort/{Light,Dark}-SVG/ES-28 Fatigue Duty Hours.svg").
+//  Sole author: Mike "Diego" Usoro / Eusorone Technologies, Inc.
+//
+//  ARCHETYPE COMPLIANCE · 7-DAY ACCUMULATOR COLUMN. The signature organ is one
+//  vertical column whose axis is CUMULATIVE HOURS — 0 H on the floor, a 60 H
+//  ceiling line capping the top — filled bottom-up by one stratum per day of
+//  the rolling seven-day window, oldest stratum at the bottom, so the escort
+//  reads the total, the days that built it, and which day rolls out next, in a
+//  single glance.
+//
+//  Anti-clone: deliberately NOT ES-24 Hazmat Watch, the other escort COMPLIANCE
+//  instrument panel and the nearest sibling. ES-24's organ is a DECAY TRACK: a
+//  HORIZONTAL 0-to-40-minute age ruler that DEPLETES left-to-right toward a
+//  STATUTORY 30-minute staleness boundary (49 CFR §177.817). ES-28 reads in the
+//  opposite direction on every axis they share — VERTICAL, ACCUMULATING upward
+//  rather than depleting, and bounded by a HOUSE ceiling rather than a statute,
+//  because escorts are HOS-EXEMPT (ROLES.ESCORT is absent from hosReadProcedure,
+//  hos.ts:28-39) and this surface says so on its face instead of borrowing a
+//  legal boundary it does not have. ES-24 asks how old one number is; ES-28
+//  asks how much has piled up and whether the pile can be trusted. No decay
+//  track, no age ruler, no wind rose, no statutory line here.
+//  Also deliberately NOT ES-09 Escort Home's 16-HOUR DAY-RULER — a horizontal
+//  time-of-day axis (05..21) with one block laid on it. ES-28 has no
+//  time-of-day axis at all: a day here is a BAND WITH A HEIGHT, not a position
+//  on a clock, and seven of them stack. Also NOT ES-15 Schedule Availability's
+//  6x7 CALENDAR LATTICE — no lattice, no date cells, no capsule bands; seven
+//  days are seven strata in one column, ordered by age.
+//
+//  ═════════════════════════════════════════════════════════════════════════
+//  THE THESIS OF THIS SCREEN, RE-FOUNDED. READ THIS BEFORE THE MANIFEST.
+//  ═════════════════════════════════════════════════════════════════════════
+//  An earlier revision of this file and of the twins' <desc> founded the whole
+//  screen on the claim that THE SEVEN-DAY FOLD HAS NO READ PATH — that no
+//  procedure hands an escort the loadIds of their own completed window, so six
+//  of seven strata had to be designed voids. THAT CLAIM WAS FALSE AND IS
+//  WITHDRAWN. The fold is reachable in TWO CALLS, exact to the second:
+//
+//    CALL 1  escorts.listSettlements          escorts.ts:4723
+//            escortProcedure (escorts.ts:11), self-scoped at escorts.ts:4732
+//            (`eq(escortAssignments.escortUserId, userId)` over
+//            resolveEscortUserId at escorts.ts:4731). The status filter is
+//            OPTIONAL (escorts.ts:4725) so omitting it returns EVERY assignment
+//            the escort owns, COMPLETED INCLUDED. It selects
+//            escortAssignments.loadId at escorts.ts:4740 and returns the rows
+//            RAW at escorts.ts:4743.
+//    CALL 2  loads.getEscortAssignment        loads.ts:2029
+//            keyed on that loadId (input is a STRING, loads.ts:2030, parsed at
+//            loads.ts:2034), selects both stamps at loads.ts:2045-2046 and
+//            emits them UNTRUNCATED at loads.ts:2070-2071.
+//
+//  So the strata ARE measurable and this screen now measures them. WHAT IT
+//  COSTS, stated on the card face rather than here:
+//    · TWO ROUND TRIPS MINIMUM, and in practice an N+1 — one call 2 per
+//      distinct loadId returned by call 1.
+//    · A 100-ROW PAGE. escorts.ts:4726 is `z.number().min(1).max(100)`, and
+//      there is NO date filter and NO completedAt ordering — the page is
+//      ordered by `desc(escortAssignments.updatedAt)` (escorts.ts:4743). The
+//      window is therefore PROVABLY COMPLETE ONLY when fewer rows come back
+//      than the page limit; at exactly the limit, older assignments may exist
+//      that were never seen, and the surface says COMPLETENESS NOT PROVEN.
+//    · A CLIENT-SIDE PROBE BUDGET. The N+1 is capped (ES28DutyRules
+//      .loadProbeBudget) so a large ledger cannot fan out unbounded on a phone.
+//      Exhausting the budget also drops completeness to NOT PROVEN.
+//    · A LEAK IT MUST STEP AROUND. loads.getEscortAssignment is declared
+//      `.query(async ({ input }) => {` at loads.ts:2031 — NO ctx, therefore no
+//      caller scoping of any kind; its only gate is isolatedApprovedProcedure
+//      (_core/trpc.ts:524 = requireUser + requireApproval + isolation +
+//      autoAudit, no role and no row scope). It hands back EVERY escort's
+//      startedAt, completedAt, name and phone on that load. Already filed as
+//      counter-party row ESC-DUTY-LEAK; NOT re-filed here. This screen keeps
+//      only the row whose `id` matches an assignmentId the SERVER already
+//      scoped to the caller in call 1, and drops the others unread — it never
+//      matches on a user id it inferred for itself.
+//
+//  WHAT THE FOLD STILL CANNOT TELL YOU, and why this screen still exists:
+//    (1) The column starts late. startedAt is stamped only on the 'escorting'
+//        transition (escorts.ts:1201), so staging, the pre-trip check, deadhead
+//        and on-site waiting are in NO day of the fold. A complete fold is
+//        still an UNDER-REPORT.
+//    (2) The column is rewritable. Two of the four startedAt writers carry no
+//        set-once guard (hazmatEscort.ts:180, convoy.ts:292 — see the writer
+//        table below), so any stratum can be narrowed underneath the escort.
+//    (3) Therefore HEADROOM IS STILL REFUSED. 60 H minus an under-reporting,
+//        rewritable total is a number that errs toward SAYING YOU HAVE MORE
+//        LEFT THAN YOU DO — the exact failure this instrument exists to
+//        prevent. `headroomHours` is nil while ES28DutyRules
+//        .shiftClockUnderReports is true, which it is while escorts.ts:1201 is
+//        what it is. The refusal did not weaken when the fold opened; its
+//        REASON changed from "we cannot see the week" to "we can see the week
+//        and it is measured on a clock that starts late and can be moved".
+//  THE RE-FOUNDED THESIS, one sentence: an HOS-exempt role has no legal clock,
+//  and the only duty record the platform holds must be assembled out of two
+//  procedures built for other purposes — a settlements ledger and a driver's
+//  escort panel — so this screen shows exactly what can be proven, prices what
+//  it cost to prove it, and refuses the one figure no number of round trips
+//  can make honest.
+//
+//  WIRING MANIFEST (every anchor opened at the line first-hand this fire
+//  against the live tree ~/Desktop/eusoronetechnologiesinc/frontend;
+//  escorts.ts is 4745 lines, loads.ts 5476)
+//    escorts.getActiveTrip             escorts.ts:2787  EXISTS · CALLED
+//        → startedAt as an ISO-8601 STRING or null at escorts.ts:2824, for the
+//          one row whose status is IN ('accepted','en_route','on_site',
+//          'escorting') (escorts.ts:2794). This is the current-shift clock.
+//          FAIL-OPEN: escorts.ts:2846 `catch (e) { ...; return null; }` — see
+//          the TRANSPORT-LAYER block below.
+//    escorts.getMyTeam                 escorts.ts:2026  EXISTS · CALLED
+//        → selects escortAssignments.startedAt at escorts.ts:2042 over statuses
+//          IN ('accepted','en_route','on_site','escorting','pending')
+//          (escorts.ts:2046) and emits it at escorts.ts:2166. The open-row list.
+//          FAIL-OPEN: escorts.ts:2171 `catch (e) { ...; return []; }`.
+//    escorts.listSettlements           escorts.ts:4723  EXISTS · CALLED
+//        → CALL 1 of the fold. Self-scoped escorts.ts:4731-4732, optional
+//          status filter escorts.ts:4725, limit ≤100 escorts.ts:4726, loadId
+//          selected escorts.ts:4740 and returned raw escorts.ts:4743.
+//          This procedure does NOT swallow: `if (!db) throw` at escorts.ts:4728
+//          and no catch anywhere in its body.
+//    loads.getEscortAssignment         loads.ts:2029    EXISTS · CALLED
+//        → CALL 2 of the fold. startedAt/completedAt selected loads.ts:2045-2046
+//          and emitted untruncated loads.ts:2070-2071. No ctx, no row scope
+//          (loads.ts:2031) — counter-party row ESC-DUTY-LEAK, cited not re-filed.
+//    escorts.getActiveAssignmentDetail escorts.ts:3725  EXISTS · NOT CALLED
+//        → same startedAt field, second reader, escorts.ts:3789.
+//    escorts.updateJobStatus (MUT)     escorts.ts:1171  EXISTS · NOT CALLED HERE
+//        escorts.ts:1201  if (input.status === "escorting" && !a.startedAt)
+//                             updates.startedAt = new Date();
+//        escorts.ts:1202  if (input.status === "completed")
+//                             updates.completedAt = new Date();
+//        Both writes verified at the line. Ownership gate escorts.ts:1180-1182.
+//
+//    ── TRANSPORT LAYER · HTTP 200 ON A SWALLOWED FAULT ──────────────────────
+//    TWO of the bound procedures answer 200 with an EMPTY payload when their
+//    own DB read has already failed:
+//      escorts.getMyTeam     escorts.ts:2171  catch → return []
+//      escorts.getActiveTrip escorts.ts:2846  catch → return null
+//    and a THIRD swallow sits under both of them and under the ledger call:
+//      resolveEscortUserId   escorts.ts:145   `catch { /* fall through */ }`
+//                            escorts.ts:147   returns ctxUser.id ?? 0
+//    so a failed users lookup silently scopes every query to escortUserId = 0,
+//    which returns [] from a healthy database. ON A FATIGUE INSTRUMENT AN EMPTY
+//    COLUMN READS AS RESTED, so a swallowed fault would paint 0:00 and a full
+//    week of capacity. The house pattern for this is already in this file — the
+//    fold distinguishes UNREADABLE from OPEN from 0:00 — and it is extended to
+//    the transport layer here: see ES28Provenance / ES28EmptyPayloadGuard.
+//    An ALL-EMPTY payload is byte-identical to the three swallows above, so it
+//    is NOT painted as a reading at all; it renders its own band, visibly
+//    distinct from both the failure band and a real zero, and no numeral is
+//    shown. ANY non-empty payload (an active trip, an open row, or a single
+//    ledger row) proves a real row was found for this caller and corroborates
+//    the rest. The client half is the most this lane can do: the fix is
+//    server-side and is FILED as counter-party row ESC-DUTY-EMPTY200, owning
+//    lane THE ESCORTS ROUTER (server/routers/escorts.ts) — remove the two
+//    catch-to-empty returns at escorts.ts:2171 and escorts.ts:2846 so a DB
+//    fault becomes a tRPC error, and make resolveEscortUserId (escorts.ts:138)
+//    throw rather than fall through to 0 at escorts.ts:145-147.
+//
+//    ── COMPLETE startedAt / completedAt WRITER TABLE ────────────────────────
+//    Enumerated tree-wide this fire, not sampled: every db.update(
+//    escortAssignments) (16 sites) and db.insert(escortAssignments) (8 sites)
+//    under server/ was opened, and there is no raw-SQL writer of
+//    escort_assignments anywhere. FOUR sites write startedAt, FOUR write
+//    completedAt.
+//      startedAt
+//        escorts.updateJobStatus    escorts.ts:1201   GUARDED  !a.startedAt
+//                                   self-owned :1180-1182 · status z.string() ✗
+//        escorts.updateTripStatus   escorts.ts:2861   GUARDED  !assignment.startedAt
+//                                   self-owned :2856-2857 · status ENUM ✓ (:26)
+//        hazmatEscort.checkIn       hazmatEscort.ts:180  UNGUARDED
+//                                   self-owned :162 only · NO hazmat-class check
+//        convoy.updateConvoyStatus  convoy.ts:292     UNGUARDED and UNGATED
+//                                   convoy.ts:258 takes NO ctx, asserts nothing
+//      completedAt   (none of the four tests !completedAt)
+//        escorts.updateJobStatus    escorts.ts:1202   UNGUARDED
+//        escorts.updateTripStatus   escorts.ts:2862   UNGUARDED
+//        escorts.update             escorts.ts:653    UNGUARDED, behind a SECOND
+//                                   unvalidated z.string().optional() (:641),
+//                                   no pre-trip gate of any kind
+//        convoy.updateConvoyStatus  convoy.ts:312     UNGUARDED and UNGATED
+//      NON-WRITERS (touch the row, never these two columns): escorts.ts:665,
+//        :1160, :3831, :4331, :4679 (settledAt — a different column), :4719;
+//        convoy.ts:92, :116, :330; dispatch.ts:3172. All eight inserts —
+//        escorts.ts:555 :903 :1140 :1164, convoy.ts:96 :120,
+//        dispatch.ts:3101 :3665 — leave both columns NULL.
+//
+//    THE UNDER-REPORT IS NOT ONE-DIRECTIONAL. An earlier revision of this
+//    header and of the twins' <desc> claimed the bias ran only LONGER "by
+//    construction". THAT WAS FALSE AND IS WITHDRAWN. Two of the four startedAt
+//    doors carry no set-once guard, so the stamp is also overwritable in the
+//    NARROWING direction:
+//      hazmatEscort.ts:179-181  ...(existing.status === "pending" ||
+//        existing.status === "accepted" ? { status: "en_route" as const,
+//        startedAt: stamp } : {}),
+//      convoy.ts:290-293        .set({ status: "escorting",
+//        startedAt: new Date(), updatedAt: new Date() })
+//    REPRODUCTION, two calls, no privilege: an escort at 'escorting' with a
+//    12 h-old startedAt posts escorts.updateJobStatus { status: "accepted" }
+//    (taken verbatim — :1172 is a free string, :1199 writes it, the only
+//    precondition at :1185 fires on "en_route" alone), then posts
+//    hazmatEscort.checkIn; existing.status is "accepted", so :180 sets
+//    startedAt = now and this screen reads 0:00, ON THE CLOCK, 14 h of
+//    headroom. A FATIGUED ESCORT READS RESTED. The min() clamp is irrelevant:
+//    the attack moves the INPUT, not the arithmetic.
+//    DISCLOSED on the gauge as (d); DEFENDED client-side, within its honest
+//    limit, by ES28StartStampWatch (below). Filed for the server lane as
+//    ESC-DUTY-ENUM, revised — see the ADVERSARIAL PROBE block.
+//
+//    STORAGE  escortAssignments.startedAt / .completedAt
+//                                      drizzle/schema.ts:3842-3843
+//        index ea_escort_idx on escortUserId, drizzle/schema.ts:3849.
+//
+//    STILL ABSENT, AND STILL DRAWN AS ABSENT (these did NOT change when the
+//    fold opened):
+//    STUB — a PURPOSE-BUILT fold procedure. `getDutyWindows` = 0 and
+//        `escortDuty` = 0 over server/ + drizzle/ + client/. The two-call path
+//        above is a workaround assembled out of procedures written for other
+//        jobs, not an API for duty hours: it cannot filter by date, cannot
+//        order by completedAt, and costs an N+1. Still filed, still not called:
+//          escorts.getDutyWindows({ days: z.number().int().min(1).max(14)
+//            .default(7) }) -> { windowStartUtc, windowEndUtc,
+//            ceilingHours: 60,
+//            days: [{ dateLocal, seconds, closedCount, openCount,
+//                     unreadableCount }],
+//            openIntervals: [{ assignmentId, startedAtUtc }],
+//            totals: { closedSeconds, openSeconds, unreadableCount,
+//                      implausibleCount, overlapMergedSeconds } }
+//        Filed as ESC-DUTY-FOLD-COST against the escorts-router lane: one
+//        procedure would replace 1+N round trips and make the window provable.
+//    STUB — 5-question daily survey. Zero-greps over frontend/server/** and
+//        frontend/drizzle/**: escortFatigue 0 · escort_fatigue 0 ·
+//        fatigueSurvey 0 · fatigue_survey 0 · escortShift 0 · escort_shifts 0 ·
+//        escortHos 0 · escort_hos 0 · duty_hours 0. The complete escort table
+//        set is escortCertifications :1793, escortVehicleInspections :1821,
+//        escortSurveys :1841, escortSurveyHazards :1860, escortAssignments
+//        :3803 — no shift, duty or fatigue table. Rendered as a DESIGNED VOID
+//        with NO SUBMIT CONTROL. Cheapest honest path if the lane wants it
+//        live: one auditLogs row, driverWellness.ts:801-809 is the template.
+//    STUB — relief swap. reliefSwap 0 · relief_swap 0. Stated absence, no control.
+//
+//    CLOSED DOOR, NOT WIRED, NOT DRAWN — hos.* is FORBIDDEN to this role.
+//        hos.ts:28-39 verbatim: roleProcedure(ROLES.DRIVER, ROLES.CATALYST,
+//        ROLES.DISPATCH, ROLES.TERMINAL_MANAGER, ROLES.COMPLIANCE_OFFICER,
+//        ROLES.SAFETY_MANAGER, ROLES.RAIL_ENGINEER, ROLES.RAIL_CONDUCTOR,
+//        ROLES.SHIP_CAPTAIN, ROLES.ADMIN, ROLES.SUPER_ADMIN). ROLES.ESCORT is
+//        absent while it exists at _core/trpc.ts:23 and escort factories exist
+//        at :228/:451/:543 — the omission is deliberate. The nine procedures
+//        sit behind THREE factories and ROLES.ESCORT is absent from all three:
+//        hosReadProcedure (hos.ts:28-39) gates :161 :179 :257 :278 :398;
+//        hosDriverWriteProcedure = roleProcedure(ROLES.DRIVER) (hos.ts:41)
+//        gates :210 :315 :358; hosFleetProcedure (hos.ts:42-50) gates :426.
+//        All nine return FORBIDDEN to an escort.
+//    CLOSED DOOR, NOT WIRED — driverWellness.getFatigueRiskAssessment
+//        driverWellness.ts:471 throws NOT_FOUND "Driver profile is required for
+//        fatigue assessment." at :481-482. An ESCORT has no `drivers` row.
+//
+//  UNDER-REPORT — DISCLOSED ON THE GAUGE, NOT IN A FOOTNOTE. startedAt is
+//  stamped only at 'escorting' (escorts.ts:1201), so staging, the pre-trip
+//  check, deadhead and on-site waiting are never captured and BOTH the shift
+//  figure and every stratum of the fold UNDER-REPORT. Decision: RENDER IT, with
+//  FOUR disclosures welded to the gauge — (a) a TORN HEAD, a saw-edged lead-in
+//  standing outside the zero mark, labelled NOT CAPTURED; (b) the label
+//  ESCORTING TIME ONLY, never ON-DUTY TIME; (c) the cause and its file:line
+//  under the bar; (d) START STAMP IS OVERWRITABLE — A REWRITE MAKES THIS READ
+//  0:00, with the two unguarded writers and the enabler pinned under it,
+//  because the bias runs BOTH WAYS and this surface no longer claims otherwise.
+//  Omission would leave an HOS-exempt role with no shift clock at all; a fully
+//  disclosed bias is usable, a blank is not.
+//
+//  CLAMPS. 14 H figure = min(max(0, now − startedAt), 14 H); the 60 H ceiling
+//  is a compile-time constant. The clamp guards the GEOMETRY; the VERDICT runs
+//  on the UNCLAMPED value so an over-limit cannot hide behind the clamp.
+//  SCOPE OF THE CLAMP, STATED: it protects the ARITHMETIC, not the STAMP. A
+//  rewritten startedAt narrows the figure before the clamp ever runs, which is
+//  why the on-face tag reads min(elapsed, 14 H) CLAMPS MATH, NOT STAMP.
+//
+//  ADVERSARIAL PROBE (see ES28DutyFold): (a) negative interval → UNREADABLE,
+//  never a silent zero; (b) unclosed row → OPEN, disclosed, never coalesced;
+//  (c) overlapping pair → UNION (correct duty semantics) with the merge count
+//  disclosed, because a silent permissive merge is the hidden hole; (d)
+//  implausible magnitude (>24 h) → quarantined and counted, not folded, not
+//  dropped; (e) THE SECOND HOLE — escorts.updateJobStatus takes
+//  `status: z.string()` at escorts.ts:1172, an unvalidated free string with no
+//  enum and no transition guard, so a row can land with completedAt SET and
+//  startedAt NULL; coalescing that to a zero interval would silently delete
+//  real duty time, so it is UNREADABLE and surfaced.
+//  (f) THE THIRD HOLE, found on the re-probe after (e) was closed, and
+//  reported because the artifact that closes this class is the writer table
+//  above rather than a count: escorts.update at escorts.ts:640 is a SECOND
+//  unvalidated status door — `status: z.string().optional()` at :641, keyed on
+//  loadId rather than assignmentId, self-owned, with NO pre-trip gate at all
+//  (updateJobStatus at least gates 'en_route' at :1185-1198) — and it stamps
+//  completedAt at :653 with no !a.completedAt guard. The status rollback that
+//  resets the clock therefore has TWO independent entry doors.
+//  (g) AN ENUM ALONE CLOSES NOTHING: "accepted" is a legal member, so the
+//  rollback survives validation; only a FORWARD-ONLY TRANSITION GUARD kills
+//  it. And the enum previously filed as "owed" ALREADY EXISTS IN THE SAME
+//  FILE — assignmentStatusSchema, escorts.ts:26, the full seven-value
+//  z.enum(["pending","accepted","en_route","on_site","escorting","completed",
+//  "cancelled"]), already used by escorts.updateTripStatus at escorts.ts:2849.
+//  (h) THE START STAMP ITSELF MOVES — see the writer table. Defended here by
+//  ES28StartStampWatch within its honest limit; disclosed as (d) on the gauge.
+//  (i) THE TRANSPORT LAYER, added this fire and the reason ES28Provenance
+//  exists: an EMPTY 200 is not a reading. See the TRANSPORT LAYER block above.
+//  (j) A MIDNIGHT-CROSSING SPAN, added with the fold: a span that crosses local
+//  midnight is SPLIT across the two strata, never assigned whole to one day.
+//  Assigning it whole would make one day read heavier and its neighbour read
+//  LIGHTER, and lighter is the direction that says rested.
+//  ESC-DUTY-ENUM, REVISED and filed (not applied — hazmatEscort.ts and
+//  convoy.ts belong to other lanes):
+//    (i)   apply assignmentStatusSchema to escorts.updateJobStatus (:1172)
+//          AND to escorts.update (:641);
+//    (ii)  one shared forward-only transition guard on both, rejecting any
+//          move backwards through pending → accepted → en_route → on_site →
+//          escorting → completed;
+//    (iii) !existing.startedAt guard at hazmatEscort.ts:180 and !startedAt
+//          guard at convoy.ts:292;
+//    (iv)  give convoy.updateConvoyStatus (convoy.ts:258) a ctx and a
+//          convoy-membership assertion — it has neither today;
+//    (v)   !completedAt guards at escorts.ts:1202, :2862, :653, convoy.ts:312.
+//
+//  BINDING: ES28Screen's default service is ES28LiveService, which reads all
+//  four procedures through EusoTripAPI.shared — queryNoInput
+//  (Services/EusoTripAPI.swift:1438) for the two no-input escortProcedure
+//  queries, and query(_:input:) (Services/EusoTripAPI.swift:1392) for the two
+//  that take input. The no-input pattern is the same one the sibling escort
+//  ports already bind at ES27_PerformanceScorecard.swift:430/437 and
+//  ES25_HighSecurityConvoy.swift:1095. ES28UnboundService is retained as an
+//  injectable test double only.
+//
+//  PERSIST · AUDIT · REALTIME: this screen writes nothing. The duty stamp it
+//  reads carries NO blockchainAuditTrail row — the token appears 0 times in
+//  escorts.ts (4745 lines) and 0 times in hazmatEscort.ts, re-verified by
+//  grep -c this fire, while the table itself is real at drizzle/schema.ts:10018
+//  and IS used elsewhere (loads.ts imports it at loads.ts:14 and references it
+//  5 times). So the gap is specific and it is named: NONE of the four
+//  procedures this screen calls, and none of the eight writers of the two duty
+//  columns, writes a blockchainAuditTrail row. The escort audit surface is
+//  recordAuditEvent() (_core/auditService, imported escorts.ts:17, called :110
+//  et al) and updateJobStatus is NOT one of those call sites. No WS event
+//  exists (grep -nE "FATIGUE|DUTY" server/_core/websocket.ts = 0). Filed as
+//  ESC-DUTY-AUDIT (no chain row on the duty stamp) and ESC-DUTY-WS.
+//  RBAC: escortProcedure aliased as protectedProcedure at escorts.ts:11 =
+//  roleProcedure(ROLES.ESCORT) at _core/trpc.ts:228 over ROLES.ESCORT at
+//  _core/trpc.ts:23; row scope resolveEscortUserId escorts.ts:138. THE ONE
+//  EXCEPTION, named rather than smoothed over: loads.getEscortAssignment is
+//  isolatedApprovedProcedure (loads.ts:11 → _core/trpc.ts:524), NOT a
+//  roleProcedure, and carries no row scope at all — ESC-DUTY-LEAK.
+//  §W OFFLINE: ONLINE_ONLY. A cached elapsed figure ages in the PERMISSIVE
+//  direction — 4:29 out of a five-hour-old cache is really 9:29 — so nothing
+//  here is read from EscortOfflineCache and no staleness line is needed. There
+//  is no escort outbox, so a queue badge is NEVER drawn. Money movement and
+//  award commits are ONLINE_ONLY unconditionally; this surface commits neither.
+//  CHAIN: read CLOSED for the shift gauge, the open-row list AND (this fire)
+//  the 7-day fold, the last one through the two-call path above; write N-A —
+//  this surface exposes no verb; survey and relief-swap chains SILENT.
+//
+
+import SwiftUI
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MARK: - Duty rules (all thresholds are compile-time constants)
+//
+// Nothing on this surface reads a threshold out of a payload. The 60 H ceiling
+// and the 14 H shift limit are `let` constants here so that no server response,
+// no cache and no decoded field can widen either one.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum ES28DutyRules {
+    /// House shift limit. NOT a statute: escorts are HOS-exempt (ROLES.ESCORT is
+    /// absent from `hosReadProcedure`, hos.ts:28-39).
+    static let shiftCeilingHours: Double = 14
+    /// House rolling-week ceiling. Also not a statute, for the same reason.
+    static let weekCeilingHours: Double = 60
+    static let windowDays: Int = 7
+    /// Any single interval longer than this is quarantined rather than folded.
+    /// A garbage `startedAt` (epoch) yields ~490 000 h; folding it pins the
+    /// column at the ceiling — the SAFE direction — but destroys the strata,
+    /// so it is counted and surfaced instead of being silently absorbed.
+    static let implausibleSingleIntervalHours: Double = 24
+
+    /// escorts.listSettlements caps its page at 100 — `z.number().min(1)
+    /// .max(100).default(25)` at escorts.ts:4726. Asking for the maximum is
+    /// the only way to widen the window, and even the maximum does not PROVE
+    /// completeness: see `ES28DutyWindow.foldComplete`.
+    static let settlementsPageLimit: Int = 100
+
+    /// Ceiling on the N+1 fan-out of loads.getEscortAssignment (loads.ts:2029).
+    /// A phone on a corridor must not fire 100 serialised round trips to paint
+    /// one card. Exhausting this budget does NOT silently shorten the week —
+    /// it drops `foldComplete` to false and the surface says so.
+    static let loadProbeBudget: Int = 60
+
+    /// Maximum concurrent call-2 probes. Bounded so the fold cannot saturate
+    /// a weak link and time the whole screen out.
+    static let loadProbeConcurrency: Int = 6
+
+    /// TRUE while escorts.ts:1201 stamps `startedAt` only on the 'escorting'
+    /// transition. While it is true, EVERY figure derived by subtracting this
+    /// column from the 60 H ceiling errs in the PERMISSIVE direction — it says
+    /// the escort has MORE left than they do. It is the reason `headroomHours`
+    /// is nil even now that the seven-day fold is readable. Flip it only when
+    /// the server stamps an on-duty time rather than an escorting time.
+    static let shiftClockUnderReports: Bool = true
+
+    /// The min() clamp. Applied to GEOMETRY only.
+    static func clampForDrawing(_ hours: Double, ceiling: Double) -> Double {
+        min(max(0, hours), ceiling)
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MARK: - Wire models
+//
+// Typed against what the producer actually emits, field by field.
+//   escorts.getActiveTrip     escorts.ts:2787 → startedAt is emitted as an
+//     ISO-8601 STRING or null at escorts.ts:2824 (`?.toISOString() || null`).
+//   escorts.getMyTeam         escorts.ts:2026 → startedAt likewise at :2166.
+//   escorts.listSettlements   escorts.ts:4723 → rows returned RAW at :4743.
+//   loads.getEscortAssignment loads.ts:2029   → both stamps at :2070-2071.
+//   `rate` on the escort surfaces is already parseFloat'd server-side
+//     (escorts.ts:2821, :2151) so it arrives as a JSON number — but the raw
+//     drizzle `decimal` columns behind it serialize as STRINGS, which is the
+//     class that has killed three escort screens. `netPayout` on
+//     listSettlements is exactly such a column and is DELIBERATELY NOT DECODED
+//     here: this screen has no business reading money, and an undeclared key is
+//     an ignored key. Any numeric field that does come straight off a
+//     decimal/BIGINT aggregate is decoded through `ES28LenientSeconds`, which
+//     accepts both shapes rather than being typed Double and blowing up.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Accepts an integer, a double, or a numeric string. MySQL returns SUM() over
+/// a decimal/bigint as a STRING through drizzle; typing it `Int` throws.
+struct ES28LenientSeconds: Codable, Equatable {
+    let value: Int
+    init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        // The two `try?`s below are a TYPE PROBE, not a swallowed error: the
+        // ladder ends in a throwing `decode(String.self)` plus an explicit
+        // dataCorruptedError, so an unexpected shape still surfaces. Nothing on
+        // this file swallows a load failure.
+        if let i = try? c.decode(Int.self) { value = i; return }
+        if let d = try? c.decode(Double.self) { value = Int(d.rounded()); return }
+        let s = try c.decode(String.self)
+        guard let d = Double(s) else {
+            throw DecodingError.dataCorruptedError(in: c, debugDescription: "seconds not numeric: \(s)")
+        }
+        value = Int(d.rounded())
+    }
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer(); try c.encode(value)
+    }
+    init(_ v: Int) { value = v }
+}
+
+/// escorts.getActiveTrip — escorts.ts:2787. Only the fields this screen reads.
+struct ES28ActiveTripDTO: Codable, Equatable {
+    let assignmentId: Int
+    let assignmentStatus: String
+    let position: String?
+    /// escorts.ts:2824 — ISO-8601 or null. NEVER a Date; the wire is a string.
+    let startedAt: String?
+}
+
+/// escorts.getMyTeam — escorts.ts:2026. Statuses are
+/// pending|accepted|en_route|on_site|escorting (escorts.ts:2046), so this list
+/// can never contain a completed row — which is why it is the OPEN-ROW list
+/// and not the fold.
+struct ES28OpenAssignmentDTO: Codable, Equatable, Identifiable {
+    let assignmentId: Int
+    let loadNumber: String
+    let origin: String
+    let destination: String
+    let myPosition: String
+    let myStatus: String
+    /// escorts.ts:2166 — ISO-8601 or null.
+    let startedAt: String?
+
+    var id: Int { assignmentId }
+}
+
+/// escorts.listSettlements — escorts.ts:4723. CALL 1 OF THE FOLD.
+/// Self-scoped by the SERVER at escorts.ts:4732 over resolveEscortUserId
+/// (escorts.ts:4731). The status filter at escorts.ts:4725 is optional and is
+/// deliberately NOT sent, so completed assignments come back too. `loadId` is
+/// selected at escorts.ts:4740 and the rows are returned raw at escorts.ts:4743.
+/// `netPayout`/`settledAt`/`settlementId` are present on the wire and are NOT
+/// declared here — this screen reads duty, never money.
+struct ES28SettlementRowDTO: Codable, Equatable, Identifiable {
+    let assignmentId: Int
+    let loadId: Int
+    let settlementStatus: String?
+
+    var id: Int { assignmentId }
+}
+
+/// loads.getEscortAssignment — loads.ts:2029. CALL 2 OF THE FOLD.
+///
+/// SCOPE WARNING, KEPT ON THE TYPE SO IT CANNOT BE LOST. This procedure is
+/// declared `.query(async ({ input }) => {` at loads.ts:2031 — NO ctx — and its
+/// only gate is isolatedApprovedProcedure (_core/trpc.ts:524). It returns EVERY
+/// escort on the load, including other escorts' duty stamps, names and phones.
+/// That exposure is counter-party row ESC-DUTY-LEAK; it is CITED, not re-filed.
+/// This screen never reads `escortName`/`escortPhone` (undeclared keys are
+/// ignored keys) and keeps ONLY the row whose `id` matches an assignmentId the
+/// SERVER already scoped to the caller in call 1 — see
+/// `ES28DutyFold.selfRows(_:ownedAssignmentIds:)`.
+struct ES28LoadEscortRowDTO: Codable, Equatable, Identifiable, Sendable {
+    /// escortAssignments.id — loads.ts:2058. The join key back to call 1.
+    let id: Int
+    let status: String?
+    /// loads.ts:2070 — ISO-8601 or null, UNTRUNCATED.
+    let startedAt: String?
+    /// loads.ts:2071 — ISO-8601 or null, UNTRUNCATED.
+    let completedAt: String?
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MARK: - Provenance — the transport-layer half of the honesty machinery
+//
+// The fold already refuses to turn "no reading" into 0:00. This does the same
+// job one layer down: it refuses to turn "the server swallowed a fault and
+// answered 200 with nothing" into a rested week.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum ES28Provenance: Equatable {
+    /// At least one payload came back with a row in it, which proves the DB
+    /// answered and the caller resolved to a real escortUserId.
+    case corroborated
+    /// EVERY read came back empty. That payload is byte-identical to three
+    /// known swallows — escorts.getMyTeam's `catch → return []`
+    /// (escorts.ts:2171), escorts.getActiveTrip's `catch → return null`
+    /// (escorts.ts:2846), and resolveEscortUserId's `catch { }` at
+    /// escorts.ts:145 falling through to `0` at escorts.ts:147, which scopes
+    /// every subsequent query to a user id that owns nothing. No numeral is
+    /// painted in this state.
+    case indistinguishable
+}
+
+enum ES28EmptyPayloadGuard {
+    /// The rule, stated once: ANY non-empty payload corroborates the others.
+    /// All-empty is refused. There is deliberately no third "probably fine"
+    /// case — a fatigue instrument gets two answers, "measured" and "refused".
+    static func provenance(trip: ES28ActiveTripDTO?,
+                           openRows: [ES28OpenAssignmentDTO],
+                           ledger: [ES28SettlementRowDTO]) -> ES28Provenance {
+        (trip == nil && openRows.isEmpty && ledger.isEmpty) ? .indistinguishable : .corroborated
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MARK: - The fold, and every adversarial guard on it
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum ES28UnreadableReason: String, Equatable {
+    /// startedAt nil AND completedAt nil — the row was never on the clock.
+    case neverStarted
+    /// PROBE (e), THE SECOND HOLE. completedAt SET, startedAt NULL.
+    /// escorts.updateJobStatus takes `status: z.string()` (escorts.ts:1172) —
+    /// an unvalidated free string with no enum and no transition guard — so a
+    /// client can post status:"completed" on a row that never reached
+    /// 'escorting'. escorts.ts:1202 stamps completedAt unconditionally while
+    /// escorts.ts:1201 only stamps startedAt on the 'escorting' transition.
+    /// Coalescing this to a zero-length interval would SILENTLY DELETE real
+    /// duty time from the total. It is surfaced instead.
+    case completedWithoutStart
+    /// PROBE (a). completedAt < startedAt — clock skew or a manual edit. A
+    /// negative interval would SUBTRACT and make a fatigued escort read rested.
+    case negativeInterval
+    case nonFiniteInterval
+    /// PROBE (h), THE START STAMP MOVED. startedAt is NOT set-once on the
+    /// server: hazmatEscort.ts:180 and convoy.ts:292 both rewrite it with no
+    /// !startedAt guard, and the unvalidated `status: z.string()` at
+    /// escorts.ts:1172 (and again at escorts.ts:641) makes the status rollback
+    /// that reaches them a two-call, no-privilege operation. A rewritten stamp
+    /// makes a 12-hour shift read 0:00 — the UNSAFE direction. When the
+    /// session watch sees the value jump FORWARD for the same assignment, the
+    /// figure is refused rather than repainted as a fresh clock.
+    case startStampMovedForward
+}
+
+enum ES28IntervalReading: Equatable {
+    case closed(TimeInterval)
+    /// PROBE (b). startedAt set, completedAt nil. Counted as OPEN and disclosed
+    /// separately — never coalesced to 0.
+    case open(TimeInterval)
+    case unreadable(ES28UnreadableReason)
+    /// PROBE (d). Quarantined, not folded, not dropped.
+    case implausible(TimeInterval)
+}
+
+struct ES28DutyInterval: Equatable {
+    let assignmentId: Int
+    let startedAt: Date?
+    let completedAt: Date?
+}
+
+/// One day of the accumulator column.
+struct ES28DayStratum: Equatable, Identifiable {
+    /// Local start-of-day.
+    let dayStart: Date
+    let label: String
+    /// nil means NOT MEASURABLE for this day — drawn hatched with an em-dash,
+    /// never as 0:00. A measured zero is `some 0`, which is a different fact
+    /// and is drawn as a floor marker.
+    let seconds: TimeInterval?
+    /// True when a row still on the clock contributes to this day.
+    let isOpen: Bool
+
+    var id: Date { dayStart }
+    var hours: Double? { seconds.map { $0 / 3600 } }
+    var isMeasured: Bool { seconds != nil }
+}
+
+enum ES28DutyFold {
+
+    static func read(_ i: ES28DutyInterval, now: Date) -> ES28IntervalReading {
+        guard let start = i.startedAt else {
+            return .unreadable(i.completedAt == nil ? .neverStarted : .completedWithoutStart)
+        }
+        let end = i.completedAt ?? now
+        let raw = end.timeIntervalSince(start)
+        guard raw.isFinite else { return .unreadable(.nonFiniteInterval) }
+        if raw < 0 { return .unreadable(.negativeInterval) }
+        if raw > ES28DutyRules.implausibleSingleIntervalHours * 3600 { return .implausible(raw) }
+        return i.completedAt == nil ? .open(raw) : .closed(raw)
+    }
+
+    /// PROBE (c). Nothing in escorts.updateJobStatus prevents two rows sitting
+    /// in 'escorting' at once, so a naive SUM double-counts. A body cannot be on
+    /// duty twice, so the UNION is the correct duty semantics — but the union is
+    /// SHORTER than the naive sum, i.e. it moves in the permissive direction.
+    /// It is therefore used AND disclosed: the merge count rides on the surface
+    /// so a silent permissive merge is impossible.
+    static func union(_ spans: [(start: Date, end: Date)]) -> (seconds: TimeInterval, overlaps: Int) {
+        guard !spans.isEmpty else { return (0, 0) }
+        let sorted = spans.sorted { $0.start < $1.start }
+        var total: TimeInterval = 0
+        var overlaps = 0
+        var cur = sorted[0]
+        for s in sorted.dropFirst() {
+            if s.start <= cur.end {
+                overlaps += 1
+                if s.end > cur.end { cur.end = s.end }
+            } else {
+                total += cur.end.timeIntervalSince(cur.start)
+                cur = s
+            }
+        }
+        total += cur.end.timeIntervalSince(cur.start)
+        return (max(0, total), overlaps)
+    }
+
+    /// PROBE (h). Pure half of the start-stamp defence: has this read's
+    /// startedAt moved FORWARD relative to the earliest value previously
+    /// observed for the same assignment? A forward jump can only mean the
+    /// column was rewritten, because no legitimate path moves a set startedAt
+    /// later — escorts.ts:1201 and escorts.ts:2861 are both set-once.
+    /// The tolerance absorbs clock jitter and fractional-second re-encoding;
+    /// it is deliberately small, since the attack moves the stamp by hours.
+    static func startStampMovedForward(previousEarliest: Date?,
+                                       current: Date,
+                                       tolerance: TimeInterval = 60) -> Bool {
+        guard let previous = previousEarliest else { return false }
+        return current.timeIntervalSince(previous) > tolerance
+    }
+
+    /// THE SCOPE FILTER for call 2. loads.getEscortAssignment has no ctx and no
+    /// row scope (loads.ts:2031), so it answers with every escort on the load.
+    /// Rather than infer "which of these is me" from a user id the client
+    /// guessed, this keeps only the rows whose assignment id the SERVER already
+    /// scoped to the caller in escorts.listSettlements (escorts.ts:4732). The
+    /// counter-party rows are dropped unread; the exposure itself is
+    /// ESC-DUTY-LEAK and belongs to the loads lane.
+    static func selfRows(_ rows: [ES28LoadEscortRowDTO],
+                         ownedAssignmentIds: Set<Int>) -> [ES28LoadEscortRowDTO] {
+        rows.filter { ownedAssignmentIds.contains($0.id) }
+    }
+
+    /// PROBE (j). Splits merged spans across local day boundaries. A span that
+    /// crosses midnight is SPLIT, never assigned whole to one day: assigning it
+    /// whole would make one stratum read heavier and its neighbour read
+    /// LIGHTER, and lighter is the direction that says rested.
+    ///
+    /// Returns seconds keyed by local start-of-day, for the days given.
+    static func bucketByDay(spans: [(start: Date, end: Date)],
+                            days: [Date],
+                            calendar: Calendar) -> [Date: TimeInterval] {
+        var out: [Date: TimeInterval] = [:]
+        for day in days {
+            guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: day) else { continue }
+            var total: TimeInterval = 0
+            for s in spans {
+                let lo = max(s.start, day)
+                let hi = min(s.end, dayEnd)
+                if hi > lo { total += hi.timeIntervalSince(lo) }
+            }
+            out[day] = total
+        }
+        return out
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MARK: - ES28StartStampWatch — the client-side half of disclosure (d)
+//
+// WHAT IT CATCHES. Within one app session it remembers the EARLIEST startedAt
+// seen per assignmentId. If a later read comes back with the stamp moved
+// forward, the shift figure is refused and the gauge prints
+// START STAMP MOVED · UNREADABLE instead of a fresh, restful-looking clock.
+//
+// WHAT IT CANNOT CATCH, STATED PLAINLY RATHER THAN IMPLIED. A rewrite that
+// lands BEFORE the first read of a session is INVISIBLE to any client. There
+// is no prior value to compare against: no procedure in the tree returns a
+// history of escortAssignments.startedAt, and updateJobStatus writes no audit
+// row behind the stamp (it is not among the recordAuditEvent call sites in
+// escorts.ts). This watch is a mitigation, not a guard. The guard has to land
+// on the server, and its exact shape is filed as ESC-DUTY-ENUM in the header.
+// ─────────────────────────────────────────────────────────────────────────────
+
+@MainActor
+final class ES28StartStampWatch {
+    static let shared = ES28StartStampWatch()
+
+    private var earliestSeen: [Int: Date] = [:]
+
+    /// Records this read and reports whether the stamp jumped forward.
+    /// Idempotent for repeated observations of the same value, so the trip
+    /// gauge, the open-row fold and the seven-day fold may all call it for the
+    /// same assignment.
+    func observe(assignmentId: Int, startedAt: Date) -> Bool {
+        guard let previous = earliestSeen[assignmentId] else {
+            earliestSeen[assignmentId] = startedAt
+            return false
+        }
+        if ES28DutyFold.startStampMovedForward(previousEarliest: previous, current: startedAt) {
+            return true
+        }
+        // Keep the earliest value: a backwards correction is not the attack,
+        // and holding the floor keeps the comparison honest on later reads.
+        if startedAt < previous { earliestSeen[assignmentId] = startedAt }
+        return false
+    }
+
+    /// Test seam only. Never called from the surface.
+    func reset() { earliestSeen.removeAll() }
+}
+
+/// What the column actually renders. Note there is deliberately NO
+/// `remainingHours` — see `headroomHours`, which is nil BY CONSTRUCTION while
+/// the duty column under-reports.
+struct ES28DutyWindow: Equatable {
+    let windowStart: Date
+    let windowEnd: Date
+    let readSeconds: TimeInterval
+    let openSeconds: TimeInterval
+    let unreadableCount: Int
+    let implausibleCount: Int
+    let overlapCount: Int
+    /// Newest first — index 0 is today, index 6 is the day that rolls out next.
+    let days: [ES28DayStratum]
+    let provenance: ES28Provenance
+
+    // ── the cost of the two-call fold, carried so the face can print it ──
+    /// Rows returned by escorts.listSettlements (escorts.ts:4723).
+    let ledgerRows: Int
+    /// Distinct loadIds actually probed through loads.getEscortAssignment.
+    let loadsProbed: Int
+    /// Distinct loadIds that WANTED probing.
+    let loadsSeen: Int
+    /// False when the ledger page was full (escorts.ts:4726 caps at 100, with
+    /// no date filter and `desc(updatedAt)` ordering at escorts.ts:4743) or the
+    /// client probe budget was exhausted. Either way older assignments may
+    /// exist that were never seen, so the window is NOT provably complete.
+    let foldComplete: Bool
+
+    var totalDayCount: Int { ES28DutyRules.windowDays }
+    var readHours: Double { readSeconds / 3600 }
+    var readableDayCount: Int { days.filter { $0.isMeasured }.count }
+    var budgetExhausted: Bool { loadsProbed < loadsSeen }
+
+    /// Geometry only. Clamped so no input can paint past the ceiling.
+    var drawFraction: Double {
+        ES28DutyRules.clampForDrawing(readHours, ceiling: ES28DutyRules.weekCeilingHours)
+            / ES28DutyRules.weekCeilingHours
+    }
+
+    /// The verdict runs on the UNCLAMPED value so an over-limit can never be
+    /// hidden by the clamp that protects the drawing.
+    var isOverCeiling: Bool { readHours > ES28DutyRules.weekCeilingHours }
+
+    /// THE SINGLE MOST DANGEROUS NUMBER THIS SCREEN COULD PRINT, and it is
+    /// still refused. It stayed nil when the fold opened, and the reason
+    /// changed rather than disappeared: `shiftClockUnderReports` is true while
+    /// escorts.ts:1201 stamps only the 'escorting' transition, so 60 H minus
+    /// this total is systematically TOO LARGE. The completeness and
+    /// readability guards below are kept as well, so that flipping the
+    /// under-report flag alone can never be enough to start printing it.
+    var headroomHours: Double? {
+        guard !ES28DutyRules.shiftClockUnderReports,
+              provenance == .corroborated,
+              foldComplete,
+              unreadableCount == 0,
+              implausibleCount == 0,
+              readableDayCount == totalDayCount else { return nil }
+        return max(0, ES28DutyRules.weekCeilingHours - readHours)
+    }
+
+    /// What the surface prints where a headroom figure would have gone.
+    var headroomRefusalReason: String {
+        if provenance == .indistinguishable { return "NO PAYLOAD TO STAND BEHIND" }
+        if ES28DutyRules.shiftClockUnderReports { return "CLOCK STARTS LATE \u{00B7} IS REWRITABLE" }
+        if !foldComplete { return "WINDOW NOT PROVEN COMPLETE" }
+        return "WINDOW NOT FULLY READABLE"
+    }
+}
+
+enum ES28Format {
+    /// H:MM. A nil or negative input renders as an em-dash, never as 0:00 —
+    /// "no reading" and "zero hours" are different facts on a fatigue surface.
+    static func hhmm(_ seconds: TimeInterval?) -> String {
+        guard let s = seconds, s.isFinite, s >= 0 else { return "\u{2014}" }
+        let m = Int(s / 60)
+        return String(format: "%d:%02d", m / 60, m % 60)
+    }
+
+    /// The instant the oldest stratum leaves the rolling window, e.g.
+    /// "00:00 TUE 18 AUG". Local, because the window is bucketed locally.
+    static func rollOut(_ d: Date) -> String {
+        let f = DateFormatter(); f.dateFormat = "HH:mm EEE d MMM"
+        return f.string(from: d).uppercased()
+    }
+}
+
+/// The smaller, separate gauge. Different clock, different confidence.
+struct ES28ShiftGauge: Equatable {
+    /// nil when the open row has startedAt NULL — drawn as an em-dash, not 0.
+    let elapsed: TimeInterval?
+    let startedAtLocal: String?
+    /// PROBE (h). True when ES28StartStampWatch saw this assignment's startedAt
+    /// move FORWARD inside the session. `elapsed` is forced nil alongside it,
+    /// so the numeral falls to an em-dash rather than to a fresh, small figure.
+    let startStampMoved: Bool
+    /// PROBE (i). When the whole payload was empty this gauge has no reading
+    /// it can stand behind, so it prints an em-dash and says why.
+    let provenance: ES28Provenance
+
+    init(elapsed: TimeInterval?,
+         startedAtLocal: String?,
+         startStampMoved: Bool = false,
+         provenance: ES28Provenance = .corroborated) {
+        self.elapsed = elapsed
+        self.startedAtLocal = startedAtLocal
+        self.startStampMoved = startStampMoved
+        self.provenance = provenance
+    }
+
+    var hours: Double? { provenance == .corroborated ? elapsed.map { $0 / 3600 } : nil }
+
+    /// min() clamp on the drawing.
+    var drawFraction: Double {
+        guard let h = hours else { return 0 }
+        return ES28DutyRules.clampForDrawing(h, ceiling: ES28DutyRules.shiftCeilingHours)
+            / ES28DutyRules.shiftCeilingHours
+    }
+
+    /// Verdict on the unclamped value.
+    var isOverLimit: Bool { (hours ?? 0) > ES28DutyRules.shiftCeilingHours }
+
+    var display: String { provenance == .corroborated ? ES28Format.hhmm(elapsed) : "\u{2014}" }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MARK: - Service seam
+//
+// A purpose-built `escorts.getDutyWindows` is still DELIBERATELY ABSENT from
+// this protocol: it does not exist on the server (grep over server/ + drizzle/
+// + client/ = 0). What IS declared here is the two-call workaround that does
+// exist, procedure for procedure, at the lines cited on each method.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum ES28DutyLoadError: Error, LocalizedError, Equatable {
+    case transport(String)
+    case decode(String)
+    var errorDescription: String? {
+        switch self {
+        case .transport(let m): return "Could not reach the duty record — \(m)"
+        case .decode(let m):    return "Duty record did not decode — \(m)"
+        }
+    }
+}
+
+/// `Sendable` because the call-2 fan-out below runs the probes in a bounded
+/// task group off the main actor. Every conformer is a struct of value types.
+protocol ES28DutyService: Sendable {
+    /// escorts.getActiveTrip — escorts.ts:2787
+    func activeTrip() async throws -> ES28ActiveTripDTO?
+    /// escorts.getMyTeam — escorts.ts:2026
+    func openAssignments() async throws -> [ES28OpenAssignmentDTO]
+    /// escorts.listSettlements — escorts.ts:4723. CALL 1 of the fold.
+    func settlementLedger(limit: Int) async throws -> [ES28SettlementRowDTO]
+    /// loads.getEscortAssignment — loads.ts:2029. CALL 2 of the fold.
+    func escortRows(loadId: Int) async throws -> [ES28LoadEscortRowDTO]
+}
+
+/// THE DEFAULT THE REGISTRY GETS. All four procedures were opened at the line
+/// this fire and all four are bound live.
+///
+/// Nothing is softened: no call is wrapped in `try?` and none falls back to an
+/// empty payload. A failure propagates to ES28ViewModel.load(), which paints
+/// the failure band, because an empty column on a fatigue instrument reads as
+/// RESTED. The two procedures that fail OPEN on the server side
+/// (escorts.ts:2171, escorts.ts:2846) are caught by ES28EmptyPayloadGuard
+/// instead, which cannot un-swallow them but can refuse to draw them.
+struct ES28LiveService: ES28DutyService {
+    /// escorts.getActiveTrip — escorts.ts:2787. Returns null when the escort
+    /// has no open assignment, which decodes straight into the nil case.
+    func activeTrip() async throws -> ES28ActiveTripDTO? {
+        try await EusoTripAPI.shared.queryNoInput("escorts.getActiveTrip")
+    }
+    /// escorts.getMyTeam — escorts.ts:2026.
+    func openAssignments() async throws -> [ES28OpenAssignmentDTO] {
+        try await EusoTripAPI.shared.queryNoInput("escorts.getMyTeam")
+    }
+    /// escorts.listSettlements — escorts.ts:4723. The `status` filter
+    /// (escorts.ts:4725) is deliberately OMITTED so completed assignments are
+    /// included; `limit` is the input at escorts.ts:4726.
+    func settlementLedger(limit: Int) async throws -> [ES28SettlementRowDTO] {
+        struct In: Encodable { let limit: Int }
+        return try await EusoTripAPI.shared.query("escorts.listSettlements",
+                                                  input: In(limit: limit))
+    }
+    /// loads.getEscortAssignment — loads.ts:2029. NOTE the input is declared
+    /// `z.string()` at loads.ts:2030 and parsed with parseInt at loads.ts:2034,
+    /// so the id goes over the wire as a STRING or the call 400s.
+    func escortRows(loadId: Int) async throws -> [ES28LoadEscortRowDTO] {
+        struct In: Encodable { let loadId: String }
+        return try await EusoTripAPI.shared.query("loads.getEscortAssignment",
+                                                  input: In(loadId: String(loadId)))
+    }
+}
+
+/// INJECTABLE TEST DOUBLE ONLY — not the registry default.
+/// Every method throws, so a caller can exercise the fail-closed path
+/// deliberately and confirm that the surface paints the failure band rather
+/// than an empty column.
+struct ES28UnboundService: ES28DutyService {
+    func activeTrip() async throws -> ES28ActiveTripDTO? {
+        throw ES28DutyLoadError.transport(
+            "escorts.getActiveTrip (escorts.ts:2787) is not bound in this service")
+    }
+    func openAssignments() async throws -> [ES28OpenAssignmentDTO] {
+        throw ES28DutyLoadError.transport(
+            "escorts.getMyTeam (escorts.ts:2026) is not bound in this service")
+    }
+    func settlementLedger(limit: Int) async throws -> [ES28SettlementRowDTO] {
+        throw ES28DutyLoadError.transport(
+            "escorts.listSettlements (escorts.ts:4723) is not bound in this service")
+    }
+    func escortRows(loadId: Int) async throws -> [ES28LoadEscortRowDTO] {
+        throw ES28DutyLoadError.transport(
+            "loads.getEscortAssignment (loads.ts:2029) is not bound in this service")
+    }
+}
+
+enum ES28ViewState: Equatable {
+    case loading
+    case failed(String)
+    /// PROBE (i). Every read answered 200 with nothing. Visibly distinct from
+    /// `.failed` (which names a thrown error) AND from a real reading, and it
+    /// paints no numeral at all.
+    case unproven
+    case loaded
+}
+
+@MainActor
+final class ES28ViewModel: ObservableObject {
+    @Published private(set) var state: ES28ViewState = .loading
+    @Published private(set) var window: ES28DutyWindow?
+    @Published private(set) var gauge: ES28ShiftGauge?
+    @Published private(set) var rows: [ES28OpenAssignmentDTO] = []
+
+    private let service: any ES28DutyService
+    private let clock: () -> Date
+    private let calendar: Calendar
+
+    init(service: any ES28DutyService,
+         clock: @escaping () -> Date = Date.init,
+         calendar: Calendar = .current) {
+        self.service = service
+        self.clock = clock
+        self.calendar = calendar
+    }
+
+    /// No load failure is swallowed anywhere on this path — no `try?`, no
+    /// `?? []`, no empty-array fallback. A swallowed decode is how two escort
+    /// screens shipped permanently empty; on THIS surface it would hand a
+    /// fatigued escort an empty column, which reads as RESTED. A thrown failure
+    /// paints the failure band and no figure at all; a 200-with-nothing paints
+    /// the unproven band and no figure at all.
+    func load() async {
+        state = .loading
+        do {
+            async let tripTask   = service.activeTrip()
+            async let rowsTask   = service.openAssignments()
+            async let ledgerTask = service.settlementLedger(limit: ES28DutyRules.settlementsPageLimit)
+            let (trip, open, ledger) = try await (tripTask, rowsTask, ledgerTask)
+
+            let now = clock()
+            rows = open
+
+            // ── PROBE (i) · the transport layer, before any arithmetic ──
+            let provenance = ES28EmptyPayloadGuard.provenance(trip: trip,
+                                                             openRows: open,
+                                                             ledger: ledger)
+            guard provenance == .corroborated else {
+                gauge = ES28ShiftGauge(elapsed: nil, startedAtLocal: nil,
+                                       startStampMoved: false, provenance: provenance)
+                window = Self.emptyWindow(now: now, calendar: calendar, provenance: provenance)
+                state = .unproven
+                return
+            }
+
+            // ── the shift gauge — from the one open 'escorting' row ──
+            if let t = trip, let iso = t.startedAt, let d = Self.parseISO(iso) {
+                // PROBE (h). The stamp is not set-once on the server
+                // (hazmatEscort.ts:180, convoy.ts:292 — see the writer table).
+                // A forward jump inside the session means it was rewritten, and
+                // a rewritten stamp reads as a fresh clock on a tired escort.
+                let moved = ES28StartStampWatch.shared.observe(assignmentId: t.assignmentId,
+                                                               startedAt: d)
+                let raw = now.timeIntervalSince(d)
+                let usable = !moved && raw.isFinite && raw >= 0
+                gauge = ES28ShiftGauge(elapsed: usable ? raw : nil,
+                                       startedAtLocal: usable ? Self.localTime(d) : nil,
+                                       startStampMoved: moved,
+                                       provenance: provenance)
+            } else {
+                // Guard on PRESENCE, not truthiness. No startedAt is not 0:00.
+                gauge = ES28ShiftGauge(elapsed: nil, startedAtLocal: nil,
+                                       startStampMoved: false, provenance: provenance)
+            }
+
+            // ── THE SEVEN-DAY FOLD, call 2 · loads.getEscortAssignment ──
+            // The ledger (call 1) is already self-scoped by the server at
+            // escorts.ts:4732, so its assignment ids are the ONLY ids this
+            // screen will accept back out of the unscoped call 2.
+            let ownedIds = Set(ledger.map(\.assignmentId))
+            // Descending loadId is the only recency proxy available: the ledger
+            // carries no completedAt and no date filter (escorts.ts:4723-4743),
+            // so when the probe budget bites it must bite the OLDEST loads.
+            let loadIds  = Array(Set(ledger.map(\.loadId))).sorted(by: >)
+            let loadsSeen = loadIds.count
+            let probeList = Array(loadIds.prefix(ES28DutyRules.loadProbeBudget))
+
+            let svc = service
+            var fetched: [ES28LoadEscortRowDTO] = []
+            try await withThrowingTaskGroup(of: [ES28LoadEscortRowDTO].self) { group in
+                var issued = 0
+                var inFlight = 0
+                while issued < probeList.count || inFlight > 0 {
+                    while inFlight < ES28DutyRules.loadProbeConcurrency, issued < probeList.count {
+                        let id = probeList[issued]
+                        issued += 1
+                        inFlight += 1
+                        group.addTask { try await svc.escortRows(loadId: id) }
+                    }
+                    if let batch = try await group.next() {
+                        inFlight -= 1
+                        fetched.append(contentsOf: batch)
+                    }
+                }
+            }
+
+            // Drop every counter-party row unread — ESC-DUTY-LEAK is the loads
+            // lane's to close; this screen simply refuses to consume it.
+            let mine = ES28DutyFold.selfRows(fetched, ownedAssignmentIds: ownedIds)
+
+            // The OPEN rows are still folded in: a row on the clock right now
+            // has no completedAt anywhere, so call 2 alone would under-report
+            // today by the whole running interval.
+            var intervals: [ES28DutyInterval] = mine.map {
+                ES28DutyInterval(assignmentId: $0.id,
+                                 startedAt: $0.startedAt.flatMap(Self.parseISO),
+                                 completedAt: $0.completedAt.flatMap(Self.parseISO))
+            }
+            let seenIds = Set(mine.map(\.id))
+            for r in open where !seenIds.contains(r.assignmentId) {
+                intervals.append(ES28DutyInterval(assignmentId: r.assignmentId,
+                                                  startedAt: r.startedAt.flatMap(Self.parseISO),
+                                                  completedAt: nil))
+            }
+
+            var spans: [(start: Date, end: Date)] = []
+            var openSeconds: TimeInterval = 0
+            var unreadable = 0, implausible = 0
+            var openSpanDays = Set<Date>()
+            for i in intervals {
+                // PROBE (h) again, per row: a rewritten stamp shortens the fold
+                // exactly as it shortens the gauge, so it is quarantined into
+                // the UNREADABLE count rather than folded as a short interval.
+                if let st = i.startedAt,
+                   ES28StartStampWatch.shared.observe(assignmentId: i.assignmentId, startedAt: st) {
+                    unreadable += 1
+                    continue
+                }
+                switch ES28DutyFold.read(i, now: now) {
+                case .closed(let s):
+                    if let st = i.startedAt { spans.append((st, st.addingTimeInterval(s))) }
+                case .open(let s):
+                    openSeconds += s
+                    if let st = i.startedAt {
+                        spans.append((st, st.addingTimeInterval(s)))
+                        openSpanDays.insert(calendar.startOfDay(for: st.addingTimeInterval(s)))
+                    }
+                case .unreadable:  unreadable += 1
+                case .implausible: implausible += 1
+                }
+            }
+
+            // Trim the union to the window so an assignment that started before
+            // the window cannot pour its whole length into day 7.
+            let today = calendar.startOfDay(for: now)
+            let dayStarts: [Date] = (0..<ES28DutyRules.windowDays).compactMap {
+                calendar.date(byAdding: .day, value: -$0, to: today)
+            }
+            let windowStart = dayStarts.last ?? today
+            let clipped: [(start: Date, end: Date)] = spans.compactMap {
+                let lo = max($0.start, windowStart)
+                let hi = min($0.end, now)
+                return hi > lo ? (lo, hi) : nil
+            }
+            let merged = ES28DutyFold.union(clipped)
+            let buckets = ES28DutyFold.bucketByDay(spans: clipped,
+                                                   days: dayStarts,
+                                                   calendar: calendar)
+
+            // A day is MEASURED when the ledger page and the probe budget both
+            // covered it. If either was truncated the OLDEST days are the ones
+            // that may be missing, so they — and only they — fall to nil rather
+            // than to a comfortable-looking small number.
+            let complete = ledger.count < ES28DutyRules.settlementsPageLimit
+                && probeList.count == loadsSeen
+            let days: [ES28DayStratum] = dayStarts.map { d in
+                ES28DayStratum(dayStart: d,
+                               label: Self.dayLabel(d),
+                               seconds: complete ? (buckets[d] ?? 0) : buckets[d].flatMap { $0 > 0 ? $0 : nil },
+                               isOpen: openSpanDays.contains(d))
+            }
+
+            window = ES28DutyWindow(
+                windowStart: windowStart,
+                windowEnd: now,
+                readSeconds: merged.seconds,
+                openSeconds: openSeconds,
+                unreadableCount: unreadable,
+                implausibleCount: implausible,
+                overlapCount: merged.overlaps,
+                days: days,
+                provenance: provenance,
+                ledgerRows: ledger.count,
+                loadsProbed: probeList.count,
+                loadsSeen: loadsSeen,
+                foldComplete: complete
+            )
+            state = .loaded
+        } catch let e as ES28DutyLoadError {
+            state = .failed(e.localizedDescription)
+        } catch {
+            state = .failed(String(describing: error))
+        }
+    }
+
+    /// The shape drawn when nothing can be stood behind: seven unmeasured
+    /// strata and a zero total that the surface never prints.
+    private static func emptyWindow(now: Date,
+                                    calendar: Calendar,
+                                    provenance: ES28Provenance) -> ES28DutyWindow {
+        let today = calendar.startOfDay(for: now)
+        let dayStarts: [Date] = (0..<ES28DutyRules.windowDays).compactMap {
+            calendar.date(byAdding: .day, value: -$0, to: today)
+        }
+        return ES28DutyWindow(
+            windowStart: dayStarts.last ?? today,
+            windowEnd: now,
+            readSeconds: 0, openSeconds: 0,
+            unreadableCount: 0, implausibleCount: 0, overlapCount: 0,
+            days: dayStarts.map { ES28DayStratum(dayStart: $0, label: dayLabel($0),
+                                                 seconds: nil, isOpen: false) },
+            provenance: provenance,
+            ledgerRows: 0, loadsProbed: 0, loadsSeen: 0, foldComplete: false)
+    }
+
+    private static let iso: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+    private static let isoPlain: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime]; return f
+    }()
+    static func parseISO(_ s: String) -> Date? { iso.date(from: s) ?? isoPlain.date(from: s) }
+    static func localTime(_ d: Date) -> String {
+        let f = DateFormatter(); f.dateFormat = "HH:mm"; return f.string(from: d)
+    }
+    static func dayLabel(_ d: Date) -> String {
+        let f = DateFormatter(); f.dateFormat = "MMM d"
+        return f.string(from: d).uppercased()
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MARK: - Surface
+// ─────────────────────────────────────────────────────────────────────────────
+
+struct ES28View: View {
+    @Environment(\.palette) private var palette
+    @StateObject private var vm: ES28ViewModel
+
+    init(service: any ES28DutyService) {
+        _vm = StateObject(wrappedValue: ES28ViewModel(service: service))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            header
+            // The ONE IridescentHairline on this screen (COMPONENTS.md:91).
+            Rectangle().fill(palette.iridescentHairline).frame(height: 1)
+            switch vm.state {
+            case .loading:
+                loadingBand
+            case .failed(let message):
+                // Never an empty column on a failure. An empty column reads
+                // as "rested", which is the one thing this screen must not say.
+                failureBand(message)
+            case .unproven:
+                // PROBE (i). Distinct from BOTH the failure band and a reading.
+                unprovenBand
+            case .loaded:
+                content
+            }
+        }
+        .task { await vm.load() }
+    }
+
+    // MARK: header — DETAIL archetype, H1 28, no meta row above the hairline
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("\u{2726} ESCORT \u{00B7} DUTY & FATIGUE")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(LinearGradient(colors: [Brand.blue, Brand.magenta],
+                                                    startPoint: .leading, endPoint: .trailing))
+                Spacer()
+                Text("ESC-260817-44021")
+                    .font(.system(size: 9, weight: .heavy, design: .monospaced)).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            .padding(.horizontal, 20).padding(.top, 12)
+
+            HStack(spacing: 8) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(palette.textPrimary)
+                Text("Duty & fatigue")
+                    .font(.system(size: 28, weight: .bold)).tracking(-0.4)
+                    .foregroundStyle(palette.textPrimary)
+            }
+            .padding(.horizontal, 20).padding(.top, 14).padding(.bottom, 12)
+        }
+    }
+
+    private var loadingBand: some View {
+        Text("READING THE DUTY RECORD\u{2026}")
+            .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+            .foregroundStyle(palette.textTertiary)
+            .padding(20)
+    }
+
+    private func failureBand(_ message: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("DUTY RECORD UNAVAILABLE")
+                .font(.system(size: 11, weight: .heavy)).tracking(0.6)
+                .foregroundStyle(Brand.danger)
+            Text(message)
+                .font(.system(size: 11)).foregroundStyle(palette.textSecondary)
+            Text("NO FIGURE IS SHOWN. AN EMPTY COLUMN WOULD READ AS RESTED.")
+                .font(.system(size: 8, weight: .heavy, design: .monospaced))
+                .foregroundStyle(palette.textTertiary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(RoundedRectangle(cornerRadius: 16).fill(palette.bgCard))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Brand.danger.opacity(0.45)))
+        .padding(.horizontal, 20).padding(.top, 16)
+    }
+
+    /// PROBE (i). The server answered 200 with nothing. That is not an error
+    /// and it is not a reading, so it gets neither of their treatments: a
+    /// hatched, dashed band in warning ink, with the three swallows pinned.
+    private var unprovenBand: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Image(systemName: "questionmark.circle")
+                    .font(.system(size: 14, weight: .bold))
+                Text("DUTY RECORD NOT PROVEN \u{00B7} NOT ZERO")
+                    .font(.system(size: 11, weight: .heavy)).tracking(0.6)
+            }
+            .foregroundStyle(Brand.warning)
+            Text("Every read came back empty. An empty answer here is byte-identical to a server-side fault that was caught and hidden, so no duty figure is drawn.")
+                .font(.system(size: 11)).foregroundStyle(palette.textSecondary)
+            Text("escorts.ts:2171 catch \u{2192} [] \u{00B7} escorts.ts:2846 catch \u{2192} null")
+                .font(.system(size: 7.5, weight: .bold, design: .monospaced))
+                .foregroundStyle(palette.textTertiary)
+            Text("escorts.ts:145 catch \u{2192} escorts.ts:147 userId 0 \u{00B7} SCOPES EVERY QUERY TO NOBODY")
+                .font(.system(size: 7.5, weight: .bold, design: .monospaced))
+                .foregroundStyle(palette.textTertiary)
+            Text("EMPTY IS NOT RESTED. FILED ESC-DUTY-EMPTY200 \u{00B7} ESCORTS ROUTER LANE.")
+                .font(.system(size: 8, weight: .heavy)).tracking(0.2)
+                .foregroundStyle(Brand.danger)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(RoundedRectangle(cornerRadius: 16).fill(palette.tintWarning))
+        .overlay(RoundedRectangle(cornerRadius: 16)
+            .stroke(style: StrokeStyle(lineWidth: 1.5, dash: [5, 3]))
+            .foregroundStyle(Brand.warning.opacity(0.8)))
+        .padding(.horizontal, 20).padding(.top, 16)
+    }
+
+    private var content: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            sectionHeader("ROLLING DUTY WINDOW \u{00B7} 7 DAYS",
+                          right: "FOLD READ IN 2 CALLS \u{00B7} N+1")
+            if let w = vm.window { accumulator(w) }        // the one ActiveCard
+
+            sectionHeader("THIS SHIFT", right: "ESCORTING TIME, NOT ON-DUTY TIME")
+            if let g = vm.gauge { shiftGauge(g) }
+
+            sectionHeader("OPEN ROWS ON THE CLOCK", right: "STAMPS ARE REWRITABLE")
+            openRows
+
+            designedVoid
+        }
+        .padding(.top, 16)
+    }
+
+    private func sectionHeader(_ left: String, right: String) -> some View {
+        HStack {
+            Text(left).font(.system(size: 9, weight: .heavy)).tracking(1.0)
+            Spacer()
+            Text(right).font(.system(size: 9, weight: .heavy)).tracking(0.4)
+        }
+        .foregroundStyle(palette.textTertiary)
+        .padding(.horizontal, 20)
+    }
+
+    // MARK: the accumulator column — the ONE rimmed ActiveCard
+
+    private func accumulator(_ w: ES28DutyWindow) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("60 H CEILING \u{00B7} HOUSE RULE, NOT STATUTE")
+                .font(.system(size: 10, weight: .heavy)).tracking(0.6)
+                .foregroundStyle(Brand.danger)
+                .monospacedDigit()
+            Text("ESCORTS ARE HOS-EXEMPT \u{2014} hos.ts:28-39 OMITS ROLES.ESCORT")
+                .font(.system(size: 7.5, weight: .bold)).tracking(0.3)
+                .foregroundStyle(palette.textTertiary)
+            Rectangle().fill(Brand.danger).frame(height: 3)
+
+            HStack(alignment: .top, spacing: 16) {
+                column(w)
+                readout(w)
+            }
+
+            // ── THE COST OF THE FOLD, on the card face and not in a comment ──
+            Text("\(w.readableDayCount) OF \(w.totalDayCount) DAYS MEASURED \u{00B7} \(w.ledgerRows) LEDGER ROWS \u{00B7} \(w.loadsProbed) OF \(w.loadsSeen) LOADS PROBED \u{00B7} N+1")
+                .font(.system(size: 7, weight: .bold, design: .monospaced))
+                .foregroundStyle(palette.textTertiary)
+            Text("FOLD escorts.listSettlements:4723 loadId:4740 \u{2192} loads.getEscortAssignment:2029 \u{00B7} :2070-2071")
+                .font(.system(size: 7, weight: .bold, design: .monospaced))
+                .foregroundStyle(palette.textTertiary)
+            Text("EMPTY \u{2260} RESTED \u{00B7} escorts.ts:2171 / :2846 SWALLOW DB FAULTS TO [] / null AT HTTP 200")
+                .font(.system(size: 7, weight: .bold, design: .monospaced))
+                .foregroundStyle(palette.textTertiary)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 18.5).fill(palette.bgCard))
+        .padding(1.5)
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(LinearGradient(colors: [Brand.blue.opacity(0.85), Brand.magenta.opacity(0.85)],
+                                     startPoint: .topLeading, endPoint: .bottomTrailing))
+        )
+        .padding(.horizontal, 20)
+    }
+
+    /// 200 pt of column against the 60 H ceiling, oldest day at the BOTTOM.
+    /// Every stratum whose seconds are known is drawn TO SCALE. A day that is
+    /// known to be zero is drawn as a floor marker, not as nothing — a measured
+    /// zero and an unmeasurable day are different facts. A day that could not be
+    /// measured (truncated ledger page or exhausted probe budget) keeps the old
+    /// hatched treatment at a NOMINAL height, and the nominal height is biased
+    /// toward MORE hours, because on a fatigue instrument the only safe way to
+    /// draw an unknown is toward fatigue.
+    private func column(_ w: ES28DutyWindow) -> some View {
+        let unit = 200.0 / ES28DutyRules.weekCeilingHours
+        func height(_ d: ES28DayStratum) -> CGFloat {
+            guard let h = d.hours else { return 21 }        // nominal, hatched
+            if h <= 0 { return 3 }                          // measured zero
+            return max(11, CGFloat(min(h, ES28DutyRules.weekCeilingHours) * unit))
+        }
+        return HStack(alignment: .top, spacing: 6) {
+            VStack(alignment: .trailing, spacing: 0) {
+                Spacer(minLength: 0)
+                ForEach(w.days) { d in
+                    Text(d.label)
+                        .foregroundStyle(d.id == w.days.last?.id ? Brand.warning : palette.textTertiary)
+                        .frame(height: height(d), alignment: .center)
+                }
+            }
+            .font(.system(size: 8, weight: .bold, design: .monospaced))
+            .frame(height: 200)
+
+            VStack(spacing: 0) {
+                // the unclaimed span above the stack is NOT headroom
+                VStack(spacing: 2) {
+                    Text("THIS GAP IS").foregroundStyle(palette.textTertiary)
+                    Text("NOT HEADROOM").foregroundStyle(Brand.warning)
+                }
+                .font(.system(size: 8, weight: .heavy)).tracking(0.4)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                ForEach(w.days) { d in
+                    stratum(d).frame(height: height(d))
+                }
+            }
+            .frame(width: 100, height: 200)
+            .overlay(Rectangle().stroke(palette.borderSoft))
+        }
+    }
+
+    @ViewBuilder
+    private func stratum(_ d: ES28DayStratum) -> some View {
+        if let s = d.seconds {
+            ZStack(alignment: .trailing) {
+                if d.isOpen {
+                    // Still running: the full brand gradient plus a dashed top
+                    // edge, because this stratum is not finished growing.
+                    Rectangle().fill(LinearGradient(colors: [Brand.blue, Brand.magenta],
+                                                    startPoint: .topLeading,
+                                                    endPoint: .bottomTrailing))
+                        .overlay(alignment: .top) {
+                            Rectangle()
+                                .stroke(style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
+                                .foregroundStyle(.white.opacity(0.8))
+                                .frame(height: 1)
+                        }
+                } else {
+                    Rectangle().fill(Brand.blue.opacity(0.55))
+                }
+                Text(ES28Format.hhmm(s) + (d.isOpen ? " \u{00B7} OPEN" : ""))
+                    .font(.system(size: 8, weight: .heavy)).tracking(0.3)
+                    .monospacedDigit()
+                    .foregroundStyle(.white)
+                    .padding(.trailing, 6)
+                    .opacity(s > 0 ? 1 : 0)
+            }
+        } else {
+            ZStack(alignment: .trailing) {
+                Rectangle().fill(palette.tintNeutral)
+                Text("\u{2014}")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(palette.textTertiary)
+                    .padding(.trailing, 22)
+            }
+            .overlay(Rectangle().stroke(style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
+                .foregroundStyle(palette.textTertiary.opacity(0.55)))
+        }
+    }
+
+    private func readout(_ w: ES28DutyWindow) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("READ IN WINDOW")
+                .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                .foregroundStyle(palette.textTertiary)
+            HStack(alignment: .lastTextBaseline, spacing: 6) {
+                Text(w.provenance == .corroborated ? ES28Format.hhmm(w.readSeconds) : "\u{2014}")
+                    .font(.system(size: 28, weight: .semibold)).monospacedDigit()
+                    .foregroundStyle(palette.textPrimary)
+                Text("H:MM").font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            // The headroom figure is printed ONLY when it is real, which — while
+            // escorts.ts:1201 stamps only 'escorting' — is never.
+            Group {
+                if let h = w.headroomHours {
+                    Text(String(format: "%.1f H REMAINING", h))
+                        .foregroundStyle(Brand.success)
+                } else {
+                    Text("HEADROOM UNKNOWN").foregroundStyle(Brand.warning)
+                }
+            }
+            .font(.system(size: 10, weight: .heavy)).tracking(0.6)
+            .padding(.horizontal, 10).padding(.vertical, 4)
+            .background(RoundedRectangle(cornerRadius: 10).fill(palette.tintWarning))
+
+            Text("\(w.readableDayCount) OF \(w.totalDayCount) DAYS MEASURED")
+                .font(.system(size: 11, weight: .bold)).monospacedDigit()
+                .foregroundStyle(palette.textPrimary)
+            Text("60 H \u{2212} \(ES28Format.hhmm(w.readSeconds)) IS NOT HEADROOM")
+                .font(.system(size: 10)).foregroundStyle(palette.textSecondary)
+            Text(w.headroomRefusalReason)
+                .font(.system(size: 9, weight: .heavy)).tracking(0.3)
+                .foregroundStyle(Brand.danger)
+
+            if w.unreadableCount > 0 {
+                Text("\(w.unreadableCount) UNREADABLE ROW(S) \u{00B7} NOT COUNTED AS ZERO")
+                    .font(.system(size: 9, weight: .heavy)).foregroundStyle(Brand.danger)
+            }
+            if w.implausibleCount > 0 {
+                Text("\(w.implausibleCount) IMPLAUSIBLE INTERVAL(S) QUARANTINED")
+                    .font(.system(size: 9, weight: .heavy)).foregroundStyle(Brand.danger)
+            }
+            if w.overlapCount > 0 {
+                Text("\(w.overlapCount) OVERLAP(S) MERGED \u{00B7} UNION, NOT SUM")
+                    .font(.system(size: 9, weight: .heavy)).foregroundStyle(Brand.warning)
+            }
+
+            Divider().overlay(palette.borderFaint)
+            if let oldest = w.days.last {
+                Text("NEXT OUT \u{00B7} \(oldest.label) \u{00B7} \(ES28Format.hhmm(oldest.seconds))")
+                    .font(.system(size: 10, weight: .heavy)).tracking(0.4)
+                    .foregroundStyle(Brand.warning)
+                if let out = Calendar.current.date(byAdding: .day,
+                                                   value: ES28DutyRules.windowDays,
+                                                   to: oldest.dayStart) {
+                    Text(ES28Format.rollOut(out))
+                        .font(.system(size: 10, design: .monospaced)).monospacedDigit()
+                        .foregroundStyle(palette.textSecondary)
+                }
+            }
+            Text(w.foldComplete ? "WINDOW COMPLETE \u{00B7} LEDGER PAGE NOT FULL"
+                                : "COMPLETENESS NOT PROVEN \u{00B7} 100-ROW PAGE")
+                .font(.system(size: 9, weight: .heavy)).tracking(0.3)
+                .foregroundStyle(w.foldComplete ? palette.textSecondary : Brand.danger)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: the shift gauge — a different clock, its disclosure attached to IT
+
+    private func shiftGauge(_ g: ES28ShiftGauge) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("THIS SHIFT \u{00B7} ESCORTING TIME ONLY")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer()
+                Text("14 H HOUSE LIMIT")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.6).monospacedDigit()
+                    .foregroundStyle(g.isOverLimit ? Brand.danger : palette.textTertiary)
+            }
+            // PROBE (h). The stamp moved forward inside this session, so the
+            // figure is refused. It is NOT repainted as a small, restful number.
+            if g.startStampMoved {
+                Text("START STAMP MOVED \u{00B7} UNREADABLE \u{2014} NOT A FRESH CLOCK")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.4)
+                    .foregroundStyle(Brand.danger)
+            }
+            HStack(spacing: 10) {
+                Text(g.display)
+                    .font(.system(size: 26, weight: .semibold)).monospacedDigit()
+                    .foregroundStyle(palette.textPrimary)
+                // TORN HEAD: the uncaptured lead-in has no known length, so its
+                // left edge is ragged and it stands OUTSIDE the zero mark.
+                ES28TornHead().fill(Brand.warning.opacity(0.35)).frame(width: 28, height: 12)
+                ZStack(alignment: .leading) {
+                    Capsule().fill(palette.bgCardSoft).frame(height: 12)
+                    GeometryReader { geo in
+                        Capsule()
+                            .fill(g.isOverLimit ? Brand.danger : Brand.warning)
+                            .frame(width: geo.size.width * g.drawFraction, height: 12)
+                    }
+                    .frame(height: 12)
+                }
+                Rectangle().fill(Brand.danger).frame(width: 2, height: 24)
+            }
+            HStack {
+                Text("NOT CAPTURED")
+                    .font(.system(size: 7.5, weight: .heavy)).tracking(0.3)
+                    .foregroundStyle(Brand.warning)
+                Spacer()
+                // Scoped honestly: the clamp protects the arithmetic, not the
+                // stamp. The rollback attack moves the input, not the maths.
+                Text("min(elapsed, 14 H) CLAMPS MATH, NOT STAMP")
+                    .font(.system(size: 7.5, weight: .bold, design: .monospaced))
+                    .foregroundStyle(palette.textTertiary)
+            }
+            Text("STAGING \u{00B7} PRE-TRIP \u{00B7} DEADHEAD ARE NOT IN THIS CLOCK.")
+                .font(.system(size: 8, weight: .heavy)).tracking(0.2)
+                .foregroundStyle(Brand.warning)
+            Text("startedAt FIRES ONLY AT 'escorting' \u{2014} escorts.ts:1201 \u{00B7} THIS FIGURE UNDER-REPORTS")
+                .font(.system(size: 7.5, weight: .bold, design: .monospaced))
+                .foregroundStyle(palette.textTertiary)
+
+            // ── DISCLOSURE (d) · the start stamp itself is overwritable ──
+            // The torn head discloses the span the clock never captured. This
+            // discloses that the clock's zero can be moved beneath the escort.
+            // Both live on the gauge, not in a footnote, for the same reason.
+            Rectangle().fill(Brand.danger.opacity(0.30)).frame(height: 1)
+            Text("START STAMP IS OVERWRITABLE \u{2014} A REWRITE MAKES THIS READ 0:00")
+                .font(.system(size: 8, weight: .heavy)).tracking(0.2)
+                .foregroundStyle(Brand.danger)
+            Text("hazmatEscort.ts:179-181 \u{00B7} convoy.ts:290-293 REWRITE startedAt UNGUARDED")
+                .font(.system(size: 6.5, weight: .bold, design: .monospaced))
+                .foregroundStyle(palette.textTertiary)
+            Text("ENABLER escorts.ts:1172 z.string() \u{00B7} IN-SESSION JUMP \u{2192} UNREADABLE; EARLIER, INVISIBLE")
+                .font(.system(size: 6.5, weight: .bold, design: .monospaced))
+                .foregroundStyle(palette.textTertiary)
+            // ── DISCLOSURE (e) · an empty payload is refused, not drawn as 0 ──
+            Text("AN EMPTY 200 IS REFUSED, NOT DRAWN AS 0:00 \u{00B7} ESC-DUTY-EMPTY200")
+                .font(.system(size: 6.5, weight: .bold, design: .monospaced))
+                .foregroundStyle(palette.textTertiary)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 16).fill(palette.bgCard))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(palette.borderFaint))
+        .overlay(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 1.5).fill(Brand.warning).frame(width: 3)
+        }
+        .padding(.horizontal, 20)
+    }
+
+    // MARK: open rows — 40x40 rx10 chips, pitch 76, navigation only, no CTA
+
+    private var openRows: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(vm.rows.enumerated()), id: \.element.id) { idx, r in
+                let clocked = r.startedAt != nil
+                HStack(spacing: 12) {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(clocked ? Brand.warning.opacity(0.16) : palette.tintNeutral)
+                        .frame(width: 40, height: 40)
+                        .overlay {
+                            Image(systemName: clocked ? "clock" : "clock.badge.xmark")
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundStyle(clocked ? Brand.warning : palette.textTertiary)
+                        }
+                        .overlay {
+                            if !clocked {
+                                RoundedRectangle(cornerRadius: 10)
+                                    .stroke(style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
+                                    .foregroundStyle(palette.textTertiary.opacity(0.5))
+                            }
+                        }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(r.origin) \u{2192} \(r.destination)")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(palette.textPrimary)
+                        Text("\(r.loadNumber) \u{00B7} \(r.myPosition.uppercased()) \u{00B7} \(r.myStatus)")
+                            .font(.system(size: 10, design: .monospaced)).tracking(0.4)
+                            .foregroundStyle(palette.textSecondary)
+                    }
+                    Spacer()
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(clocked ? "ON THE CLOCK" : "startedAt NULL")
+                            .font(.system(size: clocked ? 11 : 9,
+                                          weight: clocked ? .bold : .heavy,
+                                          design: clocked ? .default : .monospaced))
+                            .tracking(clocked ? 0.6 : 0.4)
+                            .foregroundStyle(clocked ? Brand.warning : palette.textTertiary)
+                        if clocked, let g = vm.gauge {
+                            Text(g.display)
+                                .font(.system(size: 14, weight: .bold)).monospacedDigit()
+                                .foregroundStyle(palette.textPrimary)
+                        } else {
+                            // The absence is drawn. It is never a zero.
+                            Text("\u{2014}")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(palette.textTertiary)
+                                .frame(width: 30, height: 20)
+                                .overlay(RoundedRectangle(cornerRadius: 10)
+                                    .stroke(style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
+                                    .foregroundStyle(palette.textTertiary.opacity(0.6)))
+                        }
+                    }
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(palette.textTertiary)
+                }
+                .padding(.horizontal, 16).padding(.vertical, 18)
+                if idx < vm.rows.count - 1 {
+                    Divider().overlay(palette.borderFaint).padding(.horizontal, 16)
+                }
+            }
+        }
+        .background(RoundedRectangle(cornerRadius: 16).fill(palette.bgCard))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(palette.borderFaint))
+        .padding(.horizontal, 20)
+    }
+
+    // MARK: the designed void — survey + relief swap, both absent, NO SUBMIT
+
+    private var designedVoid: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("DAILY FATIGUE SURVEY")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                Spacer()
+                Text("RELIEF SWAP \u{00B7} NO BACKEND")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.4)
+            }
+            .foregroundStyle(palette.textTertiary)
+            HStack(spacing: 8) {
+                ForEach(0..<5, id: \.self) { _ in
+                    Rectangle()
+                        .stroke(style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+                        .foregroundStyle(palette.textTertiary.opacity(0.6))
+                        .frame(width: 24, height: 1)
+                }
+                Text("NOT COLLECTED \u{00B7} NO SUBMIT IS DRAWN")
+                    .font(.system(size: 8, weight: .bold)).tracking(0.2)
+                    .foregroundStyle(palette.textSecondary)
+            }
+            Text("grep escortFatigue \u{00B7} fatigue_survey \u{00B7} reliefSwap OVER server+drizzle = 0")
+                .font(.system(size: 7, weight: .bold, design: .monospaced))
+                .foregroundStyle(palette.textTertiary)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(RoundedRectangle(cornerRadius: 16)
+            .stroke(style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+            .foregroundStyle(palette.textTertiary.opacity(0.5)))
+        .padding(.horizontal, 20)
+        // NO CTA BELOW THIS POINT, DELIBERATELY. Every candidate mutation is
+        // either an evidenced gap (survey, relief swap) or a mislabel:
+        // escorts.updateJobStatus is real, but firing status:"completed" from a
+        // fatigue screen would complete a JOB under a button that claimed to
+        // close a SHIFT. ES-26 precedent: an omitted button beats an invented one.
+    }
+}
+
+/// The ragged left edge of the uncaptured lead-in.
+struct ES28TornHead: Shape {
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        let teeth = 3
+        let step = r.height / CGFloat(teeth * 2)
+        p.move(to: CGPoint(x: r.maxX, y: r.minY))
+        p.addLine(to: CGPoint(x: r.minX + 8, y: r.minY))
+        for i in 0..<(teeth * 2) {
+            let y = r.minY + step * CGFloat(i + 1)
+            p.addLine(to: CGPoint(x: i % 2 == 0 ? r.minX : r.minX + 8, y: y))
+        }
+        p.addLine(to: CGPoint(x: r.maxX, y: r.maxY))
+        p.closeSubpath()
+        return p
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MARK: - Registered surface wrapper
+// ─────────────────────────────────────────────────────────────────────────────
+
+struct ES28Screen: View {
+    let theme: Theme.Palette
+    /// Bound live — see ES28LiveService. Injectable for previews and tests.
+    var service: any ES28DutyService = ES28LiveService()
+
+    var body: some View {
+        Shell(theme: theme) {
+            ES28View(service: service)
+                .environment(\.palette, theme)
+        } nav: {
+            // Role-level duty record, reached from ES-12 Me Profile, so ME is
+            // the current tab. Nav registration is single-writer owned; this
+            // file does not touch EscortNavController.swift or ContentView.swift
+            // — the registry entry is listed in the build manifest instead.
+            BottomNav(
+                leading: EscortNavRoute.leading(current: .me),
+                trailing: EscortNavRoute.trailing(current: .me),
+                orbState: .idle
+            )
+        }
+    }
+}
+
+#if DEBUG
+// ─────────────────────────────────────────────────────────────────────────────
+// MARK: - Fixtures (DEBUG ONLY)
+//
+// These mirror the painted scenario exactly: a seven-day ledger whose six
+// closed days are readable through the two-call fold, plus one open 'escorting'
+// row with a real startedAt and one 'on_site' row with startedAt NULL — the
+// completedWithoutStart / neverStarted shape that escorts.ts:1172's unvalidated
+// `status: z.string()` makes reachable.
+//
+// The load rows deliberately include a COUNTER-PARTY row (a second escort on
+// the same load) so the ESC-DUTY-LEAK filter in
+// ES28DutyFold.selfRows(_:ownedAssignmentIds:) is exercised by the preview.
+// ─────────────────────────────────────────────────────────────────────────────
+
+struct ES28FixtureService: ES28DutyService {
+    var failWith: ES28DutyLoadError? = nil
+    /// Drives the PROBE (i) preview: every read answers 200 with nothing.
+    var emptyPayload: Bool = false
+
+    private var startedNow: Date { Date().addingTimeInterval(-(4 * 3600 + 29 * 60)) }
+    private static let iso: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime]; return f
+    }()
+
+    /// day: 0 = today. Hours worked on each closed day of the painted week.
+    private static let closedDays: [(day: Int, assignmentId: Int, loadId: Int, minutes: Int)] = [
+        (1, 43884, 8801, 552),   // 9:12
+        (2, 43712, 8794, 484),   // 8:04
+        (3, 43550, 8788,   0),   // measured zero — a day off, drawn as a marker
+        (4, 43401, 8771, 458),   // 7:38
+        (5, 43266, 8760, 605),   // 10:05
+        (6, 43102, 8749, 411),   // 6:51 — the day that rolls out next
+    ]
+
+    func activeTrip() async throws -> ES28ActiveTripDTO? {
+        if let e = failWith { throw e }
+        if emptyPayload { return nil }
+        return ES28ActiveTripDTO(assignmentId: 44021, assignmentStatus: "escorting",
+                                 position: "lead", startedAt: Self.iso.string(from: startedNow))
+    }
+
+    func openAssignments() async throws -> [ES28OpenAssignmentDTO] {
+        if let e = failWith { throw e }
+        if emptyPayload { return [] }
+        return [
+            ES28OpenAssignmentDTO(assignmentId: 44021, loadNumber: "ESC-260817-44021",
+                                  origin: "Odessa TX", destination: "Hobbs NM",
+                                  myPosition: "lead", myStatus: "escorting",
+                                  startedAt: Self.iso.string(from: startedNow)),
+            ES28OpenAssignmentDTO(assignmentId: 43884, loadNumber: "ESC-260816-43884",
+                                  origin: "Hobbs NM", destination: "Carlsbad NM",
+                                  myPosition: "chase", myStatus: "on_site",
+                                  startedAt: nil)
+        ]
+    }
+
+    func settlementLedger(limit: Int) async throws -> [ES28SettlementRowDTO] {
+        if let e = failWith { throw e }
+        if emptyPayload { return [] }
+        var out = [ES28SettlementRowDTO(assignmentId: 44021, loadId: 8802,
+                                        settlementStatus: "pending")]
+        out.append(contentsOf: Self.closedDays.map {
+            ES28SettlementRowDTO(assignmentId: $0.assignmentId, loadId: $0.loadId,
+                                 settlementStatus: "paid")
+        })
+        return Array(out.prefix(limit))
+    }
+
+    func escortRows(loadId: Int) async throws -> [ES28LoadEscortRowDTO] {
+        if let e = failWith { throw e }
+        if emptyPayload { return [] }
+        guard let d = Self.closedDays.first(where: { $0.loadId == loadId }) else {
+            // Today's still-open load: no completedAt anywhere yet.
+            return [ES28LoadEscortRowDTO(id: 44021, status: "escorting",
+                                         startedAt: Self.iso.string(from: startedNow),
+                                         completedAt: nil)]
+        }
+        let cal = Calendar.current
+        let day = cal.date(byAdding: .day, value: -d.day, to: cal.startOfDay(for: Date())) ?? Date()
+        let start = day.addingTimeInterval(6 * 3600)
+        let end = start.addingTimeInterval(Double(d.minutes) * 60)
+        return [
+            ES28LoadEscortRowDTO(id: d.assignmentId, status: "completed",
+                                 startedAt: Self.iso.string(from: start),
+                                 completedAt: d.minutes == 0 ? Self.iso.string(from: start)
+                                                             : Self.iso.string(from: end)),
+            // COUNTER-PARTY ROW — another escort on the same load. loads.ts:2029
+            // has no row scope, so this really does come back. It must be
+            // dropped by ES28DutyFold.selfRows and never folded.
+            ES28LoadEscortRowDTO(id: 90000 + d.assignmentId, status: "completed",
+                                 startedAt: Self.iso.string(from: start.addingTimeInterval(-7200)),
+                                 completedAt: Self.iso.string(from: end.addingTimeInterval(7200)))
+        ]
+    }
+}
+
+#Preview("ES-28 \u{00B7} Duty & fatigue \u{00B7} Light") {
+    ES28Screen(theme: Theme.light, service: ES28FixtureService())
+        .preferredColorScheme(.light)
+}
+#Preview("ES-28 \u{00B7} Duty & fatigue \u{00B7} Dark") {
+    ES28Screen(theme: Theme.dark, service: ES28FixtureService())
+        .preferredColorScheme(.dark)
+}
+#Preview("ES-28 \u{00B7} load failure \u{00B7} no figure is shown") {
+    ES28Screen(theme: Theme.dark,
+               service: ES28FixtureService(failWith: .transport("offline")))
+        .preferredColorScheme(.dark)
+}
+#Preview("ES-28 \u{00B7} empty 200 \u{00B7} not proven, not zero") {
+    ES28Screen(theme: Theme.dark,
+               service: ES28FixtureService(emptyPayload: true))
+        .preferredColorScheme(.dark)
+}
+#endif

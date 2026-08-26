@@ -31,10 +31,12 @@ struct WalletPassScreen: View {
     }
 }
 
-private struct PassUrl: Decodable, Hashable {
+private struct PassUrl {
     let url: String
     let expiresAt: String?
     let theme: EusoTripAPI.WalletThemeMetadata
+    let visualTheme: WalletCardTheme
+    let manifestDigest: String
     let passTypeIdentifier: String
     let serialNumber: String
 }
@@ -48,6 +50,7 @@ private struct WalletPassBody: View {
     @State private var loadError: String? = nil
     @State private var walletMessage: String? = nil
     @State private var fallbackShortCode: String? = nil
+    @State private var fallbackQRPayload: String? = nil
 
     private var isDark: Bool { palette.bgPage == Theme.dark.bgPage }
 
@@ -267,6 +270,11 @@ private struct WalletPassBody: View {
                     .font(EType.caption).foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            if let payload = fallbackQRPayload, !payload.isEmpty {
+                EusoQRView(kind: .raw(text: payload), role: .shipper, size: 220)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, Space.s2)
+            }
         }
         .padding(Space.s4)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -283,8 +291,11 @@ private struct WalletPassBody: View {
         switch await EusoWalletPassService.shared.addPass(
             from: passURL,
             expectedTheme: pass.theme,
+            expectedVisualTheme: pass.visualTheme,
+            expectedManifestDigest: pass.manifestDigest,
             expectedPassTypeIdentifier: pass.passTypeIdentifier,
-            expectedSerialNumber: pass.serialNumber
+            expectedSerialNumber: pass.serialNumber,
+            credentialKind: .pickup
         ) {
         case .presented:
             walletMessage = "Apple Wallet is open with the signed pass."
@@ -300,11 +311,13 @@ private struct WalletPassBody: View {
     private func load() async {
         loading = true; loadError = nil
         fallbackShortCode = nil
+        fallbackQRPayload = nil
         do {
-            let credential = try await EusoTripAPI.shared.createPickupCredential(
-                loadId: EusoWalletPassService.numericLoadId(from: loadId),
+            let prepared = try await EusoWalletPassService.shared.preparePickupCredential(
+                forLoadId: loadId,
                 expiresInHours: 24
             )
+            let credential = prepared.credential
             let passURLText = credential.pkpassUrl?.trimmingCharacters(
                 in: .whitespacesAndNewlines
             )
@@ -316,6 +329,7 @@ private struct WalletPassBody: View {
             if !signedPassAvailable {
                 pass = nil
                 fallbackShortCode = credential.shortCode
+                fallbackQRPayload = credential.accessToken
                 loadError = nil
             } else {
                 guard let url = passURLText,
@@ -330,13 +344,25 @@ private struct WalletPassBody: View {
                       ),
                       !serialNumber.isEmpty,
                       signedTheme == credential.theme,
-                      !(credential.manifestDigest ?? "").isEmpty else {
+                      signedTheme.id == prepared.selectedTheme.id,
+                      signedTheme.revision == prepared.selectedTheme.revision,
+                      signedTheme.digest == prepared.selectedTheme.digest,
+                      signedTheme.manifestVersion == prepared.selectedTheme.manifestVersion,
+                      signedTheme.passStyle == prepared.selectedTheme.passStyle,
+                      signedTheme.artSlot?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                        == prepared.selectedTheme.normalizedArtSlot,
+                      let manifestDigest = credential.manifestDigest?.trimmingCharacters(
+                        in: .whitespacesAndNewlines
+                      ),
+                      !manifestDigest.isEmpty else {
                     throw WalletPassScreenError.invalidSignedPass
                 }
                 pass = PassUrl(
                     url: url,
                     expiresAt: credential.expiresAt,
                     theme: signedTheme,
+                    visualTheme: prepared.selectedTheme,
+                    manifestDigest: manifestDigest,
                     passTypeIdentifier: passTypeIdentifier,
                     serialNumber: serialNumber
                 )

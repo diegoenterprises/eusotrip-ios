@@ -21,6 +21,13 @@
 //  day — not the portfolio — is the subject, which is what separates
 //  this from the shipper home it shares an archetype with.
 //
+//  WEB PARITY ROUTE (blueprint field 1):
+//    /escort → client/src/pages/EscortDashboardNW.tsx, registered
+//    App.tsx:931 behind guard(ESCT), lazy import App.tsx:164. The older
+//    EscortDashboard.tsx is superseded at the ROUTE level (DAW-ESC-01) and
+//    kept on disk — it is NOT the parity surface. There is no /escort/home
+//    route on the web; the escort root is /escort.
+//
 //  WIRING (verified against frontend/server/routers/escorts.ts this fire):
 //    EXISTS escorts.getActiveJobs          escorts.ts:706   → today's block
 //    EXISTS escorts.getUpcomingJobs        escorts.ts:738   → NEXT UP rows
@@ -38,10 +45,50 @@
 //           column, so the countdown renders only when the row supplies
 //           a pickup date it can honestly count toward.
 //
-//  RBAC: every proc above is `protectedProcedure` + `resolveEscortUserId`
-//  row-scoping (escorts.ts:11 / :75). No `loads.rate` for the shipper's
-//  account, no carrier margin, no shipper identity is bound anywhere in
-//  this file.
+//    LIFECYCLE DOTS — escorts.getUpcomingJobs' OWN hard filter
+//           status='accepted' escorts.ts:752 (REPOINT — the pre-remediation
+//           header cited :751, which is the .innerJoin(loads, …) line
+//           immediately above the .where). Dot 1 (ACCEPTED) is inked
+//           because the row could not be in the result set otherwise; dots
+//           2-3 (STAGE, ROLL) stay hollow because the proc returns no
+//           status field that could advance them.
+//
+//  WRITE PATH (blueprint field 3):
+//    ES-09 writes NOTHING. Every bound procedure is a `.query`, so no DB
+//    row, no audit record and no broadcast originates on this surface. The
+//    one write reachable from here is the Pre-trip CTA handing off to ES-06:
+//      escorts.submitVehicleCheck escorts.ts:1208
+//        → INSERT escort_vehicle_inspections escorts.ts:1239
+//          (+ certificate row INSERT documents escorts.ts:1271)
+//        → recordAuditEvent escorts.ts:1282
+//          (AuditAction.RECORD_CREATED · auditService.ts:162)
+//        → wsService.broadcastToChannel WS_CHANNELS.LOAD escorts.ts:1301,
+//          with a WS_CHANNELS.DISPATCH_UPDATES fan-out on failure :1305
+//    blockchainAuditTrail = STUB · escort-lane-blockchain-audit-absent. The
+//    table is real (drizzle/schema.ts:10018, GAP-444) but escorts.ts holds
+//    ZERO references to it across all 4,745 lines. The escort lane books
+//    none of it, while peer routers insert it broadly — 53 files under
+//    server/ carry an insert(blockchainAuditTrail) call, among them
+//    wallet.ts (:1190, :1631, :1752, :3495, :4327) and
+//    detentionAccessorials.ts (:909, :1409), plus dispatch.ts (10 insert
+//    sites), loads.ts, drivers.ts, catalysts.ts, compliance.ts,
+//    shippers.ts, appointments.ts, kyc.ts and fraud.ts. The gap is
+//    escort-specific, not platform-wide. No escort event — not even the
+//    pre-trip certificate — is chained today. The missing half is a
+//    blockchainAuditTrail insert alongside recordAuditEvent in the escort
+//    mutations. Named here, not faked, and no chain badge is drawn.
+//
+//  RBAC (blueprint field 4): every proc above is gated by
+//  `roleProcedure(ROLES.ESCORT)` — factory _core/trpc.ts:216,
+//  `escortProcedure = roleProcedure(ROLES.ESCORT)` _core/trpc.ts:228,
+//  imported into escorts.ts:11 under the LOCAL ALIAS `protectedProcedure`.
+//  The alias is cosmetic; the gate underneath is a real ROLE gate that
+//  refuses a non-ESCORT session, not the generic authenticated procedure
+//  the local name suggests. Row scope `resolveEscortUserId`
+//  escorts.ts:138 (REPOINT — the pre-fire6 header cited :75, which is a
+//  call site inside another helper, not the declaration). No `loads.rate`
+//  for the shipper's account, no carrier margin, no shipper identity is
+//  bound anywhere in this file.
 //
 //  OFFLINE (§W): READ_CACHED(15m) via `EscortOfflineCache` — the whole
 //  read model is snapshotted on every successful refresh and replayed on
@@ -51,6 +98,40 @@
 //  offline state rather than stale numbers dressed as live. Every
 //  mutation reachable from here is ONLINE_ONLY (escort outbox not yet
 //  ported — PLANNED per Encyclopedia v2); no queue badge is ever drawn.
+//
+//  ── CANON DELTA vs run-1 (canon gate 2026-08-23.1, fire 2026-08-26) ──
+//  Every wiring pin above is carried VERBATIM from run-1; it is the
+//  contract of record and nothing below edits a pin to match a face.
+//  What changed is the SKIN only:
+//    · eyebrow retired — the 10px all-caps 1.0-tracking identity row is
+//      replaced by a sentence-case 12/600 orientation line;
+//    · type scale floored at 12 and snapped to the exemplar histogram
+//      10 · 12 · 14 · 15 · 17 · 28 · 34. 10 is reserved for bottom-nav
+//      captions, which this file does not own (BottomNav does);
+//    · every positive `.tracking()` deleted. Negative optical tracking
+//      survives only on display type: -0.4 on the 28 screen title and
+//      -0.6 on the 34 hero number;
+//    · retired brand gradients withdrawn. `LinearGradient.primary`,
+//      `LinearGradient.diagonal` and `IridescentHairline` no longer paint
+//      here. The only gradients left are the three canon defs: ONE
+//      EusoLine on the day-ruler spine, plus the ESANG orb + its
+//      specular highlight;
+//    · the primary command is a FLAT #0B66E5 fill — never a gradient —
+//      so the shared `CTAButton` (gradient-backed, 17pt label) is not
+//      used on this surface;
+//    · colours are pinned to the §4 canon token table, light and dark,
+//      instead of the ad-hoc inks run-1 carried;
+//    · soft-fill position/state badges retired for the exemplar's dot +
+//      ink-word treatment;
+//    · the hero's single largest number is the stage countdown at 34/700,
+//      with its 12px explainer beneath it;
+//    · DUTY CLOCK — the header now prints the honest `Duty clock
+//      unavailable` in tertiary ink. There is no duty-clock procedure and
+//      no `escort_duty_status` column, so the verb stays SILENT and no
+//      percentage, elapsed value, zero or dash-dressed-as-data is drawn.
+//  The bottom bar is unchanged and remains bound to the shipped escort
+//  enum HOME · ASSIGNMENTS · [ESang orb] · CORRIDOR · ME
+//  (EscortNavController.swift:77-85; orb labels :63).
 //
 //  Powered by ESANG AI™.
 //
@@ -174,6 +255,86 @@ private struct ES09Snapshot: Codable {
     var offers: [ES09OfferRow] = []
 }
 
+// MARK: - Canon tokens (§4 of the 2026-08-23.1 rework spec)
+//
+// The shared `Theme.Palette` is band-wide and predates this gate; its
+// tertiary inks and inset tracks do not carry the canon pairs. Rather than
+// reach across into a single-writer file, ES-09 pins its own tokens here.
+// Every value below is one row of the §4 table, light column then dark —
+// nothing is invented and nothing is interpolated.
+
+private enum ES09Ink {
+    /// Carried for completeness of the §4 row set. `Shell` owns the page
+    /// field, so this screen never paints it — but the value is recorded
+    /// here so the twin's background is checkable against the table.
+    static func pageBg(_ dark: Bool)        -> Color { dark ? Color(hex: 0x030309) : Color(hex: 0xEEF0F5) }
+    static func surface(_ dark: Bool)       -> Color { dark ? Color(hex: 0x0D0E1A) : Color(hex: 0xFFFFFF) }
+    static func track(_ dark: Bool)         -> Color { dark ? Color(hex: 0x0B0C16) : Color(hex: 0xE6E9EF) }
+    static func hairline(_ dark: Bool)      -> Color { dark ? Color(hex: 0x25283A) : Color(hex: 0xD8DDE6) }
+    static func primary(_ dark: Bool)       -> Color { dark ? Color(hex: 0xF5F5F7) : Color(hex: 0x0D1117) }
+    static func secondary(_ dark: Bool)     -> Color { dark ? Color(hex: 0xAAB2BB) : Color(hex: 0x52606D) }
+    static func tertiary(_ dark: Bool)      -> Color { dark ? Color(hex: 0x7F8996) : Color(hex: 0x596978) }
+    /// Action primary is deliberately identical on both twins — the CTA is
+    /// the one surface that must not shift register between themes.
+    static let action                        = Color(hex: 0x0B66E5)
+    static func link(_ dark: Bool)          -> Color { dark ? Color(hex: 0x4DA3FF) : Color(hex: 0x075FAB) }
+    static let warnDot                       = Color(hex: 0xFFA726)
+    static func warnInk(_ dark: Bool)       -> Color { dark ? Color(hex: 0xFFA726) : Color(hex: 0x7A4400) }
+    static let successDot                    = Color(hex: 0x00C48C)
+    static func successInk(_ dark: Bool)    -> Color { dark ? Color(hex: 0x00C48C) : Color(hex: 0x006B4D) }
+    /// Accent carries the chase / secondary role.
+    static func accent(_ dark: Bool)        -> Color { dark ? Color(hex: 0xD28BEB) : Color(hex: 0x6B2B83) }
+    static func esangRegion(_ dark: Bool)   -> Color { dark ? Color(hex: 0x2A2038) : Color(hex: 0xE8DDFC) }
+    static func esangProof(_ dark: Bool)    -> Color { dark ? Color(hex: 0xAAB2BB) : Color(hex: 0x52606D) }
+    static let neutralDot                    = Color(hex: 0x6B7280)
+    static func ctaStroke(_ dark: Bool)     -> Color { dark ? Color(hex: 0x7F8996) : Color(hex: 0x778391) }
+}
+
+/// §5 — the only three gradients that survive the canon gate.
+private enum ES09Grad {
+    /// `eusoLine`. Used EXACTLY ONCE on this screen: the day-ruler spine,
+    /// which is the one temporal object the screen is about.
+    static let eusoLine = LinearGradient(
+        stops: [.init(color: Color(hex: 0x1473FF), location: 0.0),
+                .init(color: Color(hex: 0x813FF5), location: 0.52),
+                .init(color: Color(hex: 0xBE01FF), location: 1.0)],
+        startPoint: .leading, endPoint: .trailing)
+
+    /// `esangOrb` — the counsel dot, and nowhere else.
+    static let esangOrb = LinearGradient(
+        stops: [.init(color: Color(hex: 0x1473FF), location: 0.0),
+                .init(color: Color(hex: 0x813FF5), location: 0.52),
+                .init(color: Color(hex: 0xBE01FF), location: 1.0)],
+        startPoint: .topLeading, endPoint: .bottomTrailing)
+
+    /// `orbSpec` — the specular highlight that rides on the counsel dot.
+    static func orbSpec(diameter: CGFloat) -> RadialGradient {
+        RadialGradient(
+            stops: [.init(color: Color.white.opacity(0.85), location: 0.0),
+                    .init(color: Color.white.opacity(0.12), location: 0.35),
+                    .init(color: Color.white.opacity(0.0),  location: 1.0)],
+            center: UnitPoint(x: 0.32, y: 0.28),
+            startRadius: 0, endRadius: diameter * 0.75)
+    }
+}
+
+/// §3 — the exemplar histogram, spelled out so no call site can drift below
+/// the floor. 10 belongs to bottom-nav captions, which `BottomNav` owns.
+private enum ES09Type {
+    /// §3 — tabular numerics on every money and countdown value.
+    static let heroNumber   = Font.system(size: 34, weight: .bold, design: .default).monospacedDigit()
+    static let screenTitle  = Font.system(size: 28, weight: .bold)
+    static let large        = Font.system(size: 17, weight: .semibold)
+    static let largeValue   = Font.system(size: 17, weight: .bold, design: .monospaced)
+    static let rowTitle     = Font.system(size: 15, weight: .semibold)
+    static let money        = Font.system(size: 15, weight: .bold, design: .monospaced)
+    static let chevron      = Font.system(size: 14, weight: .semibold)
+    static let label        = Font.system(size: 12, weight: .semibold)
+    static let body         = Font.system(size: 12, weight: .medium)
+    static let mono         = Font.system(size: 12, weight: .medium, design: .monospaced)
+    static let monoStrong   = Font.system(size: 12, weight: .bold, design: .monospaced)
+}
+
 // MARK: - Nav intents (this file never touches EscortNavController)
 
 extension Notification.Name {
@@ -185,7 +346,6 @@ extension Notification.Name {
 // MARK: - Screen body
 
 struct EscortHomeES09: View {
-    @Environment(\.palette) private var palette
     @Environment(\.colorScheme) private var scheme
     @EnvironmentObject private var session: EusoTripSession
 
@@ -200,29 +360,31 @@ struct EscortHomeES09: View {
     private let cacheKey = "es09.home"
     private let cacheTTL: TimeInterval = 15 * 60      // READ_CACHED(15m)
 
-    // Semantic inks that palette-swap with the SVG pair.
+    // Canon inks, resolved for the active twin.
     private var isDark: Bool { scheme == .dark }
-    private var amberInk: Color { isDark ? Color(hex: 0xFBBF24) : Color(hex: 0xB45309) }
-    private var purpleInk: Color { isDark ? Color(hex: 0xCE93D8) : Color(hex: 0x7B1FA2) }
-    private var orangeInk: Color { isDark ? Color(hex: 0xFB923C) : Color(hex: 0xC2410C) }
-    private let leadBlue = Color(hex: 0x1473FF)
-    private let hpOrange = Color(hex: 0xF97316)
-    private let chasePurple = Color(hex: 0x9C27B0)
-    private let amber = Color(hex: 0xF59E0B)
-    /// Hero rim — the brand gradient at the SVG's 0.85 rim opacity.
-    private let heroRim = LinearGradient(
-        colors: [Brand.blue.opacity(0.85), Brand.magenta.opacity(0.85)],
-        startPoint: .topLeading, endPoint: .bottomTrailing)
+    private var inkPrimary: Color   { ES09Ink.primary(isDark) }
+    private var inkSecondary: Color { ES09Ink.secondary(isDark) }
+    private var inkTertiary: Color  { ES09Ink.tertiary(isDark) }
+    private var surface: Color      { ES09Ink.surface(isDark) }
+    private var track: Color        { ES09Ink.track(isDark) }
+    private var hairline: Color     { ES09Ink.hairline(isDark) }
+    private var warnInk: Color      { ES09Ink.warnInk(isDark) }
+    private var successInk: Color   { ES09Ink.successInk(isDark) }
+    private var accentInk: Color    { ES09Ink.accent(isDark) }
+    private var linkInk: Color      { ES09Ink.link(isDark) }
+    private var esangProof: Color   { ES09Ink.esangProof(isDark) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s4) {
-            eyebrowRow
+            orientationRow
             titleRow
             metaRow
             if let age = cacheAge {
                 stalenessLine(age)
             }
-            IridescentHairline()
+            // Canon hairline — flat, not iridescent. The one iridescent
+            // spine this screen is allowed goes on the day ruler.
+            Rectangle().fill(hairline).frame(height: 1)
             content
         }
         .padding(.horizontal, Space.s5)
@@ -233,45 +395,48 @@ struct EscortHomeES09: View {
 
     // MARK: Header
 
-    private var eyebrowRow: some View {
-        HStack {
-            EusoTripEyebrow(verbatim: "ESCORT · TODAY")
-                .font(EType.micro).tracking(1.0)
-                .foregroundStyle(LinearGradient.primary)
+    /// Sentence case, 12/600, zero tracking. The run-1 eyebrow shouted at
+    /// 10px all-caps on 1.0 tracking; both were retired by the canon gate.
+    private var orientationRow: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(companyLine)
+                .font(ES09Type.label)
+                .foregroundStyle(inkSecondary)
+                .lineLimit(1)
             Spacer(minLength: Space.s2)
-            Text(companyCaps)
-                .font(EType.micro).tracking(1.0)
-                .foregroundStyle(palette.textTertiary)
+            Text(todayStamp)
+                .font(ES09Type.mono)
+                .foregroundStyle(inkSecondary)
                 .lineLimit(1)
         }
     }
 
     /// The escort's own tenant. Never a literal — a hardcoded company name
     /// would tell every operator on the platform who they work for.
-    private var companyCaps: String {
+    private var companyLine: String {
         if let cid = session.user?.companyId, !cid.isEmpty {
-            return "COMPANY · \(cid)".uppercased()
+            return "Escort · \(cid)"
         }
-        return "INDEPENDENT ESCORT"
+        return "Escort · independent"
     }
 
     private var titleRow: some View {
-        HStack(alignment: .center, spacing: Space.s3) {
+        HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
+            // §3 — screen title 28 / 700 / -0.4. The one 28 on the screen.
             Text("Today")
-                .font(.system(size: 30, weight: .bold)).tracking(-0.5)
-                .foregroundStyle(LinearGradient.primary)
+                .font(ES09Type.screenTitle).tracking(-0.4)
+                .foregroundStyle(inkPrimary)
+                .lineLimit(1).minimumScaleFactor(0.8)
             Spacer(minLength: 0)
-            HStack(spacing: 6) {
-                Circle().fill(leadBlue).frame(width: 6, height: 6)
-                Text(todayStamp)
-                    .font(EType.mono(.caption)).tracking(0.2)
-                    .foregroundStyle(palette.textPrimary)
-                    .lineLimit(1)
-            }
-            .padding(.horizontal, 10).padding(.vertical, 6)
-            .background(palette.bgCardSoft)
-            .clipShape(Capsule())
-            .overlay(Capsule().strokeBorder(palette.borderFaint, lineWidth: 1))
+            // §9 TRUTH LAW — there is no duty-clock procedure and no
+            // `escort_duty_status` column, so the elapsed-duty value run-1
+            // painted is WITHDRAWN. The verb is logged SILENT and the face
+            // says so in tertiary ink rather than printing a zero, a dash
+            // dressed as data, or an extrapolation.
+            Text("Duty clock unavailable")
+                .font(ES09Type.body)
+                .foregroundStyle(inkTertiary)
+                .lineLimit(1).minimumScaleFactor(0.85)
         }
     }
 
@@ -281,20 +446,20 @@ struct EscortHomeES09: View {
                 positionBadge(pos)
             }
             Text(blockCountLine)
-                .font(EType.caption)
-                .foregroundStyle(palette.textSecondary)
+                .font(ES09Type.body)
+                .foregroundStyle(inkSecondary)
             HStack(spacing: 5) {
                 Circle()
-                    .fill(cacheAge == nil ? AnyShapeStyle(Brand.success) : AnyShapeStyle(palette.textTertiary))
+                    .fill(cacheAge == nil ? ES09Ink.successDot : ES09Ink.neutralDot)
                     .frame(width: 6, height: 6)
                 Text(cacheAge == nil ? "live" : "cached")
-                    .font(EType.caption.weight(.semibold))
-                    .foregroundStyle(palette.textPrimary)
+                    .font(ES09Type.label)
+                    .foregroundStyle(inkSecondary)
             }
             Spacer(minLength: 0)
-            Text(operatorCaps)
-                .font(EType.mono(.micro)).tracking(0.6)
-                .foregroundStyle(palette.textTertiary)
+            Text(operatorLine)
+                .font(ES09Type.mono)
+                .foregroundStyle(inkTertiary)
                 .lineLimit(1)
         }
     }
@@ -304,16 +469,16 @@ struct EscortHomeES09: View {
     private func stalenessLine(_ age: TimeInterval) -> some View {
         HStack(spacing: 6) {
             Image(systemName: "wifi.slash")
-                .font(.system(size: 9, weight: .bold))
+                .font(ES09Type.label)
             Text("\(EscortOfflineCache.stalenessLine(age: age)) · showing the last good read, not live")
-                .font(EType.mono(.micro))
+                .font(ES09Type.mono)
         }
-        .foregroundStyle(amberInk)
+        .foregroundStyle(warnInk)
     }
 
-    private var operatorCaps: String {
+    private var operatorLine: String {
         let name = session.user?.name ?? ""
-        return name.isEmpty ? "ESCORT" : name
+        return name.isEmpty ? "Escort" : name
     }
 
     // MARK: Content ladder
@@ -343,7 +508,7 @@ struct EscortHomeES09: View {
         VStack(alignment: .leading, spacing: Space.s3) {
             ForEach(0..<3, id: \.self) { _ in
                 RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                    .fill(palette.bgCardSoft)
+                    .fill(track)
                     .frame(height: 88)
             }
         }
@@ -353,88 +518,84 @@ struct EscortHomeES09: View {
     private var failedBlock: some View {
         VStack(alignment: .leading, spacing: Space.s3) {
             Text("Today didn't load")
-                .font(EType.title).foregroundStyle(palette.textPrimary)
+                .font(ES09Type.rowTitle).foregroundStyle(inkPrimary)
             Text("No live read and no snapshot inside the 15-minute window. Nothing here is being guessed at.")
-                .font(EType.caption).foregroundStyle(palette.textSecondary)
-            CTAButton(title: "Try again", action: { Task { await refresh() } })
+                .font(ES09Type.body).foregroundStyle(inkSecondary)
+            primaryCommand("Try again") { Task { await refresh() } }
         }
         .padding(Space.s4)
-        .background(palette.bgCard)
+        .background(surface)
         .clipShape(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
-            .strokeBorder(palette.borderFaint, lineWidth: 1))
+            .strokeBorder(hairline, lineWidth: 1))
     }
 
     // MARK: Hero — the day ruler
 
     private var heroDayRuler: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
-            sectionLabel("TODAY · ASSIGNMENT BLOCK",
-                         trailing: snap.active.isEmpty ? "NOTHING SCHEDULED"
-                                                       : "\(snap.active.count) OF \(snap.active.count) · ACCEPTED")
+            sectionLabel("Today's assignment",
+                         trailing: snap.active.isEmpty ? "Nothing scheduled"
+                                                       : "\(snap.active.count) accepted")
             if let job = todaysJob {
                 VStack(alignment: .leading, spacing: Space.s3) {
                     HStack(spacing: Space.s2) {
                         Text(job.loadNumber ?? job.jobNumber ?? "—")
-                            .font(EType.mono(.caption))
-                            .foregroundStyle(palette.textPrimary)
-                            .padding(.horizontal, 10).padding(.vertical, 5)
-                            .background(palette.bgCardSoft)
-                            .clipShape(Capsule())
-                        if let pos = job.position, !pos.isEmpty { positionBadge(pos, solid: true) }
+                            .font(ES09Type.mono)
+                            .foregroundStyle(inkSecondary)
+                        if let pos = job.position, !pos.isEmpty { positionBadge(pos) }
                         Spacer(minLength: 0)
                         HStack(spacing: 5) {
                             Circle()
-                                .fill(cacheAge == nil ? AnyShapeStyle(Brand.success) : AnyShapeStyle(palette.textTertiary))
-                                .frame(width: 7, height: 7)
-                            Text(cacheAge == nil ? "LIVE" : "CACHED")
-                                .font(EType.mono(.micro))
-                                .foregroundStyle(palette.textPrimary)
+                                .fill(cacheAge == nil ? ES09Ink.successDot : ES09Ink.neutralDot)
+                                .frame(width: 6, height: 6)
+                            Text(cacheAge == nil ? "Accepted · live" : "Accepted · cached")
+                                .font(ES09Type.label)
+                                .foregroundStyle(cacheAge == nil ? successInk : inkTertiary)
                         }
-                        .padding(.horizontal, 9).padding(.vertical, 5)
-                        .background(palette.bgCard)
-                        .clipShape(Capsule())
-                        .overlay(Capsule().strokeBorder(palette.borderFaint, lineWidth: 1))
                     }
 
-                    HStack(alignment: .top) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("\(job.origin ?? "—") → \(job.destination ?? "—")")
-                                .font(.system(size: 17, weight: .bold)).tracking(-0.2)
-                                .foregroundStyle(palette.textPrimary)
-                                .lineLimit(1).minimumScaleFactor(0.72)
-                            Text(heroSubline(job))
-                                .font(EType.mono(.micro))
-                                .foregroundStyle(palette.textTertiary)
+                    // §8 — one hero surface carrying the screen's single
+                    // largest number, with a 12px explainer under it. This
+                    // is the one 34 on the screen.
+                    if let countdown = stageCountdown(job) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(countdown)
+                                .font(ES09Type.heroNumber).tracking(-0.6)
+                                .foregroundStyle(inkPrimary)
+                                .lineLimit(1).minimumScaleFactor(0.7)
+                            Text(stageExplainer(job))
+                                .font(ES09Type.body)
+                                .foregroundStyle(inkSecondary)
                                 .lineLimit(1).minimumScaleFactor(0.8)
                         }
-                        Spacer(minLength: Space.s3)
-                        if let countdown = stageCountdown(job) {
-                            VStack(alignment: .trailing, spacing: 2) {
-                                Text("STAGES IN")
-                                    .font(.system(size: 8, weight: .heavy)).tracking(0.6)
-                                    .foregroundStyle(palette.textTertiary)
-                                Text(countdown)
-                                    .font(.system(size: 17, weight: .heavy, design: .monospaced))
-                                    .foregroundStyle(amberInk)
-                            }
-                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("\(job.origin ?? "—") → \(job.destination ?? "—")")
+                            .font(ES09Type.large)
+                            .foregroundStyle(inkPrimary)
+                            .lineLimit(1).minimumScaleFactor(0.72)
+                        Text(heroSubline(job))
+                            .font(ES09Type.mono)
+                            .foregroundStyle(inkTertiary)
+                            .lineLimit(1).minimumScaleFactor(0.8)
                     }
 
                     dayRuler(for: job)
 
                     HStack(spacing: Space.s4) {
-                        eventDot(amber, stageLabel(job))
-                        eventDot(leadBlue, rollLabel(job))
-                        eventDot(Brand.success, releaseLabel(job))
+                        eventDot(ES09Ink.warnDot, stageLabel(job))
+                        eventDot(ES09Ink.action, rollLabel(job))
+                        eventDot(ES09Ink.successDot, releaseLabel(job))
                     }
                 }
                 .padding(Space.s4)
-                .background(palette.bgCard)
+                .background(surface)
                 .clipShape(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
-                        .strokeBorder(heroRim, lineWidth: 1.5)
+                        .strokeBorder(hairline, lineWidth: 1)
                 )
             } else {
                 emptyCard("No block on the ruler today",
@@ -445,6 +606,8 @@ struct EscortHomeES09: View {
 
     /// The 16-hour instrument. Fractions are computed from the real pickup
     /// stamp; when there is no stamp there is no band — only the needle.
+    /// This spine carries the screen's ONE EusoLine (§5) and nothing else
+    /// on the surface is allowed to reach for it.
     private func dayRuler(for job: ES09ActiveJob) -> some View {
         let dayStart: Double = 5, dayEnd: Double = 21
         let span = dayEnd - dayStart
@@ -460,37 +623,30 @@ struct EscortHomeES09: View {
                 let blockEnd = releaseH.map { CGFloat((min(max($0, dayStart), dayEnd) - dayStart) / span) * w }
                 ZStack(alignment: .topLeading) {
                     Capsule()
-                        .fill(palette.bgCardSoft)
-                        .frame(height: 10)
-                        .offset(y: 12)
+                        .fill(track)
+                        .frame(height: 6)
+                        .offset(y: 10)
                     if let s = blockStart, let e = blockEnd, e > s {
-                        ZStack {
-                            Capsule().fill(LinearGradient.diagonal)
-                            Text("ESCORT BLOCK")
-                                .font(.system(size: 8, weight: .heavy)).tracking(0.8)
-                                .foregroundStyle(.white)
-                                .lineLimit(1)
-                        }
-                        .frame(width: max(e - s, 10), height: 16)
-                        .offset(x: s, y: 9)
+                        Capsule()
+                            .fill(ES09Grad.eusoLine)
+                            .frame(width: max(e - s, 10), height: 6)
+                            .offset(x: s, y: 10)
                     }
+                    // The NOW needle. Sourced from the device clock, which
+                    // is the only clock this screen can honestly cite.
                     Rectangle()
-                        .fill(palette.textPrimary)
-                        .frame(width: 2, height: 26)
+                        .fill(inkPrimary)
+                        .frame(width: 2, height: 14)
                         .offset(x: clampedNow - 1, y: 6)
-                    Circle()
-                        .fill(palette.textPrimary)
-                        .frame(width: 6, height: 6)
-                        .offset(x: clampedNow - 3, y: 3)
                 }
             }
-            .frame(height: 34)
+            .frame(height: 22)
 
             HStack(spacing: 0) {
-                ForEach([5, 7, 9, 11, 13, 15, 17, 19, 21], id: \.self) { h in
+                ForEach([5, 9, 13, 17, 21], id: \.self) { h in
                     Text(String(format: "%02d", h))
-                        .font(.system(size: 8, weight: .bold, design: .monospaced))
-                        .foregroundStyle(palette.textTertiary)
+                        .font(ES09Type.mono)
+                        .foregroundStyle(inkTertiary)
                         .frame(maxWidth: .infinity, alignment: h == 5 ? .leading : (h == 21 ? .trailing : .center))
                 }
             }
@@ -499,10 +655,10 @@ struct EscortHomeES09: View {
 
     private func eventDot(_ tint: Color, _ label: String) -> some View {
         HStack(spacing: 5) {
-            Circle().fill(tint).frame(width: 7, height: 7)
+            Circle().fill(tint).frame(width: 6, height: 6)
             Text(label)
-                .font(.system(size: 9.5, weight: .bold))
-                .foregroundStyle(palette.textPrimary)
+                .font(ES09Type.body)
+                .foregroundStyle(inkSecondary)
                 .lineLimit(1)
         }
     }
@@ -511,38 +667,39 @@ struct EscortHomeES09: View {
 
     private var instrumentCluster: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
-            sectionLabel("DAY INSTRUMENTS", trailing: cacheAge == nil ? "LIVE" : "SNAPSHOT")
+            sectionLabel("Day instruments", trailing: cacheAge == nil ? "Live" : "Snapshot")
             HStack(spacing: Space.s2) {
                 certInstrument
                 earningsInstrument
                 marketInstrument
             }
-            .frame(height: 104)
+            .frame(height: 118)
         }
     }
 
     private var certInstrument: some View {
         instrumentShell {
             VStack(alignment: .leading, spacing: 4) {
-                Text(soonestCert.map { "CERT · \($0.code)" } ?? "CERT")
-                    .font(.system(size: 8, weight: .heavy)).tracking(0.5)
-                    .foregroundStyle(palette.textTertiary)
+                Text(soonestCert.map { "Cert · \($0.code)" } ?? "Cert")
+                    .font(ES09Type.label)
+                    .foregroundStyle(inkSecondary)
+                    .lineLimit(1).minimumScaleFactor(0.8)
                 Text(certCountdownLabel)
-                    .font(.system(size: 23, weight: .heavy, design: .monospaced))
-                    .foregroundStyle(certIsUrgent ? amberInk : palette.textPrimary)
-                    .lineLimit(1).minimumScaleFactor(0.6)
+                    .font(ES09Type.largeValue)
+                    .foregroundStyle(certIsUrgent ? warnInk : inkPrimary)
+                    .lineLimit(1).minimumScaleFactor(0.7)
                 // Depletion against the proc's own 30-day expiring horizon.
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
-                        Capsule().fill(palette.bgCardSoft)
-                        Capsule().fill(amber)
+                        Capsule().fill(track)
+                        Capsule().fill(ES09Ink.warnDot)
                             .frame(width: geo.size.width * certRemainingFraction)
                     }
                 }
                 .frame(height: 6)
                 Text(certSubline)
-                    .font(.system(size: 8.5, weight: .semibold))
-                    .foregroundStyle(palette.textSecondary)
+                    .font(ES09Type.body)
+                    .foregroundStyle(inkTertiary)
                     .lineLimit(2).minimumScaleFactor(0.85)
             }
         }
@@ -551,26 +708,34 @@ struct EscortHomeES09: View {
     private var earningsInstrument: some View {
         instrumentShell {
             VStack(alignment: .leading, spacing: 4) {
-                Text("EARNINGS · \(monthCaps)")
-                    .font(.system(size: 8, weight: .heavy)).tracking(0.5)
-                    .foregroundStyle(palette.textTertiary)
+                Text("Earnings · \(monthShort)")
+                    .font(ES09Type.label)
+                    .foregroundStyle(inkSecondary)
+                    .lineLimit(1).minimumScaleFactor(0.8)
                 Text(money(snap.stats?.monthlyEarnings))
-                    .font(.system(size: 18, weight: .heavy, design: .monospaced))
-                    .foregroundStyle(LinearGradient.diagonal)
+                    .font(ES09Type.largeValue)
+                    .foregroundStyle(inkPrimary)
                     .lineLimit(1).minimumScaleFactor(0.6)
                 HStack(alignment: .bottom, spacing: 5) {
-                    ForEach(Array(weeklyBars.enumerated()), id: \.offset) { idx, frac in
-                        RoundedRectangle(cornerRadius: 2, style: .continuous)
-                            .fill(idx == weeklyBars.count - 1
-                                  ? AnyShapeStyle(LinearGradient.diagonal)
-                                  : AnyShapeStyle(leadBlue.opacity(isDark ? 0.40 : 0.30)))
-                            .frame(height: max(4, 18 * frac))
+                    if weeklyBars.isEmpty {
+                        Text("No settled moves in the last 5 weeks")
+                            .font(ES09Type.body)
+                            .foregroundStyle(inkTertiary)
+                            .lineLimit(2).minimumScaleFactor(0.85)
+                    } else {
+                        ForEach(Array(weeklyBars.enumerated()), id: \.offset) { idx, frac in
+                            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                                .fill(idx == weeklyBars.count - 1
+                                      ? ES09Ink.action
+                                      : ES09Ink.action.opacity(isDark ? 0.40 : 0.30))
+                                .frame(height: max(4, 18 * frac))
+                        }
                     }
                 }
                 .frame(height: 18)
                 Text(earningsSubline)
-                    .font(.system(size: 8.5, weight: .semibold))
-                    .foregroundStyle(palette.textSecondary)
+                    .font(ES09Type.body)
+                    .foregroundStyle(inkTertiary)
                     .lineLimit(2).minimumScaleFactor(0.85)
             }
         }
@@ -580,27 +745,36 @@ struct EscortHomeES09: View {
         instrumentShell {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 4) {
-                    Text("MARKET")
-                        .font(.system(size: 8, weight: .heavy)).tracking(0.5)
-                        .foregroundStyle(palette.textTertiary)
+                    Text("Market")
+                        .font(ES09Type.label)
+                        .foregroundStyle(inkSecondary)
                     Spacer(minLength: 0)
-                    Circle().fill(Brand.success).frame(width: 7, height: 7)
+                    Circle().fill(ES09Ink.successDot).frame(width: 6, height: 6)
                 }
                 Text("\(snap.market?.availableJobs ?? 0) open")
-                    .font(.system(size: 19, weight: .heavy, design: .monospaced))
-                    .foregroundStyle(palette.textPrimary)
+                    .font(ES09Type.largeValue)
+                    .foregroundStyle(inkPrimary)
                     .lineLimit(1).minimumScaleFactor(0.6)
-                HStack(alignment: .bottom, spacing: 5) {
-                    ForEach(Array(pulseBars.enumerated()), id: \.offset) { _, frac in
-                        Capsule()
-                            .fill(chasePurple.opacity(isDark ? 0.55 : 0.45))
-                            .frame(width: 5, height: max(4, 20 * frac))
+                // §9 TRUTH LAW — run-1 drew eight "pulse" bars whose heights
+                // came from a sine function seeded by the counts. There is no
+                // time series on the wire: getMarketplaceStats returns
+                // scalars only. Eight bars implied eight buckets that do not
+                // exist, so the wave is WITHDRAWN. What replaces it is the
+                // one proportion both scalars can honestly support — urgent
+                // against open — and it paints only when open > 0.
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(track)
+                        if let frac = urgentFraction {
+                            Capsule().fill(accentInk)
+                                .frame(width: geo.size.width * frac)
+                        }
                     }
                 }
-                .frame(height: 20)
+                .frame(height: 6)
                 Text(marketSubline)
-                    .font(.system(size: 8.5, weight: .semibold))
-                    .foregroundStyle(palette.textSecondary)
+                    .font(ES09Type.body)
+                    .foregroundStyle(inkTertiary)
                     .lineLimit(2).minimumScaleFactor(0.85)
             }
         }
@@ -610,55 +784,117 @@ struct EscortHomeES09: View {
         inner()
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .padding(Space.s3)
-            .background(palette.bgCard)
+            .background(surface)
             .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(palette.borderFaint, lineWidth: 1))
+                .strokeBorder(hairline, lineWidth: 1))
     }
 
     // MARK: NEXT UP
 
     private var nextUpBlock: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
-            sectionLabel("NEXT UP · ACCEPTED", trailing: "SEE ALL (\(snap.upcoming.count))")
+            sectionLabel("Next up · accepted",
+                         trailing: "See all (\(snap.upcoming.count))",
+                         trailingIsLink: true)
             if snap.upcoming.isEmpty {
                 emptyCard("Nothing accepted after today",
                           "Accepted moves land here with the seat, the miles and the pay.")
             } else {
                 VStack(spacing: 0) {
                     ForEach(Array(snap.upcoming.prefix(2).enumerated()), id: \.element.id) { idx, row in
-                        VStack(alignment: .leading, spacing: 5) {
-                            HStack {
-                                Text("\(row.origin ?? "—") → \(row.destination ?? "—")")
-                                    .font(.system(size: 12.5, weight: .bold))
-                                    .foregroundStyle(palette.textPrimary)
-                                    .lineLimit(1).minimumScaleFactor(0.75)
-                                Spacer(minLength: Space.s2)
-                                Text(money(row.pay))
-                                    .font(.system(size: 12.5, weight: .bold, design: .monospaced))
-                                    .foregroundStyle(palette.textPrimary)
-                            }
-                            HStack(spacing: 8) {
-                                if let pos = row.position, !pos.isEmpty { positionBadge(pos, compact: true) }
-                                Text(upcomingSubline(row))
-                                    .font(EType.mono(.micro))
-                                    .foregroundStyle(palette.textTertiary)
-                                    .lineLimit(1).minimumScaleFactor(0.8)
+                        // 14-kit ListRow anatomy: 40×40 rx10 icon chip +
+                        // title/sub + lifecycle dots + right pill + money.
+                        HStack(alignment: .center, spacing: Space.s3) {
+                            listRowIconChip(row.position ?? "")
+                            VStack(alignment: .leading, spacing: 5) {
+                                HStack {
+                                    Text("\(row.origin ?? "—") → \(row.destination ?? "—")")
+                                        .font(ES09Type.rowTitle)
+                                        .foregroundStyle(inkPrimary)
+                                        .lineLimit(1).minimumScaleFactor(0.75)
+                                    Spacer(minLength: Space.s2)
+                                    Text(money(row.pay))
+                                        .font(ES09Type.money)
+                                        .foregroundStyle(inkPrimary)
+                                }
+                                HStack(spacing: 8) {
+                                    Text(upcomingSubline(row))
+                                        .font(ES09Type.mono)
+                                        .foregroundStyle(inkTertiary)
+                                        .lineLimit(1).minimumScaleFactor(0.8)
+                                    Spacer(minLength: Space.s2)
+                                    lifecycleDots(row.position ?? "")
+                                    if let pos = row.position, !pos.isEmpty {
+                                        positionBadge(pos)
+                                    }
+                                }
                             }
                         }
                         .padding(.vertical, Space.s3)
                         .padding(.horizontal, Space.s4)
                         if idx == 0 && snap.upcoming.count > 1 {
-                            Rectangle().fill(palette.borderFaint).frame(height: 1)
+                            Rectangle().fill(hairline).frame(height: 1)
                                 .padding(.horizontal, Space.s4)
                         }
                     }
                 }
-                .background(palette.bgCard)
-                .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                    .strokeBorder(palette.borderFaint, lineWidth: 1))
+                .background(surface)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
+                    .strokeBorder(hairline, lineWidth: 1))
             }
+        }
+    }
+
+    /// The 14-kit ListRow leading chip. `Radius` carries no 10-pt token
+    /// (sm 8 · md 12 · lg 16 · xl 20), so the kit's chip value is spelled
+    /// out here rather than rounded to the nearest token.
+    private enum ListRowChip {
+        static let side: CGFloat = 40
+        static let radius: CGFloat = 10
+    }
+
+    private func listRowIconChip(_ position: String) -> some View {
+        RoundedRectangle(cornerRadius: ListRowChip.radius, style: .continuous)
+            .fill(track)
+            .frame(width: ListRowChip.side, height: ListRowChip.side)
+            .overlay(
+                Image(systemName: "point.topleft.down.to.point.bottomright.curvepath")
+                    .font(ES09Type.large)
+                    .foregroundStyle(positionInk(position))
+            )
+    }
+
+    /// ACCEPTED · STAGE · ROLL. Only dot 1 is inked, and that is not a
+    /// decision — `escorts.getUpcomingJobs` hard-filters status='accepted'
+    /// (escorts.ts:752) and returns no status field, so nothing on the wire
+    /// could advance dots 2-3. Hollow means "not on the wire", never "not
+    /// yet happened dressed as known".
+    private func lifecycleDots(_ position: String) -> some View {
+        HStack(spacing: 4) {
+            Circle().fill(positionInk(position)).frame(width: 5, height: 5)
+            Circle().fill(hairline).frame(width: 5, height: 5)
+            Circle().fill(hairline).frame(width: 5, height: 5)
+        }
+    }
+
+    /// Position dot tints, pinned to the §4 table. LEAD reads on the action
+    /// token, CHASE on the accent token, HIGH-POLE on the warn token — §4
+    /// carries no fourth role colour and none is invented here.
+    private func positionTint(_ raw: String) -> Color {
+        switch raw.lowercased() {
+        case "chase": return ES09Ink.accent(isDark)
+        case "high_pole", "highpole", "high-pole": return ES09Ink.warnDot
+        default: return ES09Ink.action
+        }
+    }
+
+    private func positionInk(_ raw: String) -> Color {
+        switch raw.lowercased() {
+        case "chase": return ES09Ink.accent(isDark)
+        case "high_pole", "highpole", "high-pole": return ES09Ink.warnInk(isDark)
+        default: return ES09Ink.action
         }
     }
 
@@ -668,43 +904,39 @@ struct EscortHomeES09: View {
     private var offerBlock: some View {
         if let offer = snap.offers.first {
             VStack(alignment: .leading, spacing: Space.s2) {
-                sectionLabel("OFFER WAITING", trailing: "\(snap.market?.urgentJobs ?? 0) URGENT")
+                sectionLabel("Offer waiting", trailing: "\(snap.market?.urgentJobs ?? 0) urgent")
                 Button {
                     NotificationCenter.default.post(
                         name: .esES09OpenOffer, object: nil,
                         userInfo: ["jobId": offer.id])
                 } label: {
                     HStack(alignment: .top, spacing: Space.s3) {
-                        Rectangle().fill(amber).frame(width: 3)
-                        VStack(alignment: .leading, spacing: 6) {
+                        Circle().fill(ES09Ink.warnDot)
+                            .frame(width: 8, height: 8)
+                            .padding(.top, 5)
+                        VStack(alignment: .leading, spacing: 5) {
                             HStack {
-                                Text("NEW OFFER")
-                                    .font(.system(size: 8, weight: .heavy)).tracking(0.5)
-                                    .foregroundStyle(isDark ? Color(hex: 0x0B0B0F) : .white)
-                                    .padding(.horizontal, 9).padding(.vertical, 4)
-                                    .background(amber).clipShape(Capsule())
                                 Text("\(offer.origin ?? "—") → \(offer.destination ?? "—")")
-                                    .font(.system(size: 13, weight: .bold))
-                                    .foregroundStyle(palette.textPrimary)
+                                    .font(ES09Type.rowTitle)
+                                    .foregroundStyle(inkPrimary)
                                     .lineLimit(1).minimumScaleFactor(0.72)
                                 Spacer(minLength: Space.s2)
                                 Text(money(offer.pay))
-                                    .font(.system(size: 13, weight: .bold, design: .monospaced))
-                                    .foregroundStyle(palette.textPrimary)
+                                    .font(ES09Type.money)
+                                    .foregroundStyle(inkPrimary)
                             }
                             Text(offerSubline(offer))
-                                .font(EType.mono(.micro))
-                                .foregroundStyle(palette.textSecondary)
+                                .font(ES09Type.body)
+                                .foregroundStyle(inkSecondary)
                                 .lineLimit(1).minimumScaleFactor(0.78)
                         }
-                        .padding(.vertical, Space.s3)
-                        .padding(.trailing, Space.s4)
                     }
+                    .padding(Space.s4)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(amber.opacity(isDark ? 0.14 : 0.10))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                        .strokeBorder(amber.opacity(0.45), lineWidth: 1))
+                    .background(surface)
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
+                        .strokeBorder(hairline, lineWidth: 1))
                 }
                 .buttonStyle(.plain)
             }
@@ -715,28 +947,31 @@ struct EscortHomeES09: View {
 
     private var coverageRibbon: some View {
         HStack(spacing: 0) {
-            ribbonCell("PERMITS", "\(snap.permits?.activePermits ?? 0) active", nil)
+            ribbonCell("Permits", "\(snap.permits?.activePermits ?? 0) active", nil)
             ribbonDivider
-            ribbonCell("EXPIRING", "\(snap.permits?.expiringSoon ?? 0)",
-                       (snap.permits?.expiringSoon ?? 0) > 0 ? amberInk : nil)
+            ribbonCell("Expiring", "\(snap.permits?.expiringSoon ?? 0)",
+                       (snap.permits?.expiringSoon ?? 0) > 0 ? warnInk : nil)
             ribbonDivider
-            ribbonCell("STATES", "\(snap.permits?.statesCovered ?? 0) covered", nil)
+            ribbonCell("States", "\(snap.permits?.statesCovered ?? 0) covered", nil)
             ribbonDivider
-            ribbonCell("CERTS", "\(snap.permits?.certifications ?? 0) on file", nil)
+            ribbonCell("Certs", "\(snap.permits?.certifications ?? 0) on file", nil)
         }
-        .padding(.vertical, Space.s2)
-        .background(palette.textPrimary.opacity(isDark ? 0.05 : 0.03))
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .padding(.vertical, Space.s3)
+        .background(track)
+        // 14-kit "inner" radius. `Radius` has no 14-pt token (md 12 / lg 16),
+        // so the kit value is spelled out rather than rounded to a token.
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     private func ribbonCell(_ label: String, _ value: String, _ tint: Color?) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label)
-                .font(.system(size: 7.5, weight: .heavy)).tracking(0.6)
-                .foregroundStyle(palette.textTertiary)
+                .font(ES09Type.body)
+                .foregroundStyle(inkTertiary)
+                .lineLimit(1).minimumScaleFactor(0.85)
             Text(value)
-                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                .foregroundStyle(tint ?? palette.textPrimary)
+                .font(ES09Type.monoStrong)
+                .foregroundStyle(tint ?? inkPrimary)
                 .lineLimit(1).minimumScaleFactor(0.7)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -744,138 +979,162 @@ struct EscortHomeES09: View {
     }
 
     private var ribbonDivider: some View {
-        Rectangle().fill(palette.borderFaint).frame(width: 1, height: 18)
+        Rectangle().fill(hairline).frame(width: 1, height: 22)
     }
 
-    // MARK: ESANG orb (the calm expert — one concrete-number action)
+    // MARK: ESANG counsel (one soft region — the calm expert)
 
     @ViewBuilder
     private var esangCard: some View {
         if let line = esangSuggestion {
-            HStack(alignment: .top, spacing: 0) {
-                Rectangle().fill(LinearGradient.diagonal).frame(width: 3)
-                HStack(alignment: .center, spacing: Space.s3) {
-                    ZStack {
-                        Circle().fill(LinearGradient.diagonal).frame(width: 36, height: 36)
-                        Circle().fill(Color.white.opacity(0.35))
-                            .frame(width: 15, height: 15).offset(x: -6, y: -6).blur(radius: 3)
-                        Circle().strokeBorder(Color.white.opacity(0.25), lineWidth: 1)
-                            .frame(width: 36, height: 36)
-                    }
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack(spacing: 6) {
-                            Text("ESANG")
-                                .font(.system(size: 10.5, weight: .heavy)).tracking(0.8)
-                                .foregroundStyle(LinearGradient.primary)
-                            Text(line.headline)
-                                .font(.system(size: 10.5, weight: .bold))
-                                .foregroundStyle(palette.textPrimary)
-                                .lineLimit(1).minimumScaleFactor(0.75)
-                        }
-                        Text(line.body)
-                            .font(.system(size: 9))
-                            .foregroundStyle(palette.textSecondary)
-                            .lineLimit(2)
-                        Text(line.figures)
-                            .font(EType.mono(.micro))
-                            .foregroundStyle(palette.textTertiary)
-                    }
-                    Spacer(minLength: 0)
+            HStack(alignment: .top, spacing: Space.s3) {
+                // The only place on this screen that reaches for the orb
+                // gradient pair, per §5.
+                ZStack {
+                    Circle().fill(ES09Grad.esangOrb)
+                    Circle().fill(ES09Grad.orbSpec(diameter: 20))
                 }
-                .padding(.vertical, Space.s3)
-                .padding(.horizontal, Space.s3)
+                .frame(width: 20, height: 20)
+                .padding(.top, 1)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(line.headline)
+                        .font(ES09Type.rowTitle)
+                        .foregroundStyle(inkPrimary)
+                        .lineLimit(2).minimumScaleFactor(0.85)
+                    Text(line.body)
+                        .font(ES09Type.body)
+                        .foregroundStyle(esangProof)
+                        .lineLimit(2)
+                    // Source + proposal boundary, on the face, always.
+                    Text("\(line.figures) · proposal — you decide")
+                        .font(ES09Type.body)
+                        .foregroundStyle(esangProof)
+                        .lineLimit(1).minimumScaleFactor(0.8)
+                }
+                Spacer(minLength: 0)
+                Text("›")
+                    .font(ES09Type.chevron)
+                    .foregroundStyle(esangProof)
             }
+            .padding(Space.s4)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(palette.bgCard)
-            .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(palette.borderFaint, lineWidth: 1))
+            .background(ES09Ink.esangRegion(isDark))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous))
         }
     }
 
-    // MARK: CTAs — both ONLINE_ONLY downstream
+    // MARK: Command dock — both ONLINE_ONLY downstream
+
+    /// §8 command dock: 52-pt tall, rx 12, primary is a FLAT #0B66E5 fill
+    /// with a white 15/600 label. The shared `CTAButton` is gradient-backed
+    /// at a 17-pt label, so it is deliberately not used on this surface.
+    private func primaryCommand(_ title: String,
+                                enabled: Bool = true,
+                                action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(ES09Type.rowTitle)
+                .foregroundStyle(Color.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 52)
+                .background(ES09Ink.action)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .opacity(enabled ? 1 : 0.45)
+        .disabled(!enabled)
+    }
+
+    private func secondaryCommand(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(ES09Type.rowTitle)
+                .foregroundStyle(inkPrimary)
+                .frame(maxWidth: .infinity)
+                .frame(height: 52)
+                .background(surface)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(ES09Ink.ctaStroke(isDark), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
 
     private var ctaPair: some View {
-        HStack(spacing: Space.s2) {
-            CTAButton(title: "Open today's move", action: {
+        HStack(spacing: Space.s3) {
+            primaryCommand("Open today's move", enabled: todaysJob != nil) {
                 guard let job = todaysJob else { return }
                 NotificationCenter.default.post(
                     name: .esES09OpenTodaysMove, object: nil,
                     userInfo: ["assignmentId": job.id])
-            })
+            }
             .frame(maxWidth: .infinity)
-            .opacity(todaysJob == nil ? 0.45 : 1)
-            .disabled(todaysJob == nil)
 
-            Button {
+            secondaryCommand("Pre-trip check") {
                 NotificationCenter.default.post(
                     name: .esES09OpenPreTrip, object: nil,
                     userInfo: todaysJob.map { ["assignmentId": $0.id] } ?? [:])
-            } label: {
-                Text("Pre-trip check")
-                    .font(.system(size: 12.5, weight: .bold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 44)
-                    .background(palette.bgCard)
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                        .strokeBorder(palette.borderSoft, lineWidth: 1))
             }
-            .buttonStyle(.plain)
             .frame(width: 150)
         }
     }
 
     // MARK: Small parts
 
-    private func sectionLabel(_ text: String, trailing: String? = nil) -> some View {
+    /// §8 — section label 12/600 secondary at left, 12/500 tertiary count at
+    /// right. Sentence case, zero tracking; the run-1 all-caps 9px labels on
+    /// 1.0 tracking were the gate's first named defect class.
+    private func sectionLabel(_ text: String,
+                              trailing: String? = nil,
+                              trailingIsLink: Bool = false) -> some View {
         HStack {
             Text(text)
-                .font(.system(size: 9, weight: .heavy)).tracking(1.0)
-                .foregroundStyle(palette.textTertiary)
+                .font(ES09Type.label)
+                .foregroundStyle(inkSecondary)
             Spacer(minLength: Space.s2)
             if let trailing {
                 Text(trailing)
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                    .foregroundStyle(palette.textTertiary)
+                    .font(trailingIsLink ? ES09Type.label : ES09Type.body)
+                    .foregroundStyle(trailingIsLink ? linkInk : inkTertiary)
             }
         }
     }
 
     private func emptyCard(_ title: String, _ body: String) -> some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text(title).font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-            Text(body).font(EType.caption).foregroundStyle(palette.textSecondary)
+            Text(title).font(ES09Type.rowTitle).foregroundStyle(inkPrimary)
+            Text(body).font(ES09Type.body).foregroundStyle(inkSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Space.s4)
-        .background(palette.bgCard)
+        .background(surface)
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-            .strokeBorder(palette.borderFaint, lineWidth: 1))
+            .strokeBorder(hairline, lineWidth: 1))
     }
 
-    /// Position badges per the escort design directive: LEAD blue ·
-    /// CHASE purple · HIGH-POLE orange. Server enum is lead | chase | both.
-    private func positionBadge(_ raw: String, solid: Bool = false, compact: Bool = false) -> some View {
+    /// Position per the escort design directive: LEAD · CHASE · HIGH-POLE.
+    /// Server enum is lead | chase | both. The canon gate retired soft-fill
+    /// badges, so the state reads as a dot plus an ink word — the same
+    /// treatment the exemplar gives "Accepted" and "Chase".
+    private func positionBadge(_ raw: String) -> some View {
         let key = raw.lowercased()
         let label: String
-        let tint: Color
         switch key {
-        case "lead":       label = "LEAD";       tint = leadBlue
-        case "chase":      label = "CHASE";      tint = chasePurple
-        case "both":       label = "LEAD+CHASE"; tint = leadBlue
-        case "high_pole", "highpole": label = "HIGH-POLE"; tint = hpOrange
-        default:           label = raw.uppercased(); tint = Brand.neutral
+        case "lead":       label = "Lead"
+        case "chase":      label = "Chase"
+        case "both":       label = "Lead + chase"
+        case "high_pole", "highpole", "high-pole": label = "High-pole"
+        default:           label = raw.capitalized
         }
-        return Text(label)
-            .font(.system(size: compact ? 8 : 10, weight: .heavy)).tracking(0.5)
-            .foregroundStyle(solid ? AnyShapeStyle(Color.white) : AnyShapeStyle(tint))
-            .padding(.horizontal, compact ? 7 : 10)
-            .padding(.vertical, compact ? 3 : 4)
-            .background(solid ? AnyShapeStyle(tint) : AnyShapeStyle(tint.opacity(isDark ? 0.20 : 0.14)))
-            .clipShape(Capsule())
+        return HStack(spacing: 5) {
+            Circle().fill(positionTint(raw)).frame(width: 6, height: 6)
+            Text(label)
+                .font(ES09Type.label)
+                .foregroundStyle(positionInk(raw))
+                .lineLimit(1)
+        }
     }
 
     // MARK: Derived copy (numbers-first · time-relative · location-as-name)
@@ -890,13 +1149,13 @@ struct EscortHomeES09: View {
 
     private var todayStamp: String {
         let f = DateFormatter()
-        f.dateFormat = "EEE MMM d"
-        return f.string(from: Date()).uppercased()
+        f.dateFormat = "EEE MMM d · HH:mm"
+        return f.string(from: Date())
     }
 
-    private var monthCaps: String {
+    private var monthShort: String {
         let f = DateFormatter(); f.dateFormat = "MMM"
-        return f.string(from: Date()).uppercased()
+        return f.string(from: Date())
     }
 
     private func heroSubline(_ job: ES09ActiveJob) -> String {
@@ -905,7 +1164,7 @@ struct EscortHomeES09: View {
         if let d = job.distance, d > 0 { parts.append("\(Int(d.rounded())) mi") }
         if let c = job.cargoType, !c.isEmpty { parts.append(c) }
         if let h = job.hazmatClass, !h.isEmpty { parts.append("hazmat \(h)") }
-        if let s = job.status, !s.isEmpty { parts.append(s.uppercased()) }
+        if let s = job.status, !s.isEmpty { parts.append(s) }
         return parts.isEmpty ? "—" : parts.joined(separator: " · ")
     }
 
@@ -914,22 +1173,29 @@ struct EscortHomeES09: View {
         let delta = d.timeIntervalSinceNow
         guard delta > 0 else { return nil }
         let h = Int(delta) / 3600, m = (Int(delta) % 3600) / 60
-        return h > 0 ? "\(h)h \(m)m" : "\(m)m"
+        return h > 0 ? "\(h) h \(m) m" : "\(m) m"
+    }
+
+    /// The 12px explainer that sits under the hero number. It names what
+    /// the countdown is counting toward — never a bare figure.
+    private func stageExplainer(_ job: ES09ActiveJob) -> String {
+        guard let d = job.pickupDate.flatMap(parseISO) else { return "until stage-in" }
+        return "until stage-in · roll \(clock(d.addingTimeInterval(30 * 60)))"
     }
 
     private func stageLabel(_ job: ES09ActiveJob) -> String {
-        guard let d = job.pickupDate.flatMap(parseISO) else { return "STAGE —" }
-        return "STAGE \(clock(d))"
+        guard let d = job.pickupDate.flatMap(parseISO) else { return "Stage —" }
+        return "Stage \(clock(d))"
     }
 
     private func rollLabel(_ job: ES09ActiveJob) -> String {
-        guard let d = job.pickupDate.flatMap(parseISO) else { return "ROLL —" }
-        return "ROLL \(clock(d.addingTimeInterval(30 * 60)))"
+        guard let d = job.pickupDate.flatMap(parseISO) else { return "Roll —" }
+        return "Roll \(clock(d.addingTimeInterval(30 * 60)))"
     }
 
     private func releaseLabel(_ job: ES09ActiveJob) -> String {
-        guard let d = job.pickupDate.flatMap(parseISO) else { return "RELEASE —" }
-        return "RELEASE ~\(clock(d.addingTimeInterval(estimatedBlockHours(job) * 3600)))"
+        guard let d = job.pickupDate.flatMap(parseISO) else { return "Release —" }
+        return "Release ~\(clock(d.addingTimeInterval(estimatedBlockHours(job) * 3600)))"
     }
 
     /// Block length from routed miles at a 45 mph escort average, floored at
@@ -981,7 +1247,7 @@ struct EscortHomeES09: View {
 
     private var certCountdownLabel: String {
         guard let days = certDaysLeft else { return "—" }
-        if days < 0 { return "EXPIRED" }
+        if days < 0 { return "Expired" }
         return "\(days) d"
     }
 
@@ -1013,8 +1279,12 @@ struct EscortHomeES09: View {
             guard weeks >= 0, weeks < 5 else { continue }
             buckets[4 - weeks] += job.earnings ?? 0
         }
+        // §9 TRUTH LAW — run-1 fell back to five equal 0.15 bars when no
+        // completed move landed in the window. That is a drawn flat line
+        // where the truth is "nothing settled yet", so the fallback is
+        // WITHDRAWN: an empty array paints no bars at all.
         let top = buckets.max() ?? 0
-        guard top > 0 else { return [0.15, 0.15, 0.15, 0.15, 0.15] }
+        guard top > 0 else { return [] }
         return buckets.map { CGFloat($0 / top) }
     }
 
@@ -1028,18 +1298,15 @@ struct EscortHomeES09: View {
 
     // Market instrument -----------------------------------------------
 
-    /// Eight bars whose shape is seeded by the real counts, so the pulse
-    /// moves when the board moves instead of animating a decoration.
-    private var pulseBars: [CGFloat] {
+    /// Urgent tenders as a share of the open board. Both terms come off
+    /// escorts.getMarketplaceStats (escorts.ts:849) — nothing is smoothed,
+    /// extrapolated or shaped by a curve. Nil when the board is empty, so
+    /// the track paints bare instead of implying a reading.
+    private var urgentFraction: CGFloat? {
         let open = Double(snap.market?.availableJobs ?? 0)
+        guard open > 0 else { return nil }
         let urgent = Double(snap.market?.urgentJobs ?? 0)
-        guard open > 0 else { return Array(repeating: 0.2, count: 8) }
-        let base = min(1.0, open / max(open, 40))
-        let heat = min(1.0, urgent / max(open, 1))
-        return (0..<8).map { i in
-            let wave = 0.55 + 0.45 * sin(Double(i) * 0.9 + heat * 3)
-            return CGFloat(min(1.0, max(0.18, base * wave + heat * 0.25)))
-        }
+        return CGFloat(min(max(urgent / open, 0), 1))
     }
 
     private var marketSubline: String {
@@ -1198,6 +1465,9 @@ struct EscortHomeES09Screen: View {
         Shell(theme: theme) {
             EscortHomeES09()
         } nav: {
+            // §7 — the shipped escort enum, never invented:
+            // HOME · ASSIGNMENTS · [ESang orb] · CORRIDOR · ME.
+            // EscortNavController.swift:77-85 (orb labels :63).
             BottomNav(
                 leading: es09NavLeading(),
                 trailing: es09NavTrailing(),

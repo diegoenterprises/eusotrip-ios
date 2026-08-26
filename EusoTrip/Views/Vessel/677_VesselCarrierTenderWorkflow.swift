@@ -17,6 +17,7 @@
 //  see PORT-GAP below.
 //
 
+import CryptoKit
 import SwiftUI
 
 struct VesselCarrierTenderWorkflowScreen: View {
@@ -58,6 +59,11 @@ private struct VesselTenderDetail677: Decodable {
     let shipperOfRecord: String?
     let originPort: PortRef677?
     let destinationPort: PortRef677?
+    let currency: String?
+    let cargoType: String?
+    let numberOfContainers: Int?
+    let totalWeightKg: String?
+    let totalVolumeCBM: String?
 }
 
 private struct VesselVoyage677: Decodable, Identifiable {
@@ -87,6 +93,13 @@ private struct VesselCarrierTenderWorkflowBody: View {
     @State private var declining = false
     @State private var actionError: String? = nil
     @State private var actionAck: String? = nil
+    @State private var showingQuoteForm = false
+    @State private var quoteAmount = ""
+    @State private var quoteRateType = ""
+    @State private var quoteTransitDays = ""
+    @State private var quoteFreeTimeDays = ""
+    @State private var quoteDemurrageRate = ""
+    @State private var quoteNotes = ""
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -132,6 +145,7 @@ private struct VesselCarrierTenderWorkflowBody: View {
         }
         .task { await load() }
         .eusoRefreshable { await load() }
+        .sheet(isPresented: $showingQuoteForm) { quoteForm }
     }
 
     // MARK: - Eyebrow + title
@@ -332,7 +346,7 @@ private struct VesselCarrierTenderWorkflowBody: View {
             .opacity(declining ? 0.6 : 1.0)
             .disabled(declining || submitting)
 
-            Button(action: { Task { await submitQuote() } }) {
+            Button(action: { showingQuoteForm = true }) {
                 Text(submitting ? "Submitting…" : "Submit quote")
                     .font(EType.title)
                     .foregroundStyle(.white)
@@ -344,6 +358,83 @@ private struct VesselCarrierTenderWorkflowBody: View {
             .opacity(submitting ? 0.6 : 1.0)
             .disabled(submitting || declining)
         }
+    }
+
+    private var quoteForm: some View {
+        NavigationStack {
+            Form {
+                Section("Booking") {
+                    LabeledContent("Reference", value: detail?.bookingNumber ?? "Unavailable")
+                    LabeledContent("Currency", value: detail?.currency ?? "Unavailable")
+                }
+                Section("Carrier offer") {
+                    TextField("Amount", text: $quoteAmount)
+                        .keyboardType(.decimalPad)
+                    Picker("Rate basis", selection: $quoteRateType) {
+                        Text("Choose rate basis").tag("")
+                        Text("Per TEU").tag("per_teu")
+                        Text("Per metric ton").tag("per_ton")
+                        Text("Per CBM").tag("per_cbm")
+                        Text("Lump sum").tag("lump_sum")
+                    }
+                    TextField("Transit days (optional)", text: $quoteTransitDays)
+                        .keyboardType(.numberPad)
+                }
+                Section("Demurrage terms") {
+                    TextField("Free-time days", text: $quoteFreeTimeDays)
+                        .keyboardType(.numberPad)
+                    TextField("Rate per day", text: $quoteDemurrageRate)
+                        .keyboardType(.decimalPad)
+                }
+                Section("Commercial notes") {
+                    TextField("Notes (optional)", text: $quoteNotes, axis: .vertical)
+                        .lineLimit(2...5)
+                }
+            }
+            .navigationTitle("Submit vessel quote")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { showingQuoteForm = false }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Submit") { Task { await submitQuote() } }
+                        .disabled(!quoteIsValid || submitting)
+                }
+            }
+        }
+    }
+
+    private var quoteIsValid: Bool {
+        guard let amount = Double(quoteAmount), amount > 0,
+              hasAtMostTwoDecimalPlaces(amount),
+              !quoteRateType.isEmpty,
+              let freeTimeDays = Int(quoteFreeTimeDays), (0...365).contains(freeTimeDays),
+              let demurrageRate = Double(quoteDemurrageRate), demurrageRate > 0,
+              hasAtMostTwoDecimalPlaces(demurrageRate),
+              let currency = detail?.currency,
+              ["USD", "CAD", "MXN"].contains(currency) else { return false }
+        if !quoteTransitDays.isEmpty {
+            guard let transitDays = Int(quoteTransitDays), (1...365).contains(transitDays) else {
+                return false
+            }
+        }
+        if quoteRateType == "per_teu" {
+            guard let cargoType = detail?.cargoType?.lowercased(),
+                  ["container", "reefer"].contains(cargoType),
+                  (detail?.numberOfContainers ?? 0) > 0 else { return false }
+        }
+        if quoteRateType == "per_ton" {
+            guard (Double(detail?.totalWeightKg ?? "") ?? 0) > 0 else { return false }
+        }
+        if quoteRateType == "per_cbm" {
+            guard (Double(detail?.totalVolumeCBM ?? "") ?? 0) > 0 else { return false }
+        }
+        return true
+    }
+
+    private func hasAtMostTwoDecimalPlaces(_ value: Double) -> Bool {
+        abs(value * 100 - (value * 100).rounded()) < 0.000_001
     }
 
     private func ackBanner(_ text: String) -> some View {
@@ -450,33 +541,114 @@ private struct VesselCarrierTenderWorkflowBody: View {
     // MARK: - Mutations
 
     private func submitQuote() async {
+        guard !submitting else { return }
         submitting = true; actionError = nil; actionAck = nil
+        defer { submitting = false }
         struct BidIn: Encodable {
             let shipmentId: Int
             let amount: Double
             let rateType: String
+            let currency: String
+            let transitDays: Int?
+            let demurrageFreeTimeDays: Int
+            let demurrageRatePerDay: Double
+            let notes: String?
+            let requestKey: String
         }
-        struct Ack677: Decodable { let success: Bool? }
-        // Quote the shipper's target / FEU at per-TEU rate type. No fabricated
-        // amount — if the detail has no target rate we cannot quote.
-        guard let amount = detail?.targetRate else {
-            actionError = "No target rate on this booking request, cannot submit a quote."
-            submitting = false
+        struct Ack677: Decodable {
+            let success: Bool?
+            let idempotent: Bool?
+            let message: String?
+        }
+
+        guard quoteIsValid,
+              let amount = Double(quoteAmount),
+              let freeTimeDays = Int(quoteFreeTimeDays),
+              let demurrageRate = Double(quoteDemurrageRate),
+              let currency = detail?.currency,
+              ["USD", "CAD", "MXN"].contains(currency) else {
+            actionError = "Enter a valid amount, rate basis, currency, and demurrage terms."
             return
         }
+        let transitDays = quoteTransitDays.isEmpty ? nil : Int(quoteTransitDays)
+        let notes = quoteNotes.trimmingCharacters(in: .whitespacesAndNewlines)
+        let storageKey = quoteRequestStorageKey(
+            amount: amount,
+            rateType: quoteRateType,
+            currency: currency,
+            transitDays: transitDays,
+            freeTimeDays: freeTimeDays,
+            demurrageRate: demurrageRate,
+            notes: notes.isEmpty ? nil : notes
+        )
+        let stored = UserDefaults.standard.string(forKey: storageKey)?.lowercased()
+        let requestKey = stored.flatMap { UUID(uuidString: $0) != nil ? $0 : nil }
+            ?? UUID().uuidString.lowercased()
+        UserDefaults.standard.set(requestKey, forKey: storageKey)
+
         do {
             let res: Ack677 = try await EusoTripAPI.shared.mutation(
                 "vesselShipments.createVesselBid",
-                input: BidIn(shipmentId: shipmentId, amount: amount, rateType: "per_teu"))
+                input: BidIn(
+                    shipmentId: shipmentId,
+                    amount: amount,
+                    rateType: quoteRateType,
+                    currency: currency,
+                    transitDays: transitDays,
+                    demurrageFreeTimeDays: freeTimeDays,
+                    demurrageRatePerDay: demurrageRate,
+                    notes: notes.isEmpty ? nil : notes,
+                    requestKey: requestKey
+                ))
             if res.success == true {
-                actionAck = "Quote submitted · the shipper has it"
+                if UserDefaults.standard.string(forKey: storageKey)?.lowercased() == requestKey {
+                    UserDefaults.standard.removeObject(forKey: storageKey)
+                }
+                showingQuoteForm = false
+                actionAck = res.idempotent == true
+                    ? "This exact quote was already submitted."
+                    : "Quote submitted · the shipper has it"
+                quoteAmount = ""
+                quoteRateType = ""
+                quoteTransitDays = ""
+                quoteFreeTimeDays = ""
+                quoteDemurrageRate = ""
+                quoteNotes = ""
+                await load()
             } else {
-                actionError = "Your quote was rejected — it was not recorded and the shipper never received it."
+                actionError = res.message ?? "Your quote was rejected — it was not recorded and the shipper never received it."
             }
         } catch {
             actionError = error.eusoUserCopy
         }
-        submitting = false
+    }
+
+    private func quoteRequestStorageKey(
+        amount: Double,
+        rateType: String,
+        currency: String,
+        transitDays: Int?,
+        freeTimeDays: Int,
+        demurrageRate: Double,
+        notes: String?
+    ) -> String {
+        let sessionCredential = EusoTripAPI.shared.authToken
+            ?? HTTPCookieStorage.shared.cookies?.first(where: { $0.name == "app_session_id" })?.value
+            ?? "unauthenticated"
+        let intent = [
+            String(shipmentId),
+            String(format: "%.2f", amount),
+            rateType,
+            currency,
+            transitDays.map(String.init) ?? "",
+            String(freeTimeDays),
+            String(format: "%.2f", demurrageRate),
+            notes ?? "",
+        ].joined(separator: "|")
+        let digest = SHA256.hash(
+            data: Data("vesselShipments.createVesselBid|\(sessionCredential)|\(intent)".utf8)
+        )
+        return "com.eusotrip.commercial-bid." + digest.map { String(format: "%02x", $0) }.joined()
     }
 
     private func decline() async {

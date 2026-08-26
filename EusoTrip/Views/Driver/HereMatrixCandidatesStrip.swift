@@ -71,8 +71,8 @@ final class HereMatrixCandidatesStore: ObservableObject {
         }
 
         let dests = parking.compactMap { item -> (String, String, CLLocationCoordinate2D)? in
-            guard let pos = item.position else { return nil }
-            return (item.id, item.title, pos.coordinate)
+            guard let position = item.position?.coordinate else { return nil }
+            return (item.id, item.title, position)
         }
         guard !dests.isEmpty else {
             ranked = []

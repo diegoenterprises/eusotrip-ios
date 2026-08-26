@@ -27,6 +27,33 @@
 //    the seam is wired end-to-end and lights up the moment a transfer is
 //    recorded with a location).
 //
+//  OFFLINE POLICY (§W): ONLINE_ONLY(advanceSegment is a lifecycle commit that
+//    closes one leg and opens the next; a queued commit would desynchronise the
+//    segment state machine). This matches this screen's own desc contract,
+//    which already declares advanceSegment ONLINE_ONLY.
+//    · The advance-leg control is visibly gated at 45% with an explicit reason
+//      line on its face when the device is offline, and `advanceSegment()`
+//      refuses up front rather than firing a lifecycle commit into a dead
+//      socket. Nothing is queued and nothing is optimistically marked advanced.
+//    · advanceSegment is a MUTATION on the live router (intermodal.ts:561,
+//      protectedProcedure .mutation) whose body carries a real ownership gate
+//      (loadOwnedShipment) — the server, not this device, decides the next leg.
+//    · The transfer list is a plain read with no local cache: offline it shows
+//      its real load error rather than a stale board pretending to be current.
+//    · S4 FOLLOW-ON: the commit no longer swallows its error. A failed advance
+//      now says so on the surface instead of leaving the row looking untouched.
+//
+//  ESANG: esangCoach.forScreen EXISTS (esangCoach.ts:264) but its SCREEN_ENUM
+//    (esangCoach.ts:112) is a driver in-cab list — home / trips / earnings /
+//    tax / dvir / availability / missions / badges / referrals / zeun / haul /
+//    active-trip — with no rail or intermodal key, and its system prompt speaks
+//    HOS and DVIR. Calling it from a modal-interchange board would return the
+//    wrong entity, so the ESANG row below is derived on device from the
+//    transfers already decoded here and says so on its face. Same call 559 and
+//    665 made.
+//
+//  Author: Mike "Diego" Usoro / Eusorone Technologies, Inc
+//
 
 import SwiftUI
 
@@ -43,6 +70,13 @@ struct RailIntermodalTransferScreen: View {
                            NavSlot(label: "Me",          systemImage: "person",          isCurrent: false)],
                 orbState: .idle
             )
+        }
+        // Real top back affordance for this pushed Rail Engineer surface. Fixed
+        // leading slot → never overlaps the eyebrow/title; posts the shared
+        // NavBack that RailEngineerSurface pops on
+        // (RoleSurfaceRouter.swift:4813), so context is preserved on the way out.
+        .injectBespokeBackBar(title: nil) {
+            NotificationCenter.default.post(name: .eusoRoleNavBack, object: nil)
         }
     }
 }
@@ -77,9 +111,11 @@ private struct IntermodalTransfer566: Decodable, Identifiable {
 
     /// The recorded node coordinate, gated against null-island (never frame on 0,0).
     var nodeFix: HereLatLng? {
-        guard let lat = location?.lat, let lng = location?.lng,
-              !(lat == 0 && lng == 0) else { return nil }
-        return HereLatLng(lat, lng)
+        guard let coordinate = LatLongParser.validatedCoordinate(
+            latitude: location?.lat,
+            longitude: location?.lng
+        ) else { return nil }
+        return HereLatLng(coordinate.latitude, coordinate.longitude)
     }
 
     /// Human label for the node text sites (was the old `location` string) —
@@ -95,12 +131,32 @@ private struct IntermodalTransfer566: Decodable, Identifiable {
 private struct RailIntermodalTransferBody: View {
     @Environment(\.palette) private var palette
     @Environment(\.colorScheme) private var colorScheme
+    @ObservedObject private var reach = OfflineReachabilityHub.shared
     let shipmentId: Int
 
     @State private var transfers: [IntermodalTransfer566] = []
     @State private var loading = true
     @State private var loadError: String? = nil
     @State private var isAdvancing = false
+    /// Surfaced advance failure. §W: a lifecycle commit that fails must say so.
+    @State private var advanceError: String? = nil
+
+    // MARK: §W ONLINE_ONLY gate (advanceSegment)
+
+    /// A lifecycle commit that closes one leg and opens the next may not be
+    /// queued — a replayed advance would desynchronise the segment state
+    /// machine the server owns.
+    private var canAdvance: Bool {
+        reach.isOnline && !isAdvancing && activeTransfer != nil
+    }
+
+    private var advanceBlockedReason: String? {
+        if activeTransfer == nil { return "No active transfer in scope — there is no leg to advance." }
+        if !reach.isOnline {
+            return "Offline · advancing a leg is ONLINE_ONLY. It closes one segment and opens the next, so it is never queued for silent replay."
+        }
+        return nil
+    }
 
     // MARK: Derived
 
@@ -210,6 +266,7 @@ private struct RailIntermodalTransferBody: View {
                     transferMapCard
                     transferList
                     advanceLegRow
+                    esangRow
                     ctaPair
                 }
                 Color.clear.frame(height: 96)
@@ -241,12 +298,30 @@ private struct RailIntermodalTransferBody: View {
                     .font(.system(size: 28, weight: .heavy))
                     .kerning(-0.4)
                     .foregroundStyle(palette.textPrimary)
+                    .accessibilityAddTraits(.isHeader)
                 Spacer()
                 Image(systemName: "ellipsis")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(palette.textTertiary)
+                    .accessibilityHidden(true)
+            }
+            HStack(alignment: .firstTextBaseline) {
+                Text("Modal-interchange handoffs · live read")
+                    .font(EType.caption).foregroundStyle(palette.textSecondary)
+                    .lineLimit(1).minimumScaleFactor(0.8)
+                Spacer(minLength: 8)
+                // §W ONLINE_ONLY — the commit state is declared on the surface,
+                // not just in the header comment.
+                Text(reach.isOnline ? "online · commit live" : "offline · commit blocked")
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(reach.isOnline ? palette.textTertiary : Brand.warning)
+                    .fixedSize()
+                    .accessibilityLabel(reach.isOnline
+                        ? "Online. Advancing a leg is available."
+                        : "Offline. Advancing a leg is blocked and is never queued.")
             }
             IridescentHairline()
+                .accessibilityHidden(true)
         }
     }
 
@@ -321,6 +396,23 @@ private struct RailIntermodalTransferBody: View {
             RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
                 .strokeBorder(LinearGradient.diagonal, lineWidth: 1.5)
         )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(heroAccessibilityLabel)
+    }
+
+    /// Spoken form of the handoff hero, read off the same active transfer the
+    /// card draws. Fields the server did not return are said to be pending
+    /// rather than substituted.
+    private var heroAccessibilityLabel: String {
+        guard let t = activeTransfer else { return "No transfer in scope." }
+        var s = transferStatus(t) == .active ? "In progress" : "Queued"
+        s += ", \(transferTypeLabel(t)) at a \(t.facilityType ?? "ramp")."
+        if let cost = t.transferCost { s += " Transfer cost \(Int(cost)) dollars." }
+        else { s += " Transfer cost pending." }
+        if let c = t.containerNumber { s += " Container \(c)." }
+        if let from = t.fromSegmentId, let to = t.toSegmentId { s += " Segment \(from) to segment \(to)." }
+        if let f = t.facilityName { s += " Facility \(f)." }
+        return s
     }
 
     // MARK: - KPI strip
@@ -331,6 +423,8 @@ private struct RailIntermodalTransferBody: View {
             MetricTile(label: "AVG TIME", value: avgTimeLabel, gradientNumeral: avgTimeLabel != "-")
             MetricTile(label: "PENDING",  value: "\(pendingCount)", accent: pendingCount > 0 ? Brand.warning : nil)
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(todayCount) transfer\(todayCount == 1 ? "" : "s") today, average cycle \(avgTimeLabel), \(pendingCount) pending.")
     }
 
     // MARK: - Transfer-node map (RAIL .standard board)
@@ -371,6 +465,7 @@ private struct RailIntermodalTransferBody: View {
                     interactive: true,
                     tilt: 0,
                     layers: mapLayers,
+                    mapModeContext: .primary(.rail),
                     onSelectMarker: { _ in }
                 )
                 .frame(height: 220)
@@ -385,6 +480,11 @@ private struct RailIntermodalTransferBody: View {
         .overlay(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
             .strokeBorder(palette.borderFaint))
         .clipShape(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Transfer nodes")
+        .accessibilityValue(nodes.isEmpty
+            ? "No transfer has been recorded with a yard or ramp coordinate yet."
+            : "\(nodes.count) recorded interchange node\(nodes.count == 1 ? "" : "s") plotted.")
     }
 
     /// Map layers: the rail/dray legs (consecutive recorded nodes, rail blue)
@@ -481,6 +581,27 @@ private struct RailIntermodalTransferBody: View {
             }
         }
         .padding(16)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(title)
+        .accessibilityValue(rowVoice(status: status, sub: sub, costLabel: costLabel))
+    }
+
+    /// Spoken value for a transfer row, assembled outside the string
+    /// interpolation so the row body stays readable.
+    private func rowVoice(status: TransferStatus, sub: String, costLabel: String?) -> String {
+        var parts: [String] = [statusVoice(status)]
+        parts.append(sub.isEmpty ? "No facility detail reported" : sub)
+        if let cost = costLabel { parts.append("Cost \(cost)") } else { parts.append("Cost pending") }
+        return parts.joined(separator: ". ") + "."
+    }
+
+    /// Spoken form of the right-hand status word.
+    private func statusVoice(_ status: TransferStatus) -> String {
+        switch status {
+        case .done:   return "Done"
+        case .active: return "Active"
+        case .queued: return "Queued"
+        }
     }
 
     @ViewBuilder
@@ -504,42 +625,143 @@ private struct RailIntermodalTransferBody: View {
     // MARK: - Advance-leg strip
 
     private var advanceLegRow: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Brand.blue.opacity(0.14))
-                    .frame(width: 40, height: 40)
-                Image(systemName: "arrow.right")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(Brand.blue)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Brand.blue.opacity(0.14))
+                        .frame(width: 40, height: 40)
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(Brand.blue)
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(advanceLegTitle)
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(palette.textPrimary)
+                    Text(advanceLegSub)
+                        .font(.system(size: 11, weight: .regular, design: .monospaced))
+                        .tracking(0.4)
+                        .foregroundStyle(palette.textSecondary)
+                }
+                Spacer()
+                if isAdvancing {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                } else {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(palette.textSecondary)
+                }
             }
-            VStack(alignment: .leading, spacing: 4) {
-                Text(advanceLegTitle)
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(palette.textPrimary)
-                Text(advanceLegSub)
-                    .font(.system(size: 11, weight: .regular, design: .monospaced))
-                    .tracking(0.4)
-                    .foregroundStyle(palette.textSecondary)
+            .padding(16)
+            .background(palette.bgCard)
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(canAdvance ? palette.borderFaint : Brand.warning.opacity(0.45))
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            // §W ONLINE_ONLY: visibly gated, not silently inert.
+            .opacity(canAdvance || isAdvancing ? 1 : 0.45)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                guard canAdvance else { return }
+                Task { await advanceSegment() }
             }
-            Spacer()
-            if isAdvancing {
-                ProgressView()
-                    .scaleEffect(0.8)
-            } else {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(palette.textSecondary)
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityLabel(advanceLegTitle)
+            .accessibilityValue(advanceLegSub)
+            .accessibilityHint(advanceBlockedReason
+                ?? "Commits this leg on the server and opens the next one. This is never queued offline.")
+
+            if let why = advanceBlockedReason {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Brand.warning)
+                    Text(why)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(Brand.warning)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .accessibilityElement(children: .combine)
+            }
+
+            if let err = advanceError {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Brand.danger)
+                    Text(err)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(Brand.danger)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .accessibilityElement(children: .combine)
             }
         }
-        .padding(16)
+    }
+
+    // MARK: - ESANG row (derived on device — see the ESANG note in the header)
+
+    private var esangRow: some View {
+        HStack(alignment: .top, spacing: Space.s3) {
+            ZStack {
+                Circle().fill(LinearGradient.diagonal).frame(width: 30, height: 30)
+                Image(systemName: "arrow.left.arrow.right")
+                    .font(.system(size: 12, weight: .heavy))
+                    .foregroundStyle(.white)
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                Text("ESANG · TRANSFER READ")
+                    .font(.system(size: 9, weight: .black)).kerning(1.0)
+                    .foregroundStyle(LinearGradient.primary)
+                Text(esangHeadline)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(palette.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(esangDetail)
+                    .font(.system(size: 11))
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("DERIVED ON DEVICE FROM THIS BOARD · NOT AN ASSISTANT")
+                    .font(.system(size: 7.5, weight: .heavy)).tracking(0.5)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            Spacer(minLength: 4)
+        }
+        .padding(.vertical, 12).padding(.horizontal, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(palette.borderFaint)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-        .onTapGesture { Task { await advanceSegment() } }
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+            .strokeBorder(palette.borderFaint, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Transfer read, derived on this device. \(esangHeadline) \(esangDetail)")
+    }
+
+    /// One sentence off the decoded transfer log. No rail next-best-action
+    /// source is on the wire, so this states what the server returned and never
+    /// a fabricated confirm-or-hold call.
+    private var esangHeadline: String {
+        guard let t = activeTransfer else {
+            return "No transfer has been recorded on this shipment yet."
+        }
+        let facility = t.facilityName ?? t.locationLabel ?? "a facility that has not been named"
+        switch transferStatus(t) {
+        case .active: return "\(transferTypeLabel(t)) is in progress at \(facility)."
+        case .done:   return "The last \(transferTypeLabel(t)) at \(facility) is complete."
+        case .queued: return "\(transferTypeLabel(t)) at \(facility) is still queued."
+        }
+    }
+
+    private var esangDetail: String {
+        var bits: [String] = ["\(todayCount) row\(todayCount == 1 ? "" : "s") on the log"]
+        if pendingCount > 0 { bits.append("\(pendingCount) pending") }
+        if avgTimeLabel != "-" { bits.append("average cycle \(avgTimeLabel)") }
+        bits.append(reach.isOnline ? "advance available" : "advance blocked offline")
+        return bits.joined(separator: " · ")
     }
 
     // MARK: - CTA pair
@@ -553,6 +775,8 @@ private struct RailIntermodalTransferBody: View {
                 width: 176,
                 systemImage: "plus"
             )
+            .accessibilityLabel("Transfer context")
+            .accessibilityHint("Opens the shipment, facility and cycle figures this board is built from.")
             RailSecondaryActionButton(
                 title: "History",
                 sheetTitle: "Transfer history",
@@ -560,6 +784,8 @@ private struct RailIntermodalTransferBody: View {
                 width: 116,
                 systemImage: "clock.arrow.circlepath"
             )
+            .accessibilityLabel("Transfer history")
+            .accessibilityHint("Opens the recorded transfer log for this shipment.")
         }
     }
 
@@ -603,7 +829,16 @@ private struct RailIntermodalTransferBody: View {
 
     private func advanceSegment() async {
         guard let t = activeTransfer else { return }
+        // §W ONLINE_ONLY: refuse up front and say so on the surface, rather than
+        // firing a lifecycle commit into a dead socket. Nothing is queued — a
+        // replayed advance would desynchronise the server's segment state
+        // machine, which is the one thing this screen must never do.
+        guard reach.isOnline else {
+            advanceError = "Offline · the leg was NOT advanced and NOT queued. Reconnect and advance again."
+            return
+        }
         isAdvancing = true
+        advanceError = nil
         struct AdvIn: Encodable { let intermodalShipmentId: Int; let fromSegmentId: Int; let toSegmentId: Int }
         struct AdvanceSegmentResponse: Decodable {
             let success: Bool
@@ -619,7 +854,12 @@ private struct RailIntermodalTransferBody: View {
                 "intermodal.advanceSegment",
                 input: AdvIn(intermodalShipmentId: shipmentId, fromSegmentId: t.fromSegmentId ?? 0, toSegmentId: t.toSegmentId ?? 0))
             await load()
-        } catch { /* surface error silently; list stays current */ }
+        } catch {
+            // S4 follow-on (§18): this used to swallow the error, which left a
+            // FAILED lifecycle commit looking exactly like nothing happened.
+            // A commit that did not land has to say so.
+            advanceError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
         isAdvancing = false
     }
 }

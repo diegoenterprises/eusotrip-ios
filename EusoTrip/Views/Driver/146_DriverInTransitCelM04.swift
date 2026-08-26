@@ -10,7 +10,7 @@
 //  Wiring (verified against the live routers this fire): READ-ONLY surface,
 //  no mutation fires while the load status holds at in_transit.
 //    READ   loads.getById              — bound load (lane, appt, payout)
-//    READ   drivers.getMyHOSStatus     — duty status + drive clock remaining
+//    READ   hos.getStatus              — sourced duty status + drive clock remaining
 //    READ   drivers.getAssignedVehicle — tractor / trailer identity
 //    READ   drivers.lifecycle          — pickup departedAt (drives the
 //           honest time-based route estimate, badged "est.")
@@ -44,13 +44,6 @@ private struct ITLoadCtx: Decodable, Hashable {
     struct ITParty: Decodable, Hashable {
         let name: String?; let initials: String?; let companyName: String?; let mcNumber: String?
     }
-}
-
-private struct ITHos: Decodable, Hashable {
-    let status: String?
-    let drivingRemaining: String?   // display-ready "10h 14m"
-    let onDutyRemaining: String?
-    let canDrive: Bool?
 }
 
 private struct ITVehicle: Decodable, Hashable {
@@ -101,7 +94,8 @@ private struct ITBody: View {
     @EnvironmentObject private var session: EusoTripSession
 
     @State private var load: ITLoadCtx?
-    @State private var hos: ITHos?
+    @State private var hos: HOSStatus?
+    @State private var hosError: String?
     @State private var vehicle: ITVehicle?
     @State private var lifecycle: ITLifecycle?
 
@@ -111,6 +105,10 @@ private struct ITBody: View {
     }
 
     private var loadNumberDisplay: String { load?.loadNumber ?? "-" }
+    private var currentHOS: HOSStatus? {
+        guard let hos, hos.hasCurrentObservation() else { return nil }
+        return hos
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -120,7 +118,7 @@ private struct ITBody: View {
                     spareAtDock: spareAtDockDisplay,
                     needToDock: needToDockDisplay,
                     milesNote: milesNote,
-                    driveRemaining: hos?.drivingRemaining ?? "-",
+                    driveRemaining: currentHOS?.drivingRemainingDisplay ?? "—",
                     etaDock: apptDisplay,
                     onSchedule: onScheduleVerdict,
                     estProgress: estProgress
@@ -179,14 +177,17 @@ private struct ITBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 roadRow(label: "Duty status",
-                        value: hos?.status?.replacingOccurrences(of: "_", with: " ") ?? "-",
-                        live: (hos?.status ?? "") == "driving")
+                        value: currentHOS?.status?.replacingOccurrences(of: "_", with: " ") ?? "—",
+                        live: currentHOS?.status == HOSDutyCode.driving.rawValue)
                 roadRow(label: "Drive clock remaining",
-                        value: hos?.drivingRemaining ?? "-",
+                        value: currentHOS?.drivingRemainingDisplay ?? "—",
                         live: false)
                 roadRow(label: "On-duty window",
-                        value: hos?.onDutyRemaining ?? "-",
+                        value: currentHOS?.onDutyRemainingDisplay ?? "—",
                         live: false)
+                roadRow(label: "HOS evidence",
+                        value: hosEvidenceLabel,
+                        live: currentHOS != nil)
                 roadRow(label: "Tractor · trailer",
                         value: vehicleLine,
                         live: false)
@@ -316,7 +317,13 @@ private struct ITBody: View {
         do { load = try await EusoTripAPI.shared.query("loads.getById", input: In(id: loadId)) } catch { /* "-" */ }
     }
     private func readHos() async {
-        do { hos = try await EusoTripAPI.shared.queryNoInput("drivers.getMyHOSStatus") } catch { /* "-" */ }
+        do {
+            hos = try await EusoTripAPI.shared.hos.getStatus()
+            hosError = nil
+        } catch {
+            hos = nil
+            hosError = "source unavailable"
+        }
     }
     private func readVehicle() async {
         do { vehicle = try await EusoTripAPI.shared.queryNoInput("drivers.getAssignedVehicle") } catch { /* "-" */ }
@@ -353,7 +360,21 @@ private struct ITBody: View {
         let mins = Int(appt.timeIntervalSinceNow / 60)
         return mins > 0 ? mins : 0
     }
-    private var driveRemainingMinutes: Int? { ITBody.parseHM(hos?.drivingRemaining) }
+    private var driveRemainingMinutes: Int? {
+        guard let hours = currentHOS?.drivingRemaining,
+              hours.isFinite,
+              hours >= 0 else { return nil }
+        return Int((hours * 60).rounded())
+    }
+
+    private var hosEvidenceLabel: String {
+        if let hosError { return hosError }
+        guard let hos else { return "not returned" }
+        guard hos.hasCurrentObservation() else {
+            return hos.assignmentEligibility().reason ?? "not current"
+        }
+        return "\(hos.source ?? "source unavailable") · current"
+    }
 
     private var needToDockDisplay: String {
         guard let m = minutesToAppt else { return "-" }

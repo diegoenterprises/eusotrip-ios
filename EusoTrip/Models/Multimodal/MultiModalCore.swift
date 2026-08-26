@@ -510,6 +510,9 @@ public enum PortDirectory {
     public static func nearest(to coord: CLLocationCoordinate2D,
                                requiring cap: PortCapability,
                                maxMiles: Double = 200) -> Port? {
+        guard LatLongParser.isValid(coord), maxMiles.isFinite, maxMiles >= 0 else {
+            return nil
+        }
         var best: (Port, Double)? = nil
         for p in ports where !p.capabilities.intersection(cap).isEmpty {
             let d = greatCircleMiles(from: coord, to: p.coordinate)

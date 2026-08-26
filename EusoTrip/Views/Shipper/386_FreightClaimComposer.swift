@@ -1,544 +1,577 @@
 //
 //  386_FreightClaimComposer.swift
-//  EusoTrip — Shipper · Freight claim composer (Arc N).
+//  EusoTrip - Shipper freight-claim composer.
 //
 
 import SwiftUI
-import PhotosUI
 
 struct FreightClaimComposerScreen: View {
     let theme: Theme.Palette
     let loadId: String
     var initialClaimType: String = "damage"
+
     var body: some View {
-        Shell(theme: theme) { ClaimComposerBody(loadId: loadId, claimType: initialClaimType) } nav: { shipperLifecycleNav() }
+        Shell(theme: theme) {
+            ClaimComposerBody(loadId: loadId, initialClaimType: initialClaimType)
+        } nav: {
+            shipperLifecycleNav()
+        }
     }
 }
 
 private struct ClaimComposerBody: View {
     @Environment(\.palette) private var palette
+
     let loadId: String
-    @State var claimType: String
-    @State private var amount: Double? = nil
-    @State private var description: String = ""
-    @State private var photoItem: PhotosPickerItem? = nil
-    @State private var photo: UIImage? = nil
-    @State private var sending = false
-    @State private var sent = false
-    @State private var actionError: String? = nil
 
-    // ESANG document router — classify the evidence so the claim file
-    // knows what it's looking at (damage photo / BOL / POD) instead of
-    // shipping a raw image. Runs alongside, never blocks, the upload.
-    @State private var classifying = false
-    @State private var classification: DocumentRouterAPI.ClassifyResponse? = nil
-    @State private var classifyError: String? = nil
+    @State private var claimType: FreightClaimsAPI.ClaimType?
+    @State private var amountText = ""
+    @State private var currencyText = ""
+    @State private var expectedQuantityText = ""
+    @State private var receivedQuantityText = ""
+    @State private var quantityUnit = ""
+    @State private var description = ""
+    @State private var attachHistoricalWeather = false
+    @State private var filing = false
+    @State private var filingError: String?
+    @State private var filedResult: FreightClaimsAPI.FileClaimResult?
+    @State private var weatherOutcome: HistoricalWeatherOutcome?
+    @State private var weatherError: String?
+    @State private var fileRequestKey = UUID()
+    @State private var weatherRequestKey = UUID()
 
-    // Historical-weather evidence (Wave-4 server #85). When the claim is a
-    // weather-peril type, the composer auto-attaches a CITED weather.historical
-    // report via freightClaims.attachHistoricalWeatherEvidence so the carrier-
-    // insurance file carries the contemporaneous readings (gust / visibility /
-    // peak condition) that prove the peril. HONEST: the evidence is
-    // Enterprise-gated → available:false today → we render the ENTERPRISE
-    // state ("evidence available with the enterprise feed"), NEVER a fabricated
-    // report. The toggle is user-opt; default-on for the weather-peril types.
-    @State private var attachWeather = false
-    @State private var weatherLoading = false
-    @State private var weatherEvidence: HistoricalWeatherEvidence? = nil
-    @State private var weatherError: String? = nil
+    private let supportedTypes: [FreightClaimsAPI.ClaimType] = [
+        .damage, .loss, .shortage, .delay, .contamination, .overcharge
+    ]
 
-    private let claimTypes = ["damage", "shortage", "loss", "delay", "contamination", "reefer_excursion", "weather", "other"]
+    init(loadId: String, initialClaimType: String) {
+        self.loadId = loadId
+        let proposed = FreightClaimsAPI.ClaimType(rawValue: initialClaimType)
+        let supported: Set<FreightClaimsAPI.ClaimType> = [
+            .damage, .loss, .shortage, .delay, .contamination, .overcharge
+        ]
+        _claimType = State(initialValue: proposed.flatMap { supported.contains($0) ? $0 : nil })
+    }
 
-    /// The claim types whose root cause is a weather peril — these default the
-    /// historical-weather evidence toggle ON and surface the attach section.
-    private static let weatherPerilTypes: Set<String> = ["weather", "delay", "reefer_excursion", "contamination"]
-    private var isWeatherPeril: Bool { Self.weatherPerilTypes.contains(claimType) }
+    private var canonicalLoadId: String {
+        loadId.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var canonicalDescription: String {
+        description.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var amount: Double? {
+        guard let value = Double(amountText.trimmingCharacters(in: .whitespacesAndNewlines)),
+              value.isFinite,
+              value > 0 else { return nil }
+        return value
+    }
+
+    private var currency: FreightClaimsAPI.CurrencyCode? {
+        FreightClaimsAPI.CurrencyCode(rawValue: currencyText)
+    }
+
+    private var currencyIsValid: Bool {
+        currencyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || currency != nil
+    }
+
+    private var expectedQuantity: Double? { parsedQuantity(expectedQuantityText, allowsZero: false) }
+    private var receivedQuantity: Double? { parsedQuantity(receivedQuantityText, allowsZero: true) }
+
+    private var quantityIsValid: Bool {
+        guard claimType == .shortage else { return true }
+        guard let expectedQuantity, let receivedQuantity else { return false }
+        return receivedQuantity < expectedQuantity
+            && !quantityUnit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && quantityUnit.trimmingCharacters(in: .whitespacesAndNewlines).count <= 32
+    }
+
+    private var canFile: Bool {
+        !canonicalLoadId.isEmpty
+            && claimType != nil
+            && amount != nil
+            && currencyIsValid
+            && quantityIsValid
+            && canonicalDescription.count >= 10
+            && !filing
+            && filedResult == nil
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
-                if sent { LifecycleCard(accentGradient: true) { Text("Claim filed. Carrier insurance + Eusorone ops will respond within 24 hours.").font(EType.body).foregroundStyle(palette.textPrimary).fixedSize(horizontal: false, vertical: true) } }
-                if let err = actionError { LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) } }
-                typeCard
-                amountCard
-                descriptionCard
-                if isWeatherPeril { historicalWeatherCard }
-                evidenceCard
-                ctaRow
+                if let result = filedResult {
+                    confirmationCard(result)
+                } else {
+                    transactionCard
+                    typeCard
+                    amountCard
+                    if claimType == .shortage { quantityCard }
+                    descriptionCard
+                    weatherCard
+                    validationCard
+                    fileButton
+                }
                 Color.clear.frame(height: 96)
             }
-            .padding(.horizontal, 14).padding(.top, 56)
+            .padding(.horizontal, 14)
+            .padding(.top, 56)
         }
-        // Weather-peril types default the historical-weather attach ON. Picking
-        // a non-peril type tears down the evidence + toggle so a damage/loss
-        // claim never carries a stale weather record.
-        .onChange(of: claimType) { _, _ in
-            if isWeatherPeril {
-                if !attachWeather { attachWeather = true }
-            } else {
-                attachWeather = false
-                weatherEvidence = nil
-                weatherError = nil
-            }
-        }
-        .onAppear { if isWeatherPeril { attachWeather = true } }
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Image(systemName: "exclamationmark.bubble.fill").font(.system(size: 9, weight: .heavy)).foregroundStyle(Brand.warning)
-                Text("SHIPPER · FREIGHT CLAIM").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(Brand.warning)
-            }
-            Text("File a freight claim").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
+            EusoTripEyebrow(verbatim: "SHIPPER · FREIGHT CLAIM")
+                .foregroundStyle(LinearGradient.primary)
+            Text("File a freight claim")
+                .font(.system(size: 24, weight: .heavy))
+                .foregroundStyle(palette.textPrimary)
+            Text("Record the loss against one confirmed load transaction.")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
         }
+    }
+
+    private var transactionCard: some View {
+        LifecycleCard {
+            LifecycleSection(label: "TRANSACTION", icon: "shippingbox")
+            keyValueRow("Mode", "Truck")
+            keyValueRow("Load reference", canonicalLoadId.isEmpty ? "Unavailable" : canonicalLoadId)
+        }
+        .accessibilityElement(children: .combine)
     }
 
     private var typeCard: some View {
         LifecycleCard {
             LifecycleSection(label: "CLAIM TYPE", icon: "tag")
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    ForEach(claimTypes, id: \.self) { t in
-                        Button { claimType = t } label: {
-                            Text(t.replacingOccurrences(of: "_", with: " ").capitalized).font(.system(size: 11, weight: .heavy)).tracking(0.4)
-                                .foregroundStyle(claimType == t ? .white : palette.textPrimary)
-                                .padding(.horizontal, 10).padding(.vertical, 6)
-                                .background(claimType == t ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.tintNeutral))
-                                .clipShape(Capsule())
-                        }.buttonStyle(.plain)
+                HStack(spacing: 8) {
+                    ForEach(supportedTypes) { type in
+                        Button {
+                            claimType = type
+                        } label: {
+                            Label(type.label, systemImage: type.icon)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(claimType == type ? Color.white : palette.textPrimary)
+                                .padding(.horizontal, 12)
+                                .frame(minHeight: 44)
+                                .background(
+                                    claimType == type
+                                        ? AnyShapeStyle(LinearGradient.diagonal)
+                                        : AnyShapeStyle(palette.bgCardSoft)
+                                )
+                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityAddTraits(claimType == type ? .isSelected : [])
                     }
                 }
+            }
+            if claimType == nil {
+                Text("Choose a supported claim type before filing.")
+                    .font(EType.caption)
+                    .foregroundStyle(Brand.warning)
+            }
+            if claimType == .shortage {
+                Text("Include the expected quantity, received quantity, and unit in the loss narrative, then add the supporting BOL or weight ticket to the filed claim.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
 
     private var amountCard: some View {
         LifecycleCard {
-            LifecycleSection(label: "CLAIM AMOUNT (USD)", icon: "dollarsign.circle")
-            TextField("e.g. 2400", value: $amount, format: .number).keyboardType(.decimalPad).textFieldStyle(.plain)
-                .padding(.horizontal, 10).padding(.vertical, 8)
-                .background(palette.bgCard.opacity(0.6))
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            LifecycleSection(label: "CLAIM VALUE", icon: "banknote")
+            TextField("Amount", text: $amountText)
+                .keyboardType(.decimalPad)
+                .textFieldStyle(.plain)
+                .padding(.horizontal, 12)
+                .frame(minHeight: 48)
+                .background(palette.bgCardSoft)
+                .overlay(fieldBorder)
+                .accessibilityLabel("Claim amount")
+            TextField("Currency code, optional", text: $currencyText)
+                .textInputAutocapitalization(.characters)
+                .autocorrectionDisabled()
+                .textFieldStyle(.plain)
+                .padding(.horizontal, 12)
+                .frame(minHeight: 48)
+                .background(palette.bgCardSoft)
+                .overlay(fieldBorder)
+                .accessibilityHint("Enter a three-letter currency code only when it is known")
+            if !currencyIsValid {
+                Text("Use a three-letter currency code, or leave it blank to use the load's recorded currency.")
+                    .font(EType.caption)
+                    .foregroundStyle(Brand.warning)
+            }
         }
     }
 
     private var descriptionCard: some View {
         LifecycleCard {
-            LifecycleSection(label: "DESCRIPTION", icon: "text.alignleft")
-            TextField("What happened, when, where?", text: $description, axis: .vertical).lineLimit(4...10).textFieldStyle(.plain)
-                .padding(.horizontal, 10).padding(.vertical, 8)
-                .background(palette.bgCard.opacity(0.6))
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            LifecycleSection(label: "LOSS NARRATIVE", icon: "text.alignleft")
+            TextField("What happened, when, and where?", text: $description, axis: .vertical)
+                .lineLimit(5...10)
+                .textFieldStyle(.plain)
+                .padding(12)
+                .frame(minHeight: 132, alignment: .topLeading)
+                .background(palette.bgCardSoft)
+                .overlay(fieldBorder)
+            Text("Minimum 10 characters. Use only facts you can support.")
+                .font(EType.caption)
+                .foregroundStyle(palette.textTertiary)
         }
     }
 
-    // MARK: - Historical weather evidence (freightClaims.attachHistoricalWeatherEvidence)
-
-    /// Auto-attaches a CITED weather.historical report to a weather-peril claim.
-    /// Bespoke: the sky condition renders via WeatherIcons (the live weatherCode
-    /// glyph), the gust/visibility/alert metrics via utility glyphs — ZERO SF
-    /// Symbols on the weather row. HONEST: the report is Enterprise-gated, so
-    /// today the server returns available:false → we render the ENTERPRISE
-    /// state ("evidence available with the enterprise feed") that reads now and
-    /// lights the instant the key lands. We NEVER fabricate a report/peril/snapshot.
-    private var historicalWeatherCard: some View {
+    private var quantityCard: some View {
         LifecycleCard {
-            HStack(spacing: 6) {
-                WeatherIcons.utility(.alert, size: 11, tint: Brand.info)
-                Text("HISTORICAL WEATHER · EVIDENCE")
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.9)
-                    .foregroundStyle(palette.textTertiary)
-                Spacer(minLength: 0)
-                // Opt-in toggle. Default-on for weather-peril types; the shipper
-                // can drop it for a claim that isn't actually weather-caused.
-                Button { attachWeather.toggle() } label: {
-                    Text(attachWeather ? "ATTACHED" : "ATTACH")
-                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                        .foregroundStyle(attachWeather ? .white : palette.textPrimary)
-                        .padding(.horizontal, 9).padding(.vertical, 4)
-                        .background(attachWeather ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.tintNeutral))
-                        .clipShape(Capsule())
-                }.buttonStyle(.plain)
-            }
-            Text("Pulls the contemporaneous National Weather Service reading at the load's position + window — gusts, visibility, and the peak condition that prove the peril — and files it as a cited weather.historical record on the claim.")
-                .font(EType.caption).foregroundStyle(palette.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-            if attachWeather { weatherEvidencePanel }
-        }
-    }
-
-    @ViewBuilder
-    private var weatherEvidencePanel: some View {
-        if weatherLoading {
-            HStack(spacing: 6) {
-                ProgressView().scaleEffect(0.7).tint(palette.textPrimary)
-                Text("Pulling historical weather…").font(EType.caption).foregroundStyle(palette.textTertiary)
-            }
-        } else if let err = weatherError {
-            Text("Couldn't pull the historical weather, \(err). Your claim will still file; you can re-attach the report from the claim file.")
-                .font(EType.caption).foregroundStyle(Brand.warning)
-                .fixedSize(horizontal: false, vertical: true)
-        } else if let ev = weatherEvidence {
-            if ev.available == true, let snap = ev.snapshot {
-                // LIVE (enterprise key present) — a real cited report. Bespoke
-                // sky glyph + utility metric glyphs.
-                attachedWeatherReport(snap)
-            } else {
-                // Enterprise-gated today — HONEST ENTERPRISE state. Never a
-                // fabricated report; the panel reads now + lights on the key.
-                weatherEnterpriseState(note: ev.note)
-            }
-        } else {
-            // Toggle on but the fetch hasn't run yet — kick it.
-            weatherEnterpriseState(note: nil)
-                .task(id: weatherFetchKey) { await fetchHistoricalWeather() }
-        }
-    }
-
-    /// HONEST gated state — bespoke (WeatherIcons), reads now, lights on the key.
-    private func weatherEnterpriseState(note: String?) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(Color.white.opacity(0.06)).frame(width: 40, height: 40)
-                    WeatherIcons.symbolView(for: 1001, size: 26)   // neutral cloud — no guessed condition
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Evidence available with the enterprise feed")
-                        .font(.system(size: 12, weight: .heavy)).foregroundStyle(palette.textPrimary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text(note?.isEmpty == false ? note! : "The cited weather.historical report lights here the instant the enterprise weather key lands — and attaches automatically when you file.")
-                        .font(EType.caption).foregroundStyle(palette.textTertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 0)
-            }
-            HStack(spacing: 6) {
-                WeatherIcons.utility(.eye, size: 10, tint: palette.textTertiary)
-                Text("ENTERPRISE")
-                    .font(.system(size: 8.5, weight: .heavy)).tracking(0.9)
-                    .foregroundStyle(palette.textTertiary)
-            }
-        }
-        .padding(10)
-        .background(palette.bgCard.opacity(0.6))
-        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-    }
-
-    /// LIVE cited report (enterprise key present). Bespoke glyphs throughout.
-    private func attachedWeatherReport(_ snap: HistoricalWeatherEvidence.Snapshot) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(Color.white.opacity(0.06)).frame(width: 44, height: 44)
-                    WeatherIcons.symbolView(for: snap.weatherCode ?? 0, size: 30)
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(snap.peakCondition?.isEmpty == false ? snap.peakCondition! : "Cited weather record")
-                        .font(.system(size: 13, weight: .heavy)).foregroundStyle(palette.textPrimary)
-                    Text("weather.historical · attaches on file")
-                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                        .foregroundStyle(Brand.success)
-                }
-                Spacer(minLength: 0)
-            }
-            HStack(spacing: 14) {
-                if let g = snap.maxGustMph {
-                    weatherMetric(.wind, value: String(format: "%.0f mph", g), label: "MAX GUST")
-                }
-                if let v = snap.minVisibilityMi {
-                    weatherMetric(.eye, value: String(format: "%.1f mi", v), label: "MIN VIS")
-                }
-            }
-        }
-        .padding(10)
-        .background(Brand.success.opacity(0.06))
-        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Brand.success.opacity(0.35), lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-    }
-
-    private func weatherMetric(_ kind: WeatherIcons.Utility, value: String, label: String) -> some View {
-        HStack(spacing: 5) {
-            WeatherIcons.utility(kind, size: 13, tint: palette.textSecondary)
-            VStack(alignment: .leading, spacing: 0) {
-                Text(value).font(.system(size: 12, weight: .heavy)).monospacedDigit()
-                    .foregroundStyle(palette.textPrimary)
-                Text(label).font(.system(size: 8, weight: .heavy)).tracking(0.5)
-                    .foregroundStyle(palette.textTertiary)
+            LifecycleSection(label: "QUANTITY EVIDENCE", icon: "scalemass")
+            TextField("Expected quantity", text: $expectedQuantityText)
+                .keyboardType(.decimalPad)
+                .textFieldStyle(.plain)
+                .padding(.horizontal, 12)
+                .frame(minHeight: 48)
+                .background(palette.bgCardSoft)
+                .overlay(fieldBorder)
+            TextField("Received quantity", text: $receivedQuantityText)
+                .keyboardType(.decimalPad)
+                .textFieldStyle(.plain)
+                .padding(.horizontal, 12)
+                .frame(minHeight: 48)
+                .background(palette.bgCardSoft)
+                .overlay(fieldBorder)
+            TextField("Unit, e.g. lb, kg, gal, bbl, MT", text: $quantityUnit)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .textFieldStyle(.plain)
+                .padding(.horizontal, 12)
+                .frame(minHeight: 48)
+                .background(palette.bgCardSoft)
+                .overlay(fieldBorder)
+            if !quantityIsValid {
+                Text("A shortage requires a positive expected quantity, a lower non-negative received quantity, and its unit.")
+                    .font(EType.caption)
+                    .foregroundStyle(Brand.warning)
             }
         }
     }
 
-    /// Re-fetches whenever the toggle flips on or the claim type changes — so a
-    /// type swap re-keys the window without a fabricated stale carry-over.
-    private var weatherFetchKey: String { "\(claimType)-\(attachWeather)" }
-
-    @MainActor
-    private func fetchHistoricalWeather() async {
-        guard attachWeather, !weatherLoading else { return }
-        weatherLoading = true; weatherError = nil
-        defer { weatherLoading = false }
-        // Position + window are resolved server-side from the loadId; we send
-        // only what we hold. Optionals stay nil rather than fabricating a
-        // lat/lon/window the composer doesn't actually know.
-        struct In: Encodable {
-            let loadId: String
-            let lat: Double?
-            let lon: Double?
-            let from: String?
-            let to: String?
-        }
-        do {
-            weatherEvidence = try await EusoTripAPI.shared.query(
-                "freightClaims.attachHistoricalWeatherEvidence",
-                input: In(loadId: loadId, lat: nil, lon: nil, from: nil, to: nil)
-            )
-        } catch {
-            // A missing/unregistered proc or gated error must not block the
-            // claim — fall to the honest ENTERPRISE state, never a fake report.
-            weatherEvidence = HistoricalWeatherEvidence(available: false, note: nil, snapshot: nil)
-        }
-    }
-
-    private var evidenceCard: some View {
+    private var weatherCard: some View {
         LifecycleCard {
-            LifecycleSection(label: "EVIDENCE PHOTO", icon: "photo")
-            PhotosPicker(selection: $photoItem, matching: .images) {
-                Text(photo == nil ? "Attach photo" : "Replace photo")
-                    .font(.system(size: 11, weight: .heavy)).tracking(0.4).foregroundStyle(.white)
-                    .padding(.horizontal, 14).padding(.vertical, 8)
-                    .background(LinearGradient.diagonal).clipShape(Capsule())
-            }
-            .onChange(of: photoItem) { _, item in
-                Task {
-                    classification = nil; classifyError = nil
-                    guard let i = item,
-                          let data = try? await i.loadTransferable(type: Data.self),
-                          let img = UIImage(data: data) else { return }
-                    photo = img
-                    await classifyEvidence(data: data)
-                }
-            }
-            if let img = photo {
-                Image(uiImage: img).resizable().scaledToFit().frame(maxHeight: 200)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            }
-            classificationPanel
-        }
-    }
-
-    @ViewBuilder
-    private var classificationPanel: some View {
-        if classifying {
-            HStack(spacing: 6) {
-                ProgressView().scaleEffect(0.7).tint(palette.textPrimary)
-                Text("Identifying evidence…").font(EType.caption).foregroundStyle(palette.textTertiary)
-            }
-        } else if let err = classifyError {
-            Text("Couldn't auto-identify this evidence, \(err). Your photo will still be filed with the claim.")
-                .font(EType.caption).foregroundStyle(Brand.warning)
-                .fixedSize(horizontal: false, vertical: true)
-        } else if let c = classification {
-            let conf = Int((c.confidence * 100).rounded())
-            let unsure = c.classifiedType == "unknown" || c.confidence < 0.6
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 9, weight: .heavy))
-                        .foregroundStyle(LinearGradient.diagonal)
-                    Text("ESANG · EVIDENCE DETECTED")
-                        .font(.system(size: 9, weight: .heavy)).tracking(0.9)
-                        .foregroundStyle(LinearGradient.diagonal)
-                    Spacer(minLength: 0)
-                    Text("\(conf)%")
-                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                        .foregroundStyle(conf >= 85 ? Brand.success : conf >= 60 ? Brand.warning : Brand.danger)
-                }
-                if unsure {
-                    Text("Couldn't confidently identify this document. Please confirm it's the right evidence for the claim.")
-                        .font(EType.caption).foregroundStyle(palette.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                } else {
-                    Text(humanEvidenceType(c.classifiedType))
-                        .font(.system(size: 13, weight: .heavy))
+            LifecycleSection(label: "HISTORICAL WEATHER EVIDENCE", icon: "cloud")
+            Toggle(isOn: $attachHistoricalWeather) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Attach after the claim is filed")
+                        .font(EType.bodyStrong)
                         .foregroundStyle(palette.textPrimary)
-                }
-                if !c.summary.isEmpty {
-                    Text(c.summary).font(EType.caption).foregroundStyle(palette.textSecondary)
-                        .lineLimit(3).fixedSize(horizontal: false, vertical: true)
-                }
-                let keyFields = c.extractedFields.compactMap { (k, v) -> String? in
-                    guard let s = v.asString, !s.isEmpty else { return nil }
-                    return "\(k.replacingOccurrences(of: "_", with: " ").capitalized): \(s)"
-                }.sorted()
-                if !keyFields.isEmpty {
-                    ForEach(keyFields.prefix(4), id: \.self) { f in
-                        Text(f).font(EType.caption).foregroundStyle(palette.textTertiary)
-                            .lineLimit(1)
-                    }
-                }
-                ForEach(c.warnings.prefix(2), id: \.self) { w in
-                    Text("⚠ \(w)").font(EType.caption).foregroundStyle(Brand.warning)
+                    Text("Weather evidence is attached only when the claim narrative and cited provider records support a weather cause.")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .padding(10)
-            .background(palette.bgCard.opacity(0.6))
-            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
+            .tint(Brand.success)
+            .frame(minHeight: 44)
+        }
+    }
+
+    @ViewBuilder
+    private var validationCard: some View {
+        if canonicalLoadId.isEmpty {
+            messageCard("A confirmed load reference is required before this claim can be filed.", color: Brand.danger)
+        }
+        if let filingError {
+            messageCard(filingError, color: Brand.danger)
+        }
+    }
+
+    private var fileButton: some View {
+        Button {
+            Task { await fileClaim() }
+        } label: {
+            HStack(spacing: 8) {
+                if filing {
+                    ProgressView().tint(.white)
+                } else {
+                    Image(systemName: "paperplane.fill")
+                }
+                Text(filing ? "Filing claim..." : "File claim")
+                    .font(EType.bodyStrong)
+            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .frame(minHeight: 50)
+            .background(canFile ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(Brand.neutral))
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
+        .buttonStyle(.plain)
+        .disabled(!canFile)
+        .accessibilityHint("Files this claim once, then verifies the recorded claim")
     }
 
-    private func humanEvidenceType(_ raw: String) -> String {
-        switch raw {
-        case "bill_of_lading": return "Bill of Lading"
-        case "proof_of_delivery": return "Proof of Delivery"
-        case "rate_confirmation": return "Rate Confirmation"
-        case "weight_ticket", "scale_ticket": return "Weight Ticket"
-        case "damage_photo", "cargo_damage", "damage": return "Damage Photo"
-        case "inspection_report": return "Inspection Report"
-        case "us_coi", "ca_coi": return "Insurance Certificate"
-        default: return raw.replacingOccurrences(of: "_", with: " ").capitalized
+    private func confirmationCard(_ result: FreightClaimsAPI.FileClaimResult) -> some View {
+        LifecycleCard(accentGradient: true) {
+            LifecycleSection(label: "CONFIRMED CLAIM", icon: "checkmark.seal")
+            Text(result.claimNumber)
+                .font(.system(size: 20, weight: .heavy, design: .monospaced))
+                .foregroundStyle(palette.textPrimary)
+            keyValueRow("Status", result.status.replacingOccurrences(of: "_", with: " ").capitalized)
+            keyValueRow("Mode", result.transportMode.rawValue.capitalized)
+            keyValueRow("Reference", result.referenceNumber)
+            keyValueRow("Currency", result.currency.rawValue)
+            weatherConfirmation
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Claim \(result.claimNumber) confirmed from the live claim record")
+    }
+
+    @ViewBuilder
+    private var weatherConfirmation: some View {
+        if attachHistoricalWeather {
+            if let weatherError {
+                Text("Claim confirmed. Historical weather evidence was not attached: \(weatherError)")
+                    .font(EType.caption)
+                    .foregroundStyle(Brand.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if let outcome = weatherOutcome {
+                if outcome.attached {
+                    Text("Historical weather evidence confirmed on the claim record.")
+                        .font(EType.caption)
+                        .foregroundStyle(Brand.success)
+                } else {
+                    Text(outcome.note ?? "Historical weather evidence is unavailable for this claim.")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } else {
+                HStack(spacing: 8) {
+                    ProgressView().scaleEffect(0.8)
+                    Text("Checking historical weather evidence...")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+            }
         }
     }
 
-    @MainActor
-    private func classifyEvidence(data: Data) async {
-        classifying = true; classification = nil; classifyError = nil
-        defer { classifying = false }
-        // Compress oversized payloads to keep the wire light, mirroring
-        // the upload's jpeg encoding.
-        let payload: Data
-        let mime: DocumentRouterAPI.MimeType
-        if data.count > 900_000, let img = UIImage(data: data),
-           let small = img.jpegData(compressionQuality: 0.7) {
-            payload = small; mime = .jpeg
-        } else {
-            payload = data
-            mime = data.starts(with: [0x89, 0x50, 0x4E, 0x47]) ? .png : .jpeg
+    private var fieldBorder: some View {
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .strokeBorder(palette.borderFaint, lineWidth: 1)
+    }
+
+    private func keyValueRow(_ key: String, _ value: String) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(key)
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+            Spacer(minLength: 12)
+            Text(value)
+                .font(EType.bodyStrong)
+                .foregroundStyle(palette.textPrimary)
+                .multilineTextAlignment(.trailing)
         }
-        do {
-            classification = try await EusoTripAPI.shared.documentRouter.classifyAndRoute(
-                documentBase64: payload.base64EncodedString(),
-                mimeType: mime,
-                callerContext: "freight claim evidence"
+        .frame(minHeight: 32)
+    }
+
+    private func messageCard(_ text: String, color: Color) -> some View {
+        Text(text)
+            .font(EType.caption)
+            .foregroundStyle(color)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(color.opacity(0.08))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(color.opacity(0.45), lineWidth: 1)
             )
-        } catch {
-            classifyError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-        }
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
-    private var ctaRow: some View {
-        Button { Task { await fileClaim() } } label: {
-            HStack(spacing: 6) {
-                if sending { ProgressView().tint(.white) }
-                Text(sending ? "Filing…" : "File claim").font(.system(size: 13, weight: .heavy)).tracking(0.4).foregroundStyle(.white)
-            }
-            .frame(maxWidth: .infinity).padding(.vertical, 12)
-            .background(LinearGradient.diagonal)
-            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-        }.buttonStyle(.plain).disabled(sending || amount == nil || description.isEmpty)
-    }
-
-    private func fileClaim() async {
-        sending = true; actionError = nil
-        struct In: Encodable {
-            let loadId: String; let claimType: String; let amount: Double; let description: String; let evidenceBase64: String?
-            // Records the shipper's intent to attach the cited weather.historical
-            // report on the new claim. The server attaches the real record when
-            // the enterprise weather key is present; gated → it's a no-op flag,
-            // never a fabricated evidence row.
-            let attachHistoricalWeather: Bool
-        }
-        struct Out: Decodable { let success: Bool; let claimId: String? }
-        let evidenceB64 = photo?.jpegData(compressionQuality: 0.85)?.base64EncodedString()
-        do {
-            let out: Out = try await EusoTripAPI.shared.mutation("freightClaims.fileClaim", input: In(loadId: loadId, claimType: claimType, amount: amount ?? 0, description: description, evidenceBase64: evidenceB64, attachHistoricalWeather: attachWeather && isWeatherPeril))
-            // If the shipper opted into the weather report and the claim landed
-            // with an id, attach the cited historical record to THIS claim. Gated
-            // → available:false comes back and nothing is fabricated.
-            if attachWeather && isWeatherPeril, let cid = out.claimId {
-                await attachWeatherToFiledClaim(claimId: cid)
-            }
-            sent = true
-        } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
-        }
-        sending = false
-    }
-
-    /// Best-effort post-file attach to the now-created claim id. Never throws
-    /// into the file flow — a gated/missing proc leaves the claim filed and the
-    /// evidence simply lights when the enterprise key lands.
     @MainActor
-    private func attachWeatherToFiledClaim(claimId: String) async {
-        struct In: Encodable {
-            let claimId: String
-            let lat: Double?; let lon: Double?; let from: String?; let to: String?
-        }
-        let ev: HistoricalWeatherEvidence? = try? await EusoTripAPI.shared.query(
-            "freightClaims.attachHistoricalWeatherEvidence",
-            input: In(claimId: claimId, lat: nil, lon: nil, from: nil, to: nil)
+    private func fileClaim() async {
+        guard canFile,
+              let claimType,
+              let amount else { return }
+
+        filing = true
+        filingError = nil
+        weatherError = nil
+        weatherOutcome = nil
+        defer { filing = false }
+
+        let request = FreightClaimsAPI.FileClaimRequest(
+            reference: .truck(canonicalLoadId),
+            type: claimType,
+            amount: amount,
+            currency: currency,
+            description: canonicalDescription,
+            commodity: nil,
+            weight: nil,
+            weightUnit: nil,
+            expectedQuantity: claimType == .shortage ? expectedQuantity : nil,
+            receivedQuantity: claimType == .shortage ? receivedQuantity : nil,
+            quantityUnit: claimType == .shortage ? optionalText(quantityUnit) : nil,
+            damageExtent: nil,
+            discoveredAt: nil,
+            evidenceIds: nil,
+            requestKey: fileRequestKey
         )
-        if let ev { weatherEvidence = ev }
+
+        do {
+            let result = try await EusoTripAPI.shared.shipperFreightClaims.fileClaim(request)
+            try validateAcknowledgement(result, request: request)
+            guard let detail = try await EusoTripAPI.shared.shipperFreightClaims.getClaimById(id: result.claimId) else {
+                throw ClaimComposerConfirmationError.missingReadback
+            }
+            try validateReadback(detail, result: result)
+            filedResult = result
+
+            if attachHistoricalWeather {
+                await attachWeatherEvidence(to: result.claimId)
+            }
+        } catch {
+            filingError = (error as? LocalizedError)?.errorDescription ?? error.eusoUserCopy
+        }
+    }
+
+    private func parsedQuantity(_ text: String, allowsZero: Bool) -> Double? {
+        guard let value = Double(text.trimmingCharacters(in: .whitespacesAndNewlines)),
+              value.isFinite,
+              allowsZero ? value >= 0 : value > 0 else { return nil }
+        return value
+    }
+
+    private func optionalText(_ text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func validateAcknowledgement(
+        _ result: FreightClaimsAPI.FileClaimResult,
+        request: FreightClaimsAPI.FileClaimRequest
+    ) throws {
+        guard result.status == FreightClaimsAPI.ClaimStatus.filed.rawValue else {
+            throw ClaimComposerConfirmationError.unexpectedStatus(result.status)
+        }
+        guard result.transportMode == .truck,
+              result.transportMode == request.reference.transportMode,
+              result.referenceNumber == canonicalLoadId else {
+            throw ClaimComposerConfirmationError.transactionMismatch
+        }
+        if let requestedCurrency = request.currency,
+           result.currency != requestedCurrency {
+            throw ClaimComposerConfirmationError.currencyMismatch
+        }
+        if request.type == .shortage,
+           (result.expectedQuantity != request.expectedQuantity ||
+            result.receivedQuantity != request.receivedQuantity ||
+            result.quantityUnit != request.quantityUnit) {
+            throw ClaimComposerConfirmationError.quantityMismatch
+        }
+    }
+
+    private func validateReadback(
+        _ detail: FreightClaimsAPI.ClaimDetail,
+        result: FreightClaimsAPI.FileClaimResult
+    ) throws {
+        guard detail.claimId == result.claimId,
+              detail.status == result.status,
+              (detail.transportMode ?? detail.load.transportMode) == .truck,
+              detail.load.referenceNumber == result.referenceNumber,
+              detail.currency == result.currency else {
+            throw ClaimComposerConfirmationError.readbackMismatch
+        }
+        if result.expectedQuantity != nil || result.receivedQuantity != nil || result.quantityUnit != nil {
+            guard detail.quantityEvidence.state == "recorded",
+                  detail.quantityEvidence.source != nil,
+                  detail.quantityEvidence.expectedQuantity == result.expectedQuantity,
+                  detail.quantityEvidence.receivedQuantity == result.receivedQuantity,
+                  detail.quantityEvidence.quantityUnit == result.quantityUnit else {
+                throw ClaimComposerConfirmationError.quantityMismatch
+            }
+        }
+    }
+
+    @MainActor
+    private func attachWeatherEvidence(to claimId: String) async {
+        struct Input: Encodable {
+            let claimId: String
+            let requestKey: String
+        }
+
+        do {
+            let outcome: HistoricalWeatherOutcome = try await EusoTripAPI.shared.mutation(
+                "freightClaims.attachHistoricalWeatherEvidence",
+                input: Input(
+                    claimId: claimId,
+                    requestKey: weatherRequestKey.uuidString.lowercased()
+                )
+            )
+            guard outcome.claimId == claimId else {
+                throw ClaimComposerConfirmationError.weatherClaimMismatch
+            }
+            if outcome.attached {
+                guard outcome.available,
+                      let evidenceId = outcome.evidence?.id,
+                      let detail = try await EusoTripAPI.shared.shipperFreightClaims.getClaimById(id: claimId),
+                      detail.evidence.contains(where: { $0.id == evidenceId }) else {
+                    throw ClaimComposerConfirmationError.weatherReadbackMismatch
+                }
+            }
+            weatherOutcome = outcome
+        } catch {
+            weatherError = (error as? LocalizedError)?.errorDescription ?? error.eusoUserCopy
+        }
     }
 }
 
-// MARK: - Historical weather evidence (decode shape · lenient)
-//
-// `freightClaims.attachHistoricalWeatherEvidence({claimId|loadId, lat, lon,
-// from, to})` → a cited weather.historical evidence record. Enterprise-gated:
-// today the server returns `available:false` (+ an optional note) and no
-// snapshot, so EVERY field is optional and decode never throws on the gated
-// shape. `snapshot` carries the cited readings the claim cites once the
-// enterprise weather key lands. HONEST: available:false / nil snapshot ⇒ the
-// composer renders the ENTERPRISE state, never a fabricated report.
-private struct HistoricalWeatherEvidence: Decodable {
-    let available: Bool?
+private struct HistoricalWeatherOutcome: Decodable {
+    struct Evidence: Decodable {
+        let id: String?
+    }
+
+    let claimId: String
+    let available: Bool
+    let attached: Bool
+    let reason: String?
     let note: String?
-    let snapshot: Snapshot?
+    let evidence: Evidence?
+}
 
-    struct Snapshot: Decodable {
-        let weatherCode: Int?
-        let peakCondition: String?
-        let maxGustMph: Double?
-        let minVisibilityMi: Double?
-    }
+private enum ClaimComposerConfirmationError: LocalizedError {
+    case missingReadback
+    case readbackMismatch
+    case transactionMismatch
+    case currencyMismatch
+    case quantityMismatch
+    case unexpectedStatus(String)
+    case weatherClaimMismatch
+    case weatherReadbackMismatch
 
-    private enum CodingKeys: String, CodingKey {
-        case available, note, message, snapshot, weather, evidence
-    }
-
-    init(available: Bool?, note: String?, snapshot: Snapshot?) {
-        self.available = available; self.note = note; self.snapshot = snapshot
-    }
-
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        available = try? c.decodeIfPresent(Bool.self, forKey: .available)
-        // The honest note may arrive under `note` or `message`.
-        if let n = try? c.decodeIfPresent(String.self, forKey: .note) {
-            note = n
-        } else {
-            note = try? c.decodeIfPresent(String.self, forKey: .message)
-        }
-        // The cited readings may nest under `snapshot`, `weather`, or `evidence`.
-        if let s = try? c.decodeIfPresent(Snapshot.self, forKey: .snapshot) {
-            snapshot = s
-        } else if let w = try? c.decodeIfPresent(Snapshot.self, forKey: .weather) {
-            snapshot = w
-        } else {
-            snapshot = try? c.decodeIfPresent(Snapshot.self, forKey: .evidence)
+    var errorDescription: String? {
+        switch self {
+        case .missingReadback:
+            return "The claim was accepted, but its record is not available yet. Retry with the same request."
+        case .readbackMismatch:
+            return "The filed claim did not match the confirmed transaction. Nothing has been presented as complete."
+        case .transactionMismatch:
+            return "The confirmation did not match this truck load. Nothing has been reported as complete."
+        case .currencyMismatch:
+            return "The confirmed claim uses a different currency. Nothing has been reported as complete."
+        case .quantityMismatch:
+            return "The confirmed claim uses different quantity evidence. Nothing has been reported as complete."
+        case .unexpectedStatus(let status):
+            return "The claim returned an unexpected status (\(status)). Nothing has been reported as complete."
+        case .weatherClaimMismatch:
+            return "The weather-evidence acknowledgement referenced a different claim."
+        case .weatherReadbackMismatch:
+            return "Weather evidence was acknowledged but could not be confirmed on the claim record."
         }
     }
 }
-
-#Preview("386 · Claim composer · Night") { FreightClaimComposerScreen(theme: Theme.dark, loadId: "1").environmentObject(EusoTripSession()).preferredColorScheme(.dark) }
-#Preview("386 · Claim composer · Afternoon") { FreightClaimComposerScreen(theme: Theme.light, loadId: "1").environmentObject(EusoTripSession()).preferredColorScheme(.light) }

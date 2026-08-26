@@ -528,7 +528,7 @@ private struct VesselTerminalStatusBody690: View {
                 .padding(.top, Space.s3)
 
                 Rectangle().fill(palette.borderFaint).frame(height: 1).padding(.top, Space.s2)
-                Text("NAMED GAP · NO GATE-TURN METRIC EXISTS")
+                Text("GATE-TURN METRIC UNAVAILABLE")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(Brand.warning)
                     .padding(.top, Space.s2)
@@ -715,7 +715,7 @@ private struct VesselTerminalStatusBody690: View {
                     .eusoCard(radius: Radius.lg)
             } else if let gap = hoursGap {
                 VStack(alignment: .leading, spacing: Space.s2) {
-                    Text("NAMED GAP · NOT WIRED")
+                        Text("LIVE STATUS UNAVAILABLE")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                         .foregroundStyle(Brand.warning)
                     Text(gap).font(EType.caption).foregroundStyle(palette.textSecondary)

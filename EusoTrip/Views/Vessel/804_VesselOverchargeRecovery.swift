@@ -1,106 +1,98 @@
 //
 //  804_VesselOverchargeRecovery.swift
-//  EusoTrip — Vessel Operator · Overcharge Recovery.
+//  EusoTrip - Vessel Operator - Overcharge Recovery.
 //
-//  Faithful 1:1 port of "804 Vessel Overcharge Recovery.svg" (Light + Dark), RECONSTRUCTED to a
-//  purpose-built RECOVERY-PIPELINE archetype (deliberately NOT the money-ledger skeleton it used to
-//  share with 803 Freight Audit / 805 Loss Prevention): the hero is a 4-stage recovery funnel
-//  (Identified -> Disputed -> In Review -> Recovered) with proportional tapering bars + per-stage
-//  count/dollars, a thin pending/avg-days/written-off metrics rail, and a per-carrier RECOVERY CASES
-//  ledger whose rows carry a recovered-of-overcharge fraction, an aging line and a status pill.
-//  Nav anchored to the registered vessel siblings' Shell + BottomNav wrapper (HOME · SHIPMENTS ·
-//  [orb] · COMPLIANCE[current] · ME) — the exact shape 757 ships.
-//
-//  Data / wiring (endpoint confirmed via EUSOTRIP_PLATFORM MCP this fire):
-//    freightClaims.getOverchargeRecovery (EXISTS frontend/server/routers/freightClaims.ts:952 ·
-//        protectedProcedure · {status?(identified|disputed|recovered|written_off),limit,offset} ->
-//        {recoveries:[{id,invoiceNumber,carrier,overchargeAmount,recoveredAmount,status,identifiedDate,
-//        recoveredDate,type}],total,summary:{totalIdentified,totalRecovered,pendingRecovery,recoveryRate,
-//        avgRecoveryDays}}). Funnel stages are derived from the status buckets; recoveryRate =
-//        totalRecovered/totalIdentified. ZERO-FALLBACK: state is em-dash/empty-initialized and
-//        UNCONDITIONALLY overwritten by the live response (a real $0 renders $0; empty cases render
-//        the honest empty state).
-//    "File recovery dispute" -> freightClaims.fileDispute (links the selected recovery row to the real
-//        disputes lifecycle and refetches the tracker).
-//    "Export" -> freightClaims.exportOverchargeRecovery (company-scoped CSV content written to a
-//        temporary file and exposed through ShareLink). RBAC: protectedProcedure. transportMode=vessel · USD.
-//
-//  In-module fidelity notes: the canonical port leaned on app symbols that do not exist in this module —
-//  Brand.primary (a LinearGradient here, NOT a Color) -> Brand.blue; palette.track -> palette.borderSoft;
-//  StatusPill(text:tone:) -> the real StatusPill(text:kind:); Money.usd(...) -> file-private usd804(...);
-//  RimCard/ESangRow/SecondaryButton are not shared symbols -> RimCard804 / ESangRow804 / secondaryButton804
-//  built from sibling 757's gradient-rim grammar. EmptyInput is per-file (OverchargeInput804). The bespoke
-//  body — funnel, metrics rail, carrier ledger, ESang row — is preserved faithfully.
+//  Mode-scoped freight-audit recovery truth. Vessel currently has no modeled
+//  recovery source, so the API returns null values with explicit provenance.
 //
 
 import SwiftUI
 
-private struct FunnelStage804: Identifiable {
-    let id = UUID()
-    let label: String
-    let frac: Double           // relative to the widest (Identified) stage
-    let color: Color
-    let detail: String         // "9 · $42,800"
+private struct OverchargeInput804: Encodable {
+    let transportMode: String
+    let limit: Int
+    let offset: Int
 }
 
-private struct RecoveryCase804: Identifiable {
-    let id = UUID()
-    let carrierCode: String    // chip initials (MSC / MAEU / OOLU)
-    let title: String          // "MSC · accessorial"
-    let sub: String            // "INV-MSC-88241 · recovered 6d ago"
-    let tone: StatusPill.Kind
-    let chip: Color
-    let pill: String
-    let value: String          // recovered money
-    let ofOver: String         // "of $3,200 over"
-    let muted: Bool
-}
-
-private struct OpenRecovery804 {
+private struct RecoveryRow804: Decodable, Identifiable {
     let id: String
     let invoiceNumber: String
     let carrier: String
-    let amount: Double
+    let overchargeAmount: Double?
+    let recoveredAmount: Double?
+    let currency: String?
+    let transportMode: String
+    let status: String
+    let identifiedDate: String
+    let recoveredDate: String?
     let type: String
 }
 
-private struct FileDisputeInput804: Encodable {
-    let type: String
-    let invoiceNumber: String
-    let amount: Double
-    let description: String
-    let recoveryId: String?
+private struct RecoverySummary804: Decodable {
+    let totalIdentified: Double?
+    let totalRecovered: Double?
+    let pendingRecovery: Double?
+    let recoveryRate: Double?
+    let avgRecoveryDays: Double?
+    let totalCurrency: String?
+    let unvaluedCount: Int?
 }
 
-private struct FileDisputeAck804: Decodable {
-    let id: String?
-    let disputeNumber: String?
-    let status: String?
+private struct RecoveryTracking804: Decodable {
+    let tracked: Bool
+    let state: String
+    let modeledModes: [String]
+    let reason: String?
 }
 
-private struct ExportInput804: Encodable {
+private struct RecoveryMetricStates804: Decodable {
+    let total: FreightClaimsAPI.MetricTruth
+    let totalIdentified: FreightClaimsAPI.MetricTruth
+    let totalRecovered: FreightClaimsAPI.MetricTruth
+    let pendingRecovery: FreightClaimsAPI.MetricTruth
+    let recoveryRate: FreightClaimsAPI.MetricTruth
+    let avgRecoveryDays: FreightClaimsAPI.MetricTruth
+}
+
+private struct RecoveryPageScope804: Decodable {
+    let kind: String
+    let offset: Int
     let limit: Int
+    let returnedCount: Int
+    let totalMatching: Int?
+    let status: String?
+    let transportMode: String?
 }
 
-private struct ExportAck804: Decodable {
-    let filename: String
-    let contentType: String?
-    let rows: Int
-    let csv: String
+private struct RecoveryProvenance804: Decodable {
+    let source: String?
+    let scope: String
+    let transportMode: String?
+    let observedAt: String?
+    let computedAt: String
+}
+
+private struct OverchargeResp804: Decodable {
+    let recoveries: [RecoveryRow804]
+    let transportMode: String?
+    let total: Int?
+    let summary: RecoverySummary804
+    let tracking: RecoveryTracking804
+    let metricStates: RecoveryMetricStates804
+    let pageScope: RecoveryPageScope804
+    let provenance: RecoveryProvenance804
 }
 
 struct VesselOverchargeRecoveryScreen: View {
     let theme: Theme.Palette
-    init(theme: Theme.Palette) { self.theme = theme }
+
     var body: some View {
-        Shell(theme: theme) {
-            VesselOverchargeRecoveryBody()
-        } nav: {
+        Shell(theme: theme) { VesselOverchargeRecoveryBody() } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home",      systemImage: "house",                   isCurrent: false),
-                          NavSlot(label: "Shipments", systemImage: "shippingbox.fill",        isCurrent: false)],
+                leading: [NavSlot(label: "Home", systemImage: "house", isCurrent: false),
+                          NavSlot(label: "Shipments", systemImage: "shippingbox.fill", isCurrent: false)],
                 trailing: [NavSlot(label: "Compliance", systemImage: "checkmark.shield.fill", isCurrent: true),
-                           NavSlot(label: "Me",          systemImage: "person",               isCurrent: false)],
+                           NavSlot(label: "Me", systemImage: "person", isCurrent: false)],
                 orbState: .idle
             )
         }
@@ -109,402 +101,171 @@ struct VesselOverchargeRecoveryScreen: View {
 
 private struct VesselOverchargeRecoveryBody: View {
     @Environment(\.palette) private var palette
+    @State private var response: OverchargeResp804?
     @State private var loading = true
-    @State private var loadError: String? = nil
-
-    // ZERO-FALLBACK: em-dash/empty init — every figure is unconditionally
-    // overwritten from the live response (a real $0 renders as $0, never a seed).
-    @State private var hero    = "—"
-    @State private var subline = "—"
-    @State private var ratePct = "—"
-    @State private var pending     = "—"
-    @State private var avgDays     = "—"
-    @State private var writtenOff  = "—"
-
-    @State private var stages: [FunnelStage804] = []
-    @State private var cases: [RecoveryCase804] = []
-    /// Live-derived ESang advisory (best open case) — nil hides the row.
-    @State private var esangBestCase: (title: String, subtitle: String)? = nil
-    @State private var openRecovery: OpenRecovery804? = nil
-    @State private var actionBusy = false
-    @State private var actionMessage: String? = nil
-    @State private var actionFailed = false
-    @State private var exportURL: URL? = nil
+    @State private var loadError: String?
 
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s3) {
                 header
-                Text(hero).font(.system(size: 34, weight: .bold, design: .monospaced)).foregroundStyle(LinearGradient.diagonal)
-                Text(subline).font(.system(size: 12)).foregroundStyle(palette.textSecondary)
+                Text("Overcharge recovery").font(.system(size: 30, weight: .bold)).foregroundStyle(palette.textPrimary)
+                Text("Mode-scoped recovery truth").font(.system(size: 12)).foregroundStyle(palette.textSecondary)
                 IridescentHairline()
-
-                if let message = actionMessage {
-                    LifecycleCard(accentDanger: actionFailed) {
-                        Text(message)
-                            .font(EType.caption)
-                            .foregroundStyle(actionFailed ? Brand.danger : palette.textSecondary)
-                    }
-                }
                 if loading {
-                    LifecycleCard { Text("Loading…").font(EType.caption).foregroundStyle(palette.textSecondary) }
-                } else if let err = loadError {
-                    LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) }
-                } else {
-                    pipelineCard
-                    metricsRail
-                    Text("RECOVERY CASES · BY CARRIER")
-                        .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
-                    caseLedger
-                    HStack(spacing: 8) {
-                        CTAButton(title: actionBusy ? "Working…" : "File recovery dispute",
-                                  action: { Task { await fileDispute() } },
-                                  trailingIcon: "doc.text")
-                            .disabled(actionBusy || openRecovery == nil)
-                        secondaryButton804(title: actionBusy ? "Exporting…" : "Export") { Task { await exportRecovery() } }
-                            .disabled(actionBusy)
+                    LifecycleCard {
+                        Text("Loading recovery evidence...").font(EType.caption).foregroundStyle(palette.textSecondary)
                     }
-                    if let exportURL {
-                        ShareLink(item: exportURL) {
-                            Label("Share recovery export", systemImage: "square.and.arrow.up")
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundStyle(Brand.blue)
-                                .frame(maxWidth: .infinity, minHeight: 42)
-                                .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCard))
-                                .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
-                        }
+                } else if let loadError {
+                    LifecycleCard(accentDanger: true) {
+                        Text(loadError).font(EType.caption).foregroundStyle(Brand.danger)
                     }
-                    // ESang advisory derives from the LIVE best open case only —
-                    // no fabricated "Maersk duplicate" line when none exists.
-                    if let best = esangBestCase {
-                        ESangRow804(title: best.title, subtitle: best.subtitle)
-                    }
+                } else if let response {
+                    sourceContract(response)
+                    Text("RECOVERY RECORDS · CURRENT PAGE").font(EType.micro).foregroundStyle(palette.textTertiary)
+                    recoveryRows(response)
+                    CTAButton(title: "Refresh", action: { Task { await load() } }, trailingIcon: "arrow.clockwise")
                 }
                 Color.clear.frame(height: 96)
             }
-            .padding(.horizontal, 14).padding(.top, 8)
+            .padding(.horizontal, 14)
+            .padding(.top, 8)
         }
         .task { await load() }
         .eusoRefreshable { await load() }
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
-                Text("VESSEL OPERATOR · OVERCHARGE RECOVERY").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
-                Spacer()
-                Text("2026-Q2").font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundStyle(palette.textTertiary)
-            }
-            HStack(spacing: 6) {
-                Text("Compliance").font(.system(size: 13, weight: .semibold)).foregroundStyle(palette.textSecondary)
-            }
+        HStack(spacing: 6) {
+            EusoTripBrandMark(size: 12).foregroundStyle(LinearGradient.diagonal)
+            Text("VESSEL OPERATOR · OVERCHARGE RECOVERY").font(.system(size: 9, weight: .heavy))
+                .tracking(1).foregroundStyle(LinearGradient.diagonal)
+            Spacer()
+            Text("RECOVERY").font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
         }
     }
 
-    // RECOVERY PIPELINE — 4-stage funnel
-    private var pipelineCard: some View {
+    private func sourceContract(_ value: OverchargeResp804) -> some View {
         RimCard804 {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 7) {
+                Text(value.tracking.tracked ? "TRACKED SOURCE" : "NOT MODELED FOR VESSEL")
+                    .font(EType.micro)
+                    .foregroundStyle(value.tracking.tracked ? Brand.success : Brand.warning)
+                Text(value.tracking.tracked ? "Recovery evidence" : "Recovery metrics unavailable")
+                    .font(.system(size: 20, weight: .bold)).foregroundStyle(palette.textPrimary)
+                Text(value.tracking.reason ?? value.metricStates.total.reason ?? "No source is configured for this metric.")
+                    .font(.system(size: 11)).foregroundStyle(palette.textSecondary)
+                Divider().overlay(palette.borderFaint)
                 HStack {
-                    Text("RECOVERY PIPELINE").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
-                    Spacer()
-                    Text(ratePct).font(.system(size: 13, weight: .bold, design: .monospaced)).foregroundStyle(Brand.success)
+                    contractMetric("ROWS RETURNED", "\(value.pageScope.returnedCount)")
+                    contractMetric("TOTAL MATCHING", value.total.map(String.init) ?? "Unavailable")
+                    contractMetric("PAGE SCOPE", value.pageScope.kind.replacingOccurrences(of: "_", with: " ").capitalized)
                 }
-                ForEach(stages) { s in
-                    HStack(spacing: 10) {
-                        Text(s.label).font(.system(size: 10, weight: .bold)).foregroundStyle(palette.textSecondary)
-                            .frame(width: 74, alignment: .leading)
-                        GeometryReader { geo in
-                            ZStack(alignment: .leading) {
-                                Capsule().fill(palette.borderSoft).frame(height: 11)
-                                Capsule().fill(s.color).frame(width: max(6, geo.size.width * s.frac), height: 11)
-                            }
-                        }.frame(height: 11)
-                        Text(s.detail).font(.system(size: 11, weight: .bold, design: .monospaced)).foregroundStyle(palette.textPrimary)
-                            .frame(width: 86, alignment: .trailing)
-                    }
-                }
+                Text(provenanceLabel(value.provenance))
+                    .font(.system(size: 10)).foregroundStyle(palette.textTertiary)
             }
         }
     }
 
-    private var metricsRail: some View {
-        HStack(alignment: .top, spacing: 0) {
-            railStat(label: "PENDING", value: pending, tone: Brand.warning, align: .leading)
-            railStat(label: "AVG TO RECOVER", value: avgDays, tone: palette.textPrimary, align: .leading)
-            railStat(label: "WRITTEN OFF", value: writtenOff, tone: palette.textTertiary, align: .trailing)
-        }.padding(.horizontal, 2)
-    }
-
-    private func railStat(label: String, value: String, tone: Color, align: HorizontalAlignment) -> some View {
-        VStack(alignment: align, spacing: 4) {
-            Text(label).font(.system(size: 9, weight: .bold)).foregroundStyle(palette.textTertiary)
-            Text(value).font(.system(size: 13, weight: .bold, design: .monospaced)).foregroundStyle(tone)
-        }.frame(maxWidth: .infinity, alignment: align == .trailing ? .trailing : .leading)
+    private func contractMetric(_ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label).font(EType.micro).foregroundStyle(palette.textTertiary)
+            Text(value).font(.system(size: 12, weight: .bold)).foregroundStyle(palette.textPrimary).lineLimit(2)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
-    private var caseLedger: some View {
-        if cases.isEmpty {
-            // Honest empty — no invented MSC/Maersk/OOCL rows when the live ledger is empty.
-            EusoEmptyState(systemImage: "tray",
-                           title: "No recovery cases",
-                           subtitle: "Overcharge cases appear here as the freight-audit engine flags invoices for recovery.")
+    private func recoveryRows(_ value: OverchargeResp804) -> some View {
+        if value.recoveries.isEmpty {
+            EusoEmptyState(
+                systemImage: "tray",
+                title: value.tracking.tracked ? "No matching recovery observations" : "Vessel recovery tracking is not modeled",
+                subtitle: value.tracking.reason ?? value.metricStates.total.reason ?? "No source is configured for this metric."
+            )
         } else {
-            caseLedgerRows
-        }
-    }
-
-    private var caseLedgerRows: some View {
-        LifecycleCard {
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(cases.enumerated()), id: \.element.id) { idx, c in
-                    HStack(alignment: .top, spacing: 12) {
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(c.chip.opacity(0.14)).frame(width: 40, height: 40)
-                            .overlay(Text(c.carrierCode).font(.system(size: 10, weight: .heavy, design: .monospaced)).foregroundStyle(c.chip))
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(c.title).font(.system(size: 14, weight: .bold)).foregroundStyle(palette.textPrimary)
-                            Text(c.sub).font(.system(size: 11, design: .monospaced)).foregroundStyle(palette.textSecondary)
-                        }
-                        Spacer()
-                        VStack(alignment: .trailing, spacing: 6) {
-                            StatusPill(text: c.pill, kind: c.tone)
-                            Text(c.value).font(.system(size: 14, weight: .bold, design: .monospaced))
-                                .foregroundStyle(c.muted ? palette.textTertiary : palette.textPrimary)
-                            Text(c.ofOver).font(.system(size: 11, design: .monospaced)).foregroundStyle(palette.textTertiary)
-                        }
+            LifecycleCard {
+                VStack(spacing: 0) {
+                    ForEach(Array(value.recoveries.enumerated()), id: \.element.id) { index, row in
+                        recoveryRow(row)
+                        if index < value.recoveries.count - 1 { Divider().overlay(palette.borderFaint) }
                     }
-                    .padding(.vertical, 10)
-                    if idx < cases.count - 1 { Divider().overlay(palette.borderFaint) }
                 }
             }
         }
     }
 
-    /// Bespoke secondary (outline) button — the canonical port's `SecondaryButton`
-    /// is not a shared app symbol, so we hand-roll the same outline grammar the
-    /// registered sibling 757 uses for its secondary CTA.
-    private func secondaryButton804(title: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(Brand.blue)
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .background(
-                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                        .fill(palette.bgCard)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                        .strokeBorder(LinearGradient.diagonal, lineWidth: 1.5)
-                )
+    private func recoveryRow(_ row: RecoveryRow804) -> some View {
+        let tone = statusColor(row.status)
+        return HStack(alignment: .top, spacing: 12) {
+            RoundedRectangle(cornerRadius: 10).fill(tone.opacity(0.14)).frame(width: 40, height: 40)
+                .overlay(Text(String(row.carrier.uppercased().prefix(4)))
+                    .font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundStyle(tone))
+            VStack(alignment: .leading, spacing: 4) {
+                Text("\(row.carrier) · \(row.type.replacingOccurrences(of: "_", with: " "))")
+                    .font(.system(size: 13, weight: .bold)).foregroundStyle(palette.textPrimary)
+                Text("\(row.invoiceNumber) · \(row.status)")
+                    .font(.system(size: 10, design: .monospaced)).foregroundStyle(palette.textSecondary).lineLimit(1)
+                Text("Identified \(money(row.overchargeAmount, currency: row.currency))")
+                    .font(.system(size: 10)).foregroundStyle(palette.textSecondary)
+                Text("Recovered \(money(row.recoveredAmount, currency: row.currency))")
+                    .font(.system(size: 10)).foregroundStyle(palette.textSecondary)
+            }
+            Spacer()
+            Text(row.status.replacingOccurrences(of: "_", with: " ").uppercased())
+                .font(EType.micro).foregroundStyle(tone)
         }
-        .buttonStyle(.plain)
+        .padding(.vertical, 10)
+    }
+
+    private func money(_ value: Double?, currency: String?) -> String {
+        guard let value, let currency else { return "Unavailable" }
+        return value.formatted(.currency(code: currency))
+    }
+
+    private func provenanceLabel(_ value: RecoveryProvenance804) -> String {
+        guard let source = value.source else { return "No source · evaluated \(value.computedAt)" }
+        return "\(source) · observed \(value.observedAt ?? "time unavailable") · calculated \(value.computedAt)"
+    }
+
+    private func statusColor(_ value: String) -> Color {
+        switch value {
+        case "recovered": return Brand.success
+        case "disputed": return Brand.warning
+        case "written_off": return Brand.danger
+        default: return Brand.info
+        }
     }
 
     private func load() async {
-        loading = true; loadError = nil
+        loading = true
+        loadError = nil
         do {
-            struct Rec: Decodable { let id: String?; let invoiceNumber: String?; let carrier: String?; let overchargeAmount: Double?; let recoveredAmount: Double?; let status: String?; let type: String? }
-            struct Summary: Decodable { let totalIdentified: Double?; let totalRecovered: Double?; let pendingRecovery: Double?; let recoveryRate: Double?; let avgRecoveryDays: Double? }
-            struct Out: Decodable { let recoveries: [Rec]; let summary: Summary }
-            let r: Out = try await EusoTripAPI.shared.query("freightClaims.getOverchargeRecovery", input: OverchargeInput804(limit: 20, offset: 0))
-            let s = r.summary
-            let identified = s.totalIdentified ?? 0, recovered = s.totalRecovered ?? 0
-
-            // UNCONDITIONAL overwrite — a real $0 renders as $0, never a seed.
-            hero = usd804(recovered)
-            let rate = identified > 0 ? Int(round(recovered / identified * 100)) : 0
-            ratePct = "\(rate)% recovered"
-            pending = usd804(s.pendingRecovery ?? 0)
-            avgDays = "\(Int(round(s.avgRecoveryDays ?? 0)))d"
-            subline = "recovered of \(usd804(identified)) identified · \(rate)% rate · avg \(avgDays) to recover"
-
-            let bucket: (String) -> (Double, Int) = { st in
-                let g = r.recoveries.filter { ($0.status ?? "") == st }
-                return (g.reduce(0) { $0 + ($1.overchargeAmount ?? 0) }, g.count)
-            }
-            let idAmt = identified, idN = r.recoveries.count
-            let (dAmt, dN) = bucket("disputed")
-            let reviewG = r.recoveries.filter { ($0.status ?? "") == "identified" }
-            let iAmt = reviewG.reduce(0) { $0 + ($1.overchargeAmount ?? 0) }, iN = reviewG.count
-            let (rAmt, rN) = bucket("recovered")
-            let base = max(idAmt, 1)
-            stages = [
-                FunnelStage804(label: "IDENTIFIED", frac: idAmt > 0 ? 1.0 : 0,    color: Brand.blue,    detail: "\(idN) · \(usd804(idAmt))"),
-                FunnelStage804(label: "DISPUTED",   frac: min(1, dAmt / base), color: Brand.warning, detail: "\(dN) · \(usd804(dAmt))"),
-                FunnelStage804(label: "IN REVIEW",  frac: min(1, iAmt / base), color: Brand.info,    detail: "\(iN) · \(usd804(iAmt))"),
-                FunnelStage804(label: "RECOVERED",  frac: min(1, rAmt / base), color: Brand.success, detail: "\(rN) · \(usd804(rAmt))")
-            ]
-            writtenOff = usd804(bucket("written_off").0)
-
-            cases = r.recoveries.prefix(3).map { rec in
-                let st = rec.status ?? "identified"
-                let tone: StatusPill.Kind = st == "recovered" ? .success : (st == "disputed" ? .warning : (st == "written_off" ? .neutral : .info))
-                let chip: Color = st == "recovered" ? Brand.success : (st == "disputed" ? Brand.warning : (st == "written_off" ? Brand.neutral : Brand.blue))
-                let code = (rec.carrier ?? "-").uppercased().prefix(4)
-                return RecoveryCase804(
-                    carrierCode: String(code),
-                    title: "\(rec.carrier ?? "-") · \(rec.type ?? "review")",
-                    sub: "\(rec.invoiceNumber ?? "-") · \(st)",
-                    tone: tone, chip: chip, pill: st.uppercased(),
-                    value: usd804(rec.recoveredAmount ?? 0),
-                    ofOver: "of \(usd804(rec.overchargeAmount ?? 0)) over",
-                    muted: st == "written_off")
-            }
-
-            // ESang advisory from the LIVE best open case (largest open overcharge).
-            let open = r.recoveries.filter { ["identified", "disputed"].contains($0.status ?? "") }
-            if let best = open.max(by: { ($0.overchargeAmount ?? 0) < ($1.overchargeAmount ?? 0) }) {
-                openRecovery = OpenRecovery804(
-                    id: best.id ?? "",
-                    invoiceNumber: best.invoiceNumber ?? "",
-                    carrier: best.carrier ?? "Counterparty unresolved",
-                    amount: best.overchargeAmount ?? 0,
-                    type: best.type ?? "overcharge"
-                )
-                esangBestCase = (
-                    title: "ESang: \(best.carrier ?? "—") · \(best.type ?? "overcharge") is your best open case",
-                    subtitle: "\(best.invoiceNumber ?? "—") · \(usd804(best.overchargeAmount ?? 0)) over · file the dispute"
-                )
-            } else {
-                openRecovery = nil
-                esangBestCase = nil
-            }
+            response = try await EusoTripAPI.shared.query(
+                "freightClaims.getOverchargeRecovery",
+                input: OverchargeInput804(transportMode: "VESSEL", limit: 20, offset: 0)
+            )
         } catch {
             loadError = error.eusoUserCopy
         }
         loading = false
     }
-
-    private func fileDispute() async {
-        guard let recovery = openRecovery,
-              !recovery.id.isEmpty,
-              !recovery.invoiceNumber.isEmpty,
-              recovery.amount > 0 else {
-            actionFailed = true
-            actionMessage = "No open recovery case is available to dispute."
-            return
-        }
-        if actionBusy { return }
-        actionBusy = true
-        actionFailed = false
-        actionMessage = nil
-        do {
-            let description = "Vessel overcharge recovery dispute for \(recovery.invoiceNumber). Audit basis: \(recovery.type.replacingOccurrences(of: "_", with: " ")). Carrier: \(recovery.carrier). Amount: \(usd804(recovery.amount))."
-            let ack: FileDisputeAck804 = try await EusoTripAPI.shared.mutation(
-                "freightClaims.fileDispute",
-                input: FileDisputeInput804(
-                    type: "rate",
-                    invoiceNumber: recovery.invoiceNumber,
-                    amount: recovery.amount,
-                    description: description,
-                    recoveryId: recovery.id
-                )
-            )
-            actionMessage = "Filed recovery dispute \(ack.disputeNumber ?? ack.id ?? "") and linked it to \(recovery.invoiceNumber)."
-            await load()
-        } catch {
-            actionFailed = true
-            actionMessage = error.eusoUserCopy
-        }
-        actionBusy = false
-    }
-
-    private func exportRecovery() async {
-        if actionBusy { return }
-        actionBusy = true
-        actionFailed = false
-        actionMessage = nil
-        do {
-            let export: ExportAck804 = try await EusoTripAPI.shared.mutation(
-                "freightClaims.exportOverchargeRecovery",
-                input: ExportInput804(limit: 1000)
-            )
-            let safeName = export.filename.replacingOccurrences(of: "/", with: "-")
-            let url = FileManager.default.temporaryDirectory.appendingPathComponent(safeName)
-            try export.csv.data(using: .utf8)?.write(to: url, options: .atomic)
-            exportURL = url
-            actionMessage = "Prepared \(export.rows) recovery row\(export.rows == 1 ? "" : "s") for export."
-        } catch {
-            actionFailed = true
-            actionMessage = error.eusoUserCopy
-        }
-        actionBusy = false
-    }
-
-    /// USD formatter — the canonical port's `Money.usd(...)` is not a shared app
-    /// symbol in this module, so we render the same grouped-dollar grammar file-scoped.
-    private func usd804(_ amount: Double) -> String {
-        "$" + Int(amount.rounded()).formatted(.number.grouping(.automatic))
-    }
 }
 
-// MARK: - File-scoped bespoke helpers (preserve the canonical wireframe look)
-
-/// Gradient-rim hero card — mirrors the gradient-stroked context cards the
-/// registered siblings (757 `RimCard757`, 664 `moveContextCard`) ship.
 private struct RimCard804<Content: View>: View {
     @Environment(\.palette) private var palette
     @ViewBuilder var content: () -> Content
+
     var body: some View {
-        content()
-            .padding(Space.s4)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(palette.bgCard)
-            .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                    .strokeBorder(LinearGradient.diagonal, lineWidth: 1.5)
-            )
+        content().padding(Space.s4).frame(maxWidth: .infinity, alignment: .leading)
+            .background(palette.bgCard).clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+            .overlay(RoundedRectangle(cornerRadius: Radius.lg).strokeBorder(LinearGradient.diagonal, lineWidth: 1.5))
     }
 }
 
-/// ESang advisory row — the canonical port's `ESangRow` is not a shared app
-/// symbol, so we render the same sparkle + advisory grammar file-scoped.
-private struct ESangRow804: View {
-    @Environment(\.palette) private var palette
-    let title: String
-    let subtitle: String
-    var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(LinearGradient.diagonal.opacity(0.14))
-                    .frame(width: 34, height: 34)
-                Image(systemName: "sparkles")
-                    .font(.system(size: 14, weight: .heavy))
-                    .foregroundStyle(LinearGradient.diagonal)
-            }
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(palette.textPrimary)
-                Text(subtitle)
-                    .font(.system(size: 11))
-                    .foregroundStyle(palette.textSecondary)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(Space.s3)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(palette.bgCardSoft)
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(palette.borderFaint)
-        )
-    }
+#Preview("804 · Overcharge Recovery · Night") {
+    VesselOverchargeRecoveryScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark)
 }
-
-/// Typed input for `freightClaims.getOverchargeRecovery` (status is optional and
-/// omitted here — we want the full pipeline, not a single bucket).
-private struct OverchargeInput804: Encodable {
-    let limit: Int
-    let offset: Int
+#Preview("804 · Overcharge Recovery · Light") {
+    VesselOverchargeRecoveryScreen(theme: Theme.light).environmentObject(EusoTripSession()).preferredColorScheme(.light)
 }
-
-#Preview("804 · Overcharge Recovery · Night") { VesselOverchargeRecoveryScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }
-#Preview("804 · Overcharge Recovery · Light") { VesselOverchargeRecoveryScreen(theme: Theme.light).environmentObject(EusoTripSession()).preferredColorScheme(.light) }

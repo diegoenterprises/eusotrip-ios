@@ -84,6 +84,7 @@ private struct ADBody: View {
     @Environment(\.palette) private var palette
     @State private var load: ADLoadCtx?
     @State private var drivers: [ADDriver] = []
+    @State private var hosEvidence: [HOSFleetDriver] = []
     @State private var selectedDriverId: String?
     @State private var inFlight = false
     @State private var ack: String?
@@ -215,7 +216,8 @@ private struct ADBody: View {
         )
         .dropDestination(for: String.self) { droppedIds, _ in
             guard let driverId = droppedIds.first,
-                  drivers.contains(where: { $0.id == driverId }) else { return false }
+                  let driver = drivers.first(where: { $0.id == driverId }),
+                  isHOSEligible(driver) else { return false }
             Task { await assign(driverIdOverride: driverId) }
             return true
         } isTargeted: { hovering in
@@ -251,7 +253,7 @@ private struct ADBody: View {
 
     private var driverListSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("AVAILABLE DRIVERS · \(drivers.count)")
+            Text("HOS-ELIGIBLE DRIVERS · \(drivers.filter(isHOSEligible).count) OF \(drivers.count)")
                 .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                 .foregroundStyle(palette.textTertiary)
                 .padding(.horizontal, 2)
@@ -267,15 +269,20 @@ private struct ADBody: View {
                         // gesture race and `.draggable` never starts a drag. Plain
                         // view + .onTapGesture keeps the tap and lets the drag own
                         // the long-press.
-                        driverRow(d, selected: d.id == selectedDriverId)
-                            .contentShape(Rectangle())
-                            .onTapGesture { selectedDriverId = d.id }
-                            .draggable(String(d.id)) {
+                        if isHOSEligible(d) {
+                            driverRow(d, selected: d.id == selectedDriverId)
+                                .contentShape(Rectangle())
+                                .onTapGesture { selectedDriverId = d.id }
+                                .draggable(String(d.id)) {
+                                    driverRow(d, selected: false)
+                                        .frame(maxWidth: 320)
+                                        .opacity(0.92)
+                                        .shadow(color: .black.opacity(0.25), radius: 10, x: 0, y: 4)
+                                        .onAppear { draggingDriverId = d.id }
+                                }
+                        } else {
                             driverRow(d, selected: false)
-                                .frame(maxWidth: 320)
-                                .opacity(0.92)
-                                .shadow(color: .black.opacity(0.25), radius: 10, x: 0, y: 4)
-                                .onAppear { draggingDriverId = d.id }
+                                .opacity(0.62)
                         }
                     }
                 }
@@ -303,6 +310,10 @@ private struct ADBody: View {
                 let suffix = (d.hazmatEndorsement ?? false) ? " · HAZMAT" : ""
                 Text("\(status)\(lic.isEmpty ? "" : " · " + lic)\(suffix)")
                     .font(.caption2).foregroundStyle(palette.textTertiary).lineLimit(1)
+                Text(hosEvidenceLine(d))
+                    .font(.caption2)
+                    .foregroundStyle(isHOSEligible(d) ? Brand.blue : Brand.warning)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
             if selected {
@@ -368,7 +379,7 @@ private struct ADBody: View {
             .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
         .buttonStyle(.plain)
-        .disabled(selectedDriverId == nil || inFlight)
+        .disabled(selectedDriver.map { isHOSEligible($0) } != true || inFlight)
     }
 
     // MARK: data
@@ -391,15 +402,22 @@ private struct ADBody: View {
             let equipmentType: String?
         }
         do {
-            drivers = try await EusoTripAPI.shared.query(
+            let driverRows: [ADDriver] = try await EusoTripAPI.shared.query(
                 "dispatch.getAvailableDrivers",
                 input: In(loadId: loadId,
                           hazmatRequired: nil,
                           equipmentType: load?.equipmentType)
             )
+            let evidenceRows: [HOSFleetDriver] = try await EusoTripAPI.shared.queryNoInput("hos.getFleetHOS")
+            drivers = driverRows
+            hosEvidence = evidenceRows
+            if let selectedDriver, !isHOSEligible(selectedDriver) { selectedDriverId = nil }
         } catch {
             await MainActor.run {
                 err = assignFailureCopy_532(error, noun: "available drivers")
+                drivers = []
+                hosEvidence = []
+                selectedDriverId = nil
             }
         }
     }
@@ -409,22 +427,29 @@ private struct ADBody: View {
     private func assign(driverIdOverride: String? = nil) async {
         guard let driverId = driverIdOverride ?? selectedDriverId else { return }
         await MainActor.run { inFlight = true; ack = nil; err = nil }
-        struct In: Encodable {
-            let loadId: String
-            let driverId: String
-        }
-        struct Out: Decodable {
-            let success: Bool?
-            let loadId: String?
-            let driverId: String?
-            let message: String?
-        }
+        struct Assignment: Encodable { let loadId: Int; let driverId: Int }
+        struct In: Encodable { let assignments: [Assignment] }
+        struct Result: Decodable { let loadId: Int; let success: Bool; let error: String? }
+        struct Out: Decodable { let assigned: Int; let failed: Int; let results: [Result] }
         do {
+            let refreshedEvidence: [HOSFleetDriver] = try await EusoTripAPI.shared.queryNoInput("hos.getFleetHOS")
+            await MainActor.run { hosEvidence = refreshedEvidence }
+            guard let driver = drivers.first(where: { $0.id == driverId }),
+                  isHOSEligible(driver),
+                  let numericLoadId = Int(loadId),
+                  let numericDriverId = Int(driverId) else {
+                throw AssignmentEvidenceError_532.unavailable
+            }
             let resp: Out = try await EusoTripAPI.shared.mutation(
-                "dispatch.assignDriver",
-                input: In(loadId: loadId, driverId: driverId)
+                "dispatch.smartBulkAssign",
+                input: In(assignments: [Assignment(loadId: numericLoadId, driverId: numericDriverId)])
             )
-            if resp.success != false {
+            if resp.assigned == 1,
+               resp.failed == 0,
+               resp.results.count == 1,
+               let result = resp.results.first,
+               result.loadId == numericLoadId,
+               result.success {
                 let name = drivers.first(where: { $0.id == driverId })?.name ?? "the selected driver"
                 await MainActor.run {
                     ack = "Assigned · \(name) is on this load · compliance gates passed · dispatch, driver and shipper all notified."
@@ -434,7 +459,10 @@ private struct ADBody: View {
                 await loadCtx()
             } else {
                 await MainActor.run {
-                    err = resp.message ?? "The assignment came back unconfirmed. Refresh this load before you tell the driver."
+                    let reason = resp.results.first?.error?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    err = reason?.isEmpty == false
+                        ? reason
+                        : "The server held this assignment after evidence revalidation."
                     draggingDriverId = nil
                     dropHover = false
                 }
@@ -447,6 +475,33 @@ private struct ADBody: View {
             }
         }
         await MainActor.run { inFlight = false }
+    }
+
+    private func evidence(for driver: ADDriver) -> HOSFleetDriver? {
+        hosEvidence.first { evidence in
+            evidence.driverId == driver.id || driver.userId.map { String($0) } == evidence.driverId
+        }
+    }
+
+    private func isHOSEligible(_ driver: ADDriver) -> Bool {
+        evidence(for: driver)?.assignmentEligibility() == .eligible
+    }
+
+    private func hosEvidenceLine(_ driver: ADDriver) -> String {
+        guard let evidence = evidence(for: driver) else { return "HOS observation unavailable · assignment held" }
+        if evidence.assignmentEligibility() == .eligible {
+            let source = evidence.source?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let sourceLabel = source.flatMap { $0.isEmpty ? nil : $0.uppercased() } ?? "HOS"
+            return "\(sourceLabel) · current ≤15m"
+        }
+        return evidence.assignmentEligibility().reason ?? "HOS evidence unavailable"
+    }
+}
+
+private enum AssignmentEvidenceError_532: LocalizedError {
+    case unavailable
+    var errorDescription: String? {
+        "Current, complete HOS evidence is unavailable. Refresh before assigning this load."
     }
 }
 

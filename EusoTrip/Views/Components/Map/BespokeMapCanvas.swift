@@ -66,12 +66,12 @@ import UIKit
 /// `.auto` (the default) preserves the historical behavior: a forward-tilt /
 /// first-person camera resolves to the driver "Active Enroute" register and
 /// everything else to the flat shipper / catalyst board. `.ocean` forces the
-/// Vessel 003 "Live Tracking" great-circle register (`.ocean` dark /
+/// Vessel 003 "Live Tracking" ocean register (`.ocean` dark /
 /// `.lightOcean` light) — the AIS orb, port pins, latitude grid, coast hints,
 /// and the speed/heading/coords callout chip. `.rail` forces the Rail 003
-/// hero registers (`.darkRail` / `.lightRail` — flat-gray [2,6] remaining).
-/// `.nav` forces the driver turn-by-turn register (035/116 — w9 route over a
-/// w16 casing, road ribbons, maneuver node, heading-arrow puck).
+/// hero registers (`.darkRail` / `.lightRail` — topology-bound EusoLine).
+/// `.nav` forces the driver turn-by-turn register (035/116 — one uncased w9
+/// gradient ribbon, road ribbons, maneuver node, heading-arrow puck).
 /// `.portApproach` forces the Vessel 660 port-approach chart (deep navy in
 /// BOTH modes — #15233A landmass, history wake, container-vessel AIS hull).
 /// `.geothermal` forces the Hot Zones thermal register: a CONTINUOUS
@@ -127,7 +127,7 @@ public struct BespokeMapCanvas: View {
         )
     }
 
-    /// Hinted initializer: pass `style: .ocean` for the Vessel 003 great-circle
+    /// Hinted initializer: pass `style: .ocean` for the Vessel 003 ocean
     /// register. `style:` carries no default here so it never shadows the
     /// 7-arg overload above (which IS the backward-compatible default path).
     public init(
@@ -285,8 +285,14 @@ public struct BespokeMapCanvas: View {
     private func makeBaseViewport(size: CGSize) -> BespokeMapViewport {
         let routeCoords = Self.allRouteCoords(layers)
         let base: BespokeMapViewport
-        if !routeCoords.isEmpty {
-            base = BespokeMapViewport(fitting: routeCoords, size: size, padding: 48, minZoom: 1, maxZoom: 16)
+        if let fitted = BespokeMapViewport(
+            fitting: routeCoords,
+            size: size,
+            padding: 48,
+            minZoom: 1,
+            maxZoom: 16
+        ) {
+            base = fitted
         } else {
             base = BespokeMapViewport(center: center, zoom: zoom, size: size)
         }
@@ -373,7 +379,13 @@ public struct BespokeMapCanvas: View {
     static func allRouteCoords(_ layers: [HereMapLayer]) -> [HereLatLng] {
         var out: [HereLatLng] = []
         for layer in layers {
-            if case .route(let poly, _) = layer { out.append(contentsOf: poly) }
+            switch layer {
+            case .route(let poly, _), .eusoRoute(let poly, _, _),
+                 .observationTrail(let poly, _):
+                out.append(contentsOf: poly)
+            default:
+                break
+            }
         }
         return out
     }
@@ -391,37 +403,24 @@ public struct BespokeMapCanvas: View {
 
     static func stableID(for m: HereMarker) -> String? {
         if let id = m.id, !id.isEmpty { return id }
-        return "\(m.kind.rawValue):\(String(format: "%.5f", m.at.lat)),\(String(format: "%.5f", m.at.lng))"
+        return "\(m.kind.rawValue):\(m.at.lat),\(m.at.lng)"
     }
 
-    /// The live puck coordinate: the first `.truck`-kind marker across all
-    /// marker layers (the AIS vessel on the ocean register, the truck on road
-    /// boards). nil when no live puck is present — callers fall back to the
-    /// authored route split.
+    /// Observation coordinate helper retained for marker camera work. It must
+    /// never be used to infer route completion or traveled progress.
     static func liveMarkerCoord(_ layers: [HereMapLayer]) -> HereLatLng? {
         for layer in layers {
             switch layer {
             case .markers(let ms), .missionPins(let ms):
-                if let truck = ms.first(where: { $0.kind == .truck }) { return truck.at }
+                if let asset = ms.first(where: { [.truck, .rail, .vessel].contains($0.kind) }) {
+                    return asset.at
+                }
             default: break
             }
         }
         return nil
     }
 
-    /// Index of the polyline vertex geodesically closest to `target`. Used to
-    /// split the great-circle route at the live AIS position. Returns 0 for an
-    /// empty polyline (degenerate-safe; the caller clamps).
-    static func nearestVertexIndex(in poly: [HereLatLng], to target: HereLatLng) -> Int {
-        guard !poly.isEmpty else { return 0 }
-        var bestIndex = 0
-        var bestDist = Double.greatestFiniteMagnitude
-        for (i, v) in poly.enumerated() {
-            let d = BespokeMapProjection.haversineMeters(v, target)
-            if d < bestDist { bestDist = d; bestIndex = i }
-        }
-        return bestIndex
-    }
 }
 
 // MARK: - Precomputed render model
@@ -485,14 +484,16 @@ extension BespokeMapCanvas {
         // Ad-zone polygons (screen space) + their fill.
         var adZones: [(pts: [CGPoint], fill: Color, opacity: Double)] = []
 
-        // Route — already-simplified + Catmull-Rom-smoothed Paths in screen
-        // space, plus the FIXED map-space gradient direction.
-        var routeActivePath: Path = Path()
-        var routePendingPath: Path = Path()
-        var routeGradStart: CGPoint = .zero
-        var routeGradEnd: CGPoint = .zero
-        var breadcrumbDots: [CGPoint] = []
-        var hasRoute: Bool = false
+        struct RouteMember {
+            let points: [CGPoint]
+            /// Exact caller-owned canonical `.eusoRoute` state.
+            let state: HereRouteVisualState
+        }
+
+        // Each LineString member remains independent. The renderer never
+        // concatenates MultiLineString members or bridges an invalid point.
+        var routeMembers: [RouteMember] = []
+        var hasRoute: Bool { !routeMembers.isEmpty }
 
         // Geofence rings (§3c) — screen-space center + POINT radius (meters
         // projected through the committed camera) + kind, with the optional
@@ -517,7 +518,7 @@ extension BespokeMapCanvas {
         static let empty = RenderModel()
 
         /// The heavy precompute. Pure + deterministic given its value inputs.
-        /// Projects continents, simplifies + smooths the route, culls + caps
+        /// Projects continents, preserves canonical route vertices, culls + caps
         /// markers / labels, and resolves the scale pill text — once.
         static func build(
             size: CGSize,
@@ -620,14 +621,25 @@ extension BespokeMapCanvas {
                 }
             }
 
-            // ── 4c — route (simplify → smooth, once) ──
-            let liveCoord = BespokeMapCanvas.liveMarkerCoord(layers)
+            // ── 4c — route (validate → simplify, once) ──
+            // Route state is caller-owned server truth. Raw position evidence
+            // never authorizes a traveled/remaining split. Legacy `.route`
+            // geometry fails closed: a flat/static provider line is not a
+            // second route grammar and cannot be promoted by this renderer.
             for layer in layers {
-                if case .route(let poly, _) = layer, poly.count >= 2 {
-                    m.buildRoute(poly: poly, style: style, viewport: viewport, liveCoord: liveCoord)
-                    // Endpoints derived from route geometry.
+                switch layer {
+                case .route:
+                    break
+                case .eusoRoute(let poly, let state, _):
+                    guard m.buildRoute(
+                        poly: poly,
+                        state: state,
+                        viewport: viewport
+                    ) else { continue }
                     m.endpoints.append((viewport.screenPoint(poly.first!), style.originMarker))
                     m.endpoints.append((viewport.screenPoint(poly.last!), style.destMarker))
+                default:
+                    break
                 }
             }
 
@@ -694,7 +706,12 @@ extension BespokeMapCanvas {
             // appear beside a real freight lane.
             if !hasAuthoredLabels {
                 for layer in layers {
-                    if case .route(let poly, _) = layer, let first = poly.first, let last = poly.last {
+                    let poly: [HereLatLng]?
+                    switch layer {
+                    case .eusoRoute(let points, _, _): poly = points
+                    default: poly = nil
+                    }
+                    if let poly, let first = poly.first, let last = poly.last {
                         if labelCount < BespokeMapCanvas.maxVisibleLabels,
                            !labelled.contains(BespokeMapCanvas.coordKey(first)) {
                             let a = viewport.screenPoint(first)
@@ -731,84 +748,35 @@ extension BespokeMapCanvas {
             //    otherwise static board. Anything else stays static and
             //    pauses the TimelineView entirely. ──
             let hasLivePuck = m.markers.contains { $0.kind == .truck }
-            let flowEligible = m.hasRoute
-                && style.ping == nil
-                && style.truckMarker?.glyph == .cabBox
-                && style.routePending.stops != nil
             let fenceMotion = m.fences.contains {
                 $0.kind == .pilotGround || $0.kind == .railRamp || $0.breach != nil
             }
-            m.hasLiveMotion = hasLivePuck || flowEligible || fenceMotion
+            m.hasLiveMotion = hasLivePuck || fenceMotion
 
             return m
         }
 
-        /// Build the simplified + smoothed active / pending route Paths in
-        /// screen space, plus the fixed map-space gradient direction and the
-        /// light-register breadcrumb dots. Mutates `self`.
+        /// Preserve one validated LineString member as its own screen-space
+        /// path. Invalid members fail closed; they are never repaired by
+        /// dropping a point and joining the coordinates around it.
+        @discardableResult
         mutating func buildRoute(
             poly: [HereLatLng],
-            style: BespokeMapStyle,
-            viewport: BespokeMapViewport,
-            liveCoord: HereLatLng?
-        ) {
-            guard poly.count >= 2 else { return }
-            // Project once.
+            state: HereRouteVisualState,
+            viewport: BespokeMapViewport
+        ) -> Bool {
+            guard poly.count >= 2, poly.allSatisfy(\.isUsableCoordinate) else { return false }
+            // Project exact canonical geometry once. It is evidence, so the
+            // renderer neither simplifies nor repairs its coordinates.
             let projected = poly.map { viewport.screenPoint($0) }
-
-            // FIX 2 — simplify (Douglas–Peucker) to ~the canvas pixel
-            // resolution BEFORE Catmull-Rom smoothing, so a 2000-pt HERE route
-            // never spawns 2000 Bézier segments. We keep index correspondence
-            // for the live-split by simplifying the screen polyline and
-            // re-finding the split on the simplified set.
-            let tolerance: CGFloat = 1.5   // ~1.5pt ≈ on-screen pixel resolution
-            let simplified = BespokeMapCanvas.simplify(projected,
-                                                       tolerance: tolerance,
-                                                       cap: BespokeMapCanvas.maxRoutePoints)
-            guard simplified.count >= 2 else {
-                // Degenerate: a straight 2-point line, split at midpoint.
-                routeActivePath = BespokeMapCanvas.smoothPath(simplified)
-                routePendingPath = Path()
-                hasRoute = true
-                let bb = BespokeMapCanvas.boundingBox(simplified)
-                routeGradStart = CGPoint(x: bb.minX, y: bb.maxY)
-                routeGradEnd = CGPoint(x: bb.maxX, y: bb.minY)
-                return
-            }
-
-            // Split index — geodesic nearest to the live puck, else the
-            // authored 0.62 fraction. Resolve on the GEO polyline for the live
-            // case, then map that fraction onto the simplified screen polyline.
-            let splitIndex: Int
-            if let live = liveCoord {
-                let geoIdx = BespokeMapCanvas.nearestVertexIndex(in: poly, to: live)
-                let frac = poly.count > 1 ? Double(geoIdx) / Double(poly.count - 1) : 0.62
-                splitIndex = Swift.max(1, Swift.min(simplified.count - 1,
-                                                    Int(Double(simplified.count - 1) * frac)))
-            } else {
-                splitIndex = Swift.max(1, Swift.min(simplified.count - 1,
-                                                    Int(Double(simplified.count - 1) * 0.62)))
-            }
-
-            let activePts = Array(simplified.prefix(splitIndex + 1))
-            let pendingPts = Array(simplified.suffix(from: splitIndex))
-
-            // FIXED map-space gradient direction (bottom-leading → top-trailing)
-            // over the FULL route bounds, for BOTH active + pending.
-            let bounds = BespokeMapCanvas.boundingBox(simplified)
-            routeGradStart = CGPoint(x: bounds.minX, y: bounds.maxY)
-            routeGradEnd = CGPoint(x: bounds.maxX, y: bounds.minY)
-
-            routeActivePath = BespokeMapCanvas.smoothPath(activePts)
-            routePendingPath = BespokeMapCanvas.smoothPath(pendingPts)
-            hasRoute = true
-
-            // Light-register breadcrumbs along the traveled portion.
-            if style.ping == nil, style.truckMarker?.glyphColor == Color(hex: 0x0D1117) {
-                for (offset, pt) in activePts.enumerated() where offset % 2 == 0 {
-                    breadcrumbDots.append(pt)
-                }
-            }
+            guard projected.count >= 2 else { return false }
+            routeMembers.append(
+                .init(
+                    points: projected,
+                    state: state
+                )
+            )
+            return true
         }
 
         /// FEATURE 1 — project the real geographic context (state / province +
@@ -1180,9 +1148,9 @@ extension BespokeMapCanvas {
             paintTrafficSegment(&context, path: seg.path, severity: seg.severity,
                                 isDark: model.isDarkRegister)
         }
-        // 4c — route (pre-smoothed paths).
+        // 4c — independent exact route/reference members.
         if model.hasRoute {
-            paintRoutePaths(&context, model: model, phase: phase)
+            paintRoutePaths(&context, model: model)
         }
         // 4c2 — geofence rings (+ breach node): above the route, below pins
         // (the JS __applyLayers z-order — fences before markers).
@@ -1607,98 +1575,155 @@ extension BespokeMapCanvas {
             style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round))
     }
 
-    // MARK: 4c — Route (solid traveled + dashed remaining; NO glow underlay)
+    // MARK: 4c — Route (owned gradient + redundant state truth)
 
-    /// Stroke the PRE-smoothed active + pending route Paths from the model.
-    /// No simplify / smoothing here — that ran once in `RenderModel.build`.
-    /// `phase` drives the 222 flow overlay (boards only).
-    static func paintRoutePaths(
-        _ context: inout GraphicsContext,
-        model: RenderModel,
-        phase: PulsePhase = .still
-    ) {
-        let style = model.style
-        let gradStart = model.routeGradStart
-        let gradEnd = model.routeGradEnd
+    private struct RouteVisualSpec {
+        let width: CGFloat
+    }
 
-        // Casing — flat road bed stroked UNDER the whole route (nav register:
-        // #FFFFFF w16 light / #05060A w16 dark per 035). Both legs share it.
-        if let casing = style.routeActive.casing, style.routeActive.casingWidth > 0 {
-            let casingStyle = StrokeStyle(
-                lineWidth: style.routeActive.casingWidth, lineCap: .round, lineJoin: .round)
-            context.stroke(model.routeActivePath, with: .color(casing), style: casingStyle)
-            context.stroke(model.routePendingPath, with: .color(casing), style: casingStyle)
-        }
+    private static func routeVisualSpec(_: HereRouteVisualState) -> RouteVisualSpec {
+        // Route state is expressed by accessible text and localized glyphs.
+        // The authored EusoLine itself never changes width, pattern, or edge.
+        .init(width: 5)
+    }
 
-        // Active — iridescent gradient, solid, round caps.
-        let routeGradient = GraphicsContext.Shading.linearGradient(
-            Gradient(colors: style.routeActive.stops),
-            startPoint: gradStart,
-            endPoint: gradEnd
-        )
-        context.stroke(
-            model.routeActivePath,
-            with: routeGradient,
-            style: StrokeStyle(lineWidth: style.routeActive.width, lineCap: .round, lineJoin: .round)
-        )
-
-        // Pending — dashed, gradient (if present) else flat color, round caps.
-        let pendingShading: GraphicsContext.Shading
-        if let stops = style.routePending.stops, !stops.isEmpty {
-            pendingShading = .linearGradient(
-                Gradient(colors: stops),
-                startPoint: gradStart,
-                endPoint: gradEnd
-            )
+    /// Exact interpolation through the shared three authored route stops. The
+    /// input is member-local route order, never screen geography.
+    private static func routeColor(at progress: Double) -> Color {
+        let t = Swift.max(0, Swift.min(1, progress))
+        let midpoint = 0.52
+        let from: (Double, Double, Double)
+        let to: (Double, Double, Double)
+        let local: Double
+        if t <= midpoint {
+            from = (0x14, 0x73, 0xFF)
+            to = (0x81, 0x3F, 0xF5)
+            local = t / midpoint
         } else {
-            pendingShading = .color(style.routePending.color)
+            from = (0x81, 0x3F, 0xF5)
+            to = (0xBE, 0x01, 0xFF)
+            local = (t - midpoint) / (1 - midpoint)
         }
-        context.stroke(
-            model.routePendingPath,
-            with: pendingShading,
-            style: StrokeStyle(
-                lineWidth: style.routePending.width,
-                lineCap: .round,
-                lineJoin: .round,
-                dash: style.routePending.dashPattern
-            )
+        return Color(
+            red: (from.0 + (to.0 - from.0) * local) / 255,
+            green: (from.1 + (to.1 - from.1) * local) / 255,
+            blue: (from.2 + (to.2 - from.2) * local) / 255
         )
+    }
 
-        // CANON FLOW (222 boards): the active leg carries an eusoPrimary dash
-        // [3,7] overlay whose dashoffset runs 0 → −20 over a 1.4 s loop. The
-        // wireframe authors the flow as full-opacity dashes over a faded base;
-        // over the engine's full-opacity active leg the same-hue dashes are
-        // lifted additively (plusLighter @0.35) so the motion reads without
-        // re-tinting the verified-no-drift static route. Boards only — the
-        // driver / ocean / rail / nav wireframes author no flow.
-        if phase.animated,
-           style.ping == nil,
-           style.truckMarker?.glyph == .cabBox,
-           let flowStops = style.routePending.stops, !flowStops.isEmpty {
-            var flow = context
-            flow.blendMode = .plusLighter
-            flow.opacity = 0.35
-            flow.stroke(
-                model.routeActivePath,
-                with: routeGradient,
-                style: StrokeStyle(
-                    lineWidth: style.routeActive.width,
-                    lineCap: .round,
-                    lineJoin: .round,
-                    dash: [3, 7],
-                    dashPhase: phase.flowDashOffset
+    private struct EusoLineSegment {
+        let points: [CGPoint]
+        let progress: Double
+    }
+
+    /// Renderer-only cumulative screen-distance parameterization. Every added
+    /// point subdivides an existing straight edge; original corners remain
+    /// exact. This is never canonical distance, progress, ETA, Haul, or price.
+    private static func eusoLineSegments(
+        _ points: [CGPoint],
+        budget: Int = 72
+    ) -> [EusoLineSegment] {
+        guard points.count >= 2 else { return [] }
+        let epsilon = 0.000_001
+        var weights: [Double] = []
+        var cumulative: [Double] = [0]
+        var total = 0.0
+        for index in 0..<(points.count - 1) {
+            let start = points[index]
+            let end = points[index + 1]
+            let weight = hypot(Double(end.x - start.x), Double(end.y - start.y))
+            weights.append(weight)
+            total += weight
+            cumulative.append(total)
+        }
+
+        guard total > epsilon else {
+            return [.init(points: points, progress: 0.5)]
+        }
+        let count = Swift.max(1, Swift.min(96, budget))
+
+        func point(at distance: Double) -> CGPoint {
+            if distance <= 0 { return points[0] }
+            if distance >= total { return points[points.count - 1] }
+            var low = 0
+            var high = cumulative.count - 1
+            while low + 1 < high {
+                let middle = (low + high) / 2
+                if cumulative[middle] <= distance {
+                    low = middle
+                } else {
+                    high = middle
+                }
+            }
+
+            var edge = Swift.min(low, weights.count - 1)
+            while edge < weights.count - 1, weights[edge] <= epsilon {
+                edge += 1
+            }
+            let weight = weights[edge]
+            guard weight > epsilon else { return points[edge + 1] }
+            let local = Swift.max(
+                0,
+                Swift.min(1, (distance - cumulative[edge]) / weight)
+            )
+            let start = points[edge]
+            let end = points[edge + 1]
+            return CGPoint(
+                x: start.x + (end.x - start.x) * CGFloat(local),
+                y: start.y + (end.y - start.y) * CGFloat(local)
+            )
+        }
+
+        var segments: [EusoLineSegment] = []
+        segments.reserveCapacity(count)
+        var interiorVertex = 1
+        for index in 0..<count {
+            let startDistance = total * Double(index) / Double(count)
+            let endDistance = total * Double(index + 1) / Double(count)
+            var segmentPoints = [point(at: startDistance)]
+            while interiorVertex < points.count - 1,
+                  cumulative[interiorVertex] <= startDistance + epsilon {
+                interiorVertex += 1
+            }
+            while interiorVertex < points.count - 1,
+                  cumulative[interiorVertex] < endDistance - epsilon {
+                segmentPoints.append(points[interiorVertex])
+                interiorVertex += 1
+            }
+            segmentPoints.append(point(at: endDistance))
+            segments.append(
+                .init(
+                    points: segmentPoints,
+                    progress: (startDistance + endDistance) / (2 * total)
                 )
             )
         }
+        return segments
+    }
 
-        // Light decoration: breadcrumbs sprinkled along the traveled portion.
-        for pt in model.breadcrumbDots {
-            let dot = Path(ellipseIn: CGRect(
-                x: pt.x - BespokeMapStyle.lightBreadcrumbRadius,
-                y: pt.y - BespokeMapStyle.lightBreadcrumbRadius,
-                width: BespokeMapStyle.lightBreadcrumbRadius * 2,
-                height: BespokeMapStyle.lightBreadcrumbRadius * 2))
-            context.fill(dot, with: .color(BespokeMapStyle.lightBreadcrumbColor))
+    /// Stroke every independent canonical LineString as one slim, continuous
+    /// EusoLine from origin blue through 52%-violet to destination purple.
+    /// Legacy `.route` members fail closed during model construction; there is
+    /// no neutral/static alternative route grammar.
+    static func paintRoutePaths(
+        _ context: inout GraphicsContext,
+        model: RenderModel
+    ) {
+        for member in model.routeMembers {
+            let spec = routeVisualSpec(member.state)
+            // The route itself is the identity: one continuous gradient
+            // ribbon with no outline, backdrop, casing, or route halo.
+            for segment in eusoLineSegments(member.points) {
+                context.stroke(
+                    BespokeMapCanvas.polylinePath(segment.points),
+                    with: .color(routeColor(at: segment.progress)),
+                    style: StrokeStyle(
+                        lineWidth: spec.width,
+                        lineCap: .round,
+                        lineJoin: .round
+                    )
+                )
+            }
         }
     }
 
@@ -1810,8 +1835,19 @@ extension BespokeMapCanvas {
         return CGRect(x: minX, y: minY, width: Swift.max(1, maxX - minX), height: Swift.max(1, maxY - minY))
     }
 
+    /// Exact polyline path. Canonical route geometry uses this helper so the
+    /// renderer does not round a server-authored corner into new geometry.
+    static func polylinePath(_ pts: [CGPoint]) -> Path {
+        var path = Path()
+        guard let first = pts.first else { return path }
+        path.move(to: first)
+        for point in pts.dropFirst() { path.addLine(to: point) }
+        return path
+    }
+
     /// A smooth (Catmull-Rom-ish) path through screen points. Falls back to a
-    /// straight polyline for < 3 points.
+    /// straight polyline for < 3 points. Reserved for non-authoritative map
+    /// decoration; canonical route members use `polylinePath`.
     static func smoothPath(_ pts: [CGPoint]) -> Path {
         var path = Path()
         guard let first = pts.first else { return path }
@@ -1906,6 +1942,12 @@ extension BespokeMapCanvas {
         // VERBATIM: omitted endpoints paint NOTHING (cosmos / lightDriver origin).
         if marker.omitted { return }
 
+        // Local endpoint grace from the authored route mockups. This stays
+        // beneath the marker and never becomes a route outline or geometry.
+        if let bloom = marker.bloom {
+            paintEndpointBloom(&context, at: c, bloom: bloom)
+        }
+
         // VERBATIM: a glass-pill + rounded-diamond destination glyph replaces the
         // concentric circles entirely when present (cosmos / lightDriver dest).
         if let dp = marker.destPill {
@@ -1913,15 +1955,26 @@ extension BespokeMapCanvas {
             return
         }
 
-        // VERBATIM (ocean 003): a HOLLOW port pin — `outerFill` center disc
-        // (page bg) with a thick `ringStroke` ring AT `outerRadius`, no inner
-        // core. Origin ring = eusoPrimary, dest ring = #6E7681 / #8A96A3.
+        // OCEAN 003: a genuinely HOLLOW port pin. The underlying water stays
+        // visible through the center; only the sourced port ring is painted.
+        // Origin ring = eusoPrimary, dest ring = #6E7681 / #8A96A3.
         if let ringStroke = marker.ringStroke, marker.ringWidth > 0 {
             let ring = Path(ellipseIn: CGRect(
                 x: c.x - marker.outerRadius, y: c.y - marker.outerRadius,
                 width: marker.outerRadius * 2, height: marker.outerRadius * 2))
-            context.fill(ring, with: .color(marker.outerFill))
-            context.stroke(ring, with: .color(ringStroke), lineWidth: marker.ringWidth)
+            if let stops = marker.ringGradient, !stops.isEmpty {
+                context.stroke(
+                    ring,
+                    with: .linearGradient(
+                        Gradient(colors: stops),
+                        startPoint: CGPoint(x: c.x - marker.outerRadius, y: c.y),
+                        endPoint: CGPoint(x: c.x + marker.outerRadius, y: c.y)
+                    ),
+                    lineWidth: marker.ringWidth
+                )
+            } else {
+                context.stroke(ring, with: .color(ringStroke), lineWidth: marker.ringWidth)
+            }
             return
         }
 
@@ -1951,6 +2004,51 @@ extension BespokeMapCanvas {
             )
         } else {
             context.fill(inner, with: .color(marker.innerFill))
+        }
+    }
+
+    /// Paint a soft endpoint-local bloom. `.ring` never paints inside its
+    /// inner edge, preserving the transparent center of Vessel port rings.
+    static func paintEndpointBloom(
+        _ context: inout GraphicsContext,
+        at c: CGPoint,
+        bloom: BespokeMapStyle.EndpointBloom
+    ) {
+        guard bloom.radius > 0, bloom.opacity > 0 else { return }
+        let rect = CGRect(
+            x: c.x - bloom.radius,
+            y: c.y - bloom.radius,
+            width: bloom.radius * 2,
+            height: bloom.radius * 2
+        )
+        let path = Path(ellipseIn: rect)
+        switch bloom.treatment {
+        case .disc:
+            context.fill(
+                path,
+                with: .radialGradient(
+                    Gradient(stops: [
+                        .init(color: bloom.color.opacity(bloom.opacity), location: 0),
+                        .init(color: bloom.color.opacity(bloom.opacity * 0.42), location: 0.55),
+                        .init(color: .clear, location: 1),
+                    ]),
+                    center: c,
+                    startRadius: 0,
+                    endRadius: bloom.radius
+                )
+            )
+        case .ring:
+            let width = Swift.max(1, bloom.ringWidth)
+            context.stroke(
+                path,
+                with: .color(bloom.color.opacity(bloom.opacity * 0.30)),
+                lineWidth: width * 1.8
+            )
+            context.stroke(
+                path,
+                with: .color(bloom.color.opacity(bloom.opacity)),
+                lineWidth: width
+            )
         }
     }
 
@@ -1997,13 +2095,25 @@ extension BespokeMapCanvas {
         phase: PulsePhase = .still
     ) {
         switch kind {
-        case .truck:
+        case .truck, .rail, .vessel:
             // Exactly ONE puck per register: truck on standard, ping on driver.
             if let truck = style.truckMarker {
                 paintTruck(&context, at: c, truck: truck, phase: phase)
             } else if let ping = style.ping {
                 paintPing(&context, at: c, ping: ping, phase: phase)
             }
+        case .cluster:
+            let r: CGFloat = 10
+            let disc = Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2))
+            context.fill(
+                disc,
+                with: .linearGradient(
+                    Gradient(colors: [Color(hex: "#1473FF"), Color(hex: "#813FF5"), Color(hex: "#BE01FF")]),
+                    startPoint: CGPoint(x: c.x - r, y: c.y),
+                    endPoint: CGPoint(x: c.x + r, y: c.y)
+                )
+            )
+            context.stroke(disc, with: .color(.white.opacity(0.92)), lineWidth: 1.5)
         case .pickup:
             paintEndpoint(&context, at: c, marker: style.originMarker)
         case .delivery:
@@ -2354,11 +2464,19 @@ extension BespokeMapCanvas {
     // MARK: Formatting
 
     static func coordText(_ c: HereLatLng) -> String {
-        String(format: "%.4f, %.4f", c.lat, c.lng)
+        guard let coordinate = LatLongParser.validatedCoordinate(
+            latitude: c.lat,
+            longitude: c.lng
+        ) else { return "Location unavailable" }
+        return LatLongParser.displayString(coordinate)
     }
 
     static func coordKey(_ c: HereLatLng) -> String {
-        String(format: "%.4f,%.4f", c.lat, c.lng)
+        guard let coordinate = LatLongParser.validatedCoordinate(
+            latitude: c.lat,
+            longitude: c.lng
+        ) else { return "unavailable" }
+        return "\(coordinate.latitude),\(coordinate.longitude)"
     }
 
     /// Round a raw mileage to a clean 1 / 2 / 5 × 10ⁿ magnitude for the bar.

@@ -119,8 +119,11 @@ private struct CarGeo585: Decodable, Hashable {
     }
     /// A usable HERE coordinate, gated past null-island. `nil` when no real fix.
     var fix: HereLatLng? {
-        guard let lat, let lng, !(lat == 0 && lng == 0) else { return nil }
-        return HereLatLng(lat, lng)
+        guard let coordinate = LatLongParser.validatedCoordinate(
+            latitude: lat,
+            longitude: lng
+        ) else { return nil }
+        return HereLatLng(coordinate.latitude, coordinate.longitude)
     }
 }
 
@@ -325,10 +328,17 @@ private struct RailEquipmentPositionsBody: View {
     private var positionMarkers: [HereMarker] {
         rows.compactMap { car -> HereMarker? in
             guard let fix = car.mapFix else { return nil }
-            let kind: HereMarker.Kind = bucket(car.status) == "in_motion" ? .truck
+            let kind: HereMarker.Kind = bucket(car.status) == "in_motion" ? .rail
                 : (bucket(car.status) == "bad_order" ? .alert : .stop)
-            return HereMarker(at: fix, kind: kind,
-                              label: car.carNumber ?? "Railcar", id: car.id)
+            return HereMarker(
+                at: fix,
+                kind: kind,
+                label: car.carNumber ?? "Railcar",
+                id: car.id,
+                observationState: .degraded,
+                sourceLabel: car.currentLocationGeo == nil ? "Yard catalog" : "Carrier AEI/GPS",
+                accessibilityLabel: "Railcar \(car.carNumber ?? car.id); freshness not supplied"
+            )
         }
     }
 
@@ -547,6 +557,13 @@ private struct RailEquipmentPositionsBody: View {
                         center: center,
                         zoom: 6,
                         layers: [.markers(positionMarkers)],
+                        mapModeContext: .primary(.rail),
+                        liveOperationsStatus: .init(
+                            availability: .degraded,
+                            sourceLabel: "Carrier AEI/GPS",
+                            detail: "Positions available; freshness not supplied",
+                            observationCount: positionMarkers.count
+                        ),
                         onSelectMarker: { id in selectedCarId = id }
                     )
                     .frame(height: 220)
@@ -578,10 +595,10 @@ private struct RailEquipmentPositionsBody: View {
             Image(systemName: "dot.radiowaves.left.and.right")
                 .font(.system(size: 26, weight: .regular))
                 .foregroundStyle(palette.textTertiary)
-            Text("Live positions pending feed")
+            Text("No authorized live feed")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(palette.textSecondary)
-            Text("Plotting the moment the carrier reports a railcar AEI/GPS fix or spotted yard.")
+            Text("No railcar AEI/GPS fix or spotted yard has been returned.")
                 .font(.system(size: 11))
                 .foregroundStyle(palette.textTertiary)
                 .multilineTextAlignment(.center)

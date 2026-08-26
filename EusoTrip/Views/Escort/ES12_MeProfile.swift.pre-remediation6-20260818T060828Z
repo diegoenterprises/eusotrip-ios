@@ -1,0 +1,1375 @@
+//
+//  ES12_MeProfile.swift
+//  EusoTrip — Escort · Me — Profile & Settings (ES-12).
+//
+//  SUPERSEDES-BY-ADOPTION: `620_EscortMeHome.swift` (legacy escort Me hub — a flat
+//  chevron list of ten destinations with no data on it). That file is NOT deleted and
+//  NOT edited by this brick — the escort nav map still binds the "me" bottom-nav slot
+//  to "620" until the single-writer of EscortNavController.swift rewires it. When it
+//  does, the "me" slot adopts `EscortMeProfileScreen` and the legacy file retires.
+//
+//  Built from the ES-12 design-authority twins
+//  ("07 Escort/{Light,Dark}-SVG/ES-12 Me Profile.svg").
+//
+//  ARCHETYPE HOME/DETAIL (growth ladder). The hero is a certification LADDER drawn as
+//  a rising staircase: three rungs of increasing height — the earned one short and
+//  solid, the current one gradient-filled, the locked one taller and dashed, carrying
+//  its single unmet requirement and its exam date. Below it a capability facet grid,
+//  an equipment preview that defers to the registry, settings drawn as ListRows that
+//  each carry a value, and a two-button action bar.
+//
+//  Deliberately NOT ES-08 Cert Reciprocity: ES-08 answers WHERE a credential is
+//  honoured (a 51-tile choropleth of law by geography, wallet sorted by expiry). ES-12
+//  answers HOW FAR the career has climbed and what the next rung costs — no map, no
+//  state tiles, one ordinal axis instead of a spatial one.
+//
+//  TYPE RAMP (HOME archetype). H1 34/700/-0.6 · credential subline beneath it ·
+//  section labels 9/800/1.0 tertiary · ListRow titles 14/700 · SF-Mono for money,
+//  counts, dates and codes. The H1 was raised 26 → 34 this fire and the preferred
+//  position was lifted out of the H1's row onto the LEAD facet tile
+//  (POSITION · PREFERRED), so a long escort name has the full run of the row.
+//
+//  COMPONENTS (14-kit). Cards Radius.xl(20): equipment strip, settings card, both CTA
+//  buttons. Tiles Radius.lg(16): the three rungs, the six facet tiles. Chips
+//  cornerRadius 10 at height 20. ListRow anatomy on all four settings rows:
+//  40×40 cornerRadius-10 icon chip + 14/700 title + sub + pill + value + chevron.
+//
+//  ══ WIRING TRUTH — every line opened in frontend/server/routers/escorts.ts this fire ══
+//    EXISTS  escorts.getProfile             escorts.ts:3081  return literal :3127-3188
+//                                                            positions :3138 · preferredPosition :3139
+//                                                            heightPole :3145 · equipment :3149
+//                                                            stats :3152-3160 over real counts :3101-3125
+//                                                            wallet block :3174-3178
+//    EXISTS  escorts.getCertificationStatus escorts.ts:924   → getCertificationStatusInternal :487
+//                                                            heightPoleCertified :519
+//                                                            hazmatEscortCertified :520
+//                                                            nightOperationsCertified :521
+//                                                            statesCleared :531 · reciprocal :532
+//                                                            30-day expiringSoon window :497
+//    EXISTS  escorts.getMyCertifications    escorts.ts:2458  wallet rows behind the ladder
+//    EXISTS  escorts.getAvailability        escorts.ts:2298  Availability row + secondary CTA state
+//    EXISTS  escorts.updateAvailability     escorts.ts:2318  SECONDARY CTA        — ONLINE_ONLY
+//    EXISTS  escorts.uploadCertification    escorts.ts:2551  PRIMARY CTA          — ONLINE_ONLY
+//                                                            row insert :2556 · audit :2569
+//                                                            WS ESCORT_CERT_UPLOADED :2589-2590
+//    EXISTS  escorts.updateProfile          escorts.ts:3192  facet writes, merge :3216-3229 — ONLINE_ONLY
+//    EXISTS  escorts.getReciprocityMap      escorts.ts:931   CERT WALLET → ES-08
+//                                            REPOINT: earlier ports cited :918, which is a
+//                                            wsService.broadcastToChannel line inside
+//                                            applyForJob. The declaration is :931.
+//    EXISTS  escorts.getPermitStats         escorts.ts:2199  permit count chip
+//
+//  ══ NAMED GAPS — honest, not shipped ══
+//    · STUB·cert-level — no `level` column on escort_certifications and no proc returns
+//      one. Levels 1→3 are DERIVED below from the three real booleans (L1 = at least one
+//      active cert, L2 = heightPole AND nightOps, L3 = hazmat). Owed: a canonical level,
+//      otherwise two surfaces can disagree about what level this escort is.
+//    · STUB·wallet-balance — wallet.balance is a hard-coded literal 0 (escorts.ts:3175).
+//      This screen renders NO balance at any point; the Payout row carries the method and
+//      the lifetime figure (a real SUM :3103) and says "no balance shown here" on its own
+//      face. Filed platform-wide as ESC-CP-BALANCE-WIDE: a fabricated zero must never be
+//      printed as if it were money.
+//    · STUB·zero-stats — stats.incidentCount and stats.repeatClientRate are hard-coded 0
+//      (:3156-3157) and are therefore not drawn at all.
+//    · STUB·steer-position — positions has exactly four keys (:3138) and
+//      escort_assignments.position is enum lead|chase|both. The STEER facet reads
+//      NOT MODELLED and is not tappable, never a toggle that would silently never persist.
+//    · STUB·equipment-registry — profile.equipment is an untyped metadata blob (:3149) —
+//      no equipment table and no registry proc. The strip previews the blob; the section
+//      label says REGISTRY OWED · ES-30 rather than linking to a surface that does not exist.
+//    · STUB·cert-expiry-push — the 30-d / 7-d cert-expiry push is ABSENT (same gap ES-08
+//      named). The Alerts row says in-app only and never implies a push.
+//    · STUB·escort-blockchain-trail — escorts.ts contains ZERO occurrences of
+//      `blockchainAuditTrail` across all 4 745 lines. The table is real and is appended to
+//      by wallet.ts:1190/:1631/:1752/:3495/:4327 and detentionAccessorials.ts:909/:1156/
+//      :1409; no escort procedure appends to it. A certification upload changes job
+//      eligibility across 51 jurisdictions and is exactly the class the chain exists for.
+//    · STUB·escort-role-gate — see RBAC below.
+//
+//  ══ CHAIN ══
+//  escorts.uploadCertification is the ONLY closed write on this screen: it inserts a real
+//  escort_certifications row (:2556), records an audit event (:2569) and broadcasts
+//  ESCORT_CERT_UPLOADED on WS_CHANNELS.USER (:2589-2590). It appends NO blockchainAuditTrail.
+//  escorts.updateProfile (:3192-3231) and escorts.updateAvailability (:2318-2336) are bare
+//  users.metadata writes — no audit row, no realtime emit, no blockchain append — so a
+//  capability or availability change is invisible to dispatch, to the marketplace matcher
+//  and to any other logged-in session until each cold-refetches. That consequence is
+//  printed on the face of the screen under the facet grid, not buried in this comment.
+//  Owed halves: recordAuditEvent + WS ESCORT_PROFILE_UPDATED on updateProfile and
+//  updateAvailability, and a blockchainAuditTrail append on uploadCertification.
+//
+//  ══ RBAC ══
+//  Every procedure this screen calls is gated by `protectedProcedure`
+//  (server/_core/trpc.ts:155 = t.procedure.use(requireUser)) — it asserts ONLY that a
+//  session exists. That is NOT `roleProcedure` and is not described here as one.
+//  `escortProcedure = roleProcedure(ROLES.ESCORT)` exists (trpc.ts:216/:227) and is NOT
+//  applied to getProfile :3081, updateProfile :3192, updateAvailability :2318,
+//  getAvailability :2298, uploadCertification :2551, getCertificationStatus :924 or
+//  getMyCertifications :2458. Role narrowing happens inside each body via
+//  resolveEscortUserId (escorts.ts:138-148), which resolves the caller's own users.id by
+//  email and performs no role check; getProfile additionally ignores a caller-supplied
+//  escortId unless the caller is ADMIN/SUPER_ADMIN (:3089-3091). Net: no escort reaches
+//  another escort's certifications, ratings or earnings — but a signed-in SHIPPER or
+//  DRIVER is not refused at the gate, they simply receive their own empty escortProfile.
+//  The web parity route IS role-gated (client/src/App.tsx:934, guard ESCT); the API is not.
+//
+//  ══ OFFLINE (§W) ══
+//  READ_CACHED(60m) through `EscortOfflineCache`. A cached paint swaps the ladder's live
+//  dot for the staleness line; past the ttl the screen shows its offline state rather than
+//  a stale level presented as current. Every write — the two CTAs, the facet toggles and
+//  sign-out — is ONLINE_ONLY and both CTAs say so on their faces: the phone has no escort
+//  outbox (Driver-only mirror, PLANNED per Offline Mode Encyclopedia v2). No queue badge
+//  is ever drawn.
+//
+//  ══ WEB PARITY ══
+//  client/src/pages/EscortProfile.tsx at route "/escort/profile" (client/src/App.tsx:934).
+//
+//  ══ MODE + COUNTRY ══
+//  transportMode `truck` — escort is a truck-mode role and neither rail nor vessel has an
+//  escort surface, so no mode switch is offered. COUNTRY US only: P/EVO and flagger are US
+//  state credentials, currency USD (NumberFormatter currencyCode "USD" below), and the exam
+//  date is a US state exam. The CA/MX seam has no reciprocal analogue and nothing here
+//  claims cross-border validity; tri-country is carried as content, never as a verdict.
+//
+//  Sole author: Mike "Diego" Usoro / Eusorone Technologies, Inc.
+//
+
+import SwiftUI
+
+// MARK: - Wire projections (screen-local, private)
+
+private struct MpPositions: Codable, Hashable {
+    var leadEscort: Bool?
+    var rearEscort: Bool?
+    var heightPole: Bool?
+    var routeSurvey: Bool?
+}
+
+private struct MpHomeBase: Codable, Hashable { var city: String?; var state: String? }
+private struct MpHeightPole: Codable, Hashable { var maxHeight: Double?; var hasElectronicSensor: Bool? }
+
+private struct MpStats: Codable, Hashable {
+    var totalConvoys: Int?
+    var totalMiles: Int?
+    var onTimePercentage: Int?
+    var leadJobs: Int?
+    var chaseJobs: Int?
+}
+
+private struct MpWallet: Codable, Hashable {
+    /// NOTE: `balance` is a hard-coded literal 0 server-side (escorts.ts:3175).
+    /// Decoded for completeness; NEVER rendered — see STUB·wallet-balance in the header.
+    var balance: Double?
+    var lifetimeEarnings: Double?
+    var activeJobs: Int?
+}
+
+/// `escorts.getProfile` (escorts.ts:3081) — the fields this surface actually paints.
+private struct MpProfile: Codable {
+    var id: String?
+    var name: String?
+    var escortCompany: String?
+    var positions: MpPositions?
+    var preferredPosition: String?
+    var yearsExperience: Int?
+    var homeBase: MpHomeBase?
+    var willingToTravel: Int?
+    var heightPole: MpHeightPole?
+    var stats: MpStats?
+    var wallet: MpWallet?
+}
+
+/// One row of `escorts.getCertificationStatus.certifications` (resolver escorts.ts:514-528).
+private struct MpCertification: Codable, Identifiable, Hashable {
+    var id: String
+    var certType: String?
+    var certNumber: String?
+    var issuingState: String?
+    var status: String?
+    var expirationDate: String?
+    var heightPoleCertified: Bool?
+    var hazmatEscortCertified: Bool?
+    var nightOperationsCertified: Bool?
+    var clearsStates: [String]?
+}
+
+private struct MpCertStateRow: Codable, Identifiable, Hashable {
+    var id: String { code }
+    var code: String
+    var name: String?
+    var status: String?
+    var expirationDate: String?
+}
+
+/// `escorts.getCertificationStatus` (escorts.ts:924).
+private struct MpCertStatus: Codable {
+    var total: Int?
+    var active: Int?
+    var expiringSoon: Int?
+    var expired: Int?
+    var statesCleared: [String]?
+    var reciprocalStatesCleared: [String]?
+    var states: [MpCertStateRow]?
+    var certifications: [MpCertification]?
+}
+
+/// One row of `escorts.getAvailability` (escorts.ts:2298).
+private struct MpAvailabilityDay: Codable, Identifiable, Hashable {
+    var id: Int { dayOfWeek }
+    var dayOfWeek: Int
+    var dayName: String
+    var available: Bool
+}
+
+private struct MpProfileInput: Encodable { let escortId: String? }
+private struct MpUpdatePositionsInput: Encodable { let positions: MpPositionsWire }
+private struct MpPositionsWire: Encodable {
+    let leadEscort: Bool; let rearEscort: Bool; let heightPole: Bool; let routeSurvey: Bool
+}
+private struct MpUpdateResult: Decodable { let success: Bool?; let updatedAt: String? }
+
+/// `escorts.updateAvailability` input (escorts.ts:2319).
+private struct MpAvailabilityInput: Encodable { let dayOfWeek: Int; let available: Bool }
+private struct MpAvailabilityResult: Decodable {
+    let success: Bool?; let dayOfWeek: Int?; let available: Bool?
+}
+
+/// `escorts.uploadCertification` input (escorts.ts:2551).
+private struct MpUploadCertInput: Encodable {
+    let state: String; let type: String; let expirationDate: String
+}
+private struct MpUploadCertResult: Decodable { let success: Bool?; let certId: String? }
+
+/// One Codable envelope so the whole surface caches as a single last-good snapshot.
+private struct MpSnapshot: Codable {
+    var profile: MpProfile?
+    var certs: MpCertStatus?
+    var availability: [MpAvailabilityDay]?
+    var capturedAt: Date
+}
+
+// MARK: - Derived ladder (there is no server `level` — this is the client rule)
+
+private struct MpRung: Identifiable {
+    enum State { case earned, current, locked }
+    let id: Int
+    let level: Int
+    let titleLines: [String]
+    let proof: String
+    var state: State
+    let unmet: String?
+    let unlockLine: String?
+}
+
+private struct MpLadder {
+    let rungs: [MpRung]
+    var currentLevel: Int { rungs.last(where: { $0.state != .locked })?.level ?? 1 }
+    var total: Int { rungs.count }
+
+    /// L1 = at least one active credential · L2 = high-pole AND night-ops endorsements
+    /// · L3 = hazmat-escort endorsement. Every input is a real column on
+    /// escort_certifications (escorts.ts:519-521). The LEVELS are ours, not the server's.
+    static func derive(from certs: MpCertStatus?) -> MpLadder {
+        let rows = certs?.certifications ?? []
+        let activeRows = rows.filter { ($0.status ?? "active") == "active" }
+        let held = (certs?.statesCleared ?? []).joined(separator: " · ")
+        let hasBase = !activeRows.isEmpty
+        let hasPole = activeRows.contains { $0.heightPoleCertified == true }
+        let hasNight = activeRows.contains { $0.nightOperationsCertified == true }
+        let hasHazmat = activeRows.contains { $0.hazmatEscortCertified == true }
+
+        let reciprocalGain = Set(activeRows.flatMap { $0.clearsStates ?? [] })
+            .subtracting(Set(certs?.statesCleared ?? []))
+            .subtracting(Set(certs?.reciprocalStatesCleared ?? []))
+            .count
+
+        var rungs: [MpRung] = [
+            MpRung(id: 1, level: 1, titleLines: ["P/EVO"],
+                   proof: held.isEmpty ? "no active credential" : "\(held) held",
+                   state: hasBase ? .earned : .locked,
+                   unmet: hasBase ? nil : "0 of 1 active credential", unlockLine: nil),
+            MpRung(id: 2, level: 2, titleLines: ["HIGH-POLE", "+ NIGHT OPS"],
+                   proof: "endorse HP · NT",
+                   state: (hasPole && hasNight) ? .earned : .locked,
+                   unmet: (hasPole && hasNight) ? nil
+                        : "\((hasPole ? 1 : 0) + (hasNight ? 1 : 0)) of 2 endorsements",
+                   unlockLine: nil),
+            MpRung(id: 3, level: 3, titleLines: ["HAZMAT", "ESCORT"],
+                   proof: "endorse HM",
+                   state: hasHazmat ? .earned : .locked,
+                   unmet: hasHazmat ? nil : "0 of 1 endorsement",
+                   unlockLine: reciprocalGain > 0 ? "+\(reciprocalGain) states" : nil)
+        ]
+        // The highest earned rung is the one you stand on.
+        if let idx = rungs.lastIndex(where: { $0.state == .earned }) {
+            rungs[idx].state = .current
+        }
+        return MpLadder(rungs: rungs)
+    }
+}
+
+// MARK: - Screen body
+
+struct EscortMeProfile: View {
+    @Environment(\.palette) private var palette
+    @EnvironmentObject private var session: EusoTripSession
+
+    private enum Phase { case loading, loaded, failed }
+
+    @State private var phase: Phase = .loading
+    @State private var snapshot: MpSnapshot? = nil
+    @State private var stalenessLine: String? = nil
+    @State private var writeNotice: String? = nil
+    @State private var showSignOutConfirm = false
+    @State private var showAddCert = false
+    @State private var showAvailability = false
+
+    private static let cacheKey = "es12-me-profile"
+    private static let cacheTTL: TimeInterval = 60 * 60   // READ_CACHED(60m)
+
+    /// The ONE colour on this surface with no DesignSystem token. `Brand` carries no
+    /// indigo, and the night-ops endorsement must not borrow `Brand.info` (already the
+    /// LEAD position) or `Brand.rail` (a transport mode). An indigo accent token is owed.
+    private static let nightOpsIndigo = Color(hex: 0x6366F1)
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: Space.s4) {
+                topBar
+                identityBlock
+                iridescentHairline
+                switch phase {
+                case .loading: loadingBlock
+                case .failed:  failedBlock
+                case .loaded:
+                    certLadder
+                    facetGrid
+                    writeHalfNote
+                    equipmentPreview
+                    settingsCard
+                    actionBar
+                    if let notice = writeNotice {
+                        Text(notice).font(EType.caption).foregroundStyle(palette.textSecondary)
+                    }
+                    provenanceFootnote
+                }
+                Color.clear.frame(height: 96)
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 8)
+        }
+        .task { await refreshAll() }
+        .eusoRefreshable { await refreshAll() }
+        .alert("Sign out?", isPresented: $showSignOutConfirm) {
+            Button("Sign out", role: .destructive) { Task { await session.signOut() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("You'll need to sign back in to view assignments, certifications and corridor routing.")
+        }
+        .sheet(isPresented: $showAddCert) {
+            EscortAddCertificationSheet { state, type, expiry in
+                await uploadCertification(state: state, type: type, expirationDate: expiry)
+            }
+            .environment(\.palette, palette)
+        }
+        .sheet(isPresented: $showAvailability) {
+            EscortAvailabilitySheet(
+                days: (snapshot?.availability ?? []).map { $0.publicRow }
+            ) { day, available in
+                await setAvailability(dayOfWeek: day, available: available)
+            }
+            .environment(\.palette, palette)
+        }
+    }
+
+    // MARK: - Chrome
+
+    private var topBar: some View {
+        HStack(alignment: .firstTextBaseline) {
+            HStack(spacing: 4) {
+                EusoTripBrandMark(size: 12)
+                    .font(.system(size: 9, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("ESCORT · ME")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(LinearGradient.diagonal)
+            }
+            Spacer(minLength: 0)
+            Text((snapshot?.profile?.escortCompany ?? "").uppercased())
+                .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                .foregroundStyle(palette.textTertiary)
+                .lineLimit(1).minimumScaleFactor(0.8)
+        }
+    }
+
+    /// HOME archetype H1: 34 / 700 / -0.6. The H1 owns its whole row — nothing shares it,
+    /// which is what makes a long escort name safe at 34pt.
+    private var identityBlock: some View {
+        let p = snapshot?.profile
+        let displayName = p?.name ?? session.user?.name ?? "Escort"
+        return HStack(alignment: .top, spacing: Space.s3) {
+            Text(monogram(displayName))
+                .font(.system(size: 16, weight: .heavy)).tracking(0.4)
+                .foregroundStyle(palette.textOnGradient)
+                .frame(width: 48, height: 48)
+                .background(Circle().fill(LinearGradient.diagonal))
+            VStack(alignment: .leading, spacing: 6) {
+                Text(displayName)
+                    .font(.system(size: 34, weight: .bold)).tracking(-0.6)
+                    .foregroundStyle(LinearGradient.primary)
+                    .lineLimit(1).minimumScaleFactor(0.6)
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text(credentialLine(p))
+                        .font(EType.mono(.micro))
+                        .foregroundStyle(palette.textTertiary)
+                        .lineLimit(1).minimumScaleFactor(0.75)
+                    Spacer(minLength: 4)
+                    Text(careerLine(p))
+                        .font(EType.mono(.micro))
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(1).minimumScaleFactor(0.7)
+                }
+            }
+        }
+    }
+
+    private var iridescentHairline: some View {
+        Rectangle()
+            .fill(LinearGradient(colors: [Brand.blue.opacity(0.55), Brand.magenta.opacity(0.55)],
+                                 startPoint: .leading, endPoint: .trailing))
+            .frame(height: 1)
+            .padding(.horizontal, -14)
+    }
+
+    // MARK: - Certification ladder (HERO)
+
+    private var certLadder: some View {
+        let ladder = MpLadder.derive(from: snapshot?.certs)
+        return VStack(alignment: .leading, spacing: Space.s2) {
+            HStack {
+                Text("CERTIFICATION LADDER · LEVEL \(ladder.currentLevel) OF \(ladder.total)")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer(minLength: 8)
+                stalenessChip
+            }
+
+            HStack(alignment: .bottom, spacing: 11) {
+                ForEach(ladder.rungs) { rung in rungBlock(rung) }
+            }
+            .frame(height: 136, alignment: .bottom)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(palette.textPrimary.opacity(0.10)).frame(height: 1.5).offset(y: 1)
+            }
+
+            HStack(spacing: 0) {
+                dataStat("STATES CLEARED", value: "\(statesClearedCount)", gradient: true)
+                statDivider
+                dataStat("EXPIRING 30 d", value: expiringLabel, tint: Brand.warning)
+                statDivider
+                dataStat("EXPIRED", value: expiredLabel, tint: Brand.danger)
+            }
+            .frame(height: 46)
+            .padding(.top, Space.s2)
+        }
+    }
+
+    /// Cached and live are visibly distinct: live carries a success dot, cached drops the
+    /// dot entirely and reads in the warning register.
+    private var stalenessChip: some View {
+        HStack(spacing: 7) {
+            if stalenessLine == nil {
+                ZStack {
+                    Circle().fill(Brand.success.opacity(0.25)).frame(width: 12, height: 12)
+                    Circle().fill(Brand.success).frame(width: 7, height: 7)
+                }
+            }
+            Text(stalenessLine ?? "certs · live")
+                .font(EType.mono(.micro))
+                .foregroundStyle(stalenessLine == nil ? palette.textPrimary : Brand.warning)
+        }
+        .padding(.horizontal, 9)
+        .frame(height: 20)
+        .background(chipShape.fill(palette.bgCard).overlay(chipShape.stroke(palette.borderFaint)))
+    }
+
+    @ViewBuilder
+    private func rungBlock(_ rung: MpRung) -> some View {
+        let height: CGFloat = [56, 96, 136][min(rung.level - 1, 2)]
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top) {
+                Text("LEVEL \(rung.level)")
+                    .font(.system(size: 8, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(rung.state == .current
+                                     ? palette.textOnGradient.opacity(0.75) : palette.textTertiary)
+                Spacer(minLength: 4)
+                rungGlyph(rung)
+            }
+            .padding(.bottom, 6)
+
+            ForEach(Array(rung.titleLines.enumerated()), id: \.offset) { _, line in
+                Text(line)
+                    .font(.system(size: 12.5, weight: .heavy))
+                    .foregroundStyle(rung.state == .current ? palette.textOnGradient : palette.textPrimary)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+            }
+
+            if let unmet = rung.unmet {
+                Text(unmet).font(EType.mono(.micro)).foregroundStyle(Brand.warning)
+                    .padding(.top, 5)
+                Rectangle().fill(palette.borderFaint).frame(height: 1).padding(.vertical, 6)
+                Text("renewal opens in Cert wallet")
+                    .font(EType.mono(.micro)).foregroundStyle(palette.textSecondary)
+                    .lineLimit(2).minimumScaleFactor(0.8)
+                if let unlock = rung.unlockLine {
+                    // ESANG earns its place here — the climb is the coaching moment.
+                    HStack(spacing: 7) {
+                        Circle().fill(LinearGradient.diagonal).frame(width: 18, height: 18)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("ESANG").font(.system(size: 8, weight: .heavy)).tracking(0.3)
+                                .foregroundStyle(palette.textPrimary)
+                            Text(unlock).font(EType.mono(.micro)).foregroundStyle(Brand.escort)
+                        }
+                    }
+                    .padding(.top, 6)
+                }
+            } else {
+                Text(rung.proof)
+                    .font(EType.mono(.micro))
+                    .foregroundStyle(rung.state == .current
+                                     ? palette.textOnGradient.opacity(0.85) : Brand.success)
+                    .padding(.top, 5)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+                if rung.state == .current {
+                    Text("YOU ARE HERE")
+                        .font(.system(size: 8, weight: .heavy)).tracking(0.5)
+                        .foregroundStyle(palette.textOnGradient)
+                        .padding(.horizontal, 10)
+                        .frame(height: 20)
+                        .background(chipShape.fill(Color.white.opacity(0.22)))
+                        .padding(.top, 6)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .frame(height: height, alignment: .topLeading)
+        .background(rungBackground(rung))
+    }
+
+    @ViewBuilder
+    private func rungGlyph(_ rung: MpRung) -> some View {
+        switch rung.state {
+        case .earned:
+            ZStack {
+                Circle().fill(Brand.success.opacity(0.18)).frame(width: 18, height: 18)
+                Image(systemName: "checkmark").font(.system(size: 9, weight: .heavy))
+                    .foregroundStyle(Brand.success)
+            }
+        case .current:
+            ZStack {
+                Circle().fill(Color.white.opacity(0.22)).frame(width: 18, height: 18)
+                Image(systemName: "checkmark").font(.system(size: 9, weight: .heavy))
+                    .foregroundStyle(palette.textOnGradient)
+            }
+        case .locked:
+            Image(systemName: "lock").font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(palette.textTertiary)
+        }
+    }
+
+    @ViewBuilder
+    private func rungBackground(_ rung: MpRung) -> some View {
+        let shape = tileShape                 // tiles rx16
+        switch rung.state {
+        case .current: shape.fill(LinearGradient.diagonal)
+        case .earned:  shape.fill(palette.bgCard).overlay(shape.strokeBorder(palette.borderFaint))
+        case .locked:
+            shape.fill(palette.bgCard.opacity(0.6))
+                .overlay(shape.strokeBorder(Brand.magenta.opacity(0.45),
+                                            style: StrokeStyle(lineWidth: 1, dash: [6, 5])))
+        }
+    }
+
+    // MARK: - Positions & capabilities (facet BentoGrid)
+
+    private struct Facet: Identifiable {
+        /// `.toggle` = a real profile switch · `.fromCert` = read-only, owned by a
+        /// certification column · `.notModelled` = no server representation at all.
+        enum Register { case toggle, fromCert, notModelled }
+        let id: Int
+        let kind: String
+        let name: String
+        let on: Bool
+        let register: Register
+        let trailing: String?
+        let tint: Color
+    }
+
+    private var facets: [Facet] {
+        let p = snapshot?.profile
+        let pos = p?.positions
+        let certRows = snapshot?.certs?.certifications ?? []
+        let night = certRows.contains {
+            $0.nightOperationsCertified == true && ($0.status ?? "active") == "active"
+        }
+        let poleMax = p?.heightPole?.maxHeight
+        let preferred = (p?.preferredPosition ?? "").uppercased()
+        return [
+            Facet(id: 1, kind: preferred == "LEAD" ? "POSITION · PREFERRED" : "POSITION",
+                  name: "LEAD", on: pos?.leadEscort == true, register: .toggle,
+                  trailing: (p?.stats?.leadJobs).map { "\($0) jobs" }, tint: Brand.info),
+            Facet(id: 2, kind: preferred == "CHASE" ? "POSITION · PREFERRED" : "POSITION",
+                  name: "CHASE", on: pos?.rearEscort == true, register: .toggle,
+                  trailing: (p?.stats?.chaseJobs).map { "\($0) jobs" }, tint: Brand.escort),
+            Facet(id: 3, kind: "CAPABILITY", name: "HIGH-POLE",
+                  on: pos?.heightPole == true, register: .toggle,
+                  trailing: poleMax.map { String(format: "max %.1f ft", $0) }, tint: Brand.hazmat),
+            Facet(id: 4, kind: "CAPABILITY", name: "SURVEY",
+                  on: pos?.routeSurvey == true, register: .toggle,
+                  trailing: nil, tint: Brand.success),
+            // Read-only: owned by nightOperationsCertified (escorts.ts:521), not a toggle.
+            Facet(id: 5, kind: "ENDORSEMENT", name: "NIGHT OPS", on: night, register: .fromCert,
+                  trailing: night ? "held" : "not held", tint: Self.nightOpsIndigo),
+            // STUB·steer-position — no server representation at all.
+            Facet(id: 6, kind: "POSITION", name: "STEER", on: false, register: .notModelled,
+                  trailing: nil, tint: Brand.neutral)
+        ]
+    }
+
+    private var facetGrid: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            sectionLabel("POSITIONS & CAPABILITIES", trailing: facetTally)
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
+                ForEach(facets) { facet in facetCell(facet) }
+            }
+        }
+    }
+
+    private var facetTally: String {
+        let on = facets.filter { $0.register == .toggle && $0.on }.count
+        let cert = facets.filter { $0.register == .fromCert }.count
+        let unmodelled = facets.filter { $0.register == .notModelled }.count
+        return "\(on) ON · \(cert) FROM CERT · \(unmodelled) UNMODELLED"
+    }
+
+    private func facetCell(_ facet: Facet) -> some View {
+        Button(action: { Task { await toggleFacet(facet) } }) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(facet.kind)
+                    .font(.system(size: 8, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+                Text(facet.name)
+                    .font(.system(size: 12, weight: .heavy))
+                    .foregroundStyle(facet.register == .notModelled
+                                     ? palette.textTertiary : palette.textPrimary)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+                HStack(spacing: 4) {
+                    Text(registerLabel(facet))
+                        .font(.system(size: 7.5, weight: .heavy)).tracking(0.4)
+                        .foregroundStyle(registerInk(facet))
+                        .padding(.horizontal, 8)
+                        .frame(height: 20)
+                        .background(chipShape.fill(registerFill(facet)))
+                    Spacer(minLength: 0)
+                    if let trailing = facet.trailing {
+                        Text(trailing).font(EType.mono(.micro))
+                            .foregroundStyle(palette.textSecondary)
+                            .lineLimit(1).minimumScaleFactor(0.7)
+                    }
+                }
+            }
+            .padding(.horizontal, Space.s3).padding(.vertical, 9)
+            .frame(height: 62, alignment: .topLeading)
+            .background(facetBackground(facet))
+        }
+        .buttonStyle(.plain)
+        .disabled(facet.register != .toggle)
+    }
+
+    private func registerLabel(_ f: Facet) -> String {
+        switch f.register {
+        case .toggle:      return f.on ? "ON" : "OFF"
+        case .fromCert:    return "FROM CERT"
+        case .notModelled: return "NOT MODELLED"
+        }
+    }
+
+    private func registerInk(_ f: Facet) -> Color {
+        switch f.register {
+        case .toggle:      return f.on ? f.tint : palette.textSecondary
+        case .fromCert:    return f.tint
+        case .notModelled: return palette.textSecondary
+        }
+    }
+
+    private func registerFill(_ f: Facet) -> Color {
+        switch f.register {
+        case .toggle:      return f.on ? f.tint.opacity(0.16) : Brand.neutral.opacity(0.14)
+        case .fromCert:    return f.tint.opacity(0.16)
+        case .notModelled: return Brand.neutral.opacity(0.14)
+        }
+    }
+
+    @ViewBuilder
+    private func facetBackground(_ facet: Facet) -> some View {
+        let shape = tileShape                 // tiles rx16
+        if facet.register == .notModelled {
+            shape.fill(palette.bgCard.opacity(0.6))
+                .overlay(shape.strokeBorder(palette.textTertiary.opacity(0.45),
+                                            style: StrokeStyle(lineWidth: 1, dash: [5, 4])))
+        } else {
+            shape.fill(palette.bgCard)
+                .overlay(shape.strokeBorder(palette.borderFaint))
+                .overlay(alignment: .leading) {
+                    Rectangle().fill(facet.on ? facet.tint : Brand.neutral.opacity(0.4))
+                        .frame(width: 3).clipShape(RoundedRectangle(cornerRadius: 1.5))
+                }
+        }
+    }
+
+    /// escorts.updateProfile :3192 records no audit row and emits no realtime event, so the
+    /// consequence is stated in the user's own words rather than left for them to discover.
+    private var writeHalfNote: some View {
+        Text("Toggles save now · dispatch and the job board see them on their next refresh")
+            .font(.system(size: 8, weight: .semibold))
+            .foregroundStyle(palette.textTertiary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    // MARK: - Equipment preview (defers to the registry — never a verdict)
+
+    private var equipmentPreview: some View {
+        let poleMax = snapshot?.profile?.heightPole?.maxHeight
+        let sensor = snapshot?.profile?.heightPole?.hasElectronicSensor == true
+        return VStack(alignment: .leading, spacing: Space.s2) {
+            sectionLabel("EQUIPMENT", trailing: "REGISTRY OWED · ES-30")
+            HStack(spacing: 0) {
+                equipmentCell("HEIGHT POLE", poleMax.map { String(format: "%.1f ft", $0) } ?? "—")
+                Rectangle().fill(palette.borderFaint).frame(width: 1, height: 28)
+                equipmentCell("SENSOR", sensor ? "electronic" : "manual")
+                Rectangle().fill(palette.borderFaint).frame(width: 1, height: 28)
+                equipmentCell("HOME BASE", homeBaseShort)
+                Rectangle().fill(palette.borderFaint).frame(width: 1, height: 28)
+                equipmentCell("RADIUS",
+                              (snapshot?.profile?.willingToTravel).map { "\($0) mi" } ?? "—")
+            }
+            .padding(.horizontal, Space.s4)
+            .frame(height: 44)
+            .background(cardShape.fill(palette.bgCard)
+                .overlay(cardShape.strokeBorder(palette.borderFaint)))
+        }
+    }
+
+    private func equipmentCell(_ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label).font(.system(size: 8, weight: .heavy)).tracking(0.5)
+                .foregroundStyle(palette.textTertiary)
+                .lineLimit(1).minimumScaleFactor(0.7)
+            Text(value).font(.system(size: 13, weight: .heavy, design: .monospaced))
+                .foregroundStyle(palette.textPrimary)
+                .lineLimit(1).minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: - Settings · four ListRows (40×40 rx10 icon chip + 14/700 title + sub + value)
+
+    private var settingsCard: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            Text("SETTINGS").font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                .foregroundStyle(palette.textTertiary)
+            VStack(spacing: 0) {
+                settingsRow(title: "Availability", icon: "calendar", iconTint: Brand.success,
+                            pill: (snapshot?.profile?.wallet?.activeJobs ?? 0) > 0
+                                  ? "ON A MOVE" : "ACCEPTING",
+                            pillTint: Brand.success,
+                            value: availabilityValue, warning: false,
+                            sub: "\(homeBaseShort) home base · \(acceptingDaysLabel)",
+                            action: { showAvailability = true })
+                listDivider
+                // STUB·wallet-balance — escorts.ts:3175 returns a hard-coded 0. No balance
+                // is drawn; the row says so rather than printing a fabricated zero.
+                settingsRow(title: "Payout", icon: "creditcard", iconTint: Brand.info,
+                            pill: "NET-7 QUICKPAY", pillTint: Brand.info,
+                            value: lifetimeLabel, warning: false,
+                            sub: "Lifetime earnings · no balance shown here, it lives in Earnings",
+                            action: nil)
+                listDivider
+                settingsRow(title: "Alerts", icon: "bell", iconTint: Brand.hazmat,
+                            pill: nil, pillTint: nil,
+                            value: "in-app only", warning: true,
+                            sub: "Cert-expiry push not shipped — the 30-d / 7-d reminder is owed",
+                            action: nil)
+                listDivider
+                settingsRow(title: "Sign out", icon: "rectangle.portrait.and.arrow.right",
+                            iconTint: Brand.danger, pill: nil, pillTint: nil,
+                            value: "online only", warning: false,
+                            sub: "Ends the session on this device · assignments stay on the server",
+                            action: { showSignOutConfirm = true }, isDanger: true,
+                            showsChevron: false)
+            }
+            .background(cardShape.fill(palette.bgCard)
+                .overlay(cardShape.strokeBorder(palette.borderFaint)))
+        }
+    }
+
+    private var listDivider: some View {
+        Rectangle().fill(palette.borderFaint).frame(height: 1)
+            .padding(.leading, 60).padding(.trailing, 14)
+    }
+
+    private func settingsRow(title: String, icon: String, iconTint: Color,
+                             pill: String?, pillTint: Color?,
+                             value: String, warning: Bool, sub: String?,
+                             action: (() -> Void)?, isDanger: Bool = false,
+                             showsChevron: Bool = true) -> some View {
+        Button(action: { action?() }) {
+            HStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(iconTint.opacity(0.14))
+                    Image(systemName: icon)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(iconTint)
+                }
+                .frame(width: 40, height: 40)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 8) {
+                        Text(title).font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(isDanger ? Brand.danger : palette.textPrimary)
+                        if let pill, let tint = pillTint {
+                            Text(pill).font(.system(size: 8, weight: .heavy)).tracking(0.4)
+                                .foregroundStyle(tint)
+                                .padding(.horizontal, 9)
+                                .frame(height: 20)
+                                .background(chipShape.fill(tint.opacity(0.16)))
+                        }
+                        Spacer(minLength: 4)
+                        Text(value).font(EType.mono(.micro))
+                            .foregroundStyle(warning ? Brand.warning : palette.textSecondary)
+                            .lineLimit(1).minimumScaleFactor(0.8)
+                        if showsChevron && action != nil {
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 10, weight: .heavy))
+                                .foregroundStyle(palette.textTertiary)
+                        }
+                    }
+                    if let sub {
+                        Text(sub).font(.system(size: 8.5, weight: .semibold))
+                            .foregroundStyle(palette.textTertiary)
+                            .lineLimit(1).minimumScaleFactor(0.7)
+                    }
+                }
+            }
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .frame(height: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(action == nil)
+    }
+
+    // MARK: - Action bar
+    //
+    // Both buttons are line-confirmed callable escort-scoped mutations. Neither is a
+    // link to nowhere: the primary is escorts.uploadCertification (escorts.ts:2551 —
+    // the only CLOSED write on this screen: row :2556, audit :2569, WS :2589) and the
+    // secondary is escorts.updateAvailability (escorts.ts:2318 — a real mutation, but a
+    // bare metadata write with no audit row and no realtime emit, which is why its
+    // caption is modest). Both are ONLINE_ONLY and both say so on their faces.
+
+    private var actionBar: some View {
+        HStack(spacing: Space.s3) {
+            Button(action: { showAddCert = true }) {
+                HStack(spacing: 10) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 14, weight: .heavy))
+                        .foregroundStyle(palette.textOnGradient)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Add certification")
+                            .font(.system(size: 13.5, weight: .heavy))
+                            .foregroundStyle(palette.textOnGradient)
+                            .lineLimit(1).minimumScaleFactor(0.8)
+                        Text("audited · syncs live · online only")
+                            .font(EType.mono(.micro))
+                            .foregroundStyle(palette.textOnGradient.opacity(0.85))
+                            .lineLimit(1).minimumScaleFactor(0.7)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, Space.s4)
+                .frame(height: 44)
+                .frame(maxWidth: .infinity)
+                .background(cardShape.fill(LinearGradient.diagonal))
+            }
+            .buttonStyle(.plain)
+
+            Button(action: { showAvailability = true }) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Set availability")
+                        .font(.system(size: 12.5, weight: .heavy))
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(1).minimumScaleFactor(0.8)
+                    Text("online only")
+                        .font(EType.mono(.micro))
+                        .foregroundStyle(palette.textTertiary)
+                }
+                .padding(.horizontal, Space.s4)
+                .frame(height: 44)
+                .frame(width: 152, alignment: .leading)
+                .background(cardShape.fill(palette.bgCard)
+                    .overlay(cardShape.strokeBorder(palette.borderSoft)))
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var provenanceFootnote: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Levels 1–3 are worked out on this device from your height-pole, night-ops and hazmat endorsements — no level is stored on your record.")
+            Text("Adding a certification is recorded and pushed to your other open sessions. Capability and availability edits are saved but not announced.")
+        }
+        .font(.system(size: 9, weight: .semibold))
+        .foregroundStyle(palette.textTertiary)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    // MARK: - Register blocks
+
+    private var loadingBlock: some View {
+        HStack(spacing: Space.s3) {
+            ProgressView()
+            Text("Loading profile…").font(EType.body).foregroundStyle(palette.textSecondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, Space.s6)
+    }
+
+    private var failedBlock: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            Text("Profile unavailable")
+                .font(.system(size: 15, weight: .bold)).foregroundStyle(palette.textPrimary)
+            Text("No live read and no snapshot inside the 60-minute window. Your level is not shown rather than shown stale.")
+                .font(EType.caption).foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button(action: { Task { await refreshAll() } }) {
+                Text("Retry").font(.system(size: 13, weight: .heavy))
+                    .foregroundStyle(palette.textOnGradient)
+                    .padding(.horizontal, Space.s5).padding(.vertical, Space.s2)
+                    .background(Capsule().fill(LinearGradient.diagonal))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.vertical, Space.s5)
+    }
+
+    // MARK: - Shape primitives (14-kit tokens only — no local hex palette)
+
+    /// Cards rx20.
+    private var cardShape: RoundedRectangle { RoundedRectangle(cornerRadius: Radius.xl, style: .continuous) }
+    /// Tiles rx16.
+    private var tileShape: RoundedRectangle { RoundedRectangle(cornerRadius: Radius.lg, style: .continuous) }
+    /// Chips rx10 (every chip here is exactly 20 tall, so rx10 is a true capsule).
+    private var chipShape: RoundedRectangle { RoundedRectangle(cornerRadius: 10, style: .continuous) }
+
+    // MARK: - Primitives + formatting
+
+    private func sectionLabel(_ text: String, trailing: String) -> some View {
+        HStack {
+            Text(text).font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                .foregroundStyle(palette.textTertiary)
+            Spacer(minLength: 8)
+            Text(trailing).font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                .foregroundStyle(palette.textTertiary)
+                .lineLimit(1).minimumScaleFactor(0.75)
+        }
+    }
+
+    private var statDivider: some View {
+        Rectangle().fill(palette.textPrimary.opacity(0.07)).frame(width: 1, height: 28)
+    }
+
+    private func dataStat(_ label: String, value: String, tint: Color? = nil,
+                          gradient: Bool = false) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label).font(.system(size: 8, weight: .heavy)).tracking(0.6)
+                .foregroundStyle(palette.textTertiary)
+            if gradient {
+                Text(value).font(.system(size: 17, weight: .heavy, design: .monospaced))
+                    .foregroundStyle(LinearGradient.diagonal)
+            } else {
+                Text(value).font(.system(size: 17, weight: .heavy, design: .monospaced))
+                    .foregroundStyle(tint ?? palette.textPrimary)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.leading, Space.s3)
+    }
+
+    private func monogram(_ s: String) -> String {
+        let parts = s.split(separator: " ").prefix(2)
+        let initials = parts.compactMap { $0.first.map(String.init) }.joined().uppercased()
+        return initials.isEmpty ? "—" : String(initials.prefix(2))
+    }
+
+    private func credentialLine(_ p: MpProfile?) -> String {
+        var bits: [String] = []
+        if !homeBaseShort.isEmpty && homeBaseShort != "—" { bits.append(homeBaseShort) }
+        if let radius = p?.willingToTravel { bits.append("\(radius) mi") }
+        return bits.isEmpty ? "Escort profile" : bits.joined(separator: " · ")
+    }
+
+    private func careerLine(_ p: MpProfile?) -> String {
+        var bits: [String] = []
+        if let yrs = p?.yearsExperience, yrs > 0 { bits.append("\(yrs) yr") }
+        if let convoys = p?.stats?.totalConvoys { bits.append("\(convoys) escorts") }
+        if let ot = p?.stats?.onTimePercentage { bits.append("\(ot)% OT") }
+        return bits.joined(separator: " · ")
+    }
+
+    private var homeBaseShort: String {
+        guard let hb = snapshot?.profile?.homeBase else { return "—" }
+        let city = hb.city ?? "", state = hb.state ?? ""
+        let joined = [city, state].filter { !$0.isEmpty }.joined(separator: " ")
+        return joined.isEmpty ? "—" : joined
+    }
+
+    private var statesClearedCount: Int {
+        let held = snapshot?.certs?.statesCleared?.count ?? 0
+        let reciprocal = snapshot?.certs?.reciprocalStatesCleared?.count ?? 0
+        return held + reciprocal
+    }
+
+    private var expiringLabel: String {
+        let n = snapshot?.certs?.expiringSoon ?? 0
+        guard n > 0 else { return "0" }
+        return "\(n)"
+    }
+
+    private var expiredLabel: String { "\(snapshot?.certs?.expired ?? 0)" }
+
+    /// Availability is a real read (escorts.getAvailability escorts.ts:2298), so the row
+    /// prints the days the server actually holds rather than a hard-coded week.
+    private var acceptingDaysLabel: String {
+        let days = snapshot?.availability ?? []
+        guard !days.isEmpty else { return "availability not loaded" }
+        let on = days.filter { $0.available }.map { String($0.dayName.prefix(3)) }
+        return on.isEmpty ? "no days accepted" : on.joined(separator: " ")
+    }
+
+    private var availabilityValue: String {
+        guard let radius = snapshot?.profile?.willingToTravel else { return "—" }
+        let count = (snapshot?.availability ?? []).filter { $0.available }.count
+        return "\(count)/7 d · \(radius) mi"
+    }
+
+    /// Lifetime earnings only — never `wallet.balance`, which is a hard-coded 0
+    /// (escorts.ts:3175).
+    private var lifetimeLabel: String {
+        guard let amount = snapshot?.profile?.wallet?.lifetimeEarnings else { return "—" }
+        let f = NumberFormatter()
+        f.numberStyle = .currency
+        f.currencyCode = "USD"
+        f.maximumFractionDigits = 0
+        return f.string(from: NSNumber(value: amount)) ?? "—"
+    }
+
+    // MARK: - Data plumbing
+
+    private func refreshAll() async {
+        if snapshot == nil { phase = .loading }
+        do {
+            async let profile: MpProfile? = try? EusoTripAPI.shared.query(
+                "escorts.getProfile", input: MpProfileInput(escortId: nil))
+            async let certs: MpCertStatus? = try? EusoTripAPI.shared.query(
+                "escorts.getCertificationStatus", input: EmptyInput())
+            async let availability: [MpAvailabilityDay]? = try? EusoTripAPI.shared.query(
+                "escorts.getAvailability", input: EmptyInput())
+
+            let fresh = MpSnapshot(profile: await profile, certs: await certs,
+                                   availability: await availability, capturedAt: Date())
+            guard fresh.profile != nil || fresh.certs != nil else { throw EscortMeProfileError.empty }
+            await MainActor.run {
+                snapshot = fresh
+                stalenessLine = nil
+                phase = .loaded
+            }
+            EscortOfflineCache.store(fresh, key: Self.cacheKey)
+        } catch {
+            // READ_CACHED(60m): paint last-good and say so, or show the offline state.
+            if let cached = EscortOfflineCache.load(MpSnapshot.self, key: Self.cacheKey,
+                                                    ttl: Self.cacheTTL) {
+                await MainActor.run {
+                    snapshot = cached.value
+                    stalenessLine = EscortOfflineCache.stalenessLine(age: cached.age)
+                    phase = .loaded
+                }
+            } else if snapshot == nil {
+                await MainActor.run { phase = .failed }
+            }
+        }
+    }
+
+    /// PRIMARY CTA — escorts.uploadCertification escorts.ts:2551. The only closed write on
+    /// this screen: it inserts the row (:2556), records an audit event (:2569) and
+    /// broadcasts ESCORT_CERT_UPLOADED (:2589-2590). ONLINE_ONLY — no outbox, so a failure
+    /// is reported and nothing is queued.
+    private func uploadCertification(state: String, type: String,
+                                     expirationDate: String) async -> Bool {
+        do {
+            let result: MpUploadCertResult = try await EusoTripAPI.shared.mutation(
+                "escorts.uploadCertification",
+                input: MpUploadCertInput(state: state, type: type, expirationDate: expirationDate))
+            guard result.success == true else { throw EscortMeProfileError.empty }
+            await MainActor.run { writeNotice = "Certification added — your other sessions were told." }
+            await refreshAll()
+            return true
+        } catch {
+            await MainActor.run {
+                writeNotice = "Certification wasn't added — check signal and retry. Nothing was queued."
+            }
+            return false
+        }
+    }
+
+    /// SECONDARY CTA — escorts.updateAvailability escorts.ts:2318. A real mutation, but a
+    /// bare users.metadata write: no audit row, no realtime emit. ONLINE_ONLY.
+    private func setAvailability(dayOfWeek: Int, available: Bool) async -> Bool {
+        do {
+            let result: MpAvailabilityResult = try await EusoTripAPI.shared.mutation(
+                "escorts.updateAvailability",
+                input: MpAvailabilityInput(dayOfWeek: dayOfWeek, available: available))
+            guard result.success == true else { throw EscortMeProfileError.empty }
+            await refreshAll()
+            return true
+        } catch {
+            await MainActor.run {
+                writeNotice = "Availability didn't save — check signal and retry. Nothing was queued."
+            }
+            return false
+        }
+    }
+
+    /// ONLINE_ONLY — escorts.updateProfile merges into users.metadata.escortProfile.
+    /// There is no outbox for the escort role, so a failure is reported, never queued.
+    /// The write also emits nothing and records no audit row (see CHAIN in the header),
+    /// which is why the confirmation copy is deliberately modest.
+    private func toggleFacet(_ facet: Facet) async {
+        guard facet.register == .toggle, let pos = snapshot?.profile?.positions else { return }
+        var next = MpPositionsWire(leadEscort: pos.leadEscort ?? false,
+                                   rearEscort: pos.rearEscort ?? false,
+                                   heightPole: pos.heightPole ?? false,
+                                   routeSurvey: pos.routeSurvey ?? false)
+        switch facet.name {
+        case "LEAD":      next = MpPositionsWire(leadEscort: !next.leadEscort, rearEscort: next.rearEscort, heightPole: next.heightPole, routeSurvey: next.routeSurvey)
+        case "CHASE":     next = MpPositionsWire(leadEscort: next.leadEscort, rearEscort: !next.rearEscort, heightPole: next.heightPole, routeSurvey: next.routeSurvey)
+        case "HIGH-POLE": next = MpPositionsWire(leadEscort: next.leadEscort, rearEscort: next.rearEscort, heightPole: !next.heightPole, routeSurvey: next.routeSurvey)
+        case "SURVEY":    next = MpPositionsWire(leadEscort: next.leadEscort, rearEscort: next.rearEscort, heightPole: next.heightPole, routeSurvey: !next.routeSurvey)
+        default:          return
+        }
+        do {
+            let _: MpUpdateResult = try await EusoTripAPI.shared.mutation(
+                "escorts.updateProfile", input: MpUpdatePositionsInput(positions: next))
+            await MainActor.run { writeNotice = "Saved to your profile." }
+            await refreshAll()
+        } catch {
+            await MainActor.run {
+                writeNotice = "Didn't save — check signal and retry. Nothing was queued."
+            }
+        }
+    }
+}
+
+private enum EscortMeProfileError: Error { case empty }
+
+/// `escorts.getCertificationStatus` and `escorts.getAvailability` take no input.
+private struct EmptyInput: Encodable {}
+
+// MARK: - PRIMARY CTA sheet · escorts.uploadCertification (escorts.ts:2551)
+
+struct EscortAddCertificationSheet: View {
+    @Environment(\.palette) private var palette
+    @Environment(\.dismiss) private var dismiss
+
+    /// Injected by the screen so the sheet holds no network code of its own.
+    let submit: (_ state: String, _ type: String, _ expirationDate: String) async -> Bool
+
+    /// The server input is `{ state, type, expirationDate }` (escorts.ts:2551) — `type`
+    /// is a free string there, so this list is the phone's vocabulary, not a server enum.
+    private static let certTypes = ["P/EVO", "FLAGGER", "HIGH-POLE", "NIGHT OPS", "HAZMAT ESCORT"]
+
+    @State private var stateCode = ""
+    @State private var certType = "P/EVO"
+    @State private var expiration = Calendar.current.date(byAdding: .year, value: 2, to: Date()) ?? Date()
+    @State private var submitting = false
+    @State private var failed = false
+
+    private var canSubmit: Bool { stateCode.trimmingCharacters(in: .whitespaces).count == 2 && !submitting }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Issuing state") {
+                    TextField("Two-letter code", text: $stateCode)
+                        .textInputAutocapitalization(.characters)
+                        .autocorrectionDisabled()
+                        .font(EType.mono(.body))
+                }
+                Section("Type") {
+                    Picker("Type", selection: $certType) {
+                        ForEach(Self.certTypes, id: \.self) { Text($0).tag($0) }
+                    }
+                }
+                Section("Expires") {
+                    DatePicker("Expiration", selection: $expiration, displayedComponents: .date)
+                }
+                Section {
+                    Text("Adding a certification is recorded to your audit trail and pushed to your other open sessions. It needs a connection — nothing is queued on this phone.")
+                        .font(EType.caption).foregroundStyle(palette.textSecondary)
+                }
+                if failed {
+                    Section {
+                        Text("Didn't save. Check signal and try again.")
+                            .font(EType.caption).foregroundStyle(Brand.danger)
+                    }
+                }
+            }
+            .navigationTitle("Add certification")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Add") {
+                        submitting = true
+                        failed = false
+                        Task {
+                            let ok = await submit(stateCode.uppercased(), certType,
+                                                  Self.iso(expiration))
+                            await MainActor.run {
+                                submitting = false
+                                if ok { dismiss() } else { failed = true }
+                            }
+                        }
+                    }
+                    .disabled(!canSubmit)
+                }
+            }
+        }
+    }
+
+    private static func iso(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.timeZone = TimeZone(identifier: "UTC")
+        return f.string(from: date)
+    }
+}
+
+// MARK: - SECONDARY CTA sheet · escorts.updateAvailability (escorts.ts:2318)
+
+struct EscortAvailabilitySheet: View {
+    @Environment(\.palette) private var palette
+    @Environment(\.dismiss) private var dismiss
+
+    /// Rows as `escorts.getAvailability` (escorts.ts:2298) returned them.
+    let days: [MpAvailabilityDayPublic]
+    let submit: (_ dayOfWeek: Int, _ available: Bool) async -> Bool
+
+    @State private var pending: Int? = nil
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(days) { day in
+                        Toggle(day.dayName, isOn: Binding(
+                            get: { day.available },
+                            set: { newValue in
+                                pending = day.dayOfWeek
+                                Task {
+                                    _ = await submit(day.dayOfWeek, newValue)
+                                    await MainActor.run { pending = nil }
+                                }
+                            }))
+                        .disabled(pending != nil)
+                    }
+                } footer: {
+                    Text("Saved to your profile as soon as you tap. Dispatch and the job board pick it up on their next refresh — this change is not announced to them. It needs a connection; nothing is queued on this phone.")
+                        .font(EType.caption).foregroundStyle(palette.textSecondary)
+                }
+            }
+            .navigationTitle("Availability")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+            }
+        }
+    }
+}
+
+/// Mirror of the private wire row (`escorts.getAvailability`, escorts.ts:2298) so the
+/// sheet can be declared outside the screen's private type scope.
+struct MpAvailabilityDayPublic: Identifiable, Hashable {
+    var id: Int { dayOfWeek }
+    let dayOfWeek: Int
+    let dayName: String
+    let available: Bool
+}
+
+private extension MpAvailabilityDay {
+    var publicRow: MpAvailabilityDayPublic {
+        MpAvailabilityDayPublic(dayOfWeek: dayOfWeek, dayName: dayName, available: available)
+    }
+}
+
+// MARK: - Screen wrapper (Shell + BottomNav)
+//
+// The nav is bound from the single-writer of the escort bar — EscortNavController.swift —
+// not hand-listed here: leading/trailing come from EscortNavRoute (:77-85) with
+// `isCurrent: .me` (tab enum :32), the ESang orb slot is BottomNav's own (orb labels
+// EscortNavController.swift:63, dispatch :88-96), and Destination.me = "620" (:46).
+// Canonical five-slot escort bar: HOME · ASSIGNMENTS · [ESang orb] · CORRIDOR · ME.
+
+struct EscortMeProfileScreen: View {
+    let theme: Theme.Palette
+
+    var body: some View {
+        Shell(theme: theme) {
+            EscortMeProfile()
+        } nav: {
+            BottomNav(
+                leading: EscortNavRoute.leading(current: .me),
+                trailing: EscortNavRoute.trailing(current: .me),
+                orbState: .idle
+            )
+        }
+    }
+}
+
+// MARK: - Previews
+//
+// Previews don't run `.task`, so both variants render in the loading register
+// without touching the network. No fixture data exists in this file at all.
+
+#if DEBUG
+
+#Preview("ES-12 · Escort · Me — Profile & Settings · Dark") {
+    EscortMeProfileScreen(theme: Theme.dark)
+        .environmentObject(EusoTripSession())
+        .preferredColorScheme(.dark)
+}
+
+#Preview("ES-12 · Escort · Me — Profile & Settings · Light") {
+    EscortMeProfileScreen(theme: Theme.light)
+        .environmentObject(EusoTripSession())
+        .preferredColorScheme(.light)
+}
+
+#endif

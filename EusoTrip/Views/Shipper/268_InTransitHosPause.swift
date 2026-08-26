@@ -63,8 +63,12 @@ private struct HosPauseBody: View {
             // Parked truck pin first; fall back to the delivery address.
             // Gate null-island (0,0): an un-locked geofence must NOT deep-link
             // to the ocean — fall through to the destination address instead.
-            if let g = live.lastGeofence, !(g.latitude == 0 && g.longitude == 0) {
-                return URL(string: "maps://?ll=\(g.latitude),\(g.longitude)&q=Parked")
+            if let g = live.lastGeofence,
+               let coordinate = LatLongParser.validatedCoordinate(
+                   latitude: g.latitude,
+                   longitude: g.longitude
+               ) {
+                return URL(string: "maps://?ll=\(coordinate.latitude),\(coordinate.longitude)&q=Parked")
             }
             if let addr = live.delivery?.address, !addr.isEmpty {
                 let q = addr.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
@@ -118,7 +122,13 @@ private struct HosPauseBody: View {
             LifecycleSection(label: "PARKED", icon: "p.circle.fill")
             if let g = live.lastGeofence {
                 LifecycleRow(label: "Last event", value: g.type.uppercased())
-                LifecycleRow(label: "GPS",        value: String(format: "%.4f, %.4f", g.latitude, g.longitude))
+                LifecycleRow(
+                    label: "GPS",
+                    value: LatLongParser.validatedCoordinate(
+                        latitude: g.latitude,
+                        longitude: g.longitude
+                    ).map(LatLongParser.displayString) ?? "Not recorded"
+                )
                 LifecycleRow(label: "Recorded",   value: humanISO(g.eventTimestamp))
             } else {
                 Text("No geofence event captured for the parked location yet.")

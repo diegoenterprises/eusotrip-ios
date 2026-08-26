@@ -45,8 +45,16 @@ SWIFT_API_DEFAULT="$REPO_ROOT/EusoTrip/Services/EusoTripAPI.swift"
 SWIFT_API="${SWIFT_API:-$SWIFT_API_DEFAULT}"
 SWIFT_ROOT="${SWIFT_ROOT:-$REPO_ROOT/EusoTrip}"
 
-# The canonical backend lives in a sibling checkout. Override with BACKEND=.
-BACKEND_DEFAULT="$(cd "$REPO_ROOT/.." && pwd)/eusoronetechnologiesinc/frontend/server/routers"
+# Prefer the clean hardening checkout used for cross-repository release gates on
+# this workstation. Other machines retain the original sibling-checkout
+# fallback, and CI can always provide BACKEND explicitly.
+HARDENING_BACKEND_DEFAULT="${HOME}/_codex_rios_hardening/frontend/server/routers"
+SIBLING_BACKEND_DEFAULT="$(cd "$REPO_ROOT/.." && pwd)/eusoronetechnologiesinc/frontend/server/routers"
+if [[ -d "$HARDENING_BACKEND_DEFAULT" ]]; then
+  BACKEND_DEFAULT="$HARDENING_BACKEND_DEFAULT"
+else
+  BACKEND_DEFAULT="$SIBLING_BACKEND_DEFAULT"
+fi
 BACKEND="${BACKEND:-$BACKEND_DEFAULT}"
 SERVER_ROOT="$(dirname "$BACKEND")"
 
@@ -68,6 +76,8 @@ SUMMARY_ONLY=0
 router_file_for_prefix() {
   case "$1" in
     auth)  printf '%s\n' "$SERVER_ROOT/routers.ts" ;;
+    crossBorder) printf '%s\n' "$BACKEND/crossBorderCompliance.ts" ;;
+    crossBorderShipping) printf '%s\n' "$BACKEND/crossBorder.ts" ;;
     devPortal) printf '%s\n' "$BACKEND/developerPortal.ts" ;;
     esang) printf '%s\n' "$SERVER_ROOT/esangRouter.ts" ;;
     *)
@@ -93,6 +103,8 @@ group_router_file_for_prefix() {
     bayOps.disconnect)    printf '%s\n' "$BACKEND/bayOps/disconnect.ts" ;;
     bayOps.connectHose)   printf '%s\n' "$BACKEND/bayOps/connectHose.ts" ;;
     bayOps.backingAssist) printf '%s\n' "$BACKEND/bayOps/backingAssist.ts" ;;
+    crossBorder.cartaPorte) printf '%s\n' "$BACKEND/crossBorderCompliance.ts" ;;
+    telemetry.scales)     printf '%s\n' "$BACKEND/telemetry/scales.ts" ;;
     *)                    printf '%s\n' "" ;;
   esac
 }

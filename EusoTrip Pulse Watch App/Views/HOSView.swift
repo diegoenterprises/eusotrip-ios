@@ -18,12 +18,13 @@ struct HOSView: View {
             ScrollView {
                 VStack(spacing: S.s3) {
                     statusPill
+                    evidenceState
                     ZStack {
-                        ring(progress: hos.current.cyclePct, color: .esangBlue, lineWidth: 6, inset: 0)
-                        ring(progress: hos.current.windowPct, color: .esangAmber, lineWidth: 6, inset: 16)
-                        ring(progress: hos.current.drivePct, color: .esangGreen, lineWidth: 6, inset: 32)
+                        ring(progress: observation?.cyclePct ?? 0, color: .esangBlue, lineWidth: 6, inset: 0)
+                        ring(progress: observation?.windowPct ?? 0, color: .esangAmber, lineWidth: 6, inset: 16)
+                        ring(progress: observation?.drivePct ?? 0, color: .esangGreen, lineWidth: 6, inset: 32)
                         VStack(spacing: 0) {
-                            Text(hos.current.driveHoursText)
+                            Text(observation?.driveHoursText ?? "—")
                                 .font(.system(size: 22, weight: .bold, design: .rounded))
                             Text("DRIVE")
                                 .font(.system(size: 10, weight: .medium))
@@ -35,9 +36,9 @@ struct HOSView: View {
                     // reading as a letterboxed inset card.
                     .frame(width: 168, height: 168)
 
-                    hoursRow(label: "Drive",    value: hos.current.driveHoursText,    tint: .esangGreen)
-                    hoursRow(label: "Window",   value: hos.current.windowHoursText,   tint: .esangAmber)
-                    hoursRow(label: "Cycle",    value: minutes(hos.current.cycleRemainingMinutes), tint: .esangBlue)
+                    hoursRow(label: "Drive",    value: observation?.driveHoursText ?? "—", tint: .esangGreen)
+                    hoursRow(label: "Window",   value: observation?.windowHoursText ?? "—", tint: .esangAmber)
+                    hoursRow(label: "Cycle",    value: minutes(observation?.cycleRemainingMinutes), tint: .esangBlue)
 
                     statusButtons
 
@@ -64,9 +65,9 @@ struct HOSView: View {
             // even before the inner rings render.
             ModularTickBezel(
                 corners: .init(
-                    topLeading:     "DRV \(hos.current.driveHoursText)",
-                    topTrailing:    hos.current.status.short.uppercased(),
-                    bottomLeading:  "WIN \(hos.current.windowHoursText)",
+                    topLeading:     "DRV \(observation?.driveHoursText ?? "—")",
+                    topTrailing:    observation?.status.short.uppercased() ?? "UNVERIFIED",
+                    bottomLeading:  "WIN \(observation?.windowHoursText ?? "—")",
                     bottomTrailing: "CYCLE"
                 )
             )
@@ -83,16 +84,39 @@ struct HOSView: View {
         .watchEdgeGlow()
     }
 
+    private var observation: WatchHOS? { hos.currentObservation }
+
     private var statusPill: some View {
         HStack(spacing: 6) {
-            Image(systemName: hos.current.status.symbol)
+            Image(systemName: observation?.status.symbol ?? "questionmark.circle")
                 .foregroundStyle(.white)
-            Text(hos.current.status.label)
+            Text(observation?.status.label ?? "HOS unavailable")
                 .font(.system(size: 13, weight: .semibold))
         }
         .padding(.horizontal, 10).padding(.vertical, 4)
         .background(LinearGradient.esangPrimary, in: Capsule())
         .foregroundStyle(.white)
+    }
+
+    @ViewBuilder
+    private var evidenceState: some View {
+        if let observation {
+            Text("\(observation.source ?? "Source unavailable") · observed \(observation.observedAt?.formatted(date: .omitted, time: .shortened) ?? "time unavailable")")
+                .font(.system(size: 9, weight: .medium, design: .rounded))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        } else {
+            Text("Current sourced HOS evidence is unavailable. Duty controls require live GPS and server confirmation.")
+                .font(.system(size: 9, weight: .medium, design: .rounded))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        if let error = hos.lastMutationError {
+            Text(error)
+                .font(.system(size: 9, weight: .semibold, design: .rounded))
+                .foregroundStyle(.orange)
+                .multilineTextAlignment(.center)
+        }
     }
 
     // MARK: Compliance footer — Mar 23, 2026 wave anchor
@@ -167,19 +191,20 @@ struct HOSView: View {
                     }
                     .frame(maxWidth: .infinity, minHeight: 42)
                     .background(
-                        hos.current.status == s
+                        observation?.status == s
                             ? Color.esangBlue
                             : Color.esangCard,
                         in: RoundedRectangle(cornerRadius: R.sm)
                     )
-                    .foregroundStyle(hos.current.status == s ? .white : .white.opacity(0.9))
+                    .foregroundStyle(observation?.status == s ? .white : .white.opacity(0.9))
                 }
                 .buttonStyle(.plain)
             }
         }
     }
 
-    private func minutes(_ m: Int) -> String {
+    private func minutes(_ m: Int?) -> String {
+        guard let m else { return "—" }
         let h = m / 60
         let mm = m % 60
         return String(format: "%dh %02dm", h, mm)

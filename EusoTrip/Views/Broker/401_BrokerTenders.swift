@@ -122,6 +122,18 @@ struct BrokerTenders: View {
             tenders.limit = 50
             await tenders.refresh()
         }
+        // RealtimeService → `bid:received` (server socketService.ts
+        // emit to room `role:broker`) is re-posted as
+        // `.esangRefreshSurface` (Services/RealtimeService.swift:375).
+        // This is the tender board itself: a bid landing must move the
+        // responding-carrier counts here without a pull-to-refresh.
+        // eusotrip-killers-elite :01 §20 · 2026-08-25
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task {
+                tenders.limit = 50
+                await tenders.refresh()
+            }
+        }
     }
 
     // MARK: - Header

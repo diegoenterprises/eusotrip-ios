@@ -171,7 +171,7 @@ private struct BH519Body: View {
                      tint: minutesToGateText == "—" ? nil : Brand.info)
             BH519Kpi(label: "HOS LEFT",
                      value: hosText,
-                     sub: hosText == "—" ? "not on the live driver board" : "drive window",
+                     sub: hosText == "—" ? "driver hours not reported" : "reported · freshness unavailable",
                      tint: nil)
             BH519Kpi(label: "WINDOW",
                      value: windowStateText,

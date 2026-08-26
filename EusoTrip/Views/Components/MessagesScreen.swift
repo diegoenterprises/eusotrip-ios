@@ -158,7 +158,7 @@ struct MessagesScreen: View {
     private func popConversation() {
         guard !path.isEmpty else { return }
         withTransaction(Transaction(animation: nil)) {
-            path.removeLast()
+            _ = path.removeLast()
         }
     }
 

@@ -585,12 +585,12 @@ private struct RailReleaseOrderBody: View {
         // path resumes the shipment off-hold; we submit the canonical
         // resume target and surface any server transition rejection
         // verbatim — no silent failure.
-        struct StatusIn: Encodable { let id: Int; let newStatus: String; let notes: String }
+        struct StatusIn: Encodable { let id: Int; let newStatus: String; let requestKey: String; let notes: String }
         struct Empty620: Decodable {}
         do {
             _ = try await EusoTripAPI.shared.mutation(
                 "railShipments.updateRailShipmentStatus",
-                input: StatusIn(id: id, newStatus: "in_transit",
+                input: StatusIn(id: id, newStatus: "in_transit", requestKey: UUID().uuidString,
                                 notes: "Release order armed - holds cleared, gate-out")) as Empty620
             releaseDone = true
             await reload()

@@ -26,9 +26,9 @@ struct WalletCardPickerView: View {
     /// unchanged — only the access surface passes `.staffAccess`.
     var mode: Mode = .pickup
 
-    /// Inline fallback shown when an access-card mint succeeds but PassKit isn't
-    /// configured server-side (pkpassUrl == nil): the real 6-digit code + QR.
-    @State private var accessFallback: AccessInlineFallback? = nil
+    /// Real server-issued QR/code shown when PassKit signing is not configured.
+    /// This is the same credential the pass would carry, never a local token.
+    @State private var inlineFallback: WalletInlineFallback? = nil
 
     private let cols = [GridItem(.adaptive(minimum: 104), spacing: 12)]
 
@@ -115,10 +115,27 @@ struct WalletCardPickerView: View {
             let code = note.userInfo?["accessCode"] as? String ?? ""
             let qr   = note.userInfo?["qrPayload"]  as? String ?? ""
             let exp  = note.userInfo?["expiresAt"]  as? String
-            accessFallback = AccessInlineFallback(accessCode: code, qrPayload: qr, expiresAt: exp)
+            inlineFallback = WalletInlineFallback(
+                kind: .staffAccess,
+                code: code,
+                qrPayload: qr,
+                expiresAt: exp
+            )
         }
-        .sheet(item: $accessFallback) { fb in
-            NavigationStack { AccessCardInlineFallbackView(fallback: fb) }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoFallbackToInlineQR)) { note in
+            guard mode == .pickup else { return }
+            let code = note.userInfo?["shortCode"] as? String ?? ""
+            let qr   = note.userInfo?["qrPayload"] as? String ?? ""
+            let exp  = note.userInfo?["expiresAt"] as? String
+            inlineFallback = WalletInlineFallback(
+                kind: .pickup,
+                code: code,
+                qrPayload: qr,
+                expiresAt: exp
+            )
+        }
+        .sheet(item: $inlineFallback) { fallback in
+            NavigationStack { WalletInlineFallbackView(fallback: fallback) }
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
@@ -165,20 +182,38 @@ struct WalletCardPreview: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            // Apple Wallet uses background.png for art themes and applies a
-            // crop + blur on non-poster event tickets. Mirror that behavior in
-            // the full preview; solid boarding-pass themes stay color-only.
-            if theme.isArt, let previewImage = theme.previewImage {
-                Color.clear.overlay {
+            theme.bg
+            if let previewImage = theme.previewImage {
+                switch theme.normalizedArtSlot {
+                case "background":
+                    Color.clear.overlay {
+                        Image(uiImage: previewImage)
+                            .resizable()
+                            .scaledToFill()
+                            .scaleEffect(full ? 1.08 : 1.02)
+                            .blur(radius: full ? 6 : 1.5)
+                    }
+                    .clipped()
+                case "strip":
+                    VStack(spacing: 0) {
+                        Image(uiImage: previewImage)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(maxWidth: .infinity)
+                            .frame(height: full ? 118 : 35)
+                            .clipped()
+                        Spacer(minLength: 0)
+                    }
+                case "thumbnail":
                     Image(uiImage: previewImage)
                         .resizable()
                         .scaledToFill()
-                        .scaleEffect(full ? 1.08 : 1.02)
-                        .blur(radius: full ? 6 : 1.5)
+                        .frame(width: full ? 74 : 26, height: full ? 74 : 26)
+                        .clipShape(RoundedRectangle(cornerRadius: full ? 10 : 4))
+                        .padding(full ? 14 : 8)
+                default:
+                    EmptyView()
                 }
-                .clipped()
-            } else {
-                theme.bg
             }
             VStack(alignment: .leading, spacing: full ? 10 : 4) {
                 HStack(alignment: .top) {
@@ -213,15 +248,17 @@ struct WalletCardPreview: View {
                         Spacer()
                         HStack { field("FACILITY", "—"); Spacer(); field("GATE CODE", "—", trailing: true) }
                     } else {
-                        if theme.isArt {
-                            // Background-art passes mint as event tickets. Apple
-                            // gives that style one primary field, so preview the
-                            // exact combined lane Wallet will render.
-                            field("LANE", "\(load?.origin ?? "—") → \(load?.destination ?? "—")")
+                        if theme.passStyle == "eventTicket" {
+                            field(
+                                "LANE",
+                                "\(load?.origin ?? "—") → \(load?.destination ?? "—")"
+                            )
                         } else {
                             HStack(alignment: .bottom) {
-                                field("FROM", load?.origin ?? "—"); Spacer()
-                                Image(systemName: "arrow.right").foregroundStyle(theme.accent); Spacer()
+                                field("FROM", load?.origin ?? "—")
+                                Spacer()
+                                Image(systemName: "arrow.right").foregroundStyle(theme.accent)
+                                Spacer()
                                 field("TO", load?.destination ?? "—", trailing: true)
                             }
                         }
@@ -345,25 +382,23 @@ private func catalystWalletNav_walletCard() -> BottomNav {
     )
 }
 
-// MARK: - Access-card inline fallback (PassKit not yet configured)
-//
-// When the access-card mint succeeds but the server hasn't wired the PassKit
-// signing pipeline yet (pkpassUrl == nil), the holder still gets a usable
-// credential: the REAL 6-digit access code from `staffAccessTokens` plus the
-// scannable QR payload. This is honest — it's the same grant, just delivered
-// in-app instead of as a Wallet pass — and an access controller can verify
-// either form. No fabricated pass is ever shown.
+// MARK: - Real inline credential when PassKit signing is not configured
 
-struct AccessInlineFallback: Identifiable, Equatable {
-    let accessCode: String
+struct WalletInlineFallback: Identifiable, Equatable {
+    enum Kind: String, Equatable { case pickup, staffAccess }
+
+    let kind: Kind
+    let code: String
     let qrPayload: String
     let expiresAt: String?
-    var id: String { accessCode + "|" + qrPayload }
+    var id: String { kind.rawValue + "|" + code + "|" + qrPayload }
 }
 
-struct AccessCardInlineFallbackView: View {
-    let fallback: AccessInlineFallback
+struct WalletInlineFallbackView: View {
+    let fallback: WalletInlineFallback
     @Environment(\.dismiss) private var dismiss
+
+    private var isAccess: Bool { fallback.kind == .staffAccess }
 
     var body: some View {
         ScrollView {
@@ -372,9 +407,11 @@ struct AccessCardInlineFallbackView: View {
                     Image(systemName: "lock.shield.fill")
                         .font(.system(size: 30, weight: .heavy))
                         .foregroundStyle(LinearGradient.diagonal)
-                    Text("Access card ready")
+                    Text(isAccess ? "Access card ready" : "Pickup credential ready")
                         .font(.headline)
-                    Text("Show this active code or QR at the gate. It is the same verified temporary access grant.")
+                    Text(isAccess
+                         ? "Show this active code or QR at the gate. It is the same verified temporary access grant."
+                         : "Show this active QR or code at pickup. It is the server-issued credential for this load.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -383,14 +420,19 @@ struct AccessCardInlineFallbackView: View {
                 .padding(.top, 8)
 
                 if !fallback.qrPayload.isEmpty {
-                    EusoQRView(kind: .raw(text: fallback.qrPayload), role: .terminal, size: 220)
+                    EusoQRView(
+                        kind: .raw(text: fallback.qrPayload),
+                        role: isAccess ? .terminal : .shipper,
+                        size: 220
+                    )
                 }
 
-                if !fallback.accessCode.isEmpty {
+                if !fallback.code.isEmpty {
                     VStack(spacing: 4) {
-                        Text("6-DIGIT CODE").font(.system(size: 10, weight: .heavy)).tracking(1.2)
+                        Text(isAccess ? "6-DIGIT CODE" : "GATE CODE")
+                            .font(.system(size: 10, weight: .heavy)).tracking(1.2)
                             .foregroundStyle(.secondary)
-                        Text(spacedCode(fallback.accessCode))
+                        Text(spacedCode(fallback.code))
                             .font(.system(size: 34, weight: .heavy, design: .monospaced))
                             .tracking(4)
                     }
@@ -403,12 +445,13 @@ struct AccessCardInlineFallbackView: View {
             }
             .padding(18)
         }
-        .navigationTitle("Access card")
+        .navigationTitle(isAccess ? "Access card" : "Pickup credential")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
     }
 
-    /// Group a 6-digit code as "123 456" for readability; falls back to raw.
+    /// Group a 6-digit access code as "123 456"; other server code formats
+    /// remain byte-for-byte intact.
     private func spacedCode(_ c: String) -> String {
         let digits = c.filter(\.isNumber)
         guard digits.count == 6 else { return c }

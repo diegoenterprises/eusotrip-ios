@@ -802,12 +802,18 @@ private struct CapacityBody_402: View {
     private func liveLocation(_ truck: TruckFleetVehicle) -> TruckPostLocation? {
         guard let lat = truck.location?.lat,
               let lng = truck.location?.lng,
-              abs(lat) <= 90,
-              abs(lng) <= 180,
-              !(abs(lat) < 0.000001 && abs(lng) < 0.000001) else {
+              let coordinate = LatLongParser.validatedCoordinate(
+                  latitude: lat,
+                  longitude: lng
+              ) else {
             return nil
         }
-        return TruckPostLocation(lat: lat, lng: lng, city: nil, state: nil)
+        return TruckPostLocation(
+            lat: coordinate.latitude,
+            lng: coordinate.longitude,
+            city: nil,
+            state: nil
+        )
     }
 
     private func truckTitle(_ truck: TruckFleetVehicle) -> String {

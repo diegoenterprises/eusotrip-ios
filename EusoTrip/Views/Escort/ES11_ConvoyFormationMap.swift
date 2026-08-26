@@ -22,15 +22,42 @@
 //
 //  WIRING TRUTH (code-traced this fire)
 //    REAL  escorts.getActiveConvoys      escorts.ts:985   active convoy + lane context
-//    REAL  convoy.getChannel             convoy.ts:928    envelope :948 (convoyId/loadId/status/members)
 //    REAL  convoy.getMembers             convoy.ts:951    :958-966 role/online/lastSeenAt/lat/lng/heading/speedMph
 //    REAL  convoy.getConvoyPositions     convoy.ts:213    latest locationHistory row per member :225,
 //                                                         roles emitted lead|load|rear ONLY :227,
 //                                                         gaps via haversine :1100 → METRES :248-251
-//    REAL  convoy.getConvoy              convoy.ts:203-207 targets + speed cap (:61 800 m, :63 45 mph)
+//    REAL  convoy.getConvoy              convoy.ts:175    targets returned :203-207 (:61 800 m, :63 45 mph)
 //    REAL  convoy.getConvoyAlerts        convoy.ts:641    warn :656 · critical target×1.5 :654 · stale >120 s :689
 //    REAL  convoy.updateMemberLocation   convoy.ts:1071   own fix ping — ONLINE_ONLY
-//    REAL  convoy.sendHazard             convoy.ts:1044   HAIL CHASE → ES-01 — ONLINE_ONLY
+//    REAL  convoy.sendHazard             convoy.ts:1026   HAIL CHASE → ES-01 — ONLINE_ONLY
+//
+//    NOT READ HERE  convoy.getChannel    convoy.ts:928    the channel envelope (:948) is ES-01's
+//                                                         read; `refreshAll()` below calls
+//                                                         getActiveConvoys / getConvoy /
+//                                                         getConvoyPositions / getMembers /
+//                                                         getConvoyAlerts and nothing else.
+//
+//  WEB PARITY (.tsx route) — STUB·named-gap. There is NO /escort/formation page on
+//  the web. client/src/App.tsx routes exactly eleven escort paths (:932-946 —
+//  active-trip, cert-reciprocity, profile, incidents, jobs, marketplace, schedule,
+//  earnings, certifications, plus the /escort/reports→/escort/earnings and
+//  /escort/permits→/escort/certifications redirects) and none of them is this screen.
+//  The nearest web surface is the embedded component
+//  client/src/components/convoy/ConvoySyncDashboard.tsx:144, mounted only inside
+//  pages/LoadDetails.tsx:782 — a load page, not an escort route — and the
+//  "/escort/convoys" link at pages/EscortActiveTrip.tsx:640 resolves to no Route at
+//  all. Owed: an /escort/formation page plus its App.tsx guard. Do not claim parity.
+//
+//  DB ROW + AUDIT + BROADCAST — the write this screen owns is
+//  convoy.updateMemberLocation convoy.ts:1071: it writes the convoy_members row
+//  (UPDATE :1091 when the member row exists, INSERT :1094 when it does not), it
+//  inserts NO blockchainAuditTrail row, and it broadcasts nothing.
+//  STUB·convoy-audit-trail — blockchainAuditTrail EXISTS at drizzle/schema.ts:10018
+//  and peer routers insert it (appointments.ts:122), but convoy.ts references it ZERO
+//  times, so NEITHER of this screen's two writes is audited. The second write,
+//  convoy.sendHazard convoy.ts:1026, inserts convoy_messages :1042 and DOES fan out
+//  (fanOutConvoyMessage convoy.ts:39 → emitNotification per member :43, called at
+//  :1047) yet still books no audit row. Owed: a blockchainAuditTrail insert on both.
 //
 //  NAMED GAPS — honest, not shipped:
 //    · No per-state spacing rule exists anywhere on the server. The 790-ft law line
@@ -63,8 +90,29 @@
 //  on the position write (WS_CHANNELS.CONVOY carrying CONVOY_LOCATION) subscribed by the
 //  positions read, over one store. This surface therefore prints "poll 30s", never "live".
 //
-//  RBAC: row-level convoy membership gate assertConvoyMember convoy.ts:19 on every proc
-//  above; Shipper NO ACCESS; no rate or tender price on this surface.
+//  RBAC — the procedure gate on every convoy.* endpoint this screen touches is
+//  protectedProcedure (trpc.ts:155, t.procedure.use(requireUser)), which is
+//  AUTHENTICATION ONLY. It is NOT roleProcedure (trpc.ts:216) and NOT escortProcedure
+//  (trpc.ts:228 = roleProcedure(ROLES.ESCORT)); no escort-role gate exists anywhere in
+//  convoy.ts, so any signed-in user of any role clears the procedure gate on this
+//  router. STUB·convoy-role-gate — owed: escortProcedure (or roleProcedure) on the
+//  convoy reads and writes. The only role-shaped check in the file is
+//  DISPATCH_ALLOWED_CALLOUTS convoy.ts:37, applied inside sendHazard at :1036.
+//
+//  Row level: the convoy membership gate assertConvoyMember convoy.ts:18 is called on
+//  the comms and write procs ONLY — getChannel :932, getMembers :955, getCommsHistory :981,
+//  sendText :1016, sendHazard :1035, commitAudio :1061, updateMemberLocation :1081. THREE of
+//  the procedures this screen reads are NOT gated: convoy.getConvoy :175,
+//  convoy.getConvoyPositions :213 and convoy.getConvoyAlerts :641 are each declared
+//  `.query(async ({ input }) =>` with no ctx and no membership check, so any authenticated
+//  caller can read any convoyId's positions and alerts. Filed as counter-party row
+//  ESC-CP-CONVOYGATE — proposed shape: add assertConvoyMember(ctx, input.convoyId) to
+//  convoy.getConvoy / getConvoyPositions / getConvoyAlerts. Shipper NO ACCESS; no rate
+//  or tender price here.
+//
+//  DO NOT "SIMPLIFY" THE RBAC PARAGRAPH ABOVE. This row failed a prior fire on a false
+//  claim that assertConvoyMember guards every procedure. It guards seven, and the three
+//  reads this hero depends on are ungated. The enumeration is the finding.
 //
 //  Sole author: Mike "Diego" Usoro / Eusorone Technologies, Inc.
 //
@@ -146,7 +194,7 @@ private struct FmPositionsEnvelope: Codable {
     let status: String?
 }
 
-/// `convoy.getConvoy` (convoy.ts:203-207) — spacing targets and speed cap.
+/// `convoy.getConvoy` (convoy.ts:175, targets returned :203-207) — spacing targets and speed cap.
 private struct FmConvoyDetail: Codable {
     let id: Int?
     let status: String?
@@ -293,8 +341,11 @@ struct EscortConvoyFormationMap: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack(alignment: .center) {
+                // HOME type ramp — 34 / 700 / -0.6. The twins are composed as a home
+                // (eyebrow, H1 band, meta subline, hairline at y158), not as a detail,
+                // so the home H1 applies and not the detail 28.
                 Text("Formation")
-                    .font(.system(size: 30, weight: .bold)).tracking(-0.5)
+                    .font(.system(size: 34, weight: .bold)).tracking(-0.6)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer(minLength: 8)
                 if let move = snapshot?.convoy?.loadNumber {
@@ -596,10 +647,12 @@ struct EscortConvoyFormationMap: View {
                 Spacer(minLength: 0)
             }
             .padding(Space.s3)
+            // The screen's one rx20 card (Radius.xl). The rail rungs above are the
+            // TILE tier at Radius.lg; the map overlays are the CHIP tier (Capsule).
             .background(
-                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
                     .fill(Brand.danger.opacity(0.12))
-                    .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                    .overlay(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
                         .strokeBorder(Brand.danger.opacity(0.45)))
             )
         }
@@ -695,7 +748,8 @@ struct EscortConvoyFormationMap: View {
             }
         }
         .padding(.horizontal, 10).padding(.vertical, 5)
-        .background(RoundedRectangle(cornerRadius: Radius.sm).fill(palette.bgCard.opacity(0.9)))
+        // CHIP tier — 20 pt tall and fully rounded, matching rx10 in both twins.
+        .background(Capsule().fill(palette.bgCard.opacity(0.9)))
     }
 
     // MARK: - Actions (both ONLINE_ONLY)
@@ -1051,12 +1105,23 @@ struct EscortConvoyFormationMapScreen: View {
     }
 }
 
+// The escort bar is HOME · ASSIGNMENTS · [ESang orb] · CORRIDOR · ME, rendered from
+// the role enum and never by hand (EscortNavController.swift — tab enum :32,
+// NavSlots :77-85, orb labels :63, dispatcher :88-96).
+//
+// `isCurrent` inks CORRIDOR, not ASSIGNMENTS: ES-11 IS the corridor destination —
+// EscortNavRoute.Destination.corridor = "602" (EscortNavController.swift:45), the
+// same registry id this file supersedes by adoption. The previous `.assignments`
+// here came from the mechanical "trip" → .assignments alias
+// (EscortNavController.swift:58), which is a label fallback for legacy new-wave
+// screens, not a statement about which tab this surface lives under.
+
 private func escortNavLeading_ES11() -> [NavSlot] {
-    EscortNavRoute.leading(current: .assignments)
+    EscortNavRoute.leading(current: .corridor)
 }
 
 private func escortNavTrailing_ES11() -> [NavSlot] {
-    EscortNavRoute.trailing(current: .assignments)
+    EscortNavRoute.trailing(current: .corridor)
 }
 
 // MARK: - Previews

@@ -6,21 +6,42 @@
 //  Status swim-lanes (ON ROUTE · STAGING/USMCA · RAMP) of full-width yard
 //  rows, each carrying a relative-capacity bar (slot capacity scaled to the
 //  largest yard on the route) + track counts + status pill + railroad disc.
-//  Route RAIL-260523-7C3A0B12D4 · BNSF transcon · Corwith → Argentine → LPC.
+//  Board scope is whatever getRailYards returns — no route, carrier or
+//  corridor is asserted anywhere on this screen.
 //
 //  Web parity: app/(rail)/yards/page.tsx.
 //  tRPC (server/routers/railShipments.ts):
-//    ON ROUTE + STAGING lanes ← railShipments.getRailYards (yards; country
-//      filter; capacity=carSlots, totalTracks). RBAC: railProcedure.
-//    "Yard directory" CTA → railShipments.getRailYards (full list).
-//    "Map" CTA → railShipments.getRailTracking (yard pins on the map).
+//    Lanes ← railShipments.getRailYards (railShipments.ts:1512; capacity,
+//      totalTracks, status, hasHazmat). RBAC: railReadProcedure.
+//    "Yard directory" CTA → the SAME procedure at the directory limit, which
+//      lifts the board's 50-row cap (`limit` is z.number().default(50) with no
+//      max — railShipments.ts:1519) and flips the board into a labelled
+//      DIRECTORY state. Not a re-run of the query already on screen.
+//    "Map" CTA → Rail560 (rail tracking map).
+//
+//  SCOPE, STATED HONESTLY: getRailYards takes railroadId / state / country /
+//    yardType / hasIntermodal / limit — there is NO route or shipment
+//    parameter. This board is therefore NOT route-filtered, and it no longer
+//    claims to be.
+//
+//  §W OFFLINE: READ_CACHED(none) — a read-only board with no commit on it. It
+//    holds no local cache, so offline it shows its real load error rather than
+//    a stale yard list. Nothing here is queued.
+//
 //  PORT-GAP: RAMP shelf / per-facility staging detail wants
 //    railShipments.getFacilityStatus(railroad, facilityCode) — a per-facility
 //    call with no batch wrapper and no Swift API shim; the ramp shelf is
 //    derived from the intermodal yards returned by getRailYards instead.
+//  NAMED GAP · esang-screen-enum-rail: esangCoach.forScreen EXISTS
+//    (esangCoach.ts:264) but its SCREEN_ENUM (esangCoach.ts:112-125) carries no
+//    rail or yard key and its system prompt is an in-cab DRIVER coach speaking
+//    HOS/DVIR. Calling it with a driver key would return the wrong entity, so
+//    the 559 spec's ESANG routing note is NOT wired and NOT faked. Same call
+//    the sibling yard screen 665 made (665:95).
 //
 
 import SwiftUI
+import CoreLocation
 
 struct RailYardOperationsScreen: View {
     let theme: Theme.Palette
@@ -63,6 +84,10 @@ private struct RailYard559: Decodable, Identifiable {
 private struct YardCoord559: Decodable, Hashable {
     let lat: Double
     let lng: Double
+
+    var coordinate: CLLocationCoordinate2D? {
+        LatLongParser.validatedCoordinate(latitude: lat, longitude: lng)
+    }
 }
 
 // MARK: - Visibility throttle (weather.realtime at the yard coordinate)
@@ -122,8 +147,11 @@ private struct YardWeather559: Decodable {
 
 // MARK: - Lane model
 
+/// Lane taxonomy. `.unknown` is a first-class state, not a fallback: a yard
+/// whose `yardType` is absent, or a classification yard whose `hasHazmat` is
+/// absent, cannot be classified and must never be painted green ACTIVE.
 private enum YardPill {
-    case active, hazmat, ramp, staging
+    case active, hazmat, ramp, staging, unknown
 
     var label: String {
         switch self {
@@ -131,6 +159,7 @@ private enum YardPill {
         case .hazmat:  return "HAZMAT"
         case .ramp:    return "RAMP"
         case .staging: return "STAGING"
+        case .unknown: return "UNKNOWN"
         }
     }
     var color: Color {
@@ -139,6 +168,7 @@ private enum YardPill {
         case .hazmat:  return Brand.warning
         case .ramp:    return Brand.blue
         case .staging: return Color(hex: 0x90A4AE)
+        case .unknown: return Brand.warning
         }
     }
     var disc: Color {
@@ -147,6 +177,7 @@ private enum YardPill {
         case .hazmat:  return Brand.warning
         case .ramp:    return Color(hex: 0x4FB0FF)
         case .staging: return Color(hex: 0x90A4AE)
+        case .unknown: return Brand.warning
         }
     }
 }
@@ -164,8 +195,17 @@ private struct RailYardOperationsBody: View {
     /// coordinate. Empty until the fan-out lands; a yard with no entry (no
     /// geocode / no data / good vis) renders un-throttled at full capacity.
     @State private var yardWeather: [Int: YardWeather559] = [:]
+    /// True while the board is showing the FULL yard directory (the board's own
+    /// 50-row cap lifted) rather than the default board load. The CTA's effect
+    /// is visible precisely because this drives a labelled on-screen state.
+    @State private var directoryMode = false
+    @State private var directoryLoading = false
 
-    private let routeId = "RAIL-260523-7C3A0B12D4"
+    /// The board load cap, and the directory ceiling the "Yard directory" CTA
+    /// raises it to. `getRailYards.limit` is `z.number().default(50)` with no
+    /// max (railShipments.ts:1519), so both are legal inputs.
+    private static let boardLimit = 50
+    private static let directoryLimit = 200
 
     /// The throttle reading for a yard, if any — only present when the feed
     /// returned REAL point conditions for that yard's coordinate.
@@ -191,11 +231,37 @@ private struct RailYardOperationsBody: View {
     }
 
     private func pill(for y: RailYard559) -> YardPill {
-        if (y.hasHazmat ?? false) && ((y.yardType ?? "").lowercased() == "classification") { return .hazmat }
-        switch (y.yardType ?? "").lowercased() {
+        let type = (y.yardType ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        // No yard type on the row ⇒ the lane cannot be classified. That is
+        // UNKNOWN. It used to fall through to a green ACTIVE pill.
+        guard !type.isEmpty else { return .unknown }
+        if type == "classification" {
+            // `hasHazmat` is `boolean(...).default(true)` (drizzle/schema.ts:11163),
+            // so coalescing it to false inverted the column's own default and
+            // painted a hazmat-capable classification yard as plain green
+            // ACTIVE. Absent ⇒ UNKNOWN, never "not hazmat".
+            guard let hazmat = y.hasHazmat else { return .unknown }
+            return hazmat ? .hazmat : .active
+        }
+        switch type {
         case "staging":         return .staging
         case "intermodal_ramp": return .ramp
         default:                return .active
+        }
+    }
+
+    /// `rail_yards.status` is an operational-record enum
+    /// (active | inactive | maintenance — drizzle/schema.ts:11165). It does NOT
+    /// model gate acceptance, so nothing here says "accepting". An absent value
+    /// renders as not reported, never as "open".
+    private func yardStatusLine(_ y: RailYard559) -> String {
+        guard let raw = y.status?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty else { return "status not reported" }
+        switch raw.lowercased() {
+        case "active":      return "listed active"
+        case "inactive":    return "listed inactive"
+        case "maintenance": return "in maintenance"
+        default:            return "status \(raw)"
         }
     }
 
@@ -205,16 +271,20 @@ private struct RailYardOperationsBody: View {
     /// the route-overview map can plot. Driven entirely by live data; if none
     /// are geocoded the map card is simply omitted.
     private var mappedYards: [RailYard559] {
-        yards.filter { $0.coordinates != nil }
+        yards.filter { $0.coordinates?.coordinate != nil }
     }
 
     /// Camera anchor = centroid of the plotted yard fixes.
-    private var mapCenter: HereLatLng {
-        let pts = mappedYards.compactMap { $0.coordinates }
-        guard !pts.isEmpty else { return HereLatLng(39.0, -98.0) } // CONUS fallback (unused: card hidden when empty)
-        let lat = pts.map { $0.lat }.reduce(0, +) / Double(pts.count)
-        let lng = pts.map { $0.lng }.reduce(0, +) / Double(pts.count)
-        return HereLatLng(lat, lng)
+    private var mapCenter: HereLatLng? {
+        let pts = mappedYards.compactMap { $0.coordinates?.coordinate }
+        guard let first = pts.first else { return nil }
+        let latitude = pts.map(\.latitude).reduce(0, +) / Double(pts.count)
+        let longitude = pts.map(\.longitude).reduce(0, +) / Double(pts.count)
+        let center = LatLongParser.validatedCoordinate(
+            latitude: latitude,
+            longitude: longitude
+        ) ?? first
+        return HereLatLng(center)
     }
 
     /// Lane glyph → map marker kind (`.truck` puck for live on-route yards,
@@ -226,6 +296,8 @@ private struct RailYardOperationsBody: View {
         case .ramp:    return .delivery
         case .staging: return .stop
         case .hazmat:  return .alert
+        // An unclassifiable yard gets the attention glyph, never the live puck.
+        case .unknown: return .alert
         }
     }
 
@@ -253,15 +325,22 @@ private struct RailYardOperationsBody: View {
                     filterChips
                         .padding(.horizontal, 20).padding(.top, 14)
 
+                    if directoryMode {
+                        directoryModeBanner
+                            .padding(.horizontal, 20).padding(.top, 12)
+                    }
+
                     // Route map — yard fixes plotted at their real geocodes
                     // (rail_yards.coordinates). Lane-colored pins; tap → ramp.
-                    if !mappedYards.isEmpty {
-                        routeMapCard
+                    if let mapCenter {
+                        routeMapCard(center: mapCenter)
                             .padding(.horizontal, 20).padding(.top, 16)
                     }
 
-                    // Lane 1 · ON ROUTE
-                    laneHeader(title: "ON ROUTE · \(onRouteYards.count)", color: Color(hex: 0x2BD9A4))
+                    // Lane 1 · OPERATING (non-staging). This lane is
+                    // `yardType != "staging"` — it is NOT a route membership
+                    // test, and no longer claims to be.
+                    laneHeader(title: "OPERATING · \(onRouteYards.count)", color: Color(hex: 0x2BD9A4))
                     onRouteCard
                         .padding(.horizontal, 20).padding(.top, 8)
 
@@ -304,7 +383,10 @@ private struct RailYardOperationsBody: View {
                         .foregroundStyle(LinearGradient.primary)
                 }
                 Spacer()
-                Text(routeId)
+                // The board scope, not a route id. getRailYards has no route
+                // parameter, so a route reference here would attribute this
+                // list to a route the query never asked for.
+                Text(directoryMode ? "FULL DIRECTORY" : "YARD BOARD")
                     .font(EType.mono(.micro)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
             }
@@ -330,27 +412,58 @@ private struct RailYardOperationsBody: View {
     }
 
     private var routeSubtitle: String {
-        // "BNSF transcon · Corwith → Argentine → LPC" — derived from the
-        // on-route yards in railroad order; falls back to the route name.
-        let names = onRouteYards.compactMap { $0.name }
-        if names.count >= 2 {
-            return names.prefix(3).joined(separator: " → ")
-        }
-        return "Yards on route \(routeId)"
+        // This used to join three arbitrary yard names with arrows, presenting
+        // an ORDERED ROUTE that getRailYards cannot know: the procedure takes
+        // railroadId / state / country / yardType / hasIntermodal / limit and
+        // applies no route filter and no route ordering
+        // (railShipments.ts:1513-1532). We state the real scope instead.
+        let n = yards.count
+        let unit = "yard\(n == 1 ? "" : "s")"
+        return directoryMode
+            ? "Full yard directory · \(n) \(unit) · not route-filtered"
+            : "Yard board · \(n) \(unit) · not route-filtered"
     }
 
     // MARK: - Filter chips
 
     private var filterChips: some View {
         let hazmatCount = onRouteYards.filter { pill(for: $0) == .hazmat }.count
+        // Unclassifiable yards get their own visible count instead of being
+        // absorbed into the green "operating" tally.
+        let unknownCount = yards.filter { pill(for: $0) == .unknown }.count
         return ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 chip(text: "All · \(yards.count)", fg: .white, active: true)
-                chip(text: "On route · \(onRouteYards.count)", fg: Color(hex: 0x2BD9A4), active: false)
+                chip(text: "Operating · \(onRouteYards.count)", fg: Color(hex: 0x2BD9A4), active: false)
                 chip(text: "Hazmat · \(hazmatCount)", fg: Brand.warning, active: false)
                 chip(text: "Staging · \(stagingYards.count)", fg: Color(hex: 0x90A4AE), active: false)
+                if unknownCount > 0 {
+                    chip(text: "Unclassified · \(unknownCount)", fg: Brand.warning, active: false)
+                }
             }
         }
+    }
+
+    /// The directory state made visible. Without an on-screen change the
+    /// "Yard directory" CTA would still be a no-op affordance, whatever it
+    /// queried.
+    private var directoryModeBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "list.bullet.rectangle")
+                .font(.system(size: 12, weight: .bold)).foregroundStyle(Brand.blue)
+            Text("FULL DIRECTORY · \(yards.count) YARDS · NO ROUTE FILTER")
+                .font(.system(size: 10, weight: .heavy)).tracking(0.6)
+                .foregroundStyle(Brand.blue)
+                .lineLimit(1).minimumScaleFactor(0.7)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(Brand.blue.opacity(0.10))
+        .overlay(Capsule().strokeBorder(Brand.blue.opacity(0.30)))
+        .clipShape(Capsule())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Full yard directory")
+        .accessibilityValue("\(yards.count) yards listed. No route filter is applied.")
     }
 
     private func chip(text: String, fg: Color, active: Bool) -> some View {
@@ -397,7 +510,7 @@ private struct RailYardOperationsBody: View {
     /// swim-lanes (active=puck, ramp=delivery, staging=stop, hazmat=alert).
     /// RAIL has no dedicated style ⇒ flat `.standard` register (tilt 0, no
     /// ocean hint). Tapping a pin swaps to the rail tracking map (Rail560).
-    private var routeMapCard: some View {
+    private func routeMapCard(center: HereLatLng) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("ROUTE MAP · \(mappedYards.count) PLOTTED")
@@ -413,20 +526,21 @@ private struct RailYardOperationsBody: View {
             .padding(.bottom, 10)
 
             HereVectorMapView(
-                center: mapCenter,
+                center: center,
                 zoom: 4,
                 interactive: true,
                 tilt: 0,
                 layers: [
                     .markers(mappedYards.compactMap { y in
-                        guard let c = y.coordinates else { return nil }
+                        guard let coordinate = y.coordinates?.coordinate else { return nil }
                         return HereMarker(
-                            at: HereLatLng(c.lat, c.lng),
+                            at: HereLatLng(coordinate),
                             kind: markerKind(for: y),
                             label: y.name,
                             id: String(y.id))
                     })
                 ],
+                mapModeContext: .primary(.rail),
                 onSelectMarker: { _ in
                     NotificationCenter.default.post(
                         name: .eusoRailNavSwap, object: nil,
@@ -494,21 +608,28 @@ private struct RailYardOperationsBody: View {
         // the lane's own status color (unchanged).
         let barTint: Color = degraded ? Brand.warning : kind.disc
 
-        let nominalCap = y.capacity ?? 0
+        // UNKNOWN CAPACITY stays nil the whole way to the bar. The old
+        // `capacity ?? 0` fed a `max(0.04, …)` floor, so a yard whose capacity
+        // column is empty still drew a visible sliver that read as "it has
+        // some". Nil now draws NO fill at all.
+        let nominalCap: Int? = y.capacity
         // Throttled slot count: nominal × the REAL visibility factor (floored).
         // Only a present, degraded reading discounts; otherwise == nominal.
-        let throttledCap: Int = {
-            guard let f = wx?.capacityFactor else { return nominalCap }
-            return Int((Double(nominalCap) * f).rounded(.down))
+        let throttledCap: Int? = {
+            guard let cap = nominalCap else { return nil }
+            guard let f = wx?.capacityFactor else { return cap }
+            return Int((Double(cap) * f).rounded(.down))
         }()
         // Bar saturation reflects the THROTTLED throughput so the discount
         // reads at a glance; still scaled against the board's nominal max.
-        let frac = max(0.04, min(1.0, Double(throttledCap) / maxCapacity))
+        // Nil ⇒ the bar renders as a dashed unknown rail, never a fill.
+        let frac: Double? = throttledCap.map { min(1.0, max(0, Double($0) / maxCapacity)) }
 
         let metaParts: [String] = [
             [y.city, y.state].compactMap { $0 }.joined(separator: " "),
             railroadName(y.railroadId),
-            stagingMeta(y) ?? "\(y.totalTracks ?? 0) tracks"
+            // A yard with no track count used to render "0 tracks".
+            stagingMeta(y) ?? (y.totalTracks.map { "\($0) tracks" } ?? "tracks not reported")
         ].filter { !$0.isEmpty }
         let meta = metaParts.joined(separator: " · ")
 
@@ -573,17 +694,27 @@ private struct RailYardOperationsBody: View {
                 HStack(alignment: .bottom, spacing: 12) {
                     GeometryReader { geo in
                         ZStack(alignment: .leading) {
-                            Capsule().fill(Color.white.opacity(0.14))
-                                .frame(height: 6)
-                            Capsule().fill(barTint)
-                                .frame(width: max(6, geo.size.width * frac), height: 6)
+                            if let frac {
+                                Capsule().fill(Color.white.opacity(0.14))
+                                    .frame(height: 6)
+                                Capsule().fill(barTint)
+                                    .frame(width: max(0, geo.size.width * frac), height: 6)
+                            } else {
+                                // Capacity not reported — a dashed empty rail,
+                                // visibly distinct from a yard at zero slots.
+                                Capsule()
+                                    .strokeBorder(Brand.warning.opacity(0.55),
+                                                  style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                                    .frame(height: 6)
+                            }
                         }
                     }
                     .frame(height: 6)
                     VStack(alignment: .trailing, spacing: 1) {
                         Text(capacityString(degraded ? throttledCap : y.capacity))
                             .font(.system(size: 14, weight: .bold)).monospacedDigit()
-                            .foregroundStyle(degraded ? Brand.warning : palette.textPrimary)
+                            .foregroundStyle(y.capacity == nil ? Brand.warning
+                                             : (degraded ? Brand.warning : palette.textPrimary))
                         // When throttled, label the discount honestly against
                         // the nominal (e.g. "of 1,800 · throttled"); otherwise
                         // the unchanged slot/track unit.
@@ -597,6 +728,40 @@ private struct RailYardOperationsBody: View {
             }
             .padding(.leading, 12)
         }
+        // Every state string on this row reaches VoiceOver — the UNKNOWN pill,
+        // the not-reported capacity and the throttle are states, not colours.
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(y.name ?? "Yard, name not reported")
+        .accessibilityValue(yardRowAccessibility(y, kind: kind, degraded: degraded,
+                                                 throttledCap: throttledCap, meta: meta))
+    }
+
+    /// The spoken equivalent of the row. Nothing here is derived from a
+    /// default: an absent field is spoken as not reported.
+    private func yardRowAccessibility(_ y: RailYard559,
+                                      kind: YardPill,
+                                      degraded: Bool,
+                                      throttledCap: Int?,
+                                      meta: String) -> String {
+        var parts: [String] = [kind.label, yardStatusLine(y)]
+        if kind == .unknown {
+            parts.append(y.yardType == nil
+                         ? "Yard type not reported, so the lane cannot be classified"
+                         : "Hazmat capability not reported, so this classification yard cannot be ruled in or out")
+        }
+        if let cap = y.capacity {
+            parts.append(degraded
+                         ? "\(capacityString(throttledCap)) car slots, throttled from \(capacityString(cap))"
+                         : "\(capacityString(cap)) car slots")
+        } else {
+            parts.append("Capacity not reported")
+        }
+        parts.append(y.totalTracks.map { "\($0) tracks" } ?? "Track count not reported")
+        if degraded, let v = weather(for: y)?.visibilityMi {
+            parts.append("Degraded, \(v.formatted(.number.precision(.fractionLength(0...1)))) miles visibility")
+        }
+        if !meta.isEmpty { parts.append(meta) }
+        return parts.joined(separator: ". ")
     }
 
     /// The capacity sublabel — nominal-vs-throttled when low vis discounts the
@@ -606,11 +771,15 @@ private struct RailYardOperationsBody: View {
         if degraded, let nominal = y.capacity {
             return "of \(capacityString(nominal)) · throttled"
         }
-        return kind == .staging ? "\(y.totalTracks ?? 0) tracks" : "car slots"
+        if kind == .staging {
+            return y.totalTracks.map { "\($0) tracks" } ?? "track count not reported"
+        }
+        return y.capacity == nil ? "capacity not reported" : "car slots"
     }
 
+    /// Em-dash for an absent capacity — never a zero, and never a formatted 0.
     private func capacityString(_ cap: Int?) -> String {
-        guard let cap = cap else { return "-" }
+        guard let cap = cap else { return "—" }
         let fmt = NumberFormatter()
         fmt.numberStyle = .decimal
         return fmt.string(from: NSNumber(value: cap)) ?? "\(cap)"
@@ -648,15 +817,22 @@ private struct RailYardOperationsBody: View {
     }
 
     private func rampCard(_ y: RailYard559) -> some View {
+        let kind = pill(for: y)
         let dot: Color = {
-            switch pill(for: y) {
+            switch kind {
             case .hazmat:  return Brand.warning
             case .ramp:    return Brand.blue
             case .staging: return Color(hex: 0x90A4AE)
             case .active:  return Color(hex: 0x00C48C)
+            case .unknown: return Brand.warning
             }
         }()
-        let line2: String = (y.status ?? "open").lowercased() == "active" ? "open · accepting" : (y.status ?? "open · accepting")
+        // Both branches of the old ternary rendered "open · accepting", so a
+        // yard of UNKNOWN status was shown to the dispatcher as open and taking
+        // cars. `rail_yards.status` is active | inactive | maintenance
+        // (drizzle/schema.ts:11165) — an operational-record enum that models no
+        // gate-acceptance state at all — so nothing here claims "accepting".
+        let line2 = yardStatusLine(y)
         let line3 = [railroadName(y.railroadId), y.state].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 0) {
@@ -684,6 +860,9 @@ private struct RailYardOperationsBody: View {
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
             .strokeBorder(palette.borderFaint))
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(shortName(y.name)) ramp")
+        .accessibilityValue([kind.label, line2, line3].filter { !$0.isEmpty }.joined(separator: ". "))
     }
 
     private func shortName(_ name: String?) -> String {
@@ -695,12 +874,21 @@ private struct RailYardOperationsBody: View {
 
     private var ctaPair: some View {
         HStack(spacing: 8) {
-            Button(action: { Task { await loadDirectory() } }) {
+            Button(action: {
+                Task {
+                    if directoryMode { await load() } else { await loadDirectory() }
+                }
+            }) {
                 HStack(spacing: 8) {
-                    Image(systemName: "rectangle.split.1x2")
-                        .font(.system(size: 14, weight: .bold))
-                    Text("Yard directory")
+                    if directoryLoading {
+                        ProgressView().controlSize(.small).tint(.white)
+                    } else {
+                        Image(systemName: directoryMode ? "arrow.uturn.backward" : "rectangle.split.1x2")
+                            .font(.system(size: 14, weight: .bold))
+                    }
+                    Text(directoryMode ? "Back to yard board" : "Yard directory")
                         .font(.system(size: 15, weight: .bold))
+                        .lineLimit(1).minimumScaleFactor(0.75)
                 }
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity, minHeight: 48)
@@ -708,6 +896,12 @@ private struct RailYardOperationsBody: View {
                 .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
+            .disabled(directoryLoading)
+            .opacity(directoryLoading ? 0.6 : 1)
+            .accessibilityLabel(directoryMode ? "Back to yard board" : "Open yard directory")
+            .accessibilityValue(directoryMode
+                ? "Showing the full directory, \(yards.count) yards. Activates to return to the \(Self.boardLimit) yard board."
+                : "Showing the \(Self.boardLimit) yard board, \(yards.count) listed. Activates to load the full directory.")
 
             Button(action: { NotificationCenter.default.post(name: .eusoRailNavSwap, object: nil, userInfo: ["screenId": "Rail560"]) }) {
                 Text("Map")
@@ -719,6 +913,7 @@ private struct RailYardOperationsBody: View {
                     .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Open rail tracking map")
         }
     }
 
@@ -749,12 +944,14 @@ private struct RailYardOperationsBody: View {
         let lon: Double
     }
 
+    /// The default board load, capped at `boardLimit`.
     private func load() async {
         loading = true; loadError = nil
         do {
             let rows: [RailYard559] = try await EusoTripAPI.shared.query(
-                "railShipments.getRailYards", input: YardsIn(country: nil, limit: 50))
+                "railShipments.getRailYards", input: YardsIn(country: nil, limit: Self.boardLimit))
             self.yards = rows
+            self.directoryMode = false
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
@@ -764,12 +961,20 @@ private struct RailYardOperationsBody: View {
         await hydrateYardWeather()
     }
 
-    /// "Yard directory" CTA — full list, no route filter (getRailYards).
+    /// "Yard directory" CTA — genuinely distinct from `load()`, which it used to
+    /// duplicate byte for byte (same procedure, same `limit: 50`, same nil
+    /// country) so that tapping it changed nothing on screen. It now lifts the
+    /// board's own cap to the directory ceiling and flips the board into a
+    /// labelled DIRECTORY state, so both the query AND the render differ.
     private func loadDirectory() async {
+        directoryLoading = true
+        loadError = nil
+        defer { directoryLoading = false }
         do {
             let rows: [RailYard559] = try await EusoTripAPI.shared.query(
-                "railShipments.getRailYards", input: YardsIn(country: nil, limit: 50))
+                "railShipments.getRailYards", input: YardsIn(country: nil, limit: Self.directoryLimit))
             self.yards = rows
+            self.directoryMode = true
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
@@ -784,16 +989,18 @@ private struct RailYardOperationsBody: View {
     /// state — and they light up the moment the Apple WeatherKit key lands. We never
     /// fabricate a visibility reading or a "degraded" verdict.
     private func hydrateYardWeather() async {
-        let geocoded = yards.compactMap { y -> (Int, YardCoord559)? in
-            guard let c = y.coordinates else { return nil }
-            return (y.id, c)
+        let geocoded = yards.compactMap { y -> (Int, CLLocationCoordinate2D)? in
+            guard let coordinate = y.coordinates?.coordinate else { return nil }
+            return (y.id, coordinate)
         }
         guard !geocoded.isEmpty else { return }
         let readings = await withTaskGroup(of: (Int, YardWeather559?).self) { group in
             for (id, c) in geocoded {
                 group.addTask {
                     let wx: YardWeather559? = try? await EusoTripAPI.shared.query(
-                        "weather.realtime", input: RealtimeIn(lat: c.lat, lon: c.lng))
+                        "weather.realtime",
+                        input: RealtimeIn(lat: c.latitude, lon: c.longitude)
+                    )
                     return (id, wx)
                 }
             }

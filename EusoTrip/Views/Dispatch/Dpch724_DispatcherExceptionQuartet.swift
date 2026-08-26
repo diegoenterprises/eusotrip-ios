@@ -58,7 +58,6 @@ private struct ExceptionShell<Content: View>: View {
 private struct AvailableDriver: Decodable, Hashable, Identifiable {
     let id: String
     let name: String?
-    let hosRemainingMin: Int?
     let currentLocation: String?
     let utilizationPct: Double?
 
@@ -66,13 +65,12 @@ private struct AvailableDriver: Decodable, Hashable, Identifiable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.id = try c.decode(String.self, forKey: .id)
         self.name = try c.decodeIfPresent(String.self, forKey: .name)
-        self.hosRemainingMin = try c.decodeIfPresent(Int.self, forKey: .hosRemainingMin)
         self.currentLocation = try c.decodeIfPresent(String.self, forKey: .currentLocation)
         self.utilizationPct = try c.decodeIfPresent(Double.self, forKey: .utilizationPct)
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, name, hosRemainingMin, currentLocation, utilizationPct
+        case id, name, currentLocation, utilizationPct
     }
 }
 
@@ -90,6 +88,8 @@ private struct HOSReassignBody: View {
     @Environment(\.dismiss) private var dismiss
     @State private var load: ExceptionLoadCtx?
     @State private var candidates: [AvailableDriver] = []
+    @State private var hosEvidence: [HOSFleetDriver] = []
+    @State private var hosWarning: String?
     @State private var selectedCandidate: String?
     @State private var loading: Bool = true
     @State private var actionInFlight: Bool = false
@@ -104,6 +104,13 @@ private struct HOSReassignBody: View {
                 loadContextCard
                 wizardStrip(step: 2)
                 candidatesSection
+                if let hosWarning {
+                    LifecycleCard(accentDanger: true) {
+                        Text(hosWarning)
+                            .font(EType.caption)
+                            .foregroundStyle(Brand.warning)
+                    }
+                }
                 actionRow
                 if let ack = actionAck {
                     LifecycleCard { Text(ack).font(EType.caption).foregroundStyle(.green) }
@@ -185,18 +192,23 @@ private struct HOSReassignBody: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("CANDIDATES · TAP TO SELECT")
                 .font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
-            if loading && candidates.isEmpty {
+            if loading && eligibleCandidates.isEmpty {
                 LifecycleCard { Text("Loading candidates…").font(EType.caption).foregroundStyle(palette.textSecondary) }
-            } else if candidates.isEmpty {
-                EusoEmptyState(systemImage: "person.crop.circle.badge.questionmark", title: "No HOS-eligible drivers", subtitle: "Driver pool needs more available capacity.")
+            } else if eligibleCandidates.isEmpty {
+                EusoEmptyState(
+                    systemImage: "clock.badge.exclamationmark",
+                    title: "No HOS-cleared drivers",
+                    subtitle: "A current, sourced and complete HOS observation is required before reassignment."
+                )
             } else {
-                ForEach(candidates) { c in candidateCard(c) }
+                ForEach(eligibleCandidates) { c in candidateCard(c) }
             }
         }
     }
 
     private func candidateCard(_ c: AvailableDriver) -> some View {
         let isSelected = selectedCandidate == c.id
+        let hos = evidence(for: c.id)
         return Button { selectedCandidate = c.id } label: {
             LifecycleCard(accentGradient: isSelected) {
                 HStack {
@@ -206,9 +218,12 @@ private struct HOSReassignBody: View {
                     }
                     Spacer()
                     VStack(alignment: .trailing, spacing: 2) {
-                        Text("HOS \((c.hosRemainingMin ?? 0) / 60)h \((c.hosRemainingMin ?? 0) % 60)m")
+                        Text("HOS \(HOSStatus.formatHours(hos?.hoursAvailable?.drivingRemaining))")
                             .font(.caption.monospaced().weight(.semibold))
-                            .foregroundStyle((c.hosRemainingMin ?? 0) > 120 ? .green : .orange)
+                            .foregroundStyle(hos?.hoursAvailable?.drivingRemaining.map { $0 > 2 } == true ? .green : .orange)
+                        Text("\(hos?.source?.uppercased() ?? "SOURCE UNAVAILABLE") · \(humanISO(hos?.freshness))")
+                            .font(.caption2.monospaced())
+                            .foregroundStyle(palette.textTertiary)
                         if let u = c.utilizationPct {
                             Text("UTIL \(Int(u))%").font(.caption2.weight(.semibold)).foregroundStyle(palette.textTertiary)
                         }
@@ -254,23 +269,43 @@ private struct HOSReassignBody: View {
     }
 
     private func confirmReassign() async {
-        guard let driverId = selectedCandidate else { return }
+        guard let selectedDriverId = selectedCandidate,
+              let driverId = Int(selectedDriverId),
+              let numericLoadId = load?.id ?? Int(loadId) else {
+            actionError = "The selected load or driver identifier is invalid. Nothing was assigned."
+            return
+        }
         actionInFlight = true; actionAck = nil; actionError = nil
         defer { actionInFlight = false }
-        struct In: Encodable { let loadId: String; let driverId: String; let vehicleId: String?; let notes: String? }
-        struct Out: Decodable { let success: Bool?; let loadId: String?; let driverId: String?; let assignedAt: String? }
+        struct Assignment: Encodable { let loadId: Int; let driverId: Int }
+        struct In: Encodable { let assignments: [Assignment] }
+        struct Result: Decodable { let loadId: Int; let success: Bool; let error: String? }
+        struct Out: Decodable { let assigned: Int; let failed: Int; let results: [Result] }
         do {
-            let resp: Out = try await EusoTripAPI.shared.mutation(
-                "dispatchRole.assignDriver",
-                input: In(loadId: loadId, driverId: driverId, vehicleId: nil,
-                          notes: "HOS reassignment from prior driver · selected via Dpch724")
-            )
-            if resp.success == true {
-                actionAck = "Reassigned · driver \(resp.driverId ?? driverId) is now on LD-\(resp.loadId ?? loadId). Notification fired."
-                await loadCtx()
-            } else {
-                actionError = "Reassign returned no success flag. Reload and try again."
+            let refreshed: [HOSFleetDriver] = try await EusoTripAPI.shared.queryNoInput("hos.getFleetHOS")
+            hosEvidence = refreshed
+            guard evidence(for: selectedDriverId)?.assignmentEligibility() == .eligible else {
+                actionError = "The driver's current HOS evidence no longer permits reassignment. Nothing was assigned."
+                selectedCandidate = nil
+                return
             }
+            let resp: Out = try await EusoTripAPI.shared.mutation(
+                "dispatch.smartBulkAssign",
+                input: In(assignments: [Assignment(loadId: numericLoadId, driverId: driverId)])
+            )
+            guard resp.assigned == 1,
+                  resp.failed == 0,
+                  resp.results.count == 1,
+                  let result = resp.results.first,
+                  result.loadId == numericLoadId,
+                  result.success else {
+                actionError = resp.results.first?.error
+                    ?? "The server did not confirm this reassignment. Nothing was reported as assigned."
+                return
+            }
+            actionAck = "Reassigned · driver \(driverId) is now on LD-\(numericLoadId)."
+            selectedCandidate = nil
+            await loadCtx()
         } catch let err {
             actionError = (err as? LocalizedError)?.errorDescription ?? "Reassign failed: \(err)"
         }
@@ -296,7 +331,35 @@ private struct HOSReassignBody: View {
     }
     private func loadCandidates() async {
         struct In: Encodable { let limit: Int }
-        do { candidates = try await EusoTripAPI.shared.query("dispatch.getAvailableDrivers", input: In(limit: 12)) } catch { /* */ }
+        do {
+            async let roster: [AvailableDriver] = EusoTripAPI.shared.query(
+                "dispatch.getAvailableDrivers", input: In(limit: 12)
+            )
+            async let hosRowsRequest: [HOSFleetDriver] = EusoTripAPI.shared.queryNoInput("hos.getFleetHOS")
+            let (driverRows, hosRows) = try await (roster, hosRowsRequest)
+            candidates = driverRows
+            hosEvidence = hosRows
+            hosWarning = nil
+            if let selectedCandidate,
+               evidence(for: selectedCandidate)?.assignmentEligibility() != .eligible {
+                self.selectedCandidate = nil
+            }
+        } catch {
+            candidates = []
+            hosEvidence = []
+            selectedCandidate = nil
+            hosWarning = "Current company HOS evidence could not refresh. Reassignment is held."
+        }
+    }
+
+    private var eligibleCandidates: [AvailableDriver] {
+        candidates.filter { evidence(for: $0.id)?.assignmentEligibility() == .eligible }
+    }
+
+    private func evidence(for driverId: String) -> HOSFleetDriver? {
+        hosEvidence.first { row in
+            row.driverId == driverId || row.userId.map { String($0) } == driverId
+        }
     }
 }
 

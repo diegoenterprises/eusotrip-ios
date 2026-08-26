@@ -15,14 +15,6 @@
 
 import SwiftUI
 
-private struct HOSData: Decodable, Hashable {
-    let drivingRemainingMin: Int?
-    let onDutyRemainingMin: Int?
-    let cycleRemainingMin: Int?
-    let driveTimeRemaining: Double?
-    let eldSynced: Bool?
-}
-
 struct CatalystDriveModeScreen: View {
     let theme: Theme.Palette
     var body: some View {
@@ -43,7 +35,8 @@ private struct DriveModeBody: View {
         case drive = "DRIVE", offRotation = "OFF-ROTATION", park = "PARK"
     }
 
-    @State private var hos: HOSData?
+    @State private var hos: HOSStatus?
+    @State private var hosError: String?
     @State private var mode: Mode = .offRotation
     @State private var loading: Bool = true
 
@@ -89,12 +82,15 @@ private struct DriveModeBody: View {
 
     private var kpiGrid: some View {
         let cols = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
-        let driveMin = hos?.drivingRemainingMin ?? hos.flatMap { $0.driveTimeRemaining.map { Int($0) } } ?? 0
-        let driveTime = "\(driveMin / 60)h \(driveMin % 60)m"
+        let driveHours = hos?.hasCurrentObservation() == true ? hos?.drivingRemaining : nil
+        let driveTime = HOSStatus.formatHours(driveHours)
+        let source = hos?.hasCurrentObservation() == true
+            ? "\(hos?.source?.uppercased() ?? "SOURCED") · \(humanISO(hos?.freshness))"
+            : hosError ?? hos?.assignmentEligibility().reason ?? "HOS evidence unavailable"
         return LazyVGrid(columns: cols, spacing: 8) {
             kpi("LANE", "1", "HOU → DAL · MC-306", .blue)
-            kpi("HOS LEFT", driveTime, "11h drive · ELD \(hos?.eldSynced == true ? "synced" : "offline")",
-                driveMin > 60 ? .green : .orange)
+            kpi("HOS LEFT", driveTime, source,
+                driveHours.map { $0 > 1 } == true ? .green : driveHours == nil ? palette.textTertiary : .orange)
             kpi("DVIR", "PRE", "17 pts · due now", .green)
             kpi("DRIFT", "0d", "since last vac", .green)
         }
@@ -115,14 +111,19 @@ private struct DriveModeBody: View {
     private var modeToggle: some View {
         HStack(spacing: 6) {
             ForEach(Mode.allCases, id: \.self) { m in
-                Button { mode = m } label: {
+                Button {
+                    if m != .drive || canEnterDriveMode { mode = m }
+                } label: {
                     Text(m.rawValue)
                         .font(.system(size: 11, weight: .heavy)).tracking(0.8)
                         .padding(.horizontal, 14).padding(.vertical, 10)
                         .foregroundStyle(mode == m ? .white : palette.textSecondary)
                         .background(mode == m ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.bgCard))
                         .clipShape(Capsule())
-                }.buttonStyle(.plain)
+                }
+                .buttonStyle(.plain)
+                .disabled(m == .drive && !canEnterDriveMode)
+                .opacity(m == .drive && !canEnterDriveMode ? 0.5 : 1)
             }
             Spacer(minLength: 0)
         }
@@ -147,25 +148,44 @@ private struct DriveModeBody: View {
 
     private var modeContextCopy: String {
         switch mode {
-        case .drive: return "Ready to roll · Houston → Dallas, MC-306 tanker."
-        case .offRotation: return "Entered 06:00 CDT today · 1 active haul"
-        case .park: return "Parked at home base · Belle Plaine bay 2."
+        case .drive: return canEnterDriveMode ? "Current HOS evidence permits driving." : "Drive mode is held pending current HOS evidence."
+        case .offRotation: return "Off-rotation mode selected."
+        case .park: return "Park mode selected."
         }
     }
 
     private var modeContextSubcopy: String {
-        switch mode {
-        case .drive: return "Pre-trip DVIR cleared · ELD synced · HOS green. Auto-records on engine-on."
-        case .offRotation: return "Auto-locks at post-trip 18:30 CDT. Hour cycle resumes 06:00 tomorrow."
-        case .park: return "Drift watch active. PM service due in 9d (May 8, oil + DEF, bay 2)."
+        if let hosError { return hosError }
+        guard let hos else { return "No HOS observation returned." }
+        if hos.hasCurrentObservation() {
+            return "\(hos.source?.uppercased() ?? "SOURCED") · observed \(humanISO(hos.freshness))"
         }
+        return hos.assignmentEligibility().reason ?? "HOS observation is not current."
+    }
+
+    private var canEnterDriveMode: Bool {
+        guard let hos,
+              hos.hasCurrentObservation(),
+              hos.status.flatMap(HOSDutyCode.init(rawValue:)) != nil,
+              hos.drivingRemaining != nil,
+              hos.onDutyRemaining != nil,
+              hos.cycleRemaining != nil,
+              hos.breakRequired != nil else {
+            return false
+        }
+        return hos.canDrive == true && hos.breakRequired == false
     }
 
     private func load() async {
         loading = true; defer { loading = false }
+        hosError = nil
         do {
             hos = try await EusoTripAPI.shared.queryNoInput("drivers.getMyHOS")
-        } catch { /* graceful — HOS panel renders even without live data */ }
+        } catch {
+            hos = nil
+            hosError = "Current HOS evidence could not refresh."
+            if mode == .drive { mode = .offRotation }
+        }
     }
 }
 

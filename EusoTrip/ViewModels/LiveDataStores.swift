@@ -1151,62 +1151,15 @@ final class CratesStore: BaseDynamicListStore<GamificationAPI.Crate> {
 /// gamification router (`gamification.getLobbyMessages` /
 /// `postLobbyMessage`, MCP-verified at
 /// `frontend/server/routers/gamification.ts:1304` / `:1363`) and is
-/// world-readable for any signed-in driver.
+/// available to the authenticated carrier-community roles accepted by the
+/// server. Identity, role, ownership and timestamps come from that canonical
+/// response; this store never reconstructs them from a second auth request.
 @MainActor
-final class PulseLobbyStore: BaseDynamicListStore<MessagingMessage> {
-    /// Wire shape of one `gamification.getLobbyMessages` row. Mirrors the
-    /// server projection at gamification.ts:1342 exactly.
-    private struct LobbyRow: Decodable {
-        let id: Int
-        let userId: Int
-        let userName: String
-        let userRole: String
-        let message: String
-        let messageType: String
-        let isPinned: Bool
-        let createdAt: String
-    }
-
-    /// `{ messages: [...], total }` envelope returned by
-    /// `gamification.getLobbyMessages`.
-    private struct LobbyEnvelope: Decodable {
-        let messages: [LobbyRow]
-        let total: Int
-    }
-
-    /// tRPC input — `{ limit: 50 }`. `before` is intentionally omitted
-    /// (the server defaults it) so the encoder never emits an explicit
-    /// `null` that the zod `.optional()` guard would reject.
-    private struct LobbyInput: Encodable {
-        let limit: Int
-    }
-
-    override func fetch() async throws -> [MessagingMessage] {
-        // The Haul lobby row carries the author's userId but not an
-        // `isOwn` flag (it's a global feed, not a 1:1 thread). Resolve
-        // the signed-in driver once so own-vs-other bubbles render on the
-        // correct side. `auth.me` is already the canonical identity call
-        // used by the profile stores in this file.
-        let myId: String? = try? await EusoTripAPI.shared.auth.me().id
-        let env: LobbyEnvelope = try await EusoTripAPI.shared.query(
-            "gamification.getLobbyMessages",
-            input: LobbyInput(limit: 50)
-        )
-        return env.messages.map { row in
-            MessagingMessage(
-                id: String(row.id),
-                conversationId: "haul-lobby",
-                senderId: String(row.userId),
-                senderName: row.userName,
-                senderAvatar: nil,
-                content: row.message,
-                type: row.messageType,
-                timestamp: row.createdAt,
-                read: nil,
-                isOwn: myId.map { $0 == String(row.userId) } ?? false,
-                metadata: nil
-            )
-        }
+final class PulseLobbyStore: BaseDynamicListStore<GamificationAPI.LobbyMessage> {
+    override func fetch() async throws -> [GamificationAPI.LobbyMessage] {
+        try await EusoTripAPI.shared.gamification
+            .getLobbyMessages(limit: 50)
+            .messages
     }
 }
 
@@ -1903,7 +1856,10 @@ final class ViolationsStore: BaseDynamicListStore<UnifiedViolation> {
         async let hosVios: [HOSViolation] = EusoTripAPI.shared.hos.getViolations()
         async let statsResp: ComplianceAPI.ViolationStats? = try? EusoTripAPI.shared.compliance.getViolationStats()
 
-        let resolved = await (try complianceResp, (try? await hosVios) ?? [], statsResp)
+        // A failed HOS feed is not an empty violation list. Fail the combined
+        // compliance read so the surface exposes unavailable evidence instead
+        // of silently presenting a clean HOS file.
+        let resolved = await (try complianceResp, try await hosVios, statsResp)
         self.stats = resolved.2
 
         var combined: [UnifiedViolation] = []
@@ -2819,41 +2775,70 @@ final class FreightClaimsStore: ObservableObject, DynamicStore {
         isLoading = true
         lastError = nil
         defer { isLoading = false }
-        async let dashTask: FreightClaimsAPI.Dashboard? = try? EusoTripAPI.shared.freightClaims.getDashboard()
-        async let claimsTask: FreightClaimsAPI.ClaimsResponse? = try? EusoTripAPI.shared.freightClaims.getClaims(limit: 20)
-        let (d, c) = await (dashTask, claimsTask)
-        dashboard = d
-        claims = c?.claims ?? []
-        if d == nil && claims.isEmpty {
-            lastError = NSError(
-                domain: "FreightClaimsStore",
-                code: -1,
-                userInfo: [NSLocalizedDescriptionKey: "Can't reach claims service"]
-            )
+        let dashboardTask = Task { try await EusoTripAPI.shared.freightClaims.getDashboard() }
+        let claimsTask = Task { try await EusoTripAPI.shared.freightClaims.getClaims(limit: 20) }
+        var failures: [Error] = []
+
+        do {
+            dashboard = try await dashboardTask.value
+        } catch {
+            failures.append(error)
+        }
+
+        do {
+            claims = try await claimsTask.value.claims
+        } catch {
+            failures.append(error)
+        }
+
+        if let firstFailure = failures.first {
+            lastError = firstFailure
         }
     }
 
     @discardableResult
-    func fileClaim(
-        loadId: String,
-        type: FreightClaimsAPI.ClaimType,
-        amount: Double,
-        description: String,
-        commodity: String?,
-        damageExtent: String?
-    ) async throws -> FreightClaimsAPI.FileClaimResult {
+    func fileClaim(_ request: FreightClaimsAPI.FileClaimRequest) async throws -> FreightClaimsAPI.FileClaimResult {
         isFiling = true
         defer { isFiling = false }
-        let result = try await EusoTripAPI.shared.freightClaims.fileClaim(
-            loadId: loadId,
-            type: type,
-            amount: amount,
-            description: description,
-            commodity: commodity,
-            damageExtent: damageExtent
-        )
+        let result = try await EusoTripAPI.shared.freightClaims.fileClaim(request)
+        guard result.status == FreightClaimsAPI.ClaimStatus.filed.rawValue else {
+            throw FreightClaimConfirmationError.unexpectedStatus(result.status)
+        }
+        guard result.transportMode == request.reference.transportMode else {
+            throw FreightClaimConfirmationError.modeMismatch
+        }
+        guard let detail = try await EusoTripAPI.shared.freightClaims.getClaimById(id: result.claimId) else {
+            throw FreightClaimConfirmationError.missingReadback
+        }
+        guard detail.claimId == result.claimId,
+              detail.status == result.status,
+              (detail.transportMode ?? detail.load.transportMode) == result.transportMode,
+              detail.load.referenceNumber == result.referenceNumber,
+              detail.currency == result.currency else {
+            throw FreightClaimConfirmationError.readbackMismatch
+        }
         await refresh()
         return result
+    }
+}
+
+private enum FreightClaimConfirmationError: LocalizedError {
+    case missingReadback
+    case readbackMismatch
+    case modeMismatch
+    case unexpectedStatus(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .missingReadback:
+            return "The claim was accepted, but its record is not available yet. Retry with the same request."
+        case .readbackMismatch:
+            return "The filed claim did not match the confirmed transaction record. Nothing has been reported as complete."
+        case .modeMismatch:
+            return "The confirmed claim uses a different transportation mode. Nothing has been reported as complete."
+        case .unexpectedStatus(let status):
+            return "The claim returned an unexpected status (\(status)). Nothing has been reported as complete."
+        }
     }
 }
 
@@ -4124,6 +4109,7 @@ final class ShipperPostLoadStore: ObservableObject {
         // pre-multi-modal defaults so the existing callers keep
         // working unchanged.
         transportMode: TransportMode? = nil,
+        truckDetentionTerms: TruckDetentionNegotiatedTerms?,
         vesselClass: String? = nil,
         multiVehicleCount: Int? = nil,
         permitType: String? = nil,
@@ -4147,6 +4133,22 @@ final class ShipperPostLoadStore: ObservableObject {
         }
         if let reason = classification.blockReason(context: classificationContext) {
             self.phase = .error(reason)
+            return
+        }
+        let resolvedTransportMode = transportMode ?? .truck
+        if resolvedTransportMode == .truck {
+            guard let truckDetentionTerms else {
+                self.phase = .error(
+                    "Truck loads require explicit detention free time, rate, billing, rounding, and suspension terms before posting."
+                )
+                return
+            }
+            if let reason = truckDetentionTerms.validationMessage {
+                self.phase = .error(reason)
+                return
+            }
+        } else if truckDetentionTerms != nil {
+            self.phase = .error("Truck detention terms cannot be attached to a non-truck load.")
             return
         }
         self.phase = .submitting
@@ -4193,7 +4195,8 @@ final class ShipperPostLoadStore: ObservableObject {
                 modeRoutePayload: modeRoutePayload,
                 equipmentType: equipmentType,
                 portIntelligenceAssessmentId: portIntelligenceAssessmentId,
-                portIntelligenceAcknowledged: portIntelligenceAcknowledged
+                portIntelligenceAcknowledged: portIntelligenceAcknowledged,
+                truckDetentionTerms: truckDetentionTerms
             )
             self.phase = .success(ack)
         } catch {

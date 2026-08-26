@@ -49,17 +49,32 @@ struct ResolvedAddress: Equatable {
     var coordinate: CLLocationCoordinate2D?
     /// Where the coord came from (or `.typed` if none yet).
     var source: Source
+    /// Provider/input provenance retained independently of coordinate state.
+    var provenance: HereAddressProvenance
 
-    init(text: String = "", coordinate: CLLocationCoordinate2D? = nil, source: Source = .typed) {
+    init(
+        text: String = "",
+        coordinate: CLLocationCoordinate2D? = nil,
+        source: Source = .typed,
+        provenance: HereAddressProvenance? = nil
+    ) {
         self.text = text
         self.coordinate = coordinate
         self.source = source
+        self.provenance = provenance ?? {
+            switch source {
+            case .typed: return .userEntered
+            case .coord: return .coordinateInput
+            case .autocomplete: return .hereAutosuggest
+            }
+        }()
     }
 
     // Equatable by hand — CLLocationCoordinate2D isn't Equatable.
     static func == (lhs: ResolvedAddress, rhs: ResolvedAddress) -> Bool {
         lhs.text == rhs.text &&
         lhs.source == rhs.source &&
+        lhs.provenance == rhs.provenance &&
         lhs.coordinate?.latitude == rhs.coordinate?.latitude &&
         lhs.coordinate?.longitude == rhs.coordinate?.longitude
     }
@@ -81,8 +96,8 @@ struct EusoAddressField: View {
     let placeholder: String
     /// Two-way binding that carries text + coord + source back to the caller.
     @Binding var value: ResolvedAddress
-    /// Bias for HERE autosuggest. Falls back to Dallas when nil — matches
-    /// the seed data default used elsewhere in the app.
+    /// Optional real bias for HERE autosuggest. When unavailable, forward
+    /// geocoding runs without a location bias instead of inventing one.
     var nearHint: CLLocationCoordinate2D?
 
     // MARK: Internal state
@@ -93,12 +108,6 @@ struct EusoAddressField: View {
     @State private var reverseTask: Task<Void, Never>?
     @State private var resolvedLabel: String? = nil
     @FocusState private var focused: Bool
-
-    /// Default bias when `nearHint == nil` and no other location source is
-    /// available. Same origin as the load seed data (Dallas, TX) so the
-    /// first suggestions lean toward the freight belt.
-    private static let fallbackHint = CLLocationCoordinate2D(latitude: 32.7767,
-                                                             longitude: -96.7970)
 
     // MARK: Body
 
@@ -182,6 +191,7 @@ struct EusoAddressField: View {
     private var suggestionList: some View {
         VStack(spacing: 0) {
             ForEach(suggestions.prefix(5)) { hit in
+                let formatted = hit.formattedAddress(provenance: .hereAutosuggest)
                 Button {
                     pick(hit)
                 } label: {
@@ -192,7 +202,7 @@ struct EusoAddressField: View {
                             .frame(width: 18)
                             .padding(.top, 2)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(hit.title)
+                            Text(formatted.label)
                                 .font(EType.bodyStrong)
                                 .foregroundStyle(palette.textPrimary)
                                 .lineLimit(1)
@@ -211,7 +221,7 @@ struct EusoAddressField: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityElement(children: .combine)
-                .accessibilityLabel("\(hit.title)\(subtitle(for: hit).map { ", \($0)" } ?? "")")
+                .accessibilityLabel("\(formatted.label)\(subtitle(for: hit).map { ", \($0)" } ?? "")")
                 .accessibilityAddTraits(.isButton)
 
                 if hit.id != suggestions.prefix(5).last?.id {
@@ -239,18 +249,29 @@ struct EusoAddressField: View {
                              .replacingOccurrences(of: "\r", with: " ")
 
         // 1. Coord short-circuit.
-        if let coord = LatLongParser.parse(cleaned) {
+        if let parsed = LatLongParser.parseDetailed(cleaned) {
             autosuggestTask?.cancel()
             showSuggestions = false
             suggestions = []
-            value = ResolvedAddress(text: cleaned, coordinate: coord, source: .coord)
-            reverseResolve(coord)
+            value = ResolvedAddress(
+                text: parsed.originalText,
+                coordinate: parsed.coordinate,
+                source: .coord,
+                provenance: .coordinateInput
+            )
+            reverseResolve(parsed.coordinate)
             return
         }
 
-        // 2. Normal path — preserve existing coord if the caller had one
-        //    and the text is unchanged; otherwise reset to .typed.
-        value = ResolvedAddress(text: cleaned, coordinate: nil, source: .typed)
+        // 2. Normal path — a manual edit invalidates the prior coordinate and
+        //    any in-flight reverse-geocode label.
+        reverseTask?.cancel()
+        value = ResolvedAddress(
+            text: cleaned,
+            coordinate: nil,
+            source: .typed,
+            provenance: .userEntered
+        )
         resolvedLabel = nil
 
         guard !cleaned.trimmingCharacters(in: .whitespaces).isEmpty else {
@@ -270,13 +291,24 @@ struct EusoAddressField: View {
     }
 
     private func runAutosuggest(query: String) async {
-        let hint = nearHint ?? Self.fallbackHint
         do {
-            let items = try await HereGeocodingClient.shared.autosuggest(
-                query: query,
-                near: hint,
-                limit: 5
-            )
+            let items: [HereGeocodeItem]
+            if let hint = LatLongParser.validatedCoordinate(
+                latitude: nearHint?.latitude,
+                longitude: nearHint?.longitude
+            ) {
+                items = try await HereGeocodingClient.shared.autosuggest(
+                    query: query,
+                    near: hint,
+                    limit: 5
+                )
+            } else {
+                items = try await HereGeocodingClient.shared.geocode(
+                    query: query,
+                    near: nil,
+                    limit: 5
+                )
+            }
             if Task.isCancelled { return }
             await MainActor.run {
                 // Keep category/coordless matches too — `pick(_:)` resolves
@@ -310,25 +342,42 @@ struct EusoAddressField: View {
         // onto the admin-matching result; store a clean structured label.
         // Optimistically reflect the tap immediately, then correct once the
         // confirming geocode returns.
-        if let pos = hit.position {
+        if let pos = hit.position,
+           let coordinate = LatLongParser.validatedCoordinate(
+               latitude: pos.lat,
+               longitude: pos.lng
+           ) {
+            let formatted = hit.formattedAddress(provenance: .hereAutosuggest)
             value = ResolvedAddress(
-                text: hit.displayLabel,
-                coordinate: CLLocationCoordinate2D(latitude: pos.lat, longitude: pos.lng),
-                source: .autocomplete
+                text: formatted.label,
+                coordinate: coordinate,
+                source: .autocomplete,
+                provenance: formatted.provenance
             )
         } else {
-            value = ResolvedAddress(text: hit.displayLabel, coordinate: nil, source: .typed)
+            let formatted = hit.formattedAddress(provenance: .hereAutosuggest)
+            value = ResolvedAddress(
+                text: formatted.label,
+                coordinate: nil,
+                source: .typed,
+                provenance: formatted.provenance
+            )
         }
         resolvedLabel = nil
 
         reverseTask = Task {
-            guard let resolved = await HereGeocodingClient.shared.resolve(hit) else { return }
+            guard let resolved = await HereGeocodingClient.shared.resolve(hit),
+                  let coordinate = LatLongParser.validatedCoordinate(
+                      latitude: resolved.coordinate.latitude,
+                      longitude: resolved.coordinate.longitude
+                  ) else { return }
             if Task.isCancelled { return }
             await MainActor.run {
                 self.value = ResolvedAddress(
                     text: resolved.label,
-                    coordinate: resolved.coordinate,
-                    source: .autocomplete
+                    coordinate: coordinate,
+                    source: .autocomplete,
+                    provenance: resolved.formattedAddress.provenance
                 )
             }
         }
@@ -337,7 +386,12 @@ struct EusoAddressField: View {
     private func clear() {
         autosuggestTask?.cancel()
         reverseTask?.cancel()
-        value = ResolvedAddress(text: "", coordinate: nil, source: .typed)
+        value = ResolvedAddress(
+            text: "",
+            coordinate: nil,
+            source: .typed,
+            provenance: .userEntered
+        )
         suggestions = []
         showSuggestions = false
         resolvedLabel = nil
@@ -354,11 +408,19 @@ struct EusoAddressField: View {
                 if Task.isCancelled { return }
                 await MainActor.run {
                     if let hit = items.first {
-                        self.resolvedLabel = hit.title
+                        self.resolvedLabel = hit.formattedAddress(
+                            provenance: .hereReverseGeocode
+                        ).label
+                    } else {
+                        self.resolvedLabel = HereAddressFormatter.unknownLabel
                     }
                 }
             } catch {
-                // Keep coord, skip the label.
+                // Keep the exact coordinate and surface an honest unknown.
+                if Task.isCancelled { return }
+                await MainActor.run {
+                    self.resolvedLabel = HereAddressFormatter.unknownLabel
+                }
             }
         }
     }

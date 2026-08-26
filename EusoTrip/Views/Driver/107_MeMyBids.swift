@@ -39,6 +39,7 @@ final class MyBidsStore: ObservableObject {
     @Published private(set) var withdrawing: Set<Int> = []
     @Published var lastWithdrew: Int? = nil
     @Published var lastError: String? = nil
+    private var withdrawalKeys: [Int: String] = [:]
 
     static let statusFilters: [(String?, String)] = [
         (nil, "All"),
@@ -55,6 +56,7 @@ final class MyBidsStore: ObservableObject {
 
     func load() async {
         phase = .loading
+        lastError = nil
         do {
             // Server envelopes as { bids, total } on every path —
             // decode the envelope and read .bids. The status chip
@@ -65,19 +67,32 @@ final class MyBidsStore: ObservableObject {
             )
             phase = .loaded(envelope.bids)
         } catch {
-            phase = .error("Couldn't reach bid service.")
+            phase = .error(EusoTripAPIError.bidActionMessage(for: error, noun: "bid list"))
         }
     }
 
     func withdraw(_ bid: LoadBiddingAPI.MyBid) async {
         withdrawing.insert(bid.id)
         defer { withdrawing.remove(bid.id) }
+        let requestKey = withdrawalKeys[bid.id] ?? UUID().uuidString.lowercased()
+        withdrawalKeys[bid.id] = requestKey
         do {
-            _ = try await api.loadBidding.withdraw(bidId: bid.id)
+            let ack = try await api.loadBidding.withdraw(
+                bidId: bid.opaqueID,
+                requestKey: requestKey
+            )
+            guard ack.confirmedStatus?.lowercased() == "withdrawn",
+                  ack.opaqueID == bid.opaqueID,
+                  ack.opaqueLoadID == bid.opaqueLoadID else {
+                throw EusoTripAPIError.decodingFailed(
+                    "Withdrawal reply did not match the persisted bid."
+                )
+            }
+            withdrawalKeys.removeValue(forKey: bid.id)
             lastWithdrew = bid.id
             await load()
         } catch {
-            lastError = "Couldn't withdraw bid."
+            lastError = EusoTripAPIError.bidActionMessage(for: error, noun: "withdrawal")
         }
     }
 }
@@ -95,6 +110,7 @@ struct MeMyBidsView: View {
                 header
                 statsHero
                 filterRow
+                if let actionError = store.lastError { errorCard(actionError) }
                 listSection
                 Color.clear.frame(height: 96)
             }
@@ -235,29 +251,16 @@ struct MeMyBidsView: View {
     private func bidRow(_ b: LoadBiddingAPI.MyBid) -> some View {
         let style = BidStatusStyle.from(b.status)
         let isPending = b.status.lowercased() == "pending"
-        return Button {
-            // Drill into the BID DETAIL surface (109) so the driver
-            // sees the counter chain + Accept/Counter/Withdraw CTA.
-            //
-            // Founder bug 2026-06-13 ("clicking on my bids sends you on
-            // a perpetual loop of these pages when pressing back"): this
-            // row previously fired BOTH `MeAction.fire("driver.bid.detail")`
-            // — which `handleDriverMeAction` resolved to `nav.currentTab =
-            // .wallet`, yanking the user off the Me tab to My Loads — AND
-            // a nav-swap to "108" (Eusoboards), the wrong screen. The two
-            // competing navigations bounced the driver between My Loads /
-            // Eusoboards / My Bids with no real bid detail ever mounting,
-            // and each retry re-appended "108" onto the (now off-screen)
-            // Me stack. Resolution: drop the tab-switching MeAction, push
-            // the correct detail screen (109) on the Me stack, and carry
-            // the real `loadId` so `DriverMeSurface` mounts the live chain
-            // instead of the registry's `loadId: 0` sentinel.
-            NotificationCenter.default.post(
-                name: .eusoDriverMeNavSwap, object: nil,
-                userInfo: ["screenId": "109", "loadId": String(b.loadId), "bidId": String(b.id)]
-            )
-        } label: {
-            HStack(alignment: .top, spacing: 10) {
+        return HStack(alignment: .top, spacing: 10) {
+            Button {
+                // One route event, one stack push. The withdrawal control is
+                // a sibling, so a mutation tap cannot also open bid detail.
+                NotificationCenter.default.post(
+                    name: .eusoDriverMeNavSwap, object: nil,
+                    userInfo: ["screenId": "109", "loadId": b.opaqueLoadID, "bidId": b.opaqueID]
+                )
+            } label: {
+                HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "hand.raised.fill").font(.system(size: 14, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
                     .frame(width: 36, height: 36)
@@ -266,7 +269,7 @@ struct MeMyBidsView: View {
                     .clipShape(RoundedRectangle(cornerRadius: Radius.sm))
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
-                        Text("Load #\(b.loadId)").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+                        Text("Load #\(b.opaqueLoadID)").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
                         statusPill(style.label, color: style.color)
                         if let r = b.bidRound, r > 1 {
                             roundChip(r)
@@ -290,29 +293,37 @@ struct MeMyBidsView: View {
                     }
                 }
                 Spacer(minLength: 0)
-                if isPending {
-                    if store.withdrawing.contains(b.id) {
-                        ProgressView().scaleEffect(0.6).padding(.trailing, 4)
-                    } else {
-                        Button {
-                            Task { await store.withdraw(b) }
-                        } label: {
-                            Image(systemName: "xmark.circle.fill").font(.system(size: 18))
-                                .foregroundStyle(Brand.danger.opacity(0.7))
-                        }.buttonStyle(.plain)
-                    }
-                } else {
+                if !isPending {
                     Image(systemName: "chevron.right").font(.system(size: 10, weight: .heavy))
                         .foregroundStyle(palette.textTertiary)
                 }
             }
-            .padding(Space.s3)
+            .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(palette.bgCard)
-            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+
+            if isPending {
+                if store.withdrawing.contains(b.id) {
+                    ProgressView().scaleEffect(0.6).frame(width: 44, height: 44)
+                } else {
+                    Button {
+                        Task { await store.withdraw(b) }
+                    } label: {
+                        Image(systemName: "xmark.circle.fill").font(.system(size: 18))
+                            .foregroundStyle(Brand.danger.opacity(0.7))
+                            .frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Withdraw bid for load \(b.opaqueLoadID)")
+                }
+            }
         }
-        .buttonStyle(.plain)
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
     private func statusPill(_ s: String, color: Color) -> some View {

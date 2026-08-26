@@ -146,6 +146,7 @@ private struct VesselFleetHealthBody: View {
                     .padding(.top, Space.s3)
 
                 VStack(alignment: .leading, spacing: Space.s4) {
+                    ModeAssetAvailabilityLaunchCard(mode: .vessel)
                     if loading {
                         loadingState
                     } else if let err = loadError {

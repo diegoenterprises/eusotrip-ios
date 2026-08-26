@@ -93,8 +93,11 @@ final class ControlTowerStore: ObservableObject {
         /// Null-island gate (013:427 doctrine) — a load whose pickup is
         /// (0,0) is un-geocoded; drop it rather than frame the Atlantic.
         var fix: HereLatLng? {
-            guard !(lat == 0 && lng == 0) else { return nil }
-            return HereLatLng(lat, lng)
+            guard let coordinate = LatLongParser.validatedCoordinate(
+                latitude: lat,
+                longitude: lng
+            ) else { return nil }
+            return HereLatLng(coordinate.latitude, coordinate.longitude)
         }
 
         /// The §3 risk ladder resolved off the wire string. Honest `.none`
@@ -351,12 +354,24 @@ struct ShipperControlTower: View {
                 zoom: mapZoom,
                 route: [],
                 baseLayers: loadMarkerLayers,
-                addOns: .shipperTracking,
+                addOns: modeFilter == .truck ? .shipperTracking : .weather,
+                mapModeContext: {
+                    switch modeFilter {
+                    case .truck: return .primary(.truck)
+                    case .rail: return .primary(.rail)
+                    case .vessel: return .primary(.vessel)
+                    case .all: return .intermodal(activeSegment: nil)
+                    }
+                }(),
+                // `getActivePositions` currently returns geocoded pickup
+                // anchors, not asset observations. Keep Live Operations
+                // honest until an authorized telemetry feed is wired.
+                liveOperationsStatus: .noAuthorizedFeed,
                 onSelectMarker: { loadId in openLoad(loadId) }
             )
                 .frame(height: 380)
                 .clipped()
-                .accessibilityLabel("Live load map, \(overview.total.active) active loads, \(store.positions.count) plotted")
+                .accessibilityLabel("Active load pickup map, \(overview.total.active) active loads, \(visibleMapPositions.count) plotted, no authorized live feed")
 
             VStack(alignment: .leading, spacing: Space.s3) {
                 modeFilterChips(overview: overview)
@@ -399,6 +414,21 @@ struct ShipperControlTower: View {
 
     // MARK: Map data plumbing (real loads.pickupLocation coords)
 
+    /// Mode chips filter pickup anchors using the row's explicit mode. Barge
+    /// participates only after the user explicitly selects the Vessel product;
+    /// unknown rows stay visible only in the unresolved All view.
+    private var visibleMapPositions: [ControlTowerStore.ActiveLoadPosition] {
+        store.positions.filter { position in
+            let mode = EusoTripMapTransportMode(canonicalValue: position.mode)
+            switch modeFilter {
+            case .all: return true
+            case .truck: return mode == .truck
+            case .rail: return mode == .rail
+            case .vessel: return mode == .vessel || mode == .barge
+            }
+        }
+    }
+
     /// The base-layer markers fed into the hero map — one `.pickup` pin
     /// per active load, positioned by the real `loads.pickupLocation`
     /// lat/lng (`controlTower.getActivePositions`). Each pin carries the
@@ -413,7 +443,7 @@ struct ShipperControlTower: View {
     /// weather feeds are gated (no riskTier on any position), this layer
     /// is empty → no storm pins, exactly as honest as the KPI 0.
     private var loadMarkerLayers: [HereMapLayer] {
-        let markers: [HereMarker] = store.positions.compactMap { p in
+        let markers: [HereMarker] = visibleMapPositions.compactMap { p in
             guard let fix = p.fix else { return nil }
             return HereMarker(
                 at: fix,
@@ -440,14 +470,14 @@ struct ShipperControlTower: View {
     /// Active positions flagged elevated/severe by the §3 risk ladder —
     /// the storm-grade pickups. Empty when the weather feeds are gated.
     private var stormPositions: [ControlTowerStore.ActiveLoadPosition] {
-        store.positions.filter { $0.isStormPin }
+        visibleMapPositions.filter { $0.isStormPin }
     }
 
     /// Frame the lane spread: centroid of the plotted pickups when we
     /// have real coords, else honest CONUS center. No fabricated points
     /// ever feed this — an empty `positions` list keeps the wide view.
     private var mapCenter: HereLatLng {
-        let fixes = store.positions.compactMap { $0.fix }
+        let fixes = visibleMapPositions.compactMap { $0.fix }
         guard !fixes.isEmpty else { return HereLatLng(39.5, -98.35) }
         let lat = fixes.map(\.lat).reduce(0, +) / Double(fixes.count)
         let lng = fixes.map(\.lng).reduce(0, +) / Double(fixes.count)
@@ -457,7 +487,7 @@ struct ShipperControlTower: View {
     /// Tighten the zoom once there are pins to look at; stay wide (CONUS)
     /// when the board is empty so the situational view still reads as a map.
     private var mapZoom: Int {
-        store.positions.isEmpty ? 4 : 5
+        visibleMapPositions.isEmpty ? 4 : 5
     }
 
     /// Tap on a load pin → open that load's detail (205), mirroring the

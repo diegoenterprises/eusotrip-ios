@@ -59,7 +59,13 @@ private struct ApproachingBody: View {
             if let g = live.lastGeofence {
                 LifecycleRow(label: "Type",      value: g.type.uppercased())
                 LifecycleRow(label: "Timestamp", value: humanISO(g.eventTimestamp))
-                LifecycleRow(label: "GPS",       value: String(format: "%.4f, %.4f", g.latitude, g.longitude))
+                LifecycleRow(
+                    label: "GPS",
+                    value: LatLongParser.validatedCoordinate(
+                        latitude: g.latitude,
+                        longitude: g.longitude
+                    ).map(LatLongParser.displayString) ?? "Not recorded"
+                )
             } else {
                 Text("No geofence events yet for this load.")
                     .font(EType.caption).foregroundStyle(palette.textSecondary)
@@ -98,8 +104,11 @@ private struct ApproachingBody: View {
     private func commsButton(icon: String, label: String, phone: String?) -> some View {
         let mapDeepLink: URL? = {
             guard icon == "map.fill" else { return nil }
-            if let lat = live.pickup?.lat, let lng = live.pickup?.lng, !(lat == 0 && lng == 0) {
-                return URL(string: "maps://?ll=\(lat),\(lng)&q=\(label)")
+            if let coordinate = LatLongParser.validatedCoordinate(
+                latitude: live.pickup?.lat,
+                longitude: live.pickup?.lng
+            ) {
+                return URL(string: "maps://?ll=\(coordinate.latitude),\(coordinate.longitude)&q=\(label)")
             }
             if let addr = live.pickup?.address, !addr.isEmpty {
                 let q = addr.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""

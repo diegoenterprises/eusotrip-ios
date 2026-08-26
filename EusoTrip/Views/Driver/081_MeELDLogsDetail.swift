@@ -199,7 +199,7 @@ struct MeELDLogsDetail: View {
     private func dayPill(_ date: String) -> some View {
         let selected = date == selectedDate
         let log = store.today?.date == date ? store.today : store.history.first { $0.date == date }
-        let certified = log?.certified ?? false
+        let certified = log?.certified
         let label = shortDayLabel(date)
         return Button {
             selectedDate = date
@@ -212,10 +212,20 @@ struct MeELDLogsDetail: View {
                     .font(EType.micro)
                     .tracking(1.0)
                     .foregroundStyle(selected ? AnyShapeStyle(Color.white.opacity(0.85)) : AnyShapeStyle(palette.textTertiary))
-                if certified {
-                    Image(systemName: "checkmark.seal.fill")
+                if let certified {
+                    Image(systemName: certified ? "checkmark.seal.fill" : "exclamationmark.seal")
                         .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(selected ? AnyShapeStyle(Color.white) : AnyShapeStyle(LinearGradient.diagonal))
+                        .foregroundStyle(
+                            selected
+                                ? AnyShapeStyle(Color.white)
+                                : certified
+                                    ? AnyShapeStyle(LinearGradient.diagonal)
+                                    : AnyShapeStyle(palette.textTertiary)
+                        )
+                } else if log != nil {
+                    Image(systemName: "questionmark.circle")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(selected ? AnyShapeStyle(Color.white) : AnyShapeStyle(palette.textTertiary))
                 }
             }
             .padding(.horizontal, Space.s3)
@@ -280,7 +290,7 @@ struct MeELDLogsDetail: View {
                 }
             }
             Spacer()
-            if log.certified {
+            if log.certified == true {
                 VStack(alignment: .trailing, spacing: 2) {
                     Image(systemName: "checkmark.seal.fill")
                         .font(.system(size: 22, weight: .bold))
@@ -289,12 +299,21 @@ struct MeELDLogsDetail: View {
                         .font(EType.micro).tracking(1.2)
                         .foregroundStyle(palette.textTertiary)
                 }
-            } else {
+            } else if log.certified == false {
                 VStack(alignment: .trailing, spacing: 2) {
                     Image(systemName: "exclamationmark.seal")
                         .font(.system(size: 22, weight: .regular))
                         .foregroundStyle(palette.textTertiary)
                     Text("PENDING")
+                        .font(EType.micro).tracking(1.2)
+                        .foregroundStyle(palette.textTertiary)
+                }
+            } else {
+                VStack(alignment: .trailing, spacing: 2) {
+                    Image(systemName: "questionmark.circle")
+                        .font(.system(size: 22, weight: .regular))
+                        .foregroundStyle(palette.textTertiary)
+                    Text("UNAVAILABLE")
                         .font(EType.micro).tracking(1.2)
                         .foregroundStyle(palette.textTertiary)
                 }
@@ -424,6 +443,7 @@ struct MeELDLogsDetail: View {
 
     private func segmentRow(_ e: HOSLogEntry) -> some View {
         Button {
+            guard e.duty != nil, e.startDate != nil else { return }
             remarkTarget = e
         } label: {
             HStack(spacing: Space.s3) {
@@ -483,13 +503,14 @@ struct MeELDLogsDetail: View {
             )
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(e.duty.shortLabel) segment \(timeRange(e))")
-        .accessibilityHint("Opens remark editor")
+        .disabled(e.duty == nil || e.startDate == nil)
+        .accessibilityLabel("\(e.duty?.shortLabel ?? "Unknown duty") segment \(timeRange(e))")
+        .accessibilityHint(e.duty == nil || e.startDate == nil ? "Segment evidence is incomplete" : "Opens remark editor")
     }
 
     @ViewBuilder
-    private func dutyBadge(_ duty: HOSDutyCode) -> some View {
-        Text(duty.shortLabel)
+    private func dutyBadge(_ duty: HOSDutyCode?) -> some View {
+        Text(duty?.shortLabel ?? "?")
             .font(EType.micro)
             .tracking(1.3)
             .foregroundStyle(duty == .driving ? AnyShapeStyle(Color.white) : AnyShapeStyle(palette.textSecondary))
@@ -508,7 +529,7 @@ struct MeELDLogsDetail: View {
 
     @ViewBuilder
     private func certifyActionRow(_ log: HOSDailyLog) -> some View {
-        if log.certified {
+        if log.certified == true {
             HStack(spacing: Space.s2) {
                 Image(systemName: "checkmark.seal.fill")
                     .foregroundStyle(LinearGradient.diagonal)
@@ -528,7 +549,7 @@ struct MeELDLogsDetail: View {
             }
             .padding(Space.s3)
             .eusoCard(radius: Radius.lg)
-        } else {
+        } else if log.certified == false, log.hasCurrentLogEvidence {
             Button {
                 signatureText = session.user?.name ?? ""
                 showCertifySheet = true
@@ -549,7 +570,23 @@ struct MeELDLogsDetail: View {
                 .background(LinearGradient.diagonal)
                 .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
-            .buttonStyle(.plain)
+                .buttonStyle(.plain)
+        } else {
+            HStack(spacing: Space.s2) {
+                Image(systemName: "questionmark.circle")
+                    .foregroundStyle(palette.textTertiary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Certification evidence unavailable")
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                    Text("Refresh the current, complete ELD log before certifying.")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textTertiary)
+                }
+                Spacer()
+            }
+            .padding(Space.s3)
+            .eusoCard(radius: Radius.lg)
         }
     }
 
@@ -611,7 +648,7 @@ struct MeELDLogsDetail: View {
                     Text("§395.8(j) remark")
                         .font(EType.micro).tracking(1.2)
                         .foregroundStyle(palette.textTertiary)
-                    Text("\(entry.duty.shortLabel) · \(timeRange(entry))")
+                    Text("\(entry.duty?.shortLabel ?? "Unknown duty") · \(timeRange(entry))")
                         .font(EType.bodyStrong)
                         .foregroundStyle(palette.textPrimary)
                     if let loc = entry.locationDescription, !loc.isEmpty {
@@ -654,10 +691,9 @@ struct MeELDLogsDetail: View {
                     let text = remarkText.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !text.isEmpty else { return }
                     Task {
-                        // Pin the remark to this segment's wall-clock —
-                        // guard against the epoch fallback startDate uses
-                        // when the stamp doesn't parse.
-                        let moment = entry.startDate.timeIntervalSince1970 > 0 ? entry.startDate : nil
+                        // Pin the remark only to a parsed source timestamp.
+                        // A malformed timestamp remains unavailable, never epoch.
+                        let moment = entry.startDate
                         let ok = await store.addRemark(text, entryId: entry.id, at: moment)
                         remarkTarget = nil
                         flashToast(ok ? "Remark added" : "Couldn't add remark - try again")
@@ -856,7 +892,8 @@ struct MeELDLogsDetail: View {
     }
 
     private func timeRange(_ e: HOSLogEntry) -> String {
-        let start = clockTime(e.startDate)
+        guard let startDate = e.startDate else { return "Time unavailable" }
+        let start = clockTime(startDate)
         if let end = e.endDate { return "\(start)–\(clockTime(end))" }
         return "\(start) · now"
     }

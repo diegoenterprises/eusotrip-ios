@@ -68,11 +68,6 @@ struct ShipperDetentionExposure: View {
                 heroCard
                 byFacilitySection
                 activeSection
-                // COUNTRY-DONE (wireframe 298B): detention free-time regime by
-                // country. Rows are regime reference constants; the per-load
-                // recompute is a named gap handed to the-oath
-                // (detentionAccessorials.getFreeTimeRegime).
-                FreeTimeRegimeBand(theme: palette)
                 ctaRow
                 footnote
             }
@@ -123,6 +118,7 @@ struct ShipperDetentionExposure: View {
 
     private var heroCard: some View {
         let d = store.dashboard
+        let code = store.observedCurrency
         return VStack(alignment: .leading, spacing: Space.s3) {
             Text("DETENTION & ACCESSORIAL EXPOSURE · WK 18")
                 .font(EType.micro)
@@ -130,7 +126,7 @@ struct ShipperDetentionExposure: View {
                 .foregroundStyle(palette.textTertiary)
 
             HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
-                Text(currency(d?.totalCharges ?? 0))
+                Text(money(d?.totalCharges, currency: code))
                     .font(.system(size: 40, weight: .bold))
                     .foregroundStyle(LinearGradient.diagonal)
                     .monospacedDigit()
@@ -142,9 +138,9 @@ struct ShipperDetentionExposure: View {
             IridescentHairline()
 
             HStack(spacing: Space.s2) {
-                splitTile(label: "Collected", value: d?.collectedAmount ?? 0, tone: .collected)
-                splitTile(label: "Billed",    value: d?.billedAmount ?? 0,    tone: .billed)
-                splitTile(label: "Disputed",  value: d?.disputedAmount ?? 0,  tone: .disputed)
+                splitTile(label: "Collected", value: d?.collectedAmount, currency: code, tone: .collected)
+                splitTile(label: "Billed", value: d?.billedAmount, currency: code, tone: .billed)
+                splitTile(label: "Disputed", value: d?.disputedAmount, currency: code, tone: .disputed)
             }
         }
         .padding(Space.s4)
@@ -154,7 +150,12 @@ struct ShipperDetentionExposure: View {
 
     private enum SplitTone { case collected, billed, disputed }
 
-    private func splitTile(label: String, value: Double, tone: SplitTone) -> some View {
+    private func splitTile(
+        label: String,
+        value: Double?,
+        currency: TruckDetentionNegotiatedTerms.Currency?,
+        tone: SplitTone
+    ) -> some View {
         let valueStyle: AnyShapeStyle = {
             switch tone {
             case .collected: return AnyShapeStyle(Brand.success)
@@ -167,7 +168,7 @@ struct ShipperDetentionExposure: View {
                 .font(EType.micro)
                 .tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
-            Text(currency(value))
+            Text(money(value, currency: currency))
                 .font(EType.bodyStrong)
                 .foregroundStyle(valueStyle)
                 .monospacedDigit()
@@ -215,7 +216,7 @@ struct ShipperDetentionExposure: View {
                     .foregroundStyle(palette.textTertiary)
             }
             Spacer()
-            Text(currency(f.totalCharges))
+            Text(money(f.totalCharges, currency: store.observedCurrency))
                 .font(EType.bodyStrong)
                 .foregroundStyle(palette.textPrimary)
                 .monospacedDigit()
@@ -254,8 +255,10 @@ struct ShipperDetentionExposure: View {
     }
 
     private func activeRow(_ d: DetentionAPI.ActiveDetention) -> some View {
-        let accruing = d.billableMinutes > 0
+        let accruing = d.billableMinutes.map { $0 > 0 } == true
+            && d.commercialState.hasPrefix("verified_")
         let freeTime = humanMinutes(d.freeTimeMinutes)
+        let clockStatus = status(for: d)
         let wx = store.snapshot(for: d.id)
         return VStack(alignment: .leading, spacing: Space.s2) {
             HStack(alignment: .top) {
@@ -266,7 +269,7 @@ struct ShipperDetentionExposure: View {
                                               : AnyShapeStyle(palette.textPrimary))
                     .monospacedDigit()
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("\(d.facilityName) · \(d.locationType.capitalized)")
+                    Text(locationLabel(d))
                         .font(EType.bodyStrong)
                         .foregroundStyle(palette.textPrimary)
                     if let ref = d.loadRef {
@@ -279,7 +282,7 @@ struct ShipperDetentionExposure: View {
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 4) {
-                    statusPill(accruing ? .accruing : .watch)
+                    statusPill(clockStatus)
                     // Auto WX HOLD tag — only when the server says the dwell
                     // overlapped a documented severe weather alert. Never
                     // inferred client-side.
@@ -288,11 +291,11 @@ struct ShipperDetentionExposure: View {
             }
 
             HStack {
-                Text(accruing ? "$75/hr after \(freeTime)" : "free until \(freeTime)")
+                Text(commercialDetail(d, freeTime: freeTime))
                     .font(EType.caption)
                     .foregroundStyle(accruing ? Brand.warning : palette.textTertiary)
                 Spacer()
-                Text(currency(d.currentCharge))
+                Text(money(d.currentCharge, currency: d.currency))
                     .font(EType.bodyStrong)
                     .foregroundStyle(accruing ? AnyShapeStyle(LinearGradient.diagonal)
                                               : AnyShapeStyle(palette.textTertiary))
@@ -321,7 +324,7 @@ struct ShipperDetentionExposure: View {
         .eusoCard(radius: Radius.md)
     }
 
-    private enum ClockStatus { case accruing, watch, disputed }
+    private enum ClockStatus { case accruing, watch, adjudicating, unavailable, disputed }
 
     @ViewBuilder
     private func statusPill(_ status: ClockStatus) -> some View {
@@ -329,6 +332,8 @@ struct ShipperDetentionExposure: View {
             switch status {
             case .accruing: return ("ACCRUING", Brand.warning, AnyShapeStyle(Brand.warning.opacity(0.2)))
             case .watch:    return ("WATCH", palette.textSecondary, AnyShapeStyle(palette.tintNeutral.opacity(0.55)))
+            case .adjudicating: return ("ADJUDICATING", Brand.warning, AnyShapeStyle(Brand.warning.opacity(0.2)))
+            case .unavailable: return ("UNAVAILABLE", palette.textTertiary, AnyShapeStyle(palette.tintNeutral.opacity(0.4)))
             case .disputed: return ("DISPUTED", Brand.magenta, AnyShapeStyle(Brand.magenta.opacity(0.2)))
             }
         }()
@@ -449,7 +454,8 @@ struct ShipperDetentionExposure: View {
             Button {
                 // "Dispute charge" with no row selected → jump to the
                 // first accruing clock (the one bleeding money now).
-                disputing = store.active.first(where: { $0.billableMinutes > 0 }) ?? store.active.first
+                disputing = store.active.first(where: { $0.billableMinutes.map { $0 > 0 } == true })
+                    ?? store.active.first
             } label: {
                 Text("Dispute charge")
                     .font(EType.bodyStrong)
@@ -496,16 +502,20 @@ struct ShipperDetentionExposure: View {
 
     // MARK: Helpers
 
-    private func currency(_ value: Double) -> String {
-        let f = NumberFormatter()
-        f.numberStyle = .currency
-        f.locale = Locale(identifier: "en_US")
-        f.maximumFractionDigits = 0
-        return f.string(from: NSNumber(value: value)) ?? "$\(Int(value))"
+    private func money(
+        _ value: Double?,
+        currency: TruckDetentionNegotiatedTerms.Currency?
+    ) -> String {
+        guard let value, let currency else { return "—" }
+        return value.formatted(
+            .currency(code: currency.rawValue)
+                .precision(.fractionLength(0...2))
+        )
     }
 
     /// "2h 48m" style — used for average dwell + free time.
-    private func humanMinutes(_ mins: Int) -> String {
+    private func humanMinutes(_ mins: Int?) -> String {
+        guard let mins else { return "—" }
         if mins < 60 { return "\(mins)m" }
         let h = mins / 60
         let m = mins % 60
@@ -513,10 +523,53 @@ struct ShipperDetentionExposure: View {
     }
 
     /// "2:14" colon clock — used for the big live elapsed timer.
-    private func humanClock(_ mins: Int) -> String {
+    private func humanClock(_ mins: Int?) -> String {
+        guard let mins else { return "—" }
         let h = mins / 60
         let m = mins % 60
         return String(format: "%d:%02d", h, m)
+    }
+
+    private func status(for detention: DetentionAPI.ActiveDetention) -> ClockStatus {
+        switch detention.commercialState {
+        case "verified_calculation", "verified_live_estimate":
+            return detention.billableMinutes.map { $0 > 0 } == true ? .accruing : .watch
+        case "awaiting_suspension_adjudication":
+            return .adjudicating
+        default:
+            return .unavailable
+        }
+    }
+
+    private func commercialDetail(
+        _ detention: DetentionAPI.ActiveDetention,
+        freeTime: String
+    ) -> String {
+        switch detention.commercialState {
+        case "verified_calculation", "verified_live_estimate":
+            return detention.billableMinutes.map { $0 > 0 } == true
+                ? "Signed free time \(freeTime) · verified live charge"
+                : "Signed free time \(freeTime)"
+        case "awaiting_suspension_adjudication":
+            return "Charge awaits evidence-backed suspension allocation"
+        default:
+            return "Signed commercial calculation unavailable"
+        }
+    }
+
+    private func locationLabel(_ detention: DetentionAPI.ActiveDetention) -> String {
+        let facility = detention.facilityName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let type = detention.locationType?.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch (facility?.isEmpty == false ? facility : nil, type?.isEmpty == false ? type : nil) {
+        case let (.some(facility), .some(type)):
+            return "\(facility) · \(type.capitalized)"
+        case let (.some(facility), nil):
+            return facility
+        case let (nil, .some(type)):
+            return type.capitalized
+        default:
+            return "Facility unavailable"
+        }
     }
 }
 
@@ -542,8 +595,13 @@ private struct DisputeChargeSheet: View {
         NavigationStack {
             Form {
                 Section("Charge") {
-                    Text("\(detention.facilityName) · \(detention.locationType.capitalized)")
+                    Text(detention.facilityName ?? "Facility unavailable")
                         .font(EType.bodyStrong)
+                    if let locationType = detention.locationType, !locationType.isEmpty {
+                        Text(locationType.capitalized)
+                            .font(EType.caption)
+                            .foregroundStyle(.secondary)
+                    }
                     if let ref = detention.loadRef {
                         Text(ref)
                             .font(EType.caption)
@@ -614,13 +672,24 @@ final class ShipperDetentionExposureStore: ObservableObject, DynamicStore {
     /// The weather snapshot for a clock, when the row carries one.
     func snapshot(for detentionId: Int) -> DetentionWxSnapshot? { weather[detentionId] }
 
-    /// Right-rail string "$8,420 · 3 ACTIVE".
+    var observedCurrency: TruckDetentionNegotiatedTerms.Currency? {
+        let distinct = Set(active.compactMap(\.currency))
+        return distinct.count == 1 ? distinct.first : nil
+    }
+
+    /// Right-rail exposure. Amount stays unknown unless the live rows establish
+    /// one unambiguous currency for the dashboard aggregate.
     var exposureRail: String {
-        let total = Int(dashboard?.totalCharges ?? 0)
         let active = dashboard?.activeDetentions ?? self.active.count
-        let f = NumberFormatter(); f.numberStyle = .currency
-        f.locale = Locale(identifier: "en_US"); f.maximumFractionDigits = 0
-        let money = f.string(from: NSNumber(value: total)) ?? "$\(total)"
+        let money: String
+        if let total = dashboard?.totalCharges, let currency = observedCurrency {
+            money = total.formatted(
+                .currency(code: currency.rawValue)
+                    .precision(.fractionLength(0...2))
+            )
+        } else {
+            money = "—"
+        }
         return "\(money) · \(active) ACTIVE"
     }
 
@@ -628,21 +697,35 @@ final class ShipperDetentionExposureStore: ObservableObject, DynamicStore {
         isLoading = true
         lastError = nil
         defer { isLoading = false }
-        async let dashTask: DetentionAPI.Dashboard? =
-            try? EusoTripAPI.shared.detention.getDashboard()
-        async let facTask: DetentionAPI.ByFacilityResponse? =
-            try? EusoTripAPI.shared.detention.getByFacility(limit: 10)
-        async let activeTask: DetentionAPI.ActiveDetentionsResponse? =
-            try? EusoTripAPI.shared.detention.getActive(limit: 10)
-        let (d, f, a) = await (dashTask, facTask, activeTask)
-        dashboard = d
-        facilities = f?.facilities ?? []
-        active = a?.detentions ?? []
-        // Overlay the per-row weather snapshot + wxHold (Wave 4-server #85).
-        // Best-effort: a miss leaves the clocks untagged rather than failing.
-        weather = (try? await EusoTripAPI.shared.detention.getActiveWeather(limit: 10)) ?? [:]
-        if d == nil && (f?.facilities.isEmpty ?? true) && (a?.detentions.isEmpty ?? true) {
-            lastError = NSError(
+        var failures: [Error] = []
+        var successfulCoreReads = 0
+
+        do {
+            dashboard = try await EusoTripAPI.shared.detention.getDashboard()
+            successfulCoreReads += 1
+        } catch {
+            failures.append(error)
+        }
+        do {
+            facilities = try await EusoTripAPI.shared.detention.getByFacility(limit: 10).facilities
+            successfulCoreReads += 1
+        } catch {
+            failures.append(error)
+        }
+        do {
+            active = try await EusoTripAPI.shared.detention.getActive(limit: 10).detentions
+            successfulCoreReads += 1
+        } catch {
+            failures.append(error)
+        }
+        do {
+            weather = try await EusoTripAPI.shared.detention.getActiveWeather(limit: 10)
+        } catch {
+            failures.append(error)
+        }
+
+        if successfulCoreReads == 0 {
+            lastError = failures.first ?? NSError(
                 domain: "ShipperDetentionExposureStore",
                 code: -1,
                 userInfo: [NSLocalizedDescriptionKey: "Can't reach detention service"]
@@ -665,22 +748,32 @@ final class ShipperDetentionExposureStore: ObservableObject, DynamicStore {
     func exportCSV() -> String {
         var lines: [String] = ["section,name,detail,amount"]
         if let d = dashboard {
-            lines.append("summary,Total charged,,\(Int(d.totalCharges))")
-            lines.append("summary,Collected,,\(Int(d.collectedAmount))")
-            lines.append("summary,Billed,,\(Int(d.billedAmount))")
-            lines.append("summary,Disputed,,\(Int(d.disputedAmount))")
+            lines.append("summary,Total charged,,\(csvAmount(d.totalCharges, currency: observedCurrency))")
+            lines.append("summary,Collected,,\(csvAmount(d.collectedAmount, currency: observedCurrency))")
+            lines.append("summary,Billed,,\(csvAmount(d.billedAmount, currency: observedCurrency))")
+            lines.append("summary,Disputed,,\(csvAmount(d.disputedAmount, currency: observedCurrency))")
         }
         for f in facilities.prefix(3) {
-            lines.append("facility,\(csv(f.facilityName)),avg \(f.avgWaitMinutes)m,\(Int(f.totalCharges))")
+            lines.append("facility,\(csv(f.facilityName)),avg \(f.avgWaitMinutes)m,\(csvAmount(f.totalCharges, currency: observedCurrency))")
         }
         for a in active {
             // Annotate the dwell with its documented WX HOLD when the server
             // flagged a severe-weather overlap — honest evidence in the ledger,
             // never a fabricated tag.
             let wxNote = weather[a.id]?.isHold == true ? " · WX HOLD" : ""
-            lines.append("active,\(csv(a.facilityName)),\(a.elapsedMinutes)m elapsed\(wxNote),\(Int(a.currentCharge))")
+            let facility = a.facilityName ?? ""
+            let elapsed = a.elapsedMinutes.map { "\($0)m elapsed" } ?? "elapsed unavailable"
+            lines.append("active,\(csv(facility)),\(elapsed)\(wxNote),\(csvAmount(a.currentCharge, currency: a.currency))")
         }
         return lines.joined(separator: "\n")
+    }
+
+    private func csvAmount(
+        _ amount: Double?,
+        currency: TruckDetentionNegotiatedTerms.Currency?
+    ) -> String {
+        guard let amount, let currency else { return "" }
+        return csv("\(currency.rawValue) \(amount)")
     }
 
     private func csv(_ s: String) -> String {

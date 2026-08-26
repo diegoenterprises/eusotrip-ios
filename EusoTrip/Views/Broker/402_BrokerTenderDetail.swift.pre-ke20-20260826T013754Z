@@ -1,0 +1,1143 @@
+//
+//  402_BrokerTenderDetail.swift
+//  EusoTrip — Broker · Tender Detail (brick 402).
+//
+//  Third brick on the Broker role track (400s). The natural follow-on
+//  to 401_BrokerTenders — when a broker taps a row on the open-tenders
+//  board, this is the deep tender-detail surface that opens. Until
+//  402 shipped, 401's row tap surfaced an
+//  `EusoEmptyState(comingSoon: true)` placeholder
+//  (`tenderDetailComingSoonSheet` in 401). Now that 402 is live, that
+//  placeholder is replaced with this real surface.
+//
+//  Pixel-doctrine compliant per EUSOTRIP2027GOLD §2 (gradient-only
+//  accent — no flat Brand.info / Brand.blue fills, no .tint(.blue)),
+//  §4 (tokenized spacing / radius / type — Space.s*, Radius.*,
+//  EType.*), §5 (palette semantic only — no hard-coded Color.white /
+//  Color.black / Color.gray fills outside CTA inverse-text and
+//  shadow opacities), §7 (`AnyShapeStyle` wrapping for ternary
+//  shape-styles in fill / stroke), §10 (previews compile in
+//  isolation — `.task` doesn't run in the preview canvas, so the
+//  store stays in `.loading` and never hits the network).
+//
+//  Cohort B — fully dynamic (SKILL.md §3 "no-mock" pledge · 2027
+//  motivation "no fake data, 1000% dynamic"):
+//
+//    • Tender detail → `BrokerTenderDetailStore`
+//      (LiveDataStores.swift, added in this firing) →
+//      `loads.getById` (input `{ id: string }`). Verified live at
+//      `frontend/server/routers/loads.ts:1046`. Same procedure the
+//      Carrier Load Detail (302) and Shipper Load Detail (205)
+//      already use — the role distinction is in framing only.
+//    • Carrier shortlist → backend has not exposed
+//      `brokers.getTenderResponses` yet, so this screen renders a
+//      neutral placeholder card explaining what will live there.
+//      No fabricated carrier names, no synthesised bid amounts.
+//    • Award CTA → `brokers.awardTender` is also not exposed yet,
+//      so the affordance renders disabled with an honest
+//      explanatory subtitle. Per §13 doctrine: "every backend stub
+//      gap has a neutral empty state on the client (no fake data)."
+//    • Empty / blank server fields surface as em-dash sentinels
+//      ("-") — every nullable column on a fresh tender (no pickup
+//      date scheduled, no rate posted) renders as a neutral em-dash,
+//      never a fabricated value.
+//    • Preview hint passthrough (loadNumber / lane / posted /
+//      respondingCarriers / targetRate / shipper) so the sheet has
+//      paint-1 visible content while the detail fetch is in flight.
+//
+//  Wired into `ContentView.ScreenRegistry` as id="402".
+//
+//  Powered by ESANG AI™.
+//
+
+import SwiftUI
+
+// MARK: - Screen body
+
+struct BrokerTenderDetail: View {
+    @Environment(\.palette) private var palette
+    @EnvironmentObject private var session: EusoTripSession
+
+    /// The tender (load) id to fetch. Server expects `{ id: string }`
+    /// per the Zod input on `loads.getById`. The 401 row carries
+    /// `id: String` already (BrokerAPI.OpenTender).
+    let tenderId: String
+
+    /// Optional preview header values used while the detail fetch is
+    /// in flight. The sheet caller (401's row tap) carries these for
+    /// free — passing them through prevents the perceptible "blank
+    /// header → real header" flash on first paint. When unavailable,
+    /// pass `nil` and the screen renders em-dash sentinels.
+    let previewLoadNumber: String?
+    let previewLane: String?
+    let previewPostedAt: String?
+    let previewRespondingCarriers: Int?
+    let previewTargetRate: Double?
+    let previewShipper: String?
+
+    @StateObject private var detailStore = BrokerTenderDetailStore()
+
+    /// Renderer-safe lines from the exact server-owned posting plan. Each
+    /// LineString/MultiLineString member remains independent so the client
+    /// never bridges a discontinuity or authors route geometry.
+    @State private var canonicalRouteLines: [[HereLatLng]] = []
+    @State private var canonicalRouteStatus: String?
+    @State private var canonicalRouteVersion: Int?
+    @State private var canonicalRouteMode: CanonicalRoutePlanClient.Mode?
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: Space.s4) {
+                header
+                contentBody
+                Color.clear.frame(height: 96)
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 8)
+        }
+        .task { await refreshAll() }
+        .eusoRefreshable { await refreshAll() }
+    }
+
+    // MARK: - Header
+    //
+    // Always-visible header. Renders from preview hints until the live
+    // detail row arrives, then swaps in the server-emitted values.
+
+    private var header: some View {
+        let live: LoadsAPI.LoadDetail? = detailStore.state.value ?? nil
+        let loadNumber = live?.loadNumber ?? previewLoadNumber ?? "-"
+        let lane: String = live?.laneDisplay ?? previewLane ?? "-"
+        let status = live?.status ?? ""
+
+        return VStack(alignment: .leading, spacing: Space.s2) {
+            HStack(spacing: 10) {
+                Image(systemName: "doc.badge.gearshape.fill")
+                    .font(.system(size: 18, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                    .frame(width: 36, height: 36)
+                    .background(palette.bgCard)
+                    .overlay(Circle().strokeBorder(palette.borderFaint))
+                    .clipShape(Circle())
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        EusoTripBrandMark(size: 12)
+                            .font(.system(size: 9, weight: .heavy))
+                            .foregroundStyle(LinearGradient.diagonal)
+                        Text("BROKER · TENDER DETAIL")
+                            .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                            .foregroundStyle(LinearGradient.diagonal)
+                    }
+                    Text(loadNumber)
+                        .font(.system(size: 22, weight: .heavy))
+                        .foregroundStyle(palette.textPrimary)
+                }
+                Spacer(minLength: 0)
+                if !status.isEmpty {
+                    statusPill(status)
+                }
+            }
+            Text(lane)
+                .font(EType.body)
+                .foregroundStyle(palette.textSecondary)
+        }
+    }
+
+    // MARK: - Content body (state machine)
+
+    @ViewBuilder
+    private var contentBody: some View {
+        switch detailStore.state {
+        case .loading:
+            loadingCard
+        case .loaded(let opt):
+            if let detail = opt {
+                detailCards(for: detail)
+            } else {
+                EusoEmptyState(
+                    systemImage: "doc.badge.gearshape",
+                    title: "Tender not found",
+                    subtitle: "The tender you tapped is no longer in the system. Pull to refresh or pick another tender from the board."
+                )
+            }
+        case .empty:
+            EusoEmptyState(
+                systemImage: "doc.badge.gearshape",
+                title: "Tender not found",
+                subtitle: "The tender you tapped is no longer in the system. Pull to refresh or pick another tender from the board."
+            )
+        case .error(let err):
+            errorBanner(message: readableError(err))
+        }
+    }
+
+    // MARK: - Detail cards (live data)
+
+    @ViewBuilder
+    private func detailCards(for detail: LoadsAPI.LoadDetail) -> some View {
+        laneCard(detail)
+        metricsRow(detail)
+        scheduleCard(detail)
+        cargoCard(detail)
+        spreadCard(detail)
+        feeBreakdownCard(detail)   // T-024 · 2026-05-20
+        carriersCard(detail)
+        notesCard(detail)
+        awardCTA(detail)
+    }
+
+    // MARK: - T-024 · Canonical FeeBreakdown rate sheet (2026-05-20)
+
+    /// Renders the canonical 7-multiplier breakdown
+    /// (`BASE × COUNTRY × VERTICAL × PRODUCT × HAZMAT × DISTANCE × CYCLE`)
+    /// so the broker sees how the platform fee is composed before they
+    /// award the tender. Each multiplier renders as a chip — gradient
+    /// for surcharge (> 1.0), green for discount (< 1.0), neutral for
+    /// no impact. The `humanRateSheet` text is appended in mono so the
+    /// broker can copy/paste it into a back-office spreadsheet.
+    private func feeBreakdownCard(_ d: LoadsAPI.LoadDetail) -> some View {
+        let inputs = feeInputs(from: d)
+        let breakdown = FeeMultiplierEngine.compute(inputs)
+        let effPct = pctString(breakdown.effective - 1)
+        let rateUsd = d.rateValue
+        let feeUsd = rateUsd * NSDecimalNumber(decimal: breakdown.effective).doubleValue - rateUsd
+        return VStack(alignment: .leading, spacing: Space.s2) {
+            sectionHeader("CANONICAL RATE SHEET", icon: "sparkles")
+            HStack(alignment: .firstTextBaseline) {
+                Text("Effective platform fee")
+                    .font(.system(size: 12, weight: .heavy)).tracking(0.4)
+                    .foregroundStyle(palette.textPrimary)
+                Spacer(minLength: 0)
+                Text(effPct)
+                    .font(.system(size: 16, weight: .heavy, design: .monospaced))
+                    .foregroundStyle(LinearGradient.diagonal)
+                if rateUsd > 0 {
+                    Text(String(format: "≈ $%.2f", feeUsd))
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(palette.textSecondary)
+                }
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    feeChip("BASE",     breakdown.base)
+                    feeChip("COUNTRY",  breakdown.country)
+                    feeChip("VERTICAL", breakdown.vertical)
+                    feeChip("PRODUCT",  breakdown.product)
+                    feeChip("HAZMAT",   breakdown.hazmat)
+                    feeChip("DISTANCE", breakdown.distance)
+                    feeChip("CYCLE",    breakdown.cycleDampener)
+                }
+            }
+            Text(breakdown.humanRateSheet)
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(palette.textSecondary)
+                .padding(.top, 4)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    /// Build a `FeeComputationInput` from the load detail. Verticals
+    /// + trailer types are derived from cargoType + equipmentType +
+    /// hazmatClass with the same heuristic used by 030_LoadingInProgress
+    /// (T-020). Country defaults to US; cross-border defaults to false
+    /// — refines once LoadDetail grows structured columns (T-024b).
+    private func feeInputs(from d: LoadsAPI.LoadDetail) -> FeeComputationInput {
+        let cargo = (d.cargoType ?? "").lowercased()
+        let hasHaz = !(d.hazmatClass ?? "").isEmpty
+        let vertical: Vertical = {
+            switch cargo {
+            case "refrigerated": return .refrigerated
+            case "livestock":    return .livestock
+            case "vehicles":     return .autoTransport
+            case "oversized", "flatbed": return .flatbedOpenDeck
+            case "hazmat":       return .hazmat
+            case "petroleum", "liquid", "chemicals", "gas", "cryogenic":
+                return .tankerLiquidBulk
+            default:             return .generalFreight
+            }
+        }()
+        let trailer: TrailerCode = {
+            switch cargo {
+            case "refrigerated": return .reefer
+            case "livestock":    return .livestockCattlePot
+            case "vehicles":     return .autoCarrier
+            case "oversized", "flatbed": return .standardFlatbed
+            case "petroleum", "liquid", "chemicals": return .liquidTank
+            case "gas":          return .pressurizedGasTank
+            case "cryogenic":    return .cryogenicTank
+            case "hazmat":       return hasHaz ? .hazmatBox : .dryVan
+            default:             return .dryVan
+            }
+        }()
+        let miles: Decimal = {
+            guard let dist = d.distance, dist > 0 else { return 0 }
+            // Distance comes in miles by default; convert km if the unit says so.
+            if (d.distanceUnit ?? "miles").lowercased() == "km" {
+                return Decimal(dist * 0.621371)
+            }
+            return Decimal(dist)
+        }()
+        return FeeComputationInput(
+            baseRate: PostLoadDraft.canonicalBaseRate,   // 5% platform floor
+            originCountry: .US,
+            destinationCountry: .US,
+            vertical: vertical,
+            trailer: trailer,
+            mode: .truck,
+            isHazmat: hasHaz || vertical.isHazmatVertical,
+            distanceMiles: miles,
+            shipperPostingCycleDays: 365,
+            isCrossBorder: false
+        )
+    }
+
+    @ViewBuilder
+    private func feeChip(_ label: String, _ value: Decimal) -> some View {
+        let n = NSDecimalNumber(decimal: value).doubleValue
+        let isSurcharge = n > 1.0001
+        let isDiscount  = n < 0.9999
+        let bg: AnyShapeStyle = {
+            if isSurcharge { return AnyShapeStyle(LinearGradient.diagonal) }
+            if isDiscount  { return AnyShapeStyle(Brand.success.opacity(0.85)) }
+            return AnyShapeStyle(palette.bgCardSoft)
+        }()
+        let fg: Color = isSurcharge || isDiscount ? .white : palette.textPrimary
+        VStack(spacing: 1) {
+            Text(label)
+                .font(.system(size: 8, weight: .heavy)).tracking(0.6)
+                .foregroundStyle(fg.opacity(0.85))
+            Text(pctString(value - 1))
+                .font(.system(size: 11, weight: .heavy, design: .monospaced))
+                .foregroundStyle(fg)
+        }
+        .padding(.horizontal, 8).padding(.vertical, 5)
+        .background(bg)
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+    }
+
+    private func pctString(_ d: Decimal) -> String {
+        let n = NSDecimalNumber(decimal: d).doubleValue
+        if abs(n) < 0.0001 { return "0%" }
+        let sign = n >= 0 ? "+" : ""
+        return "\(sign)\(String(format: "%.1f", n * 100))%"
+    }
+
+    /// Three-tile row: target rate / responding carriers / posted-at.
+    /// Em-dash on missing values so a brand-new tender doesn't
+    /// fabricate values.
+    private func metricsRow(_ d: LoadsAPI.LoadDetail) -> some View {
+        HStack(spacing: Space.s2) {
+            metricTile(
+                label: "TARGET RATE",
+                value: targetDisplay(d),
+                icon: "dollarsign.circle"
+            )
+            metricTile(
+                label: "RESPONSES",
+                value: responsesDisplay(),
+                icon: "person.2.fill"
+            )
+            metricTile(
+                label: "POSTED",
+                value: postedDisplay(d),
+                icon: "clock"
+            )
+        }
+    }
+
+    /// Target rate prefers the row hint (server's market projection
+    /// returned by getOpenTenders) over the LoadDetail rateValue —
+    /// because the broker's "target" is their ask price, which the
+    /// list endpoint exposes but the detail endpoint may not. Falls
+    /// back to LoadDetail.rateValue when the hint is missing.
+    private func targetDisplay(_ d: LoadsAPI.LoadDetail) -> String {
+        if let target = previewTargetRate, target > 0 {
+            return currency(target)
+        }
+        return d.rateDisplay
+    }
+
+    /// "0 carriers" / "1 carrier" / "12 carriers" — em-dash when the
+    /// preview hint is nil (cold open from a deep link). The 401 row
+    /// always passes this hint through, so the cold-open path is
+    /// rare in practice.
+    private func responsesDisplay() -> String {
+        guard let n = previewRespondingCarriers else { return "-" }
+        return "\(n) " + (n == 1 ? "carrier" : "carriers")
+    }
+
+    /// "12m ago" — server-projected relative label from the OpenTender
+    /// row. Em-dash when missing.
+    private func postedDisplay(_ d: LoadsAPI.LoadDetail) -> String {
+        if let p = previewPostedAt, !p.isEmpty {
+            return p
+        }
+        // Fall back to the createdAt column on LoadDetail.
+        return humanDate(d.createdAt)
+    }
+
+    private func metricTile(label: String, value: String, icon: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 9, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text(label)
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            Text(value)
+                .font(.system(size: 17, weight: .heavy))
+                .foregroundStyle(palette.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Space.s3)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    // MARK: - Lane hero map
+    //
+    // The canonical hero for a load/route detail surface — an
+    // origin→destination lane on the in-house HERE basemap. Matches
+    // the Shipper 205 (`heroMap`/`laneForMap`) and Carrier 302 idiom:
+    // the broker's single deep-dive on a tendered load opens onto its
+    // lane. Renders `HereLiveMapView` in the flat board register
+    // (`.shipperTracking` add-ons: weather + traffic + ad-zones — no
+    // driver-only gamification pins) since the broker is a tracking
+    // role, not a first-person driver.
+    //
+    // Real data: coordinates come ONLY from
+    //   `detail.pickupLocation.lat/.lng` and
+    //   `detail.deliveryLocation.lat/.lng`
+    // (LoadsAPI.LoadCityState — the same loads.getById fields 205
+    // reads; the server self-heals/geocodes these on read). When
+    // either endpoint hasn't been geocoded yet (lat/lng nil or 0,0
+    // null-island), the card renders an honest "Route geocoding…"
+    // empty state — never a fabricated route — and lights up on the
+    // next read once the rows populate. No hardcoded coordinates.
+    @ViewBuilder
+    private func laneCard(_ d: LoadsAPI.LoadDetail) -> some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            sectionHeader("LANE", icon: "map")
+            ZStack {
+                if let lane = laneForMap(d) {
+                    let mapTransportMode = EusoTripMapTransportMode(
+                        canonicalValue: canonicalRouteMode?.rawValue ?? d.transportMode
+                    )
+                    let markerLayer = HereMapLayer.markers([
+                        .init(at: .init(lane.pickup), kind: .pickup, label: lane.originTitle),
+                        .init(at: .init(lane.delivery), kind: .delivery, label: lane.destinationTitle)
+                    ])
+                    let mapLayers: [HereMapLayer] = canonicalRouteLines.enumerated().map { index, line in
+                        .eusoRoute(
+                            polyline: line,
+                            state: .planned,
+                            label: index == 0
+                                ? "Eusorone \(mapTransportMode.rawValue) posting route plan version \(canonicalRouteVersion ?? 0)"
+                                : nil
+                        )
+                    } + [markerLayer]
+                    ZStack(alignment: .bottomLeading) {
+                        HereLiveMapView(
+                            center: canonicalRouteLines.lazy.compactMap(\.first).first
+                                ?? .init(
+                                    (lane.pickup.latitude + lane.delivery.latitude) / 2,
+                                    (lane.pickup.longitude + lane.delivery.longitude) / 2
+                                ),
+                            zoom: 6,
+                            route: [],
+                            baseLayers: mapLayers,
+                            addOns: mapTransportMode == .truck ? .shipperTracking : .weather,
+                            activeJob: false,
+                            mapModeContext: .unconfirmed(mapTransportMode)
+                        )
+                        if let canonicalRouteStatus {
+                            canonicalRouteStatusPill(canonicalRouteStatus)
+                                .padding(10)
+                        }
+                    }
+                } else {
+                    // SEAM: no geocoded coords on the tender yet. Honest
+                    // "awaiting data" state — no fabricated points. Lights
+                    // up automatically once loads.getById's self-heal
+                    // backfills pickup/delivery lat/lng on the next read.
+                    Rectangle()
+                        .fill(palette.bgCardSoft)
+                        .overlay(
+                            VStack(spacing: 6) {
+                                Image(systemName: "map")
+                                    .font(.system(size: 18, weight: .heavy))
+                                    .foregroundStyle(palette.textTertiary)
+                                Text("Route geocoding…")
+                                    .font(.system(size: 11, weight: .heavy)).tracking(0.8)
+                                    .foregroundStyle(palette.textTertiary)
+                                if let canonicalRouteStatus {
+                                    Text(canonicalRouteStatus)
+                                        .font(.system(size: 9, weight: .semibold))
+                                        .foregroundStyle(palette.textSecondary)
+                                        .multilineTextAlignment(.center)
+                                        .accessibilityLabel(canonicalRouteStatus)
+                                }
+                            }
+                        )
+                }
+            }
+            .frame(height: 180)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.borderFaint, lineWidth: 1)
+            )
+            .accessibilityLabel("Lane map, \(originLabel(d)) to \(destinationLabel(d))")
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    /// Composes a `HereMapView.Lane` from the tender's pickup + delivery
+    /// coordinates (`detail.pickupLocation.lat/.lng`,
+    /// `detail.deliveryLocation.lat/.lng`). Returns nil — never a
+    /// fabricated lane — when either endpoint hasn't been geocoded yet
+    /// (lat/lng nil or a 0,0 null-island sentinel). The server's
+    /// loads.getById self-heal backfills these on the next read.
+    private func laneForMap(_ d: LoadsAPI.LoadDetail) -> HereMapView.Lane? {
+        guard let p = d.pickupLocation,
+              let dl = d.deliveryLocation,
+              let pickup = LatLongParser.validatedCoordinate(
+                  latitude: p.lat,
+                  longitude: p.lng
+              ),
+              let delivery = LatLongParser.validatedCoordinate(
+                  latitude: dl.lat,
+                  longitude: dl.lng
+              ) else { return nil }
+        return HereMapView.Lane(
+            id: "tender_\(d.id)",
+            originTitle: originLabel(d),
+            destinationTitle: destinationLabel(d),
+            pickup: pickup,
+            delivery: delivery
+        )
+    }
+
+    private func originLabel(_ d: LoadsAPI.LoadDetail) -> String {
+        let city = d.pickupLocation?.city ?? ""
+        return city.isEmpty ? "ORIGIN" : city.uppercased()
+    }
+
+    private func destinationLabel(_ d: LoadsAPI.LoadDetail) -> String {
+        let city = d.deliveryLocation?.city ?? ""
+        return city.isEmpty ? "DESTINATION" : city.uppercased()
+    }
+
+    /// Pickup / delivery / bidding-ends. Em-dash on missing columns
+    /// so a fresh tender doesn't show synthetic dates.
+    private func scheduleCard(_ d: LoadsAPI.LoadDetail) -> some View {
+        let mode = TransportMode(rawValue: d.transportMode ?? "truck") ?? .truck
+        return VStack(alignment: .leading, spacing: Space.s2) {
+            sectionHeader("SCHEDULE", icon: "calendar")
+            scheduleRow(label: TransportLexicon.short(.originWindow,      mode: mode, equipmentRaw: d.equipmentType), value: humanDate(d.pickupDate))
+            scheduleRow(label: TransportLexicon.short(.destinationWindow, mode: mode, equipmentRaw: d.equipmentType), value: humanDate(d.deliveryDate))
+            if d.biddingEnds != nil {
+                scheduleRow(label: "Bidding ends", value: humanDate(d.biddingEnds))
+            }
+            if d.estimatedDeliveryDate != nil {
+                scheduleRow(label: "Est. delivery", value: humanDate(d.estimatedDeliveryDate))
+            }
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    private func scheduleRow(label: String, value: String) -> some View {
+        HStack {
+            Text(label)
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+            Spacer(minLength: Space.s2)
+            Text(value)
+                .font(EType.bodyStrong)
+                .foregroundStyle(palette.textPrimary)
+                .multilineTextAlignment(.trailing)
+        }
+    }
+
+    /// Cargo card mirrors 302's cargoCard. Hazmat row only renders
+    /// when the load is hazmat (so non-hazmat loads don't show
+    /// "Hazmat: —" filler).
+    private func cargoCard(_ d: LoadsAPI.LoadDetail) -> some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            sectionHeader("CARGO", icon: "shippingbox")
+            scheduleRow(label: "Type", value: humanCargoType(d.cargoType))
+            if let commodity = (d.commodity ?? d.commodityName), !commodity.isEmpty {
+                scheduleRow(label: "Commodity", value: commodity)
+            }
+            if let equip = d.equipmentType, !equip.isEmpty {
+                scheduleRow(label: "Equipment", value: equip)
+            }
+            // 2026-05-17 — Broker counter-party multi-modal payload.
+            // Same surfacing as 205 / 305 / 502 so the broker sees the
+            // shipper's mode pick BEFORE quoting / re-tendering. A WS
+            // tanker tender quoted as $/mile is the kind of mistake
+            // this badge prevents.
+            if let mode = d.transportMode, !mode.isEmpty, mode != "truck" {
+                scheduleRow(label: "Mode", value: mode.uppercased())
+            }
+            if let vc = d.vesselClass, !vc.isEmpty {
+                scheduleRow(label: "Vessel class", value: vc)
+            }
+            if let count = d.multiVehicleCount, count > 1 {
+                scheduleRow(label: "Vehicles", value: "\(count) ×")
+            }
+            if let perm = d.permitType, !perm.isEmpty, perm != "none" {
+                scheduleRow(label: "Permit", value: perm.replacingOccurrences(of: "_", with: " ").uppercased())
+            }
+            if let ws = d.worldscalePct, !ws.isEmpty, let n = Double(ws), n > 0 {
+                scheduleRow(label: "Worldscale", value: "WS \(Int(n.rounded()))")
+            }
+            if let w = d.weightDisplay as String?, w != "-" {
+                scheduleRow(label: "Weight", value: w)
+            }
+            if let dist = d.distanceDisplay as String?, dist != "-" {
+                scheduleRow(label: "Distance", value: dist)
+            }
+            if let hz = d.hazmatClass, !hz.isEmpty {
+                scheduleRow(label: "Hazmat class", value: hz)
+                if let un = d.unNumber, !un.isEmpty {
+                    scheduleRow(label: "UN number", value: un)
+                }
+                if let g = d.ergGuide {
+                    scheduleRow(label: "ERG guide", value: "#\(g)")
+                }
+            }
+            if d.spectraMatchVerified == true {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.seal.fill")
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundStyle(LinearGradient.diagonal)
+                    Text("SPECTRA-MATCH VERIFIED")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                        .foregroundStyle(LinearGradient.diagonal)
+                }
+                .padding(.top, 2)
+            }
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    /// Spread card — broker-specific framing of the rate window.
+    /// Surfaces the target ask vs. market range so the broker can
+    /// see at a glance whether their tender is priced inside, at,
+    /// or outside the suggested band. Em-dash when the server
+    /// hasn't computed a market range for this lane.
+    private func spreadCard(_ d: LoadsAPI.LoadDetail) -> some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            sectionHeader("SPREAD", icon: "chart.line.uptrend.xyaxis")
+            scheduleRow(label: "Target ask", value: targetDisplay(d))
+            if let lo = d.suggestedRateMin, let hi = d.suggestedRateMax,
+               lo > 0, hi > 0 {
+                scheduleRow(
+                    label: "Market range",
+                    value: "\(currency(lo)) – \(currency(hi))"
+                )
+                if let label = spreadLabel(target: previewTargetRate ?? d.rateValue, lo: lo, hi: hi) {
+                    HStack(spacing: 6) {
+                        Image(systemName: label.icon)
+                            .font(.system(size: 11, weight: .heavy))
+                            .foregroundStyle(LinearGradient.diagonal)
+                        Text(label.text)
+                            .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                            .foregroundStyle(LinearGradient.diagonal)
+                    }
+                    .padding(.top, 2)
+                }
+            } else {
+                scheduleRow(label: "Market range", value: "-")
+            }
+            if let cur = d.currency, !cur.isEmpty, cur.uppercased() != "USD" {
+                scheduleRow(label: "Currency", value: cur.uppercased())
+            }
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    /// Compute a small badge-style label describing where the
+    /// target sits relative to the market range. Returns nil when
+    /// the target is zero (no badge).
+    private func spreadLabel(target: Double, lo: Double, hi: Double) -> (text: String, icon: String)? {
+        guard target > 0 else { return nil }
+        if target < lo {
+            return ("PRICED BELOW MARKET", "arrow.down.right.circle.fill")
+        }
+        if target > hi {
+            return ("PRICED ABOVE MARKET", "arrow.up.right.circle.fill")
+        }
+        return ("INSIDE MARKET RANGE", "checkmark.circle.fill")
+    }
+
+    /// Carriers card — placeholder card that honestly communicates
+    /// the missing depth. When `brokers.getTenderResponses` (or an
+    /// equivalent) ships server-side, this card swaps to a real
+    /// shortlist of carrier rows. Until then, the card surfaces the
+    /// responding-carrier count from the row hint and explains
+    /// what's coming. NEVER fabricates carrier names or bid amounts.
+    private func carriersCard(_ d: LoadsAPI.LoadDetail) -> some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            sectionHeader("CARRIERS", icon: "person.2.fill")
+            HStack(alignment: .firstTextBaseline) {
+                Text(responsesDisplay())
+                    .font(.system(size: 22, weight: .heavy))
+                    .foregroundStyle(palette.textPrimary)
+                Spacer(minLength: Space.s2)
+                Text("RESPONDING")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            if let shipper = previewShipper, !shipper.isEmpty {
+                HStack(spacing: 6) {
+                    Image(systemName: "building.2.fill")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(palette.textTertiary)
+                    Text("Shipper · \(shipper)")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(1)
+                }
+            }
+            Text("Carrier shortlist with bid history, fit-score, and award tools appears here when tender responses are available.")
+                .font(EType.caption)
+                .foregroundStyle(palette.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    /// Notes block — only renders when the load actually carries
+    /// special-instructions text from the server. Drafts with no
+    /// notes get the section omitted entirely (no "-" filler).
+    @ViewBuilder
+    private func notesCard(_ d: LoadsAPI.LoadDetail) -> some View {
+        if let notes = d.notes, !notes.isEmpty {
+            VStack(alignment: .leading, spacing: Space.s2) {
+                sectionHeader("NOTES", icon: "text.alignleft")
+                Text(notes)
+                    .font(EType.body)
+                    .foregroundStyle(palette.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(Space.s3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(palette.bgCard)
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.borderFaint, lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        }
+    }
+
+    /// Award CTA — disabled affordance until `brokers.awardTender`
+    /// ships server-side. Honest about why it's not yet actionable.
+    /// Renders only on tenders that are in a state where awarding
+    /// would be plausible (status `available` / `posted` /
+    /// `bidding_open`); award is suppressed for already-awarded /
+    /// in-flight / delivered loads.
+    @ViewBuilder
+    private func awardCTA(_ d: LoadsAPI.LoadDetail) -> some View {
+        let awardable: Set<String> = ["available", "posted", "bidding_open", "open"]
+        if awardable.contains(d.status.lowercased()) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("Award tender")
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                    Spacer()
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 12, weight: .heavy))
+                        .foregroundStyle(palette.textTertiary)
+                }
+                Text("Awarding from the app ships next on the broker track. Today this surface confirms the tender is awardable; once `brokers.awardTender` ships, this CTA activates.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(Space.s3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(palette.bgCard.opacity(0.6))
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.borderFaint, lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        }
+    }
+
+    // MARK: - Loading + error states
+
+    private var loadingCard: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            sectionHeader("LOADING", icon: "arrow.clockwise")
+            Text("Pulling the latest from the tender record…")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Space.s4)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    private func errorBanner(message: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(Brand.danger)
+                Text("COULDN'T LOAD")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(Brand.danger)
+            }
+            Text(message)
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+            Button(action: { Task { await refreshAll() } }) {
+                Text("Retry")
+                    .font(.system(size: 11, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .background(LinearGradient.diagonal)
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(Brand.danger.opacity(0.4), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    // MARK: - Helpers
+
+    private func sectionHeader(_ text: String, icon: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 9, weight: .heavy))
+                .foregroundStyle(LinearGradient.diagonal)
+            Text(text)
+                .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                .foregroundStyle(LinearGradient.diagonal)
+        }
+    }
+
+    private func statusPill(_ raw: String) -> some View {
+        let label = raw.replacingOccurrences(of: "_", with: " ").uppercased()
+        let isOpen = openStatuses.contains(raw.lowercased())
+        let style: AnyShapeStyle = isOpen
+            ? AnyShapeStyle(LinearGradient.diagonal)
+            : AnyShapeStyle(palette.tintNeutral)
+        let fg: Color = isOpen ? .white : palette.textSecondary
+        return Text(label)
+            .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+            .foregroundStyle(fg)
+            .padding(.horizontal, 8).padding(.vertical, 4)
+            .background(style)
+            .clipShape(Capsule())
+    }
+
+    /// "Open" framing for a broker — tenders that are still awaiting
+    /// a carrier award. Anything past award reads as neutral.
+    private var openStatuses: Set<String> {
+        ["available", "posted", "bidding_open", "open"]
+    }
+
+    /// Map the backend's lowercase enum value to a sentence-case label.
+    /// Em-dash on empty/nil so a draft cargoType missing from the row
+    /// surfaces as a neutral cell.
+    private func humanCargoType(_ raw: String?) -> String {
+        guard let r = raw, !r.isEmpty else { return "-" }
+        switch r.lowercased() {
+        case "general":      return "General freight"
+        case "hazmat":       return "Hazmat"
+        case "petroleum":    return "Petroleum"
+        case "gas":          return "Gas"
+        case "chemicals":    return "Chemicals"
+        case "refrigerated": return "Refrigerated"
+        case "container":    return "Container"
+        case "bulk":         return "Bulk"
+        default:             return r.capitalized
+        }
+    }
+
+    /// Parse an ISO-8601 date string from the server and render as a
+    /// short human-readable form (e.g. "Apr 28 · 09:30"). Em-dash
+    /// when nil / empty / unparseable so missing dates always look
+    /// like a deliberate sentinel.
+    private func humanDate(_ iso: String?) -> String {
+        guard let iso = iso, !iso.isEmpty else { return "-" }
+        let isoFmt = ISO8601DateFormatter()
+        isoFmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        var date = isoFmt.date(from: iso)
+        if date == nil {
+            isoFmt.formatOptions = [.withInternetDateTime]
+            date = isoFmt.date(from: iso)
+        }
+        if date == nil {
+            // Server occasionally hands back YYYY-MM-DD only.
+            let day = DateFormatter()
+            day.dateFormat = "yyyy-MM-dd"
+            day.locale = Locale(identifier: "en_US_POSIX")
+            date = day.date(from: iso)
+        }
+        guard let d = date else { return iso }
+        let fmt = DateFormatter()
+        fmt.dateFormat = "MMM d · HH:mm"
+        return fmt.string(from: d)
+    }
+
+    private func currency(_ value: Double) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .currency
+        f.currencyCode = "USD"
+        f.maximumFractionDigits = 0
+        return f.string(from: NSNumber(value: value)) ?? "$\(Int(value))"
+    }
+
+    private func readableError(_ error: Error) -> String {
+        if let api = error as? EusoTripAPIError {
+            return api.errorDescription ?? "Request failed."
+        }
+        return error.localizedDescription
+    }
+
+    private func refreshAll() async {
+        detailStore.loadId = tenderId
+        await detailStore.refresh()
+        await refreshCanonicalRoute()
+    }
+
+    /// A tender is a market preview, so it requests the posting plan using
+    /// only the persisted load identity. Mode, endpoints, requirement
+    /// profile, graph, evidence, constraints, rights, and geometry stay
+    /// server-owned.
+    @MainActor
+    private func refreshCanonicalRoute() async {
+        canonicalRouteLines = []
+        canonicalRouteVersion = nil
+        canonicalRouteMode = nil
+        canonicalRouteStatus = "Verified posting route is still being prepared"
+        guard let detail = detailStore.state.value ?? nil,
+              let loadId = Int(detail.id), loadId > 0 else {
+            canonicalRouteStatus = "Canonical route pending a persisted load identity"
+            return
+        }
+        do {
+            let result = try await CanonicalRoutePlanClient.shared.planLoad(
+                id: loadId,
+                purpose: .posting
+            )
+            switch result {
+            case .persisted(let persisted):
+                applyCanonicalRoute(persisted.route)
+            case .pending(let pending):
+                canonicalRouteStatus = pending.blockers.first?.message
+                    ?? "Canonical mode-native posting route pending verified authority"
+                await readExistingCanonicalRoute(loadId: loadId)
+            }
+        } catch {
+            canonicalRouteStatus = error.eusoUserCopy
+            await readExistingCanonicalRoute(loadId: loadId)
+        }
+    }
+
+    @MainActor
+    private func readExistingCanonicalRoute(loadId: Int) async {
+        do {
+            applyCanonicalRoute(
+                try await CanonicalRoutePlanClient.shared.getBoundLoad(id: loadId)
+            )
+        } catch {
+            if canonicalRouteStatus == nil { canonicalRouteStatus = error.eusoUserCopy }
+        }
+    }
+
+    @MainActor
+    private func applyCanonicalRoute(_ route: CanonicalRoutePlanClient.BoundRoutePlan) {
+        guard route.plan.purpose == .posting,
+              let payload = route.rendererPayload else {
+            canonicalRouteLines = []
+            canonicalRouteVersion = nil
+            canonicalRouteMode = nil
+            canonicalRouteStatus = "Canonical posting route exists but is not released for rendering"
+            return
+        }
+        canonicalRouteLines = payload.lines
+        canonicalRouteVersion = payload.identity.version
+        canonicalRouteMode = payload.identity.mode
+        canonicalRouteStatus = nil
+    }
+
+    private func canonicalRouteStatusPill(_ message: String) -> some View {
+        Text(message)
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(palette.textSecondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(palette.bgCard.opacity(0.92))
+            .overlay(Capsule().strokeBorder(Brand.warning.opacity(0.45)))
+            .clipShape(Capsule())
+            .accessibilityLabel(message)
+    }
+}
+
+// MARK: - Screen wrapper (Shell + BottomNav)
+
+struct BrokerTenderDetailScreen: View {
+    let theme: Theme.Palette
+    let tenderId: String
+    let previewLoadNumber: String?
+    let previewLane: String?
+    let previewPostedAt: String?
+    let previewRespondingCarriers: Int?
+    let previewTargetRate: Double?
+    let previewShipper: String?
+
+    init(
+        theme: Theme.Palette,
+        tenderId: String,
+        previewLoadNumber: String? = nil,
+        previewLane: String? = nil,
+        previewPostedAt: String? = nil,
+        previewRespondingCarriers: Int? = nil,
+        previewTargetRate: Double? = nil,
+        previewShipper: String? = nil
+    ) {
+        self.theme = theme
+        self.tenderId = tenderId
+        self.previewLoadNumber = previewLoadNumber
+        self.previewLane = previewLane
+        self.previewPostedAt = previewPostedAt
+        self.previewRespondingCarriers = previewRespondingCarriers
+        self.previewTargetRate = previewTargetRate
+        self.previewShipper = previewShipper
+    }
+
+    var body: some View {
+        Shell(theme: theme) {
+            BrokerTenderDetail(
+                tenderId: tenderId,
+                previewLoadNumber: previewLoadNumber,
+                previewLane: previewLane,
+                previewPostedAt: previewPostedAt,
+                previewRespondingCarriers: previewRespondingCarriers,
+                previewTargetRate: previewTargetRate,
+                previewShipper: previewShipper
+            )
+        } nav: {
+            BottomNav(
+                leading: brokerNavLeading_402(),
+                trailing: brokerNavTrailing_402(),
+                orbState: .idle
+            )
+        }
+    }
+}
+
+private func brokerNavLeading_402() -> [NavSlot] {
+    BrokerNavRoute.leading(current: .tenders)
+}
+
+private func brokerNavTrailing_402() -> [NavSlot] {
+    BrokerNavRoute.trailing(current: .tenders)
+}
+
+// MARK: - Previews
+//
+// Previews don't run `.task`, so the store stays in `.loading` —
+// both registers render the loading skeleton without hitting the
+// network. Per doctrine §10: previews must compile in isolation.
+
+#Preview("402 · Broker · Tender Detail · Night") {
+    BrokerTenderDetailScreen(
+        theme: Theme.dark,
+        tenderId: "0",
+        previewLoadNumber: "-",
+        previewLane: "-",
+        previewPostedAt: nil,
+        previewRespondingCarriers: nil,
+        previewTargetRate: nil,
+        previewShipper: nil
+    )
+    .environmentObject(EusoTripSession())
+    .preferredColorScheme(.dark)
+}
+
+#Preview("402 · Broker · Tender Detail · Afternoon") {
+    BrokerTenderDetailScreen(
+        theme: Theme.light,
+        tenderId: "0",
+        previewLoadNumber: "-",
+        previewLane: "-",
+        previewPostedAt: nil,
+        previewRespondingCarriers: nil,
+        previewTargetRate: nil,
+        previewShipper: nil
+    )
+    .environmentObject(EusoTripSession())
+    .preferredColorScheme(.light)
+}

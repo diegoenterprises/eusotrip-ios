@@ -53,23 +53,14 @@ struct ELDIntegrationView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView(.vertical, showsIndicators: false) {
-                // `TileStack` (not VStack) gives the five cards the app-wide
-                // cafe-door entrance — status, symbiotic notice, picker,
-                // key field, compliance footer each swing in from an
-                // alternating side per the uniform TileReveal contract.
-                TileStack(alignment: .leading, spacing: Space.s4) {
-                    statusCard
-                    symbioticNotice
-                    providerGridCard
-                    apiKeyCard
-                    complianceFooter
-                }
-                .padding(.horizontal, Space.s5)
-                .padding(.top, Space.s4)
-                .padding(.bottom, Space.s6)
-            }
-            .background(palette.bgPrimary.ignoresSafeArea())
+            ConnectedAppsBody(
+                includedCategories: ["operational_eld"],
+                surfaceTitle: "ELD + fleet telemetry",
+                surfaceSummary: "Authorize the provider account that already owns your fleet data. EusoTrip activates it only after credentials, entitlement, health, and first synchronization are verified.",
+                showsJourney: true,
+                showsAdaptation: false,
+                showsTokens: false
+            )
             .navigationTitle("ELD Integration")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -78,9 +69,6 @@ struct ELDIntegrationView: View {
                         .fontWeight(.semibold)
                 }
             }
-            .task { await store.bootstrap() }
-            .eusoRefreshable { await store.refresh() }
-            .overlay(alignment: .top) { bannerOverlay }
         }
         // Outer screen-surface fade so the whole sheet lands with the
         // EusoTrip uniform feel on top of the per-card stagger.
@@ -232,7 +220,7 @@ struct ELDIntegrationView: View {
     @ViewBuilder
     private func providerTile(_ provider: ELDProvider) -> some View {
         let selected = store.selectedSlug == provider.slug
-        let connected = store.connection?.providers.contains(provider.slug) == true
+        let connected = store.isProviderConnected(provider.slug)
 
         Button {
             // Switching providers resets the API-key draft so we don't
@@ -505,7 +493,7 @@ struct ELDIntegrationView: View {
             return "API key"
         }
         let providerName = providerDisplayName(for: slug)
-        let connected = store.connection?.providers.contains(slug) == true
+        let connected = store.isProviderConnected(slug)
         return connected ? "Replace \(providerName) key" : "Connect \(providerName)"
     }
 
@@ -544,7 +532,7 @@ struct ELDIntegrationView: View {
     private var ctaTitle: String {
         if store.isMutating { return "Working…" }
         guard let slug = store.selectedSlug else { return "Connect" }
-        let alreadyConnected = store.connection?.providers.contains(slug) == true
+        let alreadyConnected = store.isProviderConnected(slug)
         return alreadyConnected ? "Update key" : "Connect"
     }
 

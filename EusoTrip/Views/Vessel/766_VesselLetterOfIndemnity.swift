@@ -84,7 +84,7 @@ private struct VesselLetterOfIndemnityBody: View {
                     LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) }
                 } else {
                     hero
-                    sectionLabel("UNDERTAKING TERMS", ref: "STUB · loi.issue")
+                    sectionLabel("UNDERTAKING TERMS", ref: "SIGNED INDEMNITY REQUIRED")
                     termsCard
                     sectionLabel("COUNTER-SIGNATORIES", ref: "EXISTS surrenderBOL:986")
                     signatories

@@ -83,15 +83,15 @@ struct DriverTripsPane: View {
     @State private var selectedLoadID: String? = nil
     @State private var showSOSSheet: Bool = false
 
-    /// Decoded HERE truck route for the current active trip. Until routing
-    /// succeeds, the labeled basemap shows only verified endpoint markers.
-    /// Keyed on `trip.currentLoad?.id` so a new active load refetches instead
-    /// of inheriting stale geometry.
-    @State private var activeRoute: HereRoute? = nil
-    /// Tracks the load id the current `activeRoute` was computed for.
-    /// Guards against stale routes sticking around after the driver
-    /// finishes one load and picks up another.
+    /// Exact committed server route for the current active trip. Independent
+    /// GeoJSON lines remain independent at the renderer boundary.
+    @State private var activeRouteLines: [[HereLatLng]] = []
     @State private var activeRouteLoadID: String? = nil
+    @State private var activeRouteVersion: Int? = nil
+    @State private var activeRouteStatus: String? = nil
+    @State private var activeTruckObservation: LiveOperationsClient.Observation? = nil
+    @State private var activeTruckLiveStatus: HereLiveOperationsStatus? = nil
+    @StateObject private var nearbyTruckStore = LiveOperationsNearbyStore(mode: .truck)
 
     private let equipmentChips: [String] = [
         "All", "Dry Van", "Reefer", "Flatbed", "Step Deck", "Hazmat", "Power Only"
@@ -430,46 +430,49 @@ struct DriverTripsPane: View {
         if let load = trip.currentLoad,
            let pickup = load.pickupLocation,
            let delivery = load.deliveryLocation,
-           // Null-island + finite gate: an active load whose pickup/delivery
-           // hasn't been geocoded yet defaults to (0,0). Plotting those pins
-           // (and centering the camera on their midpoint) drags the hero map
-           // to the Gulf of Guinea. Mirror `hasRealOriginCoord` / the
-           // `!(lat == 0 && lng == 0)` gate every sibling surface applies, and
-           // fall back to an honest awaiting-coordinates seam below.
-           !(pickup.lat == 0 && pickup.lng == 0),
-           !(delivery.lat == 0 && delivery.lng == 0),
-           pickup.lat.isFinite, pickup.lng.isFinite,
-           delivery.lat.isFinite, delivery.lng.isFinite
+           // Complete-pair + range gate. Unknown endpoints stay nil in the
+           // model; every valid WGS-84 pair, including `(0,0)`, renders.
+           let pickupCoordinate = pickup.coordinatePair,
+           let deliveryCoordinate = delivery.coordinatePair
         {
-            let routeReady = activeRoute != nil
-                && activeRouteLoadID == String(load.id)
-
-            // Canonical OMV vector map + live HERE add-ons (fuel / EV /
-            // weather / traffic / sponsored ad-zones). Uses the real decoded
-            // HERE truck-route polyline when ready; marker-only while the
-            // route fetch is in flight.
-            let routeCoords: [HereLatLng] = routeReady
-                ? (activeRoute?.sections ?? [])
-                    .flatMap { HereFlexiblePolyline.decode($0.polyline) }
-                    .map { HereLatLng($0) }
-                : []
-            let lineCoords: [HereLatLng] = routeCoords.count >= 2 ? routeCoords : []
-            let markerLayer = HereMapLayer.markers([
-                .init(at: .init(pickup.lat, pickup.lng), kind: .pickup, label: pickup.city),
-                .init(at: .init(delivery.lat, delivery.lng), kind: .delivery, label: delivery.city)
-            ])
-            let routeLayers: [HereMapLayer] = lineCoords.count >= 2
-                ? [.route(polyline: lineCoords, colorHex: "#1473FF"), markerLayer]
-                : [markerLayer]
+            let mapTransportMode = EusoTripMapTransportMode(canonicalValue: load.transportMode)
+            let markers = activeTripMarkers(
+                pickup: .init(pickupCoordinate.lat, pickupCoordinate.lng),
+                pickupLabel: pickup.city,
+                delivery: .init(deliveryCoordinate.lat, deliveryCoordinate.lng),
+                deliveryLabel: delivery.city
+            )
+            let markerLayer = HereMapLayer.markers(markers)
+            let routeLines = activeRouteLoadID == String(load.id) ? activeRouteLines : []
+            let mapCenter = routeLines.lazy.compactMap(\.first).first
+                ?? activeTruckObservation?.position.coordinate
+                ?? .init(pickupCoordinate.lat, pickupCoordinate.lng)
+            let nearbyLayers: [HereMapLayer] = nearbyTruckStore.markers.isEmpty
+                ? []
+                : [.markers(nearbyTruckStore.markers)]
+            let routeLayers: [HereMapLayer] = routeLines.enumerated().map { index, line in
+                .eusoRoute(
+                    polyline: line,
+                    state: .active,
+                    label: index == 0
+                        ? "Eusorone \(mapTransportMode.rawValue) route plan version \(activeRouteVersion ?? 0)"
+                        : nil
+                )
+            } + nearbyLayers + [markerLayer]
 
             HereLiveMapView(
-                center: .init((pickup.lat + delivery.lat) / 2,
-                              (pickup.lng + delivery.lng) / 2),
+                center: mapCenter,
                 zoom: 7,
                 firstPerson: true,
-                route: lineCoords,
+                route: [],
                 baseLayers: routeLayers,
-                addOns: .driverEnRoute
+                addOns: mapTransportMode == .truck ? .driverEnRoute : [],
+                activeJob: true,
+                mapModeContext: .unconfirmed(mapTransportMode),
+                liveOperationsStatus: nearbyTruckStore.result != nil
+                    || nearbyTruckStore.errorMessage != nil
+                    ? nearbyTruckStore.status
+                    : activeTruckLiveStatus
             )
             .frame(height: 260)
             .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
@@ -491,16 +494,61 @@ struct DriverTripsPane: View {
                     radius: 10, x: -2, y: 3)
             .shadow(color: Brand.magenta.opacity(scheme == .dark ? 0.25 : 0.14),
                     radius: 10, x: 2, y: 3)
-            // Fetch the truck-aware polyline from HERE Routing v8 as
-            // soon as the active trip map appears, and refetch whenever
-            // the active load id changes (e.g. driver completes one
-            // load and picks up the next).
+            .overlay(alignment: .bottomLeading) {
+                if let activeRouteStatus {
+                    Text(activeRouteStatus)
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(palette.textSecondary)
+                        .padding(.horizontal, 10).padding(.vertical, 6)
+                        .background(palette.bgCard.opacity(0.92))
+                        .overlay(Capsule().strokeBorder(Brand.warning.opacity(0.45)))
+                        .clipShape(Capsule())
+                        .padding(10)
+                        .accessibilityLabel(activeRouteStatus)
+                }
+            }
+            // Resolve the exact bound plan and licensed observation whenever
+            // the active load changes.
             .task(id: String(load.id)) {
                 await fetchActiveRoute(for: load)
+            }
+            .task(id: "truck-nearby-\(load.id)-\(mapCenter.lat)-\(mapCenter.lng)") {
+                guard mapTransportMode == .truck else { return }
+                await nearbyTruckStore.poll(
+                    around: mapCenter,
+                    radiusMeters: 80_000,
+                    limit: 100
+                )
             }
         } else {
             activeTripMapAwaitingSeam
         }
+    }
+
+    /// Builds observation markers outside the SwiftUI ViewBuilder. The truck
+    /// point remains distinct evidence and is never appended into route geometry.
+    private func activeTripMarkers(
+        pickup: HereLatLng,
+        pickupLabel: String,
+        delivery: HereLatLng,
+        deliveryLabel: String
+    ) -> [HereMarker] {
+        var markers: [HereMarker] = [
+            .init(at: pickup, kind: .pickup, label: pickupLabel),
+            .init(at: delivery, kind: .delivery, label: deliveryLabel)
+        ]
+        if let observation = activeTruckObservation,
+           let coordinate = observation.position.coordinate {
+            markers.append(.init(
+                at: coordinate,
+                kind: .truck,
+                label: "Assigned truck",
+                observationState: observation.markerState,
+                sourceLabel: observation.provider.id,
+                accessibilityLabel: observation.accessibleEvidenceLabel
+            ))
+        }
+        return markers
     }
 
     /// Honest placeholder shown while the active load has no real pickup/
@@ -527,40 +575,117 @@ struct DriverTripsPane: View {
         )
     }
 
-    /// Calls HERE Routing v8 for the given active load and caches the decoded
-    /// route. Failure leaves the map marker-only; endpoint order is never
-    /// presented as road geometry.
+    /// Resolves the exact server route. This client supplies only subject and
+    /// purpose, never endpoints, profile, mode, graph, or geometry.
     @MainActor
     private func fetchActiveRoute(for load: Load) async {
-        // Reset the existing route so we never flash a stale polyline
-        // from a previous load.
         if activeRouteLoadID != String(load.id) {
-            activeRoute = nil
+            activeRouteLines = []
             activeRouteLoadID = nil
+            activeRouteVersion = nil
+            activeRouteStatus = nil
+            activeTruckObservation = nil
+            activeTruckLiveStatus = nil
         }
         do {
-            let resp = try await HereRoutingClient.shared.route(for: load)
-            if let first = resp.routes.first {
-                activeRoute = first
-                activeRouteLoadID = String(load.id)
+            let result = try await CanonicalRoutePlanClient.shared.planLoad(
+                id: load.id,
+                purpose: .activeJob
+            )
+            switch result {
+            case .persisted(let persisted):
+                applyActiveRoute(persisted.route, loadId: load.id)
+            case .pending(let pending):
+                activeRouteStatus = pending.blockers.first?.message
+                    ?? "Canonical mode-native route pending verified authority"
+                await readExistingActiveRoute(loadId: load.id)
             }
         } catch {
-            activeRoute = nil
-            activeRouteLoadID = nil
+            activeRouteStatus = error.eusoUserCopy
+            await readExistingActiveRoute(loadId: load.id)
+        }
+        await refreshActiveTruckObservation(for: load)
+    }
+
+    @MainActor
+    private func readExistingActiveRoute(loadId: Int) async {
+        do {
+            applyActiveRoute(
+                try await CanonicalRoutePlanClient.shared.getBoundLoad(id: loadId),
+                loadId: loadId
+            )
+        } catch {
+            if activeRouteStatus == nil { activeRouteStatus = error.eusoUserCopy }
         }
     }
 
-    /// Nav tiles for the active-trip surface — miles remaining, ETA,
-    /// next stop. Sourced from the trip controller today as static text;
-    /// will read live from `CLLocationManager` + `HereRoutingClient` in
-    /// the next wave.
+    @MainActor
+    private func applyActiveRoute(
+        _ route: CanonicalRoutePlanClient.BoundRoutePlan,
+        loadId: Int
+    ) {
+        guard let payload = route.rendererPayload else {
+            activeRouteLines = []
+            activeRouteLoadID = nil
+            activeRouteVersion = nil
+            activeRouteStatus = "Canonical route exists but is not released for rendering"
+            return
+        }
+        activeRouteLines = payload.lines
+        activeRouteLoadID = String(loadId)
+        activeRouteVersion = payload.identity.version
+        activeRouteStatus = nil
+    }
+
+    @MainActor
+    private func refreshActiveTruckObservation(for load: Load) async {
+        guard EusoTripMapTransportMode(canonicalValue: load.transportMode) == .truck else { return }
+        do {
+            let assigned = try await EusoTripAPI.shared.vehicle.getAssigned()
+            guard let vehicleId = Int(assigned.id) else { return }
+            let result = try await LiveOperationsClient.shared.latestTruck(vehicleId: vehicleId)
+            activeTruckObservation = result.observation
+            if let observation = result.observation {
+                let availability: HereLiveOperationsStatus.Availability
+                switch observation.markerState {
+                case .current: availability = observation.operationalUseAllowed ? .live : .degraded
+                case .stale: availability = .stale
+                case .degraded: availability = .degraded
+                case .offline: availability = .unavailable
+                }
+                activeTruckLiveStatus = .init(
+                    availability: availability,
+                    sourceLabel: observation.provider.id,
+                    freshnessLabel: observation.freshnessState.rawValue,
+                    detail: observation.accessibleEvidenceLabel,
+                    observationCount: 1
+                )
+            } else {
+                activeTruckLiveStatus = .init(
+                    availability: .empty,
+                    detail: result.coverage.statement,
+                    observationCount: 0
+                )
+            }
+        } catch {
+            activeTruckLiveStatus = .init(
+                availability: .degraded,
+                detail: "Authorized truck observation is unavailable",
+                observationCount: 0
+            )
+        }
+    }
+
+    /// Active-trip facts. Remaining distance and ETA cannot be inferred from a
+    /// planned distance or scheduled delivery timestamp, so progress stays
+    /// pending until an exact server route projection arrives.
     private var activeTripNavRow: some View {
         HStack(spacing: Space.s2) {
             navTile(icon: "road.lanes",
-                    label: "MILES LEFT",
+                    label: "PROGRESS",
                     value: milesRemaining)
             navTile(icon: "clock",
-                    label: "ETA",
+                    label: "PLANNED",
                     value: etaDisplay)
             navTile(icon: "mappin.and.ellipse",
                     label: "NEXT STOP",
@@ -568,10 +693,7 @@ struct DriverTripsPane: View {
         }
     }
 
-    private var milesRemaining: String {
-        guard let load = trip.currentLoad else { return "-" }
-        return "\(Int(load.distanceValue)) mi"
-    }
+    private var milesRemaining: String { "Pending" }
 
     private var etaDisplay: String {
         trip.currentLoad?.deliveryDate.flatMap { String($0.prefix(16)) } ?? "-"
@@ -753,17 +875,13 @@ struct DriverTripsPane: View {
         // add-on overlays here: the board is a pick-a-load surface, kept
         // clean. (Migrated off the raster `HereMapView` onto the canonical
         // OMV vector renderer that the plan actually serves.)
-        // Fix gate — pin ONLY loads whose pickup centroid is a real table
-        // hit. Loads the adapter couldn't geocode resolve to the CONUS
-        // fabrication sentinel (39.8283, -98.5795) or null-island (0,0);
-        // plotting those stacks every unknown city in Kansas and biases
-        // the camera centroid toward CONUS-center. `compactMap` (here a
-        // `filter`) drops them entirely — exactly as the distance path now
-        // omits un-geocoded lanes — so "no real coord" means "no pin".
+        // Pin only loads with a complete validated coordinate pair. Strict
+        // centroid adapters now return nil on a miss, never a map sentinel.
         let mappableLoads = filtered.filter { $0.hasRealOriginCoord }
-        let boardMarkers: [HereMarker] = mappableLoads.map { load in
-            HereMarker(
-                at: HereLatLng(load.originLat, load.originLng),
+        let boardMarkers: [HereMarker] = mappableLoads.compactMap { load in
+            guard let coordinate = load.originCoordinate else { return nil }
+            return HereMarker(
+                at: HereLatLng(coordinate),
                 kind: .pickup,
                 label: "\(load.origin) · $\(Int(load.rate)) · \(load.miles) mi · \(load.equipment)",
                 id: load.id
@@ -783,6 +901,7 @@ struct DriverTripsPane: View {
                 baseLayers: [.markers(boardMarkers)],
                 addOns: [],
                 showLegend: false,
+                mapModeContext: .primary(.truck),
                 onSelectMarker: { id in
                     openLoadDetail(id)
                 }
@@ -1208,12 +1327,12 @@ struct AvailableLoad: Identifiable, Equatable {
     /// Origin city centroid, rendered as the pickup annotation on the
     /// Eusoboards map view and seeded into `HereRoutingClient` when the
     /// driver taps through to the load detail sheet.
-    let originLat: Double
-    let originLng: Double
+    let originLat: Double?
+    let originLng: Double?
     /// Destination city centroid — paired with `originLat/Lng` to draw the
     /// blue→magenta gradient polyline on the Eusoboards map.
-    let destLat: Double
-    let destLng: Double
+    let destLat: Double?
+    let destLng: Double?
     /// Backend numeric loadId. Distinct from `id` (which carries the
     /// human-readable `loadNumber` so the UI can render "LOAD-2026-A1B2"
     /// rather than "94120"). Populated by every `AvailableLoad.from(...)`
@@ -1242,30 +1361,27 @@ struct AvailableLoad: Identifiable, Equatable {
     /// terminology resolves correctly. nil when the source carries none.
     var equipmentRaw: String? = nil
 
-    /// Fix gate — true only when the pickup centroid is a REAL table hit,
-    /// never a fabricated anchor. The `AvailableLoad.from(_:)` adapter
-    /// resolves un-geocoded cities through the loose `centroid(for:)`,
-    /// which falls back to the CONUS geographic center
-    /// `(39.8283, -98.5795)` so the detail-sheet map has *something* to
-    /// anchor on. That fallback (and the `(0,0)` null-island) must NOT be
-    /// plotted as a pickup pin on the board map — it stacks every unknown
-    /// city in the middle of Kansas and drags the camera centroid there.
-    /// Mirrors the `!(lat == 0 && lng == 0)` gate every sibling surface
-    /// (212 Control Tower, 222 LiveTracking, 301 Dispatch, 375 FleetTrack,
-    /// 400 Convoy) already applies, plus the CONUS-sentinel rejection that
-    /// the distance path got via `centroidStrict` (founder report
-    /// 2026-05-04).
+    /// True only when the pickup has a complete finite WGS-84 pair. Strict
+    /// adapters preserve an unresolved location as nil, so no coordinate is
+    /// reserved as a fabrication sentinel.
     var hasRealOriginCoord: Bool {
-        // Null-island gate (lat/lng order: originLat is the latitude).
-        if originLat == 0 && originLng == 0 { return false }
-        // CONUS-center fabrication sentinel — the loose-centroid fallback.
-        // Compare with a small epsilon so float-rounded copies are caught.
-        let conusLat = 39.8283, conusLng = -98.5795
-        if abs(originLat - conusLat) < 0.0001 && abs(originLng - conusLng) < 0.0001 {
-            return false
-        }
-        // Sanity range — reject anything outside legal lat/lng bounds.
-        return abs(originLat) <= 90 && abs(originLng) <= 180
+        originCoordinate != nil
+    }
+
+    var originCoordinate: CLLocationCoordinate2D? {
+        validatedCoordinate(latitude: originLat, longitude: originLng)
+    }
+
+    var destinationCoordinate: CLLocationCoordinate2D? {
+        validatedCoordinate(latitude: destLat, longitude: destLng)
+    }
+
+    private func validatedCoordinate(latitude: Double?,
+                                     longitude: Double?) -> CLLocationCoordinate2D? {
+        LatLongParser.validatedCoordinate(
+            latitude: latitude,
+            longitude: longitude
+        )
     }
 
     /// Convenience — pickup as a `LoadLocation` for HERE Maps annotations.
@@ -3565,8 +3681,8 @@ struct DriverMePane: View {
 // MARK: - Chat transfer payload (used by ESANG coach + inbox conversations)
 
 /// Typed card rendered inline when the driver sends a P2P transfer from
-/// a chat composer. EusoWallet (Stripe Connect under the hood) executes
-/// the real money move on the backend; the chat thread just echoes the
+/// a chat composer. EusoWallet's double-entry ledger executes the real money
+/// move on the backend; the chat thread just echoes the
 /// confirmation card so the driver has a visible receipt in-conversation.
 ///
 /// Keeping the payload shape flat here — the same struct is embedded in
@@ -3577,6 +3693,11 @@ struct ChatTransferPayload: Equatable {
     let recipientName: String
     let memo: String?
     let status: Status
+    /// Stable identity for one user-authorized transfer intent. It is minted
+    /// once before the first request and reused after an uncertain failure so
+    /// the server can return the original transfer instead of moving money a
+    /// second time. Hydrated historical cards intentionally carry nil.
+    let idempotencyKey: UUID?
 
     enum Status: String, Equatable {
         /// Awaiting wallet confirmation — shows a spinner.

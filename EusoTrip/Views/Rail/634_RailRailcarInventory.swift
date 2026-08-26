@@ -233,6 +233,7 @@ private struct RailRailcarInventoryBody: View {
             VStack(alignment: .leading, spacing: Space.s4) {
                 topBar
                 IridescentHairline()
+                ModeAssetAvailabilityLaunchCard(mode: .rail)
                 if loading {
                     loadingState
                 } else if let err = loadError {

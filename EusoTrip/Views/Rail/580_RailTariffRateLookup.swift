@@ -106,14 +106,12 @@ private struct RailTariffRateLookupBody: View {
     @State private var demurrage: [DemurrageRecord580] = []
     @State private var loading = true
     @State private var loadError: String? = nil
-    @State private var isQuoting = false
 
     // MARK: Derived
 
     private var routings: [TariffRouting580] { tariff?.routings ?? [] }
     private var baseRate: Double  { tariff?.rate ?? 0 }
     private var carCount: Int     { tariff?.carCount ?? 1 }
-    private var totalQuote: Double { baseRate * Double(carCount) }
     private var routingCount: Int  { routings.count }
 
     private var rateLabel: String {
@@ -135,10 +133,6 @@ private struct RailTariffRateLookupBody: View {
     }
     private var routeLabel: String  { tariff?.routeLabel ?? "-" }
     private var ruleTypeLabel: String { tariff?.ruleType ?? "RULE 11" }
-    private var quoteLabel: String {
-        totalQuote > 0 ? String(format: "Quote · $%.0f", totalQuote) : "Get quote"
-    }
-
     private var freeDaysLabel: String {
         demurrage.first?.freeDays.map { "\($0) free day\($0 == 1 ? "" : "s") at ramp" } ?? "-"
     }
@@ -157,6 +151,15 @@ private struct RailTariffRateLookupBody: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
+                // Rail tariffs and contracts are proposal-only until human
+                // confirmation, source-rights authorization, and activation.
+                // Legacy lookup rows below remain read-only market context;
+                // they cannot become the route's executable price authority.
+                PricedRouteRateSheetAuthorityPanel(mode: .rail)
+                PricedRouteQuoteAuthorityPanel(
+                    subjectType: .railShipment,
+                    subjectId: shipmentId
+                )
                 if loading {
                     LifecycleCard { Text("Loading tariff…").font(EType.caption).foregroundStyle(palette.textSecondary) }
                 } else if let err = loadError {
@@ -166,7 +169,6 @@ private struct RailTariffRateLookupBody: View {
                     kpiStrip
                     routingsList
                     if !demurrage.isEmpty { freeTimeStrip }
-                    ctaPair
                 }
                 Color.clear.frame(height: 96)
             }
@@ -373,35 +375,6 @@ private struct RailTariffRateLookupBody: View {
             .strokeBorder(palette.borderFaint))
     }
 
-    // MARK: - CTA pair
-
-    private var ctaPair: some View {
-        HStack(spacing: Space.s2) {
-            CTAButton(title: quoteLabel,
-                      action: { Task { await requestQuote() } },
-                      leadingIcon: "plus",
-                      isLoading: isQuoting)
-            RailSecondaryActionButton(
-                title: "Routings",
-                sheetTitle: "Tariff routing context",
-                lines: routingReviewLines,
-                systemImage: "point.topleft.down.curvedto.point.bottomright.up"
-            )
-        }
-    }
-
-    private var routingReviewLines: [String] {
-        var lines = [
-            "\(routeLabel) · \(ruleTypeLabel) · \(routeMilesLabel) mi",
-            "Base \(rateLabel) · total \(quoteLabel) · \(carCount) car\(carCount == 1 ? "" : "s")",
-            "Free time \(freeDaysLabel) · \(dailyRateLabel) · \(demurrageEquipLabel)"
-        ]
-        lines.append(contentsOf: routings.prefix(6).map { routing in
-            "\(routing.routeName ?? "Routing") · \(routing.railroadCodes ?? "-") · \(routing.miles.map { "\($0) mi" } ?? "-")"
-        })
-        return lines
-    }
-
     // MARK: - Load / Actions
 
     private func load() async {
@@ -430,11 +403,6 @@ private struct RailTariffRateLookupBody: View {
         loading = false
     }
 
-    private func requestQuote() async {
-        isQuoting = true
-        try? await Task.sleep(nanoseconds: 800_000_000)
-        isQuoting = false
-    }
 }
 
 #Preview("580 · Rail Tariff Rate · Night") { RailTariffRateLookupScreen(theme: Theme.dark, railId: "RAIL-260523-7C3A0B12D4", shipmentId: 0).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }

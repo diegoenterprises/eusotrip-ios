@@ -123,6 +123,7 @@ private struct CatalystDriverQuarterDetailBody: View {
     @State private var comparable: PriorYearComparable327B? = nil
     @State private var cfr: CfrText327B? = nil
     @State private var hos: HosWindow327B? = nil
+    @State private var hosError: String? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -144,6 +145,9 @@ private struct CatalystDriverQuarterDetailBody: View {
                     ForEach(detailRows) { detailRowView($0) }
                     cfrChip
                     actionRibbon
+                    if let hosError {
+                        actionErrorNote(hosError)
+                    }
                     if let actionError {
                         actionErrorNote(actionError)
                     }
@@ -935,9 +939,8 @@ private struct CatalystDriverQuarterDetailBody: View {
     //
     // All procs exist server-side and are role-accessible. Each is wired
     // through its typed EusoTripAPI namespace method (no raw stub strings).
-    // The primary row is required; the rollup / comparable / CFR / HOS lanes
-    // are best-effort (try?) so a partial outage still renders the page with
-    // honest "—" placeholders rather than failing the whole screen.
+    // The primary row is required. Optional supporting lanes surface their
+    // own unavailable state; regulated ELD/HOS evidence is never swallowed.
 
     private func loadAll() async {
         loading = true
@@ -961,10 +964,16 @@ private struct CatalystDriverQuarterDetailBody: View {
 
             // eld.getDriverHosWindow — ELD anomalies + unidentified driving.
             let window = hosWindow
-            self.hos = try? await EusoTripAPI.shared.eld.getDriverHosWindow(
-                driverId: driverId,
-                from: window.from.isEmpty ? nil : window.from,
-                to: window.to.isEmpty ? nil : window.to)
+            do {
+                self.hos = try await EusoTripAPI.shared.eld.getDriverHosWindow(
+                    driverId: driverId,
+                    from: window.from.isEmpty ? nil : window.from,
+                    to: window.to.isEmpty ? nil : window.to)
+                self.hosError = nil
+            } catch {
+                self.hos = nil
+                self.hosError = "ELD/HOS quality evidence could not refresh; those metrics remain unavailable."
+            }
         } catch {
             self.loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }

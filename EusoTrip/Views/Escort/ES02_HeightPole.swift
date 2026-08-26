@@ -38,8 +38,9 @@
 //  Powered by ESANG AI™.
 //
 
-import SwiftUI
 import CoreLocation
+import CryptoKit
+import SwiftUI
 
 // MARK: - Wire projections (screen-local, private)
 
@@ -54,11 +55,10 @@ private struct EscortAssignmentRow: Decodable, Identifiable {
 
 private struct AssignmentsLimitInput: Encodable { let limit: Int }
 
-/// Input echo for `escorts.checkBridgeClearances`. The service
-/// checks the national low-clearance structure set against the
-/// supplied height; the load id rides along for the audit echo.
+/// The server derives the freight load from this authenticated escort
+/// assignment. The client never supplies a free-standing load identity.
 private struct ClearanceCheckInput: Encodable {
-    let loadId: Int
+    let assignmentId: Int
     let vehicleHeightFt: Double
 }
 
@@ -86,10 +86,8 @@ private struct ClearanceResultBlock: Decodable {
     let warnings: [StructureWarning]?
 }
 
-/// Envelope off `escorts.checkBridgeClearances`. The proc returns
-/// `clearances` as an object when a check ran and as an empty array
-/// when the height is below the check threshold — decode defensively
-/// so both shapes land.
+/// Stable envelope off `escorts.checkBridgeClearances`. A height below the
+/// check threshold returns `clearances: null`, never a second JSON shape.
 private struct ClearanceEnvelope: Decodable {
     let required: Bool
     let allClear: Bool?
@@ -99,9 +97,9 @@ private struct ClearanceEnvelope: Decodable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        required = (try? c.decode(Bool.self, forKey: .required)) ?? false
-        allClear = try? c.decodeIfPresent(Bool.self, forKey: .allClear)
-        result = try? c.decodeIfPresent(ClearanceResultBlock.self, forKey: .clearances)
+        required = try c.decode(Bool.self, forKey: .required)
+        allClear = try c.decodeIfPresent(Bool.self, forKey: .allClear)
+        result = try c.decodeIfPresent(ClearanceResultBlock.self, forKey: .clearances)
     }
 }
 
@@ -124,8 +122,22 @@ private struct SetPoleConfigInput: Encodable {
     let assignmentId: Int
     let loadHeightFt: Double
     let offsetIn: Int
+    let requestKey: String
 }
-private struct SetPoleConfigResult: Decodable { let success: Bool? }
+private struct SetPoleConfigResult: Decodable {
+    let success: Bool
+    let idempotent: Bool
+    let auditOutboxId: String
+}
+
+private struct PoleConfigRead: Decodable {
+    let armed: Bool
+    let poleHeightFt: Double?
+    let offsetIn: Double?
+    let loadHeightFt: Double?
+    let activeAt: String?
+    let stateRule: String?
+}
 
 /// Input for `incidents.report` — the real strike-capture write.
 private struct StrikeReportInput: Encodable {
@@ -152,10 +164,10 @@ struct EscortHeightPole: View {
     @Environment(\.palette) private var palette
     @EnvironmentObject private var session: EusoTripSession
 
-    // Pole configuration — local first, then synced to the assignment
-    // poleConfig record via escorts.setPoleConfig.
-    @AppStorage("escort.pole.loadHeightInches") private var loadHeightInches: Int = 0
-    @AppStorage("escort.pole.offsetInches") private var offsetInches: Int = 4
+    // Cached per authenticated credential + assignment. The server record is
+    // authoritative; a retained request key marks an unconfirmed local write.
+    @State private var loadHeightInches: Int = 0
+    @State private var offsetInches: Int = 4
 
     @State private var assignment: EscortAssignmentRow? = nil
     @State private var clearance: ClearanceEnvelope? = nil
@@ -225,7 +237,14 @@ struct EscortHeightPole: View {
             return rows.sorted { $0.marginFt < $1.marginFt }
         }
         return rows.sorted {
-            distanceMi(from: coord, to: $0.bridge) < distanceMi(from: coord, to: $1.bridge)
+            let left = distanceMi(from: coord, to: $0.bridge)
+            let right = distanceMi(from: coord, to: $1.bridge)
+            switch (left, right) {
+            case let (left?, right?): return left < right
+            case (_?, nil): return true
+            case (nil, _?): return false
+            case (nil, nil): return $0.marginFt < $1.marginFt
+            }
         }
     }
 
@@ -461,7 +480,9 @@ struct EscortHeightPole: View {
         HStack(spacing: Space.s2) {
             gaugeStat(
                 label: "TO STRUCT",
-                value: userCoord.map { milesLabel(distanceMi(from: $0, to: next.bridge)) } ?? "-",
+                value: userCoord
+                    .flatMap { distanceMi(from: $0, to: next.bridge) }
+                    .map(milesLabel) ?? "-",
                 tint: palette.textPrimary
             )
             gaugeStat(
@@ -637,14 +658,32 @@ struct EscortHeightPole: View {
     }
 
     private func bumpLoadHeight(_ inches: Int) {
+        guard assignment != nil else {
+            poleSyncMessage = nil
+            poleSyncError = "Open an active escort assignment before arming the height pole."
+            return
+        }
         let next = max(0, min(20 * 12, loadHeightInches + inches))
         loadHeightInches = next
-        Task { await refreshClearance() }
+        persistLocalPoleState()
+        Task {
+            await syncPoleConfig()
+            await refreshClearance()
+        }
     }
 
     private func bumpOffset(_ inches: Int) {
+        guard assignment != nil else {
+            poleSyncMessage = nil
+            poleSyncError = "Open an active escort assignment before changing the pole offset."
+            return
+        }
         offsetInches = max(3, min(6, offsetInches + inches))
-        Task { await refreshClearance() }
+        persistLocalPoleState()
+        Task {
+            await syncPoleConfig()
+            await refreshClearance()
+        }
     }
 
     // MARK: - Upcoming structures rail
@@ -673,8 +712,9 @@ struct EscortHeightPole: View {
         let tint = statusColor(w.status)
         return VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 4) {
-                if let coord = userCoord {
-                    Text(milesLabel(distanceMi(from: coord, to: w.bridge)))
+                if let coord = userCoord,
+                   let distance = distanceMi(from: coord, to: w.bridge) {
+                    Text(milesLabel(distance))
                         .font(EType.mono(.micro)).tracking(0.3)
                         .foregroundStyle(tint)
                 } else {
@@ -704,14 +744,15 @@ struct EscortHeightPole: View {
 
     @ViewBuilder
     private var mapCard: some View {
-        if poleIsSet, !sortedStructures.isEmpty {
+        if poleIsSet, !sortedStructures.isEmpty, let mapCenter {
             VStack(alignment: .leading, spacing: Space.s2) {
                 sectionHeader("PROXIMITY MAP", icon: "map.fill")
                 HereVectorMapView(
                     center: mapCenter,
                     zoom: userCoord != nil ? 9 : 5,
                     interactive: false,
-                    layers: [.markers(mapMarkers)]
+                    layers: [.markers(mapMarkers)],
+                    mapModeContext: .escort(activeRoadEscort: true)
                 )
                 .frame(height: 190)
                 .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
@@ -738,18 +779,27 @@ struct EscortHeightPole: View {
         }
     }
 
-    private var mapCenter: HereLatLng {
+    private var mapCenter: HereLatLng? {
         if let c = userCoord { return HereLatLng(c) }
-        if let first = sortedStructures.first {
-            return HereLatLng(first.bridge.lat, first.bridge.lng)
+        if let coordinate = sortedStructures.lazy.compactMap({ warning -> CLLocationCoordinate2D? in
+            return LatLongParser.validatedCoordinate(
+                latitude: warning.bridge.lat,
+                longitude: warning.bridge.lng
+            )
+        }).first {
+            return HereLatLng(coordinate)
         }
-        return HereLatLng(39.5, -98.35)
+        return nil
     }
 
     private var mapMarkers: [HereMarker] {
-        var pins = sortedStructures.prefix(12).map { w in
-            HereMarker(
-                at: HereLatLng(w.bridge.lat, w.bridge.lng),
+        var pins: [HereMarker] = sortedStructures.prefix(12).compactMap { w -> HereMarker? in
+            guard let coordinate = LatLongParser.validatedCoordinate(
+                latitude: w.bridge.lat,
+                longitude: w.bridge.lng
+            ) else { return nil }
+            return HereMarker(
+                at: HereLatLng(coordinate),
                 kind: .alert,
                 label: ftIn(w.bridge.clearanceFt)
             )
@@ -788,8 +838,9 @@ struct EscortHeightPole: View {
     }
 
     private func lowClearanceHeadline(_ w: StructureWarning) -> String {
-        if let coord = userCoord {
-            return "LOW CLEARANCE · \(milesLabel(distanceMi(from: coord, to: w.bridge)))"
+        if let coord = userCoord,
+           let distance = distanceMi(from: coord, to: w.bridge) {
+            return "LOW CLEARANCE · \(milesLabel(distance))"
         }
         return "LOW CLEARANCE ON THE STRUCTURE SET"
     }
@@ -922,9 +973,17 @@ struct EscortHeightPole: View {
         return "\(Int(mi.rounded())) mi"
     }
 
-    private func distanceMi(from coord: CLLocationCoordinate2D, to bridge: BridgeStructure) -> Double {
+    private func distanceMi(from coord: CLLocationCoordinate2D, to bridge: BridgeStructure) -> Double? {
+        guard LatLongParser.isValid(coord),
+              let bridgeCoordinate = LatLongParser.validatedCoordinate(
+                  latitude: bridge.lat,
+                  longitude: bridge.lng
+              ) else { return nil }
         let a = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
-        let b = CLLocation(latitude: bridge.lat, longitude: bridge.lng)
+        let b = CLLocation(
+            latitude: bridgeCoordinate.latitude,
+            longitude: bridgeCoordinate.longitude
+        )
         return a.distance(from: b) / 1609.344
     }
 
@@ -938,26 +997,66 @@ struct EscortHeightPole: View {
     }
 
     private func refreshAssignment() async {
-        let rows: [EscortAssignmentRow]? = try? await EusoTripAPI.shared.query(
-            "escorts.getActiveAssignments",
-            input: AssignmentsLimitInput(limit: 1)
-        )
-        assignment = rows?.first
+        do {
+            let rows: [EscortAssignmentRow] = try await EusoTripAPI.shared.query(
+                "escorts.getActiveAssignments",
+                input: AssignmentsLimitInput(limit: 1)
+            )
+            assignment = rows.first
+            guard let aid = assignment.flatMap({ Int($0.id) }), aid > 0 else {
+                loadHeightInches = 0
+                offsetInches = 4
+                poleSyncMessage = nil
+                poleSyncError = "No active escort assignment is available for a height-pole setup."
+                return
+            }
+
+            loadCachedPoleState(assignmentId: aid)
+            if hasPendingPoleWrite(assignmentId: aid) {
+                await syncPoleConfig()
+                return
+            }
+
+            let remote: PoleConfigRead = try await EusoTripAPI.shared.query(
+                "escorts.getPoleConfig",
+                input: PoleConfigInput(assignmentId: aid)
+            )
+            if remote.armed,
+               let loadHeightFt = remote.loadHeightFt,
+               let offsetIn = remote.offsetIn {
+                loadHeightInches = max(0, Int((loadHeightFt * 12).rounded()))
+                offsetInches = max(3, min(6, Int(offsetIn.rounded())))
+                persistLocalPoleState()
+            } else {
+                loadHeightInches = 0
+                offsetInches = 4
+                clearLocalPoleState(assignmentId: aid)
+            }
+            poleSyncError = nil
+        } catch {
+            assignment = nil
+            clearance = nil
+            poleSyncMessage = nil
+            poleSyncError = "The active assignment and its pole configuration could not be read. Pull to refresh before using the pole."
+        }
     }
 
     private func refreshClearance() async {
         guard poleIsSet else {
             clearance = nil
             clearanceFailed = false
-            poleSyncMessage = nil
-            poleSyncError = nil
+            return
+        }
+        guard let aid = assignment.flatMap({ Int($0.id) }), aid > 0 else {
+            clearance = nil
+            clearanceFailed = true
             return
         }
         do {
             let env: ClearanceEnvelope = try await EusoTripAPI.shared.query(
                 "escorts.checkBridgeClearances",
                 input: ClearanceCheckInput(
-                    loadId: assignment.flatMap { Int($0.id) } ?? 0,
+                    assignmentId: aid,
                     vehicleHeightFt: activePoleHeightFt
                 )
             )
@@ -966,7 +1065,6 @@ struct EscortHeightPole: View {
         } catch {
             clearanceFailed = true
         }
-        await syncPoleConfig()
     }
 
     private func syncPoleConfig() async {
@@ -975,22 +1073,99 @@ struct EscortHeightPole: View {
             poleSyncError = "Pole setup is saved on this device; no active escort assignment was returned to sync."
             return
         }
+        persistLocalPoleState()
+        let storageKey = poleRequestStorageKey(
+            assignmentId: aid,
+            loadHeightInches: loadHeightInches,
+            offsetInches: offsetInches
+        )
+        let stored = UserDefaults.standard.string(forKey: storageKey)?.lowercased()
+        let requestKey = stored.flatMap { UUID(uuidString: $0) != nil ? $0 : nil }
+            ?? UUID().uuidString.lowercased()
+        UserDefaults.standard.set(requestKey, forKey: storageKey)
         do {
             let out: SetPoleConfigResult = try await EusoTripAPI.shared.mutation(
                 "escorts.setPoleConfig",
-                input: SetPoleConfigInput(assignmentId: aid, loadHeightFt: loadHeightFt, offsetIn: offsetInches)
+                input: SetPoleConfigInput(
+                    assignmentId: aid,
+                    loadHeightFt: loadHeightFt,
+                    offsetIn: offsetInches,
+                    requestKey: requestKey
+                )
             )
-            if out.success == false {
+            if !out.success {
                 poleSyncMessage = nil
                 poleSyncError = "Pole setup is saved on this device, but the assignment sync was not accepted."
             } else {
+                if UserDefaults.standard.string(forKey: storageKey)?.lowercased() == requestKey {
+                    UserDefaults.standard.removeObject(forKey: storageKey)
+                }
                 poleSyncError = nil
-                poleSyncMessage = "Pole setup synced to assignment \(aid)."
+                poleSyncMessage = out.idempotent
+                    ? "Pole setup already matches assignment \(aid)."
+                    : "Pole setup synced to assignment \(aid)."
             }
         } catch {
             poleSyncMessage = nil
             poleSyncError = Self.poleSyncFailureCopy(for: error)
         }
+    }
+
+    private struct PoleConfigInput: Encodable { let assignmentId: Int }
+
+    private var credentialScope: String {
+        EusoTripAPI.shared.authToken
+            ?? HTTPCookieStorage.shared.cookies?.first(where: { $0.name == "app_session_id" })?.value
+            ?? "unauthenticated"
+    }
+
+    private func poleStoragePrefix(assignmentId: Int) -> String {
+        let digest = SHA256.hash(data: Data("escort-pole|\(credentialScope)|\(assignmentId)".utf8))
+        return "com.eusotrip.escort-pole." + digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func poleRequestStorageKey(
+        assignmentId: Int,
+        loadHeightInches: Int,
+        offsetInches: Int
+    ) -> String {
+        let identity = "\(poleStoragePrefix(assignmentId: assignmentId))|\(loadHeightInches)|\(offsetInches)"
+        let digest = SHA256.hash(data: Data(identity.utf8))
+        return "com.eusotrip.escort-pole-request." + digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func persistLocalPoleState() {
+        guard let aid = assignment.flatMap({ Int($0.id) }), aid > 0 else { return }
+        let prefix = poleStoragePrefix(assignmentId: aid)
+        UserDefaults.standard.set(loadHeightInches, forKey: prefix + ".loadHeightInches")
+        UserDefaults.standard.set(offsetInches, forKey: prefix + ".offsetInches")
+    }
+
+    private func loadCachedPoleState(assignmentId: Int) {
+        let prefix = poleStoragePrefix(assignmentId: assignmentId)
+        let defaults = UserDefaults.standard
+        guard defaults.object(forKey: prefix + ".loadHeightInches") != nil else {
+            loadHeightInches = 0
+            offsetInches = 4
+            return
+        }
+        loadHeightInches = max(0, defaults.integer(forKey: prefix + ".loadHeightInches"))
+        offsetInches = max(3, min(6, defaults.integer(forKey: prefix + ".offsetInches")))
+    }
+
+    private func clearLocalPoleState(assignmentId: Int) {
+        let prefix = poleStoragePrefix(assignmentId: assignmentId)
+        UserDefaults.standard.removeObject(forKey: prefix + ".loadHeightInches")
+        UserDefaults.standard.removeObject(forKey: prefix + ".offsetInches")
+    }
+
+    private func hasPendingPoleWrite(assignmentId: Int) -> Bool {
+        let key = poleRequestStorageKey(
+            assignmentId: assignmentId,
+            loadHeightInches: loadHeightInches,
+            offsetInches: offsetInches
+        )
+        return UserDefaults.standard.string(forKey: key) != nil
     }
 
     /// Operator-language copy for a failed pole sync. The underlying error is
@@ -1341,7 +1516,7 @@ private struct EscortStrikeCaptureSheet: View {
                 return "\(s.bridge.name) · \(s.bridge.route), \(s.bridge.state)"
             }
             if let c = coordinate {
-                return String(format: "%.5f, %.5f", c.latitude, c.longitude)
+                return LatLongParser.displayString(c)
             }
             return "On corridor — position unavailable"
         }()
@@ -1356,7 +1531,7 @@ private struct EscortStrikeCaptureSheet: View {
         parts.append("Damage observed: \(damage.rawValue.lowercased()).")
         parts.append("Haul stopped: \(haulStopped ? "yes" : "no").")
         if let c = coordinate {
-            parts.append(String(format: "GPS %.5f, %.5f.", c.latitude, c.longitude))
+            parts.append("GPS \(LatLongParser.displayString(c)).")
         }
         if !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             parts.append("Notes: \(notes)")

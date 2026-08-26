@@ -305,4 +305,6 @@ if (JSON_OUT) {
   }
   console.log(`\n${C.dim}Limits: top-level scalar fields only; matches by <routerFile>.<proc>; nested/named/union schemas skipped (shown as notes). Precision-biased — clean-parse mismatches only.${C.rst}`);
 }
-process.exit(mism.length > 0 ? 1 : 0);
+// Let stdout drain before Node exits. `process.exit()` can truncate the JSON
+// report when a large contract census is consumed through a pipe or CI runner.
+process.exitCode = mism.length > 0 ? 1 : 0;

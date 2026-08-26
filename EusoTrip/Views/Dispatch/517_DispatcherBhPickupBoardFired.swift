@@ -241,8 +241,8 @@ private struct BH517Body: View {
                 Divider().overlay(palette.borderFaint)
                 BH517GateRow(title: "Fitness gate",
                              sub: fitnessSub,
-                             pill: driverRow?.hoursRemaining != nil ? "CHECKED" : "—",
-                             pillTint: driverRow?.hoursRemaining != nil ? Brand.success : Brand.neutral)
+                             pill: driverRow?.hoursRemaining != nil ? "REPORTED" : "—",
+                             pillTint: driverRow?.hoursRemaining != nil ? Brand.warning : Brand.neutral)
                 Divider().overlay(palette.borderFaint)
                 BH517GateRow(title: "Pickup dock",
                              sub: dockSub,
@@ -402,9 +402,9 @@ private struct BH517Body: View {
 
     private var fitnessSub: String {
         if let h = driverRow?.hoursRemaining {
-            return String(format: "HOS %.0fh drive available · from the live driver board", h)
+            return String(format: "HOS %.0fh reported · freshness unavailable", h)
         }
-        return "driver hours not on the live board for this load"
+        return "driver hours not reported for this load"
     }
 
     private var dockSub: String {
@@ -542,7 +542,14 @@ private struct BH517DetailSheet: View {
                     }
                     LifecycleCard {
                         if let p = tracking?.position {
-                            row("GPS", String(format: "%.4f, %.4f", p.lat ?? 0, p.lng ?? 0))
+                            if let coordinate = LatLongParser.validatedCoordinate(
+                                latitude: p.lat,
+                                longitude: p.lng
+                            ) {
+                                row("GPS", LatLongParser.displayString(coordinate))
+                            } else {
+                                row("GPS", "Not recorded")
+                            }
                             row("Speed", p.speed.map { String(format: "%.0f mph", $0) } ?? "—")
                             row("Heartbeat", p.updatedAt ?? "—")
                         } else {

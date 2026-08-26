@@ -9,7 +9,7 @@
 //    • Text messages
 //    • Image attachments (PhotosPicker — BOL snap, dashboard light,
 //      reefer gauge evidence, DVIR photo, etc.)
-//    • P2P EusoWallet money transfers (backed by Stripe Connect on the
+//    • P2P EusoWallet money transfers (double-entry wallet ledger on the
 //      server — driver-to-driver settle for team partners, shared fuel,
 //      tolls, etc.). Only visible when the thread's recipient has an
 //      EusoWallet peer profile (InboxThread.allowsTransfer == true).
@@ -134,6 +134,10 @@ struct DriverConversationView: View {
     /// optimistic bubble in a pending state until the tRPC mutation
     /// returns (or fails).
     @State private var isSending: Bool = false
+    /// Transfer bubbles currently awaiting an idempotent server ACK. The set
+    /// prevents a failed card's Retry control from firing the same request in
+    /// parallel while preserving the request key for safe serial retries.
+    @State private var transferRequestsInFlight: Set<UUID> = []
     /// Surfaces transient errors from send/upload/transfer mutations so
     /// the driver knows to retry. Cleared on the next successful send.
     @State private var lastErrorMessage: String? = nil
@@ -601,7 +605,7 @@ struct DriverConversationView: View {
                 .italic()
                 .foregroundStyle(palette.textTertiary)
         } else if let payload = m.transfer {
-            transferCard(payload, outbound: outbound)
+            transferCard(payload, outbound: outbound, messageID: m.id)
         } else if let data = m.imageData, let ui = uiImage(from: data) {
             attachmentImage {
                 Image(uiImage: ui).resizable().scaledToFill()
@@ -697,7 +701,7 @@ struct DriverConversationView: View {
         } else if let payload = m.transfer {
             // Money transfer card — styled distinct from plain chat bubbles
             // so the driver can spot a transaction in the scroll at a glance.
-            transferCard(payload, outbound: m.from == .me)
+            transferCard(payload, outbound: m.from == .me, messageID: m.id)
         } else if let data = m.imageData, let ui = uiImage(from: data) {
             // Image attachment (local preview for the optimistic path
             // before the server ACK). Constrain the preview width so the
@@ -802,7 +806,7 @@ struct DriverConversationView: View {
     /// EusoWallet transfer card. Reused by both inbound and outbound —
     /// the gradient/green tint flips based on direction.
     @ViewBuilder
-    private func transferCard(_ payload: ChatTransferPayload, outbound: Bool) -> some View {
+    private func transferCard(_ payload: ChatTransferPayload, outbound: Bool, messageID: UUID) -> some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack(spacing: Space.s2) {
                 Image(systemName: "dollarsign.circle.fill")
@@ -824,9 +828,27 @@ struct DriverConversationView: View {
                     .font(EType.caption)
                     .foregroundStyle(outbound ? Color.white.opacity(0.9) : palette.textSecondary)
             }
-            Text("EusoWallet · powered by Stripe")
+            Text("EusoWallet secure transfer")
                 .font(EType.micro).tracking(0.5)
                 .foregroundStyle(outbound ? Color.white.opacity(0.7) : palette.textTertiary)
+            if outbound, payload.status == .failed, payload.idempotencyKey != nil {
+                Button {
+                    Task { await retryTransfer(messageID: messageID, payload: payload) }
+                } label: {
+                    Label(
+                        transferRequestsInFlight.contains(messageID) ? "Retrying" : "Retry transfer",
+                        systemImage: "arrow.clockwise"
+                    )
+                    .font(EType.caption)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, Space.s2)
+                    .background(Color.white.opacity(0.16))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(transferRequestsInFlight.contains(messageID))
+            }
         }
         .padding(.horizontal, Space.s4)
         .padding(.vertical, Space.s3)
@@ -1332,7 +1354,12 @@ struct DriverConversationView: View {
     /// backend debits the caller's EusoWallet, credits the recipient,
     /// and posts a `payment_sent` row — we optimistically surface the
     /// pending card and flip it to `.sent` or `.failed` on ACK.
+    @MainActor
     private func sendTransfer(_ payload: ChatTransferPayload) async {
+        guard payload.idempotencyKey != nil else {
+            lastErrorMessage = "Transfer could not start because its secure request identity is missing."
+            return
+        }
         let optimistic = ChatMessage(
             from: .me,
             text: "",
@@ -1341,17 +1368,47 @@ struct DriverConversationView: View {
         )
         let anchor = optimistic.id
         messages.append(optimistic)
+        await performTransfer(payload, messageID: anchor)
+    }
 
+    /// Replays the same authorized transfer intent after a transport or server
+    /// failure. The original UUID is retained so an ACK lost in transit can
+    /// never become a second debit when the driver taps Retry.
+    @MainActor
+    private func retryTransfer(messageID: UUID, payload: ChatTransferPayload) async {
+        guard payload.status == .failed,
+              payload.idempotencyKey != nil,
+              !transferRequestsInFlight.contains(messageID),
+              let index = messages.firstIndex(where: { $0.id == messageID }) else { return }
+        var pending = messages[index]
+        let pendingPayload = ChatTransferPayload(
+            amountCents: payload.amountCents,
+            recipientName: payload.recipientName,
+            memo: payload.memo,
+            status: .pending,
+            idempotencyKey: payload.idempotencyKey
+        )
+        pending.transfer = pendingPayload
+        messages[index] = pending
+        await performTransfer(pendingPayload, messageID: messageID)
+    }
+
+    @MainActor
+    private func performTransfer(_ payload: ChatTransferPayload, messageID: UUID) async {
+        guard let requestKey = payload.idempotencyKey,
+              !transferRequestsInFlight.contains(messageID) else { return }
+        transferRequestsInFlight.insert(messageID)
+        defer { transferRequestsInFlight.remove(messageID) }
         do {
-            let amountDollars = Double(payload.amountCents) / 100.0
             let ack = try await EusoTripAPI.shared.messaging.sendPayment(
                 conversationId: thread.id,
-                amount: amountDollars,
+                amountCents: payload.amountCents,
                 currency: "USD",
                 note: payload.memo,
-                type: "send"
+                type: "send",
+                idempotencyKey: requestKey
             )
-            if let idx = messages.firstIndex(where: { $0.id == anchor }) {
+            if let idx = messages.firstIndex(where: { $0.id == messageID }) {
                 var updated = messages[idx]
                 updated.serverId = ack.id
                 let newStatus: ChatTransferPayload.Status =
@@ -1360,19 +1417,21 @@ struct DriverConversationView: View {
                     amountCents: payload.amountCents,
                     recipientName: payload.recipientName,
                     memo: payload.memo,
-                    status: newStatus
+                    status: newStatus,
+                    idempotencyKey: requestKey
                 )
                 messages[idx] = updated
             }
             lastErrorMessage = nil
         } catch {
-            if let idx = messages.firstIndex(where: { $0.id == anchor }) {
+            if let idx = messages.firstIndex(where: { $0.id == messageID }) {
                 var updated = messages[idx]
                 updated.transfer = ChatTransferPayload(
                     amountCents: payload.amountCents,
                     recipientName: payload.recipientName,
                     memo: payload.memo,
-                    status: .failed
+                    status: .failed,
+                    idempotencyKey: requestKey
                 )
                 messages[idx] = updated
             }
@@ -1496,7 +1555,8 @@ struct DriverConversationView: View {
                     amountCents: cents,
                     recipientName: thread.title,
                     memo: m.metadata?.note,
-                    status: status
+                    status: status,
+                    idempotencyKey: nil
                 )
                 chat.text = ""
             }
@@ -1749,7 +1809,8 @@ struct ChatMoneyTransferSheet: View {
                 amountCents: amountCents,
                 recipientName: recipientName,
                 memo: memo.trimmingCharacters(in: .whitespaces).isEmpty ? nil : memo,
-                status: .pending
+                status: .pending,
+                idempotencyKey: UUID()
             )
             onConfirm(payload)
             dismiss()
@@ -1789,7 +1850,7 @@ struct ChatMoneyTransferSheet: View {
             Image(systemName: "lock.shield.fill")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(palette.textSecondary)
-            Text("Transfers clear via EusoWallet on Stripe. Peer must have an active wallet to receive.")
+            Text("Transfers settle through EusoWallet. The recipient must have an active wallet.")
                 .font(EType.micro)
                 .foregroundStyle(palette.textSecondary)
                 .lineLimit(3)

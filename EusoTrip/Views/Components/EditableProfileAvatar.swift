@@ -75,6 +75,7 @@ struct EditableProfileAvatar: View {
         .accessibilityHint("Opens the photo library")
         .accessibilityValue(accessibilityValue)
         .task { await loadProfile() }
+        .eusoRefreshHandler { await loadProfile() }
         .onChange(of: selectedItem) { _, item in
             guard let item else { return }
             Task { await uploadSelection(item) }
@@ -292,6 +293,40 @@ struct EditableProfileAvatar: View {
         }
 
         throw AvatarUploadError.imageTooLarge
+    }
+}
+
+/// Profile action for role-owned Me roots that share a native mode or
+/// specialist shell. Dedicated Me screens already place the same editable
+/// avatar in their own identity header, so `RoleSettingsCatalog` only mounts
+/// this card where that action would otherwise be absent.
+struct RoleProfileAvatarCard: View {
+    let role: EusoRole
+
+    @Environment(\.palette) private var palette
+
+    var body: some View {
+        HStack(spacing: Space.s3) {
+            EditableProfileAvatar(size: 56)
+            VStack(alignment: .leading, spacing: Space.s1) {
+                Text("Profile photo")
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                Text("Tap to update your \(role.displayName) identity photo")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(Space.s4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(palette.borderFaint)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 }
 

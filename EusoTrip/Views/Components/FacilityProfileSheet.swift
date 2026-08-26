@@ -178,8 +178,11 @@ public struct FacilityProfileSheet: View {
             if !addr.isEmpty {
                 row(label: "ADDRESS", value: addr)
             }
-            if let lat = f.latitude, let lng = f.longitude {
-                row(label: "COORDS", value: "\(lat), \(lng)")
+            if let coordinate = LatLongParser.validatedCoordinate(
+                latitude: f.latitude.flatMap(Double.init),
+                longitude: f.longitude.flatMap(Double.init)
+            ) {
+                row(label: "COORDS", value: LatLongParser.displayString(coordinate))
             }
         }
         .padding(14)

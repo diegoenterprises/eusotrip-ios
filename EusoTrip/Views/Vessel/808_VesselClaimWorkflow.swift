@@ -1,66 +1,36 @@
 //
 //  808_VesselClaimWorkflow.swift
-//  EusoTrip — Vessel Operator · Claim Workflow.
+//  EusoTrip
 //
-//  Faithful 1:1 port of the RECONSTRUCTED "808 Vessel Claim Workflow.svg" (Light + Dark),
-//  adapted to app convention. The CLAIM-LIFECYCLE archetype: a reserve-vs-claimed gradient-rim
-//  hero ($34,200 figure + SLA clock + INVESTIGATION pill), a horizontal lifecycle strip
-//  (done done · active · neutral) with a blocking caption, the BLOCKING ITEMS as icon-chip rows
-//  with state pills, the ESang fused-clock advisory, and the Advance stage / Document CTA pair.
-//  Nav anchored to VesselOperatorNavController (HOME · SHIPMENTS · [orb] · COMPLIANCE[current] · ME)
-//  — the same Shell + BottomNav wrapper the registered vessel sibling 757 ships.
-//
-//  Data / wiring (endpoints MCP-confirmed on disk this fire · frontend/server/routers/freightClaims.ts):
-//    LIFECYCLE STRIP: freightClaims.getClaimWorkflow EXISTS :459 ·
-//        input {claimId:string} · returns {claimId, currentStep:number (1-indexed),
-//        steps:[{step:Int, name:String, description?, required[]?, completed:Bool}]}.
-//        Strip renders live from steps[] + currentStep (NOT the manifest's {stages,slaRemainingHours,
-//        blockingItems} — the real procedure ships a 6-step File→Close ladder; we map a step to
-//        .done when completed, .active when step == currentStep, else .future).
-//    WRITE (advance): freightClaims.updateClaimStatus EXISTS :393 ·
-//        input {id:string, status:claimStatusSchema, notes?, settledAmount?} · returns {success,...}.
-//        Advance pushes status "investigating" then re-loads the workflow.
-//    DOCUMENT (attach evidence): freightClaims.addClaimEvidence EXISTS :437 ·
-//        input {claimId, type, name, description?, url?} → {id, uploadUrl, ...}. The Document CTA is
-//        flagged STUB here because attaching needs a file picker + upload (out of this screen's scope);
-//        the real mutation is named so the-oath can wire the picker, NOT faked.
-//    RBAC: protectedProcedure (vessel operator).
-//
-//  ZERO-FALLBACK (2026-06-09 · B18 fix): the previous build rendered a permanent fabricated story
-//  ("$34,200" hero · "38h" SLA · invented blocking items · CLM-260524-A38FB12C7E) that no load path
-//  ever overwrote. Now the screen anchors to a REAL claim: freightClaims.getClaims(limit:1) resolves
-//  the newest live claim id, freightClaims.getClaimById(:246) hydrates the claim amount (decoded
-//  tolerantly — the server currently hardcodes amount:0, fixed in a parallel server lane; 0/absent
-//  renders an em-dash, never an invented figure), and getClaimWorkflow drives the lifecycle strip.
-//  SLA hours and blocking items have NO server source today → em-dash + honest "none on file" row.
-//  RimCard808 / secondaryButton808 are file-scoped bespoke helpers (the canonical port's RimCard /
-//  SecondaryButton are not shared app symbols) built from sibling 757's gradient-rim grammar.
+//  Purpose: trace one vessel booking claim through server-confirmed milestones
+//  without inventing permitted transitions, investigators, or evidence.
+//  Archetype: maritime resolution track.
 //
 
 import SwiftUI
 
-private enum StageState808 { case done, active, future }
-private enum BlockSev808 { case warn, danger }
-
-private struct ClaimStage808: Identifiable {
-    let id = UUID(); let label: String; let date: String; let state: StageState808
-}
-private struct BlockingItem808: Identifiable {
-    let id = UUID(); let title: String; let sub: String; let pill: String; let stage: String; let sev: BlockSev808
-}
-
 struct VesselClaimWorkflowScreen: View {
     let theme: Theme.Palette
-    init(theme: Theme.Palette) { self.theme = theme }
+    var claimId: String
+
+    init(theme: Theme.Palette, claimId: String = "") {
+        self.theme = theme
+        self.claimId = claimId
+    }
+
     var body: some View {
         Shell(theme: theme) {
-            VesselClaimWorkflowBody()
+            VesselClaimWorkflowBody(claimId: claimId)
         } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home",      systemImage: "house",                   isCurrent: false),
-                          NavSlot(label: "Shipments", systemImage: "shippingbox.fill",        isCurrent: false)],
-                trailing: [NavSlot(label: "Compliance", systemImage: "checkmark.shield.fill", isCurrent: true),
-                           NavSlot(label: "Me",          systemImage: "person",               isCurrent: false)],
+                leading: [
+                    NavSlot(label: "Home", systemImage: "house", isCurrent: false),
+                    NavSlot(label: "Shipments", systemImage: "shippingbox.fill", isCurrent: false)
+                ],
+                trailing: [
+                    NavSlot(label: "Compliance", systemImage: "checkmark.shield.fill", isCurrent: true),
+                    NavSlot(label: "Me", systemImage: "person", isCurrent: false)
+                ],
                 orbState: .idle
             )
         }
@@ -69,434 +39,1355 @@ struct VesselClaimWorkflowScreen: View {
 
 private struct VesselClaimWorkflowBody: View {
     @Environment(\.palette) private var palette
+    let claimId: String
+
+    @State private var claim: FreightClaimsAPI.ClaimDetail?
     @State private var loading = true
-    @State private var loadError: String? = nil
-
-    // B18: nil/empty initial state — everything below hydrates from the live claim.
-    @State private var claim: Claim808? = nil
-    @State private var stages: [ClaimStage808] = []
-    @State private var currentStepName: String? = nil
-    @State private var nextStepName: String? = nil
-    @State private var stageOf: String = "—"
-
-    /// Blocking items have NO server source today (getClaimWorkflow carries none) —
-    /// the ledger renders its honest "none on file" row until a real feed exists.
-    private let blocking: [BlockingItem808] = []
-
-    // MARK: Derived display (live claim or em-dash — never an invented figure)
-
-    private var claimTotal: String {
-        guard let amt = claim?.amount, amt > 0 else { return "—" }
-        let f = NumberFormatter(); f.numberStyle = .currency; f.currencyCode = "USD"; f.maximumFractionDigits = 0
-        return f.string(from: NSNumber(value: amt)) ?? "$\(Int(amt))"
-    }
-    private var subline: String {
-        guard let c = claim else { return "No claim resolved yet" }
-        var parts = [c.claimNumber ?? c.id ?? "—"]
-        if let o = c.load?.origin, let d = c.load?.destination, !o.isEmpty, !d.isEmpty { parts.append("\(o) → \(d)") }
-        if let t = c.type, !t.isEmpty { parts.append(t.replacingOccurrences(of: "_", with: " ")) }
-        return parts.joined(separator: " · ")
-    }
-    private var claimSub: String {
-        guard let c = claim else { return "—" }
-        let d = c.description ?? ""
-        return d.isEmpty ? "claim total" : d
-    }
-    private var claimMeta: String {
-        guard let c = claim else { return "—" }
-        var parts: [String] = []
-        if let ln = c.load?.loadNumber, !ln.isEmpty, ln != "-" { parts.append(ln) }
-        if let fd = c.filedDate, !fd.isEmpty { parts.append("filed \(fd)") }
-        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
-    }
-    private var stagePill: String {
-        if let s = currentStepName, !s.isEmpty { return s.uppercased() }
-        return (claim?.status ?? "—").replacingOccurrences(of: "_", with: " ").uppercased()
-    }
-    private var headerBadge: String {
-        guard let c = claim else { return "—" }
-        let t = (c.type ?? "claim").replacingOccurrences(of: "_", with: " ").uppercased()
-        let s = (c.status ?? "open").replacingOccurrences(of: "_", with: " ").uppercased()
-        return "\(t) · \(s)"
-    }
-    private var lifecycleCaption: String {
-        if let next = nextStepName { return "Current: \(currentStepName ?? "—") · next: \(next)" }
-        return currentStepName.map { "Current: \($0)" } ?? "—"
-    }
+    @State private var loadError: String?
+    @State private var pendingTransitionKey: String?
+    @State private var transitionRequestKeys: [String: UUID] = [:]
+    @State private var transitionError: String?
+    @State private var investigatorDirectory: FreightClaimsAPI.ClaimInvestigatorCandidateDirectory?
+    @State private var investigatorDirectoryLoading = false
+    @State private var investigatorDirectoryError: String?
+    @State private var selectedAssignmentType: FreightClaimsAPI.ClaimAssignmentType = .investigator
+    @State private var selectedInvestigatorId = ""
+    @State private var investigatorPriority = ""
+    @State private var investigatorNotes = ""
+    @State private var investigatorRequestKey: UUID?
+    @State private var investigatorRequestFingerprint: String?
+    @State private var investigatorAssignmentPending = false
+    @State private var investigatorAssignmentConfirmation: String?
+    @State private var pendingConflictAttestationAssignmentId: String?
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: Space.s3) {
-                header
-                Text("Claim workflow").font(.system(size: 28, weight: .bold)).tracking(-0.4)
-                    .foregroundStyle(palette.textPrimary)
-                Text(subline).font(.system(size: 12)).foregroundStyle(palette.textSecondary)
-                IridescentHairline()
+        VStack(alignment: .leading, spacing: Space.s4) {
+            FreightClaimSurfaceHeader(
+                context: "Vessel claim workflow",
+                title: "Resolution track",
+                purpose: "Trace a booking-bound cargo claim through the milestones, evidence, and decision currently recorded by the claims service."
+            )
 
-                if loading {
-                    RimCard808 { Text("Loading…").font(EType.caption).foregroundStyle(palette.textSecondary) }
-                } else if let err = loadError {
-                    RimCard808 { Text(err).font(EType.caption).foregroundStyle(Brand.danger) }
-                } else if claim == nil {
-                    EusoEmptyState(systemImage: "doc.text.magnifyingglass",
-                                   title: "No claims on file",
-                                   subtitle: "File a freight claim from a booking to track its lifecycle here.")
-                } else {
-                    claimHero
-                    Text("CLAIM LIFECYCLE · STAGE \(stageOf)")
-                        .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
-                    lifecycleCard
-                    Text("BLOCKING ITEMS · EVIDENCE NEEDED")
-                        .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
-                    blockingCard
-                    esangCard
-                    HStack(spacing: 8) {
-                        CTAButton(title: "Advance stage",
-                                  action: { Task { await advance() } },
-                                  trailingIcon: "arrow.forward.circle")
-                            .disabled(claim?.id == nil)
-                            .opacity(claim?.id == nil ? 0.45 : 1)
-                        secondaryButton808(title: "Document") { Task { await document() } }
-                    }
+            if loading && claim == nil {
+                ProgressView("Loading resolution track")
+                    .frame(maxWidth: .infinity, minHeight: 120)
+            } else if let loadError {
+                LifecycleCard(accentDanger: true) {
+                    Text(loadError).font(.body).foregroundStyle(Brand.danger)
                 }
-                Color.clear.frame(height: 96)
+            } else if let claim {
+                resolutionHeader(claim)
+                FreightClaimWorkflowRegister(workflow: claim.workflow)
+                quantityEvidenceState(claim)
+                proofState(claim)
+                lifecycleLedgers(claim)
+                outcomeState(claim)
+            } else {
+                EusoEmptyState(
+                    systemImage: "point.topleft.down.to.point.bottomright.curvepath",
+                    title: "No vessel claim workflow",
+                    subtitle: "No claim tied to a vessel booking is available to this account."
+                )
             }
-            .padding(.horizontal, 14).padding(.top, 8)
         }
+        .padding(.horizontal, Space.s4)
+        .padding(.top, Space.s3)
         .task { await load() }
         .eusoRefreshable { await load() }
-    }
-
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
-                Text("VESSEL OPERATOR · CLAIM WORKFLOW").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
-                Spacer()
-                // Live claim type · status — em-dash until a real claim resolves.
-                Text(headerBadge).font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundStyle(claim == nil ? palette.textTertiary : Brand.danger)
-            }
-            HStack(spacing: 6) {
-                Text("Claims").font(.system(size: 13, weight: .semibold)).foregroundStyle(palette.textSecondary)
-            }
+        .confirmationDialog(
+            "Conflict attestation",
+            isPresented: Binding(
+                get: { pendingConflictAttestationAssignmentId != nil },
+                set: { if !$0 { pendingConflictAttestationAssignmentId = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Attest and accept") { confirmAssignmentAcceptance() }
+            Button("Cancel", role: .cancel) { pendingConflictAttestationAssignmentId = nil }
+        } message: {
+            Text("I attest that I have no known personal, financial, professional, or organizational conflict affecting this claim.")
         }
     }
 
-    private var claimHero: some View {
-        RimCard808 {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("CLAIM TOTAL · live record").font(.system(size: 9, weight: .heavy)).tracking(0.9).foregroundStyle(palette.textTertiary)
-                    // B18: the hero renders the REAL decoded amount — em-dash for 0/absent
-                    // (server amount:0 stub is being fixed in a parallel lane).
-                    Text(claimTotal).font(.system(size: 44, weight: .bold)).tracking(-1)
-                        .foregroundStyle(palette.textPrimary).monospacedDigit()
-                    Text(claimSub).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(palette.textSecondary).lineLimit(2)
-                    Text(claimMeta).font(.system(size: 11, design: .monospaced)).foregroundStyle(palette.textTertiary)
-                }
-                Spacer(minLength: 0)
-                VStack(alignment: .trailing, spacing: 6) {
-                    StatusPill(text: stagePill, kind: .warning)
-                    // No SLA feed exists server-side — honest em-dash, never an invented clock.
-                    Text("—").font(.system(size: 20, weight: .heavy)).tracking(-0.3).foregroundStyle(palette.textTertiary).monospacedDigit()
-                    Text("SLA · NOT TRACKED").font(.system(size: 9, weight: .heavy)).tracking(0.3).foregroundStyle(palette.textTertiary)
-                }
-            }
-        }
-    }
-
-    private var lifecycleCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            ClaimLifecycleStrip808(stages: stages)
-            Divider().overlay(palette.borderFaint)
-            Text(lifecycleCaption).font(.system(size: 10.5, weight: .semibold)).foregroundStyle(palette.textSecondary)
-        }
-        .padding(14)
-        .background(RoundedRectangle(cornerRadius: 18).fill(palette.bgCard))
-        .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(palette.borderFaint))
-    }
-
-    private var blockingCard: some View {
-        VStack(spacing: 0) {
-            if blocking.isEmpty {
-                Text("No blocking items on file — evidence and signature blockers appear here when the claims feed carries them.")
-                    .font(EType.caption).foregroundStyle(palette.textTertiary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 14)
-            }
-            ForEach(Array(blocking.enumerated()), id: \.element.id) { idx, b in
-                HStack(alignment: .top, spacing: 12) {
-                    BlockChip808(sev: b.sev)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(b.title).font(.system(size: 14, weight: .bold)).foregroundStyle(palette.textPrimary)
-                        Text(b.sub).font(.system(size: 11, design: .monospaced)).foregroundStyle(palette.textSecondary)
-                    }
-                    Spacer(minLength: 0)
-                    VStack(alignment: .trailing, spacing: 3) {
-                        Text(b.pill).font(.system(size: 11, weight: .heavy)).tracking(0.5).foregroundStyle(blockColor(b.sev))
-                        Text(b.stage).font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundStyle(blockColor(b.sev))
+    private func resolutionHeader(_ claim: FreightClaimsAPI.ClaimDetail) -> some View {
+        LifecycleCard {
+            VStack(spacing: 0) {
+                FreightClaimValueRow(label: "Claim", value: claim.claimNumber)
+                Divider().opacity(0.25)
+                FreightClaimValueRow(
+                    label: "Vessel booking",
+                    value: FreightClaimConsumerCanon.reference(for: claim, mode: .vessel)
+                )
+                Divider().opacity(0.25)
+                FreightClaimValueRow(label: "Status", value: FreightClaimConsumerCanon.label(claim.status))
+                Divider().opacity(0.25)
+                FreightClaimValueRow(label: "Investigator", value: investigatorLabel(claim.investigator))
+                if let investigator = claim.investigator {
+                    Divider().opacity(0.25)
+                    FreightClaimValueRow(label: "Assignment status", value: FreightClaimConsumerCanon.label(investigator.status))
+                    Divider().opacity(0.25)
+                    FreightClaimValueRow(label: "Priority", value: FreightClaimConsumerCanon.label(investigator.priority))
+                    Divider().opacity(0.25)
+                    FreightClaimValueRow(label: "Assigned", value: FreightClaimConsumerCanon.clean(investigator.assignedAt))
+                    Divider().opacity(0.25)
+                    FreightClaimValueRow(label: "Assignment source", value: investigatorSourceLabel(investigator.provenance))
+                    if let assignmentId = FreightClaimConsumerCanon.clean(investigator.assignmentId) {
+                        Divider().opacity(0.25)
+                        FreightClaimValueRow(label: "Assignment ID", value: assignmentId)
                     }
                 }
-                .padding(.vertical, 12)
-                if idx < blocking.count - 1 { Divider().overlay(palette.borderFaint) }
+                Divider().opacity(0.25)
+                FreightClaimValueRow(label: "Last updated", value: FreightClaimConsumerCanon.clean(claim.updatedAt))
             }
         }
-        .padding(.horizontal, 16)
-        .background(RoundedRectangle(cornerRadius: 18).fill(palette.bgCard))
-        .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(palette.borderFaint))
     }
 
-    private var esangCard: some View {
-        HStack(spacing: 12) {
-            Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
-            VStack(alignment: .leading, spacing: 3) {
-                // Derived from the LIVE workflow ladder only — no fabricated advice.
-                Text(nextStepName.map { "Next stage: \($0)" } ?? "Workflow up to date")
-                    .font(.system(size: 12, weight: .bold)).foregroundStyle(palette.textPrimary)
-                Text("ESang · \(lifecycleCaption)").font(.system(size: 11)).foregroundStyle(palette.textSecondary)
+    private func quantityEvidenceState(_ claim: FreightClaimsAPI.ClaimDetail) -> some View {
+        let evidence = claim.quantityEvidence
+        let complete = evidence.expectedQuantity != nil
+            && evidence.receivedQuantity != nil
+            && FreightClaimConsumerCanon.clean(evidence.quantityUnit) != nil
+
+        return LifecycleCard(accentDanger: evidence.state == "recorded" && !complete) {
+            VStack(alignment: .leading, spacing: Space.s2) {
+                Text("Quantity evidence")
+                    .font(.headline)
+                    .foregroundStyle(palette.textPrimary)
+                    .accessibilityAddTraits(.isHeader)
+
+                if evidence.state == "recorded", complete,
+                   let expected = evidence.expectedQuantity,
+                   let received = evidence.receivedQuantity,
+                   let unit = FreightClaimConsumerCanon.clean(evidence.quantityUnit) {
+                    FreightClaimValueRow(label: "Expected", value: "\(expected.formatted()) \(unit)")
+                    Divider().opacity(0.25)
+                    FreightClaimValueRow(label: "Received", value: "\(received.formatted()) \(unit)")
+                    Divider().opacity(0.25)
+                    FreightClaimValueRow(label: "Source", value: quantitySourceLabel(evidence.source))
+                } else if evidence.state == "not_recorded" {
+                    Text("No typed expected quantity, received quantity, and unit are recorded for this claim.")
+                        .font(.body)
+                        .foregroundStyle(palette.textSecondary)
+                } else if evidence.state == "recorded" {
+                    Text("The quantity record is incomplete. No cargo shortage is inferred from booking weight.")
+                        .font(.body)
+                        .foregroundStyle(Brand.danger)
+                } else {
+                    Text("Quantity evidence state is unknown. No quantity conclusion is shown.")
+                        .font(.body)
+                        .foregroundStyle(palette.textSecondary)
+                }
+
+                Divider().opacity(0.25)
+                FreightClaimValueRow(label: "Access", value: accessLabel(evidence.accessState))
+                FreightClaimValueRow(label: "Tracking", value: trackingLabel(evidence.trackingState))
+                FreightClaimValueRow(label: "Source", value: quantitySourceLabel(evidence.provenance.source))
+                FreightClaimValueRow(label: "Observed", value: FreightClaimConsumerCanon.clean(evidence.provenance.observedAt))
+                FreightClaimValueRow(label: "Assembled", value: evidence.provenance.computedAt)
+                Text(evidence.provenance.basis)
+                    .font(.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer(minLength: 0)
         }
-        .padding(14)
-        .background(RoundedRectangle(cornerRadius: 16).fill(palette.bgCard))
-        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(palette.borderFaint))
     }
 
-    private func blockColor(_ s: BlockSev808) -> Color { s == .danger ? Brand.danger : Brand.warning }
+    private func proofState(_ claim: FreightClaimsAPI.ClaimDetail) -> some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            Text("Resolution proof")
+                .font(.headline)
+                .foregroundStyle(palette.textPrimary)
+            LifecycleCard {
+                VStack(spacing: 0) {
+                    FreightClaimValueRow(label: "Evidence records", value: claim.evidence.count.formatted())
+                    Divider().opacity(0.25)
+                    FreightClaimValueRow(label: "Timeline events", value: claim.timeline.count.formatted())
+                    Divider().opacity(0.25)
+                    FreightClaimValueRow(label: "Notes", value: claim.notes.count.formatted())
+                }
+            }
+            Text("No workflow action is shown unless the service provides an allowed transition for this account and claim.")
+                .font(.caption)
+                .foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
 
-    /// Bespoke secondary (outline) button — the canonical port's `SecondaryButton`
-    /// is not a shared app symbol, so we hand-roll the same outline grammar sibling
-    /// 757 uses for its secondary CTA.
-    private func secondaryButton808(title: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(Brand.blue)
+    private func lifecycleLedgers(_ claim: FreightClaimsAPI.ClaimDetail) -> some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            Text("Claim lifecycle ledgers")
+                .font(.headline)
+                .foregroundStyle(palette.textPrimary)
+                .accessibilityAddTraits(.isHeader)
+
+            if let transitionError {
+                LifecycleCard(accentDanger: true) {
+                    VStack(alignment: .leading, spacing: Space.s2) {
+                        Text("Claim update not confirmed")
+                            .font(.headline)
+                            .foregroundStyle(Brand.danger)
+                            .accessibilityAddTraits(.isHeader)
+                        Text(transitionError)
+                            .font(.body)
+                            .foregroundStyle(palette.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button("Dismiss") { self.transitionError = nil }
+                            .buttonStyle(.bordered)
+                            .frame(minHeight: 44)
+                            .accessibilityHint("Hides this claim update error.")
+                    }
+                }
+            }
+
+            FreightClaimLifecycleRecorder(
+                claim: $claim,
+                error: $transitionError,
+                mode: .vessel
+            )
+            assetLedger(claim.assetLedger)
+            deadlineLedger(claim.deadlineLedger)
+            investigatorAssignmentCommand(claim)
+            assignmentLedger(claim.assignmentLedger)
+            reserveLedger(claim.reserveLedger)
+        }
+    }
+
+    @ViewBuilder
+    private func investigatorAssignmentCommand(_ claim: FreightClaimsAPI.ClaimDetail) -> some View {
+        if claim.lifecycleCapabilities.assignInvestigator.allowed {
+            LifecycleCard(accentDanger: investigatorDirectoryError != nil) {
+                VStack(alignment: .leading, spacing: Space.s2) {
+                    Text("Assign claim specialist")
+                        .font(.headline)
+                        .foregroundStyle(palette.textPrimary)
+                        .accessibilityAddTraits(.isHeader)
+
+                    if investigatorDirectoryLoading && investigatorDirectory == nil {
+                        ProgressView("Loading eligible \(selectedAssignmentType.label.lowercased())s")
+                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    } else if let investigatorDirectoryError {
+                        Text(investigatorDirectoryError)
+                            .font(.body)
+                            .foregroundStyle(Brand.danger)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button("Retry directory") {
+                            Task { await loadInvestigatorDirectory(for: claim) }
+                        }
+                        .buttonStyle(.bordered)
+                        .frame(minHeight: 44)
+                        .accessibilityHint("Reloads the eligible vessel claim specialist directory.")
+                    } else if let directory = investigatorDirectory,
+                              directory.claimId == claim.claimId,
+                              directory.transportMode == .vessel {
+                        investigatorDirectoryContent(directory, claim: claim)
+                    } else {
+                        Text("The specialist directory does not match this vessel claim. Pull down to refresh before assigning anyone.")
+                            .font(.body)
+                            .foregroundStyle(Brand.danger)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    if let investigatorAssignmentConfirmation {
+                        Text(investigatorAssignmentConfirmation)
+                            .font(.caption)
+                            .foregroundStyle(Brand.success)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityLabel("Assignment confirmed. \(investigatorAssignmentConfirmation)")
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func investigatorDirectoryContent(
+        _ directory: FreightClaimsAPI.ClaimInvestigatorCandidateDirectory,
+        claim: FreightClaimsAPI.ClaimDetail
+    ) -> some View {
+        let actionable = investigatorDirectoryIsActionable(directory, for: claim)
+
+        VStack(alignment: .leading, spacing: Space.s1) {
+            Text("Responsibility")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(palette.textSecondary)
+            Picker("Responsibility", selection: $selectedAssignmentType) {
+                ForEach(FreightClaimsAPI.ClaimAssignmentType.allCases) { specialty in
+                    Text(specialty.label).tag(specialty)
+                }
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: selectedAssignmentType) { _, _ in
+                selectedInvestigatorId = ""
+                investigatorAssignmentConfirmation = nil
+                Task { await loadInvestigatorDirectory(for: claim) }
+            }
+            .accessibilityHint("Selects the credentialed claim specialty to invite.")
+        }
+
+        if directory.state.accessState != "granted" || directory.state.trackingState != "tracked" {
+            Text(directory.state.reason ?? "Eligible claim specialists are unavailable for this account.")
+                .font(.body)
+                .foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        } else if !actionable {
+            Text(directory.state.reason ?? "The specialist directory lacks the claim scope or provenance required for assignment.")
+                .font(.body)
+                .foregroundStyle(Brand.danger)
+                .fixedSize(horizontal: false, vertical: true)
+        } else if directory.candidates.isEmpty {
+            Text(directory.state.reason ?? "No current verified \(selectedAssignmentType.label.lowercased()) is eligible for this vessel claim and jurisdiction.")
+                .font(.body)
+                .foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        } else {
+            VStack(alignment: .leading, spacing: Space.s1) {
+                Text("Eligible \(selectedAssignmentType.label.lowercased())")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(palette.textSecondary)
+                Picker("Eligible specialist", selection: $selectedInvestigatorId) {
+                    Text("Select \(selectedAssignmentType.label.lowercased())").tag("")
+                    ForEach(directory.candidates) { candidate in
+                        Text(investigatorCandidateLabel(candidate)).tag(candidate.id)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .accessibilityHint("Selects a current verified vessel claim specialist eligible for this jurisdiction.")
+            }
+
+            if let candidate = directory.candidates.first(where: { $0.id == selectedInvestigatorId }) {
+                investigatorCredentialEvidence(candidate)
+            }
+
+            VStack(alignment: .leading, spacing: Space.s1) {
+                Text("Priority")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(palette.textSecondary)
+                Picker("Priority", selection: $investigatorPriority) {
+                    Text("Select priority").tag("")
+                    Text("Low").tag("low")
+                    Text("Medium").tag("medium")
+                    Text("High").tag("high")
+                    Text("Urgent").tag("urgent")
+                }
+                .pickerStyle(.menu)
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .accessibilityHint("Sets the persisted priority for this vessel claim assignment.")
+            }
+
+            VStack(alignment: .leading, spacing: Space.s1) {
+                Text("Assignment scope (optional)")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(palette.textSecondary)
+                TextEditor(text: $investigatorNotes)
+                    .frame(minHeight: 88)
+                    .padding(Space.s1)
+                    .scrollContentBackground(.hidden)
+                    .background(palette.bgCardSoft)
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                            .stroke(palette.borderStrong, lineWidth: 1)
+                    }
+                    .accessibilityLabel("Assignment scope")
+                    .accessibilityHint("Optional notes persisted with the vessel claim assignment.")
+            }
+
+            Button {
+                Task { await assignInvestigator(for: claim, directory: directory) }
+            } label: {
+                HStack(spacing: Space.s2) {
+                    if investigatorAssignmentPending { ProgressView().controlSize(.small) }
+                    Text(investigatorAssignmentPending ? "Recording invitation" : "Invite \(selectedAssignmentType.label.lowercased())")
+                        .font(.subheadline.weight(.semibold))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 .frame(maxWidth: .infinity, minHeight: 44)
-                .background(
-                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                        .fill(palette.bgCard)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                        .strokeBorder(LinearGradient.diagonal, lineWidth: 1.5)
-                )
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(
+                selectedInvestigatorId.isEmpty ||
+                investigatorPriority.isEmpty ||
+                investigatorAssignmentPending ||
+                pendingTransitionKey != nil
+            )
+            .accessibilityHint("Records an invitation for the selected verified specialist and verifies the refreshed vessel claim register.")
         }
-        .buttonStyle(.plain)
+
+        if let reason = directory.state.reason, !directory.candidates.isEmpty {
+            Text(reason)
+                .font(.caption)
+                .foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        Divider().opacity(0.25)
+        FreightClaimValueRow(label: "Directory state", value: FreightClaimConsumerCanon.label(directory.state.dataState))
+        FreightClaimValueRow(label: "Access", value: accessLabel(directory.state.accessState))
+        FreightClaimValueRow(label: "Tracking", value: trackingLabel(directory.state.trackingState))
+        FreightClaimValueRow(label: "Source", value: FreightClaimConsumerCanon.clean(directory.state.provenance.source))
+        FreightClaimValueRow(label: "Scope", value: FreightClaimConsumerCanon.label(directory.state.provenance.scope))
+        FreightClaimValueRow(label: "Observed", value: FreightClaimConsumerCanon.clean(directory.state.provenance.observedAt))
+        FreightClaimValueRow(label: "Assembled", value: FreightClaimConsumerCanon.clean(directory.state.provenance.computedAt))
+        FreightClaimValueRow(
+            label: "Candidates",
+            value: "\(directory.page.returnedCount.formatted())\(directory.page.truncated ? " · partial directory" : "")"
+        )
+        if let basis = FreightClaimConsumerCanon.clean(directory.state.provenance.basis) {
+            Text(basis)
+                .font(.caption)
+                .foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
-    // MARK: Data — anchors to a REAL claim, then decodes the REAL server shapes.
+    private func assetLedger(_ ledger: FreightClaimsAPI.ClaimAssetLedger) -> some View {
+        ledgerSection(
+            title: "Cargo and transport assets",
+            state: effectiveState(ledger.state, count: ledger.records.count),
+            accessState: ledger.accessState,
+            trackingState: ledger.trackingState,
+            provenance: ledger.provenance,
+            emptyMessage: "No bill of lading, container, parcel, seal, delivery receipt, survey, or other typed claim asset is recorded.",
+            restrictedMessage: "Claim asset details are restricted for this account."
+        ) {
+            ForEach(ledger.records) { record in
+                VStack(alignment: .leading, spacing: Space.s1) {
+                    VStack(alignment: .leading, spacing: Space.s1) {
+                        FreightClaimValueRow(label: "Asset", value: FreightClaimConsumerCanon.label(record.assetType))
+                        FreightClaimValueRow(label: "Identifier", value: FreightClaimConsumerCanon.clean(record.identifier))
+                        FreightClaimValueRow(label: "Quantity", value: quantityLabel(record.quantity, unit: record.quantityUnit))
+                        FreightClaimValueRow(label: "Verification", value: FreightClaimConsumerCanon.label(record.verificationStatus))
+                        FreightClaimValueRow(label: "Observed", value: FreightClaimConsumerCanon.clean(record.observedAt))
+                    }
+                    .accessibilityElement(children: .combine)
 
-    private func load() async {
-        loading = true; loadError = nil
+                    if !record.allowedActions.isEmpty {
+                        LazyVGrid(columns: actionColumns, spacing: Space.s2) {
+                            ForEach(record.allowedActions, id: \.self) { action in
+                                let key = assetTransitionKey(record: record, action: action)
+                                VesselClaimLifecycleActionButton(
+                                    title: assetActionLabel(action),
+                                    accessibilityLabel: "\(assetActionLabel(action)) asset \(FreightClaimConsumerCanon.clean(record.identifier) ?? FreightClaimConsumerCanon.label(record.assetType) ?? "record")",
+                                    pending: pendingTransitionKey == key,
+                                    disabled: pendingTransitionKey != nil,
+                                    destructive: action != .verified
+                                ) {
+                                    Task { await transitionAsset(record: record, action: action) }
+                                }
+                            }
+                        }
+                        .padding(.top, Space.s1)
+                    }
+                }
+                if record.id != ledger.records.last?.id { Divider().opacity(0.25) }
+            }
+        }
+    }
+
+    private func deadlineLedger(_ ledger: FreightClaimsAPI.ClaimDeadlineLedger) -> some View {
+        ledgerSection(
+            title: "Notice and filing deadlines",
+            state: effectiveState(ledger.state, count: ledger.records.count),
+            accessState: ledger.accessState,
+            trackingState: ledger.trackingState,
+            provenance: ledger.provenance,
+            emptyMessage: "No entered authority or due date is recorded. The app does not infer a statutory deadline.",
+            restrictedMessage: "Claim deadline details are restricted for this account."
+        ) {
+            ForEach(ledger.records) { record in
+                VStack(alignment: .leading, spacing: Space.s1) {
+                    VStack(alignment: .leading, spacing: Space.s1) {
+                        FreightClaimValueRow(label: "Deadline", value: FreightClaimConsumerCanon.label(record.deadlineType))
+                        FreightClaimValueRow(label: "Due", value: record.dueAt)
+                        FreightClaimValueRow(label: "Status", value: FreightClaimConsumerCanon.label(record.status))
+                        FreightClaimValueRow(label: "Authority", value: authorityLabel(record))
+                        FreightClaimValueRow(label: "Jurisdiction", value: FreightClaimConsumerCanon.clean(record.jurisdictionCode))
+                    }
+                    .accessibilityElement(children: .combine)
+
+                    if !record.allowedActions.isEmpty {
+                        LazyVGrid(columns: actionColumns, spacing: Space.s2) {
+                            ForEach(record.allowedActions, id: \.self) { action in
+                                let key = deadlineTransitionKey(record: record, action: action)
+                                VesselClaimLifecycleActionButton(
+                                    title: deadlineActionLabel(action),
+                                    accessibilityLabel: "\(deadlineActionLabel(action)) \(FreightClaimConsumerCanon.label(record.deadlineType) ?? "claim deadline")",
+                                    pending: pendingTransitionKey == key,
+                                    disabled: pendingTransitionKey != nil,
+                                    destructive: action == .waive || action == .supersede
+                                ) {
+                                    Task { await transitionDeadline(record: record, action: action) }
+                                }
+                            }
+                        }
+                        .padding(.top, Space.s1)
+                    }
+                }
+                if record.id != ledger.records.last?.id { Divider().opacity(0.25) }
+            }
+        }
+    }
+
+    private func assignmentLedger(_ ledger: FreightClaimsAPI.ClaimAssignmentLedger) -> some View {
+        ledgerSection(
+            title: "Claim assignments",
+            state: effectiveState(ledger.state, count: ledger.records.count),
+            accessState: ledger.accessState,
+            trackingState: ledger.trackingState,
+            provenance: ledger.provenance,
+            emptyMessage: "No typed investigator, adjuster, surveyor, or other claim assignment is recorded.",
+            restrictedMessage: "Claim assignment details are restricted for this account."
+        ) {
+            ForEach(ledger.records) { record in
+                VStack(alignment: .leading, spacing: Space.s1) {
+                    VStack(alignment: .leading, spacing: Space.s1) {
+                        FreightClaimValueRow(label: "Assignment", value: FreightClaimConsumerCanon.label(record.assignmentType))
+                        FreightClaimValueRow(label: "Assignee", value: assigneeLabel(record))
+                        FreightClaimValueRow(label: "Assignee state", value: FreightClaimConsumerCanon.label(record.assigneeState))
+                        FreightClaimValueRow(label: "Status", value: FreightClaimConsumerCanon.label(record.status))
+                        FreightClaimValueRow(label: "Priority", value: FreightClaimConsumerCanon.label(record.scope.priority))
+                        FreightClaimValueRow(label: "Jurisdiction", value: assignmentJurisdictionLabel(record.scope))
+                        FreightClaimValueRow(label: "Credential", value: assignmentCredentialLabel(record.verification))
+                        FreightClaimValueRow(label: "Credential valid through", value: FreightClaimConsumerCanon.clean(record.verification.validUntil))
+                        FreightClaimValueRow(label: "Conflict attestation", value: conflictAttestationLabel(record.scope))
+                        FreightClaimValueRow(label: "Assigned", value: record.createdAt)
+                    }
+                    .accessibilityElement(children: .combine)
+
+                    if !record.allowedActions.isEmpty {
+                        LazyVGrid(columns: actionColumns, spacing: Space.s2) {
+                            ForEach(record.allowedActions, id: \.self) { action in
+                                let key = assignmentTransitionKey(record: record, action: action)
+                                VesselClaimLifecycleActionButton(
+                                    title: assignmentActionLabel(action),
+                                    accessibilityLabel: "\(assignmentActionLabel(action)) \(FreightClaimConsumerCanon.label(record.assignmentType) ?? "claim assignment")",
+                                    pending: pendingTransitionKey == key,
+                                    disabled: pendingTransitionKey != nil,
+                                    destructive: action == .declined || action == .cancelled
+                                ) {
+                                    if action == .accepted {
+                                        pendingConflictAttestationAssignmentId = record.id
+                                    } else {
+                                        Task { await transitionAssignment(record: record, action: action) }
+                                    }
+                                }
+                            }
+                        }
+                        .padding(.top, Space.s1)
+                    }
+                }
+                if record.id != ledger.records.last?.id { Divider().opacity(0.25) }
+            }
+        }
+    }
+
+    private func reserveLedger(_ ledger: FreightClaimsAPI.ClaimReserveLedger) -> some View {
+        let count = ledger.records?.count
+        return ledgerSection(
+            title: "Financial reserves",
+            state: effectiveState(ledger.state, count: count),
+            accessState: ledger.accessState,
+            trackingState: ledger.trackingState,
+            provenance: ledger.provenance,
+            emptyMessage: "No reserve is recorded by the respondent financial authority.",
+            restrictedMessage: "Reserve visibility is restricted to the respondent financial authority."
+        ) {
+            if let records = ledger.records {
+                ForEach(records) { record in
+                    VStack(alignment: .leading, spacing: Space.s1) {
+                        FreightClaimValueRow(label: "Reserve", value: "\(record.amount.formatted()) \(record.currency)")
+                        FreightClaimValueRow(label: "Version", value: record.version.formatted())
+                        FreightClaimValueRow(label: "Status", value: FreightClaimConsumerCanon.label(record.status))
+                        FreightClaimValueRow(label: "Basis", value: record.basis)
+                        FreightClaimValueRow(label: "Recorded", value: record.createdAt)
+                    }
+                    .accessibilityElement(children: .combine)
+                    if record.id != records.last?.id { Divider().opacity(0.25) }
+                }
+            }
+        }
+    }
+
+    private func ledgerSection<Content: View>(
+        title: String,
+        state: String,
+        accessState: String,
+        trackingState: String,
+        provenance: FreightClaimsAPI.ClaimLedgerProvenance,
+        emptyMessage: String,
+        restrictedMessage: String,
+        @ViewBuilder records: () -> Content
+    ) -> some View {
+        LifecycleCard {
+            VStack(alignment: .leading, spacing: Space.s2) {
+                Text(title)
+                    .font(.headline)
+                    .foregroundStyle(palette.textPrimary)
+                    .accessibilityAddTraits(.isHeader)
+                FreightClaimValueRow(label: "Record state", value: ledgerStateLabel(state))
+                FreightClaimValueRow(label: "Access", value: accessLabel(accessState))
+                FreightClaimValueRow(label: "Tracking", value: trackingLabel(trackingState))
+
+                if accessState == "restricted" || state == "restricted" {
+                    Text(restrictedMessage).font(.body).foregroundStyle(palette.textSecondary)
+                } else if state == "recorded" {
+                    Divider().opacity(0.25)
+                    records()
+                } else if state == "no_records" {
+                    Text(emptyMessage).font(.body).foregroundStyle(palette.textSecondary)
+                } else {
+                    Text("This ledger cannot currently assert whether records exist.")
+                        .font(.body)
+                        .foregroundStyle(palette.textSecondary)
+                }
+
+                Divider().opacity(0.25)
+                Text(provenance.basis)
+                    .font(.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                FreightClaimValueRow(label: "Source", value: provenanceSourceLabel(provenance.source))
+                FreightClaimValueRow(label: "Observed", value: FreightClaimConsumerCanon.clean(provenance.observedAt))
+                FreightClaimValueRow(label: "Assembled", value: provenance.computedAt)
+            }
+        }
+    }
+
+    private func effectiveState(_ state: String, count: Int?) -> String {
+        if state == "recorded" && (count == nil || count == 0) { return "unknown" }
+        if state == "no_records" && count != 0 { return "unknown" }
+        return state
+    }
+
+    private func investigatorLabel(_ investigator: FreightClaimsAPI.Investigator?) -> String {
+        guard let investigator else { return "No investigator recorded" }
+        return FreightClaimConsumerCanon.clean(investigator.name)
+            ?? FreightClaimConsumerCanon.clean(investigator.email)
+            ?? "Investigator assignment recorded"
+    }
+
+    private func investigatorSourceLabel(_ provenance: String) -> String {
+        switch provenance {
+        case "freight_claim_assignments": return "Typed claim assignment ledger"
+        case "audit_logs": return "Legacy claim audit record"
+        default: return "Recorded claim source"
+        }
+    }
+
+    private func assigneeLabel(_ record: FreightClaimsAPI.ClaimAssignmentRecord) -> String {
+        FreightClaimConsumerCanon.clean(record.assignedUserName)
+            ?? FreightClaimConsumerCanon.clean(record.assignedUserEmail)
+            ?? (record.assignedCompanyId == nil ? "Assignee identity unavailable" : "Company assignment")
+    }
+
+    private func investigatorCandidateLabel(
+        _ candidate: FreightClaimsAPI.ClaimInvestigatorCandidateDirectory.Candidate
+    ) -> String {
+        let name = FreightClaimConsumerCanon.clean(candidate.displayName) ?? "Name unavailable"
+        return "\(name) · \(candidate.companyName) · \(candidate.credentialType)"
+    }
+
+    private func specialistProfileIdIsValid(_ opaqueId: String) -> Bool {
+        guard opaqueId.hasPrefix("specialist_profile_") else { return false }
+        let numericToken = opaqueId.dropFirst("specialist_profile_".count)
+        return Int(numericToken).map { $0 > 0 } == true
+    }
+
+    private func normalizedInvestigatorNotes(_ value: String) -> String? {
+        FreightClaimConsumerCanon.clean(value)
+    }
+
+    private func investigatorDirectoryIsActionable(
+        _ directory: FreightClaimsAPI.ClaimInvestigatorCandidateDirectory,
+        for claim: FreightClaimsAPI.ClaimDetail
+    ) -> Bool {
+        guard directory.claimId == claim.claimId,
+              claim.transportMode == .vessel,
+              directory.transportMode == .vessel,
+              directory.state.accessState == "granted",
+              directory.state.trackingState == "tracked",
+              directory.specialty == selectedAssignmentType,
+              directory.state.provenance.scope == "verified_specialist_directory",
+              directory.state.provenance.source?.contains("freight_claim_specialist_profiles") == true,
+              FreightClaimConsumerCanon.clean(directory.state.provenance.basis) != nil,
+              FreightClaimConsumerCanon.clean(directory.state.provenance.computedAt) != nil,
+              directory.page.limit > 0,
+              directory.page.returnedCount == directory.candidates.count else {
+            return false
+        }
+
+        let identifiers = directory.candidates.map(\.id)
+        guard Set(identifiers).count == identifiers.count,
+              identifiers.allSatisfy(specialistProfileIdIsValid),
+              directory.candidates.allSatisfy({
+                  $0.specialty == selectedAssignmentType.rawValue
+                      && $0.credentialState == "verified_current"
+                      && FreightClaimConsumerCanon.clean($0.companyName) != nil
+                      && FreightClaimConsumerCanon.clean($0.credentialType) != nil
+                      && FreightClaimConsumerCanon.clean($0.issuingAuthority) != nil
+              }) else {
+            return false
+        }
+
+        switch directory.state.dataState {
+        case "empty":
+            return directory.candidates.isEmpty && !directory.page.truncated
+        case "populated":
+            return !directory.candidates.isEmpty &&
+                !directory.page.truncated &&
+                FreightClaimConsumerCanon.clean(directory.state.provenance.observedAt) != nil
+        case "partial":
+            return !directory.candidates.isEmpty &&
+                directory.page.truncated &&
+                FreightClaimConsumerCanon.clean(directory.state.provenance.observedAt) != nil
+        default:
+            return false
+        }
+    }
+
+    private func makeInvestigatorRequestFingerprint(
+        claimId: String,
+        investigatorId: String,
+        assignmentType: FreightClaimsAPI.ClaimAssignmentType,
+        jurisdiction: FreightClaimsAPI.ClaimAssignmentJurisdiction,
+        priority: String,
+        notes: String?
+    ) -> String {
+        [claimId, investigatorId, assignmentType.rawValue, jurisdiction.scope, jurisdiction.code, priority, notes ?? "<none>"]
+            .joined(separator: "\u{001F}")
+    }
+
+    private func assignmentReadbackConfirms(
+        _ record: FreightClaimsAPI.ClaimAssignmentRecord,
+        assignmentId: String,
+        specialistProfileId: String,
+        assignmentType: FreightClaimsAPI.ClaimAssignmentType,
+        jurisdiction: FreightClaimsAPI.ClaimAssignmentJurisdiction,
+        priority: String,
+        notes: String?
+    ) -> Bool {
+        record.id == assignmentId &&
+        record.assignmentType == assignmentType.rawValue &&
+        record.specialistProfileId == specialistProfileId &&
+        record.assigneeState == "active" &&
+        record.status == "invited" &&
+        record.scope.priority == priority &&
+        normalizedInvestigatorNotes(record.scope.notes ?? "") == notes &&
+        record.scope.jurisdictionScope == jurisdiction.scope &&
+        record.scope.jurisdictionCode == jurisdiction.code &&
+        record.verification.profileState == "linked" &&
+        record.verification.snapshotState == "recorded" &&
+        record.verification.trackingState == "tracked" &&
+        record.verification.accessState == "granted" &&
+        record.acceptedAt == nil
+    }
+
+    @ViewBuilder
+    private func investigatorCredentialEvidence(
+        _ candidate: FreightClaimsAPI.ClaimInvestigatorCandidateDirectory.Candidate
+    ) -> some View {
+        VStack(spacing: 0) {
+            FreightClaimValueRow(label: "Company", value: candidate.companyName)
+            Divider().opacity(0.25)
+            FreightClaimValueRow(label: "Credential", value: candidate.credentialType)
+            Divider().opacity(0.25)
+            FreightClaimValueRow(label: "Issuing authority", value: candidate.issuingAuthority)
+            Divider().opacity(0.25)
+            FreightClaimValueRow(
+                label: "Jurisdiction",
+                value: specialistJurisdictionLabel(candidate.jurisdiction.scope, code: candidate.jurisdiction.code)
+            )
+            Divider().opacity(0.25)
+            FreightClaimValueRow(label: "Valid through", value: FreightClaimConsumerCanon.clean(candidate.validUntil))
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func specialistJurisdictionLabel(_ scope: String, code: String?) -> String {
+        let scopeLabel = FreightClaimConsumerCanon.label(scope) ?? scope
+        guard let code = FreightClaimConsumerCanon.clean(code) else { return scopeLabel }
+        return "\(scopeLabel) · \(code)"
+    }
+
+    private func assignmentJurisdictionLabel(_ scope: FreightClaimsAPI.ClaimAssignmentScope) -> String {
+        guard let jurisdictionScope = FreightClaimConsumerCanon.clean(scope.jurisdictionScope) else {
+            return "Not recorded"
+        }
+        return specialistJurisdictionLabel(jurisdictionScope, code: scope.jurisdictionCode)
+    }
+
+    private func assignmentCredentialLabel(_ verification: FreightClaimsAPI.ClaimAssignmentVerification) -> String {
+        guard verification.profileState == "linked", verification.snapshotState == "recorded" else {
+            return "Verification unavailable"
+        }
+        return FreightClaimConsumerCanon.label(verification.profileStatus) ?? "Recorded snapshot"
+    }
+
+    private func conflictAttestationLabel(_ scope: FreightClaimsAPI.ClaimAssignmentScope) -> String {
+        guard scope.conflictAttestation == "no_known_conflict" else { return "Not attested" }
+        guard let at = FreightClaimConsumerCanon.clean(scope.conflictAttestedAt) else { return "Recorded" }
+        return "No known conflict · \(at)"
+    }
+
+    private func authorityLabel(_ record: FreightClaimsAPI.ClaimDeadlineRecord) -> String {
+        FreightClaimConsumerCanon.clean(record.authorityCitation)
+            ?? FreightClaimConsumerCanon.clean(record.authorityType)
+            ?? "Authority not recorded"
+    }
+
+    private func quantityLabel(_ quantity: Double?, unit: String?) -> String {
+        guard let quantity else { return "Not recorded" }
+        guard let unit = FreightClaimConsumerCanon.clean(unit) else {
+            return "\(quantity.formatted()) · unit not recorded"
+        }
+        return "\(quantity.formatted()) \(unit)"
+    }
+
+    private func quantitySourceLabel(_ source: String?) -> String {
+        source == "incidents.expectedQuantity+receivedQuantity+quantityUnit"
+            ? "Typed claim quantity fields"
+            : source == "incidents.claimDetails"
+                ? "Legacy claim details"
+                : "Source unavailable"
+    }
+
+    private func ledgerStateLabel(_ state: String) -> String {
+        switch state {
+        case "recorded": return "Recorded"
+        case "no_records": return "No records"
+        case "restricted": return "Restricted"
+        default: return "Unknown"
+        }
+    }
+
+    private func accessLabel(_ state: String) -> String {
+        switch state {
+        case "granted": return "Granted"
+        case "restricted": return "Restricted"
+        default: return "Unknown"
+        }
+    }
+
+    private func trackingLabel(_ state: String) -> String {
+        switch state {
+        case "tracked": return "Tracked"
+        case "not_tracked": return "Not tracked"
+        default: return "Unknown"
+        }
+    }
+
+    private func provenanceSourceLabel(_ source: String?) -> String {
+        switch source {
+        case "freight_claim_assets": return "Claim asset ledger"
+        case "freight_claim_deadlines": return "Claim deadline ledger"
+        case "freight_claim_assignments": return "Claim assignment ledger"
+        case "freight_claim_reserves": return "Claim reserve ledger"
+        case nil: return "Not disclosed"
+        default: return "Recorded claim source"
+        }
+    }
+
+    private var actionColumns: [GridItem] {
+        [GridItem(.adaptive(minimum: 132), spacing: Space.s2)]
+    }
+
+    private func assetActionLabel(_ action: FreightClaimsAPI.ClaimAssetAction) -> String {
+        switch action {
+        case .verified: return "Verify"
+        case .rejected: return "Reject"
+        case .superseded: return "Supersede"
+        }
+    }
+
+    private func deadlineActionLabel(_ action: FreightClaimsAPI.ClaimDeadlineAction) -> String {
+        switch action {
+        case .verifyAuthority: return "Verify authority"
+        case .complete: return "Complete"
+        case .waive: return "Waive"
+        case .supersede: return "Supersede"
+        }
+    }
+
+    private func assignmentActionLabel(_ action: FreightClaimsAPI.ClaimAssignmentAction) -> String {
+        switch action {
+        case .accepted: return "Accept"
+        case .declined: return "Decline"
+        case .completed: return "Complete"
+        case .cancelled: return "Cancel"
+        }
+    }
+
+    private func assetTransitionKey(
+        record: FreightClaimsAPI.ClaimAssetRecord,
+        action: FreightClaimsAPI.ClaimAssetAction
+    ) -> String {
+        "asset:\(record.id):\(action.rawValue)"
+    }
+
+    private func deadlineTransitionKey(
+        record: FreightClaimsAPI.ClaimDeadlineRecord,
+        action: FreightClaimsAPI.ClaimDeadlineAction
+    ) -> String {
+        "deadline:\(record.id):\(action.rawValue)"
+    }
+
+    private func assignmentTransitionKey(
+        record: FreightClaimsAPI.ClaimAssignmentRecord,
+        action: FreightClaimsAPI.ClaimAssignmentAction
+    ) -> String {
+        "assignment:\(record.id):\(action.rawValue)"
+    }
+
+    @MainActor
+    private func loadInvestigatorDirectory(for claim: FreightClaimsAPI.ClaimDetail) async {
+        guard claim.lifecycleCapabilities.assignInvestigator.allowed else {
+            investigatorDirectory = nil
+            investigatorDirectoryError = nil
+            investigatorDirectoryLoading = false
+            return
+        }
+
+        investigatorDirectoryLoading = true
+        investigatorDirectoryError = nil
+        investigatorDirectory = nil
+        defer { investigatorDirectoryLoading = false }
+
         do {
-            // 1. Resolve the newest live claim (real `claim_<n>` id) — the workflow
-            //    may never anchor to an invented claim reference.
-            struct ClaimsIn808: Encodable { let limit: Int; let offset: Int }
-            struct ClaimsResp808: Decodable { let claims: [Claim808] }
-            let list: ClaimsResp808 = try await EusoTripAPI.shared.query(
-                "freightClaims.getClaims", input: ClaimsIn808(limit: 1, offset: 0))
-            guard let anchor = list.claims.first, let cid = anchor.id else {
-                claim = nil; stages = []; loading = false
+            investigatorDirectory = try await EusoTripAPI.shared.freightClaims
+                .getClaimSpecialistCandidates(
+                    claimId: claim.claimId,
+                    specialty: selectedAssignmentType
+                )
+        } catch {
+            investigatorDirectoryError = FreightClaimConsumerCanon.errorMessage(error)
+        }
+    }
+
+    @MainActor
+    private func assignInvestigator(
+        for claim: FreightClaimsAPI.ClaimDetail,
+        directory: FreightClaimsAPI.ClaimInvestigatorCandidateDirectory
+    ) async {
+        guard !investigatorAssignmentPending,
+              pendingTransitionKey == nil,
+              self.claim == claim,
+              investigatorDirectory == directory,
+              claim.lifecycleCapabilities.assignInvestigator.allowed,
+              investigatorDirectoryIsActionable(directory, for: claim),
+              let candidate = directory.candidates.first(where: { $0.id == selectedInvestigatorId }),
+              ["low", "medium", "high", "urgent"].contains(investigatorPriority) else {
+            transitionError = "Select a current vessel-qualified \(selectedAssignmentType.label.lowercased()) and priority from the refreshed claim directory."
+            return
+        }
+
+        let notes = normalizedInvestigatorNotes(investigatorNotes)
+        guard (notes?.count ?? 0) <= 2_000 else {
+            transitionError = "Assignment scope must be 2,000 characters or fewer."
+            return
+        }
+        guard let referenceNumber = FreightClaimConsumerCanon.clean(claim.load.referenceNumber) else {
+            transitionError = "This vessel claim has no recorded booking reference, so the assignment acknowledgement cannot be verified."
+            return
+        }
+
+        let fingerprint = makeInvestigatorRequestFingerprint(
+            claimId: claim.claimId,
+            investigatorId: candidate.id,
+            assignmentType: selectedAssignmentType,
+            jurisdiction: directory.jurisdiction,
+            priority: investigatorPriority,
+            notes: notes
+        )
+        let requestKey: UUID
+        if investigatorRequestFingerprint == fingerprint, let existingKey = investigatorRequestKey {
+            requestKey = existingKey
+        } else {
+            requestKey = UUID()
+            investigatorRequestKey = requestKey
+            investigatorRequestFingerprint = fingerprint
+        }
+
+        investigatorAssignmentPending = true
+        investigatorAssignmentConfirmation = nil
+        transitionError = nil
+        defer { investigatorAssignmentPending = false }
+
+        do {
+            let result = try await EusoTripAPI.shared.freightClaims.assignClaimSpecialist(
+                claimId: claim.claimId,
+                specialistProfileId: candidate.id,
+                assignmentType: selectedAssignmentType,
+                jurisdiction: directory.jurisdiction,
+                priority: investigatorPriority,
+                notes: notes,
+                requestKey: requestKey
+            )
+            guard result.success,
+                  result.claimId == claim.claimId,
+                  result.transportMode == .vessel,
+                  result.specialistProfileId == candidate.id,
+                  result.assignmentType == selectedAssignmentType,
+                  result.assignmentStatus == "invited",
+                  result.priority == investigatorPriority,
+                  result.referenceNumber == referenceNumber,
+                  Int(result.assignmentId).map({ $0 > 0 }) == true,
+                  result.assignedBy > 0,
+                  FreightClaimConsumerCanon.clean(result.assignedAt) != nil else {
+                transitionError = "EusoTrip did not return an exact acknowledgement for this vessel specialist assignment. The same request identity is retained for retry."
                 return
             }
 
-            // 2. Hydrate the claim detail (amount · lane · parties) + the workflow ladder.
-            struct ByIdIn808: Encodable { let id: String }
-            struct WfIn808: Encodable { let claimId: String }
-            async let detail: Claim808? = EusoTripAPI.shared.query(
-                "freightClaims.getClaimById", input: ByIdIn808(id: cid))
-            async let wf: Workflow808 = EusoTripAPI.shared.query(
-                "freightClaims.getClaimWorkflow", input: WfIn808(claimId: cid))
-            let (d, w) = try await (detail, wf)
-            claim = d ?? anchor
+            guard let refreshed = try await FreightClaimConsumerCanon.detail(
+                claimId: claim.claimId,
+                mode: .vessel
+            ) else {
+                transitionError = "The assignment was acknowledged, but the refreshed vessel claim was unavailable. The same request identity is retained for retry."
+                return
+            }
+            self.claim = refreshed
+            await loadInvestigatorDirectory(for: refreshed)
 
-            if let s = w.steps, !s.isEmpty {
-                // currentStep is 1-indexed on the wire; clamp into range.
-                let cur = max(1, min(w.currentStep ?? 1, s.count))
-                stages = s.map { st in
-                    let n = st.step ?? 0
-                    let state: StageState808 = (st.completed == true)
-                        ? .done
-                        : (n == cur ? .active : .future)
-                    return ClaimStage808(label: shortLabel(st.name),
-                                         date: "",
-                                         state: state)
-                }
-                stageOf = "\(cur) / \(s.count)"
-                currentStepName = s.first { ($0.step ?? 0) == cur }?.name
-                nextStepName = s.first { ($0.step ?? 0) == cur + 1 }?.name
-            } else {
-                stages = []; stageOf = "—"; currentStepName = nil; nextStepName = nil
+            guard refreshed.transportMode == .vessel,
+                  refreshed.status == result.status,
+                  refreshed.assignmentLedger.state == "recorded",
+                  refreshed.assignmentLedger.accessState == "granted",
+                  refreshed.assignmentLedger.trackingState == "tracked",
+                  refreshed.assignmentLedger.provenance.source == "freight_claim_assignments",
+                  FreightClaimConsumerCanon.clean(refreshed.assignmentLedger.provenance.observedAt) != nil,
+                  let assignment = refreshed.assignmentLedger.records.first(where: { $0.id == result.assignmentId }),
+                  assignmentReadbackConfirms(
+                    assignment,
+                    assignmentId: result.assignmentId,
+                    specialistProfileId: candidate.id,
+                    assignmentType: selectedAssignmentType,
+                    jurisdiction: directory.jurisdiction,
+                    priority: investigatorPriority,
+                    notes: notes
+                  ) else {
+                transitionError = "The invitation was acknowledged, but the refreshed vessel assignment register did not confirm the same verified specialist profile, jurisdiction, priority, and credential snapshot. The same request identity is retained for retry."
+                return
+            }
+
+            investigatorRequestKey = nil
+            investigatorRequestFingerprint = nil
+            selectedInvestigatorId = ""
+            investigatorPriority = ""
+            investigatorNotes = ""
+            investigatorAssignmentConfirmation = "\(investigatorCandidateLabel(candidate)) was invited to \(claim.claimNumber)."
+        } catch {
+            transitionError = "The vessel specialist assignment is not confirmed. \(FreightClaimConsumerCanon.errorMessage(error)) The same request identity is retained for retry."
+        }
+    }
+
+    @MainActor
+    private func transitionAsset(
+        record: FreightClaimsAPI.ClaimAssetRecord,
+        action: FreightClaimsAPI.ClaimAssetAction
+    ) async {
+        guard pendingTransitionKey == nil, let currentClaim = claim else { return }
+        let key = assetTransitionKey(record: record, action: action)
+        let requestKey = transitionRequestKeys[key] ?? UUID()
+        transitionRequestKeys[key] = requestKey
+        pendingTransitionKey = key
+        transitionError = nil
+        defer { pendingTransitionKey = nil }
+
+        do {
+            let result = try await EusoTripAPI.shared.freightClaims.verifyClaimAsset(
+                claimId: currentClaim.claimId,
+                assetId: record.id,
+                verificationStatus: action,
+                requestKey: requestKey
+            )
+            guard result.success,
+                  result.assetId == record.id,
+                  result.verificationStatus == action,
+                  result.transportMode == .vessel else {
+                transitionError = "EusoTrip did not return a matching confirmation for this vessel claim asset. Pull down to refresh before retrying."
+                return
+            }
+            await reloadAfterConfirmedTransition(
+                requestKey: key,
+                claimId: currentClaim.claimId,
+                subject: "vessel claim asset"
+            ) { refreshed in
+                refreshed.assetLedger.records.first(where: { $0.id == record.id })?.verificationStatus == action.rawValue
             }
         } catch {
-            loadError = error.eusoUserCopy
+            transitionError = FreightClaimConsumerCanon.errorMessage(error)
         }
-        loading = false
     }
 
-    /// Trim long server step names ("Initial Review") to the strip's compact slot.
-    private func shortLabel(_ name: String?) -> String {
-        guard let name, !name.isEmpty else { return "-" }
-        let first = name.split(separator: " ").first.map(String.init) ?? name
-        return String(first.prefix(9))
-    }
+    @MainActor
+    private func transitionDeadline(
+        record: FreightClaimsAPI.ClaimDeadlineRecord,
+        action: FreightClaimsAPI.ClaimDeadlineAction
+    ) async {
+        guard pendingTransitionKey == nil, let currentClaim = claim else { return }
+        let key = deadlineTransitionKey(record: record, action: action)
+        let requestKey = transitionRequestKeys[key] ?? UUID()
+        transitionRequestKeys[key] = requestKey
+        pendingTransitionKey = key
+        transitionError = nil
+        defer { pendingTransitionKey = nil }
 
-    private func advance() async {
-        // freightClaims.updateClaimStatus EXISTS :393 — pushes the next status on the
-        // REAL anchored claim, then re-loads the live workflow. Gated on a live id.
-        guard let cid = claim?.id else { return }
-        struct AdvanceIn808: Encodable { let id: String; let status: String }
-        struct Ack808: Decodable { let success: Bool? }
         do {
-            let _: Ack808 = try await EusoTripAPI.shared.mutation(
-                "freightClaims.updateClaimStatus",
-                input: AdvanceIn808(id: cid, status: "investigating"))
+            let result = try await EusoTripAPI.shared.freightClaims.transitionClaimDeadline(
+                claimId: currentClaim.claimId,
+                deadlineId: record.id,
+                action: action,
+                requestKey: requestKey
+            )
+            guard result.success,
+                  result.deadlineId == record.id,
+                  result.action == action,
+                  result.transportMode == .vessel else {
+                transitionError = "EusoTrip did not return a matching confirmation for this vessel claim deadline. Pull down to refresh before retrying."
+                return
+            }
+            await reloadAfterConfirmedTransition(
+                requestKey: key,
+                claimId: currentClaim.claimId,
+                subject: "vessel claim deadline"
+            ) { refreshed in
+                deadlineReadbackConfirms(recordId: record.id, action: action, claim: refreshed)
+            }
         } catch {
-            loadError = error.eusoUserCopy
+            transitionError = FreightClaimConsumerCanon.errorMessage(error)
         }
-        await load()
     }
 
-    private func document() async {
-        // addClaimEvidence EXISTS :437 but attaching needs a file picker + upload
-        // (out of this screen's scope) — STUB · named-gap surfaced to the-oath.
-        await load()
-    }
-}
+    @MainActor
+    private func transitionAssignment(
+        record: FreightClaimsAPI.ClaimAssignmentRecord,
+        action: FreightClaimsAPI.ClaimAssignmentAction,
+        conflictAttestation: String? = nil
+    ) async {
+        guard pendingTransitionKey == nil, let currentClaim = claim else { return }
+        let key = assignmentTransitionKey(record: record, action: action)
+        let requestKey = transitionRequestKeys[key] ?? UUID()
+        transitionRequestKeys[key] = requestKey
+        pendingTransitionKey = key
+        transitionError = nil
+        defer { pendingTransitionKey = nil }
 
-// MARK: - Wire shapes (mirror freightClaims.getClaims / getClaimById / getClaimWorkflow)
-
-private struct ClaimLoad808: Decodable {
-    let loadNumber: String?
-    let origin: String?
-    let destination: String?
-    let commodity: String?
-}
-
-private struct Claim808: Decodable {
-    let id: String?
-    let claimNumber: String?
-    let type: String?
-    let status: String?
-    let description: String?
-    let amount: Double?
-    let filedDate: String?
-    let load: ClaimLoad808?
-
-    private enum CodingKeys: String, CodingKey { case id, claimNumber, type, status, description, amount, filedDate, load }
-
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        id          = try? c.decodeIfPresent(String.self, forKey: .id)
-        claimNumber = try? c.decodeIfPresent(String.self, forKey: .claimNumber)
-        type        = try? c.decodeIfPresent(String.self, forKey: .type)
-        status      = try? c.decodeIfPresent(String.self, forKey: .status)
-        description = try? c.decodeIfPresent(String.self, forKey: .description)
-        // Tolerant amount: Double on the wire today (hardcoded 0 server-side, fix in
-        // flight) — also accept a DECIMAL-string so the parallel server fix can land
-        // either shape without re-breaking this hero (zero-fallback doctrine).
-        if let d = try? c.decodeIfPresent(Double.self, forKey: .amount) {
-            amount = d
-        } else if let s = try? c.decodeIfPresent(String.self, forKey: .amount) {
-            amount = Double(s)
-        } else {
-            amount = nil
+        do {
+            let result = try await EusoTripAPI.shared.freightClaims.transitionClaimAssignment(
+                claimId: currentClaim.claimId,
+                assignmentId: record.id,
+                status: action,
+                conflictAttestation: conflictAttestation,
+                requestKey: requestKey
+            )
+            guard result.success,
+                  result.assignmentId == record.id,
+                  result.status == action,
+                  result.transportMode == .vessel else {
+                transitionError = "EusoTrip did not return a matching confirmation for this vessel claim assignment. Pull down to refresh before retrying."
+                return
+            }
+            await reloadAfterConfirmedTransition(
+                requestKey: key,
+                claimId: currentClaim.claimId,
+                subject: "vessel claim assignment"
+            ) { refreshed in
+                assignmentTransitionReadbackConfirms(recordId: record.id, action: action, claim: refreshed)
+            }
+        } catch {
+            transitionError = FreightClaimConsumerCanon.errorMessage(error)
         }
-        filedDate   = try? c.decodeIfPresent(String.self, forKey: .filedDate)
-        load        = try? c.decodeIfPresent(ClaimLoad808.self, forKey: .load)
     }
-}
 
-private struct Step808: Decodable { let step: Int?; let name: String?; let completed: Bool? }
-private struct Workflow808: Decodable { let currentStep: Int?; let steps: [Step808]? }
-
-private struct BlockChip808: View {
-    let sev: BlockSev808
-    @Environment(\.palette) private var palette
-    var body: some View {
-        let (c, sym): (Color, String) = sev == .danger
-            ? (Brand.danger, "doc.text") : (Brand.warning, "doc.plaintext")
-        let dark = palette.bgPage == Theme.dark.bgPage
-        return ZStack {
-            RoundedRectangle(cornerRadius: 10).fill(c.opacity(dark ? 0.20 : 0.14))
-            Image(systemName: sym).font(.system(size: 16, weight: .semibold)).foregroundStyle(c)
-        }.frame(width: 40, height: 40)
+    @MainActor
+    private func confirmAssignmentAcceptance() {
+        guard let assignmentId = pendingConflictAttestationAssignmentId,
+              let record = claim?.assignmentLedger.records.first(where: { $0.id == assignmentId }),
+              record.allowedActions.contains(.accepted) else {
+            pendingConflictAttestationAssignmentId = nil
+            transitionError = "The vessel claim invitation changed before acceptance. Pull down to refresh the assignment register."
+            return
+        }
+        pendingConflictAttestationAssignmentId = nil
+        Task {
+            await transitionAssignment(
+                record: record,
+                action: .accepted,
+                conflictAttestation: "no_known_conflict"
+            )
+        }
     }
-}
 
-/// Horizontal lifecycle strip: done = filled gradient + check, active = ringed gradient node,
-/// future = hollow neutral ring. Connector tinted up to the active node.
-private struct ClaimLifecycleStrip808: View {
-    let stages: [ClaimStage808]
-    @Environment(\.palette) private var palette
-    var body: some View {
-        GeometryReader { geo in
-            let n = max(stages.count, 1)
-            let step = geo.size.width / CGFloat(n)
-            let activeIdx = stages.firstIndex { $0.state == .active } ?? (stages.count - 1)
-            ZStack(alignment: .top) {
-                Path { p in
-                    p.move(to: CGPoint(x: step/2, y: 14)); p.addLine(to: CGPoint(x: geo.size.width - step/2, y: 14))
-                }.stroke(palette.borderFaint, lineWidth: 2)
-                Path { p in
-                    p.move(to: CGPoint(x: step/2, y: 14))
-                    p.addLine(to: CGPoint(x: step/2 + step * CGFloat(activeIdx), y: 14))
-                }.stroke(LinearGradient.diagonal, lineWidth: 2.5)
-                HStack(spacing: 0) {
-                    ForEach(stages) { st in
-                        VStack(spacing: 4) {
-                            node(st.state)
-                            Text(st.label).font(.system(size: 8, weight: st.state == .active ? .heavy : .bold))
-                                .foregroundStyle(st.state == .future ? palette.textTertiary : palette.textPrimary)
-                                .lineLimit(1).minimumScaleFactor(0.7)
-                            Text(st.date).font(.system(size: 7.5, design: .monospaced))
-                                .foregroundStyle(st.state == .active ? Brand.warning : palette.textTertiary)
-                        }
-                        .frame(width: step)
+    @MainActor
+    private func reloadAfterConfirmedTransition(
+        requestKey: String,
+        claimId: String,
+        subject: String,
+        confirms: (FreightClaimsAPI.ClaimDetail) -> Bool
+    ) async {
+        do {
+            guard let refreshed = try await FreightClaimConsumerCanon.detail(claimId: claimId, mode: .vessel) else {
+                transitionError = "The claim update was confirmed, but the refreshed vessel claim was not returned. Pull down to refresh."
+                return
+            }
+            claim = refreshed
+            guard confirms(refreshed) else {
+                transitionError = "The update was acknowledged, but the refreshed \(subject) does not yet show that state. Pull down to refresh before retrying."
+                return
+            }
+            transitionRequestKeys.removeValue(forKey: requestKey)
+        } catch {
+            transitionError = "The claim update was confirmed, but its refreshed vessel record could not be loaded. \(FreightClaimConsumerCanon.errorMessage(error))"
+        }
+    }
+
+    private func deadlineReadbackConfirms(
+        recordId: String,
+        action: FreightClaimsAPI.ClaimDeadlineAction,
+        claim: FreightClaimsAPI.ClaimDetail
+    ) -> Bool {
+        guard let record = claim.deadlineLedger.records.first(where: { $0.id == recordId }) else {
+            return false
+        }
+        switch action {
+        case .verifyAuthority:
+            return record.authorityStatus == "verified"
+        case .complete:
+            return record.status == "completed"
+        case .waive:
+            return record.status == "waived"
+        case .supersede:
+            return record.status == "superseded" && record.authorityStatus == "superseded"
+        }
+    }
+
+    private func assignmentTransitionReadbackConfirms(
+        recordId: String,
+        action: FreightClaimsAPI.ClaimAssignmentAction,
+        claim: FreightClaimsAPI.ClaimDetail
+    ) -> Bool {
+        guard let record = claim.assignmentLedger.records.first(where: { $0.id == recordId }),
+              record.status == action.rawValue else {
+            return false
+        }
+        if action == .accepted {
+            return record.scope.conflictAttestation == "no_known_conflict"
+                && FreightClaimConsumerCanon.clean(record.scope.conflictAttestedAt) != nil
+                && record.verification.profileState == "linked"
+                && record.verification.snapshotState == "recorded"
+        }
+        return true
+    }
+
+    @ViewBuilder
+    private func outcomeState(_ claim: FreightClaimsAPI.ClaimDetail) -> some View {
+        if let decision = claim.decision {
+            VStack(alignment: .leading, spacing: Space.s2) {
+                Text("Recorded outcome")
+                    .font(.headline)
+                    .foregroundStyle(palette.textPrimary)
+                LifecycleCard {
+                    VStack(spacing: 0) {
+                        FreightClaimValueRow(label: "Decision", value: FreightClaimConsumerCanon.label(decision.type))
+                        Divider().opacity(0.25)
+                        FreightClaimValueRow(
+                            label: "Decision amount",
+                            value: FreightClaimConsumerCanon.financialContext(amount: decision.amount, currency: claim.currency)
+                        )
+                        Divider().opacity(0.25)
+                        FreightClaimValueRow(label: "Decided by", value: FreightClaimConsumerCanon.clean(decision.decidedBy))
+                        Divider().opacity(0.25)
+                        FreightClaimValueRow(label: "Decided at", value: FreightClaimConsumerCanon.clean(decision.decidedAt))
                     }
                 }
             }
+        } else {
+            Text("No recorded outcome is available for this claim.")
+                .font(.caption)
+                .foregroundStyle(palette.textSecondary)
         }
-        .frame(height: 60)
     }
-    @ViewBuilder private func node(_ s: StageState808) -> some View {
-        switch s {
-        case .done:
-            ZStack {
-                Circle().fill(LinearGradient.diagonal).frame(width: 22, height: 22)
-                Image(systemName: "checkmark").font(.system(size: 10, weight: .heavy)).foregroundStyle(.white)
-            }.frame(height: 28)
-        case .active:
-            ZStack {
-                Circle().strokeBorder(LinearGradient.diagonal, lineWidth: 3).frame(width: 28, height: 28)
-                Circle().fill(LinearGradient.diagonal).frame(width: 10, height: 10)
-            }.frame(height: 28)
-        case .future:
-            Circle().strokeBorder(palette.textTertiary.opacity(0.5), lineWidth: 2).frame(width: 20, height: 20).frame(height: 28)
+
+    @MainActor
+    private func load() async {
+        loading = claim == nil
+        loadError = nil
+        if pendingTransitionKey == nil && !investigatorAssignmentPending { transitionError = nil }
+        do {
+            let refreshed = try await FreightClaimConsumerCanon.detail(claimId: claimId, mode: .vessel)
+            claim = refreshed
+            if let refreshed {
+                await loadInvestigatorDirectory(for: refreshed)
+            } else {
+                investigatorDirectory = nil
+                investigatorDirectoryError = nil
+                investigatorDirectoryLoading = false
+            }
+        } catch {
+            investigatorDirectory = nil
+            investigatorDirectoryError = nil
+            investigatorDirectoryLoading = false
+            loadError = FreightClaimConsumerCanon.errorMessage(error)
         }
+        loading = false
     }
 }
 
-// MARK: - File-scoped bespoke helper (preserve the canonical wireframe look)
+private struct VesselClaimLifecycleActionButton: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var showsDestructiveConfirmation = false
 
-/// Gradient-rim hero card — mirrors the gradient-stroked context cards sibling 757
-/// (`RimCard757`) and the registered vessel siblings ship.
-private struct RimCard808<Content: View>: View {
-    @Environment(\.palette) private var palette
-    @ViewBuilder var content: () -> Content
+    let title: String
+    let accessibilityLabel: String
+    let pending: Bool
+    let disabled: Bool
+    let destructive: Bool
+    let action: () -> Void
+
     var body: some View {
-        content()
-            .padding(Space.s4)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(palette.bgCard)
-            .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                    .strokeBorder(LinearGradient.diagonal, lineWidth: 1.5)
-            )
+        Button {
+            if destructive {
+                showsDestructiveConfirmation = true
+            } else {
+                action()
+            }
+        } label: {
+            HStack(spacing: Space.s2) {
+                if pending {
+                    if reduceMotion {
+                        Image(systemName: "hourglass")
+                    } else {
+                        ProgressView().controlSize(.small)
+                    }
+                }
+                Text(pending ? "Submitting" : title)
+                    .font(.subheadline.weight(.semibold))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, minHeight: 44)
+        }
+        .buttonStyle(.bordered)
+        .tint(destructive ? Brand.danger : Brand.info)
+        .disabled(disabled)
+        .accessibilityLabel(Text(accessibilityLabel))
+        .accessibilityValue(Text(pending ? "Submitting" : "Available"))
+        .accessibilityHint(destructive
+            ? "Requests confirmation before committing this claim action online."
+            : "Commits this claim action online and reloads the confirmed record.")
+        .confirmationDialog(
+            "Confirm \(title.lowercased())",
+            isPresented: $showsDestructiveConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(title, role: .destructive, action: action)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This changes the persisted claim register and cannot be undone from this screen.")
+        }
     }
 }
 
-#Preview("808 · Vessel Claim Workflow · Night") { VesselClaimWorkflowScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }
-#Preview("808 · Vessel Claim Workflow · Light") { VesselClaimWorkflowScreen(theme: Theme.light).environmentObject(EusoTripSession()).preferredColorScheme(.light) }
+#Preview("Vessel claim workflow") {
+    VesselClaimWorkflowScreen(theme: Theme.dark)
+        .environmentObject(EusoTripSession())
+        .preferredColorScheme(.dark)
+}

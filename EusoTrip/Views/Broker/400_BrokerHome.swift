@@ -105,6 +105,15 @@ struct BrokerHome: View {
         }
         .task { await refreshAll() }
         .eusoRefreshable { await refreshAll() }
+        // RealtimeService → `bid:received` (server socketService.ts
+        // emit to room `role:broker`) is re-posted as
+        // `.esangRefreshSurface` (Services/RealtimeService.swift:375),
+        // so the tender / alert / recent widgets on this dashboard
+        // reflect a new bid without waiting on a pull-to-refresh.
+        // eusotrip-killers-elite :01 §20 · 2026-08-25
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task { await refreshAll() }
+        }
         .screenTileRoot()
         .sheet(isPresented: $showLaneIntel) {
             LaneIntelSheet(companyId: Int(session.user?.companyId ?? "") ?? 1)

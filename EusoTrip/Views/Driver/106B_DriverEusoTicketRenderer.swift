@@ -24,6 +24,11 @@
 //
 //  Powered by ESANG AI™.
 //
+//  §W OFFLINE POLICY: ONLINE_ONLY(a BOL/POD renders the load's current parties and status; a
+//  cached ticket could be presented at a gate after the load changed hands).
+//  Honored: nothing on this surface is persisted or replayed client-side;
+//  on any failure the model is cleared and the reason is surfaced.
+//
 
 import SwiftUI
 

@@ -10,9 +10,9 @@
 //    detail TopBar (back-chevron + one ✦ eyebrow + STEP caption + 28/700/-0.5
 //    title + sub-line) → IridescentHairline → gradient-rimmed ROUTE·YARD-TO-YARD
 //    hero (origin/dest yard rows + mono lane caption) → EQUIPMENT two-card row
-//    (CAR TYPE · CARS/WEIGHT) → COMMODITY·STCC card → TARIFF-RATE card (live perCar
-//    + rail-vs-truck savings line) → ESang advisory → CTA pair
-//    (Request shipment · Compare).
+//    (CAR TYPE · CARS/WEIGHT) → COMMODITY·STCC card → provider tariff candidate /
+//    route-gated provider evidence → ESang authority advisory → CTA pair
+//    (Request shipment · Check exact comparison).
 //  Web parity: client/src/pages/shipper/NewShipment.tsx with load.mode='rail'.
 //
 //  tRPC wiring — REAL contract (the-oath §53, 2026-05-30). Every procedure is
@@ -31,20 +31,22 @@
 //          — AS OF §53 — a blockchain_audit_trail row + WS fan-out on
 //          WS_CHANNELS.RAIL_SHIPMENT / WS_EVENTS.RAIL_SHIPMENT_CREATED
 //          (server gap filled this fire: createRailShipment.audit-ws.patch.ts).
-//    • railShipments.compareModeRates        (BUILT THIS FIRE · named-gap killed)
-//        → "Compare". {originYardId,destYardId,carType,commodity,numberOfCars}
-//          → {rail,truck,savings,railPerCar,distanceMiles,currency}. Honest
-//          computed rate comparison (haversine yard distance × real per-mode rate
-//          references + live rail tariff). Staged: compareModeRates.patch.ts.
+//    • railShipments.compareModeRates
+//        → post-create authority check. {shipmentId} only; no client geometry,
+//          yard-distance proxy, reference price, or truck-equivalent formula.
+//          Returns exact route.plan/provider-tariff evidence plus structured
+//          blockers until an independently profiled/routed/quoted truck option
+//          exists. Savings remain null until every authority is present.
 //
-//  HONEST DEGRADE: every figure the resolvers return null for (perCar, totals,
-//  savings, lane distance, draft ref) renders an EM-DASH — never the SVG sample
-//  values ("$3,420", "$17,100", "vs truck $31,250", "~1,085 mi"). No try?-collapse;
+//  HONEST DEGRADE: every figure the resolvers return null for (provider tariff,
+//  exact route distance, comparison, draft ref) renders an EM-DASH or explicit
+//  blocker — never SVG samples or inferred economics. No try?-collapse;
 //  every loader/CTA is a real do/catch surfacing actionError. createRailShipment
 //  reports the real shipmentNumber on success (no synthesized success:false).
 //
 //  RBAC: SHIPPER / ADMIN / SUPER_ADMIN (rail-mode shipper write). transportMode=rail.
-//  Single-country US (BNSF single-line domestic · STCC 0113310 grain non-haz) · USD.
+//  The draft defaults to a US grain example, but no railroad, route, or rate is
+//  inferred from that example. Provider and route authority must name themselves.
 //  Nav: canonical Shipper enum HOME · LOADS · [orb] · WALLET · ME (LOADS current),
 //  supplied by the Shipper nav chrome — this screen renders content only (matches
 //  002_RailShipmentDetail / 006_RailCrossBorderCustoms).
@@ -74,26 +76,63 @@ private struct RailYard007: Decodable, Identifiable, Hashable {
 }
 
 private struct TariffRate007: Decodable {
-    let totalRate: Double?      // per car, incl. surcharges
+    let totalRate: Double?
     let currency: String?
     let rateUnit: String?
     let railroad: String?
     let tariffNumber: String?
+    let tariffAuthority: String?
+    let effectiveDate: String?
+    let expirationDate: String?
 }
 
 private struct ModeCompare007: Decodable {
-    let rail: Double?           // total rail line-haul for the block
-    let truck: Double?          // truck-equivalent line-haul
-    let savings: Double?        // truck − rail (positive = rail cheaper)
-    let railPerCar: Double?
-    let distanceMiles: Double?
+    struct RailRoute: Decodable {
+        let routePlanPublicId: String
+        let routePlanVersionId: String
+        let version: Int
+        let planChecksum: String
+        let geometryChecksum: String
+        let distanceMiles: Double
+        let validUntil: String
+        let provenance: String
+    }
+    struct RailQuote: Decodable {
+        let amount: Double
+        let unit: String
+        let currency: String
+        let numberOfCars: Int
+        let tariffNumber: String
+        let tariffAuthority: String
+        let railroad: String
+        let effectiveDate: String
+        let expirationDate: String
+        let retrievedAt: String
+        let provenance: String
+    }
+    struct Blocker: Decodable, Identifiable {
+        var id: String { code + ":" + path }
+        let code: String
+        let path: String
+        let message: String
+    }
+
+    let shipmentId: Int
+    let shipmentNumber: String
+    let state: String
+    let rail: Double?
+    let truck: Double?
+    let savings: Double?
     let currency: String?
+    let railRoute: RailRoute?
+    let railQuote: RailQuote?
+    let blockers: [Blocker]
 }
 
 private struct CreateResult007: Decodable {
-    let id: Int?
-    let shipmentNumber: String?
-    let status: String?
+    let id: Int
+    let shipmentNumber: String
+    let status: String
 }
 
 // MARK: - Screen
@@ -125,6 +164,7 @@ struct RailNewShipment_007: View {
     @State private var requesting = false
     @State private var actionError: String? = nil
     @State private var createdRef: String? = nil
+    @State private var createdShipmentId: Int? = nil
 
     // Pickers
     @State private var picking: YardSlot? = nil
@@ -134,13 +174,9 @@ struct RailNewShipment_007: View {
 
     // MARK: Derived display
 
-    private func dash(_ s: String?) -> String {
-        guard let s, !s.trimmingCharacters(in: .whitespaces).isEmpty else { return "-" }
-        return s
-    }
-    private func money(_ v: Double?) -> String {
+    private func money(_ v: Double?, currency: String? = nil) -> String {
         guard let v else { return "-" }
-        return "$" + Self.grouped(Int(v.rounded()))
+        return "\(currency ?? "USD") " + Self.grouped(Int(v.rounded()))
     }
     private static func grouped(_ n: Int) -> String {
         let f = NumberFormatter(); f.numberStyle = .decimal
@@ -159,9 +195,10 @@ struct RailNewShipment_007: View {
     }
     private var laneCaption: String {
         let ref = createdRef ?? "RAIL DRAFT"
-        let miles = compare?.distanceMiles.map { "~\(Self.grouped(Int($0.rounded()))) mi" } ?? "- mi"
-        let line = dash(tariff?.railroad).uppercased() == "-" ? "BNSF single-line" : "\(dash(tariff?.railroad)) single-line"
-        return "\(ref) · \(line) · \(miles)"
+        let miles = compare?.railRoute.map {
+            "\(Self.grouped(Int($0.distanceMiles.rounded()))) exact mi"
+        } ?? "route not released"
+        return "\(ref) · EUSORAIL ROUTE · \(miles)"
     }
 
     var body: some View {
@@ -281,6 +318,7 @@ struct RailNewShipment_007: View {
             }
         }
         .buttonStyle(.plain)
+        .disabled(createdShipmentId != nil)
     }
 
     // MARK: - Equipment two-card row (createRailShipment: carType + numberOfCars)
@@ -300,6 +338,7 @@ struct RailNewShipment_007: View {
                 }
             }
             .buttonStyle(.plain)
+            .disabled(createdShipmentId != nil)
         }
     }
 
@@ -363,12 +402,12 @@ struct RailNewShipment_007: View {
         }
     }
 
-    // MARK: - Tariff (getTariffRate · compareModeRates)
+    // MARK: - Provider tariff candidate · exact post-create authority check
 
     private var tariffSection: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack {
-                Text("TARIFF RATE\(tariff?.tariffNumber.map { " · \($0)" } ?? "")")
+                Text(tariffTitle)
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
@@ -379,20 +418,25 @@ struct RailNewShipment_007: View {
 
             VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
-                    Text(money(tariff?.totalRate))
+                    Text(money(displayedTariffAmount, currency: displayedTariffCurrency))
                         .font(.system(size: 22, weight: .bold))
                         .monospacedDigit()
                         .foregroundStyle(palette.textPrimary)
-                    Text("per car · incl. fuel surcharge")
+                    Text(tariffUnitLabel)
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(palette.textSecondary)
                     Spacer()
                 }
-                Text(savingsLine)
+                Text(tariffProvenanceLine)
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Color(hex: 0x00966B))   // verbatim SVG green
+                    .foregroundStyle(palette.textSecondary)
                     .padding(.top, Space.s3)
-                    .lineLimit(1).minimumScaleFactor(0.7)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(comparisonTruthLine)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(compare?.railRoute == nil ? Brand.warning : palette.textSecondary)
+                    .padding(.top, Space.s2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.horizontal, 20).padding(.vertical, 14)
             .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
@@ -407,15 +451,74 @@ struct RailNewShipment_007: View {
         }
     }
 
-    private var savingsLine: String {
-        if let c = compare, let rail = c.rail, let truck = c.truck {
-            return "\(money(rail)) for \(numberOfCars) cars · vs. truck \(money(truck))"
+    private var attributedTariff: TariffRate007? {
+        guard let tariff,
+              let amount = tariff.totalRate, amount > 0,
+              tariff.currency?.isEmpty == false,
+              tariff.rateUnit?.isEmpty == false,
+              tariff.tariffNumber?.isEmpty == false,
+              tariff.tariffAuthority?.isEmpty == false,
+              tariff.railroad?.isEmpty == false,
+              tariff.effectiveDate?.isEmpty == false,
+              tariff.expirationDate?.isEmpty == false else { return nil }
+        return tariff
+    }
+
+    private var routeGatedTariff: ModeCompare007.RailQuote? {
+        compare?.railQuote
+    }
+
+    private var displayedTariffAmount: Double? {
+        routeGatedTariff?.amount ?? attributedTariff?.totalRate
+    }
+
+    private var displayedTariffCurrency: String? {
+        routeGatedTariff?.currency ?? attributedTariff?.currency
+    }
+
+    private var displayedTariffUnit: String? {
+        routeGatedTariff?.unit ?? attributedTariff?.rateUnit
+    }
+
+    private var tariffTitle: String {
+        if let routeGatedTariff {
+            return "ROUTE-GATED PROVIDER TARIFF · \(routeGatedTariff.tariffNumber)"
         }
-        // Pre-Compare honest state — derive block total from live per-car if present.
-        if let per = tariff?.totalRate {
-            return "\(money(per * Double(numberOfCars))) for \(numberOfCars) cars · tap Compare for truck"
+        guard let attributedTariff else { return "PROVIDER TARIFF · UNAVAILABLE" }
+        return "PROVIDER TARIFF CANDIDATE · \(attributedTariff.tariffNumber ?? "-")"
+    }
+
+    private var tariffUnitLabel: String {
+        switch displayedTariffUnit?.uppercased() {
+        case "PER_CAR": return "provider-reported per car"
+        case "PER_TON": return "provider-reported per ton"
+        case "PER_CWT": return "provider-reported per CWT"
+        default: return "no attributable provider rate"
         }
-        return "Tap Compare for rail-vs-truck savings"
+    }
+
+    private var tariffProvenanceLine: String {
+        if let tariff = routeGatedTariff {
+            return "\(tariff.railroad) · \(tariff.tariffAuthority) · effective \(tariff.effectiveDate) through \(tariff.expirationDate) · retrieved \(tariff.retrievedAt); provider evidence, not a priced ledger"
+        }
+        guard let tariff = attributedTariff else {
+            return "No current attributable provider tariff was returned."
+        }
+        return "Candidate only · \(tariff.railroad ?? "-") · \(tariff.tariffAuthority ?? "-") · effective \(tariff.effectiveDate ?? "-") through \(tariff.expirationDate ?? "-")"
+    }
+
+    private var comparisonTruthLine: String {
+        guard createdShipmentId != nil else {
+            return "Request the shipment before checking an exact cross-mode comparison."
+        }
+        guard let compare else {
+            return "Check authority after route.plan has had a chance to release the EusoRail route."
+        }
+        if compare.railRoute != nil, compare.railQuote != nil {
+            return "The rail route is released and a current provider tariff was returned, but neither is an immutable priced comparison ledger. A separate truck route, equipment profile, and authoritative quote are still required; no savings are asserted."
+        }
+        return compare.blockers.first?.message
+            ?? "Exact comparison remains unavailable until every route and quote authority is present."
     }
 
     // MARK: - ESang advisory (static design copy — non-actionable hint band)
@@ -452,17 +555,17 @@ struct RailNewShipment_007: View {
                 )
         )
     }
-    // Advisory copy is design-canon (unit-train threshold heuristic), gated on the
-    // real selected block size so it never contradicts the chosen car count.
     private var esangHeadline: String {
-        numberOfCars >= 25
-            ? "ESang: \(numberOfCars)-car block already qualifies for unit-train rate"
-            : "ESang: \(numberOfCars)-car block qualifies for unit-train rate"
+        if compare?.railRoute != nil {
+            return "ESang: the exact EusoRail route is released"
+        }
+        return "ESang: \(numberOfCars) cars remain a declared requirement"
     }
     private var esangDetail: String {
-        if numberOfCars >= 25 { return "Unit-train threshold met · best per-car economics" }
-        let add = 25 - numberOfCars
-        return "Add \(add) car\(add == 1 ? "" : "s") to hit 25-car threshold · saves ~9%"
+        if compare?.railRoute != nil {
+            return "Yard coordinates were not treated as route mileage. Savings stay unavailable until an independently profiled truck route and attributable quote exist."
+        }
+        return "EusoTrip will not turn the yard pair into mileage, invent a unit-train threshold, or substitute a truck-equivalent price."
     }
 
     // MARK: - CTA row (createRailShipment · compareModeRates)
@@ -485,7 +588,7 @@ struct RailNewShipment_007: View {
             Button { Task { await runCompare() } } label: {
                 HStack(spacing: Space.s2) {
                     if comparing { ProgressView().controlSize(.small).tint(palette.textPrimary) }
-                    Text("Compare")
+                    Text(createdShipmentId == nil ? "After request" : "Check authority")
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(palette.textPrimary)
                 }
@@ -502,7 +605,7 @@ struct RailNewShipment_007: View {
     }
 
     private var canRequest: Bool { origin != nil && destination != nil && numberOfCars > 0 }
-    private var canCompare: Bool { origin != nil && destination != nil }
+    private var canCompare: Bool { createdShipmentId != nil }
 
     // MARK: - Banners
 
@@ -651,23 +754,19 @@ struct RailNewShipment_007: View {
         self.compare = nil
     }
 
-    /// Rail-vs-truck comparison (compareModeRates · built §53). Read-only.
+    /// Exact post-create authority check. The client sends no geometry, yards,
+    /// mileage, equipment conversion, or price inputs.
     private func runCompare() async {
-        guard let o = origin, let d = destination else { return }
+        guard let shipmentId = createdShipmentId else { return }
         comparing = true; actionError = nil
-        struct CompareIn: Encodable {
-            let originYardId: Int; let destYardId: Int
-            let carType: String; let commodity: String; let numberOfCars: Int
-        }
+        struct CompareIn: Encodable { let shipmentId: Int }
         do {
             let c: ModeCompare007 = try await EusoTripAPI.shared.query(
                 "railShipments.compareModeRates",
-                input: CompareIn(originYardId: o.id, destYardId: d.id,
-                                 carType: carType, commodity: commodityShort,
-                                 numberOfCars: numberOfCars))
+                input: CompareIn(shipmentId: shipmentId))
             self.compare = c
         } catch {
-            actionError = "Couldn’t compare modes. " +
+            actionError = "Couldn’t verify exact comparison authority. " +
                 ((error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription)
         }
         comparing = false
@@ -688,7 +787,9 @@ struct RailNewShipment_007: View {
                 input: CreateIn(originYardId: o.id, destinationYardId: d.id,
                                 carType: carType, commodity: commodityShort,
                                 stccCode: stccCode, numberOfCars: numberOfCars))
-            self.createdRef = res.shipmentNumber ?? (res.id.map { "RS-\($0)" } ?? "REQUESTED")
+            self.createdRef = res.shipmentNumber
+            self.createdShipmentId = res.id
+            await runCompare()
         } catch {
             actionError = "Couldn’t request the shipment. " +
                 ((error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription)

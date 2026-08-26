@@ -290,6 +290,7 @@ struct LifecycleStripEight_376: View {
 
 struct FleetTrackerArrivedCard_376: View {
     fileprivate let driver: CatalystDriver376
+    let hos: HOSFleetDriver?
     /// Consignee city/state from the live delivery location, or "—".
     let consignee: String
     /// Winning/assigned carrier display from catalysts.getBidsForLoad.
@@ -309,10 +310,11 @@ struct FleetTrackerArrivedCard_376: View {
         return ini.isEmpty ? "—" : String(ini.prefix(2))
     }
     private var hosSlug: String {
-        let status = driver.status?.trimmingCharacters(in: .whitespaces) ?? ""
-        let rem = driver.hoursRemaining.map { formatHOS376($0) } ?? "—"
-        let s = status.isEmpty ? "—" : status
-        return "HOS \(s) \(rem)"
+        guard let hos, hos.hasCurrentObservation() else { return "HOS unavailable" }
+        let status = hos.status?.trimmingCharacters(in: .whitespaces) ?? ""
+        let rem = hos.hoursAvailable?.drivingRemaining.map { formatHOS376($0) } ?? "—"
+        let source = hos.source?.uppercased() ?? "SOURCE UNAVAILABLE"
+        return "HOS \(status.isEmpty ? "—" : status) \(rem) · \(source)"
     }
     private var positionLabel: String {
         let loc = driver.location?.trimmingCharacters(in: .whitespaces) ?? ""
@@ -456,6 +458,8 @@ struct CatalystAtDeliveryFleetTrackCelM04View: View {
     @State private var detail: LoadsAPI.LoadDetail? = nil
     @State private var activeRow: ActiveLoad376? = nil
     @State private var driver: CatalystDriver376? = nil
+    @State private var hosEvidence: HOSFleetDriver? = nil
+    @State private var hosWarning: String? = nil
     @State private var bids: [BidRow376] = []
     @State private var loading = true
     @State private var loadError: String? = nil
@@ -583,11 +587,11 @@ struct CatalystAtDeliveryFleetTrackCelM04View: View {
 
     /// HOS remaining for the arrived driver ("7:03"), or "-".
     private var hosDisplay: String {
-        driver?.hoursRemaining.map { formatHOS376($0) } ?? "-"
+        currentHOS?.hoursAvailable?.drivingRemaining.map { formatHOS376($0) } ?? "—"
     }
     private var hosStatusDisplay: String {
-        let s = driver?.status?.trimmingCharacters(in: .whitespaces) ?? ""
-        return s.isEmpty ? "-" : s
+        let s = currentHOS?.status?.trimmingCharacters(in: .whitespaces) ?? ""
+        return s.isEmpty ? "unavailable" : s
     }
 
     /// True when at least one real value resolved (so the surface paints
@@ -620,6 +624,7 @@ struct CatalystAtDeliveryFleetTrackCelM04View: View {
                     if let d = driver {
                         FleetTrackerArrivedCard_376(
                             driver: d,
+                            hos: currentHOS,
                             consignee: consigneeDisplay,
                             carrierName: winningCarrierName == "—" ? "assigned carrier" : winningCarrierName
                         )
@@ -736,20 +741,21 @@ struct CatalystAtDeliveryFleetTrackCelM04View: View {
         }
     }
 
-    /// Telemetry rows derived entirely from live reads. The arrival-position
-    /// + HOS rows are REAL-BACKED off catalysts.getMyDrivers; the active-board
-    /// row is honestly UNBACKED because at_delivery is filtered off that list.
+    /// Telemetry rows keep roster/GPS state separate from current, sourced HOS
+    /// evidence. The active-board row is honestly UNBACKED because at_delivery
+    /// is filtered off that list.
     private var telemetryRows: [FleetTrackRow_376] {
         let loc = driver?.location?.trimmingCharacters(in: .whitespaces) ?? ""
         let locBacked = !loc.isEmpty && loc != "Unknown"
-        let hosBacked = driver?.hoursRemaining != nil
+        let hosBacked = currentHOS?.hoursAvailable?.drivingRemaining != nil
         return [
             .init(title: "Arrived · \(consigneeDisplay)",
                   detail: "at_delivery · gated in at consignee · \(etaDisplay)",
                   trailing: locBacked ? "live" : "—",
                   realBacked: locBacked),
             .init(title: "HOS · \(hosStatusDisplay) · \(hosDisplay) remaining",
-                  detail: "drive clock frozen at arrival · live hours remaining per driver",
+                  detail: currentHOS.map { "\($0.source?.uppercased() ?? "SOURCE UNAVAILABLE") · \(humanISO($0.freshness))" }
+                    ?? (hosWarning ?? "Current sourced HOS evidence unavailable"),
                   trailing: hosBacked ? hosDisplay : "—",
                   realBacked: hosBacked),
             .init(title: "Active board echo",
@@ -783,13 +789,9 @@ struct CatalystAtDeliveryFleetTrackCelM04View: View {
     /// "Unknown" / unparseable, or frames on null island (0,0) — in which
     /// case we draw NO map rather than fabricate a fix.
     private var liveTruckFix: HereLatLng? {
-        guard let raw = driver?.location else { return nil }
-        let parts = raw.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
-        guard parts.count == 2,
-              let lat = Double(parts[0]),
-              let lng = Double(parts[1]),
-              !(lat == 0 && lng == 0) else { return nil }
-        return HereLatLng(lat, lng)
+        guard let raw = driver?.location,
+              let coordinate = LatLongParser.parse(raw) else { return nil }
+        return HereLatLng(coordinate.latitude, coordinate.longitude)
     }
 
     /// In-house HERE live map carrying the catalyst fleet-track truck puck at
@@ -819,6 +821,13 @@ struct CatalystAtDeliveryFleetTrackCelM04View: View {
                         ])
                     ],
                     addOns: .shipperTracking,
+                    mapModeContext: .primary(.truck),
+                    liveOperationsStatus: .init(
+                        availability: .degraded,
+                        sourceLabel: "Fleet telemetry",
+                        detail: "Delivery position available; freshness not supplied",
+                        observationCount: 1
+                    ),
                     onSelectMarker: { _ in
                         Task { await openLoadConversation() }
                     }
@@ -987,6 +996,9 @@ struct CatalystAtDeliveryFleetTrackCelM04View: View {
         loading = true
         loadError = nil
         actionError = nil
+        driver = nil
+        hosEvidence = nil
+        hosWarning = nil
         defer { loading = false }
 
         // Preview seed path — no live session bound; paint the canonical
@@ -1003,23 +1015,14 @@ struct CatalystAtDeliveryFleetTrackCelM04View: View {
         let api = EusoTripAPI.shared
         var anyReached = false
         var anyFailed: String? = nil
+        var roster: [CatalystDriver376] = []
 
-        // Driver roster (real-backed arrival position + HOS).
+        // Driver roster supplies assignment identity and position only. HOS
+        // comes from the independently sourced fleet-HOS spine below.
         do {
-            let drivers: [CatalystDriver376] = try await api.query(
+            roster = try await api.query(
                 "catalysts.getMyDrivers", input: LimitInput376(limit: 50))
             anyReached = true
-            // Prefer the driver currently on the resolved load number, else
-            // the first non-driving (arrived/on_duty) row. No persona match.
-            let targetNumber = (detail?.loadNumber ?? activeRow?.loadNumber)
-                ?? (loadId != "0" ? loadId : nil)
-            self.driver = drivers.first {
-                if let tn = targetNumber, !tn.isEmpty {
-                    return ($0.currentLoad ?? "").contains(tn)
-                }
-                return false
-            } ?? drivers.first { ($0.currentLoad?.isEmpty == false) }
-              ?? drivers.first
         } catch {
             anyFailed = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
@@ -1062,11 +1065,36 @@ struct CatalystAtDeliveryFleetTrackCelM04View: View {
             }
         }
 
+        if let targetNumber = (detail?.loadNumber ?? activeRow?.loadNumber)?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !targetNumber.isEmpty {
+            self.driver = roster.first { ($0.currentLoad ?? "") == targetNumber }
+        }
+
+        if let driver = self.driver {
+            do {
+                let evidence: [HOSFleetDriver] = try await api.queryNoInput("hos.getFleetHOS")
+                self.hosEvidence = evidence.first {
+                    $0.driverId == driver.id || $0.userId.map { String($0) } == driver.id
+                }
+                if self.currentHOS == nil {
+                    self.hosWarning = self.hosEvidence?.assignmentEligibility().reason
+                        ?? "Current sourced HOS evidence unavailable"
+                }
+            } catch {
+                self.hosWarning = "Current company HOS evidence could not refresh."
+            }
+        }
+
         // Only surface an error if EVERY read failed (so a partial live read
         // still paints). Empty/absent is an honest state, not an error.
         if !anyReached, let err = anyFailed {
             loadError = err
         }
+    }
+
+    private var currentHOS: HOSFleetDriver? {
+        guard let hosEvidence, hosEvidence.hasCurrentObservation() else { return nil }
+        return hosEvidence
     }
 }
 

@@ -13,7 +13,7 @@
 //           load delivered, stamps the actual delivery time, and writes the
 //           audit-trail entry; the shipper gets the review push)
 //    READ   loads.getById             — bound load + parties + payout
-//    READ   drivers.getMyHOSStatus    — duty status through the unload
+//    READ   hos.getStatus             — sourced duty status through the unload
 //  Fan-out truth: the POD lands with the shipper for review and the
 //  delivered confirmation reaches the carrier; dispatch syncs from its
 //  board. Invoicing starts automatically after delivery.
@@ -45,12 +45,6 @@ private struct PSLoadCtx: Decodable, Hashable {
     struct PSParty: Decodable, Hashable {
         let name: String?; let initials: String?; let companyName: String?; let mcNumber: String?
     }
-}
-
-private struct PSHos: Decodable, Hashable {
-    let status: String?
-    let drivingRemaining: String?
-    let onDutyRemaining: String?
 }
 
 // MARK: - Screen
@@ -88,7 +82,8 @@ private struct PSBody: View {
     @EnvironmentObject private var session: EusoTripSession
 
     @State private var load: PSLoadCtx?
-    @State private var hos: PSHos?
+    @State private var hos: HOSStatus?
+    @State private var hosError: String?
 
     @State private var actionInFlight = false
     @State private var actionAck: String?
@@ -104,6 +99,10 @@ private struct PSBody: View {
     private var unloading: Bool { status == "unloading" }
     private var atDelivery: Bool { status == "at_delivery" }
     private var loadNumberDisplay: String { load?.loadNumber ?? "-" }
+    private var currentHOS: HOSStatus? {
+        guard let hos, hos.hasCurrentObservation() else { return nil }
+        return hos
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -186,8 +185,11 @@ private struct PSBody: View {
                         detail: unloading ? "in progress" : (delivered ? "complete" : "not started"))
                 stepRow("Proof of delivery signed", done: delivered,
                         detail: delivered ? podTimeDisplay : "awaiting signature")
-                stepRow("Duty status", done: ["on_duty", "off_duty"].contains(hos?.status ?? ""),
-                        detail: hos?.status?.replacingOccurrences(of: "_", with: " ") ?? "-")
+                stepRow("Duty status",
+                        done: [HOSDutyCode.onDuty.rawValue, HOSDutyCode.offDuty.rawValue]
+                            .contains(currentHOS?.status ?? ""),
+                        detail: currentHOS?.status?.replacingOccurrences(of: "_", with: " ") ?? "—")
+                stepRow("HOS evidence", done: currentHOS != nil, detail: hosEvidenceLabel)
             }
         }
     }
@@ -330,10 +332,25 @@ private struct PSBody: View {
         do { load = try await EusoTripAPI.shared.query("loads.getById", input: In(id: loadId)) } catch { /* "-" */ }
     }
     private func readHos() async {
-        do { hos = try await EusoTripAPI.shared.queryNoInput("drivers.getMyHOSStatus") } catch { /* "-" */ }
+        do {
+            hos = try await EusoTripAPI.shared.hos.getStatus()
+            hosError = nil
+        } catch {
+            hos = nil
+            hosError = "source unavailable"
+        }
     }
 
     // MARK: derivations
+
+    private var hosEvidenceLabel: String {
+        if let hosError { return hosError }
+        guard let hos else { return "not returned" }
+        guard hos.hasCurrentObservation() else {
+            return hos.assignmentEligibility().reason ?? "not current"
+        }
+        return "\(hos.source ?? "source unavailable") · current"
+    }
 
     private var podTimeDisplay: String {
         guard let d = PSBody.parseISO(load?.actualDeliveryDate) else { return delivered ? "on record" : "-" }

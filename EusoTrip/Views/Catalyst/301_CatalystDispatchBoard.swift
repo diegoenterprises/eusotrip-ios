@@ -61,9 +61,11 @@ private struct DispatchLoad: Decodable, Hashable, Identifiable {
     /// origin, the honest puck position for a fleet board (the proc
     /// ships no live `currentLocation` fix; 0/38 carry one).
     var pickupFix: HereLatLng? {
-        guard let lat = pickupLocation?.lat, let lng = pickupLocation?.lng,
-              !(lat == 0 && lng == 0) else { return nil }
-        return HereLatLng(lat, lng)
+        guard let coordinate = LatLongParser.validatedCoordinate(
+            latitude: pickupLocation?.lat,
+            longitude: pickupLocation?.lng
+        ) else { return nil }
+        return HereLatLng(coordinate.latitude, coordinate.longitude)
     }
 }
 
@@ -228,6 +230,7 @@ private struct DispatchBoardBody: View {
                         .markers(fleetMarkers)
                     ],
                     addOns: .shipperTracking,
+                    mapModeContext: .primary(.truck),
                     onSelectMarker: { loadId in focusLoad(loadId) }
                 )
                 .frame(height: 220)

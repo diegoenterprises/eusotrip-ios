@@ -156,11 +156,10 @@ public enum BespokeMapProjection {
         return HereLatLng(clampLatitude(lat), lng)
     }
 
-    /// Interpolate `count` points (inclusive of both endpoints, so
-    /// `count >= 2`) evenly along the great-circle arc from `origin` to `dest`.
-    /// The returned polyline curves correctly under Web Mercator and is the
-    /// ocean-route geometry the bespoke canvas paints (solid traveled →
-    /// dashed remaining, split at the live-position fraction).
+    /// Legacy geometric interpolation retained only for non-operational chart
+    /// decoration. An endpoint great-circle is not Vessel route authority and
+    /// must never be rendered, priced, navigated, or treated as progress.
+    @available(*, unavailable, message: "Use exact authoritative Vessel route-plan geometry; endpoint great-circle chords are not navigable route authority.")
     public static func greatCircle(
         from origin: HereLatLng,
         to dest: HereLatLng,
@@ -189,7 +188,7 @@ public enum BespokeMapProjection {
 ///   • **Fit-to-coords** — `init(fitting:size:padding:minZoom:maxZoom:)`: you
 ///     supply a bag of coordinates and the viewport solves for the
 ///     highest (fractional) zoom + center that fits them all inside the
-///     padded canvas. Empty / degenerate inputs fall back to a world view.
+///     padded canvas. Empty or invalid geometry is unavailable.
 ///
 /// Both paths are pure: identical inputs yield an identical viewport, and
 /// every `screenPoint` / `coordinate` round-trips exactly (within FP).
@@ -238,9 +237,9 @@ public struct BespokeMapViewport: Equatable {
     ///   still fits the padded canvas on both axes, clamped to
     ///   `[minZoom, maxZoom]`.
     /// - A single coordinate (or a zero-extent box) can't imply a scale, so it
-    ///   is centered at `maxZoom`. An empty set falls back to the whole world
-    ///   (center 0,0 at `minZoom`).
-    public init(
+    ///   is centered at `maxZoom`. Empty or wholly invalid geometry returns
+    ///   `nil`; it never fabricates a geographic camera center.
+    public init?(
         fitting coords: [HereLatLng],
         size: CGSize,
         padding: CGFloat = 24,
@@ -254,17 +253,22 @@ public struct BespokeMapViewport: Equatable {
         let usableW = Swift.max(1.0, Double(safeSize.width) - 2 * pad)
         let usableH = Swift.max(1.0, Double(safeSize.height) - 2 * pad)
 
-        // Project every coord into the normalized world square and bound it.
-        guard !coords.isEmpty else {
-            self.init(center: HereLatLng(0, 0), fractionalZoom: minZoom, size: safeSize)
-            return
+        let validCoords: [HereLatLng] = coords.compactMap { point in
+            guard let coordinate = LatLongParser.validatedCoordinate(
+                latitude: point.lat,
+                longitude: point.lng
+            ) else { return nil }
+            return HereLatLng(coordinate)
         }
+        guard !validCoords.isEmpty else { return nil }
 
+        // Project every canonical coordinate into the normalized world square
+        // and bound it.
         var minX = Double.greatestFiniteMagnitude
         var minY = Double.greatestFiniteMagnitude
         var maxX = -Double.greatestFiniteMagnitude
         var maxY = -Double.greatestFiniteMagnitude
-        for c in coords {
+        for c in validCoords {
             let p = BespokeMapProjection.project(c)
             minX = Swift.min(minX, Double(p.x)); maxX = Swift.max(maxX, Double(p.x))
             minY = Swift.min(minY, Double(p.y)); maxY = Swift.max(maxY, Double(p.y))

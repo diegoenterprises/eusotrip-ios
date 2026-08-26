@@ -4,8 +4,8 @@
 //
 //  Verbatim port of "643 Rail ETA Prediction.svg" (Dark).
 //  ARCHETYPE = MAP/PREDICTION journey (NOT the generic hero+3KPI+ledger):
-//    · MapCanvas route panel hero — origin pin, interchange node, live car
-//      position, destination pin, gradient route arc, ETA callout chip.
+//    · Ordered-journey evidence hero — origin, interchange, active equipment,
+//      destination, and ETA evidence without inventing track geometry.
 //    · CONFIDENCE band card with a P10 · P50 · P90 interval bar.
 //    · PER-SEGMENT FORECAST ledger — each leg = chip + leg name + predicted
 //      clock + confidence/risk pill.
@@ -15,8 +15,8 @@
 //  Data (verified against intermodal.ts + drizzle/schema.ts):
 //    intermodal.getIntermodalTracking        (EXISTS · intermodal.ts:269)
 //        input {intermodalShipmentId:Int} → {segments[], containers[],
-//        currentMode, activeSegmentId}. Drives the route arc + live car pin
-//        + per-segment ledger (leg name, predicted clock, status).
+//        currentMode, activeSegmentId}. Drives the ordered journey + active
+//        equipment tile + per-segment ledger (leg name, clock, status).
 //    intermodal.getIntermodalShipmentDetail  (EXISTS · intermodal.ts:161)
 //        input {id:Int} → {...shipment, segments[], transfers[], containers[]}.
 //        Enriches the ledger with the full ordered segment set + origin/dest.
@@ -181,7 +181,7 @@ private struct RailETAPredictionBody: View {
             interchangeLabel: interchangeLabel,
             destinationLabel: destinationLabel,
             etaChip: etaChipText,
-            livePositionFraction: liveFraction,
+            hasJourneyEvidence: !segments.isEmpty,
             markerKind: markerKind643
         )
         .frame(height: 146)
@@ -231,20 +231,6 @@ private struct RailETAPredictionBody: View {
         return "ETA pending"
     }
 
-    /// Live-car position as a fraction (0…1) along the arc, derived from how
-    /// many legs are done vs. total. No fabricated GPS — this is purely the
-    /// completed-leg ratio against the real segment set.
-    private var liveFraction: Double {
-        let total = segments.count
-        guard total > 0 else { return 0 }
-        let done = segments.filter { ($0.status ?? "").lowercased() == "completed" }.count
-        // Place the car mid-way through the active leg when one is in transit.
-        let hasActive = segments.contains { ($0.status ?? "").lowercased() == "in_transit" }
-        let base = Double(done) / Double(total)
-        let step = 1.0 / Double(total)
-        return min(1.0, hasActive ? base + step * 0.5 : base)
-    }
-
     // MARK: - CONFIDENCE interval (PORT-GAP — no predictEta model)
 
     private var confidenceBand: some View {
@@ -265,7 +251,7 @@ private struct RailETAPredictionBody: View {
             EusoEmptyState(
                 systemImage: "chart.line.uptrend.xyaxis",
                 title: "Forecast window unavailable",
-                subtitle: "The P10·P50·P90 arrival window and confidence score require the ETA model (predictEta), which is not yet wired on this carrier.",
+                subtitle: "This carrier has not supplied a verified P10/P50/P90 arrival window or confidence score.",
                 comingSoon: true
             )
             .padding(.top, Space.s3)
@@ -589,20 +575,18 @@ private struct LedgerErrorCard: View {
     }
 }
 
-// MARK: - RouteCanvas643 (map-canvas route panel — Path/GeometryReader)
+// MARK: - RouteCanvas643 (ordered journey evidence; not track geometry)
 //
-// Reproduces the SVG hero geometry: gridlines, a gradient route arc (a glow
-// underlay + crisp stroke on top), origin/destination pins, an interchange
-// node, the live car-position pin riding the arc, and the ETA callout chip.
-// The arc is a quadratic-bezier chain matching the wireframe path; the live
-// car is placed at `livePositionFraction` along that chain.
+// The intermodal endpoints and segment order are real, but this response has no
+// canonical rail geometry. Keep the information as an ordered evidence strip
+// instead of painting an authored curve that could be mistaken for a rail path.
 
 private struct RouteCanvas643: View {
     let originLabel: String
     let interchangeLabel: String?
     let destinationLabel: String
     let etaChip: String
-    let livePositionFraction: Double
+    let hasJourneyEvidence: Bool
     /// Equipment-true marker model (Wave B, 2026-06-10) — resolved by
     /// the caller from the live leg's mode (well car on rail legs,
     /// container truck on drayage legs).
@@ -611,141 +595,72 @@ private struct RouteCanvas643: View {
     @Environment(\.palette) private var palette
 
     var body: some View {
-        GeometryReader { geo in
-            let w = geo.size.width
-            let h = geo.size.height
-
-            // Control points scaled from the 400×146 SVG canvas.
-            let sx: (CGFloat) -> CGFloat = { $0 / 400 * w }
-            let sy: (CGFloat) -> CGFloat = { $0 / 146 * h }
-
-            let p0 = CGPoint(x: sx(40),  y: sy(108))   // origin
-            let c1 = CGPoint(x: sx(160), y: sy(30))
-            let p1 = CGPoint(x: sx(240), y: sy(70))    // interchange node
-            let c2 = CGPoint(x: sx(320), y: sy(110))   // reflected control (T)
-            let p2 = CGPoint(x: sx(360), y: sy(52))    // destination
-
-            let arc = Path { p in
-                p.move(to: p0)
-                p.addQuadCurve(to: p1, control: c1)
-                p.addQuadCurve(to: p2, control: c2)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 6) {
+                Image(systemName: "point.3.connected.trianglepath.dotted")
+                    .font(.system(size: 10, weight: .bold))
+                Text("ORDERED JOURNEY · NOT TRACK GEOMETRY")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                Spacer(minLength: 8)
+                Text(etaChip)
+                    .font(.system(size: 10, weight: .bold)).monospacedDigit()
             }
+            .foregroundStyle(palette.textSecondary)
 
-            let liveT = max(0, min(1, livePositionFraction))
-            let livePoint = Self.pointOnArc(p0: p0, c1: c1, p1: p1, c2: c2, p2: p2, t: liveT)
+            HStack(spacing: 8) {
+                evidenceNode(role: "ORIGIN", label: originLabel, tint: Brand.blue)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(palette.textTertiary)
 
-            ZStack {
-                // Card surface
-                RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
-                    .fill(palette.bgCardSoft)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
-                        .strokeBorder(palette.borderFaint))
-
-                // Faint gridlines
-                Path { p in
-                    p.move(to: CGPoint(x: 0, y: sy(48)));  p.addLine(to: CGPoint(x: w, y: sy(48)))
-                    p.move(to: CGPoint(x: 0, y: sy(96)));  p.addLine(to: CGPoint(x: w, y: sy(96)))
-                    p.move(to: CGPoint(x: sx(100), y: 0)); p.addLine(to: CGPoint(x: sx(100), y: h))
-                    p.move(to: CGPoint(x: sx(200), y: 0)); p.addLine(to: CGPoint(x: sx(200), y: h))
-                    p.move(to: CGPoint(x: sx(300), y: 0)); p.addLine(to: CGPoint(x: sx(300), y: h))
-                }
-                .stroke(palette.textPrimary.opacity(0.05), lineWidth: 1)
-
-                // Route arc — glow underlay then crisp gradient stroke
-                arc.stroke(Brand.blue.opacity(0.18),
-                           style: StrokeStyle(lineWidth: 9, lineCap: .round))
-                arc.stroke(LinearGradient.primary,
-                           style: StrokeStyle(lineWidth: 3.5, lineCap: .round))
-
-                // Origin pin
-                pin(at: p0, fill: Brand.blue, ring: true)
-                label(originLabel, at: CGPoint(x: p0.x, y: p0.y + sy(22)), color: palette.textPrimary, bold: true)
-
-                // Interchange node (only when a real interchange exists)
-                if interchangeLabel != nil {
-                    Circle().fill(Color.white).frame(width: 9, height: 9)
-                        .overlay(Circle().strokeBorder(Brand.escort, lineWidth: 2.5))
-                        .position(p1)
-                    if let il = interchangeLabel {
-                        label(il, at: CGPoint(x: p1.x, y: p1.y + sy(22)),
-                              color: Brand.escort.opacity(0.85), bold: false)
-                    }
-                }
-
-                // Destination pin
-                pin(at: p2, fill: Brand.magenta, ring: true)
-                label(destinationLabel, at: CGPoint(x: p2.x, y: p2.y - sy(12)),
-                      color: palette.textPrimary, bold: true)
-
-                // Live position marker — the canonical EQUIPMENT-TRUE
-                // model from the EusoTrip Animation Design System,
-                // rendered through the in-house native SVG engine and
-                // ridden along the route arc. Wave B (2026-06-10): the
-                // kind resolves from the live leg's mode (well car on
-                // rail, container truck on drayage) — never an
-                // unconditional boxcar, never a hand-drawn car.
-                Circle().fill(Brand.blue.opacity(0.16)).frame(width: 30, height: 30)
-                    .position(livePoint)   // soft ramp-fence glow under the car
-                Group {
-                    if let carSVG = EquipmentAnimationCache.shared.svg(for: markerKind) {
+                VStack(spacing: 5) {
+                    if hasJourneyEvidence,
+                       let carSVG = EquipmentAnimationCache.shared.svg(for: markerKind) {
                         NativeSVGView(svgString: carSVG)
                             .frame(width: 58, height: 24)
                     } else {
-                        // Fallback to the gradient dot if the model can't load.
-                        Circle().fill(LinearGradient.diagonal).frame(width: 10, height: 10)
-                            .overlay(Circle().strokeBorder(Color.white, lineWidth: 1.5))
+                        Image(systemName: hasJourneyEvidence ? "tram.fill" : "clock.badge.questionmark")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(hasJourneyEvidence ? Brand.rail : palette.textTertiary)
                     }
+                    Text(hasJourneyEvidence ? "ACTIVE LEG" : "EVIDENCE PENDING")
+                        .font(.system(size: 8, weight: .heavy)).tracking(0.4)
+                        .foregroundStyle(palette.textTertiary)
                 }
-                .position(livePoint)
+                .frame(maxWidth: .infinity)
 
-                // ETA callout chip (top center)
-                Text(etaChip)
-                    .font(.system(size: 11, weight: .bold))
-                    .monospacedDigit()
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 14).padding(.vertical, 7)
-                    .background(Capsule().fill(Color(hex: 0x3A4150)))
-                    .position(x: w / 2, y: sy(23))
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(palette.textTertiary)
+                evidenceNode(role: "DESTINATION", label: destinationLabel, tint: Brand.magenta)
+            }
+
+            if let interchangeLabel, !interchangeLabel.isEmpty {
+                Label("Interchange · \(interchangeLabel)", systemImage: "arrow.triangle.swap")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1)
             }
         }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous).fill(palette.bgCardSoft))
+        .overlay(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous).strokeBorder(palette.borderFaint))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Ordered journey evidence from \(originLabel) to \(destinationLabel). Track geometry is not available. \(etaChip)")
     }
 
-    @ViewBuilder
-    private func pin(at p: CGPoint, fill: Color, ring: Bool) -> some View {
-        Circle().fill(fill).frame(width: 12, height: 12)
-            .overlay(ring ? Circle().strokeBorder(Color.white, lineWidth: 2) : nil)
-            .position(p)
-    }
-
-    @ViewBuilder
-    private func label(_ text: String, at p: CGPoint, color: Color, bold: Bool) -> some View {
-        Text(text)
-            .font(.system(size: 10, weight: bold ? .bold : .regular))
-            .foregroundStyle(color)
-            .lineLimit(1)
-            .fixedSize()
-            .position(p)
-    }
-
-    /// Evaluate the two-quad bezier chain at parameter t∈[0,1]. First half of
-    /// t maps to the first quad (p0→p1 via c1), second half to the second
-    /// quad (p1→p2 via c2).
-    static func pointOnArc(p0: CGPoint, c1: CGPoint, p1: CGPoint,
-                           c2: CGPoint, p2: CGPoint, t: Double) -> CGPoint {
-        if t <= 0.5 {
-            let lt = t / 0.5
-            return quad(p0, c1, p1, CGFloat(lt))
-        } else {
-            let lt = (t - 0.5) / 0.5
-            return quad(p1, c2, p2, CGFloat(lt))
+    private func evidenceNode(role: String, label: String, tint: Color) -> some View {
+        VStack(spacing: 4) {
+            Circle().fill(tint).frame(width: 10, height: 10)
+            Text(role)
+                .font(.system(size: 7, weight: .heavy)).tracking(0.5)
+                .foregroundStyle(palette.textTertiary)
+            Text(label)
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(palette.textPrimary)
+                .lineLimit(1).minimumScaleFactor(0.65)
         }
-    }
-
-    private static func quad(_ a: CGPoint, _ c: CGPoint, _ b: CGPoint, _ t: CGFloat) -> CGPoint {
-        let mt = 1 - t
-        let x = mt * mt * a.x + 2 * mt * t * c.x + t * t * b.x
-        let y = mt * mt * a.y + 2 * mt * t * c.y + t * t * b.y
-        return CGPoint(x: x, y: y)
+        .frame(maxWidth: .infinity)
     }
 }
 

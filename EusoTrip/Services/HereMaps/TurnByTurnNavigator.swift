@@ -82,6 +82,10 @@ final class TurnByTurnNavigator: NSObject, ObservableObject {
     }
 
     func start(polyline coords: [CLLocationCoordinate2D], actions: [HereRouteAction]) {
+        guard coords.count >= 2, coords.allSatisfy(LatLongParser.isValid) else {
+            stop()
+            return
+        }
         polyline = coords
         cumulative = Self.cumulativeDistances(coords)
         maneuvers = actions.enumerated().compactMap { idx, a in
@@ -115,7 +119,7 @@ final class TurnByTurnNavigator: NSObject, ObservableObject {
 
     // MARK: fix intake (call from the driver's live location feed)
     func ingest(fix: CLLocation) {
-        guard !polyline.isEmpty else { return }
+        guard !polyline.isEmpty, LatLongParser.isValid(fix.coordinate) else { return }
         let (segIdx, crossTrackM, alongM) = Self.project(fix.coordinate, onto: polyline, cumulative: cumulative)
 
         // 1. deviation detection: distance-from-polyline + heading divergence

@@ -140,15 +140,15 @@ test("client role policy is exact and excludes adjacent maritime roles", () => {
 });
 
 test("every eligible role has a reachable registered screen without widening shared role access", () => {
-  assert.match(registry, /id: "Vesl822"[\s\S]{0,140}role: \.vesselOperator[\s\S]{0,140}VesselWriteCenterScreen/);
+  assert.match(registry, /id: "Vesl834"[\s\S]{0,140}role: \.vesselOperator[\s\S]{0,140}VesselWriteCenterScreen/);
   assert.match(registry, /id: "TerminalVesselWrites"[\s\S]{0,160}role: \.terminal[\s\S]{0,140}VesselWriteCenterScreen/);
   assert.match(registry, /id: "AdminVesselWrites"[\s\S]{0,160}role: \.admin[\s\S]{0,140}VesselWriteCenterScreen/);
-  assert.match(operatorMe, /"Vesl822"[\s\S]{0,160}"Operations ledger"/);
+  assert.match(operatorMe, /"Vesl834"[\s\S]{0,160}"Operations ledger"/);
   assert.match(terminalMe, /to: "TerminalVesselWrites"/);
   assert.match(adminMe, /to: "AdminVesselWrites"/);
-  assert.match(router, /static let portMaster = Self\([\s\S]*detailRoutes: \["Vesl661", "Vesl822"\]/);
-  assert.match(router, /static let shipCaptain = Self\([\s\S]*detailRoutes: \["Vesl654", "Vesl822"\]/);
-  assert.doesNotMatch(registry, /id: "Vesl822"[\s\S]{0,140}role: \.(?:shipper|carrier|broker|dispatch)/);
+  assert.match(router, /static let portMaster = Self\([\s\S]*detailRoutes: \["Vesl661", "Vesl834"\]/);
+  assert.match(router, /static let shipCaptain = Self\([\s\S]*detailRoutes: \["Vesl654", "Vesl834"\]/);
+  assert.doesNotMatch(registry, /id: "Vesl834"[\s\S]{0,140}role: \.(?:shipper|carrier|broker|dispatch)/);
 });
 
 test("both new Swift files belong to the explicit EusoTrip app target", () => {

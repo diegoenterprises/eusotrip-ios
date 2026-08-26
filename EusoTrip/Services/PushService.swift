@@ -83,9 +83,9 @@ final class PushService: NSObject, ObservableObject,
     // why the default set stays small and every id here matches a real server
     // notification type.
 
-    static let actionView    = "EUSO_VIEW"
-    static let actionSnooze  = "EUSO_SNOOZE_15"
-    static let actionDone    = "EUSO_ACK"
+    nonisolated static let actionView   = "EUSO_VIEW"
+    nonisolated static let actionSnooze = "EUSO_SNOOZE_15"
+    nonisolated static let actionDone   = "EUSO_ACK"
 
     /// Categories whose notification is a REMINDER about a future obligation,
     /// and so can legitimately be snoozed. An alert about something that already

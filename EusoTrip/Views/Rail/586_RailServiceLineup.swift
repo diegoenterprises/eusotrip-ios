@@ -6,11 +6,11 @@
 //  "05 Rail/Dark-SVG/586 Rail Service Lineup.svg" — its purpose-built
 //  TIMELINE/SCHEDULE archetype (a route-rotation lineup), NOT a stat-tile
 //  dashboard:
-//    · lane-ribbon HERO — gradient-rim card: status + train-symbol + RAIL
+//    · ordered-lineup HERO — gradient-rim card: status + train-symbol + RAIL
 //      badge pills, a numbers-first next-departure countdown, an on-plan
-//      delta + consist line (cars · ft · tons), and a horizontal lane spine
-//      (LAX→BAR→KCK→GAL→CHI) drawn in Canvas with travel progress, a glowing
-//      current node and a green destination node.
+//      delta + consist line (cars · ft · tons), and a horizontal work-point
+//      sequence drawn with neutral relays. It never turns call order into track
+//      geometry or projects a train between calls.
 //    · CALL TIMELINE — a vertical rail-spine ledger of the ordered yard/ramp
 //      calls (one node per call: station, arr/dep tabular times, dwell + work
 //      events, status chip, the CURRENT call highlighted). Rendered through
@@ -663,7 +663,7 @@ private struct RailServiceLineupBody: View {
     }
 }
 
-// MARK: - Lane ribbon spine (horizontal Canvas — verbatim to SVG hero spine)
+// MARK: - Ordered lineup relay (not track geometry)
 
 private enum LaneNodeState586 { case done, current, future, onEta }
 
@@ -678,33 +678,23 @@ private struct LaneRibbonSpine586: View {
     let nodes: [LaneNode586]
     let palette: Theme.Palette
 
-    private var travel: CGFloat {
-        // The current node defines how far the travelled (gradient) segment runs.
-        nodes.first(where: { $0.state == .current })?.progress
-            ?? nodes.first(where: { $0.state == .done })?.progress
-            ?? 0
-    }
-
     var body: some View {
         GeometryReader { geo in
             let w = geo.size.width
             let lineY = geo.size.height * 0.34
             ZStack(alignment: .topLeading) {
-                // Base hairline
-                Path { p in
-                    p.move(to: CGPoint(x: 4, y: lineY))
-                    p.addLine(to: CGPoint(x: w - 4, y: lineY))
+                // Neutral chevrons communicate call order only. Call status is
+                // carried by each node; no progress line or fake track is drawn.
+                if nodes.count > 1 {
+                    ForEach(0..<(nodes.count - 1), id: \.self) { idx in
+                        let left = nodes[idx].progress
+                        let right = nodes[idx + 1].progress
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 9, weight: .heavy))
+                            .foregroundStyle(palette.textTertiary)
+                            .position(x: 4 + (w - 8) * ((left + right) / 2), y: lineY)
+                    }
                 }
-                .stroke(Color.white.opacity(0.12),
-                        style: StrokeStyle(lineWidth: 3, lineCap: .round))
-
-                // Travelled segment (gradient)
-                Path { p in
-                    p.move(to: CGPoint(x: 4, y: lineY))
-                    p.addLine(to: CGPoint(x: 4 + (w - 8) * travel, y: lineY))
-                }
-                .stroke(LinearGradient.diagonal,
-                        style: StrokeStyle(lineWidth: 3, lineCap: .round))
 
                 // Nodes + labels
                 ForEach(nodes) { node in
@@ -713,6 +703,8 @@ private struct LaneRibbonSpine586: View {
                 }
             }
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Ordered rail service calls. No track geometry or projected train position is rendered.")
     }
 
     @ViewBuilder
@@ -727,13 +719,8 @@ private struct LaneRibbonSpine586: View {
         }()
 
         ZStack {
-            // Current node glow halo
-            if node.state == .current {
-                Circle().strokeBorder(Brand.blue.opacity(0.35), lineWidth: 2)
-                    .frame(width: 20, height: 20)
-            }
             if node.state == .done {
-                Circle().fill(LinearGradient.diagonal).frame(width: 10, height: 10)
+                Circle().fill(Brand.blue).frame(width: 10, height: 10)
             } else {
                 Circle().fill(fill)
                     .overlay(Circle().strokeBorder(ring, lineWidth: 2.2))

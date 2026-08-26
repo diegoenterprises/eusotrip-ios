@@ -51,7 +51,6 @@
 //
 
 import SwiftUI
-import CoreLocation
 
 // MARK: - Screen body
 
@@ -78,14 +77,13 @@ struct BrokerTenderDetail: View {
 
     @StateObject private var detailStore = BrokerTenderDetailStore()
 
-    /// Decoded HERE Routing v8 section polyline for the tendered lane —
-    /// the real curved road geometry, not a straight 2-point segment.
-    /// Loaded by `refreshRoutePolyline` once the detail row (and thus the
-    /// real pickup/delivery coords) is on file. Stays empty — never a
-    /// fabricated path — when coords are missing, the load is a vessel
-    /// (ocean legs are great circles, not road routes), or HERE errors;
-    /// the map then falls back to the straight pickup→delivery line.
-    @State private var routePolyline: [HereLatLng] = []
+    /// Renderer-safe lines from the exact server-owned posting plan. Each
+    /// LineString/MultiLineString member remains independent so the client
+    /// never bridges a discontinuity or authors route geometry.
+    @State private var canonicalRouteLines: [[HereLatLng]] = []
+    @State private var canonicalRouteStatus: String?
+    @State private var canonicalRouteVersion: Int?
+    @State private var canonicalRouteMode: CanonicalRoutePlanClient.Mode?
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -99,6 +97,26 @@ struct BrokerTenderDetail: View {
         }
         .task { await refreshAll() }
         .eusoRefreshable { await refreshAll() }
+        // RealtimeService → `bid:received` (server socketService.ts
+        // emit to room `role:broker`) is re-posted as
+        // `.esangRefreshSurface` (Services/RealtimeService.swift:375).
+        // This is the surface a broker sits on while bids come in, so
+        // the responding-carrier list has to re-poll on the event.
+        // eusotrip-killers-elite :01 §20 · 2026-08-25
+        // NARROWED, deliberately: `detailStore.refresh()` and NOT `refreshAll()`.
+        // refreshAll() also calls refreshCanonicalRoute(), which (a) synchronously
+        // blanks canonicalRouteLines/Version/Mode to a "still being prepared" pill
+        // BEFORE its await, so the rendered route preview would flash empty on every
+        // unrelated event, and (b) issues a route-plan MUTATION — a server write —
+        // on a bus with ~49 uncoalesced posters including high-rate `eta:update`.
+        // Route planning belongs to appear and pull-to-refresh, which still call it.
+        // Only the bid/carrier list needs to move when a tender event lands.
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task {
+                detailStore.loadId = tenderId
+                await detailStore.refresh()
+            }
+        }
     }
 
     // MARK: - Header
@@ -438,26 +456,41 @@ struct BrokerTenderDetail: View {
             sectionHeader("LANE", icon: "map")
             ZStack {
                 if let lane = laneForMap(d) {
-                    let mode = (d.transportMode ?? "truck").lowercased()
-                    let line: [HereLatLng] = mode == "truck" && routePolyline.count >= 2
-                        ? routePolyline : []
+                    let mapTransportMode = EusoTripMapTransportMode(
+                        canonicalValue: canonicalRouteMode?.rawValue ?? d.transportMode
+                    )
                     let markerLayer = HereMapLayer.markers([
                         .init(at: .init(lane.pickup), kind: .pickup, label: lane.originTitle),
                         .init(at: .init(lane.delivery), kind: .delivery, label: lane.destinationTitle)
                     ])
-                    let mapLayers: [HereMapLayer] = line.count >= 2
-                        ? [.route(polyline: line, colorHex: "#1473FF"), markerLayer]
-                        : [markerLayer]
-                    HereLiveMapView(
-                        center: .init(
-                            (lane.pickup.latitude + lane.delivery.latitude) / 2,
-                            (lane.pickup.longitude + lane.delivery.longitude) / 2
-                        ),
-                        zoom: 6,
-                        route: line,
-                        baseLayers: mapLayers,
-                        addOns: mode == "truck" ? .shipperTracking : .weather
-                    )
+                    let mapLayers: [HereMapLayer] = canonicalRouteLines.enumerated().map { index, line in
+                        .eusoRoute(
+                            polyline: line,
+                            state: .planned,
+                            label: index == 0
+                                ? "Eusorone \(mapTransportMode.rawValue) posting route plan version \(canonicalRouteVersion ?? 0)"
+                                : nil
+                        )
+                    } + [markerLayer]
+                    ZStack(alignment: .bottomLeading) {
+                        HereLiveMapView(
+                            center: canonicalRouteLines.lazy.compactMap(\.first).first
+                                ?? .init(
+                                    (lane.pickup.latitude + lane.delivery.latitude) / 2,
+                                    (lane.pickup.longitude + lane.delivery.longitude) / 2
+                                ),
+                            zoom: 6,
+                            route: [],
+                            baseLayers: mapLayers,
+                            addOns: mapTransportMode == .truck ? .shipperTracking : .weather,
+                            activeJob: false,
+                            mapModeContext: .unconfirmed(mapTransportMode)
+                        )
+                        if let canonicalRouteStatus {
+                            canonicalRouteStatusPill(canonicalRouteStatus)
+                                .padding(10)
+                        }
+                    }
                 } else {
                     // SEAM: no geocoded coords on the tender yet. Honest
                     // "awaiting data" state — no fabricated points. Lights
@@ -473,6 +506,13 @@ struct BrokerTenderDetail: View {
                                 Text("Route geocoding…")
                                     .font(.system(size: 11, weight: .heavy)).tracking(0.8)
                                     .foregroundStyle(palette.textTertiary)
+                                if let canonicalRouteStatus {
+                                    Text(canonicalRouteStatus)
+                                        .font(.system(size: 9, weight: .semibold))
+                                        .foregroundStyle(palette.textSecondary)
+                                        .multilineTextAlignment(.center)
+                                        .accessibilityLabel(canonicalRouteStatus)
+                                }
                             }
                         )
                 }
@@ -504,15 +544,20 @@ struct BrokerTenderDetail: View {
     private func laneForMap(_ d: LoadsAPI.LoadDetail) -> HereMapView.Lane? {
         guard let p = d.pickupLocation,
               let dl = d.deliveryLocation,
-              let pLat = p.lat, let pLng = p.lng,
-              let dLat = dl.lat, let dLng = dl.lng,
-              !(pLat == 0 && pLng == 0), !(dLat == 0 && dLng == 0) else { return nil }
+              let pickup = LatLongParser.validatedCoordinate(
+                  latitude: p.lat,
+                  longitude: p.lng
+              ),
+              let delivery = LatLongParser.validatedCoordinate(
+                  latitude: dl.lat,
+                  longitude: dl.lng
+              ) else { return nil }
         return HereMapView.Lane(
             id: "tender_\(d.id)",
             originTitle: originLabel(d),
             destinationTitle: destinationLabel(d),
-            pickup: CLLocationCoordinate2D(latitude: pLat, longitude: pLng),
-            delivery: CLLocationCoordinate2D(latitude: dLat, longitude: dLng)
+            pickup: pickup,
+            delivery: delivery
         )
     }
 
@@ -943,50 +988,80 @@ struct BrokerTenderDetail: View {
     private func refreshAll() async {
         detailStore.loadId = tenderId
         await detailStore.refresh()
-        // Once the detail row (and thus the real pickup/delivery coords) is
-        // on file, fetch + decode the truck route so the lane map paints the
-        // real road geometry instead of a straight 2-point line. Honest
-        // no-op for vessel legs / un-geocoded endpoints.
-        await refreshRoutePolyline()
+        await refreshCanonicalRoute()
     }
 
-    /// Resolves the tendered pickup→delivery corridor via HERE Routing v8
-    /// and decodes its section polyline into `routePolyline` — the real
-    /// curved road geometry, not a straight 2-point segment. Reads the
-    /// same geocoded coords the lane map uses (`laneForMap`). Truck-aware
-    /// via the default `.standardUSSemiLoaded` profile (this surface holds
-    /// a `LoadDetail`, not the full `Load`). Vessel mode is skipped — an
-    /// ocean or rail leg is not a road route — and on any failure (missing
-    /// coords, HERE error) the polyline stays empty and the map remains
-    /// marker-only.
+    /// A tender is a market preview, so it requests the posting plan using
+    /// only the persisted load identity. Mode, endpoints, requirement
+    /// profile, graph, evidence, constraints, rights, and geometry stay
+    /// server-owned.
     @MainActor
-    private func refreshRoutePolyline() async {
-        guard let detail = detailStore.state.value ?? nil else {
-            routePolyline = []
+    private func refreshCanonicalRoute() async {
+        canonicalRouteLines = []
+        canonicalRouteVersion = nil
+        canonicalRouteMode = nil
+        canonicalRouteStatus = "Verified posting route is still being prepared"
+        guard let detail = detailStore.state.value ?? nil,
+              let loadId = Int(detail.id), loadId > 0 else {
+            canonicalRouteStatus = "Canonical route pending a persisted load identity"
             return
         }
-        // Rail, vessel, and barge legs require their own routing providers.
-        let mode = (detail.transportMode ?? "truck").lowercased()
-        guard mode == "truck", let lane = laneForMap(detail) else {
-            routePolyline = []
-            return
-        }
-        let stops = HereStops(
-            origin: lane.pickup,
-            destination: lane.delivery
-        )
         do {
-            let resp = try await HereRoutingClient.shared.route(
-                stops: stops, profile: .standardUSSemiLoaded)
-            guard let section = resp.routes.first?.sections.first else {
-                routePolyline = []
-                return
+            let result = try await CanonicalRoutePlanClient.shared.planLoad(
+                id: loadId,
+                purpose: .posting
+            )
+            switch result {
+            case .persisted(let persisted):
+                applyCanonicalRoute(persisted.route)
+            case .pending(let pending):
+                canonicalRouteStatus = pending.blockers.first?.message
+                    ?? "Canonical mode-native posting route pending verified authority"
+                await readExistingCanonicalRoute(loadId: loadId)
             }
-            let decoded = HereRoutingClient.polyline(for: section)
-            routePolyline = decoded.count >= 2 ? decoded.map { HereLatLng($0) } : []
         } catch {
-            routePolyline = []
+            canonicalRouteStatus = error.eusoUserCopy
+            await readExistingCanonicalRoute(loadId: loadId)
         }
+    }
+
+    @MainActor
+    private func readExistingCanonicalRoute(loadId: Int) async {
+        do {
+            applyCanonicalRoute(
+                try await CanonicalRoutePlanClient.shared.getBoundLoad(id: loadId)
+            )
+        } catch {
+            if canonicalRouteStatus == nil { canonicalRouteStatus = error.eusoUserCopy }
+        }
+    }
+
+    @MainActor
+    private func applyCanonicalRoute(_ route: CanonicalRoutePlanClient.BoundRoutePlan) {
+        guard route.plan.purpose == .posting,
+              let payload = route.rendererPayload else {
+            canonicalRouteLines = []
+            canonicalRouteVersion = nil
+            canonicalRouteMode = nil
+            canonicalRouteStatus = "Canonical posting route exists but is not released for rendering"
+            return
+        }
+        canonicalRouteLines = payload.lines
+        canonicalRouteVersion = payload.identity.version
+        canonicalRouteMode = payload.identity.mode
+        canonicalRouteStatus = nil
+    }
+
+    private func canonicalRouteStatusPill(_ message: String) -> some View {
+        Text(message)
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(palette.textSecondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(palette.bgCard.opacity(0.92))
+            .overlay(Capsule().strokeBorder(Brand.warning.opacity(0.45)))
+            .clipShape(Capsule())
+            .accessibilityLabel(message)
     }
 }
 

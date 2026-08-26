@@ -105,20 +105,21 @@ struct MeDetention: View {
 
     private var dashboardStrip: some View {
         let d = store.dashboard
+        let code = dashboardCurrency
         return HStack(spacing: Space.s2) {
             moneyTile(
                 label: "BILLED",
-                value: currency(d?.billedAmount ?? 0),
+                value: money(d?.billedAmount, currency: code),
                 gradient: true
             )
             moneyTile(
                 label: "COLLECTED",
-                value: currency(d?.collectedAmount ?? 0),
+                value: money(d?.collectedAmount, currency: code),
                 gradient: true
             )
             moneyTile(
                 label: "DISPUTED",
-                value: currency(d?.disputedAmount ?? 0),
+                value: money(d?.disputedAmount, currency: code),
                 gradient: false
             )
         }
@@ -169,23 +170,27 @@ struct MeDetention: View {
     }
 
     private func activeCard(_ d: DetentionAPI.ActiveDetention) -> some View {
-        let overtimeRatio = d.freeTimeMinutes > 0
-            ? Double(d.elapsedMinutes) / Double(d.freeTimeMinutes)
-            : 0
-        let urgent = overtimeRatio >= 1.0
+        let overtimeRatio: Double? = {
+            guard let elapsed = d.elapsedMinutes,
+                  let freeTime = d.freeTimeMinutes,
+                  freeTime > 0 else { return nil }
+            return Double(elapsed) / Double(freeTime)
+        }()
+        let accruing = d.billableMinutes.map { $0 > 0 } == true
+            && d.commercialState.hasPrefix("verified_")
         let wx = activeWeather[d.id]
         return VStack(alignment: .leading, spacing: Space.s2) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Text(d.facilityName)
+                        Text(displayName(d.facilityName, fallback: "Facility unavailable"))
                             .font(EType.bodyStrong)
                             .foregroundStyle(palette.textPrimary)
                         // Auto WX HOLD tag — server-flagged severe-weather
                         // overlap only; never inferred client-side.
                         if wx?.isHold == true { wxHoldChip }
                     }
-                    Text(d.locationType.capitalized)
+                    Text(displayName(d.locationType?.capitalized, fallback: "Location type unavailable"))
                         .font(EType.caption)
                         .foregroundStyle(palette.textTertiary)
                 }
@@ -209,7 +214,7 @@ struct MeDetention: View {
                         .foregroundStyle(palette.textTertiary)
                     Text(humanMinutes(d.elapsedMinutes))
                         .font(EType.bodyStrong)
-                        .foregroundStyle(urgent ? Brand.warning : palette.textPrimary)
+                        .foregroundStyle(accruing ? Brand.warning : palette.textPrimary)
                         .monospacedDigit()
                 }
                 Spacer()
@@ -220,7 +225,7 @@ struct MeDetention: View {
                         .foregroundStyle(palette.textTertiary)
                     Text(humanMinutes(d.billableMinutes))
                         .font(EType.bodyStrong)
-                        .foregroundStyle(d.billableMinutes > 0 ? Brand.warning : palette.textPrimary)
+                        .foregroundStyle(accruing ? Brand.warning : palette.textPrimary)
                         .monospacedDigit()
                 }
                 Spacer()
@@ -229,7 +234,7 @@ struct MeDetention: View {
                         .font(EType.micro)
                         .tracking(1.2)
                         .foregroundStyle(palette.textTertiary)
-                    Text(currency(d.currentCharge))
+                    Text(money(d.currentCharge, currency: d.currency))
                         .font(EType.bodyStrong)
                         .foregroundStyle(LinearGradient.diagonal)
                         .monospacedDigit()
@@ -242,21 +247,23 @@ struct MeDetention: View {
                         .font(EType.caption)
                         .foregroundStyle(palette.textTertiary)
                     Spacer()
-                    Text(urgent ? "OVER FREE" : "WITHIN FREE")
+                    Text(commercialStateLabel(d))
                         .font(EType.micro)
                         .tracking(1.1)
-                        .foregroundStyle(urgent ? Brand.warning : palette.textTertiary)
+                        .foregroundStyle(accruing ? Brand.warning : palette.textTertiary)
                 }
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(palette.tintNeutral.opacity(0.5))
-                        Capsule().fill(urgent
-                                       ? AnyShapeStyle(Brand.warning)
-                                       : AnyShapeStyle(LinearGradient.diagonal))
-                            .frame(width: max(4, geo.size.width * min(1, overtimeRatio)))
+                if let overtimeRatio {
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(palette.tintNeutral.opacity(0.5))
+                            Capsule().fill(accruing
+                                           ? AnyShapeStyle(Brand.warning)
+                                           : AnyShapeStyle(LinearGradient.diagonal))
+                                .frame(width: max(4, geo.size.width * min(1, overtimeRatio)))
+                        }
                     }
+                    .frame(height: 6)
                 }
-                .frame(height: 6)
             }
         }
         .padding(Space.s3)
@@ -288,20 +295,20 @@ struct MeDetention: View {
     }
 
     private func historyRow(_ e: DetentionAPI.HistoryEvent) -> some View {
-        let billing = (e.billingStatus ?? e.status ?? "pending").lowercased()
+        let billing = (e.billingStatus ?? e.status ?? "unavailable").lowercased()
         let canDispute = !(billing == "disputed" || billing == "paid")
         let wx = historyWeather[e.id]
         return VStack(alignment: .leading, spacing: Space.s2) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Text(e.facilityName)
+                        Text(displayName(e.facilityName, fallback: "Facility unavailable"))
                             .font(EType.bodyStrong)
                             .foregroundStyle(palette.textPrimary)
                         if wx?.isHold == true { wxHoldChip }
                     }
                     HStack(spacing: 4) {
-                        Text(e.locationType.capitalized)
+                        Text(displayName(e.locationType?.capitalized, fallback: "Location type unavailable"))
                         if let shipper = e.shipperName, shipper != "N/A", !shipper.isEmpty {
                             Text("· \(shipper)")
                         }
@@ -318,7 +325,7 @@ struct MeDetention: View {
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                 Spacer()
-                Text(currency(e.totalCharge))
+                Text(money(e.totalCharge, currency: e.currency))
                     .font(EType.bodyStrong)
                     .foregroundStyle(billing == "paid"
                                      ? AnyShapeStyle(LinearGradient.diagonal)
@@ -364,7 +371,7 @@ struct MeDetention: View {
             case "disputed":
                 return ("DISPUTED", Brand.magenta, AnyShapeStyle(Brand.magenta.opacity(0.2)))
             default:
-                return ("PENDING", palette.textSecondary, AnyShapeStyle(palette.tintNeutral.opacity(0.55)))
+                return (status.uppercased(), palette.textSecondary, AnyShapeStyle(palette.tintNeutral.opacity(0.55)))
             }
         }()
         Text(label)
@@ -489,19 +496,48 @@ struct MeDetention: View {
 
     // MARK: Helpers
 
-    private func currency(_ value: Double) -> String {
-        let f = NumberFormatter()
-        f.numberStyle = .currency
-        f.locale = Locale(identifier: "en_US")
-        f.maximumFractionDigits = 0
-        return f.string(from: NSNumber(value: value)) ?? "$\(Int(value))"
+    private var dashboardCurrency: TruckDetentionNegotiatedTerms.Currency? {
+        let observed = store.active.compactMap(\.currency)
+            + store.history.compactMap(\.currency)
+        let distinct = Set(observed)
+        return distinct.count == 1 ? distinct.first : nil
     }
 
-    private func humanMinutes(_ mins: Int) -> String {
+    private func money(
+        _ value: Double?,
+        currency: TruckDetentionNegotiatedTerms.Currency?
+    ) -> String {
+        guard let value, let currency else { return "—" }
+        return value.formatted(
+            .currency(code: currency.rawValue)
+                .precision(.fractionLength(0...2))
+        )
+    }
+
+    private func humanMinutes(_ mins: Int?) -> String {
+        guard let mins else { return "—" }
         if mins < 60 { return "\(mins)m" }
         let h = mins / 60
         let m = mins % 60
         return m == 0 ? "\(h)h" : "\(h)h \(m)m"
+    }
+
+    private func displayName(_ value: String?, fallback: String) -> String {
+        guard let value, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return fallback
+        }
+        return value
+    }
+
+    private func commercialStateLabel(_ detention: DetentionAPI.ActiveDetention) -> String {
+        switch detention.commercialState {
+        case "verified_calculation", "verified_live_estimate":
+            return detention.billableMinutes.map { $0 > 0 } == true ? "ACCRUING" : "WITHIN FREE"
+        case "awaiting_suspension_adjudication":
+            return "AWAITING ADJUDICATION"
+        default:
+            return "COMMERCIAL STATE UNAVAILABLE"
+        }
     }
 }
 
@@ -519,9 +555,9 @@ private struct DisputeSheet: View {
         NavigationStack {
             Form {
                 Section("Detention") {
-                    Text(event.facilityName)
+                    Text(event.facilityName ?? "Facility unavailable")
                         .font(EType.bodyStrong)
-                    Text(event.locationType.capitalized)
+                    Text(event.locationType?.capitalized ?? "Location type unavailable")
                         .font(EType.caption)
                         .foregroundStyle(.secondary)
                 }

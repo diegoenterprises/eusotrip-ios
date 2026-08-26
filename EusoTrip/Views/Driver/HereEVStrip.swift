@@ -1,18 +1,14 @@
 //
 //  HereEVStrip.swift
-//  EusoTrip — EV charging-nearby section backed by HERE EV
-//  Products (exposed via the HERE Browse Places category
-//  `700-7600-0322`).
+//  EusoTrip — EV charging-nearby section backed by HERE Search Browse
+//  discovery plus EV Charge Points API v3 live status and tariffs.
 //
 //  Silent when HERE returns no stations (most rural truck corridors
 //  today) — matches the "no fake data" doctrine. When stations are
 //  returned, each card renders the station title, brand chain,
 //  distance, and a connector-type pill row (CCS / CHAdeMO / Type 2
-//  / Tesla) so an EV truck driver sees at a glance whether the
-//  station matches their rig.
-//
-//  Future-proof for the vessel / rail vertical (shore-power
-//  charging) — swap the category code via an init param.
+//  / Tesla), real connector availability, and provider tariffs so an
+//  EV truck driver sees at a glance whether the station matches the rig.
 //
 //  Powered by ESANG AI™.
 //
@@ -122,6 +118,23 @@ struct HereEVStrip: View {
                         .foregroundStyle(palette.textSecondary)
                 }
             }
+            if item.liveDetails?.availabilityKnown == true,
+               let available = item.liveDetails?.availableConnectorCount {
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(available > 0 ? Brand.success : Brand.warning)
+                        .frame(width: 6, height: 6)
+                    Text(availabilityLabel(item, available: available))
+                        .font(EType.micro).tracking(0.4)
+                        .foregroundStyle(palette.textSecondary)
+                }
+            }
+            if let tariff = tariffLabel(item) {
+                Text(tariff)
+                    .font(EType.mono(.micro))
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1)
+            }
         }
         .padding(Space.s3)
         .frame(width: 220, alignment: .leading)
@@ -142,6 +155,30 @@ struct HereEVStrip: View {
             .padding(.horizontal, 5)
             .padding(.vertical, 2)
             .background(Capsule().fill(LinearGradient.diagonal.opacity(0.7)))
+    }
+
+    private func availabilityLabel(_ item: HereBrowseItem, available: Int) -> String {
+        guard let total = item.liveDetails?.totalConnectorCount else {
+            return "\(available) available now"
+        }
+        return "\(available) of \(total) available now"
+    }
+
+    private func tariffLabel(_ item: HereBrowseItem) -> String? {
+        if let price = item.liveDetails?.price {
+            if let perKwh = price.perKwh {
+                return "\(price.currency) \(String(format: "%.2f", perKwh))/kWh"
+            }
+            if let perSession = price.perSession {
+                return "\(price.currency) \(String(format: "%.2f", perSession))/session"
+            }
+        }
+        guard let tariff = item.liveDetails?.tariffs.first,
+              let currency = tariff.currency,
+              let component = tariff.components.first(where: {
+                  $0.dimension.lowercased() == "energy"
+              }) else { return nil }
+        return "\(currency) \(String(format: "%.2f", component.price))/kWh"
     }
 
     private func load() async {

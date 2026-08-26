@@ -269,9 +269,11 @@ private struct RailBorderCrossingETABody: View {
     /// or origin yard in the contract — so we render an honest single-marker
     /// crossing pin at its genuine lat/lng, never a fabricated corridor.
     private var crossingNode: HereLatLng? {
-        guard let lat = point?.lat, let lng = point?.lng,
-              !(lat == 0 && lng == 0) else { return nil }
-        return HereLatLng(lat, lng)
+        guard let coordinate = LatLongParser.validatedCoordinate(
+            latitude: point?.lat,
+            longitude: point?.lng
+        ) else { return nil }
+        return HereLatLng(coordinate.latitude, coordinate.longitude)
     }
 
     /// Bespoke crossing-node card: flat shipper/board register (tilt 0 ⇒
@@ -301,7 +303,8 @@ private struct RailBorderCrossingETABody: View {
                         HereMarker(at: node, kind: .stop,
                                    label: routeLabel, id: point?.id)
                     ])
-                ]
+                ],
+                mapModeContext: .primary(.rail)
             )
             .frame(height: 200)
             .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
@@ -560,8 +563,11 @@ private struct RailBorderCrossingETABody: View {
             let left = (point.railroadsA ?? []).joined(separator: ", ")
             let right = (point.railroadsB ?? []).joined(separator: ", ")
             lines.append("Railroads: \(left.isEmpty ? "-" : left) / \(right.isEmpty ? "-" : right)")
-            if let lat = point.lat, let lng = point.lng {
-                lines.append("Coordinates: \(String(format: "%.4f", lat)), \(String(format: "%.4f", lng))")
+            if let coordinate = LatLongParser.validatedCoordinate(
+                latitude: point.lat,
+                longitude: point.lng
+            ) {
+                lines.append("Coordinates: \(LatLongParser.displayString(coordinate))")
             }
             if let notes = point.notes, !notes.isEmpty {
                 lines.append("Notes: \(notes)")

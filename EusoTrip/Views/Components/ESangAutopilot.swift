@@ -553,10 +553,11 @@ enum eSangRoleDispatcher {
             return (.eusoRailNavSwap, "Rail550")
         case .vesselOperator:
             return (.eusoVesselNavSwap, "Vesl650")
-        // Driver + the web-continuation-only roles have no push-nav
-        // swap notification on iOS.
+        // Driver and the local-tab specialist/mode roles do not use a
+        // NotificationCenter push-nav swap. Their native owner handles ESANG
+        // destinations inside its typed dock contract.
         case .driver, .safety, .factoring,
-             .railDispatch, .railConductor, .shipCaptain:
+             .railDispatch, .railConductor, .shipCaptain, .serviceProvider:
             return nil
         }
     }
@@ -575,7 +576,7 @@ enum eSangRoleDispatcher {
              .superAdmin, .dispatch, .compliance, .railEngineer, .vesselOperator:
             return .eusoRoleNavBack
         case .driver, .safety, .factoring,
-             .railDispatch, .railConductor, .shipCaptain:
+             .railDispatch, .railConductor, .shipCaptain, .serviceProvider:
             return nil
         }
     }
@@ -855,7 +856,7 @@ enum eSangRoleDispatcher {
         case .vesselOperator:
             return vesselScreen(for: surface, segs: segs)
         case .driver, .safety, .factoring,
-             .railDispatch, .railConductor, .shipCaptain:
+             .railDispatch, .railConductor, .shipCaptain, .serviceProvider:
             return nil
         }
     }

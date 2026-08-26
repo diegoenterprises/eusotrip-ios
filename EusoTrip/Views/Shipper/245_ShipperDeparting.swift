@@ -112,8 +112,8 @@ final class ShipperDepartingStore: ObservableObject {
             let loc = try await api.shipperTelemetry.getLiveLocation(driverId: driverId)
             // STUB · named-gap — controlTower has no pin-write mutation.
             trackingResult = loc.stale
-                ? "Live pin is stale · pin-to-control-tower not yet wired (STUB)"
-                : "Live pin acquired · pin-to-control-tower not yet wired (STUB)"
+                ? "Live pin is stale · refresh location before sharing"
+                : "Live pin acquired · control-tower sharing unavailable"
             trackingInFlight = false
         } catch {
             trackingInFlight = false
@@ -127,7 +127,7 @@ final class ShipperDepartingStore: ObservableObject {
     func notifyConsignee() {
         actionError = nil
         // STUB · named-gap — no consignee-notify mutation exists.
-        notifyResult = "Consignee notify not yet wired (STUB)"
+        notifyResult = "No authorized consignee notification channel is configured."
     }
 }
 
@@ -449,106 +449,74 @@ struct ShipperDeparting: View {
         }
     }
 
-    // MARK: Route-progress map strip (SVG y=424)
+    // MARK: Route evidence strip (SVG y=424)
 
     private var routeMap: some View {
-        VStack(spacing: 0) {
-            GeometryReader { geo in
-                let w = geo.size.width, h = geo.size.height
-                // SVG corridor spans x=40..360 on a 400-wide card; map to
-                // the live width so the route line scales responsively.
-                let leftX = w * (40.0 / 400.0)
-                let rightX = w * (360.0 / 400.0)
-                let lineY = h * (50.0 / 96.0)
-                let span = rightX - leftX
-                ZStack(alignment: .topLeading) {
-                    // Inner panel.
-                    RoundedRectangle(cornerRadius: 13, style: .continuous)
-                        .fill(Color(hex: 0x10131A))
-                        .padding(1)
+        VStack(spacing: 9) {
+            HStack {
+                Text("LANE · \(originCity.uppercased()) → \(destinationCity.uppercased())")
+                    .font(.system(size: 8, weight: .heavy)).tracking(0.4)
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1).minimumScaleFactor(0.65)
+                Spacer(minLength: 8)
+                Text(distanceLabel)
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.5)
+                    .foregroundStyle(palette.textSecondary)
+            }
 
-                    // Corridor title — bound to real origin → destination.
-                    Text("ROUTE · \(originCity.uppercased()) → \(destinationCity.uppercased())")
-                        .font(.system(size: 8, weight: .heavy)).tracking(0.4)
+            HStack(spacing: 10) {
+                routeEvidenceEndpoint(role: "ORIGIN", label: originCity, tint: Brand.blue)
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(palette.textTertiary)
+                    .accessibilityHidden(true)
+                VStack(spacing: 3) {
+                    Image(systemName: "truck.box.fill")
+                        .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(palette.textSecondary)
-                        .lineLimit(1).minimumScaleFactor(0.6)
-                        .frame(width: w, alignment: .center)
-                        .position(x: w / 2, y: h * (20.0 / 96.0))
-
-                    // Base corridor line + just-departed progress segment.
-                    Capsule().fill(Color.white.opacity(0.16))
-                        .frame(width: span, height: 3)
-                        .position(x: leftX + span / 2, y: lineY)
-                    Capsule().fill(LinearGradient.primary)
-                        .frame(width: w * (10.0 / 400.0), height: 3)
-                        .position(x: leftX + w * (5.0 / 400.0), y: lineY)
-
-                    // Origin pin (DU disc) + city label.
-                    personaDisc("DU", diameter: 14, font: 6)
-                        .position(x: leftX, y: lineY)
-                    Text(originCity.uppercased())
-                        .font(.system(size: 6.5, weight: .heavy)).tracking(0.3)
-                        .foregroundStyle(palette.textSecondary)
-                        .fixedSize()
-                        .position(x: leftX + 30, y: lineY + 18)
-
-                    // Destination diamond + city label.
-                    Rectangle()
-                        .fill(Color(hex: 0x10131A))
-                        .frame(width: 10, height: 10)
-                        .overlay(Rectangle().strokeBorder(LinearGradient.primary, lineWidth: 1.4))
-                        .rotationEffect(.degrees(45))
-                        .position(x: rightX, y: lineY)
-                    Text(destinationCity.uppercased())
-                        .font(.system(size: 6.5, weight: .heavy)).tracking(0.3)
-                        .foregroundStyle(LinearGradient.primary)
-                        .fixedSize()
-                        .position(x: rightX - 18, y: lineY + 18)
-
-                    // ME tractor (just departed origin).
-                    HStack(spacing: 0) {
-                        Text("ME").font(.system(size: 7, weight: .heavy)).tracking(0.3)
-                            .foregroundStyle(.white)
-                        Text("→").font(.system(size: 7, weight: .heavy))
-                            .foregroundStyle(.white).padding(.leading, 4)
-                    }
-                    .frame(width: 28, height: 14)
-                    .background(RoundedRectangle(cornerRadius: 1.5).fill(LinearGradient.diagonal))
-                    .position(x: leftX + w * (10.0 / 400.0), y: lineY)
-
-                    // ETA meter chip (top-right) — no live ETA → "—".
-                    HStack(spacing: 4) {
-                        Text("ETA").font(.system(size: 6, weight: .heavy)).tracking(0.3)
-                            .foregroundStyle(palette.textSecondary)
-                        Spacer(minLength: 4)
-                        Text("—").font(.system(size: 8, weight: .heavy)).monospacedDigit()
-                            .foregroundStyle(LinearGradient.primary)
-                    }
-                    .padding(.horizontal, 8)
-                    .frame(width: 60, height: 18)
-                    .background(RoundedRectangle(cornerRadius: 2).fill(palette.bgCard))
-                    .overlay(RoundedRectangle(cornerRadius: 2).strokeBorder(Brand.blue.opacity(0.65), lineWidth: 0.8))
-                    .position(x: w * (350.0 / 400.0), y: h * (28.0 / 96.0))
-
-                    // Footer route line — distance is live, ETA is "—".
-                    Text("ROUTE · \(distanceLabel)")
-                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                        .foregroundStyle(LinearGradient.primary)
-                        .fixedSize()
-                        .position(x: leftX - 26 + 100, y: h * (86.0 / 96.0))
-                    Text("ETA —")
-                        .font(.system(size: 9, weight: .heavy)).tracking(0.5).monospacedDigit()
-                        .foregroundStyle(palette.textSecondary)
-                        .fixedSize()
-                        .frame(width: w - 28, alignment: .trailing)
-                        .position(x: w / 2 - 7, y: h * (86.0 / 96.0))
+                    Text("GEOMETRY IN DRIVER NAV")
+                        .font(.system(size: 7, weight: .heavy)).tracking(0.35)
+                        .foregroundStyle(palette.textTertiary)
                 }
+                .frame(maxWidth: .infinity)
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(palette.textTertiary)
+                    .accessibilityHidden(true)
+                routeEvidenceEndpoint(role: "DESTINATION", label: destinationCity, tint: Brand.magenta)
+            }
+
+            HStack {
+                Text("NO ROUTE GEOMETRY ON THIS READ")
+                    .font(.system(size: 7.5, weight: .heavy)).tracking(0.45)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer()
+                Text("ETA —")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.5).monospacedDigit()
+                    .foregroundStyle(palette.textSecondary)
             }
         }
-        .frame(height: 96)
+        .padding(.horizontal, 12).padding(.vertical, 9)
+        .frame(minHeight: 106)
         .background(palette.bgCard)
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Lane from \(originCity) to \(destinationCity), \(distanceLabel). Exact route geometry is available in driver navigation. ETA unavailable.")
+    }
+
+    private func routeEvidenceEndpoint(role: String, label: String, tint: Color) -> some View {
+        VStack(spacing: 3) {
+            Circle().fill(tint).frame(width: 9, height: 9)
+            Text(role)
+                .font(.system(size: 6.5, weight: .heavy)).tracking(0.45)
+                .foregroundStyle(palette.textTertiary)
+            Text(label.uppercased())
+                .font(.system(size: 7.5, weight: .heavy)).tracking(0.25)
+                .foregroundStyle(palette.textSecondary)
+                .lineLimit(1).minimumScaleFactor(0.65)
+        }
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: ROUTE TERM ROSTER header (SVG y=536)

@@ -836,7 +836,6 @@ struct ShipperApplePayWallet: View {
         }
     }
 
-    @ViewBuilder
     private func walletBanner(_ text: String, kind: WalletBannerKind) -> some View {
         let tint: Color = kind == .success ? Brand.success : kind == .error ? Brand.danger : Brand.blue
         let glyph: WalletGlyph.Kind = kind == .success ? .spark : kind == .error ? .pulse : .bolt

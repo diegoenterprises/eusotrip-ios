@@ -37,17 +37,13 @@ private struct HOSDriver: Decodable, Identifiable, Hashable {
     /// (driver hasn't loaded animals yet).
     let livestock28hrRemaining: Double?
 
-    /// True when this driver's currently-assigned load is livestock
-    /// AND the 28-hr countdown is active. Drives the bucketing in
-    /// `content`.
-    var isLivestock28hr: Bool {
-        loadVertical?.lowercased() == "livestock" && livestock28hrRemaining != nil
-    }
+    var isLivestockLoad: Bool { loadVertical?.lowercased() == "livestock" }
 }
 
 private struct HOSBody: View {
     @Environment(\.palette) private var palette
     @State private var rows: [HOSDriver] = []
+    @State private var fleetEvidence: [HOSFleetDriver] = []
     @State private var loading = true
     @State private var loadError: String? = nil
 
@@ -77,7 +73,9 @@ private struct HOSBody: View {
                 Text("DISPATCH · HOS").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             Text("HOS alerts").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
-            Text("Drivers under 2h remaining are flagged. Reassign before they wall.").font(EType.caption).foregroundStyle(palette.textSecondary)
+            Text("Current, company-scoped ELD observations under 2h are flagged. Missing or stale evidence stays unavailable.")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
         }
     }
 
@@ -92,13 +90,20 @@ private struct HOSBody: View {
             // 11-hr driving / 14-hr on-duty clock. The two cards
             // render with different thresholds and regulatory pills so
             // the dispatcher can't confuse the rules.
-            let livestockDrivers = rows.filter { $0.isLivestock28hr }
-            let standardDrivers  = rows.filter { !$0.isLivestock28hr }
-            let critical = standardDrivers.filter { ($0.hoursRemaining ?? 999) < 2 }
-            let warn = standardDrivers.filter { let h = $0.hoursRemaining ?? 999; return h >= 2 && h < 4 }
-            let healthy = standardDrivers.filter { ($0.hoursRemaining ?? 0) >= 4 }
+            let livestockDrivers = rows.filter(\.isLivestockLoad)
+            let standardDrivers  = rows.filter { !$0.isLivestockLoad }
+            let critical = standardDrivers.filter { standardHours(for: $0).map { $0 < 2 } == true }
+            let warn = standardDrivers.filter {
+                standardHours(for: $0).map { $0 >= 2 && $0 < 4 } == true
+            }
+            let healthy = standardDrivers.filter { standardHours(for: $0).map { $0 >= 4 } == true }
+            let unavailable = standardDrivers.filter { standardHours(for: $0) == nil }
             if rows.isEmpty {
-                EusoEmptyState(systemImage: "clock", title: "No HOS data", subtitle: "Drivers without ELD telemetry won't show here.")
+                EusoEmptyState(
+                    systemImage: "clock",
+                    title: "No HOS data",
+                    subtitle: "No company-scoped driver status rows were returned."
+                )
             } else {
                 if !livestockDrivers.isEmpty {
                     livestock28hrSection(livestockDrivers)
@@ -106,19 +111,25 @@ private struct HOSBody: View {
                 if !critical.isEmpty {
                     LifecycleCard(accentDanger: true) {
                         LifecycleSection(label: "CRITICAL · UNDER 2H · 14-HR HoS", icon: "exclamationmark.octagon")
-                        ForEach(critical) { d in driverLine(d, color: Brand.danger) }
+                        ForEach(critical) { d in standardDriverLine(d, color: Brand.danger) }
                     }
                 }
                 if !warn.isEmpty {
                     LifecycleCard {
                         LifecycleSection(label: "WARN · UNDER 4H · 14-HR HoS", icon: "exclamationmark.triangle")
-                        ForEach(warn) { d in driverLine(d, color: palette.textPrimary) }
+                        ForEach(warn) { d in standardDriverLine(d, color: palette.textPrimary) }
                     }
                 }
                 if !healthy.isEmpty {
                     LifecycleCard(accentGradient: true) {
                         LifecycleSection(label: "HEALTHY · 4H+ · 14-HR HoS", icon: "checkmark.seal")
-                        ForEach(healthy) { d in driverLine(d, color: palette.textPrimary) }
+                        ForEach(healthy) { d in standardDriverLine(d, color: palette.textPrimary) }
+                    }
+                }
+                if !unavailable.isEmpty {
+                    LifecycleCard {
+                        LifecycleSection(label: "HOS EVIDENCE UNAVAILABLE", icon: "questionmark.circle")
+                        ForEach(unavailable) { d in unavailableDriverLine(d) }
                     }
                 }
             }
@@ -131,9 +142,10 @@ private struct HOSBody: View {
     /// 4h–8h warn, >= 8h healthy.
     @ViewBuilder
     private func livestock28hrSection(_ drivers: [HOSDriver]) -> some View {
-        let critical = drivers.filter { ($0.livestock28hrRemaining ?? 999) < 4 }
-        let warn     = drivers.filter { let h = $0.livestock28hrRemaining ?? 999; return h >= 4 && h < 8 }
-        let healthy  = drivers.filter { ($0.livestock28hrRemaining ?? 0) >= 8 }
+        let critical = drivers.filter { validLivestockHours($0).map { $0 < 4 } == true }
+        let warn = drivers.filter { validLivestockHours($0).map { $0 >= 4 && $0 < 8 } == true }
+        let reported = drivers.filter { validLivestockHours($0).map { $0 >= 8 } == true }
+        let unavailable = drivers.filter { validLivestockHours($0) == nil }
         VStack(alignment: .leading, spacing: Space.s3) {
             HStack(spacing: 6) {
                 Image(systemName: "person.2.fill")
@@ -147,36 +159,60 @@ private struct HOSBody: View {
                     .font(.system(size: 8, weight: .semibold)).tracking(0.4)
                     .foregroundStyle(palette.textTertiary)
             }
-            Text("Animals can't be in continuous transit more than 28 hours without food, water and rest. Drivers below 4 hours need an immediate pen stop.")
+            Text("The load-status feed reports this timer without observation freshness. Values remain reported, not current, until that contract carries a timestamp and source.")
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             if !critical.isEmpty {
                 LifecycleCard(accentDanger: true) {
-                    LifecycleSection(label: "CRITICAL · UNDER 4H · 28-HR LAW", icon: "exclamationmark.octagon")
+                    LifecycleSection(label: "REPORTED UNDER 4H · FRESHNESS UNAVAILABLE", icon: "exclamationmark.octagon")
                     ForEach(critical) { d in livestockDriverLine(d, color: Brand.danger) }
                 }
             }
             if !warn.isEmpty {
                 LifecycleCard {
-                    LifecycleSection(label: "WARN · UNDER 8H · 28-HR LAW", icon: "exclamationmark.triangle")
+                    LifecycleSection(label: "REPORTED UNDER 8H · FRESHNESS UNAVAILABLE", icon: "exclamationmark.triangle")
                     ForEach(warn) { d in livestockDriverLine(d, color: palette.textPrimary) }
                 }
             }
-            if !healthy.isEmpty {
-                LifecycleCard(accentGradient: true) {
-                    LifecycleSection(label: "HEALTHY · 8H+ · 28-HR LAW", icon: "checkmark.seal")
-                    ForEach(healthy) { d in livestockDriverLine(d, color: palette.textPrimary) }
+            if !reported.isEmpty {
+                LifecycleCard {
+                    LifecycleSection(label: "REPORTED 8H+ · FRESHNESS UNAVAILABLE", icon: "clock")
+                    ForEach(reported) { d in livestockDriverLine(d, color: palette.textPrimary) }
+                }
+            }
+            if !unavailable.isEmpty {
+                LifecycleCard {
+                    LifecycleSection(label: "28-HR TIMER UNAVAILABLE", icon: "questionmark.circle")
+                    ForEach(unavailable) { d in livestockDriverLine(d, color: palette.textSecondary) }
                 }
             }
         }
     }
 
-    private func driverLine(_ d: HOSDriver, color: Color) -> some View {
+    private func standardDriverLine(_ d: HOSDriver, color: Color) -> some View {
         HStack {
-            Text(d.name).font(EType.bodyStrong).foregroundStyle(color)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(d.name).font(EType.bodyStrong).foregroundStyle(color)
+                Text(evidenceLine(for: d))
+                    .font(EType.micro)
+                    .foregroundStyle(palette.textTertiary)
+            }
             Spacer(minLength: 0)
-            Text(d.hoursRemaining.map { String(format: "%.1fh", $0) } ?? "-").font(EType.body).foregroundStyle(color).monospacedDigit()
+            Text(standardHours(for: d).map { String(format: "%.1fh", $0) } ?? "—")
+                .font(EType.body).foregroundStyle(color).monospacedDigit()
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func unavailableDriverLine(_ d: HOSDriver) -> some View {
+        HStack(alignment: .top) {
+            Text(d.name).font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+            Spacer(minLength: 0)
+            Text(unavailableReason(for: d))
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+                .multilineTextAlignment(.trailing)
         }
         .padding(.vertical, 4)
     }
@@ -194,7 +230,7 @@ private struct HOSBody: View {
                 }
             }
             Spacer(minLength: 0)
-            Text(d.livestock28hrRemaining.map { String(format: "%.1fh / 28h", $0) } ?? "-")
+            Text(validLivestockHours(d).map { String(format: "%.1fh / 28h", $0) } ?? "—")
                 .font(EType.body).foregroundStyle(color).monospacedDigit()
         }
         .padding(.vertical, 4)
@@ -202,17 +238,60 @@ private struct HOSBody: View {
 
     private func load() async {
         loading = true; loadError = nil
+        rows = []
+        fleetEvidence = []
         struct In: Encodable { let limit: Int }
         do {
-            let r: [HOSDriver] = try await EusoTripAPI.shared.query("dispatch.getDriverStatuses", input: In(limit: 200))
-            rows = r.sorted { ($0.hoursRemaining ?? 999) < ($1.hoursRemaining ?? 999) }
+            let driverRows: [HOSDriver] = try await EusoTripAPI.shared.query(
+                "dispatch.getDriverStatuses",
+                input: In(limit: 200)
+            )
+            let evidenceRows: [HOSFleetDriver] = try await EusoTripAPI.shared.queryNoInput("hos.getFleetHOS")
+            fleetEvidence = evidenceRows
+            rows = driverRows
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
         loading = false
     }
+
+    private func evidence(for driver: HOSDriver) -> HOSFleetDriver? {
+        fleetEvidence.first {
+            $0.driverId == driver.id || $0.userId.map { String($0) } == driver.id
+        }
+    }
+
+    private func standardHours(for driver: HOSDriver) -> Double? {
+        guard let evidence = evidence(for: driver), evidence.hasCurrentObservation(),
+              let hours = evidence.hoursAvailable?.drivingRemaining,
+              hours.isFinite, hours >= 0 else { return nil }
+        return hours
+    }
+
+    private func evidenceLine(for driver: HOSDriver) -> String {
+        guard let evidence = evidence(for: driver) else { return "HOS SOURCE UNAVAILABLE" }
+        let source = evidence.source?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let sourceLabel = source.flatMap { $0.isEmpty ? nil : $0.uppercased() } ?? "SOURCE UNAVAILABLE"
+        return "\(sourceLabel) · CURRENT ≤15M"
+    }
+
+    private func unavailableReason(for driver: HOSDriver) -> String {
+        guard let evidence = evidence(for: driver) else { return "No company-scoped HOS observation" }
+        if !evidence.hasCurrentObservation() {
+            switch HOSObservationClock.freshness(evidence.freshness) {
+            case .stale: return "HOS observation is stale"
+            case .unavailable, .invalid: return "HOS freshness unavailable"
+            case .current: return evidence.assignmentEligibility().reason ?? "HOS observation incomplete"
+            }
+        }
+        return "Driving-hours counter unavailable"
+    }
+
+    private func validLivestockHours(_ driver: HOSDriver) -> Double? {
+        guard let hours = driver.livestock28hrRemaining, hours.isFinite, hours >= 0 else { return nil }
+        return hours
+    }
 }
 
 #Preview("704 · HOS · Night") { DispatchHOSAlertsScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }
 #Preview("704 · HOS · Afternoon") { DispatchHOSAlertsScreen(theme: Theme.light).environmentObject(EusoTripSession()).preferredColorScheme(.light) }
-

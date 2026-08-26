@@ -1,509 +1,393 @@
 //
 //  655_RailLossPrevention.swift
-//  EusoTrip — Rail Engineer · Loss Prevention.
+//  EusoTrip - Rail Engineer - Loss Prevention.
 //
-//  Verbatim port of "655 Rail Loss Prevention · Dark" (05 Rail).
-//  CARRIER-SIDE intermodal-parity gap-fill. Built to the flagship DETAIL
-//  grammar (645 Rail Detention Dashboard / 02 Shipper 205): back-chevron +
-//  eyebrow + mono caption + title 28/-0.4; gradient-rimmed (cardRim+inset)
-//  hero ActiveCard with lead figure + progress; 3-cell KPI strip; itemized
-//  ListRow stack (40x40 icon chip + title + mono sub + short status pill +
-//  right tabular value); context strip; CTA pair.
-//
-//  Live tRPC anchors (grep-confirmed, frontend/server/routers/freightClaims.ts):
-//    freightClaims.getLossPreventionDashboard  :988  — hero + KPI strip + prevention strip
-//    freightClaims.getLossPreventionAnalysis   :1051 — hotspots ListRow stack
-//    freightClaims.getClaimsAnalytics          :1160 — (analysis surface · CTA)
-//
-//  Charts/list plot LIVE data only — empty state when the series is absent,
-//  never fabricated.
+//  Consumes both loss-prevention procedures without collapsing null, partial,
+//  dimensioned, no-observation, or not-modeled metric states.
 //
 
 import SwiftUI
+
+private struct MetricTruth655: Decodable {
+    struct Provenance: Decodable {
+        let source: String?
+        let observedAt: String?
+        let computedAt: String?
+        let basis: String?
+    }
+    let valueState: String
+    let accessState: String?
+    let trackingState: String
+    let provenance: Provenance
+    let reason: String?
+}
+private struct MoneyBucket655: Decodable { let currency: String; let amount: Double }
+private struct AverageBucket655: Decodable { let currency: String; let amount: Double; let count: Int }
+
+private struct LossPreventionDashboard655: Decodable {
+    struct Metrics: Decodable {
+        let totalLosses: Int
+        let lossValue: Double?
+        let lossValueCurrency: String?
+        let totalsByCurrency: [MoneyBucket655]
+        let unvaluedLossCount: Int
+        let preventedLosses: Int?
+        let preventionSavings: Double?
+        let preventionSavingsCurrency: String?
+        let lossRatio: Double?
+        let lossRatioBasis: String
+        let trendDirection: String?
+    }
+    struct Alert: Decodable, Identifiable {
+        let id: String; let severity: String; let message: String; let lane: String?; let createdAt: String
+    }
+    struct RiskLane: Decodable, Identifiable {
+        struct States: Decodable { let totalValue: MetricTruth655; let riskScore: MetricTruth655 }
+        let lane: String
+        let lossCount: Int
+        let totalValue: Double?
+        let totalValueCurrency: String?
+        let totalsByCurrency: [MoneyBucket655]
+        let riskScore: Double?
+        let riskBasis: String
+        let metricStates: States
+        var id: String { lane }
+    }
+    struct States: Decodable {
+        let totalLosses: MetricTruth655
+        let lossValue: MetricTruth655
+        let unvaluedLossCount: MetricTruth655?
+        let preventedLosses: MetricTruth655
+        let preventionSavings: MetricTruth655
+        let lossRatio: MetricTruth655
+        let trendDirection: MetricTruth655
+    }
+    struct Provenance: Decodable {
+        let source: String
+        let recordKind: String
+        let scope: String
+        let transportMode: String?
+        let observedAt: String?
+        let computedAt: String
+    }
+    let transportMode: String?
+    let metrics: Metrics
+    let alerts: [Alert]
+    let topRiskLanes: [RiskLane]
+    let metricStates: States
+    let provenance: Provenance
+}
+
+private struct LossPreventionAnalysis655: Decodable {
+    struct Row: Decodable, Identifiable {
+        struct States: Decodable {
+            let claimCount: MetricTruth655; let totalValue: MetricTruth655
+            let avgValue: MetricTruth655; let trend: MetricTruth655
+        }
+        let group: String
+        let claimCount: Int
+        let totalValue: Double?
+        let totalValueCurrency: String?
+        let totalsByCurrency: [MoneyBucket655]
+        let averagesByCurrency: [AverageBucket655]
+        let avgValue: Double?
+        let unvaluedCount: Int
+        let trend: String?
+        let metricStates: States
+        var id: String { group }
+    }
+    struct Provenance: Decodable {
+        let source: String
+        let recordKind: String
+        let derivation: String
+        let transportMode: String?
+        let observedAt: String?
+        let computedAt: String
+    }
+    let groupBy: String
+    let period: String
+    let transportMode: String?
+    let periodStart: String
+    let data: [Row]
+    let recommendations: [String]
+    let unclassifiedCount: Int
+    let provenance: Provenance
+}
 
 struct RailLossPreventionScreen: View {
     let theme: Theme.Palette
     var body: some View {
         Shell(theme: theme) { RailLossPreventionBody() } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home",      systemImage: "house",              isCurrent: false),
-                          NavSlot(label: "Shipments", systemImage: "shippingbox",        isCurrent: false)],
+                leading: [NavSlot(label: "Home", systemImage: "house", isCurrent: false),
+                          NavSlot(label: "Shipments", systemImage: "shippingbox", isCurrent: false)],
                 trailing: [NavSlot(label: "Compliance", systemImage: "checkmark.shield", isCurrent: true),
-                           NavSlot(label: "Me",          systemImage: "person",          isCurrent: false)],
+                           NavSlot(label: "Me", systemImage: "person", isCurrent: false)],
                 orbState: .idle
             )
         }
     }
 }
 
-// MARK: - Data shapes (mirror freightClaims.ts response objects)
-
-private struct LossPreventionDashboard: Decodable {
-    struct Metrics: Decodable {
-        let totalLosses: Int?
-        let lossValue: Double?
-        let preventedLosses: Int?
-        let preventionSavings: Double?
-        let lossRatio: Double?
-        let trendDirection: String?
-    }
-    struct Alert: Decodable, Identifiable {
-        let id: String
-        let severity: String?
-        let message: String?
-        let lane: String?
-        let createdAt: String?
-    }
-    struct RiskLane: Decodable, Identifiable {
-        let lane: String
-        let lossCount: Int?
-        let totalValue: Double?
-        let riskScore: Double?
-        var id: String { lane }
-    }
-    let metrics: Metrics?
-    let alerts: [Alert]?
-    let topRiskLanes: [RiskLane]?
-}
-
-private struct LossPreventionAnalysis: Decodable {
-    struct Row: Decodable, Identifiable {
-        let group: String
-        let claimCount: Int?
-        let totalValue: Double?
-        let avgValue: Double?
-        let trend: String?
-        var id: String { group }
-    }
-    let groupBy: String?
-    let period: String?
-    let data: [Row]?
-    let recommendations: [String]?
-}
-
-// MARK: - Body
-
 private struct RailLossPreventionBody: View {
     @Environment(\.palette) private var palette
-    @State private var dashboard: LossPreventionDashboard? = nil
-    @State private var analysis: LossPreventionAnalysis? = nil
+    @State private var dashboard: LossPreventionDashboard655?
+    @State private var analysis: LossPreventionAnalysis655?
     @State private var loading = true
-    @State private var loadError: String? = nil
-
-    // Derived metric strings (LIVE only — empty when the series is absent).
-    private var lossValue: Double { dashboard?.metrics?.lossValue ?? 0 }
-    private var lossRatioPct: Double { (dashboard?.metrics?.lossRatio ?? 0) * 100 }
-    private var hotspotCount: Int { dashboard?.topRiskLanes?.count ?? 0 }
-    private var trendDirection: String { dashboard?.metrics?.trendDirection ?? "stable" }
-
-    private func currencyCompact(_ v: Double) -> String {
-        if v >= 1_000_000 { return String(format: "$%.1fM", v / 1_000_000) }
-        if v >= 1_000     { return String(format: "$%.0fK", v / 1_000) }
-        return String(format: "$%.0f", v)
-    }
-    private func currencyFull(_ v: Double) -> String {
-        let f = NumberFormatter()
-        f.numberStyle = .decimal
-        f.maximumFractionDigits = 0
-        let n = f.string(from: NSNumber(value: v)) ?? "0"
-        return "$\(n)"
-    }
+    @State private var loadError: String?
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 0) {
-                eyebrow
-                titleBlock
+            VStack(alignment: .leading, spacing: Space.s4) {
+                header
                 IridescentHairline()
-                    .padding(.top, Space.s3)
-
                 if loading {
-                    loadingState
-                } else if let err = loadError {
-                    LifecycleCard(accentDanger: true) {
-                        Text(err).font(EType.caption).foregroundStyle(Brand.danger)
-                    }
-                    .padding(.top, Space.s4)
-                } else {
-                    heroCard
-                        .padding(.top, Space.s4)
-                    kpiStrip
-                        .padding(.top, Space.s3)
-                    hotspotsSection
-                        .padding(.top, Space.s4)
-                    preventionStrip
-                        .padding(.top, Space.s4)
-                    ctaPair
-                        .padding(.top, Space.s5)
+                    LifecycleCard { Text("Loading loss evidence...").font(EType.caption).foregroundStyle(palette.textSecondary) }
+                } else if let loadError {
+                    LifecycleCard(accentDanger: true) { Text(loadError).font(EType.caption).foregroundStyle(Brand.danger) }
+                } else if let dashboard, let analysis {
+                    hero(dashboard)
+                    kpis(dashboard)
+                    hotspots(analysis)
+                    preventionState(dashboard)
+                    provenance(dashboard, analysis)
                 }
                 Color.clear.frame(height: 96)
             }
-            .padding(.horizontal, Space.s5)
-            .padding(.top, Space.s4)
+            .padding(.horizontal, Space.s5).padding(.top, Space.s4)
         }
         .task { await reload() }
         .eusoRefreshable { await reload() }
     }
 
-    // MARK: - Eyebrow (sparkle once · 12 MO mono)
-
-    private var eyebrow: some View {
-        HStack {
-            EusoTripEyebrow(verbatim: "RAIL ENGINEER · LOSS PREVENTION")
-                .font(.system(size: 9, weight: .heavy)).tracking(1.0)
-                .foregroundStyle(LinearGradient.primary)
-            Spacer()
-            Text("12 MO")
-                .font(EType.mono(.micro)).tracking(1.0)
-                .foregroundStyle(palette.textTertiary)
+    private var header: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack {
+                EusoTripEyebrow(verbatim: "RAIL ENGINEER · LOSS PREVENTION")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1).foregroundStyle(LinearGradient.primary)
+                Spacer()
+                Text("12 MO").font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
+            }
+            Text("Loss prevention").font(.system(size: 28, weight: .bold)).foregroundStyle(palette.textPrimary)
         }
     }
 
-    // MARK: - Title block (back-chevron + title 28/-0.4 · BNSF caption)
-
-    private var titleBlock: some View {
-        HStack(alignment: .top) {
-            HStack(alignment: .center, spacing: Space.s2) {
-                Text("Loss prevention")
-                    .font(.system(size: 28, weight: .bold)).tracking(-0.4)
-                    .foregroundStyle(palette.textPrimary)
-            }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 4) {
-                Text("BNSF")
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                    .foregroundStyle(palette.textTertiary)
-                Text("12-month window")
-                    .font(EType.mono(.caption)).tracking(0.4)
-                    .foregroundStyle(palette.textSecondary)
-            }
-        }
-        .padding(.top, Space.s4)
-    }
-
-    // MARK: - Loading
-
-    private var loadingState: some View {
-        VStack(spacing: Space.s2) {
-            ForEach(0..<4, id: \.self) { _ in
-                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                    .fill(palette.bgCardSoft).frame(height: 72)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                        .strokeBorder(palette.borderFaint))
-            }
-        }
-        .padding(.top, Space.s4)
-    }
-
-    // MARK: - Hero (gradient-rimmed ActiveCard · lead figure + progress)
-
-    private var heroCard: some View {
+    private func hero(_ value: LossPreventionDashboard655) -> some View {
         ActiveCard {
-            VStack(alignment: .leading, spacing: 0) {
-                // Chip row: window + delta trend.
-                HStack(spacing: Space.s2) {
-                    Text("12 mo")
-                        .font(.system(size: 11, weight: .bold)).tracking(0.5)
-                        .foregroundStyle(palette.textPrimary)
-                        .padding(.horizontal, 12).padding(.vertical, 5)
-                        .background(Color.white.opacity(0.08)).clipShape(Capsule())
-                    Text(trendChipLabel)
-                        .font(.system(size: 11, weight: .bold)).tracking(0.5)
-                        .foregroundStyle(Brand.success)
-                        .padding(.horizontal, 12).padding(.vertical, 5)
-                        .background(Brand.success.opacity(0.22)).clipShape(Capsule())
+            VStack(alignment: .leading, spacing: Space.s3) {
+                HStack {
+                    Text("PHYSICAL-LOSS CLAIM VALUE").font(EType.micro).foregroundStyle(palette.textTertiary)
                     Spacer()
+                    Text(trend(value.metrics.trendDirection, truth: value.metricStates.trendDirection))
+                        .font(.system(size: 11, weight: .bold)).foregroundStyle(palette.textSecondary)
                 }
-
-                // Lead figure + caption block + right RATIO column.
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(currencyFull(lossValue))
-                            .font(.system(size: 26, weight: .bold))
-                            .foregroundStyle(LinearGradient.diagonal)
-                            .monospacedDigit()
-                        Text("claims paid · 12 mo")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(palette.textSecondary)
-                        Text(String(format: "loss ratio %.1f%% · %@", lossRatioPct, trendCaption))
-                            .font(.system(size: 11))
-                            .foregroundStyle(palette.textTertiary)
-                    }
+                Text(money(value.metrics.lossValue, currency: value.metrics.lossValueCurrency,
+                           buckets: value.metrics.totalsByCurrency, truth: value.metricStates.lossValue))
+                    .font(.system(size: 27, weight: .bold)).monospacedDigit().foregroundStyle(LinearGradient.diagonal)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(caption(value.metricStates.lossValue)).font(.system(size: 10))
+                    .foregroundStyle(palette.textSecondary).lineLimit(3)
+                HStack {
+                    Text("Physical-loss claims / all scoped claims")
+                        .font(.system(size: 10)).foregroundStyle(palette.textTertiary)
                     Spacer()
-                    VStack(alignment: .trailing, spacing: 6) {
-                        Text("RATIO")
-                            .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                            .foregroundStyle(palette.textTertiary)
-                        Text(String(format: "%.1f%%", lossRatioPct))
-                            .font(EType.mono(.body)).tracking(0.2)
-                            .foregroundStyle(Brand.success)
-                    }
+                    Text(percent(value.metrics.lossRatio, truth: value.metricStates.lossRatio))
+                        .font(.system(size: 15, weight: .bold)).foregroundStyle(palette.textPrimary)
                 }
-                .padding(.top, Space.s4)
-
-                // Progress hairline — loss ratio as a fraction of a 10% ceiling
-                // (LIVE: zero-width when the ratio is 0).
-                GeometryReader { geo in
-                    let frac = min(max(lossRatioPct / 10.0, 0), 1)
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(Color.white.opacity(0.08))
-                        Capsule().fill(LinearGradient.diagonal)
-                            .frame(width: geo.size.width * frac)
-                    }
-                }
-                .frame(height: 6)
-                .padding(.top, Space.s4)
             }
         }
     }
 
-    private var trendChipLabel: String {
-        switch trendDirection.lowercased() {
-        case "improving": return "improving"
-        case "worsening": return "worsening"
-        default:          return "stable"
-        }
-    }
-    private var trendCaption: String {
-        switch trendDirection.lowercased() {
-        case "improving": return "trending down"
-        case "worsening": return "trending up"
-        default:          return "stable"
-        }
-    }
-
-    // MARK: - KPI strip (3-cell · cell-1 eusoDiagonal)
-
-    private var kpiStrip: some View {
+    private func kpis(_ value: LossPreventionDashboard655) -> some View {
         HStack(spacing: Space.s2) {
-            // Cell 1 — PAID, gradient fill (eusoDiagonal).
-            VStack(alignment: .leading, spacing: 6) {
-                Text("PAID")
-                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
-                    .foregroundStyle(.white.opacity(0.85))
-                Text(currencyCompact(lossValue))
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(.white).monospacedDigit()
-            }
-            .padding(Space.s3)
-            .frame(maxWidth: .infinity, minHeight: 72, alignment: .topLeading)
-            .background(LinearGradient.diagonal)
-            .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
-
-            MetricTile(label: "LOSS RATIO",
-                       value: String(format: "%.1f%%", lossRatioPct),
-                       accent: Brand.success)
-            MetricTile(label: "HOTSPOTS",
-                       value: "\(hotspotCount)",
-                       accent: hotspotCount > 0 ? Brand.warning : nil)
+            tile("LOSSES", count(value.metrics.totalLosses, truth: value.metricStates.totalLosses),
+                 caption(value.metricStates.totalLosses))
+            tile("PREVENTED", optionalCount(value.metrics.preventedLosses, truth: value.metricStates.preventedLosses),
+                 caption(value.metricStates.preventedLosses))
+            tile("SAVINGS", money(value.metrics.preventionSavings,
+                                   currency: value.metrics.preventionSavingsCurrency,
+                                   buckets: [], truth: value.metricStates.preventionSavings),
+                 caption(value.metricStates.preventionSavings))
         }
     }
 
-    // MARK: - Hotspots (itemized ListRow stack · LIVE analysis.data)
+    private func tile(_ label: String, _ value: String, _ sub: String) -> some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            Text(label).font(EType.micro).foregroundStyle(palette.textTertiary)
+            Text(value).font(.system(size: 17, weight: .semibold)).monospacedDigit()
+                .foregroundStyle(palette.textPrimary).lineLimit(2).minimumScaleFactor(0.65)
+            Text(sub).font(.system(size: 9)).foregroundStyle(palette.textTertiary).lineLimit(3)
+        }
+        .padding(Space.s3).frame(maxWidth: .infinity, minHeight: 96, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg).strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+    }
 
-    private var hotspotsSection: some View {
+    private func hotspots(_ value: LossPreventionAnalysis655) -> some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack {
-                Text("HOTSPOTS")
-                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
-                    .foregroundStyle(palette.textTertiary)
+                Text("HOTSPOTS · BY \(value.groupBy.uppercased())").font(EType.micro).foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("loss analysis")
-                    .font(EType.caption)
-                    .foregroundStyle(palette.textSecondary)
+                Text(value.period.uppercased()).font(EType.mono(.micro)).foregroundStyle(palette.textSecondary)
             }
-
-            let rows = analysis?.data ?? []
-            if rows.isEmpty {
-                EusoEmptyState(systemImage: "exclamationmark.triangle",
-                               title: "No hotspots",
-                               subtitle: "Loss-prevention hotspots will appear here once the analysis is computed.")
+            if value.data.isEmpty {
+                EusoEmptyState(systemImage: "exclamationmark.triangle", title: "No hotspot observations",
+                               subtitle: "No physical-loss groups were returned for this period.")
             } else {
-                VStack(spacing: 0) {
-                    ForEach(Array(rows.enumerated()), id: \.element.id) { idx, row in
-                        hotspotRow(row)
-                        if idx < rows.count - 1 {
-                            Divider().overlay(palette.borderFaint)
+                LifecycleCard {
+                    VStack(spacing: 0) {
+                        ForEach(Array(value.data.enumerated()), id: \.element.id) { index, row in
+                            HStack(spacing: Space.s3) {
+                                RoundedRectangle(cornerRadius: 10).fill(Brand.warning.opacity(0.14)).frame(width: 40, height: 40)
+                                    .overlay(Image(systemName: "exclamationmark.triangle").foregroundStyle(Brand.warning))
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(row.group).font(.system(size: 14, weight: .bold)).foregroundStyle(palette.textPrimary)
+                                    Text("\(count(row.claimCount, truth: row.metricStates.claimCount)) claims · \(trend(row.trend, truth: row.metricStates.trend))")
+                                        .font(EType.mono(.caption)).foregroundStyle(palette.textSecondary)
+                                }
+                                Spacer()
+                                Text(money(row.totalValue, currency: row.totalValueCurrency,
+                                           buckets: row.totalsByCurrency, truth: row.metricStates.totalValue))
+                                    .font(.system(size: 12, weight: .bold)).foregroundStyle(palette.textPrimary)
+                                    .multilineTextAlignment(.trailing)
+                            }.padding(.vertical, 10)
+                            if index < value.data.count - 1 { Divider().overlay(palette.borderFaint) }
                         }
                     }
-                    HStack {
-                        Text("+ root-cause tagging · corrective actions open per hotspot")
-                            .font(.system(size: 10))
-                            .foregroundStyle(palette.textTertiary)
-                        Spacer()
-                    }
-                    .padding(.horizontal, Space.s4)
-                    .padding(.vertical, Space.s3)
                 }
-                .background(palette.bgCard)
-                .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                    .strokeBorder(palette.borderFaint))
-                .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
             }
         }
     }
 
-    private func hotspotRow(_ row: LossPreventionAnalysis.Row) -> some View {
-        let kind = hotspotKind(row.trend)
-        return HStack(spacing: Space.s3) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(kind.color.opacity(0.18))
-                    .frame(width: 40, height: 40)
-                Image(systemName: kind.icon)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(kind.color)
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(row.group)
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(palette.textPrimary)
-                Text(hotspotSubtitle(row))
-                    .font(EType.mono(.caption)).tracking(0.4)
-                    .foregroundStyle(palette.textSecondary)
-            }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 6) {
-                Text(kind.label)
-                    .font(.system(size: 11, weight: .bold)).tracking(0.5)
-                    .foregroundStyle(kind.color)
-                    .padding(.horizontal, 10).padding(.vertical, 4)
-                    .background(kind.color.opacity(0.18)).clipShape(Capsule())
-                Text(currencyFull(row.totalValue ?? 0))
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(kind.valueIsNeutral ? palette.textPrimary : kind.color)
-                    .monospacedDigit()
+    private func preventionState(_ value: LossPreventionDashboard655) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text("PREVENTION OUTCOMES").font(EType.micro).foregroundStyle(palette.textTertiary)
+            Text("Prevented losses · \(optionalCount(value.metrics.preventedLosses, truth: value.metricStates.preventedLosses))")
+                .font(.system(size: 11, weight: .bold)).foregroundStyle(palette.textPrimary)
+            Text(caption(value.metricStates.preventedLosses)).font(.system(size: 10)).foregroundStyle(palette.textSecondary)
+            Text("Prevention savings · \(caption(value.metricStates.preventionSavings))")
+                .font(.system(size: 10)).foregroundStyle(palette.textSecondary)
+        }
+        .padding(Space.s4).frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCardSoft).clipShape(RoundedRectangle(cornerRadius: Radius.md))
+    }
+
+    private func provenance(_ dashboard: LossPreventionDashboard655, _ analysis: LossPreventionAnalysis655) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("SOURCE · \(dashboard.provenance.source)").font(EType.micro).foregroundStyle(palette.textTertiary)
+            Text("Dashboard calculated \(dashboard.provenance.computedAt)")
+                .font(.system(size: 10)).foregroundStyle(palette.textSecondary)
+            Text("Analysis calculated \(analysis.provenance.computedAt)")
+                .font(.system(size: 10)).foregroundStyle(palette.textSecondary)
+            Text("Mode scope · \((dashboard.transportMode ?? dashboard.provenance.transportMode ?? "unknown").uppercased())")
+                .font(.system(size: 10)).foregroundStyle(palette.textSecondary)
+            if let unavailable = metricUnavailableLabel(dashboard.metricStates.unvaluedLossCount) {
+                Text("Unvalued loss coverage · \(unavailable)")
+                    .font(.system(size: 10)).foregroundStyle(Brand.warning)
+            } else if dashboard.metrics.unvaluedLossCount > 0 {
+                Text("Partial value coverage: \(dashboard.metrics.unvaluedLossCount) loss claims lack amount or ISO currency.")
+                    .font(.system(size: 10)).foregroundStyle(Brand.warning)
             }
         }
-        .padding(Space.s4)
+        .padding(Space.s4).background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md))
     }
 
-    private func hotspotSubtitle(_ row: LossPreventionAnalysis.Row) -> String {
-        let n = row.claimCount ?? 0
-        if let t = row.trend, !t.isEmpty, ["improving", "stable", "worsening"].contains(t.lowercased()) {
-            return n == 1 ? "1 claim · \(t.lowercased())" : "\(n) claims · \(t.lowercased())"
+    private func count(_ value: Int, truth: MetricTruth655) -> String {
+        metricUnavailableLabel(truth) ?? "\(value)"
+    }
+
+    private func optionalCount(_ value: Int?, truth: MetricTruth655) -> String {
+        if let unavailable = metricUnavailableLabel(truth) { return unavailable }
+        guard let value else { return "Unavailable" }
+        return "\(value)"
+    }
+
+    private func percent(_ value: Double?, truth: MetricTruth655) -> String {
+        if let unavailable = metricUnavailableLabel(truth) { return unavailable }
+        guard let value else { return "Unavailable" }
+        return String(format: "%.1f%%", value * 100)
+    }
+
+    private func trend(_ value: String?, truth: MetricTruth655) -> String {
+        if let unavailable = metricUnavailableLabel(truth) { return unavailable }
+        return value?.replacingOccurrences(of: "_", with: " ").capitalized ?? "Unavailable"
+    }
+
+    private func money(_ value: Double?, currency: String?, buckets: [MoneyBucket655], truth: MetricTruth655) -> String {
+        if let unavailable = metricUnavailableLabel(truth) { return unavailable }
+        if !buckets.isEmpty { return buckets.map { formatted($0.amount, currency: $0.currency) }.joined(separator: " · ") }
+        guard let value, let currency else { return "Unavailable" }
+        return formatted(value, currency: currency)
+    }
+
+    private func formatted(_ value: Double, currency: String) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.currencyCode = currency
+        formatter.maximumFractionDigits = 0
+        return formatter.string(from: NSNumber(value: value)) ?? "\(currency) \(String(format: "%.0f", value))"
+    }
+
+    private func caption(_ truth: MetricTruth655) -> String {
+        if let unavailable = metricUnavailableLabel(truth) {
+            return truth.reason ?? unavailable
         }
-        return n == 1 ? "1 claim" : "\(n) claims"
-    }
-
-    private struct HotspotKind {
-        let label: String
-        let icon: String
-        let color: Color
-        let valueIsNeutral: Bool
-    }
-    private func hotspotKind(_ trend: String?) -> HotspotKind {
-        switch (trend ?? "").lowercased() {
-        case "worsening", "rising", "hotspot":
-            return HotspotKind(label: "HOTSPOT", icon: "exclamationmark.triangle.fill", color: Brand.danger, valueIsNeutral: false)
-        case "watch", "elevated":
-            return HotspotKind(label: "WATCH", icon: "thermometer.medium", color: Brand.warning, valueIsNeutral: false)
-        case "improving", "stable":
-            return HotspotKind(label: "STABLE", icon: "shippingbox", color: Brand.info, valueIsNeutral: true)
-        default:
-            return HotspotKind(label: "WATCH", icon: "exclamationmark.triangle.fill", color: Brand.warning, valueIsNeutral: false)
-        }
-    }
-
-    // MARK: - Prevention strip (context · getLossPreventionDashboard)
-
-    private var preventionStrip: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .top) {
-                Text("PREVENTION · loss dashboard")
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
-                    .foregroundStyle(palette.textTertiary)
-                Spacer()
-                Text("12 mo")
-                    .font(EType.mono(.caption))
-                    .foregroundStyle(palette.textSecondary)
-            }
-            Text("root-cause tagging · corrective actions tracked to close")
-                .font(.system(size: 11))
-                .foregroundStyle(palette.textSecondary)
-            Text("Carrier BNSF Intermodal · Eusorone Technologies (DU) · LP program v2")
-                .font(EType.mono(.caption))
-                .foregroundStyle(palette.textSecondary)
-        }
-        .padding(Space.s4)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(palette.bgCard)
-        .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-            .strokeBorder(palette.borderFaint))
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
-    }
-
-    // MARK: - CTA pair
-
-    private var actionReviewLines: [String] {
-        var lines = [
-            "Total losses: \(dashboard?.metrics?.totalLosses ?? 0)",
-            "Loss value: \(currencyFull(lossValue))",
-            "Prevented losses: \(dashboard?.metrics?.preventedLosses ?? 0)",
-            "Prevention savings: \(currencyFull(dashboard?.metrics?.preventionSavings ?? 0))",
-            "Trend: \(trendDirection)"
-        ]
-        for alert in (dashboard?.alerts ?? []).prefix(3) {
-            lines.append("\(alert.severity ?? "alert"): \(alert.message ?? "-") \(alert.lane ?? "")")
-        }
-        for rec in (analysis?.recommendations ?? []).prefix(3) {
-            lines.append("Recommendation: \(rec)")
-        }
-        return lines
-    }
-
-    private var analysisLines: [String] {
-        var lines = [
-            "Group by: \(analysis?.groupBy ?? "lane")",
-            "Period: \(analysis?.period ?? "year")",
-            "Hotspots: \(analysis?.data?.count ?? 0)",
-            "Loss ratio: \(String(format: "%.1f%%", lossRatioPct))"
-        ]
-        for row in (analysis?.data ?? []).prefix(4) {
-            lines.append("\(row.group): \(row.claimCount ?? 0) claims, \(currencyFull(row.totalValue ?? 0)), \(row.trend ?? "-")")
-        }
-        return lines
-    }
-
-    private var ctaPair: some View {
-        HStack(spacing: Space.s3) {
-            RailSecondaryActionButton(
-                title: "Action review",
-                sheetTitle: "Loss-prevention actions",
-                lines: actionReviewLines,
-                fillWidth: true,
-                systemImage: "shield.checkered"
-            )
-                .frame(maxWidth: .infinity)
-            RailSecondaryActionButton(
-                title: "Analysis",
-                sheetTitle: "Loss-prevention analysis",
-                lines: analysisLines,
-                systemImage: "chart.xyaxis.line"
-            )
+        switch truth.valueState {
+        case "measured": return truth.provenance.basis ?? "Measured"
+        case "measured_by_dimension": return truth.reason ?? "Measured by currency"
+        case "partial": return truth.reason ?? "Partial source coverage"
+        case "no_observations": return truth.reason ?? "No scoped observations"
+        case "not_modeled": return truth.reason ?? "Not modeled"
+        default: return "Metric state unavailable"
         }
     }
 
-    // MARK: - Load
+    private func metricUnavailableLabel(_ truth: MetricTruth655) -> String? {
+        guard truth.accessState == "granted" else {
+            return truth.accessState == "restricted" ? "Restricted" : "Access unknown"
+        }
+        guard truth.trackingState == "tracked" else { return "Not tracked" }
+        switch truth.valueState {
+        case "not_modeled": return "Not modeled"
+        case "no_observations": return "No observations"
+        case "measured", "measured_by_dimension", "partial": return nil
+        default: return "Metric state unavailable"
+        }
+    }
+
+    private func metricUnavailableLabel(_ truth: MetricTruth655?) -> String? {
+        guard let truth else { return "Access unknown" }
+        return metricUnavailableLabel(truth)
+    }
 
     private func reload() async {
-        loading = true; loadError = nil
-        struct AnalysisIn: Encodable { let groupBy: String; let period: String }
+        loading = true
+        loadError = nil
+        struct DashboardInput: Encodable { let transportMode: String }
+        struct AnalysisInput: Encodable { let transportMode: String; let groupBy: String; let period: String }
         do {
-            async let dash: LossPreventionDashboard =
-                EusoTripAPI.shared.queryNoInput("freightClaims.getLossPreventionDashboard")
-            async let anl: LossPreventionAnalysis =
+            async let dashboardResult: LossPreventionDashboard655 =
+                EusoTripAPI.shared.query(
+                    "freightClaims.getLossPreventionDashboard",
+                    input: DashboardInput(transportMode: "RAIL")
+                )
+            async let analysisResult: LossPreventionAnalysis655 =
                 EusoTripAPI.shared.query("freightClaims.getLossPreventionAnalysis",
-                                         input: AnalysisIn(groupBy: "lane", period: "year"))
-            let (d, a) = try await (dash, anl)
-            self.dashboard = d
-            self.analysis = a
+                                         input: AnalysisInput(transportMode: "RAIL", groupBy: "lane", period: "year"))
+            (dashboard, analysis) = try await (dashboardResult, analysisResult)
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
 }
 
-#Preview("655 · Rail Loss Prevention · Night") { RailLossPreventionScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }
-#Preview("655 · Rail Loss Prevention · Light") { RailLossPreventionScreen(theme: Theme.light).environmentObject(EusoTripSession()).preferredColorScheme(.light) }
+#Preview("655 · Rail Loss Prevention · Night") {
+    RailLossPreventionScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark)
+}
+#Preview("655 · Rail Loss Prevention · Light") {
+    RailLossPreventionScreen(theme: Theme.light).environmentObject(EusoTripSession()).preferredColorScheme(.light)
+}

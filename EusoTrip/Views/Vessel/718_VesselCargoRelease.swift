@@ -158,7 +158,7 @@ private struct VesselCargoReleaseBody: View {
                     hero
                     sectionLabel("RELEASE METHOD · createBOL bolType", ref: "vesselShipments:892")
                     releaseSelector
-                    sectionLabel("ENDORSEMENT & LC CHAIN · recordLCEndorsement", ref: "STUB · named-gap")
+                    sectionLabel("ENDORSEMENT & LC CHAIN", ref: "VERIFIED ENDORSEMENTS")
                     chainCard
                     originalsStrip
                     sectionLabel("DOCUMENTS · listBOLs", ref: nil)

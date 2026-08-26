@@ -4,10 +4,9 @@
 //
 //  Reshaped 2026-05-23 from a tap-row → sheet-driven driver picker
 //  into a two-pane drag-to-pair surface (top carousel of unassigned
-//  load cards · bottom vertical list of available drivers). Drop a
-//  load card on a driver row to fire `dispatch.assignDriver` in
-//  one gesture instead of three taps. The legacy sheet picker stays
-//  wired to the same mutation as a tap fallback for accessibility +
+//  load cards · bottom vertical list of evidence-eligible drivers). Drop a
+//  load card on a driver row to fire `dispatch.smartBulkAssign` with one
+//  assignment. The legacy picker uses the same server-revalidated mutation +
 //  small-screen users who prefer not to drag.
 //
 
@@ -59,6 +58,7 @@ private struct LoadAssignBody: View {
     @Environment(\.rolePushDetail) private var pushDetail
     @State private var loads: [UnassignedLoad] = []
     @State private var drivers: [DriverPick] = []
+    @State private var hosEvidence: [HOSFleetDriver] = []
     @State private var loading = true
     @State private var loadError: String? = nil
     @State private var pickFor: UnassignedLoad? = nil
@@ -107,6 +107,12 @@ private struct LoadAssignBody: View {
         }
         .task { await loadAll() }
         .eusoRefreshable { await loadAll() }
+        // RealtimeService → `dispatch:board_update`. The unassigned-load
+        // queue must drop a load the moment another console claims it,
+        // otherwise two dispatchers assign the same load twice.
+        .onReceive(NotificationCenter.default.publisher(for: .eusoDispatchBoardUpdated)) { _ in
+            Task { await loadAll() }
+        }
     }
 
     private var header: some View {
@@ -133,9 +139,12 @@ private struct LoadAssignBody: View {
     /// only loads carrying REAL pickup coords participate; hides when none do.
     @ViewBuilder private var matrixStrip: some View {
         let candidates: [DispatchMatrixCandidate] = loads.compactMap { l in
-            guard let lat = l.pickupLat, let lng = l.pickupLng, !(lat == 0 && lng == 0) else { return nil }
+            guard let coordinate = LatLongParser.validatedCoordinate(
+                latitude: l.pickupLat,
+                longitude: l.pickupLng
+            ) else { return nil }
             return DispatchMatrixCandidate(id: l.id, loadNumber: l.loadNumber,
-                                           coord: CLLocationCoordinate2D(latitude: lat, longitude: lng))
+                                           coord: coordinate)
         }
         if !candidates.isEmpty {
             DispatchMatrixCandidatesStrip(candidates: candidates)
@@ -273,7 +282,7 @@ private struct LoadAssignBody: View {
                         .background(Capsule().fill(Color.green.opacity(0.18)))
                         .foregroundStyle(Color.green)
                 }
-                LifecycleRow(label: "HOS left", value: d.hoursRemaining.map { String(format: "%.1fh", $0) } ?? "-")
+                LifecycleRow(label: "Current HOS left", value: hosDisplay(for: d.id))
                 if isHover, let dragId = draggingLoadId,
                    let l = loads.first(where: { $0.id == dragId }) {
                     HStack(spacing: 4) {
@@ -344,7 +353,7 @@ private struct LoadAssignBody: View {
                             LifecycleCard {
                                 LifecycleSection(label: d.name.uppercased(), icon: "person")
                                 LifecycleRow(label: "Status",   value: d.status.uppercased())
-                                LifecycleRow(label: "HOS left", value: d.hoursRemaining.map { String(format: "%.1fh", $0) } ?? "-")
+                                LifecycleRow(label: "Current HOS left", value: hosDisplay(for: d.id))
                                 if assigning == d.id { ProgressView().padding(.top, 6) }
                             }
                         }.buttonStyle(.plain).disabled(assigning != nil)
@@ -364,7 +373,18 @@ private struct LoadAssignBody: View {
             async let d: [DriverPick] = EusoTripAPI.shared.queryNoInput("dispatch.getDriverStatuses")
             let (loadsRes, driversRes) = try await (l, d)
             loads = loadsRes
-            drivers = driversRes.filter { $0.status == "available" }
+            do {
+                hosEvidence = try await EusoTripAPI.shared.queryNoInput("hos.getFleetHOS")
+                drivers = driversRes.filter { driver in
+                    driver.status.lowercased() == "available"
+                        && evidence(for: driver.id)?.assignmentEligibility() == .eligible
+                }
+                actionError = nil
+            } catch {
+                hosEvidence = []
+                drivers = []
+                actionError = "Current company HOS evidence could not refresh. Driver assignment is held."
+            }
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
@@ -373,14 +393,46 @@ private struct LoadAssignBody: View {
 
     private func assign(loadId: String, driverId: String) async {
         await MainActor.run { assigning = driverId; actionError = nil }
-        struct In: Encodable { let loadId: String; let driverId: String }
-        struct Out: Decodable { let success: Bool? }
+        guard evidence(for: driverId)?.assignmentEligibility() == .eligible,
+              let numericLoadId = Int(loadId),
+              let numericDriverId = Int(driverId) else {
+            await MainActor.run {
+                actionError = "Current assignment evidence is unavailable. Refresh before assigning this load."
+                assigning = nil
+            }
+            return
+        }
+        struct Assignment: Encodable { let loadId: Int; let driverId: Int }
+        struct In: Encodable { let assignments: [Assignment] }
+        struct Result: Decodable { let loadId: Int; let success: Bool; let error: String? }
+        struct Out: Decodable { let assigned: Int; let failed: Int; let results: [Result] }
         let pickedLabel = pickFor?.loadNumber ?? loads.first(where: { $0.id == loadId })?.loadNumber ?? loadId
         do {
-            let _: Out = try await EusoTripAPI.shared.mutation(
-                "dispatch.assignDriver",
-                input: In(loadId: loadId, driverId: driverId)
+            let output: Out = try await EusoTripAPI.shared.mutation(
+                "dispatch.smartBulkAssign",
+                input: In(assignments: [Assignment(loadId: numericLoadId, driverId: numericDriverId)])
             )
+            guard output.assigned == 1,
+                  output.failed == 0,
+                  output.results.count == 1,
+                  let result = output.results.first,
+                  result.loadId == numericLoadId,
+                  result.success else {
+                let rawReason = output.results.first?.error?.trimmingCharacters(in: .whitespacesAndNewlines)
+                let message: String
+                if let rawReason, !rawReason.isEmpty {
+                    message = rawReason
+                } else {
+                    message = "The server held this assignment after evidence revalidation."
+                }
+                await MainActor.run {
+                    actionError = message
+                    assigning = nil
+                    draggingLoadId = nil
+                    hoverDriverId = nil
+                }
+                return
+            }
             await MainActor.run {
                 // If the assignment came from the pushed picker (pickFor
                 // set), pop the in-stack detail layer back to the board.
@@ -402,6 +454,21 @@ private struct LoadAssignBody: View {
             }
         }
         await MainActor.run { assigning = nil }
+    }
+
+    private func evidence(for driverId: String) -> HOSFleetDriver? {
+        hosEvidence.first { row in
+            row.driverId == driverId || row.userId.map { String($0) } == driverId
+        }
+    }
+
+    private func hosDisplay(for driverId: String) -> String {
+        guard let evidence = evidence(for: driverId),
+              evidence.assignmentEligibility() == .eligible,
+              let hours = evidence.hoursAvailable?.drivingRemaining else {
+            return "—"
+        }
+        return String(format: "%.1fh · %@", hours, evidence.source ?? "source unavailable")
     }
 }
 

@@ -7,7 +7,7 @@
 //  OAuth credentials never enter the iOS bundle.
 //
 //  Xcconfig (e.g. `EusoTrip.xcconfig`, git-ignored):
-//      HERE_JS_API_KEY         = ...   (Maps JS SDK only — Hot Zones heatmap)
+//      HERE_JS_API_KEY         = ...   (Maps JS SDK basemap only)
 //
 //  Info.plist (populated from xcconfig at build time via
 //  `INFOPLIST_KEY_HERE*`):
@@ -73,9 +73,10 @@ enum HereMapsConfig {
 
     // MARK: - Info.plist keys
 
-    /// HERE Maps JS 3.1 apiKey — used ONLY by the Hot Zones heatmap
-    /// WebView. This key must be restricted to the trusted referrer below.
+    /// HERE Maps JS 3.2 apiKey used by the shared labeled basemap renderer.
+    /// This key must be restricted to the trusted referrer below.
     static let jsApiKeyPlistKey        = "HEREJSApiKey"
+    static let customStylesEnabledPlistKey = "HERECustomMapStylesEnabled"
 
     /// Origin presented as the WKWebView document `baseURL` when hosting
     /// the HERE Maps JS SDK. This becomes the HTTP `Referer` on every
@@ -168,8 +169,9 @@ enum HereMapsConfig {
     /// Maps Tile API v3 host retained for diagnostics. Production iOS basemaps
     /// render through HERE Maps JS with the referrer-restricted JS key.
     ///
-    /// Example rendered:
-    ///   https://maps.hereapi.com/v3/base/mc/12/1204/1540/512/png?style=explore.day&ppi=400
+    /// Exact diagnostic shape (the dimensions are query parameters, not path
+    /// segments):
+    ///   https://maps.hereapi.com/v3/base/mc/12/1204/1540/png?style=explore.day&size=512&ppi=200&lang=en
     static var tileBaseHost: String { host(for: .tile) }
     static let tileBasePath = "/v3/base/mc"
 
@@ -185,10 +187,25 @@ enum HereMapsConfig {
         return raw
     }
 
-    /// Maps JS SDK apiKey (Hot Zones heatmap). Nil when the JS key
-    /// hasn't been provisioned yet — callers should render the existing
-    /// "no credentials" placeholder.
+    /// Maps JS SDK apiKey for every native map surface. Nil when the key has
+    /// not been provisioned; callers render the generic unavailable state.
     static var jsApiKey: String? { plistString(jsApiKeyPlistKey) }
+
+    /// Release flag for the 18 mode/family/theme Style Editor archives.
+    /// Disabled builds use the matching HERE family/theme openly; custom load
+    /// failure is still shown as degraded. Enable only after archive, runtime,
+    /// visual, and contrast gates.
+    static var customMapStylesEnabled: Bool {
+        if let value = Bundle.main.object(
+            forInfoDictionaryKey: customStylesEnabledPlistKey
+        ) as? Bool {
+            return value
+        }
+        guard let raw = plistString(customStylesEnabledPlistKey)?.lowercased() else {
+            return false
+        }
+        return ["1", "true", "yes"].contains(raw)
+    }
 
 }
 

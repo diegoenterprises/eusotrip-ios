@@ -215,6 +215,27 @@ struct DriverMeSection {
 /// screen id below is verified registered for `role: .driver` in
 /// ContentView's ScreenRegistry — no dead taps. Adding a row: append
 /// here, ensure the target id is registered.
+///
+/// 2026-08-26 · fire §27 Driver half — seventeen leaves added:
+///   wallet     · 177 Cash & fuel advance · 199B Lumper reimbursement
+///              · 179 Fuel economy
+///   compliance · 173 Clearinghouse · 178 Drug testing · 198 Gate identity
+///   vehicle    · 167 Reefer temp · 168 Tanker gauges · 170B Axle scale weigh
+///   operations · 190 Day itinerary · 169 Tolls & PrePass
+///              · 170 Weigh station bypass · 171 Truck parking
+///              · 194 Livestock · 195 HHG custody · 196 Auto transport damage
+///              · 197 Heavy-haul clearance
+///
+/// Deliberately NOT listed here — these are drill-downs and appear on a
+/// PARENT screen, because putting them on a hub would require inventing the
+/// entity they operate on:
+///   · 198B Liveness Challenge → reached from 198 At-Gate Identity Bind
+///   · 106B EusoTicket Renderer → reached from 106 EusoTicket (needs loadId
+///     + doc kind, which only a ticket row can supply)
+///   · 150 M-05 Pre-trip DVIR → belongs to the pre-trip flow, and is BLOCKED:
+///     all four `drivers.*` procedures it calls are `auditedOperationsProcedure`
+///     (SHIPPER · CATALYST · BROKER · DISPATCH). A signed-in DRIVER is
+///     role-forbidden from every read and write on that screen.
 enum DriverMeHubCatalog {
     static let account: [DriverMeSection] = [
         DriverMeSection(title: "IDENTITY", icon: "person.crop.circle", cells: [
@@ -233,11 +254,15 @@ enum DriverMeHubCatalog {
             DriverMeCell(icon: "dollarsign.circle",     label: "Earnings",            action: .screen("068")),
             DriverMeCell(icon: "chart.line.uptrend.xyaxis", label: "Earnings breakdown", action: .screen("079")),
             DriverMeCell(icon: "creditcard",            label: "Settlements",         action: .screen("070")),
+            DriverMeCell(icon: "banknote",              label: "Cash & fuel advance", action: .screen("177")),
+            DriverMeCell(icon: "dollarsign.arrow.circlepath",
+                                                          label: "Lumper reimbursement", action: .screen("199B")),
         ]),
         DriverMeSection(title: "MONEY OUT", icon: "arrow.up.circle", cells: [
             DriverMeCell(icon: "creditcard.and.123",    label: "Payment methods",     action: .screen("077")),
             DriverMeCell(icon: "calendar",              label: "Payout schedule",     action: .screen("078")),
             DriverMeCell(icon: "fuelpump",              label: "Fuel cards",          action: .screen("094")),
+            DriverMeCell(icon: "fuelpump.circle",       label: "Fuel economy",        action: .screen("179")),
         ]),
         DriverMeSection(title: "TAXES", icon: "doc.text", cells: [
             DriverMeCell(icon: "doc.text",              label: "Tax overview",        action: .screen("071")),
@@ -268,6 +293,14 @@ enum DriverMeHubCatalog {
             DriverMeCell(icon: "doc.text",              label: "DQ file",             action: .screen("093")),
             DriverMeCell(icon: "envelope.badge",        label: "DataQs filer",        action: .screen("084")),
             DriverMeCell(icon: "graduationcap",         label: "Training",            action: .screen("076")),
+            DriverMeCell(icon: "person.text.rectangle", label: "Clearinghouse",       action: .screen("173")),
+            DriverMeCell(icon: "cross.case",            label: "Drug testing",        action: .screen("178")),
+        ]),
+        // Identity proofing at a facility gate. 198B Liveness Challenge is a
+        // sub-step of 198 and is reached FROM it — never listed here, because
+        // a liveness scan outside a gate bind has nothing to bind to.
+        DriverMeSection(title: "IDENTITY & GATE", icon: "faceid", cells: [
+            DriverMeCell(icon: "faceid",                label: "Gate identity",       action: .screen("198")),
         ]),
     ]
 
@@ -281,6 +314,15 @@ enum DriverMeHubCatalog {
             DriverMeCell(icon: "folder",                label: "Documents Hub",       action: .screen("083")),
             DriverMeCell(icon: "doc.text",              label: "Permits",             action: .screen("092")),
             DriverMeCell(icon: "ticket",                label: "EusoTicket (BOL/POD)", action: .screen("106")),
+        ]),
+        // Live equipment telemetry the driver reads against a spec: reefer
+        // supply-air vs the FSMA band, MC-331 cargo-tank gauges, and axle
+        // groups vs the federal limits. Grouped with the vehicle because they
+        // describe the rig, not the trip.
+        DriverMeSection(title: "EQUIPMENT TELEMETRY", icon: "gauge.medium", cells: [
+            DriverMeCell(icon: "thermometer.snowflake", label: "Reefer temp",         action: .screen("167")),
+            DriverMeCell(icon: "gauge.medium",          label: "Tanker gauges",       action: .screen("168")),
+            DriverMeCell(icon: "scalemass",             label: "Axle scale weigh",    action: .screen("170B")),
         ]),
         DriverMeSection(title: "AGREEMENTS", icon: "signature", cells: [
             DriverMeCell(icon: "doc.append",            label: "Agreements",          action: .screen("103")),
@@ -299,6 +341,28 @@ enum DriverMeHubCatalog {
             DriverMeCell(icon: "clock.arrow.circlepath", label: "Detention",          action: .screen("091")),
             DriverMeCell(icon: "calendar.badge.clock",  label: "Weekly plan",         action: .screen("058")),
             DriverMeCell(icon: "list.bullet.rectangle", label: "Trips history",       action: .screen("059")),
+            DriverMeCell(icon: "list.bullet.rectangle.portrait",
+                                                          label: "Day itinerary",       action: .screen("190")),
+        ]),
+        // What the driver needs between the shipper and the receiver:
+        // transponder standing, the scales on the corridor, and a legal
+        // parking spot before the hours run out.
+        DriverMeSection(title: "ON THE ROAD", icon: "road.lanes", cells: [
+            DriverMeCell(icon: "dot.radiowaves.left.and.right",
+                                                          label: "Tolls & PrePass",     action: .screen("169")),
+            DriverMeCell(icon: "arrow.triangle.branch", label: "Weigh station bypass", action: .screen("170")),
+            DriverMeCell(icon: "parkingsign.circle",    label: "Truck parking",       action: .screen("171")),
+        ]),
+        // Commodity-specific duties that only apply to the freight on the
+        // trailer. Kept in one section so the hub does not scatter a
+        // livestock rule across the compliance and vehicle hubs.
+        DriverMeSection(title: "SPECIALIZED FREIGHT", icon: "shippingbox.and.arrow.backward", cells: [
+            DriverMeCell(icon: "pawprint",              label: "Livestock 28-hour",   action: .screen("194")),
+            DriverMeCell(icon: "arrow.left.arrow.right.circle",
+                                                          label: "HHG custody",         action: .screen("195")),
+            DriverMeCell(icon: "car.2",                 label: "Auto transport damage", action: .screen("196")),
+            DriverMeCell(icon: "arrow.up.and.down.and.arrow.left.and.right",
+                                                          label: "Heavy-haul clearance", action: .screen("197")),
         ]),
         DriverMeSection(title: "MARKET INTEL", icon: "flame", cells: [
             DriverMeCell(icon: "flame.fill",            label: "Hot zones",           action: .screen("100")),
@@ -552,7 +616,7 @@ private struct DriverMeHubBody: View {
         let sectionID = sectionAnchor(section)
         let isExpanded = expandedSection == sectionID
 
-        LifecycleCard {
+        return LifecycleCard {
             Button {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     expandedSection = isExpanded ? "" : sectionID
@@ -842,7 +906,7 @@ private struct DriverMeSettingsHubBody: View {
         let sectionID = sectionAnchor(section)
         let isExpanded = expandedSection == sectionID
 
-        LifecycleCard {
+        return LifecycleCard {
             Button {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     expandedSection = isExpanded ? "" : sectionID
@@ -978,9 +1042,25 @@ struct DriverMeSurface: View {
     /// Their chevrons now post `.eusoDriverMeNavBack` (see their top bars),
     /// so they belong in this set to suppress the surface overlay and leave
     /// exactly one working back button.
+    /// 2026-08-26 — fire §27 Driver half additions. The seventeen newly
+    /// reachable 167-199B leaves all ship their own header back chevron:
+    ///   · 169 · 170 · 171 · 173 · 177 · 178 · 179  via `DriverUtilityHeader`
+    ///   · 190 · 194 · 195 · 196 · 197 · 198        via `DriverComplianceHeader`
+    ///   · 167 · 168 · 170B                          via their own top bars
+    /// Each of those chevrons now posts `.eusoDriverMeNavBack` (previously a
+    /// bare `dismiss()` with no NavigationStack or sheet to act on — inert —
+    /// or, on 170B, a bare `Image` that was not a Button at all). Listing them
+    /// here suppresses the surface overlay so exactly ONE working back control
+    /// renders instead of a live chevron stacked over a dead one.
+    ///
+    /// NOT listed — these have no back control of their own and rely on the
+    /// surface overlay: "150" (M-05 DVIR, exits via its own CTAs only) and
+    /// "106B" (EusoTicket renderer, top bar is a brand mark).
     private static let driverScreensWithOwnBack: Set<String> = [
         "067hub", "067a", "067b", "067c", "067d", "067e", "067f", "067g",
         "019", "064", "162",
+        "167", "168", "169", "170", "170B", "171", "173", "177", "178", "179",
+        "190", "194", "195", "196", "197", "198", "198B", "199B",
     ]
 
     var body: some View {

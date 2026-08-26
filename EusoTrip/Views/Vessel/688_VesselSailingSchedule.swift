@@ -108,6 +108,37 @@ private struct ResolvedPortCall688: Identifiable, Hashable {
     let lng: Double
 }
 
+// MARK: - Documentation cutoffs (L03-3)
+//
+// vesselShipments.getCutoffs → the ERD/VGM/SI/cargo(CY)/DG/reefer cutoff set for
+// a real booking. `derived` is true when the carrier supplied none and the set
+// was computed from ETD (surfaced as a "Derived" badge — never presented as a
+// carrier-confirmed cutoff). Decoded leniently — an absent cutoff renders "—".
+private struct VesselCutoffs688: Decodable {
+    let shipmentId: Int?
+    let bookingNumber: String?
+    let etd: String?
+    let erdAt: String?
+    let vgmCutoffAt: String?
+    let siCutoffAt: String?
+    let cargoCutoffAt: String?
+    let dgCutoffAt: String?
+    let reeferCutoffAt: String?
+    let derived: Bool?
+}
+
+/// getVesselShipments row (minimal) — the source of a real booking id/ETD to
+/// bind the cutoff set to; the schedule itself is voyage-scoped, not booking-scoped.
+private struct VesselShipmentLite688: Decodable, Identifiable {
+    let id: Int
+    let bookingNumber: String?
+    let etd: String?
+    let status: String?
+}
+private struct VesselShipmentsEnvelope688: Decodable {
+    let shipments: [VesselShipmentLite688]
+}
+
 // MARK: - Body
 
 private struct VesselSailingScheduleBody: View {
@@ -123,6 +154,10 @@ private struct VesselSailingScheduleBody: View {
     /// Schedule rows from `multiModal.getVesselSchedules` carrying real port
     /// UN/LOCODEs (ports.unlocode). Source for the ocean map's port calls.
     @State private var scheduleRows: [MMScheduleRow688] = []
+    /// Real cutoff set for the operator's soonest upcoming booking (kills the
+    /// hero's fabricated ETD−2d countdown + hardcoded booking ref). Nil when the
+    /// caller has no accessible upcoming booking.
+    @State private var cutoffs: VesselCutoffs688? = nil
     @State private var loading = true
     @State private var loadError: String? = nil
 
@@ -157,10 +192,15 @@ private struct VesselSailingScheduleBody: View {
         var out: [ResolvedPortCall688] = []
         for row in scheduleRows {
             guard let code = row.port?.code, !code.isEmpty,
-                  let p = PortDirectory.find(unlocode: code) else { continue }   // catalog miss → skip
+                  let p = PortDirectory.find(unlocode: code),
+                  let coordinate = LatLongParser.validatedCoordinate(
+                      latitude: p.lat,
+                      longitude: p.lng
+                  ) else { continue }                                           // catalog miss/invalid → skip
             if out.last?.unlocode == p.unlocode { continue }                     // collapse consecutive repeat
             out.append(ResolvedPortCall688(
-                id: row.id, unlocode: p.unlocode, name: p.name, lat: p.lat, lng: p.lng))
+                id: row.id, unlocode: p.unlocode, name: p.name,
+                lat: coordinate.latitude, lng: coordinate.longitude))
         }
         return out
     }
@@ -169,8 +209,15 @@ private struct VesselSailingScheduleBody: View {
     /// catalog — surfaced honestly in the map caption rather than hidden.
     private var unresolvedPortCount: Int {
         scheduleRows.reduce(into: 0) { acc, row in
-            if let code = row.port?.code, !code.isEmpty,
-               PortDirectory.find(unlocode: code) == nil { acc += 1 }
+            guard let code = row.port?.code, !code.isEmpty else { return }
+            guard let port = PortDirectory.find(unlocode: code),
+                  LatLongParser.validatedCoordinate(
+                      latitude: port.lat,
+                      longitude: port.lng
+                  ) != nil else {
+                acc += 1
+                return
+            }
         }
     }
 
@@ -190,6 +237,9 @@ private struct VesselSailingScheduleBody: View {
             } else {
                 cutoffHero
                     .padding(.top, Space.s4)
+
+                cutoffsSection
+                    .padding(.top, Space.s5)
 
                 ganttSection
                     .padding(.top, Space.s5)
@@ -261,12 +311,16 @@ private struct VesselSailingScheduleBody: View {
     // MARK: - Cutoff hero (numbers-first DOC-CUTOFF countdown)
 
     private var cutoffHero: some View {
-        let v = nextBookable
-        let voyageLabel = (v?.voyageNumber).map { "v.\($0)" } ?? "-"
-        let etd = shortDateTime(v?.scheduledDeparture)
-        let eta = shortDate(v?.scheduledArrival)
-        let booking = "VES-260523-3C9F0A71B4"
-        let (cutoffBig, cutoffSub) = cutoffCountdown(v?.scheduledDeparture)
+        // Real values from getCutoffs — bound to the operator's soonest upcoming
+        // booking. When there is none, the hero renders honest em-dashes (no
+        // fabricated booking ref, no ETD−2d guess).
+        let booking = cutoffs?.bookingNumber ?? "—"
+        let etd = shortDateTime(cutoffs?.etd)
+        let derived = cutoffs?.derived == true
+        let soonest = soonestUpcomingCutoff()
+        let cutoffBig = soonest?.countdown ?? "—"
+        let cutoffSub = soonest.map { "to \($0.name) cutoff" } ?? "no upcoming cutoff"
+        let fraction = cutoffProgressFraction()
 
         return ZStack(alignment: .leading) {
             // Left gradient spine.
@@ -276,16 +330,18 @@ private struct VesselSailingScheduleBody: View {
             }
             VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .top) {
-                    Text("DOC CUTOFF · \(voyageLabel.uppercased()) · MV MAERSK SENTOSA")
+                    Text("DOC CUTOFFS · \(booking)")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                         .foregroundStyle(palette.textTertiary)
                         .lineLimit(1).minimumScaleFactor(0.7)
                     Spacer(minLength: 8)
-                    Text("VGM in 1d 14h")
-                        .font(.system(size: 9.5, weight: .heavy))
-                        .foregroundStyle(Color(hex: 0xF0B760))
-                        .padding(.horizontal, 10).padding(.vertical, 4)
-                        .background(Capsule().fill(Brand.warning.opacity(0.18)))
+                    if cutoffs != nil {
+                        Text(derived ? "Derived" : "Carrier-set")
+                            .font(.system(size: 9.5, weight: .heavy))
+                            .foregroundStyle(derived ? Color(hex: 0xF0B760) : Color(hex: 0x5AA6FF))
+                            .padding(.horizontal, 10).padding(.vertical, 4)
+                            .background(Capsule().fill((derived ? Brand.warning : Brand.info).opacity(0.18)))
+                    }
                 }
 
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -299,7 +355,7 @@ private struct VesselSailingScheduleBody: View {
                 }
                 .padding(.top, Space.s4)
 
-                (Text("ETD \(etd) CST · ETA \(eta) · book ")
+                (Text("ETD \(etd) · book ")
                     .font(.system(size: 10.5, weight: .regular))
                     .foregroundColor(palette.textSecondary)
                  + Text(booking)
@@ -307,19 +363,20 @@ private struct VesselSailingScheduleBody: View {
                     .foregroundColor(palette.textPrimary))
                     .padding(.top, Space.s2)
 
-                // Progress track toward cutoff.
+                // Progress track toward the soonest cutoff (real fraction over a
+                // 7-day window; 0 when there is no upcoming cutoff).
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
                         Capsule().fill(palette.bgCardSoft).frame(height: 6)
                         Capsule().fill(Brand.warning)
-                            .frame(width: geo.size.width * 0.70, height: 6)
+                            .frame(width: geo.size.width * fraction, height: 6)
                     }
                     .overlay(alignment: .leading) {
                         Circle()
                             .fill(palette.bgCard)
                             .frame(width: 9, height: 9)
                             .overlay(Circle().strokeBorder(Brand.warning, lineWidth: 2))
-                            .offset(x: geo.size.width * 0.70 - 4.5)
+                            .offset(x: geo.size.width * fraction - 4.5)
                     }
                 }
                 .frame(height: 9)
@@ -583,6 +640,7 @@ private struct VesselSailingScheduleBody: View {
                 tilt: 0,
                 layers: layers,
                 styleHint: .ocean,
+                mapModeContext: .primary(.vessel),
                 onSelectMarker: { _ in /* pin tap → branded port detail card */ }
             )
             .frame(height: 240)
@@ -612,6 +670,112 @@ private struct VesselSailingScheduleBody: View {
         return unresolvedPortCount > 0 ? "\(base) · \(unresolvedPortCount) off-catalog skipped" : base
     }
 
+    // MARK: - Documentation cutoffs (ERD / VGM / SI / CY / DG / reefer)
+
+    /// One cutoff line: label + real datetime (or "—"). The "Derived" provenance
+    /// lives on the section header, not per-row.
+    private struct CutoffLine688: Identifiable {
+        let id = UUID()
+        let name: String
+        let iso: String?
+    }
+
+    private var cutoffLines: [CutoffLine688] {
+        guard let c = cutoffs else { return [] }
+        return [
+            CutoffLine688(name: "Earliest return (ERD)", iso: c.erdAt),
+            CutoffLine688(name: "VGM cutoff",            iso: c.vgmCutoffAt),
+            CutoffLine688(name: "SI cutoff",             iso: c.siCutoffAt),
+            CutoffLine688(name: "Cargo (CY) cutoff",     iso: c.cargoCutoffAt),
+            CutoffLine688(name: "DG cutoff",             iso: c.dgCutoffAt),
+            CutoffLine688(name: "Reefer cutoff",         iso: c.reeferCutoffAt),
+        ]
+    }
+
+    @ViewBuilder
+    private var cutoffsSection: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack {
+                Text("DOCUMENTATION CUTOFFS")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer(minLength: 8)
+                if cutoffs?.derived == true {
+                    Text("Derived")
+                        .font(.system(size: 8, weight: .heavy)).tracking(0.4)
+                        .foregroundStyle(Color(hex: 0xF0B760))
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(Capsule().fill(Brand.warning.opacity(0.18)))
+                }
+            }
+
+            if cutoffs == nil {
+                EusoEmptyState(
+                    icon: Image(systemName: "calendar.badge.clock"),
+                    title: "No booking cutoffs",
+                    subtitle: "ERD, VGM, SI, CY, DG and reefer cutoffs appear once you have an upcoming booking."
+                )
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(cutoffLines.enumerated()), id: \.element.id) { idx, line in
+                        if idx > 0 {
+                            Rectangle().fill(palette.borderFaint).frame(height: 1)
+                        }
+                        HStack {
+                            Text(line.name)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(palette.textSecondary)
+                            Spacer(minLength: 8)
+                            Text(line.iso.map { shortDateTime($0) } ?? "—")
+                                .font(EType.mono(.caption)).tracking(0.2)
+                                .foregroundStyle(line.iso == nil ? palette.textTertiary : palette.textPrimary)
+                        }
+                        .padding(.vertical, Space.s3)
+                    }
+                }
+                .padding(.horizontal, Space.s4)
+                .background(palette.bgCard)
+                .overlay(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
+                    .strokeBorder(palette.borderFaint, lineWidth: 1))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous))
+            }
+        }
+    }
+
+    /// The soonest still-future cutoff among the set, with a formatted countdown.
+    private func soonestUpcomingCutoff() -> (name: String, countdown: String)? {
+        let now = Date()
+        let upcoming: [(String, Date)] = cutoffLines.compactMap { line in
+            guard let iso = line.iso, let d = parseISO(iso), d > now else { return nil }
+            return (line.name, d)
+        }.sorted { $0.1 < $1.1 }
+        guard let first = upcoming.first else { return nil }
+        return (first.0, countdownString(to: first.1))
+    }
+
+    /// Fraction of a 7-day window elapsed toward the soonest cutoff (clamped).
+    private func cutoffProgressFraction() -> CGFloat {
+        let now = Date()
+        let upcoming: [Date] = cutoffLines.compactMap { line in
+            guard let iso = line.iso, let d = parseISO(iso), d > now else { return nil }
+            return d
+        }.sorted()
+        guard let target = upcoming.first else { return 0 }
+        let window: TimeInterval = 7 * 86400
+        let remaining = target.timeIntervalSince(now)
+        let frac = 1.0 - min(max(remaining / window, 0), 1)
+        return CGFloat(frac)
+    }
+
+    private func countdownString(to date: Date) -> String {
+        let remaining = date.timeIntervalSinceNow
+        if remaining <= 0 { return "due" }
+        let totalHours = Int(remaining / 3600)
+        let d = totalHours / 24
+        let h = totalHours % 24
+        return d > 0 ? String(format: "%dd %02dh", d, h) : String(format: "%dh", h)
+    }
+
     // MARK: - Berth-window micro-strip (CNSHA)
 
     private var berthStrip: some View {
@@ -637,7 +801,7 @@ private struct VesselSailingScheduleBody: View {
                     Text("Yangshan Ph.4 · berth YS-04")
                         .font(.system(size: 11.5, weight: .bold))
                         .foregroundStyle(palette.textPrimary)
-                    Text("window 5/27 18:00 → 5/28 06:00 · VGM cutoff 5/26 12:00")
+                    Text(berthVgmLine)
                         .font(EType.mono(.caption)).tracking(0.2)
                         .foregroundStyle(palette.textSecondary)
                         .lineLimit(1).minimumScaleFactor(0.7)
@@ -649,6 +813,13 @@ private struct VesselSailingScheduleBody: View {
             .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).strokeBorder(palette.borderFaint))
             .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
         }
+    }
+
+    /// Real VGM cutoff for the bound booking (the berth-schedule window itself is
+    /// a documented PORT-GAP until getBerthSchedule carries a portId here).
+    private var berthVgmLine: String {
+        let vgm = cutoffs?.vgmCutoffAt.map { shortDateTime($0) }
+        return "berth window pending · VGM cutoff \(vgm ?? "—")"
     }
 
     // MARK: - ESANG suggestion
@@ -691,11 +862,10 @@ private struct VesselSailingScheduleBody: View {
     // MARK: - Primary CTA
 
     private var bookCTA: some View {
-        let voyLabel = nextBookable.flatMap { $0.voyageNumber }.map { "v.\($0)" } ?? "v.428E"
         return CTAButton(
-            title: "Book \(voyLabel) · before cutoff",
-            action: { /* PORT-GAP: vesselShipments.bookVoyage not on server — see portGaps */ },
-            leadingIcon: "checkmark"
+            title: "Refresh sailing availability",
+            action: { Task { await load() } },
+            leadingIcon: "arrow.clockwise"
         )
     }
 
@@ -732,17 +902,6 @@ private struct VesselSailingScheduleBody: View {
         return "\(max(days, 0))d"
     }
 
-    private func cutoffCountdown(_ departure: String?) -> (String, String) {
-        guard let dep = parseISO(departure) else { return ("2d 04h", "to documentation cutoff") }
-        // Documentation cutoff conventionally ~2 days before ETD.
-        let cutoff = dep.addingTimeInterval(-2 * 86400)
-        let remaining = cutoff.timeIntervalSinceNow
-        if remaining <= 0 { return ("cutoff passed", "documentation cutoff elapsed") }
-        let totalHours = Int(remaining / 3600)
-        let d = totalHours / 24
-        let h = totalHours % 24
-        return (String(format: "%dd %02dh", d, h), "to documentation cutoff")
-    }
 
     private func parseISO(_ s: String?) -> Date? {
         guard let s else { return nil }
@@ -808,7 +967,35 @@ private struct VesselSailingScheduleBody: View {
         } catch {
             loadError = error.eusoUserCopy
         }
+        // Secondary (non-fatal): bind the real cutoff set to the soonest upcoming
+        // booking. A failure here never blanks the schedule.
+        await loadCutoffs()
         loading = false
+    }
+
+    /// getVesselShipments → pick the soonest upcoming accessible booking → its
+    /// getCutoffs. Non-fatal; nil cutoffs render honest em-dashes in the hero.
+    private func loadCutoffs() async {
+        struct ShipmentsIn688: Encodable { let limit: Int; let offset: Int }
+        struct CutoffsIn688: Encodable { let shipmentId: Int }
+        guard let env: VesselShipmentsEnvelope688 = try? await EusoTripAPI.shared.query(
+            "vesselShipments.getVesselShipments", input: ShipmentsIn688(limit: 20, offset: 0)) else {
+            cutoffs = nil; return
+        }
+        let terminal: Set<String> = ["delivered", "invoiced", "settled", "cancelled", "gate_out"]
+        let dated = env.shipments
+            .filter { !terminal.contains(($0.status ?? "").lowercased()) }
+            .compactMap { s -> (VesselShipmentLite688, Date)? in
+                guard let etd = s.etd, let d = parseISO(etd) else { return nil }
+                return (s, d)
+            }
+            .sorted { $0.1 < $1.1 }
+        // Prefer the soonest ETD still in the future; else the latest booking.
+        let now = Date()
+        let nearest = dated.first(where: { $0.1 >= now })?.0 ?? dated.last?.0
+        guard let sid = nearest?.id else { cutoffs = nil; return }
+        cutoffs = try? await EusoTripAPI.shared.query(
+            "vesselShipments.getCutoffs", input: CutoffsIn688(shipmentId: sid))
     }
 }
 

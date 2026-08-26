@@ -21,7 +21,7 @@
 //        Lane (pickupLocation/deliveryLocation.cityState · laneDisplay),
 //        miles (distance · distanceDisplay), equipment (equipmentType),
 //        commodity (commodityName ?? commodity ?? cargoType label),
-//        lifecycle status, pickup coords for driver-proximity haversine
+//        lifecycle status, pickup/delivery reference coordinates
 //        (top-level pickupCoord/deliveryCoord, merged into
 //        pickupLocation.lat/lng by LoadDetail's decoder — audit M3),
 //        resolved parties (driver → DRIVER ASSIGN cell, shipper →
@@ -34,7 +34,8 @@
 //        != the accepted-bid id; CEL rank = price-sorted index + 1.
 //    • `catalysts.getMyDrivers` ({ limit }) → [CatalystAPI.FleetDriver]
 //        CEL-fleet driver-assign candidates: name, HOS hours remaining,
-//        honest availability (drivers.status), GPS for proximity miles.
+//        honest availability (drivers.status); raw GPS is not converted
+//        into route proximity without server projection.
 //    • `catalysts.getProfile` (no input) → CelIdentity_373
 //        CEL session carrier identity (company name; DOT/MC available).
 //        Short code derived client-side from the company-name initials.
@@ -45,8 +46,8 @@
 //      "Tender window: pending".
 //    • Driver "TENTATIVE" availability — no such drivers.status value;
 //      mapped honestly to AVAILABLE / ON LOAD / OFF DUTY.
-//  Driver proximity miles are computed client-side via haversine when
-//  BOTH the driver GPS fix and the pickup coords exist, else "—".
+//  Driver route proximity remains pending until a server observation is
+//  projected onto the exact canonical route plan.
 //
 //  Action wiring:
 //    • ACKNOWLEDGE TENDER → catalysts.acknowledgeTender audit row.
@@ -57,7 +58,6 @@
 //
 
 import SwiftUI
-import CoreLocation
 
 // MARK: - tRPC decode shapes
 
@@ -168,6 +168,7 @@ private struct CatalystAwardedCelM04Body: View {
     @State private var load: LoadsAPI.LoadDetail? = nil
     @State private var bids: [BidRow_373] = []
     @State private var drivers: [CatalystAPI.FleetDriver] = []
+    @State private var hosEvidence: [HOSFleetDriver] = []
     @State private var identity: CelIdentity_373? = nil
 
     @State private var loading: Bool = true
@@ -177,12 +178,13 @@ private struct CatalystAwardedCelM04Body: View {
     @State private var actionMessage: String? = nil
     @State private var showDriverPicker: Bool = false
 
-    /// Decoded HERE Routing v8 section polyline for the awarded
-    /// pickup→delivery corridor — the REAL road geometry painted on the
-    /// basemap (mirrors the Driver 013 pattern). Empty until the route
-    /// resolves; the map then falls back to the straight pickup→delivery
-    /// base line, never a fabricated bezier "map" or a hardcoded path.
-    @State private var routePolyline: [HereLatLng] = []
+    /// Exact renderer-safe members of the server-owned route plan. Members
+    /// stay independent; this surface never joins or authors geometry.
+    @State private var canonicalRouteLines: [[HereLatLng]] = []
+    @State private var canonicalRouteStatus: String?
+    @State private var canonicalRouteVersion: Int?
+    @State private var canonicalResolvedPurpose: CanonicalRoutePlanClient.Purpose?
+    @State private var canonicalRouteMode: CanonicalRoutePlanClient.Mode?
 
     // MARK: Derived — CEL identity (from catalysts.getProfile)
 
@@ -216,8 +218,8 @@ private struct CatalystAwardedCelM04Body: View {
     private var originCityState: String { load?.pickupLocation?.cityState ?? "" }
     private var destinationCityState: String { load?.deliveryLocation?.cityState ?? "" }
 
-    /// Lane miles as Int (server haversine ×1.2 road factor). nil when no
-    /// DB miles and no geocodable coords.
+    /// Server-reported commercial lane miles. This value is not treated as
+    /// canonical route geometry or route progress.
     private var laneMiles: Int? {
         guard let d = load?.distance, d > 0 else { return nil }
         return Int(d.rounded())
@@ -369,6 +371,14 @@ private struct CatalystAwardedCelM04Body: View {
                     awardedConfirmedPill
                     eyebrowRow
                     kpiQuartet
+                    // Award economics must read the immutable quote version
+                    // bound to this exact load, route, capacity allocation,
+                    // policies, platform fee, and payouts. Bid/load rate
+                    // fields remain historical context only.
+                    PricedRouteQuoteAuthorityPanel(
+                        subjectType: .load,
+                        subjectId: Int(loadId) ?? 0
+                    )
                     lifecycleStrip
                     laneMap
                     rosterCard
@@ -693,42 +703,59 @@ private struct CatalystAwardedCelM04Body: View {
                              deliveryLat: Double, deliveryLng: Double)? {
         guard let p = load?.pickupLocation,
               let d = load?.deliveryLocation,
-              let pLat = p.lat, let pLng = p.lng,
-              let dLat = d.lat, let dLng = d.lng,
-              !(pLat == 0 && pLng == 0),
-              !(dLat == 0 && dLng == 0) else { return nil }
-        return (pLat, pLng, dLat, dLng)
+              let pickup = LatLongParser.validatedCoordinate(
+                  latitude: p.lat,
+                  longitude: p.lng
+              ),
+              let delivery = LatLongParser.validatedCoordinate(
+                  latitude: d.lat,
+                  longitude: d.lng
+              ) else { return nil }
+        return (
+            pickup.latitude, pickup.longitude,
+            delivery.latitude, delivery.longitude
+        )
     }
 
     /// Real HERE map of the awarded lane (replaces the former decorative
     /// Canvas bezier). Renders ONLY when the server provided real
     /// pickup/delivery coords; otherwise an honest "awaiting coords"
-    /// placeholder — never a fabricated route. The route line appears only
-    /// after decoded truck-road geometry resolves.
+    /// placeholder — never a fabricated route. Route lines appear only after
+    /// an exact canonical mode plan is operational and renderer-safe.
     @ViewBuilder
     private var laneMap: some View {
         if let coords = laneCoords {
             let midLat = (coords.pickupLat + coords.deliveryLat) / 2
             let midLng = (coords.pickupLng + coords.deliveryLng) / 2
-            let mode = TransportMode(rawValue: load?.transportMode ?? "truck") ?? .truck
-            let line: [HereLatLng] = mode == .truck && routePolyline.count >= 2
-                ? routePolyline : []
+            let mapTransportMode = EusoTripMapTransportMode(
+                canonicalValue: canonicalRouteMode?.rawValue ?? load?.transportMode
+            )
+            let requestedPurpose = canonicalRoutePurpose
             let markerLayer = HereMapLayer.markers([
                 .init(at: .init(coords.pickupLat, coords.pickupLng),
                       kind: .pickup, label: originPinLabel),
                 .init(at: .init(coords.deliveryLat, coords.deliveryLng),
                       kind: .delivery, label: destPinLabel)
             ])
-            let mapLayers: [HereMapLayer] = line.count >= 2
-                ? [.route(polyline: line, colorHex: "#1473FF"), markerLayer]
-                : [markerLayer]
+            let mapLayers: [HereMapLayer] = canonicalRouteLines.enumerated().map { index, line in
+                .eusoRoute(
+                    polyline: line,
+                    state: canonicalResolvedPurpose == .activeJob ? .active : .planned,
+                    label: index == 0
+                        ? "Eusorone \(mapTransportMode.rawValue) route plan version \(canonicalRouteVersion ?? 0)"
+                        : nil
+                )
+            } + [markerLayer]
             ZStack(alignment: .topLeading) {
                 HereLiveMapView(
-                    center: .init(midLat, midLng),
+                    center: canonicalRouteLines.lazy.compactMap(\.first).first
+                        ?? .init(midLat, midLng),
                     zoom: 6,
-                    route: line,
+                    route: [],
                     baseLayers: mapLayers,
-                    addOns: mode == .truck ? .shipperTracking : .weather
+                    addOns: mapTransportMode == .truck ? .shipperTracking : .weather,
+                    activeJob: requestedPurpose == .activeJob,
+                    mapModeContext: .unconfirmed(mapTransportMode)
                 )
                 .frame(height: 120)
                 .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
@@ -748,7 +775,7 @@ private struct CatalystAwardedCelM04Body: View {
                 .padding(10)
 
                 // LANE LOCKED banner (bottom-left)
-                VStack {
+                VStack(alignment: .leading, spacing: 4) {
                     Spacer(minLength: 0)
                     Text(laneLockedBanner)
                         .font(.system(size: 8, weight: .heavy))
@@ -756,10 +783,9 @@ private struct CatalystAwardedCelM04Body: View {
                         .foregroundStyle(LinearGradient.diagonal)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(palette.bgCard.opacity(0.85))
-                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    if let canonicalRouteStatus {
+                        canonicalRouteStatusPill(canonicalRouteStatus)
+                    }
                 }
                 .padding(12)
             }
@@ -1013,47 +1039,8 @@ private struct CatalystAwardedCelM04Body: View {
         return String(format: "HOS %.1fh", h)
     }
 
-    /// Client-side proximity miles via haversine, marrying the driver GPS
-    /// fix (FleetDriver.location "lat, lng") to the pickup coords. Returns
-    /// "— mi" when either coord pair is absent (no fabrication).
-    private func proximitySlug(_ location: String) -> String {
-        guard
-            let drv = parseLatLng(location),
-            let plat = load?.pickupLocation?.lat,
-            let plng = load?.pickupLocation?.lng,
-            plat != 0 || plng != 0
-        else { return "— mi" }
-        let miles = haversineMiles(lat1: drv.lat, lng1: drv.lng, lat2: plat, lng2: plng)
-        return "\(Int(miles.rounded())) mi"
-    }
-
-    /// Parse "33.75, -84.39" → (lat, lng). Returns nil for "Unknown"/blank.
-    private func parseLatLng(_ s: String) -> (lat: Double, lng: Double)? {
-        let parts = s.split(separator: ",").map {
-            $0.trimmingCharacters(in: .whitespaces)
-        }
-        guard parts.count == 2,
-              let lat = Double(parts[0]),
-              let lng = Double(parts[1]),
-              (lat != 0 || lng != 0)
-        else { return nil }
-        return (lat, lng)
-    }
-
-    /// Great-circle distance in statute miles.
-    private func haversineMiles(lat1: Double, lng1: Double, lat2: Double, lng2: Double) -> Double {
-        let R = 3958.8 // Earth radius, miles
-        let dLat = (lat2 - lat1) * .pi / 180
-        let dLng = (lng2 - lng1) * .pi / 180
-        let a = sin(dLat / 2) * sin(dLat / 2)
-            + cos(lat1 * .pi / 180) * cos(lat2 * .pi / 180)
-            * sin(dLng / 2) * sin(dLng / 2)
-        let c = 2 * atan2(sqrt(a), sqrt(1 - a))
-        return R * c
-    }
-
     private func candidateCell(_ d: CatalystAPI.FleetDriver, isFirst: Bool) -> some View {
-        let available = isAvailable(d.status)
+        let available = isAssignmentReady(d)
         return VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 4) {
                 ZStack {
@@ -1071,8 +1058,7 @@ private struct CatalystAwardedCelM04Body: View {
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(1)
             }
-            // Proximity miles via client haversine ("—" when no coords).
-            Text("\(hosSlug(d.hoursRemaining)) · \(proximitySlug(d.location))")
+            Text("\(hosSlug(currentDrivingHours(for: d))) · ROUTE PROJECTION PENDING")
                 .font(.system(size: 8, design: .monospaced))
                 .foregroundStyle(palette.textSecondary)
             // ETA has no real routed-ETA source — render "ETA —".
@@ -1212,7 +1198,7 @@ private struct CatalystAwardedCelM04Body: View {
     }
 
     private func assignDriverRow(_ driver: CatalystAPI.FleetDriver) -> some View {
-        let available = isAvailable(driver.status)
+        let available = isAssignmentReady(driver)
         return HStack(alignment: .top, spacing: Space.s3) {
             ZStack {
                 Circle().fill(available ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.borderFaint))
@@ -1225,9 +1211,15 @@ private struct CatalystAwardedCelM04Body: View {
                 Text(driver.name)
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
-                Text("\(availabilityLabel(driver.status)) · \(hosSlug(driver.hoursRemaining)) · \(proximitySlug(driver.location))")
+                Text("\(availabilityLabel(driver.status)) · \(hosSlug(currentDrivingHours(for: driver))) · ROUTE PROJECTION PENDING")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
+                if !available {
+                    Text(hosEligibility(for: driver).reason ?? "Driver is not currently available")
+                        .font(EType.micro)
+                        .foregroundStyle(Brand.warning)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             Spacer()
             Button {
@@ -1272,6 +1264,11 @@ private struct CatalystAwardedCelM04Body: View {
         actionMessage = nil
         defer { actionBusy = false }
         do {
+            let refreshedEvidence: [HOSFleetDriver] = try await EusoTripAPI.shared.queryNoInput("hos.getFleetHOS")
+            hosEvidence = refreshedEvidence
+            guard isAssignmentReady(driver) else {
+                throw CatalystAwardAssignmentError_373.evidenceUnavailable
+            }
             let result: AssignDriverResult_373 = try await EusoTripAPI.shared.mutation(
                 "catalysts.assignDriver",
                 input: AssignDriverInput_373(
@@ -1281,6 +1278,11 @@ private struct CatalystAwardedCelM04Body: View {
                     notes: "Assigned from Catalyst Awarded M04"
                 )
             )
+            guard result.success,
+                  result.loadId == loadId,
+                  result.driverId == driver.id else {
+                throw CatalystAwardAssignmentError_373.unconfirmed
+            }
             actionMessage = "Driver \(result.driverId) assigned to load \(result.loadId)."
             showDriverPicker = false
             await fetch()
@@ -1337,41 +1339,102 @@ private struct CatalystAwardedCelM04Body: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
-    // MARK: - HERE route geometry (Driver 013 pattern)
+    // MARK: - Canonical route authority
 
-    /// Resolves the awarded pickup→delivery corridor via HERE Routing v8
-    /// and decodes its section polyline into the live route line painted
-    /// on the basemap — the real curved road geometry, not a straight
-    /// 2-point segment or a decorative bezier. Truck-aware via the default
-    /// `.standardUSSemiLoaded` profile (this surface holds a `LoadDetail`,
-    /// not the full `Load` that `TruckProfile.from(load:)` needs; the
-    /// default profile is the same baseEquipment `HereRoutingClient`
-    /// applies). On any failure (missing coords, HERE error) the polyline
-    /// stays empty and the map keeps the straight pickup→delivery base
-    /// line — never a fabricated path.
+    private var canonicalRoutePurpose: CanonicalRoutePlanClient.Purpose {
+        let normalized = (load?.status ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "-", with: "_")
+            .replacingOccurrences(of: " ", with: "_")
+        let active: Set<String> = [
+            "assigned", "dispatched", "en_route", "enroute", "at_pickup",
+            "loaded", "in_transit", "approaching_delivery", "at_receiver",
+            "at_delivery", "unloading", "delivering"
+        ]
+        return active.contains(normalized) ? .activeJob : .planning
+    }
+
+    /// Sends only the persisted load subject and purpose. Mode, waypoints,
+    /// asset profile, graph, source rights, evidence, and geometry are all
+    /// resolved by the canonical server authority.
     @MainActor
-    private func refreshRoutePolyline() async {
-        let mode = TransportMode(rawValue: load?.transportMode ?? "truck") ?? .truck
-        guard mode == .truck, let coords = laneCoords else {
-            routePolyline = []
+    private func refreshCanonicalRoute() async {
+        canonicalRouteLines = []
+        canonicalRouteVersion = nil
+        canonicalResolvedPurpose = nil
+        canonicalRouteMode = nil
+        canonicalRouteStatus = "Verified awarded route is still being prepared"
+        guard let load, let numericId = Int(load.id), numericId > 0 else {
+            canonicalRouteStatus = "Canonical route pending a persisted load identity"
             return
         }
-        let stops = HereStops(
-            origin: CLLocationCoordinate2D(latitude: coords.pickupLat, longitude: coords.pickupLng),
-            destination: CLLocationCoordinate2D(latitude: coords.deliveryLat, longitude: coords.deliveryLng)
-        )
+        let expectedPurpose = canonicalRoutePurpose
         do {
-            let resp = try await HereRoutingClient.shared.route(
-                stops: stops, profile: .standardUSSemiLoaded)
-            guard let section = resp.routes.first?.sections.first else {
-                routePolyline = []
-                return
+            let result = try await CanonicalRoutePlanClient.shared.planLoad(
+                id: numericId,
+                purpose: expectedPurpose
+            )
+            switch result {
+            case .persisted(let persisted):
+                applyCanonicalRoute(persisted.route, expectedPurpose: expectedPurpose)
+            case .pending(let pending):
+                canonicalRouteStatus = pending.blockers.first?.message
+                    ?? "Canonical mode-native route pending verified authority"
+                await readExistingCanonicalRoute(loadId: numericId, expectedPurpose: expectedPurpose)
             }
-            let decoded = HereRoutingClient.polyline(for: section)
-            routePolyline = decoded.count >= 2 ? decoded.map { HereLatLng($0) } : []
         } catch {
-            routePolyline = []
+            canonicalRouteStatus = error.eusoUserCopy
+            await readExistingCanonicalRoute(loadId: numericId, expectedPurpose: expectedPurpose)
         }
+    }
+
+    @MainActor
+    private func readExistingCanonicalRoute(
+        loadId: Int,
+        expectedPurpose: CanonicalRoutePlanClient.Purpose
+    ) async {
+        do {
+            applyCanonicalRoute(
+                try await CanonicalRoutePlanClient.shared.getBoundLoad(id: loadId),
+                expectedPurpose: expectedPurpose
+            )
+        } catch {
+            if canonicalRouteStatus == nil { canonicalRouteStatus = error.eusoUserCopy }
+        }
+    }
+
+    @MainActor
+    private func applyCanonicalRoute(
+        _ route: CanonicalRoutePlanClient.BoundRoutePlan,
+        expectedPurpose: CanonicalRoutePlanClient.Purpose
+    ) {
+        guard route.plan.purpose == expectedPurpose,
+              let payload = route.rendererPayload else {
+            canonicalRouteLines = []
+            canonicalRouteVersion = nil
+            canonicalResolvedPurpose = nil
+            canonicalRouteMode = nil
+            canonicalRouteStatus = "Canonical \(expectedPurpose.rawValue) route exists but is not released for rendering"
+            return
+        }
+        canonicalRouteLines = payload.lines
+        canonicalRouteVersion = payload.identity.version
+        canonicalResolvedPurpose = route.plan.purpose
+        canonicalRouteMode = payload.identity.mode
+        canonicalRouteStatus = nil
+    }
+
+    private func canonicalRouteStatusPill(_ message: String) -> some View {
+        Text(message)
+            .font(.system(size: 8, weight: .semibold))
+            .foregroundStyle(palette.textSecondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(palette.bgCard.opacity(0.92))
+            .overlay(Capsule().strokeBorder(Brand.warning.opacity(0.45)))
+            .clipShape(Capsule())
+            .accessibilityLabel(message)
     }
 
     // MARK: - Network
@@ -1383,6 +1446,11 @@ private struct CatalystAwardedCelM04Body: View {
         guard !loadId.isEmpty, loadId != "0" else {
             // No load context — leave all @State nil/[]; every value
             // renders "-"/"—". No fabrication.
+            canonicalRouteLines = []
+            canonicalRouteVersion = nil
+            canonicalResolvedPurpose = nil
+            canonicalRouteMode = nil
+            canonicalRouteStatus = "Canonical route pending a persisted load identity"
             return
         }
         let api = EusoTripAPI.shared
@@ -1393,6 +1461,7 @@ private struct CatalystAwardedCelM04Body: View {
             async let loadTask:  LoadsAPI.LoadDetail?        = api.loads.getDetail(id: loadId)
             async let bidsTask:  [BidRow_373]                = api.query("catalysts.getBidsForLoad", input: LoadIdInput_373(loadId: loadId))
             async let driversTask: [CatalystAPI.FleetDriver] = api.catalyst.getMyDrivers(limit: 5)
+            async let hosTask: [HOSFleetDriver]              = api.queryNoInput("hos.getFleetHOS")
             async let identityTask: CelIdentity_373?         = api.query("catalysts.getProfile", input: EmptyInput_373())
 
             // Award is the spine of the screen — if it throws, surface the
@@ -1405,17 +1474,50 @@ private struct CatalystAwardedCelM04Body: View {
             self.load     = (try? await loadTask)     ?? nil
             self.bids     = (try? await bidsTask)     ?? []
             self.drivers  = (try? await driversTask)  ?? []
+            do {
+                self.hosEvidence = try await hosTask
+            } catch {
+                self.hosEvidence = []
+                self.actionError = "Current company HOS evidence could not refresh. Driver assignment is held."
+            }
             self.identity = (try? await identityTask) ?? nil
 
-            // Once the load (and thus its real pickup/delivery coords) is
-            // on file, fetch + decode the truck route so the lane map
-            // paints the real road geometry instead of a straight line.
-            // Honest no-op when the load lacks geocoded endpoints.
-            // Detached so the screen's `loading` resolves immediately instead
-            // of waiting on the route fetch — no long lingering skeleton.
-            Task { @MainActor in await refreshRoutePolyline() }
+            Task { @MainActor in await refreshCanonicalRoute() }
         } catch {
             self.loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    private func hosEvidence(for driver: CatalystAPI.FleetDriver) -> HOSFleetDriver? {
+        hosEvidence.first { $0.driverId == driver.id }
+    }
+
+    private func hosEligibility(for driver: CatalystAPI.FleetDriver) -> HOSAssignmentEligibility {
+        hosEvidence(for: driver)?.assignmentEligibility() ?? .notTracked
+    }
+
+    private func isAssignmentReady(_ driver: CatalystAPI.FleetDriver) -> Bool {
+        isAvailable(driver.status) && hosEligibility(for: driver) == .eligible
+    }
+
+    private func currentDrivingHours(for driver: CatalystAPI.FleetDriver) -> Double? {
+        guard let evidence = hosEvidence(for: driver), evidence.hasCurrentObservation(),
+              let hours = evidence.hoursAvailable?.drivingRemaining,
+              hours.isFinite, hours >= 0 else { return nil }
+        return hours
+    }
+}
+
+private enum CatalystAwardAssignmentError_373: LocalizedError {
+    case evidenceUnavailable
+    case unconfirmed
+
+    var errorDescription: String? {
+        switch self {
+        case .evidenceUnavailable:
+            return "Current, complete HOS evidence is unavailable. Refresh before assigning this load."
+        case .unconfirmed:
+            return "The assignment response was not an exact confirmation. Refresh before notifying the driver."
         }
     }
 }

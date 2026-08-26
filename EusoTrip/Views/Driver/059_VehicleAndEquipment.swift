@@ -197,7 +197,8 @@ struct VehicleAndEquipment: View {
                     .lineLimit(2)
                     .truncationMode(.middle)
             }
-            // Odometer / fuel — only when telematics has supplied non-zero.
+            // Odometer / fuel preserve the distinction between a real zero
+            // reading and an unavailable metric.
             telematicsStrip(v)
         }
         .padding(Space.s4)
@@ -215,23 +216,34 @@ struct VehicleAndEquipment: View {
 
     @ViewBuilder
     private func telematicsStrip(_ v: VehicleAPI.AssignedVehicle) -> some View {
-        let hasOdo = v.odometer > 0
-        let hasFuel = v.fuelLevel > 0
-        if hasOdo || hasFuel {
-            HStack(spacing: Space.s4) {
-                if hasOdo {
-                    miniMetric(icon: "gauge.with.dots.needle.50percent",
-                               value: "\(v.odometer.formatted()) mi",
-                               label: "ODOMETER")
+        HStack(spacing: Space.s4) {
+            miniMetric(
+                icon: "gauge.with.dots.needle.50percent",
+                value: v.odometer.map { "\($0.formatted()) mi" } ?? "—",
+                label: "ODOMETER"
+            )
+            miniMetric(
+                icon: "fuelpump.fill",
+                value: v.fuelLevel.map { "\(Int($0.rounded()))%" } ?? "—",
+                label: "TRACTOR FUEL"
+            )
+            Spacer(minLength: 0)
+        }
+        .padding(.top, Space.s1)
+
+        if let provenance = v.telemetryProvenance {
+            let evidence = [provenance.odometer, provenance.fuelLevel]
+                .compactMap { metric -> String? in
+                    guard metric?.tracked == true,
+                          let source = metric?.source?.trimmingCharacters(in: .whitespacesAndNewlines),
+                          !source.isEmpty else { return nil }
+                    return source
                 }
-                if hasFuel {
-                    miniMetric(icon: "fuelpump.fill",
-                               value: "\(Int(v.fuelLevel.rounded()))%",
-                               label: "TRACTOR FUEL")
-                }
-                Spacer(minLength: 0)
+            if !evidence.isEmpty {
+                Text("Telemetry · \(Array(Set(evidence)).sorted().joined(separator: " + "))")
+                    .font(EType.micro)
+                    .foregroundStyle(palette.textTertiary)
             }
-            .padding(.top, Space.s1)
         }
     }
 

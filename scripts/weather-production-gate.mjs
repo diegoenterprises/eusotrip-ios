@@ -24,12 +24,14 @@ const store = read("EusoTrip/ViewModels/WeatherCardStore.swift");
 const widget = read("EusoTrip/Views/Components/HomeWeatherWidget.swift");
 const card = read("EusoTrip/Views/Components/WeatherCard.swift");
 const perLoad = read("EusoTrip/Views/Components/PerLoadWeatherCard.swift");
+const vesselWeather = read("EusoTrip/Views/Vessel/671_VesselMarineWeatherRouting.swift");
 const sky = read("EusoTrip/Views/Components/WeatherSkyEngine.swift");
 const driverStore = read("EusoTrip/ViewModels/DriverHomeViewModel.swift");
 const driverHome = read("EusoTrip/Views/Driver/010_DriverHome.swift");
 const railRoute = read("EusoTrip/Views/Rail/578_RailRouteWeather.swift");
 const railDisruption = read("EusoTrip/Views/Rail/579_RailNetworkDisruption.swift");
 const app = read("EusoTrip/EusoTripApp.swift");
+const providerTests = read("EusoTripTests/Weather/WeatherProviderPolicyTests.swift");
 
 const weatherHomeHosts = [
   "EusoTrip/Views/Admin/800_AdminHome.swift",
@@ -69,11 +71,16 @@ const daylightCelestial = section(celestial, "case .daylight:", "case .unknown:"
 
 const failures = [];
 const deny = [
+  ["unsafe weather service integer conversion", service, /Int\([^\n]*\.rounded\(\)\)/],
   ["server wind default", service, /cur\.windKph\s*\?\?\s*0/],
   ["HERE temperature default", adapter, /return\s+0|temperature[^\n]*\?\?\s*0/],
   ["HERE wind default", adapter, /wind(?:Mph|Speed)[^\n]*\?\?\s*0/],
   ["unsafe HERE integer conversion", adapter, /Int\([^\n]*\.rounded\(\)\)/],
   ["unsafe per-load integer conversion", perLoad, /Int\([^\n]*\.rounded\(\)\)/],
+  ["fabricated marine sky snapshot", vesselWeather, /marineSkySnapshot|WeatherSkyView\(snapshot:\s*marine/],
+  ["static vessel ESANG advice", vesselWeather, /ESang:\s*route to skip|Holds ETA\s*·\s*cuts slamming risk/],
+  ["unsafe marine integer conversion", vesselWeather, /Int\([^\n]*\.rounded\(\)\)/],
+  ["unsafe sky element integer conversion", sky, /Int\([^\n]*(?:Double\(|density|intensity|strength|\.rounded\(\))/],
   ["fabricated per-load hourly temperature", perLoad, /tempF:\s*hp\.tempF\s*\?\?\s*0/],
   ["fabricated per-load hourly timestamp", perLoad, /date:\s*hp\.time\s*\?\?\s*\.distantPast/],
   ["destination snapshot hook on ambient hero", widget, /preferredSnapshot/],
@@ -87,6 +94,12 @@ const deny = [
   ["sun rendered in night branch", nightCelestial, /SunBody/],
   ["moon rendered in daylight branch", daylightCelestial, /MoonPhaseView|StarField/],
   ["stale WeatherKit-only rail doctrine", railRoute, /Apple WeatherKit-sourced|Apple WeatherKit per-segment/],
+  ["delayed home weather reactivation", widget, /timeIntervalSince\(awaySince\)\s*>=\s*60/],
+  ["delayed per-load weather reactivation", perLoad, /timeIntervalSince\(awaySince\)\s*>=\s*60/],
+  ["duplicate home weather lifecycle owner", widget, /@Environment\(\\\.scenePhase\)|inactiveAt/],
+  ["duplicate per-load weather lifecycle owner", perLoad, /@Environment\(\\\.scenePhase\)|inactiveAt/],
+  ["automatic ESANG disclosure request", card, /let\s+shouldAnalyze/],
+  ["repeated static ESANG copy", card, /Waiting for a fresh HERE route read/],
 ];
 
 for (const [label, source, pattern] of deny) {
@@ -120,6 +133,7 @@ const requireText = [
   ["WeatherKit ambient allowlist", serverAmbient, 'case "weatherkit":'],
   ["OpenWeather ambient allowlist", serverAmbient, 'case "openweather":'],
   ["missing freshness remains missing", serverAmbient, "snap.observedAt = parseDate(server.fetchedAt)"],
+  ["server provider daylight evidence", serverAmbient, "snap.isNightHint = Self.serverIsNightHint(icon: cur.icon)"],
   ["unknown source is honest", snapshot, 'case .unknown:    return "source unavailable"'],
   ["HERE attribution is explicit", snapshot, 'case .here:       return "HERE route weather"'],
   ["HERE route provenance", adapter, "snap.dataSource = .here"],
@@ -132,6 +146,8 @@ const requireText = [
   ["ambient callback remains authoritative", driverStore, "if weather != snapshot { weather = snapshot }"],
   ["per-load forecast attribution", perLoad, "Forecast · \\(forecastSource)"],
   ["per-load real hourly filtering", perLoad, "guard let time = hp.time, let tempF = hp.tempF else { return nil }"],
+  ["numeric route source-load decoder", service, "let sourceLoadId: Int?"],
+  ["authenticated route source-load propagation", service, "sourceLoadId: authenticatedSourceLoadId"],
   ["rail HERE attribution", railRoute, 'return "HERE ROUTE WEATHER"'],
   ["rail WeatherKit fallback attribution", railRoute, 'return "APPLE WEATHERKIT FALLBACK"'],
   ["rail route source gate", railRoute, "guard routeSourceAttribution != nil else { return false }"],
@@ -142,8 +158,15 @@ const requireText = [
   ["exclusive night branch", celestial, "case .night:"],
   ["exclusive daylight branch", celestial, "case .daylight:"],
   ["neutral unknown solar branch", celestial, "case .unknown:"],
+  ["unknown condition remains unknown", sky, "default:                   self = .unknown"],
+  ["bounded sky element counts", sky, "private func boundedSkyElementCount("],
   ["card presentation clock", card, "snapshot.displaySolarState(at: displayDate)"],
   ["weather pull refresh handler", widget, ".eusoRefreshHandler(domains: [.weather])"],
+  ["per-load pull refresh handler", perLoad, ".eusoRefreshHandler(domains: [.weather])"],
+  ["single app foreground owner", app, "let needsFreshData = EusoRefreshCoordinator.shared.consumeStaleActivation()"],
+  ["per-load lane disclosure state", perLoad, "@State private var laneImpactExpanded = false"],
+  ["per-load lane details require disclosure", perLoad, "if laneImpactExpanded {"],
+  ["unknown per-load mode is explicit", perLoad, "case .unknown: return nil"],
   ["forced pull refresh", widget, "await refresh(force: true)"],
   ["refresh advances solar clock", widget, "NotificationCenter.default.post(name: .eusoWeatherDisplayClockChanged"],
   ["foreground staleness refresh", app, "reason: .staleForeground"],
@@ -154,6 +177,17 @@ const requireText = [
   ["lane list initial cap", card, "min(3, ranked.count)"],
   ["lane details render on disclosure", card, "if isOpen {"],
   ["ESANG analysis remains on demand", card, "Ask ESANG about this load"],
+  ["ESANG renders only with grounded inputs", card, "if !seg.canRequestGroundedESang(at: displayDate) {\n            EmptyView()"],
+  ["fractional ESANG provider timestamp decoder", card, "WeatherRouteDataPolicy.parseProviderDate(providerTimestamp)"],
+  ["stale daylight regression", providerTests, "testStaleDaylightHintCannotPaintSunAtAustinNight"],
+  ["provider night regression", providerTests, "testFreshProviderNightConditionWinsAtTheObservationInstant"],
+  ["unknown solar atmosphere regression", providerTests, "XCTAssertEqual(value.dayPart(at: now), .night)"],
+  ["non-finite integer regression", providerTests, "testUnsafeProviderNumericsNeverCrossIntegerBoundary"],
+  ["nullable snapshot regression", providerTests, "testInvalidSnapshotMetricsRenderAsUnknown"],
+  ["timeline truth regression", providerTests, "testInvalidTimelineRowsAreDroppedInsteadOfDefaulted"],
+  ["unknown sky condition regression", providerTests, "testUnknownWeatherCodeKeepsSkyConditionUnknown"],
+  ["provider-authored vessel guidance", vesselWeather, "private var routeGuidance: some View"],
+  ["marine numeric validation", vesselWeather, "WeatherNumeric.finite(value, allowed: 0...500)"],
 ];
 
 for (const [label, source, needle] of requireText) {

@@ -14,12 +14,10 @@
 //    • vesselShipments.getContainerPositions (EXISTS :950) — "Per-container
 //        positions" CTA. Returns { containers:[…], total }.
 //
-//  Live AIS endpoints (liveVesselPosition / getVesselTrack / liveTrackOcean-
-//  Shipment) return `null` on provider error and key off imoNumber/referenceNumber,
-//  NOT bookingNumber — so they are NOT called directly here. The aggregator
-//  composes a stable, decodable board from real DB rows; the spatial provider
-//  name NEVER appears in UI (HERE doctrine — branded "EusoTrip Network").
-//  The map is a stylized great-circle ocean schematic, not a geo plot.
+//  Live position comes only from liveOperations.latestForAsset, whose server
+//  boundary enforces tenant grants, provider licence/consent, evidence hashes,
+//  freshness, and quality. Provider identity and limitations remain visible.
+//  AIS observations never become voyage geometry or remaining distance.
 //
 //  No mock data. Real @State loading / error / actionError. do/catch — never try?.
 //
@@ -34,10 +32,7 @@ private struct OceanTrackBoard: Decodable {
     let found: Bool
     let booking: Booking?
     let vessel: Vessel?
-    let position: Position?
     let etaUtc: String?
-    let remainingNm: Double?
-    let remainingDays: Double?
     let events: [TrackEvent]
     let containerCount: Int
 
@@ -64,12 +59,6 @@ private struct OceanTrackBoard: Decodable {
         let name: String?
         let imoNumber: String?
         let status: String?
-    }
-    struct Position: Decodable {
-        let lat: Double?
-        let lng: Double?
-        let headingDeg: Double?
-        let speedKn: Double?
     }
     struct TrackEvent: Decodable, Identifiable {
         let id: Int
@@ -115,7 +104,10 @@ private struct VesselLiveTrackingBody: View {
     @State private var loading = true
     @State private var loadError: String? = nil
     @State private var actionError: String? = nil
+    @State private var liveAsset: LiveOperationsClient.AssetResult? = nil
+    @State private var liveAssetError: String? = nil
     @State private var pulse = false
+    @StateObject private var nearbyVessels = LiveOperationsNearbyStore(mode: .vessel)
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -154,6 +146,14 @@ private struct VesselLiveTrackingBody: View {
             }
         }
         .task { await load() }
+        .task(id: "fallback-nearby-\(vesselImo ?? "none")-\(fallbackMapCenter.lat)-\(fallbackMapCenter.lng)") {
+            guard vesselImo == nil, !fallbackMapPoints.isEmpty else { return }
+            await nearbyVessels.poll(
+                around: fallbackMapCenter,
+                radiusMeters: 200_000,
+                limit: 150
+            )
+        }
         .eusoRefreshable { await load() }
         .onAppear {
             withAnimation(.easeInOut(duration: 2).repeatForever(autoreverses: true)) { pulse = true }
@@ -190,10 +190,23 @@ private struct VesselLiveTrackingBody: View {
         .padding(.top, Space.s6)
     }
 
-    /// Pulsing green when a live fix is present; grey "NO FIX" otherwise (honest).
+    /// Pulsing green only for current, operationally usable evidence. Delayed,
+    /// stale, offline, conflicted, and unavailable states remain distinct.
     private var aisBadge: some View {
-        let live = board?.position != nil
-        let color: Color = live ? Brand.success : palette.textTertiary
+        let observation = liveAsset?.observation
+        let live = observation?.markerState == .current && observation?.operationalUseAllowed == true
+        let color: Color
+        switch observation?.markerState {
+        case .current: color = live ? Brand.success : Brand.warning
+        case .degraded, .stale: color = Brand.warning
+        case .offline: color = palette.textTertiary
+        case nil: color = liveAssetError == nil ? palette.textTertiary : Brand.warning
+        }
+        let label: String
+        if live { label = "AIS LIVE" }
+        else if let observation { label = "AIS \(observation.freshnessState.rawValue.uppercased())" }
+        else if liveAssetError != nil { label = "AIS DEGRADED" }
+        else { label = "NO AUTHORIZED FIX" }
         return HStack(spacing: 6) {
             ZStack {
                 Circle().fill(color).frame(width: 10, height: 10)
@@ -202,10 +215,13 @@ private struct VesselLiveTrackingBody: View {
                         .scaleEffect(pulse ? 2.2 : 1).opacity(pulse ? 0 : 0.4)
                 }
             }
-            Text(live ? "AIS" : "NO FIX")
+            Text(label)
                 .font(.system(size: 11, weight: .heavy)).tracking(0.6)
                 .foregroundStyle(color)
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+        .accessibilityValue(observation?.accessibleEvidenceLabel ?? liveAsset?.coverage.statement ?? "No authorized vessel observation")
     }
 
     private var subline: String {
@@ -213,13 +229,13 @@ private struct VesselLiveTrackingBody: View {
         if let v = board?.vessel?.name { parts.append(v) }
         let n = board?.containerCount ?? 0
         if n > 0 { parts.append("\(n) cntr") }
-        if let fix = lastFixLabel { parts.append("last fix \(fix) UTC") }
+        if let fix = lastFixLabel { parts.append("reported \(fix) UTC") }
         if parts.isEmpty { return "Eusorone Marine · awaiting first AIS fix" }
         return parts.joined(separator: " · ")
     }
 
     private var lastFixLabel: String? {
-        guard let ts = board?.events.first?.timestamp, let d = Self.iso.date(from: ts) else { return nil }
+        guard let ts = liveAsset?.observation?.observedAt, let d = Self.parseDate(ts) else { return nil }
         return Self.hhmm.string(from: d)
     }
 
@@ -232,28 +248,26 @@ private struct VesselLiveTrackingBody: View {
             RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
                 .fill(Brand.blue.opacity(0.06))
 
-            if let o = originCoord, let d = destinationCoord {
-                if let imo = vesselImo {
-                    VesselOceanTrackMap(
-                        imoNumber: imo,
-                        origin: o,
-                        destination: d,
-                        originLabel: originLabel,
-                        destinationLabel: destinationLabel
-                    )
-                } else {
-                    HereVectorMapView(
-                        center: HereLatLng((o.lat + d.lat) / 2, (o.lng + d.lng) / 2),
-                        zoom: 4,
-                        interactive: true,
-                        tilt: 0,
-                        layers: [.markers([
-                            HereMarker(at: o, kind: .pickup, label: originLabel),
-                            HereMarker(at: d, kind: .delivery, label: destinationLabel)
-                        ])],
-                        styleHint: .ocean
-                    )
-                }
+            if let o = originCoord, let d = destinationCoord, let imo = vesselImo {
+                VesselOceanTrackMap(
+                    imoNumber: imo,
+                    vesselShipmentId: board?.booking?.id,
+                    origin: o,
+                    destination: d,
+                    originLabel: originLabel,
+                    destinationLabel: destinationLabel
+                )
+            } else if !fallbackMapPoints.isEmpty {
+                HereVectorMapView(
+                    center: fallbackMapCenter,
+                    zoom: fallbackMapPoints.count >= 2 ? 4 : 7,
+                    interactive: true,
+                    tilt: 0,
+                    layers: [.markers(fallbackMapMarkers + nearbyVessels.markers)],
+                    styleHint: .ocean,
+                    mapModeContext: .primary(.vessel),
+                    liveOperationsStatus: liveOperationsStatus
+                )
             } else {
                 mapLocationUnavailable
             }
@@ -288,44 +302,121 @@ private struct VesselLiveTrackingBody: View {
         return imo
     }
 
-    /// Origin coordinate: aggregator port join → PortDirectory catalog →
-    /// live AIS fix (so the arc anchors on the real vessel). nil ⇒ schematic.
+    /// Origin coordinate: aggregator port join → PortDirectory catalog. A live
+    /// vessel fix never replaces a missing origin.
     private var originCoord: HereLatLng? {
-        if let lat = board?.booking?.originLat, let lng = board?.booking?.originLng,
-           !(lat == 0 && lng == 0) {
-            return HereLatLng(lat, lng)
+        if let coordinate = LatLongParser.validatedCoordinate(
+            latitude: board?.booking?.originLat,
+            longitude: board?.booking?.originLng
+        ) {
+            return HereLatLng(coordinate.latitude, coordinate.longitude)
         }
-        if let code = board?.booking?.originUnlocode, let p = PortDirectory.find(unlocode: code) {
-            return HereLatLng(p.lat, p.lng)
+        if let code = board?.booking?.originUnlocode,
+           let p = PortDirectory.find(unlocode: code),
+           let coordinate = LatLongParser.validatedCoordinate(
+               latitude: p.lat,
+               longitude: p.lng
+           ) {
+            return HereLatLng(coordinate)
         }
-        return livePositionCoord
+        return nil
     }
 
     /// Destination coordinate: aggregator port join → PortDirectory catalog.
     /// (No AIS fallback here — that anchors origin; the dest must be authored.)
     private var destinationCoord: HereLatLng? {
-        if let lat = board?.booking?.destinationLat, let lng = board?.booking?.destinationLng,
-           !(lat == 0 && lng == 0) {
-            return HereLatLng(lat, lng)
+        if let coordinate = LatLongParser.validatedCoordinate(
+            latitude: board?.booking?.destinationLat,
+            longitude: board?.booking?.destinationLng
+        ) {
+            return HereLatLng(coordinate.latitude, coordinate.longitude)
         }
-        if let code = board?.booking?.destinationUnlocode, let p = PortDirectory.find(unlocode: code) {
-            return HereLatLng(p.lat, p.lng)
+        if let code = board?.booking?.destinationUnlocode,
+           let p = PortDirectory.find(unlocode: code),
+           let coordinate = LatLongParser.validatedCoordinate(
+               latitude: p.lat,
+               longitude: p.lng
+           ) {
+            return HereLatLng(coordinate)
         }
         return nil
     }
 
-    /// The board's live position fix as a map coordinate, when present.
+    /// Exact licensed Live Operations position, when currently renderable.
     private var livePositionCoord: HereLatLng? {
-        guard let p = board?.position, let lat = p.lat, let lng = p.lng else { return nil }
-        return HereLatLng(lat, lng)
+        liveAsset?.observation?.position.coordinate
     }
 
-    // MARK: ETA + remaining strip (SVG y=494, two 192×64 boxes)
+    private var fallbackMapPoints: [HereLatLng] {
+        [originCoord, livePositionCoord, destinationCoord].compactMap { $0 }
+    }
+
+    private var fallbackMapCenter: HereLatLng {
+        let points = fallbackMapPoints
+        guard !points.isEmpty else { return HereLatLng(33.7, -118.2) }
+        return HereLatLng(
+            points.map(\.lat).reduce(0, +) / Double(points.count),
+            points.map(\.lng).reduce(0, +) / Double(points.count)
+        )
+    }
+
+    private var fallbackMapMarkers: [HereMarker] {
+        var markers: [HereMarker] = []
+        if let originCoord {
+            markers.append(HereMarker(at: originCoord, kind: .pickup, label: originLabel))
+        }
+        if let destinationCoord {
+            markers.append(HereMarker(at: destinationCoord, kind: .delivery, label: destinationLabel))
+        }
+        if let observation = liveAsset?.observation,
+           let coordinate = observation.position.coordinate {
+            markers.append(HereMarker(
+                at: coordinate,
+                kind: .vessel,
+                label: board?.vessel?.name ?? "Vessel",
+                observationState: observation.markerState,
+                sourceLabel: observation.provider.id,
+                accessibilityLabel: observation.accessibleEvidenceLabel
+            ))
+        }
+        return markers
+    }
+
+    private var liveOperationsStatus: HereLiveOperationsStatus {
+        if nearbyVessels.result != nil || nearbyVessels.errorMessage != nil {
+            return nearbyVessels.status
+        }
+        guard let observation = liveAsset?.observation else {
+            return .init(
+                availability: liveAssetError == nil ? .empty : .degraded,
+                sourceLabel: nil,
+                freshnessLabel: nil,
+                detail: liveAssetError ?? liveAsset?.coverage.statement ?? "No authorized vessel observation",
+                observationCount: 0
+            )
+        }
+        let availability: HereLiveOperationsStatus.Availability
+        switch observation.markerState {
+        case .current: availability = observation.operationalUseAllowed ? .live : .degraded
+        case .stale: availability = .stale
+        case .degraded: availability = .degraded
+        case .offline: availability = .unavailable
+        }
+        return .init(
+            availability: availability,
+            sourceLabel: observation.provider.id,
+            freshnessLabel: observation.freshnessState.rawValue,
+            detail: observation.provider.limitationsStatement,
+            observationCount: 1
+        )
+    }
+
+    // MARK: ETA + evidence strip
 
     private var etaStrip: some View {
         HStack(spacing: Space.s3) {
             metricBox("ETA · \(destinationShort)", etaLabel, accent: true)
-            metricBox("REMAINING", remainingLabel, accent: false)
+            metricBox("LIVE EVIDENCE", liveEvidenceLabel, accent: false)
         }
     }
 
@@ -434,13 +525,11 @@ private struct VesselLiveTrackingBody: View {
         return Self.etaFmt.string(from: d)
     }
 
-    private var remainingLabel: String {
-        guard let nm = board?.remainingNm, nm > 0 else { return "-" }
-        let nmStr = Self.grouped.string(from: NSNumber(value: nm)) ?? "\(Int(nm))"
-        if let days = board?.remainingDays, days > 0 {
-            return "\(nmStr) NM · \(String(format: "%.1f", days))d"
+    private var liveEvidenceLabel: String {
+        guard let observation = liveAsset?.observation else {
+            return liveAssetError == nil ? "NO AUTHORIZED FIX" : "DEGRADED"
         }
-        return "\(nmStr) NM"
+        return "\(observation.freshnessState.rawValue.uppercased()) · \(observation.quality.state.rawValue.replacingOccurrences(of: "_", with: " ").uppercased())"
     }
 
     private func eventLabel(_ e: OceanTrackBoard.TrackEvent) -> String {
@@ -500,7 +589,7 @@ private struct VesselLiveTrackingBody: View {
     // MARK: - Load + actions (do/catch · never try?)
 
     private func load() async {
-        loading = true; loadError = nil
+        loading = true; loadError = nil; liveAssetError = nil
         let cleaned = bookingNumber.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else {
             board = nil
@@ -528,6 +617,17 @@ private struct VesselLiveTrackingBody: View {
                 return
             }
             self.board = b
+            if let imo = b.vessel?.imoNumber?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !imo.isEmpty {
+                do {
+                    liveAsset = try await LiveOperationsClient.shared.latestVessel(imoNumber: imo)
+                } catch {
+                    liveAsset = nil
+                    liveAssetError = error.eusoUserCopy
+                }
+            } else {
+                liveAsset = nil
+            }
         } catch {
             loadError = error.eusoUserCopy
         }
@@ -558,7 +658,12 @@ private struct VesselLiveTrackingBody: View {
     private static let etaFmt: DateFormatter = { let f = DateFormatter(); f.dateFormat = "MM-dd HH:mm"; f.timeZone = TimeZone(identifier: "UTC"); return f }()
     private static let mmdd: DateFormatter = { let f = DateFormatter(); f.dateFormat = "MM-dd"; f.timeZone = TimeZone(identifier: "UTC"); return f }()
     private static let hhmm: DateFormatter = { let f = DateFormatter(); f.dateFormat = "HH:mm"; f.timeZone = TimeZone(identifier: "UTC"); return f }()
-    private static let grouped: NumberFormatter = { let f = NumberFormatter(); f.numberStyle = .decimal; f.maximumFractionDigits = 0; return f }()
+    private static func parseDate(_ raw: String) -> Date? {
+        if let date = iso.date(from: raw) { return date }
+        let fallback = ISO8601DateFormatter()
+        fallback.formatOptions = [.withInternetDateTime]
+        return fallback.date(from: raw)
+    }
 }
 
 #Preview("003 · Vessel Live Tracking · Night") {

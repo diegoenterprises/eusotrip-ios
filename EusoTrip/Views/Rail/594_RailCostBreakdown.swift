@@ -26,7 +26,8 @@
 //  on the hero card binds to the SESSION user (or "—"), never a hardcoded
 //  founder company.
 //
-//  RBAC railProcedure (RAIL_ENGINEER|CATALYST). transportMode=rail · US lane (USD).
+//  RBAC railProcedure (RAIL_ENGINEER|CATALYST). The persisted shipment
+//  currency qualifies every displayed amount; this surface never assumes USD.
 //
 
 import SwiftUI
@@ -60,30 +61,49 @@ struct RailCostBreakdownScreen: View {
 /// One rail/dray segment of the move. Server: `segments[]` in the cost
 /// breakdown (legNumber · mode · rate · status).
 private struct ICBSegmentCost: Decodable {
+    struct MetricStates: Decodable {
+        let rate: FreightClaimsAPI.MetricTruth
+    }
+
     let legNumber: Int?
     let mode: String?       // RAIL · TRUCK · VESSEL
-    let rate: Double?       // segment line-haul rate (USD)
+    let rate: Double?
+    let currency: FreightClaimsAPI.CurrencyCode?
     let status: String?     // booked · in_transit · completed · pending
+    let metricStates: MetricStates?
 }
 
 /// One inter-leg transfer (ramp lift / transload / dray hand-off). Server:
 /// `transfers[]` in the cost breakdown (transferType · cost · facilityName).
 private struct ICBTransferCost: Decodable {
+    struct MetricStates: Decodable {
+        let cost: FreightClaimsAPI.MetricTruth
+    }
+
     let transferType: String?   // rail_to_truck · truck_to_rail · …
-    let cost: Double?           // transfer cost (USD)
+    let cost: Double?
+    let currency: FreightClaimsAPI.CurrencyCode?
     let facilityName: String?   // ramp / terminal name (may be absent)
+    let metricStates: MetricStates?
 }
 
 /// Whole roll-up returned by `intermodal.getIntermodalCostBreakdown`.
 /// Every field is exactly what the proc emits — nothing invented.
 private struct IntermodalCostBreakdown: Decodable {
+    struct MetricStates: Decodable {
+        let totalSegmentCost: FreightClaimsAPI.MetricTruth
+        let totalTransferCost: FreightClaimsAPI.MetricTruth
+        let grandTotal: FreightClaimsAPI.MetricTruth
+    }
+
     let intermodalNumber: String?
     let segments: [ICBSegmentCost]?
     let transfers: [ICBTransferCost]?
     let totalSegmentCost: Double?
     let totalTransferCost: Double?
     let grandTotal: Double?
-    let currency: String?
+    let currency: FreightClaimsAPI.CurrencyCode?
+    let metricStates: MetricStates?
 }
 
 /// A single rendered ledger line, derived locally from the REAL segments +
@@ -92,7 +112,9 @@ private struct LedgerLine: Identifiable {
     let id: String
     let label: String
     let detail: String?
-    let amountUsd: Double?
+    let amount: Double?
+    let currency: FreightClaimsAPI.CurrencyCode?
+    let formattedAmount: String?
 }
 
 // MARK: - Body
@@ -123,21 +145,44 @@ private struct RailCostBreakdownBody: View {
         }
     }
 
-    private func usd(_ v: Double) -> String {
-        let n = NSNumber(value: v)
-        let f = NumberFormatter()
-        f.numberStyle = .decimal
-        f.minimumFractionDigits = 2
-        f.maximumFractionDigits = 2
-        return "$" + (f.string(from: n) ?? String(format: "%.2f", v))
+    private func qualifiedMoney(
+        _ value: Double?,
+        currency: FreightClaimsAPI.CurrencyCode?,
+        truth: FreightClaimsAPI.MetricTruth?,
+        source: String
+    ) -> Double? {
+        guard let value,
+              value.isFinite,
+              value >= 0,
+              currency != nil,
+              let truth,
+              truth.valueState == .measured,
+              truth.accessState == .granted,
+              truth.trackingState == .tracked,
+              truth.provenance.source == source,
+              truth.provenance.observedAt != nil,
+              truth.provenance.computedAt != nil else {
+            return nil
+        }
+        return value
     }
 
-    private func usdWhole(_ v: Double) -> String {
-        let n = NSNumber(value: v)
-        let f = NumberFormatter()
-        f.numberStyle = .decimal
-        f.maximumFractionDigits = 0
-        return "$" + (f.string(from: n) ?? String(format: "%.0f", v))
+    private func formattedMoney(
+        _ value: Double?,
+        currency: FreightClaimsAPI.CurrencyCode?,
+        truth: FreightClaimsAPI.MetricTruth?,
+        source: String,
+        whole: Bool = false
+    ) -> String? {
+        guard let value = qualifiedMoney(value, currency: currency, truth: truth, source: source),
+              let currency else { return nil }
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.currencyCode = currency.rawValue
+        formatter.minimumFractionDigits = whole ? 0 : 2
+        formatter.maximumFractionDigits = whole ? 0 : 2
+        return formatter.string(from: NSNumber(value: value))
+            ?? "\(currency.rawValue) \(value.formatted(.number.precision(.fractionLength(whole ? 0 : 2))))"
     }
 
     // Human label for a transport mode token returned by the proc.
@@ -179,32 +224,59 @@ private struct RailCostBreakdownBody: View {
             let legNo = seg.legNumber.map(String.init) ?? "—"
             let statusDetail = (seg.status?.isEmpty == false)
                 ? "Status \(seg.status!)" : nil
+            let amount = qualifiedMoney(
+                seg.rate,
+                currency: seg.currency,
+                truth: seg.metricStates?.rate,
+                source: "intermodal_segments.rate+intermodal_shipments.currency"
+            )
             lines.append(LedgerLine(
                 id: "seg-\(legNo)-\(seg.mode ?? "")",
                 label: "\(modeWord(seg.mode)) · leg \(legNo)",
                 detail: statusDetail,
-                amountUsd: seg.rate))
+                amount: amount,
+                currency: seg.currency,
+                formattedAmount: formattedMoney(
+                    seg.rate,
+                    currency: seg.currency,
+                    truth: seg.metricStates?.rate,
+                    source: "intermodal_segments.rate+intermodal_shipments.currency"
+                )))
         }
         for (i, t) in (b.transfers ?? []).enumerated() {
             let facility = (t.facilityName?.isEmpty == false) ? t.facilityName : nil
+            let amount = qualifiedMoney(
+                t.cost,
+                currency: t.currency,
+                truth: t.metricStates?.cost,
+                source: "intermodal_transfers.transferCost+intermodal_shipments.currency"
+            )
             lines.append(LedgerLine(
                 id: "xfer-\(i)",
                 label: "Transfer · \(transferWord(t.transferType))",
                 detail: facility,
-                amountUsd: t.cost))
+                amount: amount,
+                currency: t.currency,
+                formattedAmount: formattedMoney(
+                    t.cost,
+                    currency: t.currency,
+                    truth: t.metricStates?.cost,
+                    source: "intermodal_transfers.transferCost+intermodal_shipments.currency"
+                )))
         }
         return lines
     }
 
-    /// All-in landed cost as the proc reports it. Prefer grandTotal; fall back
-    /// to the sum of the two real subtotals; else nil (renders em-dash).
+    /// All-in landed cost exactly as the proc qualifies it. A missing or
+    /// partial source remains nil; the client never manufactures a total.
     private var landedTotal: Double? {
         guard let b = breakdown else { return nil }
-        if let g = b.grandTotal { return g }
-        if b.totalSegmentCost != nil || b.totalTransferCost != nil {
-            return (b.totalSegmentCost ?? 0) + (b.totalTransferCost ?? 0)
-        }
-        return nil
+        return qualifiedMoney(
+            b.grandTotal,
+            currency: b.currency,
+            truth: b.metricStates?.grandTotal,
+            source: "intermodal_segments.rate+intermodal_transfers.transferCost+intermodal_shipments.currency"
+        )
     }
 
     var body: some View {
@@ -282,7 +354,13 @@ private struct RailCostBreakdownBody: View {
 
     private func hero(_ b: IntermodalCostBreakdown) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(landedTotal.map { "\(usdWhole($0)) landed" } ?? "— landed")
+            Text(formattedMoney(
+                b.grandTotal,
+                currency: b.currency,
+                truth: b.metricStates?.grandTotal,
+                source: "intermodal_segments.rate+intermodal_transfers.transferCost+intermodal_shipments.currency",
+                whole: true
+            ).map { "\($0) landed" } ?? "Landed cost unavailable")
                 .font(.system(size: 32, weight: .bold))
                 .tracking(-0.6)
                 .foregroundStyle(LinearGradient.diagonal)
@@ -395,7 +473,7 @@ private struct RailCostBreakdownBody: View {
         let xfers = b.transfers?.count ?? 0
         let segPart = "\(segs) \(segs == 1 ? "segment" : "segments")"
         let xferPart = xfers > 0 ? " · \(xfers) \(xfers == 1 ? "transfer" : "transfers")" : ""
-        let curr = (b.currency?.isEmpty == false) ? " · \(b.currency!)" : ""
+        let curr = b.currency.map { " · \($0.rawValue)" } ?? ""
         return segPart + xferPart + curr
     }
 
@@ -416,7 +494,8 @@ private struct RailCostBreakdownBody: View {
             .padding(.bottom, Space.s2)
 
             let lines = ledgerLines
-            let total = lines.reduce(into: 0.0) { acc, l in acc += (l.amountUsd ?? 0) }
+            let values = lines.compactMap(\.amount)
+            let total = values.isEmpty ? nil : values.reduce(0, +)
 
             VStack(alignment: .leading, spacing: 0) {
                 breakdownBar(lines: lines, total: total)
@@ -439,17 +518,17 @@ private struct RailCostBreakdownBody: View {
         }
     }
 
-    private func breakdownBar(lines: [LedgerLine], total: Double) -> some View {
+    private func breakdownBar(lines: [LedgerLine], total: Double?) -> some View {
         GeometryReader { geo in
             let w = geo.size.width
-            let safeTotal = total > 0 ? total : 1
             HStack(spacing: 0) {
                 ForEach(Array(lines.enumerated()), id: \.element.id) { idx, line in
-                    let frac = (line.amountUsd ?? 0) / safeTotal
-                    Rectangle()
-                        .fill(idx == 0 ? AnyShapeStyle(LinearGradient.primary)
-                                       : AnyShapeStyle(legColor(idx)))
-                        .frame(width: max(0, w * frac))
+                    if let amount = line.amount, let total, total > 0 {
+                        Rectangle()
+                            .fill(idx == 0 ? AnyShapeStyle(LinearGradient.primary)
+                                           : AnyShapeStyle(legColor(idx)))
+                            .frame(width: max(0, w * amount / total))
+                    }
                 }
             }
             .frame(height: 8)
@@ -463,9 +542,12 @@ private struct RailCostBreakdownBody: View {
         // Percent-of-total is computed locally from real amounts (the proc
         // returns no pctOfTotal field), and only shown when a positive total
         // exists so we never print a fabricated share.
-        let total = ledgerLines.reduce(into: 0.0) { acc, l in acc += (l.amountUsd ?? 0) }
-        let pct: Double? = (total > 0 && line.amountUsd != nil)
-            ? (line.amountUsd! / total) * 100 : nil
+        let values = ledgerLines.compactMap(\.amount)
+        let total = values.isEmpty ? nil : values.reduce(0, +)
+        let pct: Double? = line.amount.flatMap { amount in
+            guard let total, total > 0 else { return nil }
+            return (amount / total) * 100
+        }
         return HStack(alignment: .top, spacing: 12) {
             Circle()
                 .fill(color == Brand.blue ? AnyShapeStyle(LinearGradient.diagonal)
@@ -484,7 +566,7 @@ private struct RailCostBreakdownBody: View {
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 4) {
-                Text(line.amountUsd.map { usd($0) } ?? "—")
+                Text(line.formattedAmount ?? "—")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
                     .monospacedDigit()
@@ -505,7 +587,14 @@ private struct RailCostBreakdownBody: View {
                 .font(.system(size: 11, weight: .heavy)).tracking(0.6)
                 .foregroundStyle(palette.textTertiary)
             Spacer()
-            Text(landedTotal.map { usd($0) } ?? "—")
+            Text(breakdown.flatMap { b in
+                formattedMoney(
+                    b.grandTotal,
+                    currency: b.currency,
+                    truth: b.metricStates?.grandTotal,
+                    source: "intermodal_segments.rate+intermodal_transfers.transferCost+intermodal_shipments.currency"
+                )
+            } ?? "—")
                 .font(.system(size: 18, weight: .bold))
                 .foregroundStyle(LinearGradient.diagonal)
                 .monospacedDigit()
@@ -536,7 +625,15 @@ private struct RailCostBreakdownBody: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Line-haul (segments)")
                             .font(.system(size: 10)).foregroundStyle(palette.textSecondary)
-                        Text(breakdown?.totalSegmentCost.map { usdWhole($0) } ?? "—")
+                        Text(breakdown.flatMap { b in
+                            formattedMoney(
+                                b.totalSegmentCost,
+                                currency: b.currency,
+                                truth: b.metricStates?.totalSegmentCost,
+                                source: "intermodal_segments.rate+intermodal_shipments.currency",
+                                whole: true
+                            )
+                        } ?? "—")
                             .font(.system(size: 18, weight: .bold))
                             .foregroundStyle(palette.textPrimary)
                             .monospacedDigit()
@@ -545,7 +642,15 @@ private struct RailCostBreakdownBody: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Transfers")
                             .font(.system(size: 10)).foregroundStyle(palette.textSecondary)
-                        Text(breakdown?.totalTransferCost.map { usdWhole($0) } ?? "—")
+                        Text(breakdown.flatMap { b in
+                            formattedMoney(
+                                b.totalTransferCost,
+                                currency: b.currency,
+                                truth: b.metricStates?.totalTransferCost,
+                                source: "intermodal_transfers.transferCost+intermodal_shipments.currency",
+                                whole: true
+                            )
+                        } ?? "—")
                             .font(.system(size: 18, weight: .bold))
                             .foregroundStyle(palette.textPrimary)
                             .monospacedDigit()
@@ -688,23 +793,107 @@ private struct RailCostBreakdownBody: View {
         exporting = false
     }
 
-    // MARK: - Dispute (reuses freightClaims dispute path — UNVERIFIED)
+    // MARK: - Dispute
 
     private func dispute(_ b: IntermodalCostBreakdown) async {
         exportError = nil; exportNotice = nil
         struct DisputeIn: Encodable { let intermodalShipmentId: Int; let reason: String }
-        struct DisputeOut: Decodable { let id: String? }
+        struct AmountStates: Decodable { let amount: FreightClaimsAPI.MetricTruth }
+        struct Provenance: Decodable { let source: String; let observedAt: String?; let computedAt: String? }
+        struct DisputeOut: Decodable {
+            let id: String?
+            let status: String?
+            let amount: Double?
+            let currency: FreightClaimsAPI.CurrencyCode?
+            let metricStates: AmountStates
+            let provenance: Provenance
+        }
+        struct ReadbackInput: Encodable { let limit: Int; let offset: Int }
+        struct Readback: Decodable {
+            struct Row: Decodable {
+                let id: String
+                let status: String
+                let amount: Double?
+                let currency: FreightClaimsAPI.CurrencyCode?
+                let metricStates: AmountStates
+            }
+            let disputes: [Row]
+        }
         do {
-            // PORT-GAP: dispute reuses the freightClaims dispute path (UNVERIFIED).
-            // Wired so it activates when confirmed server-side; surfaces a real
-            // error until then rather than asserting a fabricated success.
-            let _: DisputeOut = try await EusoTripAPI.shared.mutation(
+            let out: DisputeOut = try await EusoTripAPI.shared.mutation(
                 "freightClaims.createDispute",
                 input: DisputeIn(intermodalShipmentId: intermodalShipmentId,
                                  reason: "Cost breakdown dispute"))
-            exportNotice = "Dispute filed."
+            guard let disputeId = out.id, !disputeId.isEmpty,
+                  out.status?.lowercased() == "open",
+                  out.provenance.source == "intermodal_shipments+disputes+dispute_events",
+                  out.provenance.observedAt != nil,
+                  out.provenance.computedAt != nil,
+                  coherentDisputeMoney(amount: out.amount, currency: out.currency, truth: out.metricStates.amount) else {
+                throw RailCostDisputeConfirmationError.invalidAcknowledgement
+            }
+            let readback: Readback = try await EusoTripAPI.shared.query(
+                "freightClaims.getDisputeResolution",
+                input: ReadbackInput(limit: 50, offset: 0)
+            )
+            guard readback.disputes.contains(where: {
+                $0.id == disputeId
+                    && $0.status.lowercased() == "filed"
+                    && $0.currency == out.currency
+                    && sameOptionalMoney($0.amount, out.amount)
+                    && coherentDisputeMoney(amount: $0.amount, currency: $0.currency, truth: $0.metricStates.amount)
+            }) else {
+                throw RailCostDisputeConfirmationError.readbackMismatch
+            }
+            exportNotice = "Dispute \(disputeId) confirmed."
         } catch {
             exportError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    private func coherentDisputeMoney(
+        amount: Double?,
+        currency: FreightClaimsAPI.CurrencyCode?,
+        truth: FreightClaimsAPI.MetricTruth
+    ) -> Bool {
+        if truth.valueState == .noObservations {
+            return amount == nil
+                && currency == nil
+                && truth.accessState == .granted
+                && truth.trackingState == .tracked
+                && truth.provenance.source == "disputes.amountInDispute+baseCurrency"
+                && truth.provenance.observedAt == nil
+                && truth.provenance.computedAt != nil
+        }
+        return amount.map { $0 > 0 } == true
+            && currency != nil
+            && truth.valueState == .measured
+            && truth.accessState == .granted
+            && truth.trackingState == .tracked
+            && truth.provenance.source == "disputes.amountInDispute+baseCurrency"
+            && truth.provenance.observedAt != nil
+            && truth.provenance.computedAt != nil
+    }
+
+    private func sameOptionalMoney(_ left: Double?, _ right: Double?) -> Bool {
+        switch (left, right) {
+        case (nil, nil): return true
+        case let (left?, right?): return abs(left - right) < 0.005
+        default: return false
+        }
+    }
+}
+
+private enum RailCostDisputeConfirmationError: LocalizedError {
+    case invalidAcknowledgement
+    case readbackMismatch
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidAcknowledgement:
+            return "The dispute acknowledgement did not preserve its amount, currency, and provenance state."
+        case .readbackMismatch:
+            return "The dispute could not be confirmed in the live dispute ledger."
         }
     }
 }

@@ -188,13 +188,15 @@ struct EusoTripWatchApp: App {
                                 FleetCRDT.shared.configure(
                                     driverId: auth.userId ?? "unpaired"
                                 )
-                                FleetCRDT.shared.seedIfEmpty(
-                                    status:        hos.current.status.rawValue,
-                                    driveMinutes:  hos.current.driveRemainingMinutes,
-                                    windowMinutes: hos.current.windowRemainingMinutes,
-                                    cycleMinutes:  hos.current.cycleRemainingMinutes,
-                                    statusSince:   hos.current.statusSince
-                                )
+                                if let observation = hos.currentObservation {
+                                    FleetCRDT.shared.seedIfEmpty(
+                                        status:        observation.status.rawValue,
+                                        driveMinutes:  observation.driveRemainingMinutes,
+                                        windowMinutes: observation.windowRemainingMinutes,
+                                        cycleMinutes:  observation.cycleRemainingMinutes,
+                                        statusSince:   observation.statusSince
+                                    )
+                                }
                             }
                         }
                         // Q3 — bring up the BLE mesh transport if enabled.

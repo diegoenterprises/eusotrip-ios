@@ -76,7 +76,7 @@ final class MeLoadBoardStore: ObservableObject {
             )
             phase = .loaded(r)
         } catch {
-            phase = .error("Couldn't reach loadboard.")
+            phase = .error(EusoTripAPIError.bidActionMessage(for: error, noun: "load-board request"))
         }
     }
 }
@@ -142,8 +142,8 @@ struct MeLoadBoardView: View {
     /// SearchRow → AvailableLoad adapter. Only the fields the
     /// LoadDetailSheet renders are populated — pickup/delivery
     /// strings, miles, rate, equipment, hazmat. SearchRow doesn't
-    /// carry geocoded lat/lng; LoadDetailSheet falls back to its
-    /// HereRoutingClient lookup so 0/0 is fine for the seed.
+    /// carry geocoded lat/lng. Missing geometry remains nil until the
+    /// authoritative load hydration or HERE geocoding resolves it.
     fileprivate func availableLoad(from r: LoadBoardAPI.SearchRow) -> AvailableLoad {
         let perMile = (r.distance > 0) ? r.rate / r.distance : 0
         let weightString: String = {
@@ -164,10 +164,10 @@ struct MeLoadBoardView: View {
             hazmat: r.hazmat == true,
             weight: weightString,
             hotScore: 0,
-            originLat: 0,
-            originLng: 0,
-            destLat: 0,
-            destLng: 0,
+            originLat: nil,
+            originLng: nil,
+            destLat: nil,
+            destLng: nil,
             backendLoadId: Int(r.id),
             transportMode: r.transportMode ?? "truck",
             equipmentRaw: r.equipmentType

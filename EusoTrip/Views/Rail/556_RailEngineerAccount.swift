@@ -5,6 +5,42 @@
 //  PERSONA GAP: RAIL_ENGINEER individual persona not yet canonized.
 //  displayName falls back to "___" + PROPOSED chip until founder canonizes.
 //
+//  VERIFIED COUNTER-PARTIES (live source, dist/ excluded)
+//    users.me                            EXISTS users.ts:99     QUERY
+//    users.getProfile                    EXISTS users.ts:112    QUERY
+//    users.getNotificationPreferences    EXISTS users.ts:1769   QUERY
+//    users.updateNotificationPreferences EXISTS users.ts:1801   MUTATION → {success}
+//    settings.getSettings                EXISTS settings.ts:60  QUERY
+//    settings.updateDisplaySettings      EXISTS settings.ts:89  MUTATION → {success,…}
+//    railShipments.getRailCrewHOS        EXISTS railShipments.ts:2471 QUERY (no input)
+//                                        railCrewProcedure — RAIL_ENGINEER in cohort
+//
+//  PHANTOMS REMOVED FROM THIS SCREEN (zero hits in live source)
+//    settings.updateOperationalPreferences — never existed. The settings router
+//      ships only updateNotificationSettings / updateDisplaySettings /
+//      updatePrivacySettings / updatePreferences. Every distance-unit and voice
+//      save on this screen was posted into the void.
+//    settings.getSettings → `operationalPreferences` — never returned. The
+//      procedure returns getUserSettings(): { notifications, display, privacy,
+//      accessibility, apiKeys, webhooks, integrations } (settings.ts:21-47), so
+//      a NON-optional `operationalPreferences` made the payload throw on every
+//      single load — which is why the whole preferences panel sat permanently
+//      disabled with no explanation.
+//    railShipments.getCrewHOS(Empty()) — the procedure exists but REQUIRES
+//      { crewMemberId: string } (railShipments.ts:2237), and that id is a
+//      CloudMoyo-side CREW_ID (CloudMoyoCrewService.ts:212), not an EusoTrip
+//      user id. Nothing this screen loads carries one, so zod rejected every
+//      call. Re-pointed at getRailCrewHOS, which takes no input and is already
+//      company-scoped server-side; the caller's own row is matched on userId.
+//
+//  §W OFFLINE POLICY — ONLINE_ONLY
+//    Reason: this screen writes account preferences and reads a duty/HOS record.
+//    A queued preference would show the operator a setting as saved before the
+//    server ever accepted it, and cached HOS is a regulatory claim about a duty
+//    clock that has since advanced. Honoured: no cache and no queue; a failed
+//    save rolls the control back to its prior value and raises the transport
+//    error, and HOS counters are withheld unless the evidence gate passes.
+//
 
 import SwiftUI
 
@@ -54,18 +90,77 @@ private struct RailCredential: Decodable, Identifiable {
     let expiring: Bool?
 }
 
+/// A `rail_crew_assignments` row as `railShipments.getRailCrewHOS` returns it
+/// (railShipments.ts:2471 — a bare `db.select()` on the table).
+///
+/// Real columns are ONLY id · userId · consistId · role · assignedAt ·
+/// relievedAt · hoursOnDuty · hoursOfServiceCompliant (drizzle/schema.ts:11696).
+/// `limitHours`, `lastRestHours`, `tracked`, `trackingState`, `source`,
+/// `freshness` and `observationState` are NOT columns — they decode to nil, so
+/// `hasCurrentEvidence` is false today and the duty counters stay withheld.
+/// That is the intended outcome: an unverifiable duty clock is not displayed.
+/// `hoursOnDuty` is a MySQL DECIMAL, which arrives over JSON as a STRING, so it
+/// is read flexibly rather than as a bare Double.
 private struct RailCrewHOSRow: Decodable {
+    let userId: Int?
     let onDutyHours: Double?
     let limitHours: Double?
     let lastRestHours: Double?
+    let tracked: Bool?
+    let trackingState: HOSTrackingState?
+    let source: String?
+    let freshness: String?
+    let observationState: String?
+
+    enum CodingKeys: String, CodingKey {
+        case userId, hoursOnDuty, onDutyHours, limitHours, lastRestHours
+        case tracked, trackingState, source, freshness, observationState
+    }
+
+    /// DECIMAL-over-JSON tolerant read: accepts a number or its string form.
+    private static func flexDouble(
+        _ c: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys
+    ) -> Double? {
+        if let d = try? c.decodeIfPresent(Double.self, forKey: key) { return d }
+        if let s = try? c.decodeIfPresent(String.self, forKey: key) { return Double(s) }
+        return nil
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        userId = try? c.decodeIfPresent(Int.self, forKey: .userId)
+        onDutyHours = Self.flexDouble(c, .hoursOnDuty) ?? Self.flexDouble(c, .onDutyHours)
+        limitHours = Self.flexDouble(c, .limitHours)
+        lastRestHours = Self.flexDouble(c, .lastRestHours)
+        tracked = try? c.decodeIfPresent(Bool.self, forKey: .tracked)
+        trackingState = try? c.decodeIfPresent(HOSTrackingState.self, forKey: .trackingState)
+        source = try? c.decodeIfPresent(String.self, forKey: .source)
+        freshness = try? c.decodeIfPresent(String.self, forKey: .freshness)
+        observationState = try? c.decodeIfPresent(String.self, forKey: .observationState)
+    }
+
+    var hasCurrentEvidence: Bool {
+        tracked == true
+            && trackingState == .tracked
+            && observationState == "current"
+            && source?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            && HOSObservationClock.freshness(freshness).isCurrent
+    }
 }
 
+/// `settings.getSettings` (settings.ts:60) returns getUserSettings(), whose
+/// real shape is { notifications, display, privacy, accessibility, apiKeys,
+/// webhooks, integrations } (settings.ts:21-47). There is NO
+/// `operationalPreferences` key and NO `esangVoiceEnabled` field anywhere in
+/// the settings bundle — the previous non-optional `operationalPreferences`
+/// made this payload throw on every load. `display.distanceUnit` is the one
+/// field on this screen the server actually stores, and it is optional here so
+/// an older metadata blob without it degrades to "unknown" rather than throwing.
 private struct RailSettingsPayload: Decodable {
-    struct OperationalPreferences: Decodable {
-        let distanceUnit: String
-        let esangVoiceEnabled: Bool
+    struct Display: Decodable {
+        let distanceUnit: String?
     }
-    let operationalPreferences: OperationalPreferences
+    let display: Display?
 }
 
 private struct RailNotificationPreferences: Decodable {
@@ -84,9 +179,9 @@ private struct RailEngineerAccountBody: View {
     @State private var hos: RailCrewHOSRow? = nil
     @State private var hosError: String? = nil
     @State private var notificationsOn = false
-    @State private var voiceOn = true
+    @State private var notificationsLoaded = false
     @State private var distanceUnit = "miles"
-    @State private var preferencesLoaded = false
+    @State private var distanceUnitLoaded = false
     @State private var preferencesError: String? = nil
     @State private var loading = true
     @State private var loadError: String? = nil
@@ -97,8 +192,8 @@ private struct RailEngineerAccountBody: View {
     /// crammed 15 always-open sections (~103 rows) into one endless scroll.
     /// Rebuilt into 5 bespoke collapsible hubs by canonical taxonomy —
     /// Operations, Money & Commercial, Compliance & Documents, Equipment &
-    /// Crew, Customs & Intermodal. Operations starts expanded; the rest collapse.
-    @SceneStorage("rail.engineer.me.expandedHub") private var expandedHubId: String = "operations"
+    /// Crew, Customs & Intermodal. Every hub starts collapsed until opened.
+    @SceneStorage("rail.engineer.me.expandedHub") private var expandedHubId: String = ""
     @SceneStorage("rail.engineer.me.returnAnchor") private var returnAnchor: String = ""
 
     private var displayName: String {
@@ -489,27 +584,55 @@ private struct RailEngineerAccountBody: View {
         }
     }
 
+    /// Three states, never two. `expiring` is an `Optional<Bool>`, so the old
+    /// `expiring == true ? warning : success` test painted a nil — an expiry
+    /// the server never reported — as a GREEN, compliant credential. A
+    /// credential of unknown expiry is not a compliant credential.
+    ///   • expiring == true  → EXPIRING   (warning)
+    ///   • expiring == false → the server's own status label (success)
+    ///   • expiring == nil   → EXPIRY NOT REPORTED (warning, never success)
+    private func credentialExpiry(_ c: RailCredential) -> (text: String, tint: Color, voice: String) {
+        switch c.expiring {
+        case .some(true):
+            return (c.statusLabel ?? "Expiring", Brand.warning, "Expiring")
+        case .some(false):
+            return (c.statusLabel ?? "Current", Brand.success, c.statusLabel ?? "Current")
+        case .none:
+            let label = c.statusLabel?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let head = (label?.isEmpty == false) ? "\(label!) · expiry not reported" : "Expiry not reported"
+            return (head, Brand.warning,
+                    "Expiry not reported. This credential cannot be shown as compliant.")
+        }
+    }
+
     private var credentialsContent: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             Text("CREDENTIALS · ON FILE")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
             if credentials.isEmpty {
-                Text("No credential records were returned.")
-                    .font(EType.caption).foregroundStyle(palette.textSecondary)
+                // `users.getProfile` (users.ts:112) returns no `credentials`
+                // key at all — there is no credential feed behind this list
+                // yet, so an empty list is the absence of a source, not a
+                // finding of "no credentials on file". Say which it is.
+                Text("No credential feed is wired to this account yet, so nothing here can be treated as proof of compliance. Ask crew management for your credential record.")
+                    .font(EType.caption).foregroundStyle(Brand.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel("Credentials unavailable")
+                    .accessibilityValue("No credential feed is wired to this account. Nothing here is proof of compliance.")
             } else {
                 ForEach(credentials) { credential in
+                    let expiry = credentialExpiry(credential)
                     HStack {
                         Text(credential.title).font(EType.body).foregroundStyle(palette.textPrimary)
                         Spacer()
-                        Text(credential.statusLabel ?? "Status unavailable")
+                        Text(expiry.text)
                             .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(
-                                credential.expiring == true
-                                    ? Brand.warning
-                                    : (credential.statusLabel == nil ? palette.textTertiary : Brand.success)
-                            )
+                            .foregroundStyle(expiry.tint)
                     }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel(credential.title)
+                    .accessibilityValue(expiry.voice)
                 }
             }
         }
@@ -521,7 +644,8 @@ private struct RailEngineerAccountBody: View {
             Text("DUTY · HOURS OF SERVICE")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
-            if let hos, let onDuty = hos.onDutyHours, let limit = hos.limitHours {
+            if let hos, hos.hasCurrentEvidence,
+               let onDuty = hos.onDutyHours, let limit = hos.limitHours {
                 HStack {
                     Text("On duty \(onDuty, specifier: "%.1f")h · \(max(limit - onDuty, 0), specifier: "%.1f")h to recorded limit")
                         .font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
@@ -534,9 +658,15 @@ private struct RailEngineerAccountBody: View {
                     Text("Last recorded rest · \(lastRest, specifier: "%.1f")h")
                         .font(EType.caption).foregroundStyle(palette.textSecondary)
                 }
+                Text("\(hos.source ?? "source unavailable") · current")
+                    .font(EType.caption).foregroundStyle(palette.textSecondary)
             } else {
-                Text(hosError ?? "No current crew HOS telemetry was returned.")
+                let withheld = hosError ?? "Current, sourced crew HOS evidence was not returned. Duty counters are withheld."
+                Text(withheld)
                     .font(EType.caption).foregroundStyle(hosError == nil ? palette.textSecondary : Brand.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel("Duty, hours of service")
+                    .accessibilityValue("Withheld. \(withheld)")
             }
         }
     }
@@ -548,11 +678,14 @@ private struct RailEngineerAccountBody: View {
                 .foregroundStyle(palette.textTertiary)
             if let preferencesError {
                 Text(preferencesError).font(EType.caption).foregroundStyle(Brand.warning)
+                    .fixedSize(horizontal: false, vertical: true)
             }
+
+            // ── Push notifications · users.updateNotificationPreferences ──
             Toggle(isOn: Binding(
                 get: { notificationsOn },
                 set: { value in
-                    guard preferencesLoaded else { return }
+                    guard notificationsLoaded else { return }
                     let previous = notificationsOn
                     notificationsOn = value
                     Task { await saveNotifications(value, previous: previous) }
@@ -561,37 +694,65 @@ private struct RailEngineerAccountBody: View {
                 Text("Push notifications").font(EType.body).foregroundStyle(palette.textPrimary)
             }
             .tint(Brand.info)
-            .disabled(!preferencesLoaded)
+            .disabled(!notificationsLoaded)
+            .accessibilityValue(notificationsLoaded
+                                ? (notificationsOn ? "On" : "Off")
+                                : "Unavailable. This preference could not be read, so the switch position is not a saved setting.")
+            if !notificationsLoaded {
+                Text("Your notification preference couldn't be read, so it can't be changed here and the switch above is not your saved setting. Pull to refresh.")
+                    .font(EType.caption).foregroundStyle(Brand.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
+            // ── Distance units · settings.updateDisplaySettings ──
+            // The server enum is miles | kilometers ONLY (settings.ts:95). The
+            // "Nautical miles" tag that used to sit here could never save — zod
+            // rejected it on every pick and the control silently reverted, so
+            // the menu was offering a choice the account had no way to keep.
             Picker("Distance units", selection: Binding(
                 get: { distanceUnit },
                 set: { value in
-                    guard preferencesLoaded else { return }
+                    guard distanceUnitLoaded else { return }
                     let previous = distanceUnit
                     distanceUnit = value
-                    Task { await saveOperationalPreference(distanceUnit: value, previousDistanceUnit: previous) }
+                    Task { await saveDistanceUnit(value, previous: previous) }
                 }
             )) {
                 Text("Miles").tag("miles")
                 Text("Kilometers").tag("kilometers")
-                Text("Nautical miles").tag("nautical_miles")
             }
             .pickerStyle(.menu)
-            .disabled(!preferencesLoaded)
+            .disabled(!distanceUnitLoaded)
+            .accessibilityValue(distanceUnitLoaded
+                                ? distanceUnit
+                                : "Unavailable. This preference could not be read, so the selection shown is not a saved setting.")
+            if !distanceUnitLoaded {
+                Text("Your saved distance unit couldn't be read, so it can't be changed here and the selection above is not your saved setting. Pull to refresh.")
+                    .font(EType.caption).foregroundStyle(Brand.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
-            Toggle(isOn: Binding(
-                get: { voiceOn },
-                set: { value in
-                    guard preferencesLoaded else { return }
-                    let previous = voiceOn
-                    voiceOn = value
-                    Task { await saveOperationalPreference(esangVoiceEnabled: value, previousVoice: previous) }
+            // ── ESANG AI voice · HONEST DISABLE, no counter-party ──
+            // There is no `esangVoiceEnabled` field anywhere in the settings
+            // bundle and no procedure that writes one (zero hits in live
+            // source). The control stays visible and disabled rather than being
+            // deleted, and its position is labelled as NOT a saved setting so
+            // the switch itself cannot be read as a preference the account holds.
+            Toggle(isOn: .constant(false)) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("ESANG AI voice").font(EType.body).foregroundStyle(palette.textSecondary)
+                    Text("UNAVAILABLE · NOT A SAVED SETTING")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                        .foregroundStyle(Brand.warning)
                 }
-            )) {
-                Text("ESANG AI voice").font(EType.body).foregroundStyle(palette.textPrimary)
             }
             .tint(Brand.info)
-            .disabled(!preferencesLoaded)
+            .disabled(true)
+            .accessibilityLabel("ESANG AI voice")
+            .accessibilityValue("Unavailable. This preference has no store on your account, so the switch position is not a saved setting.")
+            Text("ESANG voice has no preference store on your account yet, so it can't be read or saved from this screen. Ask crew management to raise it with support if you need it changed.")
+                .font(EType.caption).foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -631,11 +792,33 @@ private struct RailEngineerAccountBody: View {
             self.me = try await EusoTripAPI.shared.query("users.me", input: Empty())
             let p: ProfileOut = try await EusoTripAPI.shared.query("users.getProfile", input: Empty())
             self.credentials = p.credentials ?? []
-            if let crewHOS = p.crewHOS {
+            if let crewHOS = p.crewHOS, crewHOS.hasCurrentEvidence {
                 self.hos = crewHOS
             } else {
+                // WAS: query("railShipments.getCrewHOS", input: Empty()).
+                // That procedure REQUIRES { crewMemberId: string }
+                // (railShipments.ts:2237) and the id is a CloudMoyo CREW_ID
+                // (CloudMoyoCrewService.ts:212) — an identity in a third-party
+                // crew system that nothing on this screen holds. zod rejected
+                // every call, so this panel could never render. Passing our own
+                // user id would be asserting a CloudMoyo identity we do not
+                // have, so it is NOT substituted here.
+                // getRailCrewHOS (railShipments.ts:2471) takes no input, is in
+                // the same railCrewProcedure cohort, and is already scoped to
+                // the caller's company server-side — the caller's OWN row is
+                // matched on the real userId from users.me. Same source 712
+                // uses. STUB · named-gap: RAIL-GAP-556-CREWMEMBER-IDENTITY.
                 do {
-                    self.hos = try await EusoTripAPI.shared.query("railShipments.getCrewHOS", input: Empty())
+                    let rows: [RailCrewHOSRow] = try await EusoTripAPI.shared
+                        .queryNoInput("railShipments.getRailCrewHOS")
+                    let myUserId = self.me?.id
+                    let mine = rows.first { $0.userId != nil && $0.userId == myUserId }
+                    self.hos = mine
+                    if mine == nil {
+                        self.hosError = "No rail crew assignment is on file for your account, so your duty clock can't be shown here."
+                    } else if mine?.hasCurrentEvidence != true {
+                        self.hosError = "Crew HOS evidence is incomplete or stale."
+                    }
                 } catch {
                     self.hos = nil
                     self.hosError = error.eusoUserCopy
@@ -648,24 +831,38 @@ private struct RailEngineerAccountBody: View {
         loading = false
     }
 
+    /// The two live preferences come from two different procedures, so they are
+    /// read independently. The old single `preferencesLoaded` flag meant the
+    /// always-throwing `operationalPreferences` decode also disabled the
+    /// notification toggle, which is why the whole panel was dead on arrival
+    /// with nothing on screen explaining it.
     private func loadPreferences() async {
-        struct Empty: Encodable {}
-        preferencesLoaded = false
+        distanceUnitLoaded = false
+        notificationsLoaded = false
         preferencesError = nil
         do {
-            async let settingsRequest: RailSettingsPayload = EusoTripAPI.shared.query(
-                "settings.getSettings", input: Empty()
-            )
-            async let notificationsRequest: RailNotificationPreferences = EusoTripAPI.shared.query(
-                "users.getNotificationPreferences", input: Empty()
-            )
-            let (settings, notifications) = try await (settingsRequest, notificationsRequest)
-            distanceUnit = settings.operationalPreferences.distanceUnit
-            voiceOn = settings.operationalPreferences.esangVoiceEnabled
-            notificationsOn = notifications.pushNotifications
-            preferencesLoaded = true
+            let settings: RailSettingsPayload = try await EusoTripAPI.shared
+                .queryNoInput("settings.getSettings")
+            let unit = settings.display?.distanceUnit?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            // Only a unit `updateDisplaySettings` will accept back counts as
+            // loaded (settings.ts:95). Anything else can be read but not
+            // written, so the control stays honestly disabled rather than
+            // offering a save that the server would reject.
+            if unit == "miles" || unit == "kilometers" {
+                distanceUnit = unit ?? distanceUnit
+                distanceUnitLoaded = true
+            }
         } catch {
             preferencesError = error.eusoUserCopy
+        }
+        do {
+            let notifications: RailNotificationPreferences = try await EusoTripAPI.shared
+                .queryNoInput("users.getNotificationPreferences")
+            notificationsOn = notifications.pushNotifications
+            notificationsLoaded = true
+        } catch {
+            if preferencesError == nil { preferencesError = error.eusoUserCopy }
         }
     }
 
@@ -685,27 +882,25 @@ private struct RailEngineerAccountBody: View {
         }
     }
 
-    private func saveOperationalPreference(
-        distanceUnit newDistanceUnit: String? = nil,
-        esangVoiceEnabled: Bool? = nil,
-        previousDistanceUnit: String? = nil,
-        previousVoice: Bool? = nil
-    ) async {
-        struct Input: Encodable {
-            let distanceUnit: String?
-            let esangVoiceEnabled: Bool?
-        }
+    /// Real writer: `settings.updateDisplaySettings` (settings.ts:89), which
+    /// takes `distanceUnit: "miles" | "kilometers"` and returns `{ success }`.
+    ///
+    /// This replaces `settings.updateOperationalPreferences`, which does not
+    /// exist in live source — the settings router ships only
+    /// updateNotificationSettings / updateDisplaySettings / updatePrivacySettings
+    /// / updatePreferences. Every save this screen made went nowhere and was
+    /// reported to the operator as successful.
+    private func saveDistanceUnit(_ value: String, previous: String) async {
+        struct Input: Encodable { let distanceUnit: String }
         do {
             let out: RailSettingsMutationAck = try await EusoTripAPI.shared.mutation(
-                "settings.updateOperationalPreferences",
-                input: Input(distanceUnit: newDistanceUnit, esangVoiceEnabled: esangVoiceEnabled)
+                "settings.updateDisplaySettings", input: Input(distanceUnit: value)
             )
             guard out.success == true else {
-                throw EusoTripAPIError.trpcError("The preference was not saved.")
+                throw EusoTripAPIError.trpcError("The distance unit was not saved.")
             }
         } catch {
-            if let previousDistanceUnit { distanceUnit = previousDistanceUnit }
-            if let previousVoice { voiceOn = previousVoice }
+            distanceUnit = previous
             saveError = error.eusoUserCopy
         }
     }

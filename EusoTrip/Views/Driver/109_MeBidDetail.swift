@@ -35,9 +35,11 @@ final class MeBidDetailStore: ObservableObject {
     @Published var lastAck: String? = nil
     @Published var lastError: String? = nil
     @Published var counterAmount: String = ""
+    @Published private(set) var loadDetail: LoadsAPI.LoadDetail?
 
     let loadId: Int
     private let api: EusoTripAPI
+    private var acceptRequestKeys: [Int: String] = [:]
 
     init(loadId: Int, api: EusoTripAPI = .shared) {
         self.loadId = loadId
@@ -46,19 +48,34 @@ final class MeBidDetailStore: ObservableObject {
 
     func load() async {
         phase = .loading
+        lastError = nil
         do {
             let chain = try await api.loadBidding.getBidChain(loadId: loadId)
             phase = .loaded(chain)
         } catch {
             phase = .error("Couldn't load bid chain.")
+            return
+        }
+        do {
+            loadDetail = try await api.loads.getDetail(id: String(loadId))
+        } catch {
+            loadDetail = nil
+            lastError = "Load mode and currency could not be verified. Counter terms remain locked."
         }
     }
 
     func accept(bidId: Int) async {
         working = true
         defer { working = false }
+        let requestKey = acceptRequestKeys[bidId] ?? UUID().uuidString.lowercased()
+        acceptRequestKeys[bidId] = requestKey
         do {
-            _ = try await api.loadBidding.accept(bidId: bidId)
+            let ack = try await api.loadBidding.accept(bidId: bidId, requestKey: requestKey)
+            guard ack.success == true else {
+                lastError = "The award was not confirmed. The bid and load remain unchanged."
+                return
+            }
+            acceptRequestKeys.removeValue(forKey: bidId)
             lastAck = "Bid accepted, load assigned."
             await load()
         } catch {
@@ -66,11 +83,24 @@ final class MeBidDetailStore: ObservableObject {
         }
     }
 
-    func counter(parentBidId: Int, amount: Double) async {
+    func counter(
+        parentBidId: Int,
+        amount: Double,
+        truckDetentionTerms: TruckDetentionNegotiatedTerms?
+    ) async {
         working = true
         defer { working = false }
         do {
-            _ = try await api.loadBidding.counter(parentBidId: parentBidId, loadId: loadId, counterAmount: amount)
+            let ack = try await api.loadBidding.counter(
+                parentBidId: parentBidId,
+                loadId: loadId,
+                counterAmount: amount,
+                truckDetentionTerms: truckDetentionTerms
+            )
+            guard ack.isConfirmed else {
+                lastError = "The counter was not confirmed. The bid chain remains unchanged."
+                return
+            }
             lastAck = "Counter sent."
             counterAmount = ""
             await load()
@@ -101,6 +131,8 @@ struct MeBidDetailView: View {
     @StateObject private var store: MeBidDetailStore
     @State private var showCounterSheet: Bool = false
     @State private var showAck: Bool = false
+    @State private var proposesDetentionOverride = false
+    @State private var counterDetentionDraft = TruckDetentionTermsDraft()
 
     init(loadId: Int) {
         self.loadId = loadId
@@ -179,11 +211,16 @@ struct MeBidDetailView: View {
 
     private func threadList(_ rows: [LoadBiddingAPI.ChainRow]) -> some View {
         VStack(spacing: 8) {
-            ForEach(rows) { row in chainRow(row) }
+            ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                chainRow(row, previous: index > 0 ? rows[index - 1] : nil)
+            }
         }
     }
 
-    private func chainRow(_ r: LoadBiddingAPI.ChainRow) -> some View {
+    private func chainRow(
+        _ r: LoadBiddingAPI.ChainRow,
+        previous: LoadBiddingAPI.ChainRow?
+    ) -> some View {
         let style = ChainStatusStyle.from(r.status)
         let role = (r.bidderRole ?? "").lowercased()
         let isMine = role == "driver" || role == "catalyst"
@@ -208,6 +245,13 @@ struct MeBidDetailView: View {
                 if let c = r.conditions, !c.isEmpty {
                     Text(c).font(EType.caption).foregroundStyle(palette.textSecondary)
                         .lineLimit(3).fixedSize(horizontal: false, vertical: true)
+                }
+                if let terms = r.truckDetentionTerms {
+                    TruckDetentionTermsSummary(
+                        terms: terms,
+                        context: detentionRoundContext(terms, previous: previous)
+                    )
+                    .padding(.top, 4)
                 }
                 HStack(spacing: 6) {
                     if let eq = r.equipmentType, !eq.isEmpty {
@@ -292,7 +336,7 @@ struct MeBidDetailView: View {
                         Task { await store.accept(bidId: bidId) }
                     }
                     secondaryButton("Counter back", systemImage: "arrow.uturn.backward") {
-                        showCounterSheet = true
+                        beginCounter(rows)
                     }
                     secondaryButton("Withdraw thread", systemImage: "xmark.circle") {
                         Task { await store.withdraw(bidId: bidId) }
@@ -389,7 +433,7 @@ struct MeBidDetailView: View {
                 Text("Push back on the shipper's counter with your number. EusoTrip records a new round in the chain and notifies the other party.")
                     .font(EType.body).foregroundStyle(palette.textSecondary)
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("AMOUNT (USD)").font(.system(size: 8, weight: .heavy)).tracking(0.7).foregroundStyle(palette.textTertiary)
+                    Text("AMOUNT (\(counterCurrencyLabel))").font(.system(size: 8, weight: .heavy)).tracking(0.7).foregroundStyle(palette.textTertiary)
                     TextField("e.g. 2150", text: $store.counterAmount)
                         .keyboardType(.decimalPad)
                         .textFieldStyle(.plain).padding(.horizontal, Space.s3).padding(.vertical, Space.s2)
@@ -399,12 +443,17 @@ struct MeBidDetailView: View {
                         .overlay(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous).strokeBorder(palette.borderFaint))
                         .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
                 }
+                counterDetentionSection
                 Button {
                     if let v = Double(store.counterAmount), v > 0,
-                       case .loaded(let rows) = store.phase,
-                       let parent = rows.last(where: { ($0.status ?? "").lowercased() == "pending" }) {
+                       let parent = counterParent,
+                       counterContractReady {
                         Task {
-                            await store.counter(parentBidId: parent.id, amount: v)
+                            await store.counter(
+                                parentBidId: parent.id,
+                                amount: v,
+                                truckDetentionTerms: proposedCounterTerms
+                            )
                             showCounterSheet = false
                         }
                     }
@@ -421,11 +470,109 @@ struct MeBidDetailView: View {
                     .foregroundStyle(.white).background(LinearGradient.diagonal).clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }
                 .buttonStyle(.plain)
-                .disabled(store.working || (Double(store.counterAmount) ?? 0) <= 0)
+                .disabled(store.working || (Double(store.counterAmount) ?? 0) <= 0 || !counterContractReady)
             }
             .padding(.horizontal, 14).padding(.top, 12)
         }
         .background(palette.bgPage)
+    }
+
+    @ViewBuilder
+    private var counterDetentionSection: some View {
+        if counterIsTruck {
+            VStack(alignment: .leading, spacing: 12) {
+                if let inherited = counterParent?.truckDetentionTerms {
+                    TruckDetentionTermsSummary(terms: inherited, context: "INHERITED IF UNCHANGED")
+                    Toggle("Propose different detention terms", isOn: $proposesDetentionOverride)
+                        .frame(minHeight: 44)
+                } else {
+                    Text("This truck chain has no effective detention authority. Complete every term before sending the counter.")
+                        .font(EType.caption)
+                        .foregroundStyle(Brand.warning)
+                    TruckDetentionTermsEditor(draft: $counterDetentionDraft)
+                }
+                if proposesDetentionOverride, counterParent?.truckDetentionTerms != nil {
+                    TruckDetentionTermsEditor(draft: $counterDetentionDraft)
+                }
+                if let message = counterCurrencyMismatch {
+                    Text(message).font(EType.caption).foregroundStyle(Brand.danger)
+                }
+            }
+            .padding(Space.s3)
+            .background(palette.bgCard)
+            .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(palette.borderFaint))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+        } else if store.loadDetail == nil {
+            Text("Load mode is unavailable. Refresh before countering so truck detention terms cannot be dropped or attached to the wrong mode.")
+                .font(EType.caption)
+                .foregroundStyle(Brand.warning)
+        }
+    }
+
+    private var counterParent: LoadBiddingAPI.ChainRow? {
+        guard case .loaded(let rows) = store.phase else { return nil }
+        return rows.last(where: { ($0.status ?? "").lowercased() == "pending" })
+    }
+
+    private var counterIsTruck: Bool {
+        if counterParent?.truckDetentionTerms != nil { return true }
+        return store.loadDetail?.transportMode?.lowercased() == "truck"
+    }
+
+    private var proposedCounterTerms: TruckDetentionNegotiatedTerms? {
+        guard counterIsTruck else { return nil }
+        let mustSupply = counterParent?.truckDetentionTerms == nil
+        return (mustSupply || proposesDetentionOverride) ? counterDetentionDraft.negotiatedTerms : nil
+    }
+
+    private var counterContractReady: Bool {
+        guard counterParent != nil else { return false }
+        guard let mode = store.loadDetail?.transportMode?.lowercased() else {
+            guard counterParent?.truckDetentionTerms != nil else { return false }
+            return !proposesDetentionOverride
+                || (proposedCounterTerms != nil && counterCurrencyMismatch == nil)
+        }
+        guard mode == "truck" else { return true }
+        if counterParent?.truckDetentionTerms == nil || proposesDetentionOverride {
+            return proposedCounterTerms != nil && counterCurrencyMismatch == nil
+        }
+        return true
+    }
+
+    private var counterCurrencyLabel: String {
+        counterParent?.truckDetentionTerms?.currency.rawValue
+            ?? store.loadDetail?.currency
+            ?? "CURRENCY UNAVAILABLE"
+    }
+
+    private var counterCurrencyMismatch: String? {
+        guard let terms = proposedCounterTerms,
+              let authoritativeCurrency = store.loadDetail?.currency?.uppercased()
+                ?? counterParent?.truckDetentionTerms?.currency.rawValue,
+              terms.currency.rawValue != authoritativeCurrency else { return nil }
+        return "Detention currency must match the inherited load currency (\(authoritativeCurrency))."
+    }
+
+    private func beginCounter(_ rows: [LoadBiddingAPI.ChainRow]) {
+        guard let parent = rows.last(where: { ($0.status ?? "").lowercased() == "pending" }) else { return }
+        if let terms = parent.truckDetentionTerms {
+            counterDetentionDraft = TruckDetentionTermsDraft(terms: terms)
+            proposesDetentionOverride = false
+        } else {
+            counterDetentionDraft = TruckDetentionTermsDraft()
+            counterDetentionDraft.currency = store.loadDetail?.currency
+                .flatMap { TruckDetentionNegotiatedTerms.Currency(rawValue: $0) }
+            proposesDetentionOverride = store.loadDetail?.transportMode?.lowercased() == "truck"
+        }
+        showCounterSheet = true
+    }
+
+    private func detentionRoundContext(
+        _ terms: TruckDetentionNegotiatedTerms,
+        previous: LoadBiddingAPI.ChainRow?
+    ) -> String {
+        guard let prior = previous?.truckDetentionTerms else { return "OPENING DETENTION TERMS" }
+        return prior == terms ? "UNCHANGED FROM PRIOR ROUND" : "UPDATED THIS ROUND"
     }
 
     // MARK: - resolution

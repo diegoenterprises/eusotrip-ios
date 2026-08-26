@@ -1892,6 +1892,7 @@ struct MeEldView: View {
         case .onDuty:       return "On-Duty"
         case .sleeperBerth: return "Sleeper"
         case .offDuty:      return "Off-Duty"
+        case nil:           return "Unavailable"
         }
     }
 
@@ -1901,30 +1902,35 @@ struct MeEldView: View {
         case .onDuty:       return .info
         case .sleeperBerth: return .neutral
         case .offDuty:      return .neutral
+        case nil:           return .neutral
         }
     }
 
     private var driveRemainingDisplay: String {
-        store.status.map { HOSStatus.formatHours($0.drivingRemaining) } ?? "-"
+        guard let status = store.status, status.hasCurrentObservation() else { return "—" }
+        return HOSStatus.formatHours(status.drivingRemaining)
     }
 
     private var shiftRemainingDisplay: String {
-        store.status.map { HOSStatus.formatHours($0.onDutyRemaining) } ?? "-"
+        guard let status = store.status, status.hasCurrentObservation() else { return "—" }
+        return HOSStatus.formatHours(status.onDutyRemaining)
     }
 
     private var cycleRemainingDisplay: String {
-        store.status.map { HOSStatus.formatHours($0.cycleRemaining) } ?? "-"
+        guard let status = store.status, status.hasCurrentObservation() else { return "—" }
+        return HOSStatus.formatHours(status.cycleRemaining)
     }
 
     /// 30-min break tile — "Complete" when not approaching, otherwise
     /// the countdown minutes or "Due now".
     private var breakTileValue: String {
-        guard let status = store.status else { return "-" }
-        if status.breakRequired { return "Due now" }
+        guard let status = store.status, status.hasCurrentObservation() else { return "—" }
+        if status.breakRequired == true { return "Due now" }
+        guard status.breakRequired == false else { return "—" }
         if let mins = store.minutesUntilBreak, mins < 30 {
             return "\(mins)m"
         }
-        return "Complete"
+        return "Not due"
     }
 
     private var milesTodayDisplay: String {
@@ -1934,8 +1940,11 @@ struct MeEldView: View {
 
     /// Project shift-end clock from onDutyRemaining.
     private var shiftEndsDisplay: String {
-        guard let status = store.status, status.onDutyRemaining > 0 else { return "-" }
-        let target = Date().addingTimeInterval(status.onDutyRemaining * 3600)
+        guard let status = store.status,
+              status.hasCurrentObservation(),
+              let remaining = status.onDutyRemaining,
+              remaining > 0 else { return "—" }
+        let target = Date().addingTimeInterval(remaining * 3600)
         return MeEldView.shiftEndFormatter.string(from: target)
     }
 
@@ -1953,23 +1962,59 @@ struct MeEldView: View {
 
     // MARK: Cycle chart
 
-    private var cycleUsedMinutes: Int {
-        store.history.reduce(0) { $0 + $1.onDutyMinutes }
+    private var cycleUsedMinutes: Int? {
+        guard !store.history.isEmpty,
+              store.history.allSatisfy({ log in
+                  log.tracked == true
+                      && log.trackingState == .tracked
+                      && log.source?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+                      && log.malformedEntryCount == 0
+                      && log.onDutyMinutes != nil
+                      && log.drivingMinutes != nil
+              }) else { return nil }
+        var total = 0
+        for log in store.history {
+            guard let onDuty = log.onDutyMinutes, let driving = log.drivingMinutes else { return nil }
+            total += onDuty + driving
+        }
+        return total
     }
 
     private var cycleUsedLabel: String {
+        guard let cycleUsedMinutes else { return "—" }
         let h = cycleUsedMinutes / 60, m = cycleUsedMinutes % 60
         return String(format: "%dh %02dm", h, m)
     }
 
     private var cycleRemainingLabel: String {
+        guard let cycleUsedMinutes else { return "—" }
         let remaining = max(0, 70 * 60 - cycleUsedMinutes)
         let h = remaining / 60, m = remaining % 60
         return String(format: "%dh %02dm", h, m)
     }
 
     private var hasSyncedHosData: Bool {
-        store.status != nil || store.today != nil || !store.history.isEmpty
+        store.status?.hasCurrentObservation() == true
+            || store.today?.hasCurrentLogEvidence == true
+            || store.history.contains(where: {
+                $0.tracked == true
+                    && $0.trackingState == .tracked
+                    && $0.source?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+                    && $0.malformedEntryCount == 0
+            })
+    }
+
+    private var canCertifyToday: Bool {
+        store.today?.certified == false && store.today?.hasCurrentLogEvidence == true
+    }
+
+    private var certificationActionLabel: String {
+        switch store.today?.certified {
+        case true?: return "Certified for today"
+        case false? where canCertifyToday: return "Certify today's log"
+        case false?: return "Current log required"
+        case nil: return "Certification unavailable"
+        }
     }
 
     private var connectedELDProviderName: String? {
@@ -2112,12 +2157,12 @@ struct MeEldView: View {
     @ViewBuilder
     private func logRow(_ entry: HOSLogEntry) -> some View {
         HStack(spacing: Space.s3) {
-            Text(MeEldView.isoSegmentFormatter.string(from: entry.startDate))
+            Text(entry.startDate.map { MeEldView.isoSegmentFormatter.string(from: $0) } ?? "—")
                 .font(EType.bodyStrong.monospacedDigit())
                 .foregroundStyle(palette.textPrimary)
                 .frame(width: 56, alignment: .leading)
             VStack(alignment: .leading, spacing: 2) {
-                Text(entry.duty.shortLabel + " · " + dutyLongLabel(entry.duty))
+                Text((entry.duty?.shortLabel ?? "?") + " · " + dutyLongLabel(entry.duty))
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
                 Text(entry.locationDescription ?? entry.remark ?? "-")
@@ -2135,21 +2180,23 @@ struct MeEldView: View {
         .padding(.vertical, Space.s3)
     }
 
-    private func dutyLongLabel(_ duty: HOSDutyCode) -> String {
+    private func dutyLongLabel(_ duty: HOSDutyCode?) -> String {
         switch duty {
         case .driving:      return "Driving"
         case .onDuty:       return "On-Duty"
         case .sleeperBerth: return "Sleeper"
         case .offDuty:      return "Off-Duty"
+        case nil:           return "Unavailable"
         }
     }
 
-    private func pillKind(for duty: HOSDutyCode) -> StatusPill.Kind {
+    private func pillKind(for duty: HOSDutyCode?) -> StatusPill.Kind {
         switch duty {
         case .driving:      return .success
         case .onDuty:       return .info
         case .sleeperBerth: return .neutral
         case .offDuty:      return .warning
+        case nil:           return .neutral
         }
     }
 
@@ -2181,10 +2228,12 @@ struct MeEldView: View {
                             .foregroundStyle(palette.textSecondary)
                     }
                     Spacer()
-                    if let status = store.status {
+                    if let status = store.status, status.hasCurrentObservation() {
                         StatusPill(
-                            text: status.breakRequired ? "Break due" : "§395.8",
-                            kind: status.breakRequired ? .warning : .info
+                            text: status.breakRequired == true
+                                ? "Break due"
+                                : status.breakRequired == false ? "§395.8" : "Break unknown",
+                            kind: status.breakRequired == true ? .warning : .info
                         )
                     }
                 }
@@ -2247,10 +2296,10 @@ struct MeEldView: View {
                     Spacer()
                     StatusPill(
                         text: hasSyncedHosData
-                            ? (store.violations.isEmpty ? "Clean" : "\(store.violations.count) issue\(store.violations.count == 1 ? "" : "s")")
+                            ? (store.violations.isEmpty ? "No issues reported" : "\(store.violations.count) issue\(store.violations.count == 1 ? "" : "s")")
                             : "No data",
                         kind: hasSyncedHosData
-                            ? (store.violations.isEmpty ? .success : .warning)
+                            ? (store.violations.isEmpty ? .info : .warning)
                             : .neutral
                     )
                 }
@@ -2264,7 +2313,7 @@ struct MeEldView: View {
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
                 } else if store.violations.isEmpty {
-                    Text("No HoS exceedance, certification gaps or unassigned segments in the last 30 days.")
+                    Text("No HOS issues were reported in the available sourced log window.")
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
                 } else if let first = store.violations.first {
@@ -2275,7 +2324,7 @@ struct MeEldView: View {
                 Button {
                     showCertify = true
                 } label: {
-                    Text(store.today?.certified == true ? "Certified for today" : "Certify today's log")
+                    Text(certificationActionLabel)
                         .font(EType.body).fontWeight(.semibold)
                         .foregroundStyle(store.today?.certified == true ? palette.textSecondary : Color.white)
                         .frame(maxWidth: .infinity, minHeight: 48)
@@ -2283,13 +2332,13 @@ struct MeEldView: View {
                             if store.today?.certified == true {
                                 palette.bgCardSoft
                             } else {
-                                LinearGradient.diagonal
+                                canCertifyToday ? LinearGradient.diagonal : LinearGradient(colors: [palette.tintNeutral, palette.tintNeutral], startPoint: .leading, endPoint: .trailing)
                             }
                         }
                         .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(palette.borderSoft))
                         .clipShape(RoundedRectangle(cornerRadius: Radius.md))
                 }
-                .disabled(store.today?.certified == true)
+                .disabled(!canCertifyToday)
                 .padding(.top, Space.s2)
             }
         }
@@ -2315,8 +2364,9 @@ struct MeEldView: View {
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                 Spacer()
-                if connected, let fresh = HOSClockService.shared.status, fresh == store.status {
-                    Text("Last sync \(Self.relativeLabel(for: Date()))")
+                if connected,
+                   let observedAt = HOSObservationClock.parse(store.status?.freshness) {
+                    Text("Observed \(Self.relativeLabel(for: observedAt))")
                         .font(EType.caption.monospacedDigit())
                         .foregroundStyle(palette.textTertiary)
                 } else if !connected {
@@ -2361,17 +2411,29 @@ struct MeEldView: View {
     private func cycleBar(day: HOSDailyLog) -> some View {
         GeometryReader { proxy in
             let totalH = proxy.size.height
-            let onDutyH = totalH * CGFloat(day.onDutyMinutes) / CGFloat(maxBarMinutes)
-            let driveH  = totalH * CGFloat(day.drivingMinutes) / CGFloat(maxBarMinutes)
+            let onDutyH: CGFloat? = {
+                guard let onDuty = day.onDutyMinutes, let driving = day.drivingMinutes else { return nil }
+                return totalH * CGFloat(onDuty + driving) / CGFloat(maxBarMinutes)
+            }()
+            let driveH = day.drivingMinutes.map { totalH * CGFloat($0) / CGFloat(maxBarMinutes) }
             VStack(spacing: 0) {
                 Spacer(minLength: 0)
                 ZStack(alignment: .bottom) {
-                    RoundedRectangle(cornerRadius: 3, style: .continuous)
-                        .fill(palette.tintNeutral)
-                        .frame(height: max(onDutyH, 4))
-                    RoundedRectangle(cornerRadius: 3, style: .continuous)
-                        .fill(LinearGradient.diagonal)
-                        .frame(height: max(driveH, 0))
+                    if let onDutyH {
+                        RoundedRectangle(cornerRadius: 3, style: .continuous)
+                            .fill(palette.tintNeutral)
+                            .frame(height: max(onDutyH, 4))
+                    }
+                    if let driveH {
+                        RoundedRectangle(cornerRadius: 3, style: .continuous)
+                            .fill(LinearGradient.diagonal)
+                            .frame(height: max(driveH, 0))
+                    }
+                    if onDutyH == nil || driveH == nil {
+                        RoundedRectangle(cornerRadius: 3, style: .continuous)
+                            .strokeBorder(palette.borderFaint, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                            .frame(height: 16)
+                    }
                 }
             }
             .frame(maxWidth: .infinity)
@@ -2686,29 +2748,21 @@ struct HaulLeaderboardTab: View {
 // from the server, and every outgoing message round-trips through the
 // moderated `postLobbyMessage` mutation and refreshes the feed.
 //
-// Role color is derived from the message sender's server-returned
-// `senderName` + role hints; absent a role hint we render the
-// driver badge so a freshly-seeded server row still lands with a
-// consistent look instead of a blank chip.
+// Role, authorship and timestamp are rendered from the server projection.
+// Missing identity remains visibly unavailable; the client never infers a
+// role from a display name or labels an unknown participant as a driver.
 
 struct HaulLobbyTab: View {
     @Environment(\.palette) var palette
 
-    enum Role { case driver, dispatch, fleet, staff
-        var label: String {
-            switch self {
-            case .driver: return "Driver"
-            case .dispatch: return "Dispatch"
-            case .fleet: return "Fleet"
-            case .staff: return "EusoTrip"
-            }
-        }
+    enum Role { case driver, dispatch, fleet, staff, unknown
         var color: Color {
             switch self {
             case .driver: return Brand.info
             case .dispatch: return Brand.success
             case .fleet: return Brand.warning
             case .staff: return Brand.magenta
+            case .unknown: return Brand.neutral
             }
         }
         var eusoBadgeKind: EusoBadgeKind {
@@ -2717,6 +2771,7 @@ struct HaulLobbyTab: View {
             case .dispatch: return .success
             case .fleet:    return .warning
             case .staff:    return .hot
+            case .unknown:  return .neutral
             }
         }
     }
@@ -2728,27 +2783,24 @@ struct HaulLobbyTab: View {
     @State private var postNotice: String?
     @State private var queuedKey: String?
     @State private var recoveredDraftKey: String?
+    @State private var deliveryTextForKey: String?
 
-    private var liveMessages: [MessagingMessage] {
+    private var liveMessages: [GamificationAPI.LobbyMessage] {
         store.items
     }
 
-    private var activeCount: Int {
-        // Unique senders over the last 50 messages — best-effort "active
-        // now" signal. Clamped to 0 when the feed is empty so the header
-        // never displays a fabricated count.
-        let senders = Set(liveMessages.prefix(50).map { $0.senderId })
+    private var recentParticipantCount: Int {
+        let senders = Set(liveMessages.prefix(50).map(\.userId))
         return senders.count
     }
 
     var body: some View {
-        // ─── Active-now header ───────────────────────────────────────
+        // ─── Recent-participation header ─────────────────────────────
         HStack(spacing: Space.s2) {
-            ZStack {
-                Circle().fill(Brand.success).frame(width: 8, height: 8)
-                Circle().stroke(Brand.success.opacity(0.45), lineWidth: 4).frame(width: 8, height: 8)
-            }
-            Text("\(activeCount) drivers online")
+            Image(systemName: "person.2.fill")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Brand.info)
+            Text("\(recentParticipantCount) recent participants")
                 .font(EType.micro).tracking(0.4)
                 .foregroundStyle(palette.textPrimary)
             Spacer()
@@ -2795,14 +2847,14 @@ struct HaulLobbyTab: View {
                 EusoEmptyState(
                     systemImage: "bubble.left.and.bubble.right",
                     title: "Lobby's quiet",
-                    subtitle: "Be the first to say hi. Messages post under your driver name.",
+                    subtitle: "Be the first to say hi. Messages post under your verified account name.",
                     comingSoon: false
                 )
             case .error:
                 EusoEmptyState(
                     systemImage: "exclamationmark.triangle",
                     title: "Lobby offline",
-                    subtitle: "Pull to refresh, the Haul service will be back momentarily."
+                    subtitle: "Pull to refresh. Your draft stays in the composer until EusoTrip confirms delivery."
                 )
             case .loaded:
                 VStack(spacing: Space.s3) {
@@ -2813,8 +2865,18 @@ struct HaulLobbyTab: View {
             }
         }
         .task {
+            RealtimeService.shared.joinHaulLobby()
             await store.refresh()
+            if let storageError = OfflineQueue.shared.storageError {
+                postError = storageError
+            }
             restoreNextFailedDraftIfNeeded()
+        }
+        .onDisappear {
+            RealtimeService.shared.leaveHaulLobby()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoHaulLobbyMessageReceived)) { _ in
+            Task { await store.refresh() }
         }
 
         // ─── Composer ────────────────────────────────────────────────
@@ -2851,6 +2913,21 @@ struct HaulLobbyTab: View {
                 .clipShape(RoundedRectangle(cornerRadius: Radius.md))
                 .lineLimit(1...3)
                 .disabled(isPosting)
+                .onChange(of: draft) { _, newValue in
+                    let canonical = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard let key = recoveredDraftKey,
+                          let boundText = deliveryTextForKey,
+                          canonical != boundText
+                    else { return }
+                    postError = nil
+                    do {
+                        try OfflineQueue.shared.discardFailedHaulDraft(key: key)
+                    } catch {
+                        postError = "Your edited draft is here, but EusoTrip could not clear its older recovery copy. \(error.localizedDescription)"
+                    }
+                    recoveredDraftKey = nil
+                    deliveryTextForKey = nil
+                }
             Button {
                 Task { await send() }
             } label: {
@@ -2881,8 +2958,13 @@ struct HaulLobbyTab: View {
             queuedKey = nil
             postError = nil
             postNotice = "Sent to the Haul."
-            OfflineQueue.shared.discardFailedHaulDraft(key: key)
+            do {
+                try OfflineQueue.shared.discardFailedHaulDraft(key: key)
+            } catch {
+                postError = "Sent, but EusoTrip could not clear an older local recovery copy. Your posted message will not duplicate."
+            }
             recoveredDraftKey = nil
+            deliveryTextForKey = nil
             Task {
                 await store.refresh()
                 restoreNextFailedDraftIfNeeded()
@@ -2891,17 +2973,39 @@ struct HaulLobbyTab: View {
         .onReceive(NotificationCenter.default.publisher(for: .eusoOutboxReplayFailed)) { note in
             guard let key = note.userInfo?["key"] as? String,
                   key == queuedKey else { return }
-            let recovery = OfflineQueue.shared.failedHaulDraft(key: key)
+            let recovery: OfflineQueue.FailedHaulDraft?
+            var recoveryReadError: String?
+            do {
+                recovery = try OfflineQueue.shared.failedHaulDraft(key: key)
+            } catch {
+                recovery = nil
+                recoveryReadError = error.localizedDescription
+            }
             let message = recovery?.message ?? (note.userInfo?["message"] as? String)
             if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                let message {
                 draft = message
             }
-            recoveredDraftKey = key
+            if let message {
+                recoveredDraftKey = key
+                deliveryTextForKey = message
+            } else {
+                recoveredDraftKey = nil
+                deliveryTextForKey = nil
+            }
             queuedKey = nil
             postNotice = nil
-            postError = (note.userInfo?["reason"] as? String)
+            let serverReason = (note.userInfo?["reason"] as? String)
                 ?? "Review this message and send it again. Your text was restored."
+            postError = [recoveryReadError, serverReason]
+                .compactMap { $0 }
+                .joined(separator: " ")
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoOutboxStorageFailed)) { note in
+            guard let key = note.userInfo?["key"] as? String,
+                  key == queuedKey || key == recoveredDraftKey else { return }
+            postError = (note.userInfo?["reason"] as? String)
+                ?? "EusoTrip could not update this message's local outbox. The draft has not been discarded."
         }
     }
 
@@ -2912,18 +3016,37 @@ struct HaulLobbyTab: View {
         postNotice = nil
         isPosting = true
         defer { isPosting = false }
-        let idempotencyKey = recoveredDraftKey ?? UUID().uuidString
+        let reusableKey = deliveryTextForKey == trimmed ? recoveredDraftKey : nil
+        let idempotencyKey = reusableKey ?? UUID().uuidString
+        do {
+            try OfflineQueue.shared.stageHaulDraftForRecovery(
+                message: trimmed,
+                key: idempotencyKey
+            )
+        } catch {
+            postError = error.localizedDescription
+            return
+        }
+        recoveredDraftKey = idempotencyKey
+        deliveryTextForKey = trimmed
         do {
             let out = try await EusoTripAPI.shared.gamification.postLobbyMessage(
                 message: trimmed,
                 idempotencyKey: idempotencyKey
             )
             if out.success {
-                OfflineQueue.shared.discardFailedHaulDraft(key: idempotencyKey)
+                var cleanupWarning: String?
+                do {
+                    try OfflineQueue.shared.discardFailedHaulDraft(key: idempotencyKey)
+                } catch {
+                    cleanupWarning = "Sent, but EusoTrip could not clear an older local recovery copy. Your posted message will not duplicate."
+                }
                 draft = ""
                 recoveredDraftKey = nil
+                deliveryTextForKey = nil
                 queuedKey = nil
                 postNotice = out.replayed == true ? "Already sent; no duplicate was created." : "Sent to the Haul."
+                postError = cleanupWarning
                 await store.refresh()
                 restoreNextFailedDraftIfNeeded()
             } else if OfflineQueue.isRetryableServerMessage(out.error ?? "") {
@@ -2949,53 +3072,98 @@ struct HaulLobbyTab: View {
     }
 
     private func queueForDelivery(message: String, key: String) {
-        OfflineQueue.shared.enqueueHaulMessage(message: message, idempotencyKey: key)
+        do {
+            try OfflineQueue.shared.enqueueHaulMessage(message: message, idempotencyKey: key)
+        } catch {
+            postNotice = nil
+            postError = error.localizedDescription
+            return
+        }
         OfflineQueue.shared.scheduleReplay()
-        OfflineQueue.shared.discardFailedHaulDraft(key: key)
+        var cleanupWarning: String?
+        do {
+            try OfflineQueue.shared.discardFailedHaulDraft(key: key)
+        } catch {
+            cleanupWarning = "Queued, but EusoTrip could not clear an older local recovery copy. The stable delivery identity prevents a duplicate."
+        }
         draft = ""
         recoveredDraftKey = nil
+        deliveryTextForKey = nil
         queuedKey = key
-        postError = nil
+        postError = cleanupWarning
         postNotice = "Queued securely; sends automatically when the service reconnects."
     }
 
     private func restoreNextFailedDraftIfNeeded() {
         guard queuedKey == nil,
-              draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              let recovery = OfflineQueue.shared.firstFailedHaulDraft()
+              draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else { return }
-        draft = recovery.message
-        recoveredDraftKey = recovery.key
-        postNotice = nil
-        postError = "Your unsent message was restored for review."
+        do {
+            guard let recovery = try OfflineQueue.shared.firstFailedHaulDraft() else { return }
+            draft = recovery.message
+            recoveredDraftKey = recovery.key
+            deliveryTextForKey = recovery.message
+            postNotice = nil
+            postError = "Your unsent message was restored for review."
+        } catch {
+            postError = error.localizedDescription
+        }
     }
 
     // MARK: - Rendering helpers
 
-    /// Infer role from the server row. `metadata.senderName` wins when
-    /// present, then `senderName` + a small keyword sniff; otherwise
-    /// the message is tagged as a driver so every post still carries
-    /// a recognizable chip instead of rendering unbranded.
-    private func inferredRole(_ m: MessagingMessage) -> Role {
-        let hint = (m.senderName ?? "").lowercased()
-        if hint.contains("dispatch") { return .dispatch }
-        if hint.contains("fleet")    { return .fleet }
-        if hint.contains("eusotrip") || hint.contains("staff") || hint.contains("admin") {
-            return .staff
+    private func inferredRole(_ m: GamificationAPI.LobbyMessage) -> Role {
+        switch m.userRole?.uppercased() {
+        case "DRIVER": return .driver
+        case "DISPATCH", "RAIL_DISPATCHER": return .dispatch
+        case "CATALYST", "RAIL_CATALYST", "VESSEL_OPERATOR": return .fleet
+        case "ADMIN", "SUPER_ADMIN", "SYSTEM": return .staff
+        default: return .unknown
         }
-        return .driver
     }
 
-    private func isSelf(_ m: MessagingMessage) -> Bool {
-        m.isOwn == true
+    private func roleLabel(_ m: GamificationAPI.LobbyMessage) -> String {
+        switch m.userRole?.uppercased() {
+        case "SHIPPER": return "Shipper"
+        case "CATALYST": return "Carrier"
+        case "BROKER": return "Broker"
+        case "DRIVER": return "Driver"
+        case "DISPATCH": return "Dispatch"
+        case "ESCORT": return "Escort"
+        case "TERMINAL_MANAGER": return "Terminal manager"
+        case "FACTORING": return "Factoring"
+        case "COMPLIANCE_OFFICER": return "Compliance"
+        case "SAFETY_MANAGER": return "Safety"
+        case "SERVICE_PROVIDER": return "Service provider"
+        case "RAIL_SHIPPER": return "Rail shipper"
+        case "RAIL_CATALYST": return "Rail carrier"
+        case "RAIL_DISPATCHER": return "Rail dispatch"
+        case "RAIL_ENGINEER": return "Rail engineer"
+        case "RAIL_CONDUCTOR": return "Rail conductor"
+        case "RAIL_BROKER": return "Rail broker"
+        case "VESSEL_SHIPPER": return "Vessel shipper"
+        case "VESSEL_OPERATOR": return "Vessel operator"
+        case "PORT_MASTER": return "Port master"
+        case "SHIP_CAPTAIN": return "Ship captain"
+        case "VESSEL_BROKER": return "Vessel broker"
+        case "CUSTOMS_BROKER": return "Customs broker"
+        case "ADMIN": return "Admin"
+        case "SUPER_ADMIN": return "Super admin"
+        case "SYSTEM": return "EusoTrip"
+        default: return "Role unavailable"
+        }
     }
 
-    private func displayName(_ m: MessagingMessage) -> String {
+    private func isSelf(_ m: GamificationAPI.LobbyMessage) -> Bool {
+        m.isOwn
+    }
+
+    private func displayName(_ m: GamificationAPI.LobbyMessage) -> String {
         if isSelf(m) { return "You" }
-        return m.senderName ?? "Driver"
+        return m.userName ?? "Name unavailable"
     }
 
-    private func initials(_ m: MessagingMessage) -> String {
+    private func initials(_ m: GamificationAPI.LobbyMessage) -> String {
         let name = displayName(m)
         let parts = name.split(separator: " ")
         if let first = parts.first?.prefix(1),
@@ -3005,20 +3173,20 @@ struct HaulLobbyTab: View {
         return String(name.prefix(2)).uppercased()
     }
 
-    private func timeLabel(_ m: MessagingMessage) -> String {
-        guard let iso = m.timestamp else { return "" }
+    private func timeLabel(_ m: GamificationAPI.LobbyMessage) -> String {
+        guard let iso = m.createdAt else { return "Time unavailable" }
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let date = formatter.date(from: iso)
             ?? ISO8601DateFormatter().date(from: iso)
-        guard let date else { return "" }
+        guard let date else { return "Time unavailable" }
         let out = DateFormatter()
         out.dateFormat = "HH:mm"
         return out.string(from: date)
     }
 
     @ViewBuilder
-    private func messageBubble(_ m: MessagingMessage) -> some View {
+    private func messageBubble(_ m: GamificationAPI.LobbyMessage) -> some View {
         let self_ = isSelf(m)
         let role = inferredRole(m)
         HStack(alignment: .top, spacing: Space.s3) {
@@ -3028,12 +3196,12 @@ struct HaulLobbyTab: View {
                     if self_ { Spacer() }
                     Text(displayName(m)).font(EType.caption)
                         .foregroundStyle(palette.textPrimary)
-                    EusoBadge(label: role.label, kind: role.eusoBadgeKind)
+                    EusoBadge(label: roleLabel(m), kind: role.eusoBadgeKind)
                     Text(timeLabel(m))
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(palette.textTertiary)
                 }
-                Text(m.content)
+                Text(m.message)
                     .font(EType.caption)
                     .foregroundStyle(palette.textPrimary)
                     .multilineTextAlignment(.leading)
@@ -3060,7 +3228,7 @@ struct HaulLobbyTab: View {
     }
 
     @ViewBuilder
-    private func avatar(_ m: MessagingMessage, role: Role) -> some View {
+    private func avatar(_ m: GamificationAPI.LobbyMessage, role: Role) -> some View {
         ZStack {
             Circle()
                 .fill(role.color.opacity(0.22))

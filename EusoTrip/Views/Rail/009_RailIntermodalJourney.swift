@@ -445,7 +445,6 @@ struct RailIntermodalJourney_009: View {
 
 private struct RailIntermodalJourneyBody009: View {
     @Environment(\.palette) private var palette
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// READ_CACHED(10m) is only half an honesty claim on its own: an age stamp
     /// can say the chain is old, never that the device cannot refresh it at all.
     /// This screen is read-only — nothing to gate, nothing to queue — so the
@@ -639,8 +638,11 @@ private struct RailIntermodalJourneyBody009: View {
     // MARK: Derived — the spatial band
 
     private func point(_ g: Geo009?) -> ChainPoint009? {
-        guard let lat = g?.lat, let lng = g?.lng, !(lat == 0 && lng == 0) else { return nil }
-        return ChainPoint009(lat: lat, lng: lng)
+        guard let coordinate = LatLongParser.validatedCoordinate(
+            latitude: g?.lat,
+            longitude: g?.lng
+        ) else { return nil }
+        return ChainPoint009(lat: coordinate.latitude, lng: coordinate.longitude)
     }
 
     /// Ordered stops: origin, every seam facility in chain order, destination.
@@ -680,32 +682,9 @@ private struct RailIntermodalJourneyBody009: View {
         segments.map { ChainEdge009(id: $0.id, mode: modeWord($0.mode), state: legState($0.status)) }
     }
 
-    /// The live container fix, projected onto the active leg by real distance.
-    /// nil when the box has never reported a coordinate — never faked.
-    private var liveFraction: Double? {
-        guard let fix = point(primaryContainer?.currentLocation) else { return nil }
-        let stops = chainStops
-        guard stops.count >= 2 else { return nil }
-        guard let active = activeSegment,
-              let idx = segments.firstIndex(where: { $0.id == active.id }),
-              idx + 1 < stops.count,
-              let a = stops[idx].point, let b = stops[idx + 1].point else { return nil }
-        let span = haversineKm(a, b)
-        guard span > 0.5 else { return nil }
-        let travelled = haversineKm(a, fix)
-        let t = min(max(travelled / span, 0), 1)
-        return (Double(idx) + t) / Double(max(1, stops.count - 1))
-    }
-
-    private func haversineKm(_ a: ChainPoint009, _ b: ChainPoint009) -> Double {
-        let r = 6371.0
-        let dLat = (b.lat - a.lat) * .pi / 180
-        let dLng = (b.lng - a.lng) * .pi / 180
-        let la1 = a.lat * .pi / 180
-        let la2 = b.lat * .pi / 180
-        let h = sin(dLat / 2) * sin(dLat / 2) + cos(la1) * cos(la2) * sin(dLng / 2) * sin(dLng / 2)
-        return 2 * r * asin(min(1, sqrt(h)))
-    }
+    // A container fix is observation evidence, not permission to place the
+    // container between two schematic chain nodes. The live glyph remains off
+    // the band until the server returns an exact segment projection.
 
     // MARK: Derived — copy
 
@@ -1012,12 +991,10 @@ private struct RailIntermodalJourneyBody009: View {
             JourneyChainBand009(
                 stops: chainStops,
                 edges: chainEdges,
-                liveFraction: liveFraction,
                 liveLabel: liveChipText,
-                liveIsReal: liveFraction != nil,
+                liveIsReal: false,
                 etaLabel: etaChipText,
-                telemetryLabel: telemetryPillText,
-                reduceMotion: reduceMotion
+                telemetryLabel: telemetryPillText
             )
             .frame(height: 168)
 
@@ -1050,7 +1027,7 @@ private struct RailIntermodalJourneyBody009: View {
             let mode = nonEmpty(tracking?.currentMode ?? c.currentMode).map { "\($0.uppercased()) · " } ?? ""
             return "LIVE · \(mode)\(where_.uppercased())"
         }
-        if liveFraction != nil { return "LIVE · FIX ON CHAIN" }
+        if point(c.currentLocation) != nil { return "LIVE · FIX REPORTED · PROJECTION PENDING" }
         return "POSITION NOT REPORTED"
     }
 
@@ -1468,9 +1445,10 @@ private struct RailIntermodalJourneyBody009: View {
                 id = (live ?? rows.first)?.id ?? 0
             }
         }
-        resolvedId = id
+        let journeyId = id
+        resolvedId = journeyId
 
-        guard id > 0 else {
+        guard journeyId > 0 else {
             journey = nil; tracking = nil; cost = nil
             loading = false
             return
@@ -1483,16 +1461,16 @@ private struct RailIntermodalJourneyBody009: View {
         // is the only hard requirement and is NOT swallowed; tracking and cost
         // are best-effort so a cost or weather outage never blanks the journey.
         async let trackTask: Tracking009? = EusoTripAPI.shared.query(
-            "intermodal.getIntermodalTracking", input: ShipmentIn(intermodalShipmentId: id))
+            "intermodal.getIntermodalTracking", input: ShipmentIn(intermodalShipmentId: journeyId))
         async let costTask: Cost009? = EusoTripAPI.shared.query(
-            "intermodal.getIntermodalCostBreakdown", input: ShipmentIn(intermodalShipmentId: id))
+            "intermodal.getIntermodalCostBreakdown", input: ShipmentIn(intermodalShipmentId: journeyId))
 
         do {
             // Decoded as Optional on purpose: the ownership gate returns a bare
             // `null` for an unowned or missing id, which is an honest empty —
             // not an error, and never another tenant's freight.
             let d: Journey009? = try await EusoTripAPI.shared.query(
-                "intermodal.getIntermodalShipmentDetail", input: DetailIn(id: id))
+                "intermodal.getIntermodalShipmentDetail", input: DetailIn(id: journeyId))
             journey = d
             tracking = (try? await trackTask) ?? nil
             cost = (try? await costTask) ?? nil
@@ -1565,63 +1543,27 @@ private struct RailIntermodalJourneyBody009: View {
 
 // MARK: - Journey chain band
 //
-// The spatial face of the same timeline: ordered stops, one edge per real
-// segment coloured by that segment's real status, and the live container fix
-// riding the active edge. X positions are distance-weighted from the REAL
-// coordinates when every stop carries one (origin/destination JSON on
-// intermodal_shipments, `location` JSON on intermodal_transfers); when any
-// coordinate is missing the band falls back to even spacing AND says
-// "SCHEMATIC" on the chip so nobody reads it as geography.
+// The compact ordered-segment face of the same timeline. This is deliberately
+// not geography: no curved connector, chord, or status-coloured route line is
+// inferred between independently reported stops. Segment order is shown with
+// neutral chevrons; exact track geometry belongs to a canonical rail plan.
 
 private struct JourneyChainBand009: View {
     @Environment(\.palette) private var palette
 
     let stops: [ChainStop009]
     let edges: [ChainEdge009]
-    let liveFraction: Double?
     let liveLabel: String
     let liveIsReal: Bool
     let etaLabel: String
     let telemetryLabel: String
-    let reduceMotion: Bool
 
-    private var geoReal: Bool { stops.count >= 2 && stops.allSatisfy { $0.point != nil } }
-
-    /// 0…1 X position per stop — distance-weighted when the chain is geo-real.
+    /// 0…1 display position per stop. Even spacing communicates sequence only;
+    /// it must never imply distance, track shape, or a projected live fix.
     private var fractions: [Double] {
         let n = stops.count
         guard n >= 2 else { return n == 1 ? [0.5] : [] }
-        guard geoReal else {
-            return (0..<n).map { Double($0) / Double(n - 1) }
-        }
-        var cum: [Double] = [0]
-        var total = 0.0
-        for i in 1..<n {
-            guard let a = stops[i - 1].point, let b = stops[i].point else { return (0..<n).map { Double($0) / Double(n - 1) } }
-            total += km(a, b)
-            cum.append(total)
-        }
-        guard total > 0 else { return (0..<n).map { Double($0) / Double(n - 1) } }
-        return cum.map { $0 / total }
-    }
-
-    private func km(_ a: ChainPoint009, _ b: ChainPoint009) -> Double {
-        let r = 6371.0
-        let dLat = (b.lat - a.lat) * .pi / 180
-        let dLng = (b.lng - a.lng) * .pi / 180
-        let la1 = a.lat * .pi / 180
-        let la2 = b.lat * .pi / 180
-        let h = sin(dLat / 2) * sin(dLat / 2) + cos(la1) * cos(la2) * sin(dLng / 2) * sin(dLng / 2)
-        return 2 * r * asin(min(1, sqrt(h)))
-    }
-
-    private func edgeColor(_ e: ChainEdge009) -> Color {
-        switch e.state {
-        case .done:    return Brand.success
-        case .active:  return Brand.blue
-        case .stopped: return Brand.danger
-        case .pending: return palette.textTertiary
-        }
+        return (0..<n).map { Double($0) / Double(n - 1) }
     }
 
     private func stopColor(_ s: ChainStop009) -> Color {
@@ -1659,24 +1601,21 @@ private struct JourneyChainBand009: View {
                 .stroke(palette.borderFaint, lineWidth: 1)
 
                 if fr.count >= 2 {
-                    // One edge per real segment, coloured by that segment's status.
+                    // Neutral relays communicate sequence without pretending to
+                    // be track geometry or recolouring a route by state.
                     ForEach(Array(edges.enumerated()), id: \.element.id) { idx, e in
                         if idx + 1 < fr.count {
                             let x1: CGFloat = insetL + usable * CGFloat(fr[idx])
                             let x2: CGFloat = insetL + usable * CGFloat(fr[idx + 1])
-                            let arc: CGFloat = e.state == .active ? -22 : -12
-                            let dash: [CGFloat] = e.state == .pending ? [4, 5] : []
-                            let width: CGFloat = e.state == .active ? 3.2 : 2.4
-                            let ink: AnyShapeStyle = e.state == .active
-                                ? AnyShapeStyle(LinearGradient.primary)
-                                : AnyShapeStyle(edgeColor(e))
-                            Path { p in
-                                p.move(to: CGPoint(x: x1, y: baseline))
-                                p.addQuadCurve(
-                                    to: CGPoint(x: x2, y: baseline),
-                                    control: CGPoint(x: (x1 + x2) / 2, y: baseline + arc))
+                            VStack(spacing: 2) {
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 11, weight: .heavy))
+                                Text(e.mode.uppercased())
+                                    .font(.system(size: 7, weight: .heavy))
+                                    .tracking(0.25)
                             }
-                            .stroke(ink, style: StrokeStyle(lineWidth: width, lineCap: .round, dash: dash))
+                            .foregroundStyle(palette.textTertiary)
+                            .position(x: (x1 + x2) / 2, y: baseline - 10)
                         }
                     }
 
@@ -1708,14 +1647,6 @@ private struct JourneyChainBand009: View {
                             .position(x: min(max(x, 44), max(45, w - 44)), y: baseline + 18)
                     }
 
-                    // The live container fix — the canonical well-car, drawn on
-                    // the chain ONLY when a real coordinate resolved.
-                    if let f = liveFraction {
-                        let fx: CGFloat = insetL + usable * CGFloat(f)
-                        RailIntermodalCar009(animated: !reduceMotion)
-                            .frame(width: 118, height: 48)
-                            .position(x: min(max(fx, 60), max(61, w - 60)), y: baseline - 34)
-                    }
                 }
 
                 // Chips: LIVE / ETA on top, telemetry pill at the foot.
@@ -1749,12 +1680,10 @@ private struct JourneyChainBand009: View {
                             .lineLimit(1).minimumScaleFactor(0.75)
                             .padding(.horizontal, 10).padding(.vertical, 3)
                             .background(Capsule().fill(Color.black.opacity(0.6)))
-                        if !geoReal {
-                            Text("SCHEMATIC · NO STOP COORDINATES")
-                                .font(.system(size: 8, weight: .heavy)).tracking(0.3)
-                                .foregroundStyle(Brand.warning)
-                                .lineLimit(1).minimumScaleFactor(0.7)
-                        }
+                        Text("ORDERED SEGMENTS · NOT TRACK GEOMETRY")
+                            .font(.system(size: 8, weight: .heavy)).tracking(0.3)
+                            .foregroundStyle(Brand.warning)
+                            .lineLimit(1).minimumScaleFactor(0.7)
                         Spacer(minLength: 0)
                     }
                 }

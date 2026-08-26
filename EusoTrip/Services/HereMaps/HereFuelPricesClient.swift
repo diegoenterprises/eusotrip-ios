@@ -116,8 +116,8 @@ struct HerePosition: Decodable, Hashable {
         }
     }
 
-    var coordinate: CLLocationCoordinate2D {
-        CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+    var coordinate: CLLocationCoordinate2D? {
+        LatLongParser.validatedCoordinate(latitude: latitude, longitude: longitude)
     }
 }
 
@@ -188,10 +188,16 @@ final class HereFuelPricesClient {
         radiusMeters: Int = 40_000,
         fuelTypes: [String] = Array(HereFuelStation.dieselFuelCodes)
     ) async throws -> [HereFuelStation] {
+        guard let coordinate = LatLongParser.validatedCoordinate(
+            latitude: center.latitude,
+            longitude: center.longitude
+        ) else {
+            throw HereMapsError.providerError("Location is unavailable.")
+        }
         let rows: [BackendStation] = try await EusoTripAPI.shared.query(
             "hereMaps.fuelPricesNearby",
             input: BackendRequest(
-                at: BackendCoord(lat: center.latitude, lng: center.longitude),
+                at: BackendCoord(lat: coordinate.latitude, lng: coordinate.longitude),
                 radiusMeters: min(200_000, max(500, radiusMeters)),
                 fuelTypes: Self.backendFuelTypes(fuelTypes)
             )

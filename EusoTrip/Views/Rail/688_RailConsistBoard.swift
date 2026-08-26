@@ -559,6 +559,7 @@ private struct RailConsistBoardBody688: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
+                ModeAssetAvailabilityLaunchCard(mode: .rail)
                 if loading && consist == nil && standing.isEmpty {
                     LifecycleCard { Text("Loading the cut…").font(EType.caption).foregroundStyle(palette.textSecondary) }
                 } else if let err = loadError, standing.isEmpty, consist == nil {

@@ -100,9 +100,16 @@ final class ZeunBreakdownReporterStore: ObservableObject {
         defer { isSubmitting = false }
         lastError = nil
 
-        let coord = await DriverLocationResolver.shared.currentCoordinate()
-        let lat = coord?.latitude ?? 0
-        let lng = coord?.longitude ?? 0
+        let current = await DriverLocationResolver.shared.currentCoordinate()
+        guard let coordinate = current.flatMap({
+            LatLongParser.validatedCoordinate(
+                latitude: $0.latitude,
+                longitude: $0.longitude
+            )
+        }) else {
+            lastError = "Current location is unavailable. Allow location access and try again."
+            return
+        }
 
         let codes = faultCodesText
             .split(whereSeparator: { ", \n".contains($0) })
@@ -116,8 +123,8 @@ final class ZeunBreakdownReporterStore: ObservableObject {
             severity: severity,
             symptoms: Array(symptoms),
             canDrive: canDrive,
-            latitude: lat,
-            longitude: lng,
+            latitude: coordinate.latitude,
+            longitude: coordinate.longitude,
             loadId: nil,
             loadStatus: loadStatus,
             cargoType: nil,

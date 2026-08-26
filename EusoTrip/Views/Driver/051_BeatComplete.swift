@@ -43,7 +43,13 @@ struct BeatComplete: View {
     @State private var activeLoad: Load?
     @State private var loadCtx: BCLoadCtx?
     @State private var hos: HOSStatus?
+    @State private var hosLoadError: String?
     @State private var isStartingPrehaul: Bool = false
+
+    private var currentHOS: HOSStatus? {
+        guard let hos, hos.hasCurrentObservation() else { return nil }
+        return hos
+    }
 
     enum Register { case night, afternoon }
     let register: Register
@@ -155,7 +161,7 @@ struct BeatComplete: View {
     private var heroCard: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack {
-                Text(hos?.cycleRemainingDisplay ?? emDash)
+                Text(currentHOS?.cycleRemainingDisplay ?? emDash)
                     .font(.system(size: 38, weight: .heavy, design: .rounded))
                     .foregroundStyle(LinearGradient.diagonal)
                     .monospacedDigit()
@@ -163,7 +169,7 @@ struct BeatComplete: View {
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textSecondary)
                 Spacer()
-                if let h = hos, h.canDrive {
+                if currentHOS?.canDrive == true {
                     Text("RESET COMPLETE")
                         .font(.system(size: 10, weight: .heavy)).tracking(0.6)
                         .foregroundStyle(Brand.success)
@@ -191,7 +197,7 @@ struct BeatComplete: View {
     /// "drive 7h 22m · on-duty 11h 48m" from the live snapshot; em-dash
     /// until `hos.getStatus` lands.
     private var hosLineDisplay: String {
-        guard let h = hos else { return emDash }
+        guard let h = currentHOS else { return emDash }
         return "drive \(h.drivingRemainingDisplay) · on-duty \(h.onDutyRemainingDisplay)"
     }
 
@@ -289,8 +295,8 @@ struct BeatComplete: View {
     private var statusTiles: some View {
         HStack(spacing: Space.s2) {
             tile(label: "HOS",
-                 primary: hos.map { "\($0.drivingRemainingDisplay)" } ?? emDash,
-                 sub: hos != nil ? "DRIVE REMAINING" : "AWAITING ELD")
+                 primary: currentHOS.map { "\($0.drivingRemainingDisplay)" } ?? emDash,
+                 sub: currentHOS != nil ? "DRIVE REMAINING" : (hosLoadError ?? "HOS EVIDENCE UNAVAILABLE"))
             tile(label: "WEATHER", primary: emDash, sub: "NO SOURCE")
             tile(label: "FUEL",    primary: emDash, sub: "NO SOURCE")
         }
@@ -402,7 +408,14 @@ struct BeatComplete: View {
         await lifecycle.refresh()
 
         // Live HOS snapshot — drives the hero cycle number + HOS tile.
-        hos = try? await EusoTripAPI.shared.hos.getStatus()
+        do {
+            let snapshot = try await EusoTripAPI.shared.hos.getStatus()
+            hos = snapshot
+            hosLoadError = snapshot.hasCurrentObservation() ? nil : "HOS EVIDENCE NOT CURRENT"
+        } catch {
+            hos = nil
+            hosLoadError = "HOS REFRESH FAILED"
+        }
 
         guard !lifecycle.loadId.isEmpty else { return }
 

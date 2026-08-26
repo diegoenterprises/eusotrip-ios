@@ -4,8 +4,8 @@
 //
 //  Pixel-matched to the 2026-04-24 Figma frame
 //  `034 Departing Pickup.png`. BOL is signed (033), gate is armed,
-//  the rig is rolling. Surfaces a mini route map (pickup →
-//  receiver), distance/ETA/via tiles, 3 compliance confirmation
+//  the rig is rolling. Surfaces a route-readiness handoff (pickup →
+//  receiver without invented geometry), distance/ETA/via tiles, 3 compliance confirmation
 //  rows (NET AT FILL, SPECTRA-MATCH FINAL, BOL SIGNED),
 //  EusoShield in-transit binder ACTIVE chip, and a first-leg
 //  turn card with HOS / fuel / bay-light row.
@@ -58,7 +58,7 @@ struct DepartingPickup: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
-                routeMapCard
+                routeEvidenceCard
                 rowTriplet
                 binderRow
                 firstLegCard
@@ -118,57 +118,49 @@ struct DepartingPickup: View {
         .padding(.top, 4)
     }
 
-    /// Stylized map strip with purple polyline from pickup tag to
-    /// destination tag. Not a live HERE render — the live map shows
-    /// up in 035 when nav is started. This is the handoff card.
-    private var routeMapCard: some View {
+    /// Departure handoff. This surface does not receive the committed route
+    /// plan, so it must not paint a plausible curve. Exact geometry appears in
+    /// 035 after Start nav opens server-owned guidance.
+    private var routeEvidenceCard: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
-            GeometryReader { geo in
-                ZStack {
-                    Rectangle()
-                        .fill(palette.bgCardSoft)
-                    // Polyline dots
-                    Path { p in
-                        p.move(to: CGPoint(x: geo.size.width * 0.15, y: geo.size.height * 0.70))
-                        p.addQuadCurve(
-                            to: CGPoint(x: geo.size.width * 0.80, y: geo.size.height * 0.32),
-                            control: CGPoint(x: geo.size.width * 0.50, y: geo.size.height * 0.20)
-                        )
-                    }
-                    .stroke(LinearGradient.diagonal, style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: [4, 4]))
-
-                    // Origin (magenta)
-                    VStack(spacing: 2) {
-                        Circle().fill(LinearGradient.diagonal).frame(width: 12, height: 12)
-                        Text(fallbackOriginTag)
-                            .font(.system(size: 8, weight: .heavy)).tracking(0.6)
-                            .foregroundStyle(palette.textPrimary)
-                    }
-                    .position(x: geo.size.width * 0.15, y: geo.size.height * 0.80)
-
-                    // Destination (ring)
-                    VStack(spacing: 2) {
-                        Text(fallbackDestTag)
-                            .font(.system(size: 8, weight: .heavy)).tracking(0.6)
-                            .foregroundStyle(palette.textPrimary)
-                        Circle()
-                            .stroke(LinearGradient.diagonal, lineWidth: 2)
-                            .frame(width: 12, height: 12)
-                    }
-                    .position(x: geo.size.width * 0.82, y: geo.size.height * 0.22)
-
-                    // Miles badge
-                    Text(fallbackDistance.uppercased())
-                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("ROUTE PLAN · VERIFIED")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.7)
                         .foregroundStyle(palette.textSecondary)
-                        .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(Capsule().fill(palette.bgCard))
-                        .overlay(Capsule().stroke(palette.borderFaint))
-                        .position(x: geo.size.width * 0.82, y: geo.size.height * 0.40)
+                    Spacer()
+                    Text("GEOMETRY OPENS IN NAV")
+                        .font(.system(size: 8, weight: .heavy)).tracking(0.5)
+                        .foregroundStyle(palette.textTertiary)
+                }
+                HStack(spacing: 10) {
+                    handoffEndpoint(role: "PICKUP", label: fallbackOriginTag, tint: Brand.blue)
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(palette.textTertiary)
+                        .accessibilityHidden(true)
+                    VStack(spacing: 5) {
+                        Image(systemName: "point.topleft.down.to.point.bottomright.curvepath")
+                            .font(.system(size: 21, weight: .semibold))
+                            .foregroundStyle(palette.textTertiary)
+                        Text("NOT RENDERED HERE")
+                            .font(.system(size: 8, weight: .heavy)).tracking(0.4)
+                            .foregroundStyle(palette.textTertiary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(palette.textTertiary)
+                        .accessibilityHidden(true)
+                    handoffEndpoint(role: "RECEIVER", label: fallbackDestTag, tint: Brand.magenta)
                 }
             }
-            .frame(height: 140)
-            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            .padding(14)
+            .frame(minHeight: 118)
+            .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCardSoft))
+            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Route plan from pickup \(fallbackOriginTag) to receiver \(fallbackDestTag). Exact geometry opens in navigation.")
 
             HStack(spacing: Space.s2) {
                 tile(label: "DISTANCE", value: fallbackDistance)
@@ -176,6 +168,20 @@ struct DepartingPickup: View {
                 tile(label: "VIA",      value: fallbackViaRoute)
             }
         }
+    }
+
+    private func handoffEndpoint(role: String, label: String, tint: Color) -> some View {
+        VStack(spacing: 4) {
+            Circle().fill(tint).frame(width: 10, height: 10)
+            Text(role)
+                .font(.system(size: 7, weight: .heavy)).tracking(0.5)
+                .foregroundStyle(palette.textTertiary)
+            Text(label)
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(palette.textPrimary)
+                .lineLimit(1).minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity)
     }
 
     private func tile(label: String, value: String) -> some View {

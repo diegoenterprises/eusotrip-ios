@@ -24,6 +24,34 @@
 //  blown-out hero node), NOT ES-12's rising cert staircase, NOT ES-06's
 //  12-tile equipment BentoGrid.
 //
+//  WEB PARITY — PARTIAL, and the shortfall is named rather than papered over. GATE 1
+//  alone has a web peer: route /register/escort at client/src/App.tsx:644 →
+//  client/src/pages/RegisterEscort.tsx, which calls registration.registerEscort at
+//  RegisterEscort.tsx:160; that Route carries NO guard() wrapper because it runs before a
+//  session exists. The POST-LOGIN 0→solo pipeline this file draws has NO .tsx peer at all:
+//  client/src/pages holds EscortDashboard / EscortJobs / EscortJobMarketplace /
+//  EscortCertifications / EscortCertReciprocity / EscortProfile / EscortSchedule /
+//  EscortEarnings / EscortIncidents / EscortTeam / EscortActiveTrip / EscortPermits /
+//  EscortReports and NO EscortOnboarding, and a grep of client/src for "escort/onboarding"
+//  returns zero hits. Nearest structural analogue: /driver/onboarding (App.tsx:825,
+//  guard(DRIV), pages/DriverOnboarding.tsx) — DRIVER-gated, no escort variant. The phone
+//  leads the web here; the parity row owed is an /escort/onboarding page behind guard(ESCT)
+//  (role list App.tsx:603 — ESCORT · ADMIN · SUPER_ADMIN).
+//
+//  CHAIN ROW (blockchainAuditTrail — table drizzle/schema.ts:10018, GAP-444, load-keyed).
+//  Only ONE mutation reachable from this face writes one: documents.delete inserts eventType
+//  "documents.deleted" at documents.ts:137. onboarding.uploadDocument:509 writes NONE and
+//  onboarding.completeStep:107 writes NONE. escorts.uploadCertification:2551 writes an
+//  auditLogs row via recordAuditEvent (escorts.ts:2569 → _core/auditService.ts:201/:230) —
+//  a DIFFERENT table, and this file does not conflate the two. Swept first-hand this fire:
+//  escorts.ts contains ZERO blockchainAuditTrail references across 4745 lines and
+//  onboarding.ts ZERO across 620, while wallet.ts:1190, dispatch.ts:4079 and
+//  registration.ts:3531 do write it. STUB·named-gap. Proposed for the tRPC team:
+//  best-effort inserts in uploadDocument ('onboarding.documentUploaded'), completeStep
+//  ('onboarding.stepCompleted') and uploadCertification ('escort.certUploaded'), each
+//  matching the documents.ts:137 shape. Nothing on this screen is drawn as if a chain row
+//  existed where it does not.
+//
 //  ─── WIRING (every anchor opened at the line first-hand this fire; escorts.ts
 //      cites pinned to md5 064a1b8459b8 · 4745 lines · 2026-08-10T22:41:39-05:00)
 //
@@ -38,6 +66,7 @@
 //    EXISTS documents.delete                documents.ts:116    WITHDRAW — soft, audited, no inverse
 //    EXISTS escorts.getCertificationStatus  escorts.ts:924      → resolver escorts.ts:487
 //    EXISTS escorts.getProfile              escorts.ts:3081     equipment blob (read-only)
+//    EXISTS registration.registerEscort     registration.ts:1338 gate 1 — PRE-AUTH, auditedPublicProcedure (_core/trpc.ts:440)
 //
 //  STUB, named, never invented — the four legs this screen refuses to fake:
 //
@@ -118,7 +147,8 @@
 //
 //  OFFLINE (§W): this pipeline STRADDLES the auth line and says so. Gate 1 runs on
 //  registration.registerEscort registration.ts:1338 — an auditedPublicProcedure
-//  (_core/trpc.ts:391) executed BEFORE a session exists, so it can be neither cached
+//  (_core/trpc.ts:440 — REPOINT, the stale :391 cite has drifted) executed BEFORE a
+//  session exists, so it can be neither cached
 //  nor queued and is never drawn as pending-on-device. Everything from gate 2
 //  rightward is post-login. Mutations are ONLINE_ONLY (escort outbox not yet ported —
 //  PLANNED per Encyclopedia v2); document upload IS a mutation and is therefore
@@ -127,7 +157,22 @@
 //  staleness line REPLACES the day counter, the rail dims, and both CTAs disable —
 //  a stale CLEARED on an admission ladder is worse than showing nothing.
 //
-//  CHAIN: reads CLOSED. Document write ONE-SIDED — onboarding.uploadDocument:509
+//  CHAIN: reads CLOSED. Certification write ONE-SIDED — escorts.uploadCertification
+//  does audit at escorts.ts:2569 and does emit WS_EVENTS.ESCORT_CERT_UPLOADED at
+//  escorts.ts:2589-2590, but nothing listens: a sweep for ESCORT_CERT_UPLOADED /
+//  `escort:cert_uploaded` returns only that emit and the constant at
+//  frontend/shared/websocket-events.ts:257 — no handler in
+//  client/src/hooks/useRealtimeEvents.ts and no `escort:cert_uploaded` case in
+//  Services/RealtimeService.swift, whose escort case block was re-read this fire and now
+//  sits at RealtimeService.swift:499-508 (job_applied · job_assigned · job_started ·
+//  job_completed only); the previously circulated :451-458 cite has DRIFTED and is now the
+//  financial:* block at :447-458. Both halves were swept again this fire and the verdict is
+//  UNCHANGED — the emit at escorts.ts:2590 and the constant at websocket-events.ts:257 are
+//  the only two hits in the entire repo. This chain is ONE-SIDED and must NOT be written
+//  back up as CLOSED by any later edit. The missing half is a subscriber on each client,
+//  owed to the realtime-subscriber lane (web useRealtimeEvents.ts · app
+//  RealtimeService.swift) and tracked as counter-party row ESC-CP-CERTSUB, not to this
+//  screen. Document write ONE-SIDED — onboarding.uploadDocument:509
 //  INSERTs the row and mutates users.metadata but emits NO WebSocket event and writes
 //  NO audit row, so no reviewer surface learns a document landed; the missing half is
 //  a reviewer fan-out (WS on WS_CHANNELS.USER + a recordAuditEvent row) at
@@ -136,17 +181,49 @@
 //  onboarding.ts:299 never learns anyone is waiting. Equipment ONE-SIDED — reader
 //  exists, writer absent. Records-check SILENT. Supervised-ride SILENT.
 //
-//  RBAC — mixed, and the mix is the honest finding. escorts.* is escortProcedure
-//  (escorts.ts:11 over roleProcedure(ROLES.ESCORT) _core/trpc.ts:212), row-scoped by
-//  resolveEscortUserId escorts.ts:138. onboarding.* is isolatedProcedure
-//  (_core/trpc.ts:468) and documents.* is auditedProtectedProcedure
-//  (_core/trpc.ts:392) — BOTH any-authenticated-user, NOT escort-gated; each pins
-//  rows to ctx.user.id server-side rather than to a role. No loads.rate, no shipper
-//  margin, no other applicant's rows are bound anywhere in this file.
+//  RBAC — mixed, and the mix is the honest finding. THREE DIFFERENT GATES hide behind the
+//  single word `protectedProcedure` on this surface, and each was opened at its own
+//  definition rather than inferred from the alias.
+//    (i)   A REAL ROLE GATE on escorts.*. escorts.ts:11 imports
+//          `escortProcedure as protectedProcedure`, and escortProcedure is declared
+//          roleProcedure(ROLES.ESCORT) at _core/trpc.ts:228 (factory
+//          `export function roleProcedure` :216 over the roleGuard middleware :169). So
+//          escorts.getCertificationStatus:924 and escorts.getProfile:3081 really are
+//          ESCORT-role-gated, row-scoped by resolveEscortUserId escorts.ts:138.
+//    (ii)  NO ROLE GATE, session only, on onboarding.* and documents.*. onboarding.ts:9
+//          imports `isolatedProcedure as protectedProcedure` (_core/trpc.ts:517 —
+//          requireUser + isolationMiddleware + autoAudit; REPOINT, the stale :468 cite is
+//          now the sensitiveData block) and documents.ts:10 imports
+//          auditedProtectedProcedure (_core/trpc.ts:441 — requireUser + autoAudit; REPOINT
+//          from :392). BOTH are ANY-AUTHENTICATED-USER and are NOT to be described as
+//          role-gated; each pins rows to ctx.user.id server-side instead of to a role.
+//    (iii) NO GATE AT ALL — and on a REGISTRATION surface that is the point, not an
+//          oversight. Gate 1's registration.registerEscort registration.ts:1338 is
+//          `auditedPublicProcedure` (_core/trpc.ts:440 — autoAudit ONLY, no requireUser;
+//          REPOINT from :391). It is genuinely PRE-AUTHENTICATION: it CREATES the account
+//          the rest of this ladder belongs to, so it cannot be role-gated by construction,
+//          and its web peer /register/escort is unguarded to match (App.tsx:644). This file
+//          does not borrow the escortProcedure verdict for its own first gate.
+//  Reviewer-side onboarding.approveApplicant onboarding.ts:299 is reachable by ANY
+//  authenticated caller — no role guard anywhere in the body, re-read line by line this
+//  fire; its sibling rejectApplicant DOES guard at onboarding.ts:327. Filed, not fixed here.
+//  No loads.rate, no shipper margin, no other applicant's rows are bound anywhere in this
+//  file.
 //
-//  NAV: this surface belongs to the ME tab (the application lives beside the cert
-//  wallet). EscortNavController.swift is single-writer owned and untouched here —
-//  the manifest carries the nav entry this screen needs.
+//  NAV — the canonical escort bar HOME · ASSIGNMENTS · [ESang orb] · CORRIDOR · ME is bound
+//  from EscortNavController.swift (tab enum :32, NavSlots :77-85, orb labels :63, ESang
+//  dispatch :88-96) and NO slot is inked: isCurrent is EscortNavTab.none (:33). That is a
+//  finding, not an omission. EscortNavRoute.Destination resolves SIX ids — home 600 ·
+//  assignments 601 · corridor 602 · me 620 · comms 603 · permits 607 (:42-49) — and this
+//  screen is registered at id 623 (ContentView.swift:1790), inside none of the six. The
+//  subject is an account with
+//  users.isVerified false whose first gate runs BEFORE a session exists; HOME, ASSIGNMENTS
+//  and CORRIDOR have nothing to show it, and ME (620, ES-12) is a CREDENTIALED escort's
+//  profile and cert ladder, which this applicant explicitly is not — the archetype note at
+//  the top of this file disowns exactly that comparison. Inking a tab would assert a parent
+//  stack that does not contain this screen. The bar still renders in full so the escape
+//  hatches stay visible; it simply makes no claim about where the user is standing.
+//  EscortNavController.swift is single-writer owned and is NOT edited here.
 //
 //  Sole author: Mike "Diego" Usoro / Eusorone Technologies, Inc.
 //  Powered by ESANG AI™.
@@ -318,6 +395,13 @@ private let es20EquipmentKeys: [String] = [
     "stop_slow_paddle", "safety_vest_hard_hat", "insurance_card_current", "spare_tire_jack",
 ]
 
+/// The 14-kit ListRow leading chip. `Radius` carries no 10-pt token
+/// (sm 8 · md 12 · lg 16 · xl 20 · xxl 28), so the kit's chip value is spelled out
+/// here rather than rounded to the nearest token.
+private enum ES20ListRowChip {
+    static let radius: CGFloat = 10
+}
+
 // MARK: - Screen
 
 struct EscortOnboardingRegistration: View {
@@ -404,7 +488,14 @@ struct EscortOnboardingRegistration: View {
             }
             Text(ledgerLine).font(EType.mono(.micro))
                 .foregroundStyle(palette.textSecondary).lineLimit(1).minimumScaleFactor(0.7)
-            Text(headlineText).font(.system(size: 27, weight: .bold)).tracking(-0.6)
+            // DETAIL ramp 28/700/-0.4. DETAIL, not HOME: the surface is ONE record (the
+            // application named on the ledger line directly above), it registers at its own
+            // screen id 623 rather than at a tab root, and it is entered from a link. Size was
+            // 27 and tracking carried HOME's -0.6; both corrected. Rendered and measured
+            // against the twins at 440pt this fire — the longest headline the projection can
+            // produce is "6 gates block solo" and it ends at x≈224 with nothing beside it, so
+            // the ramp raise collides with nothing and no string was shortened.
+            Text(headlineText).font(.system(size: 28, weight: .bold)).tracking(-0.4)
                 .foregroundStyle(LinearGradient.diagonal).lineLimit(1).minimumScaleFactor(0.75)
             Text(subheadText).font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(palette.textSecondary).lineLimit(1).minimumScaleFactor(0.8)
@@ -504,8 +595,8 @@ struct EscortOnboardingRegistration: View {
             .font(EType.caption).foregroundStyle(palette.textSecondary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(Space.s4)
-            .background(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).fill(palette.bgCard))
-            .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).strokeBorder(palette.borderFaint))
+            .background(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous).fill(palette.bgCard))
+            .overlay(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous).strokeBorder(palette.borderFaint))
     }
 
     // MARK: Gate track (HERO)
@@ -527,8 +618,8 @@ struct EscortOnboardingRegistration: View {
             .padding(.horizontal, 12).padding(.top, 6).padding(.bottom, 10)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).fill(palette.bgCard))
-        .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).strokeBorder(palette.borderFaint))
+        .background(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous).fill(palette.bgCard))
+        .overlay(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous).strokeBorder(palette.borderFaint))
         .opacity(isSnapshot ? 0.6 : 1)
     }
 
@@ -702,9 +793,9 @@ struct EscortOnboardingRegistration: View {
             .padding(.horizontal, 13).padding(.vertical, 12)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).fill(palette.bgCard))
-        .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).strokeBorder(palette.borderFaint))
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        .background(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous).fill(palette.bgCard))
+        .overlay(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous).strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous))
         .opacity(isSnapshot ? 0.6 : 1)
     }
 
@@ -756,8 +847,8 @@ struct EscortOnboardingRegistration: View {
                 .lineLimit(1).minimumScaleFactor(0.55)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).fill(palette.bgCard))
-        .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).strokeBorder(palette.borderFaint))
+        .background(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous).fill(palette.bgCard))
+        .overlay(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous).strokeBorder(palette.borderFaint))
         .opacity(isSnapshot ? 0.6 : 1)
     }
 
@@ -766,7 +857,8 @@ struct EscortOnboardingRegistration: View {
             Text(row.badge).font(.system(size: 9, weight: .heavy).monospaced())
                 .foregroundStyle(.white)
                 .frame(width: 32, height: 30)
-                .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(row.tint))
+                .background(RoundedRectangle(cornerRadius: ES20ListRowChip.radius, style: .continuous)
+                    .fill(row.tint))
             VStack(alignment: .leading, spacing: 4) {
                 Text(row.title).font(.system(size: 11.5, weight: .bold))
                     .foregroundStyle(palette.textPrimary).lineLimit(1).minimumScaleFactor(0.72)
@@ -817,7 +909,7 @@ struct EscortOnboardingRegistration: View {
         }
         .padding(.horizontal, 14).padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(RoundedRectangle(cornerRadius: Radius.lg - 2, style: .continuous)
+        .overlay(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
             .strokeBorder(palette.textTertiary.opacity(0.5),
                           style: StrokeStyle(lineWidth: 1, dash: [5, 4])))
         .allowsHitTesting(false)
@@ -856,11 +948,11 @@ struct EscortOnboardingRegistration: View {
                 .foregroundStyle(palette.textTertiary).padding(.trailing, 10)
         }
         .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: Radius.lg - 2, style: .continuous).fill(palette.bgCard))
-        .overlay(RoundedRectangle(cornerRadius: Radius.lg - 2, style: .continuous)
+        .background(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).fill(palette.bgCard))
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
             .strokeBorder(dashed ? palette.textTertiary.opacity(0.5) : palette.borderFaint,
                           style: StrokeStyle(lineWidth: 1, dash: dashed ? [5, 4] : [])))
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg - 2, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
         .allowsHitTesting(!dashed)
     }
 
@@ -892,9 +984,9 @@ struct EscortOnboardingRegistration: View {
             .padding(.horizontal, 11).padding(.vertical, 9)
         }
         .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: Radius.lg - 2, style: .continuous).fill(palette.bgCard))
-        .overlay(RoundedRectangle(cornerRadius: Radius.lg - 2, style: .continuous).strokeBorder(palette.borderFaint))
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg - 2, style: .continuous))
+        .background(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).fill(palette.bgCard))
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
     /// ESANG only speaks to what the reads can source. With no upload target it
@@ -1280,7 +1372,7 @@ struct EscortOnboardingRegistration: View {
     private func handlePicked(_ result: Result<[URL], Error>) async {
         guard let target = uploadTarget else { return }
         switch result {
-        case .failure(let err):
+        case .failure:
             await MainActor.run { toast = "That file couldn't be opened. Pick it again, or choose another copy." }
         case .success(let urls):
             guard let url = urls.first else { return }
@@ -1396,20 +1488,29 @@ struct EscortOnboardingRegistrationScreen: View {
         Shell(theme: theme) {
             EscortOnboardingRegistration()
         } nav: {
-            // Escort role enum TRIP · COMMS | PERMIT · ME — the application lives
-            // under ME beside the cert wallet, mirroring ES-08 and ES-12.
+            // Canonical five-slot escort bar: HOME · ASSIGNMENTS · [ESang orb] · CORRIDOR · ME,
+            // bound from EscortNavController.swift (NavSlots :77-85, orb labels :63) rather
+            // than hand-listed. NOTHING is inked — `EscortNavTab.none` (:33). See the NAV note
+            // in the file header: this screen registers at id 623, outside all SIX Destination
+            // ids (:42-49), and its subject is an unapproved applicant who is not
+            // standing in any of them. The bar renders in full so the escapes stay reachable.
             BottomNav(
-                leading: EscortNavRoute.leading(current: .me),
-                trailing: EscortNavRoute.trailing(current: .me),
+                leading: EscortNavRoute.leading(current: .none),
+                trailing: EscortNavRoute.trailing(current: .none),
                 orbState: .idle
             )
         }
     }
 }
 
+// Previews are DEBUG-fenced. This screen ships NO fixture at all — every value on the
+// face comes from a live read — so the fence guards the previews themselves and there is
+// no seeded snapshot anywhere in this file to compile out.
+#if DEBUG
 #Preview("ES-20 · Onboarding & Registration · Dark") {
     EscortOnboardingRegistrationScreen(theme: Theme.dark).preferredColorScheme(.dark)
 }
 #Preview("ES-20 · Onboarding & Registration · Light") {
     EscortOnboardingRegistrationScreen(theme: Theme.light).preferredColorScheme(.light)
 }
+#endif

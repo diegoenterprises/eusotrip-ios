@@ -95,8 +95,10 @@ private struct DispatcherDriverRosterBody: View {
     @State private var counts: RosterCounts = RosterCounts(total: 0, driving: 0, sleeper: 0, idle: 0, off: 0)
     @State private var companyName: String?
     @State private var filter: RosterFilter = .all
+    @State private var hosEvidence: [HOSFleetDriver] = []
     @State private var loading: Bool = true
     @State private var actionError: String?
+    @State private var hosWarning: String?
     @State private var sendingAlertDriverId: String?
     @State private var actionConfirmation: String?
 
@@ -133,6 +135,15 @@ private struct DispatcherDriverRosterBody: View {
                     if let actionConfirmation {
                         actionConfirmationCard(actionConfirmation)
                     }
+                    if let hosWarning {
+                        Text(hosWarning)
+                            .font(EType.caption)
+                            .foregroundStyle(Brand.warning)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(Space.s3)
+                            .background(RoundedRectangle(cornerRadius: Radius.md).fill(Brand.warning.opacity(0.10)))
+                            .padding(.top, Space.s3)
+                    }
                     rosterList
                     esangNudge
                     broadcastCTA
@@ -144,6 +155,13 @@ private struct DispatcherDriverRosterBody: View {
             .padding(.top, Space.s5)
         }
         .eusoRefreshTask { await load() }
+        // RealtimeService → `dispatch:board_update`. Line 9 of this file
+        // has documented the event as EXISTS since KE14 with nothing on
+        // the client listening; the roster's duty/HOS taxonomy shifts on
+        // every assignment, so it now wakes on the board signal.
+        .onReceive(NotificationCenter.default.publisher(for: .eusoDispatchBoardUpdated)) { _ in
+            Task { await load() }
+        }
     }
 
     // MARK: Header
@@ -217,6 +235,7 @@ private struct DispatcherDriverRosterBody: View {
             ForEach(visibleDrivers) { d in
                 DriverRosterRow(
                     driver: d,
+                    hosEvidence: evidence(for: d),
                     alertInFlight: sendingAlertDriverId == d.id,
                     onOpen: { openDriver(d) },
                     onMessage: { message(d) },
@@ -248,14 +267,16 @@ private struct DispatcherDriverRosterBody: View {
 
     @ViewBuilder
     private var esangNudge: some View {
-        if let pick = drivers.first(where: { $0.reassignable }) {
+        if let pick = drivers.first(where: {
+            $0.reassignable && evidence(for: $0)?.assignmentEligibility() == .eligible
+        }), let hos = evidence(for: pick) {
             HStack(spacing: Space.s3) {
                 Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
                 VStack(alignment: .leading, spacing: Space.s1) {
                     Text("ESang says: assign \(pick.name.split(separator: " ").last.map(String.init) ?? pick.name) → next open lane")
                         .font(EType.caption.weight(.semibold))
                         .foregroundStyle(palette.textPrimary)
-                    Text("\(pick.initials) · \(pick.hosRemaining ?? "-") HOS · \(pick.locationLine ?? "reassignable")")
+                    Text("\(pick.initials) · \(HOSStatus.formatHours(hos.hoursAvailable?.drivingRemaining)) HOS · \(hos.source?.uppercased() ?? "SOURCE UNAVAILABLE") · \(humanISO(hos.freshness))")
                         .font(EType.mono(.caption))
                         .foregroundStyle(palette.textSecondary)
                 }
@@ -335,15 +356,28 @@ private struct DispatcherDriverRosterBody: View {
     private func load() async {
         loading = true
         actionError = nil
+        hosWarning = nil
         do {
             let r: RosterResponse = try await EusoTripAPI.shared.queryNoInput("dispatch.getDriverRoster")
             companyName = r.companyName
             drivers = r.drivers
             counts = r.counts
+            do {
+                hosEvidence = try await EusoTripAPI.shared.queryNoInput("hos.getFleetHOS")
+            } catch {
+                hosEvidence = []
+                hosWarning = "Current HOS evidence could not refresh. Roster clocks and reassignment eligibility are unavailable."
+            }
         } catch {
             actionError = error.localizedDescription
         }
         loading = false
+    }
+
+    private func evidence(for driver: RosterDriver) -> HOSFleetDriver? {
+        hosEvidence.first { row in
+            row.driverId == driver.id || row.userId.map { String($0) } == driver.id
+        }
     }
 
     private func openDriver(_ d: RosterDriver) {
@@ -416,21 +450,26 @@ private struct DispatcherDriverRosterBody: View {
 private struct DriverRosterRow: View {
     @Environment(\.palette) private var palette
     let driver: RosterDriver
+    let hosEvidence: HOSFleetDriver?
     let alertInFlight: Bool
     let onOpen: () -> Void
     let onMessage: () -> Void
     let onAlert: () -> Void
 
-    private var isCritical: Bool { driver.hosBucket == "crit" }
+    private var isCritical: Bool {
+        guard hosEvidence?.hasCurrentObservation() == true,
+              let remaining = hosEvidence?.hoursAvailable?.drivingRemaining else { return false }
+        return remaining < 1
+    }
 
     private var ringColor: Color {
-        switch driver.hosBucket {
-        case "crit":      return Brand.danger
-        case "warn":      return Brand.warning
-        case "fresh", "available": return Brand.success
-        case "reset":     return Brand.escort
-        default:          return palette.borderSoft
+        guard let hosEvidence, hosEvidence.hasCurrentObservation() else { return palette.borderSoft }
+        if let remaining = hosEvidence.hoursAvailable?.drivingRemaining {
+            if remaining < 1 { return Brand.danger }
+            if remaining < 2 { return Brand.warning }
         }
+        if hosEvidence.assignmentEligibility() == .eligible { return Brand.success }
+        return Brand.escort
     }
 
     var body: some View {
@@ -451,7 +490,7 @@ private struct DriverRosterRow: View {
                     }
                     .buttonStyle(.plain)
                     statusBadge
-                    if driver.reassignable { reassignablePill }
+                    if driver.reassignable, hosEvidence?.assignmentEligibility() == .eligible { reassignablePill }
                 }
                 if let load = driver.loadNumber {
                     Text(laneLine(load))
@@ -532,7 +571,8 @@ private struct DriverRosterRow: View {
             case "pre_trip": return ("PRE-TRIP", Brand.success)
             case "sleeper":  return ("SLEEPER",  Brand.escort)
             case "idle":     return ("IDLE",     Brand.warning)
-            default:          return ("OFF",      Brand.neutral)
+            case "off":      return ("OFF",      Brand.neutral)
+            default:          return ("UNKNOWN",  Brand.neutral)
             }
         }()
         Text(label)
@@ -552,19 +592,27 @@ private struct DriverRosterRow: View {
     }
 
     private var hosClock: some View {
-        let (caption, footer, tint): (String, String, Color) = {
-            switch driver.hosBucket {
-            case "crit":      return ("DRIVE HOS", "REMAIN · CRIT", Brand.danger)
-            case "warn":      return ("DRIVE HOS", "REMAIN · WARN", Brand.warning)
-            case "fresh":     return ("DRIVE HOS", "FRESH",         Brand.success)
-            case "available": return ("DRIVE HOS", "AVAILABLE",     Brand.success)
-            case "reset":     return ("RESET",     "UNTIL DUTY",    Brand.escort)
-            default:           return ("HOS",       "-",             palette.textSecondary)
+        let remaining = hosEvidence?.hoursAvailable?.drivingRemaining
+        let current = hosEvidence?.hasCurrentObservation() == true
+        let value = current ? HOSStatus.formatHours(remaining) : "—"
+        let (footer, tint): (String, Color) = {
+            guard let evidence = hosEvidence else { return ("UNAVAILABLE", palette.textSecondary) }
+            guard current else {
+                if case .stale = HOSObservationClock.freshness(evidence.freshness) {
+                    return ("STALE", Brand.warning)
+                }
+                return ("UNTRACKED", palette.textSecondary)
             }
+            if let remaining {
+                if remaining < 1 { return ("REMAIN · CRIT", Brand.danger) }
+                if remaining < 2 { return ("REMAIN · WARN", Brand.warning) }
+            }
+            if evidence.assignmentEligibility() == .eligible { return ("ELIGIBLE", Brand.success) }
+            return ("HOS HELD", Brand.escort)
         }()
         return VStack(spacing: 2) {
-            Text(caption).font(EType.micro).tracking(0.4).foregroundStyle(tint.opacity(0.85))
-            Text(driver.hosRemaining ?? "-:-")
+            Text("DRIVE HOS").font(EType.micro).tracking(0.4).foregroundStyle(tint.opacity(0.85))
+            Text(value)
                 .font(.system(size: 20, weight: .heavy, design: .monospaced))
                 .foregroundStyle(tint)
             Text(footer).font(EType.micro).foregroundStyle(tint.opacity(0.85))

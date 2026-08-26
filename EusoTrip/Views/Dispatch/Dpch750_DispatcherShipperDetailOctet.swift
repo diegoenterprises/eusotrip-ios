@@ -112,7 +112,7 @@ private extension ShipperDetailKind {
                          citation: "DISPATCHER PAYMENT · 90D",
                          title: "Payment behavior",
                          subhead: "Settlement signals · 90-day window",
-                         pillCopy: "Delivered-load volume and average load rate. Days-to-pay is not yet wired.",
+                         pillCopy: "Delivered-load volume and average load rate. No verified days-to-pay metric is available.",
                          statusPill: "PAYMENT · 90D")
         case .laneWin:
             return .init(eyebrow: "DISPATCHER · SHIPPER · LANE-WIN",

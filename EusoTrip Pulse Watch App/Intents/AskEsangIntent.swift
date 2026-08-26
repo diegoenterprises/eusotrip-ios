@@ -106,7 +106,9 @@ struct HOSStatusIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        let hos = HOSStore.shared.current
+        guard let hos = HOSStore.shared.currentObservation else {
+            return .result(dialog: "Current sourced HOS evidence is unavailable.")
+        }
         return .result(
             dialog: IntentDialog(stringLiteral:
                 "You're \(hos.status.label). " +

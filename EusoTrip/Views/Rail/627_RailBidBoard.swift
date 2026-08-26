@@ -18,14 +18,14 @@
 //  NAV (real · RailEngineerNavController.swift): HOME · SHIPMENTS(current) · [orb] · COMPLIANCE · ME.
 //
 
+import CryptoKit
 import SwiftUI
 
 struct RailBidBoardScreen: View {
     let theme: Theme.Palette
-    /// Shipment the carrier is quoting against. Defaults to the canonical
-    /// in-repo demo shipment (LB ICTF → Chicago · RAIL-260524-9C20A7E15B);
-    /// real callers pass the live id from the Shipments surface.
-    var shipmentId: Int = 1
+    /// Shipment selected from a live rail-shipment surface. A missing selection
+    /// remains explicit; this screen never substitutes a demo or guessed row.
+    var shipmentId: Int? = nil
 
     var body: some View {
         Shell(theme: theme) { RailBidBoardBody(shipmentId: shipmentId) } nav: {
@@ -46,6 +46,7 @@ struct RailBidBoardScreen: View {
 /// (bidderId, amount, rateType, transitDays, route, notes).
 private struct RailBidMeta627: Decodable {
     let bidderId: Int?
+    let carrierId: Int?
     let amount: Double?
     let rateType: String?
     let transitDays: Int?
@@ -53,6 +54,7 @@ private struct RailBidMeta627: Decodable {
     let notes: String?
     /// Carrier display name when the server enriches the metadata.
     let carrier: String?
+    let carrierName: String?
     let bidderName: String?
     let isMine: Bool?
 }
@@ -60,6 +62,7 @@ private struct RailBidMeta627: Decodable {
 /// One row from `railShipments.getRailBids`.
 private struct RailBid627: Decodable, Identifiable {
     let id: Int
+    let status: String?
     let metadata: RailBidMeta627?
     let timestamp: String?
 }
@@ -99,7 +102,7 @@ private struct RailBidBoardContext627: Decodable {
 
 private struct RailBidBoardBody: View {
     @Environment(\.palette) private var palette
-    let shipmentId: Int
+    let shipmentId: Int?
 
     @State private var bids: [RailBid627] = []
     @State private var context: RailBidBoardContext627? = nil
@@ -113,6 +116,8 @@ private struct RailBidBoardBody: View {
     @State private var quoteTransitDays = ""
     @State private var quoteRoute = ""
     @State private var quoteNotes = ""
+    @State private var pendingAwardBid: RailBid627? = nil
+    @State private var awardingBidId: Int? = nil
 
     private var carrierName: String { context?.carrier?.name ?? "Your rail carrier" }
     private var shipperOfRecord: String { context?.shipperName ?? "Shipper of record" }
@@ -131,7 +136,14 @@ private struct RailBidBoardBody: View {
                 IridescentHairline()
                     .padding(.top, Space.s4)
 
-                if loading {
+                if shipmentId == nil {
+                    EusoEmptyState(
+                        systemImage: "shippingbox",
+                        title: "Choose a rail shipment",
+                        subtitle: "Open the bid board from a live rail shipment to review or submit quotes."
+                    )
+                    .padding(.top, Space.s5)
+                } else if loading {
                     LifecycleCard {
                         Text("Loading bid board…")
                             .font(EType.caption).foregroundStyle(palette.textSecondary)
@@ -170,6 +182,16 @@ private struct RailBidBoardBody: View {
         .task { await reload() }
         .eusoRefreshable { await reload() }
         .sheet(isPresented: $showingQuoteForm) { quoteForm }
+        .alert(item: $pendingAwardBid) { bid in
+            Alert(
+                title: Text("Award this rail bid?"),
+                message: Text("Assign \(carrierTitle(bid)) at \(bid.metadata?.amount.map(money) ?? "amount unavailable") to \(railRef)."),
+                primaryButton: .cancel(),
+                secondaryButton: .default(Text("Award")) {
+                    Task { await awardBid(bid) }
+                }
+            )
+        }
     }
 
     // MARK: - Derived (sorted bids → board figures)
@@ -187,8 +209,12 @@ private struct RailBidBoardBody: View {
     }
     /// The authenticated carrier's quote, never inferred from rank.
     private var yourQuote: RailBid627? { sortedBids.first { $0.metadata?.isMine == true } }
+    private var focusQuote: RailBid627? {
+        context?.isOwner == true ? sortedBids.first : yourQuote
+    }
     private var isLeading: Bool {
-        guard let mine = yourQuote?.metadata?.amount, let lowAmount else { return false }
+        guard context?.isOwner == true, focusQuote?.status == "submitted" else { return false }
+        guard let mine = focusQuote?.metadata?.amount, let lowAmount else { return false }
         return mine == lowAmount
     }
 
@@ -231,8 +257,10 @@ private struct RailBidBoardBody: View {
     private var syncCaption: String {
         // Latest bid timestamp → "synced Nm ago"; falls back to the
         // verbatim wireframe caption when no timestamp is present.
-        guard let latest = bids.compactMap({ $0.timestamp }).max(),
-              let date = parseDate(latest) else { return "synced 4m ago" }
+        guard let latest = bids.compactMap({ $0.timestamp }).max() else {
+            return "not yet synced"
+        }
+        guard let date = parseDate(latest) else { return "sync time unavailable" }
         let mins = max(0, Int(-date.timeIntervalSinceNow / 60))
         if mins < 1 { return "synced just now" }
         if mins < 60 { return "synced \(mins)m ago" }
@@ -249,11 +277,11 @@ private struct RailBidBoardBody: View {
 
     private var heroCard: some View {
         Group {
-            if let q = yourQuote, let amt = q.metadata?.amount {
+            if let q = focusQuote, let amt = q.metadata?.amount {
                 ActiveCard {
                     VStack(alignment: .leading, spacing: 0) {
                         HStack(spacing: Space.s2) {
-                            Text("your quote")
+                            Text(context?.isOwner == true ? "leading quote" : "your quote")
                                 .font(.system(size: 11, weight: .bold)).tracking(0.5)
                                 .foregroundStyle(palette.textPrimary)
                                 .padding(.horizontal, 12).padding(.vertical, 5)
@@ -290,16 +318,17 @@ private struct RailBidBoardBody: View {
                                 Text(rateUnit(q))
                                     .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                                     .foregroundStyle(palette.textTertiary)
-                                Text(isLeading ? "LEADING" : "OPEN")
+                                Text(heroStatus(q))
                                     .font(EType.mono(.body)).tracking(0.2)
-                                    .foregroundStyle(isLeading ? Color(hex: 0x34D8A6) : Brand.info)
+                                    .foregroundStyle(statusColor(q))
                             }
                             .padding(.top, Space.s2)
                         }
 
-                        // Progress: your quote's position relative to spread.
-                        progressBar
-                            .padding(.top, Space.s5)
+                        if context?.isOwner == true, amounts.count > 1, q.status == "submitted" {
+                            progressBar
+                                .padding(.top, Space.s5)
+                        }
                     }
                 }
             } else {
@@ -326,7 +355,7 @@ private struct RailBidBoardBody: View {
     /// how far "ahead" the leading quote sits within the bid spread.
     private var leadFraction: CGFloat {
         guard let lo = lowAmount, let hi = highAmount, hi > lo,
-              let mine = yourQuote?.metadata?.amount else { return 0.80 }
+              let mine = focusQuote?.metadata?.amount else { return 0 }
         // Lower = better; lead fraction grows as your quote nears the floor.
         let pos = 1.0 - ((mine - lo) / (hi - lo))
         return CGFloat(min(1.0, max(0.08, pos)))
@@ -350,12 +379,21 @@ private struct RailBidBoardBody: View {
             .background(LinearGradient.diagonal)
             .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
 
-            kpiCell(label: "LOW",
-                    value: lowAmount.map { moneyK($0) } ?? "-",
-                    color: Color(hex: 0x34D8A6))
-            kpiCell(label: "SPREAD",
-                    value: spread.map { money($0) } ?? "-",
-                    color: palette.textPrimary)
+            if context?.isOwner == true {
+                kpiCell(label: "LOW",
+                        value: lowAmount.map { moneyK($0) } ?? "-",
+                        color: Color(hex: 0x34D8A6))
+                kpiCell(label: "SPREAD",
+                        value: spread.map { money($0) } ?? "-",
+                        color: palette.textPrimary)
+            } else {
+                kpiCell(label: "YOUR QUOTE",
+                        value: yourQuote?.metadata?.amount.map { moneyK($0) } ?? "-",
+                        color: palette.textPrimary)
+                kpiCell(label: "STATUS",
+                        value: yourQuote.map(heroStatus) ?? "NONE",
+                        color: yourQuote.map(statusColor) ?? palette.textTertiary)
+            }
         }
     }
 
@@ -382,11 +420,11 @@ private struct RailBidBoardBody: View {
     private var quotesSection: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack(alignment: .firstTextBaseline) {
-                Text("QUOTES · LOWEST FIRST")
+                Text(context?.isOwner == true ? "QUOTES · LOWEST FIRST" : "YOUR QUOTE")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("rate-ranked")
+                Text(context?.isOwner == true ? "rate-ranked" : "private")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
             }
@@ -424,7 +462,7 @@ private struct RailBidBoardBody: View {
     }
 
     private func quoteRow(_ bid: RailBid627, rank: Int) -> some View {
-        let leading = rank == 1
+        let leading = context?.isOwner == true && rank == 1 && bid.status == "submitted"
         let chipColor: Color = leading ? Brand.success : (rank == 2 ? Brand.info : Brand.rail)
         let rankColor: Color = leading ? Color(hex: 0x34D8A6) : (rank == 2 ? Color(hex: 0x5BB0F5) : Color(hex: 0x90A4AE))
         return HStack(spacing: Space.s3) {
@@ -449,14 +487,32 @@ private struct RailBidBoardBody: View {
             }
             Spacer(minLength: Space.s2)
             VStack(alignment: .trailing, spacing: 6) {
-                Text(leading ? "LEADING" : "OPEN")
+                Text(context?.isOwner == true ? (leading ? "LEADING" : heroStatus(bid)) : heroStatus(bid))
                     .font(.system(size: 11, weight: .bold)).tracking(0.5)
                     .foregroundStyle(rankColor)
                     .padding(.horizontal, 10).padding(.vertical, 4)
                     .background(Capsule().fill(chipColor.opacity(leading ? 0.22 : 0.22)))
-                Text(ordinal(rank))
-                    .font(.system(size: 13, weight: .bold)).monospacedDigit()
-                    .foregroundStyle(rankColor)
+                if context?.isOwner == true {
+                    Text(ordinal(rank))
+                        .font(.system(size: 13, weight: .bold)).monospacedDigit()
+                        .foregroundStyle(rankColor)
+                }
+                if context?.isOwner == true, context?.status == "requested", bid.status == "submitted" {
+                    if bid.metadata?.carrierId != nil, bid.metadata?.amount != nil {
+                        Button {
+                            pendingAwardBid = bid
+                        } label: {
+                            Label("Award", systemImage: "checkmark.seal")
+                                .font(.system(size: 11, weight: .bold))
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(awardingBidId != nil)
+                    } else {
+                        Text("IDENTITY UNAVAILABLE")
+                            .font(EType.mono(.micro))
+                            .foregroundStyle(Brand.warning)
+                    }
+                }
             }
         }
         .padding(.horizontal, 16).padding(.vertical, 14)
@@ -509,8 +565,15 @@ private struct RailBidBoardBody: View {
     }
 
     private var awardLine: String {
+        if context?.isOwner != true, let quote = yourQuote {
+            switch quote.status {
+            case "awarded": return "Your quote was awarded · carrier assignment confirmed"
+            case "not_selected": return "Your quote was not selected · this tender is closed"
+            default: return "Your quote is submitted · awaiting shipper decision"
+            }
+        }
         if let lo = lowAmount {
-            let lead = yourQuote.map { carrierTitle($0) } ?? carrierName.capitalized
+            let lead = sortedBids.first.map { carrierTitle($0) } ?? carrierName.capitalized
             return "Shipper review pending · \(lead) \(money(lo)) leads \(bids.count) carrier bids"
         }
         return "Shipper review pending · awaiting carrier bids"
@@ -520,7 +583,7 @@ private struct RailBidBoardBody: View {
 
     private var bidHistoryLines: [String] {
         var lines = [
-            "Shipment: \(shipmentId)",
+            "Shipment: \(shipmentId.map(String.init) ?? "not selected")",
             "Lane: \(lane)",
             "Carrier: \(carrierName)",
             "Shipper: \(shipperOfRecord)",
@@ -534,16 +597,43 @@ private struct RailBidBoardBody: View {
 
     private var ctaPair: some View {
         HStack(spacing: Space.s2) {
-            CTAButton(title: "Submit quote",
-                      action: { openQuoteForm() },
-                      isLoading: submitting)
-                .frame(maxWidth: .infinity)
+            if context?.isOwner == true {
+                if let leading = sortedBids.first, context?.status == "requested" {
+                    CTAButton(
+                        title: "Award leading bid",
+                        action: { pendingAwardBid = leading },
+                        isLoading: awardingBidId != nil
+                    )
+                    .frame(maxWidth: .infinity)
+                }
+            } else if context?.status == "requested" {
+                CTAButton(title: "Submit quote",
+                          action: { openQuoteForm() },
+                          isLoading: submitting)
+                    .frame(maxWidth: .infinity)
+            }
             RailSecondaryActionButton(
                 title: "Bid history",
                 sheetTitle: "Rail bid history",
                 lines: bidHistoryLines,
                 systemImage: "clock.arrow.circlepath"
             )
+        }
+    }
+
+    private func heroStatus(_ bid: RailBid627) -> String {
+        switch bid.status {
+        case "awarded": return "AWARDED"
+        case "not_selected": return "NOT SELECTED"
+        default: return context?.isOwner == true && isLeading ? "LEADING" : "SUBMITTED"
+        }
+    }
+
+    private func statusColor(_ bid: RailBid627) -> Color {
+        switch bid.status {
+        case "awarded": return Brand.success
+        case "not_selected": return Brand.warning
+        default: return Brand.info
         }
     }
 
@@ -623,6 +713,7 @@ private struct RailBidBoardBody: View {
         return place.isEmpty ? yard.name : "\(yard.name) (\(place))"
     }
     private func carrierTitle(_ bid: RailBid627) -> String {
+        if let c = bid.metadata?.carrierName, !c.isEmpty { return c }
         if let c = bid.metadata?.carrier, !c.isEmpty { return c }
         if let n = bid.metadata?.bidderName, !n.isEmpty { return n }
         // Fall back to rate-type framing so the row still reads as a carrier quote.
@@ -668,6 +759,13 @@ private struct RailBidBoardBody: View {
     // MARK: - Load + submit
 
     private func reload() async {
+        guard let shipmentId else {
+            context = nil
+            bids = []
+            loadError = nil
+            loading = false
+            return
+        }
         loading = true; loadError = nil
         struct In: Encodable { let shipmentId: Int }
         do {
@@ -690,6 +788,10 @@ private struct RailBidBoardBody: View {
 
     private func submitQuote() async {
         guard !submitting else { return }
+        guard let shipmentId else {
+            submitNote = "Choose a rail shipment before submitting a quote"
+            return
+        }
         submitting = true; submitNote = nil
         struct In: Encodable {
             let shipmentId: Int
@@ -698,8 +800,13 @@ private struct RailBidBoardBody: View {
             let transitDays: Int
             let route: String
             let notes: String?
+            let requestKey: String
         }
-        struct Ack: Decodable { let success: Bool?; let message: String? }
+        struct Ack: Decodable {
+            let success: Bool?
+            let idempotent: Bool?
+            let message: String?
+        }
         guard let bidAmount = Double(quoteAmount), bidAmount > 0,
               let transitDays = Int(quoteTransitDays), (1...365).contains(transitDays) else {
             submitNote = "Enter a valid amount and transit time"
@@ -713,6 +820,18 @@ private struct RailBidBoardBody: View {
             submitting = false
             return
         }
+        let storageKey = bidSubmitRequestStorageKey(
+            shipmentId: shipmentId,
+            amount: bidAmount,
+            rateType: quoteRateType,
+            transitDays: transitDays,
+            route: route,
+            notes: notes.isEmpty ? nil : notes
+        )
+        let stored = UserDefaults.standard.string(forKey: storageKey)?.lowercased()
+        let requestKey = stored.flatMap { UUID(uuidString: $0) != nil ? $0 : nil }
+            ?? UUID().uuidString.lowercased()
+        UserDefaults.standard.set(requestKey, forKey: storageKey)
         do {
             let ack: Ack = try await EusoTripAPI.shared.mutation(
                 "railShipments.createRailBid",
@@ -721,14 +840,18 @@ private struct RailBidBoardBody: View {
                           rateType: quoteRateType,
                           transitDays: transitDays,
                           route: route,
-                          notes: notes.isEmpty ? nil : notes))
+                          notes: notes.isEmpty ? nil : notes,
+                          requestKey: requestKey))
             guard ack.success == true else {
                 submitNote = ack.message ?? "Bid not submitted"
                 submitting = false
                 return
             }
+            if UserDefaults.standard.string(forKey: storageKey)?.lowercased() == requestKey {
+                UserDefaults.standard.removeObject(forKey: storageKey)
+            }
             showingQuoteForm = false
-            submitNote = ack.message ?? "Bid submitted"
+            submitNote = ack.idempotent == true ? "Bid already submitted" : (ack.message ?? "Bid submitted")
             quoteAmount = ""
             quoteNotes = ""
             await reload()
@@ -736,6 +859,110 @@ private struct RailBidBoardBody: View {
             submitNote = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
         submitting = false
+    }
+
+    private func awardRequestStorageKey(
+        shipmentId: Int,
+        bidEventId: Int,
+        carrierId: Int
+    ) -> String {
+        requestStorageKey(
+            operation: "railShipments.acceptRailBid",
+            intent: "\(shipmentId)|\(bidEventId)|\(carrierId)"
+        )
+    }
+
+    private func bidSubmitRequestStorageKey(
+        shipmentId: Int,
+        amount: Double,
+        rateType: String,
+        transitDays: Int,
+        route: String,
+        notes: String?
+    ) -> String {
+        requestStorageKey(
+            operation: "railShipments.createRailBid",
+            intent: "\(shipmentId)|\(String(format: "%.2f", amount))|\(rateType)|\(transitDays)|\(route)|\(notes ?? "")"
+        )
+    }
+
+    private func requestStorageKey(operation: String, intent: String) -> String {
+        let sessionCredential = EusoTripAPI.shared.authToken
+            ?? HTTPCookieStorage.shared.cookies?.first(where: { $0.name == "app_session_id" })?.value
+            ?? "unauthenticated"
+        let material = "\(operation)|\(sessionCredential)|\(intent)"
+        let digest = SHA256.hash(data: Data(material.utf8))
+        return "com.eusotrip.commercial-award." + digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func awardBid(_ bid: RailBid627) async {
+        guard awardingBidId == nil else { return }
+        guard context?.isOwner == true else {
+            submitNote = "Only the rail shipment owner can award this bid"
+            return
+        }
+        guard context?.status == "requested" else {
+            submitNote = "This rail shipment is no longer open for award"
+            return
+        }
+        guard let shipmentId,
+              let carrierId = bid.metadata?.carrierId,
+              carrierId > 0,
+              let amount = bid.metadata?.amount,
+              amount > 0 else {
+            submitNote = "This bid does not include a verified carrier identity and amount"
+            return
+        }
+
+        struct Input: Encodable {
+            let shipmentId: Int
+            let bidEventId: Int
+            let carrierId: Int
+            let requestKey: String
+        }
+        struct Ack: Decodable {
+            let success: Bool
+            let idempotent: Bool?
+            let requestKey: String?
+        }
+
+        let storageKey = awardRequestStorageKey(
+            shipmentId: shipmentId,
+            bidEventId: bid.id,
+            carrierId: carrierId
+        )
+        let stored = UserDefaults.standard.string(forKey: storageKey)?.lowercased()
+        let requestKey = stored.flatMap { UUID(uuidString: $0) != nil ? $0 : nil }
+            ?? UUID().uuidString.lowercased()
+        UserDefaults.standard.set(requestKey, forKey: storageKey)
+        awardingBidId = bid.id
+        submitNote = nil
+
+        do {
+            let ack: Ack = try await EusoTripAPI.shared.mutation(
+                "railShipments.acceptRailBid",
+                input: Input(
+                    shipmentId: shipmentId,
+                    bidEventId: bid.id,
+                    carrierId: carrierId,
+                    requestKey: requestKey
+                )
+            )
+            guard ack.success else {
+                submitNote = "The rail award was not confirmed"
+                awardingBidId = nil
+                return
+            }
+            if UserDefaults.standard.string(forKey: storageKey)?.lowercased() == requestKey {
+                UserDefaults.standard.removeObject(forKey: storageKey)
+            }
+            pendingAwardBid = nil
+            submitNote = ack.idempotent == true ? "Rail award confirmed" : "Rail bid awarded"
+            await reload()
+        } catch {
+            submitNote = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+        awardingBidId = nil
     }
 }
 

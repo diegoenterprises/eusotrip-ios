@@ -196,6 +196,7 @@ private struct FleetTrackerOnSite_374 {
     var driverName: String = "—"
     var driverId: String = "—"
     var hos: String = "—"
+    var hosEvidence: String = "current evidence unavailable"
     var status: String = "—"
     var dock: String = "—"      // no dock column / proc on the catalyst router
     var dwell: String = "—"     // no dwell timer source
@@ -323,9 +324,9 @@ private struct FleetTrackerOnSiteCard_374: View {
                 .overlay(Text(fleet.driverInitials).font(.system(size: 10, weight: .heavy)).foregroundColor(.white))
             VStack(alignment: .leading, spacing: 3) {
                 Text("\(fleet.driverName) · CEL fleet").font(.system(size: 11, weight: .heavy))
-                Text("\(fleet.driverId) · HOS \(fleet.hos) · \(fleet.location)")
+                Text("\(fleet.driverId) · HOS \(fleet.hos) · \(fleet.hosEvidence)")
                     .font(.system(size: 9, design: .monospaced)).foregroundColor(.secondary)
-                Text("gate cleared · \(fleet.dock) · dwell \(fleet.dwell)")
+                Text("position \(fleet.location) · \(fleet.dock) · dwell \(fleet.dwell)")
                     .font(.system(size: 8)).foregroundColor(.secondary)
             }
             Spacer()
@@ -655,7 +656,24 @@ private struct CatalystPickupOnSiteEchoCelM04View: View {
                 fleet.driverInitials = monogram(d.name)
                 fleet.driverName = d.name
                 fleet.driverId = d.id
-                fleet.hos = d.hoursRemaining.map { String(format: "%.1fh", $0) } ?? "—"
+                do {
+                    let evidence: [HOSFleetDriver] = try await EusoTripAPI.shared.queryNoInput("hos.getFleetHOS")
+                    let matchedEvidence = evidence.first {
+                        $0.driverId == d.id || $0.userId.map { String($0) } == d.id
+                    }
+                    if let matchedEvidence, matchedEvidence.hasCurrentObservation() {
+                        fleet.hos = matchedEvidence.hoursAvailable?.drivingRemaining
+                            .map { String(format: "%.1fh", $0) } ?? "—"
+                        fleet.hosEvidence = "\(matchedEvidence.source?.uppercased() ?? "SOURCE UNAVAILABLE") · \(humanISO(matchedEvidence.freshness))"
+                    } else {
+                        fleet.hos = "—"
+                        fleet.hosEvidence = matchedEvidence?.assignmentEligibility().reason
+                            ?? "current evidence unavailable"
+                    }
+                } catch {
+                    fleet.hos = "—"
+                    fleet.hosEvidence = "HOS refresh unavailable"
+                }
                 fleet.status = row.status.uppercased() == "AT_PICKUP"
                     ? "ON-SITE"
                     : (d.status.isEmpty ? "—" : d.status.uppercased())

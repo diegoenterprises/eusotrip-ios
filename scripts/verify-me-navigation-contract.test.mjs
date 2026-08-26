@@ -23,10 +23,10 @@ const exactRoleMePolicy = {
   escort: "persisted-escort",
   terminal: "persisted-terminal",
   compliance: "persisted-compliance",
-  safety: "web-continuation-no-native-child",
+  safety: "native-specialist-session-only",
   admin: "persisted-admin",
   superAdmin: "persisted-admin",
-  factoring: "web-continuation-no-native-child",
+  factoring: "native-specialist-session-only",
   railShipper: "native-mode-session-only",
   railCatalyst: "native-mode-session-only",
   railDispatch: "native-mode-session-only",
@@ -39,7 +39,7 @@ const exactRoleMePolicy = {
   shipCaptain: "native-mode-session-only",
   vesselBroker: "native-mode-session-only",
   customsBroker: "native-mode-session-only",
-  serviceProvider: "web-continuation-no-native-child",
+  serviceProvider: "native-specialist-session-only",
 };
 
 function source(relativePath) {
@@ -58,17 +58,27 @@ test("all 25 roles have an explicit Me restoration policy", () => {
     Object.keys(exactRoleMePolicy).sort(),
     declaredRoles.sort(),
   );
-  assert.match(router, /case \.safety:[\s\S]{0,100}WebContinuationSurface/);
-  assert.match(router, /case \.factoring:[\s\S]{0,100}WebContinuationSurface/);
-  assert.match(router, /case \.serviceProvider:[\s\S]{0,100}WebContinuationSurface/);
+  assert.match(router, /case \.safety:[\s\S]{0,120}NativeSpecialistRoleSurface\(definition: \.safety/);
+  assert.match(router, /case \.factoring:[\s\S]{0,120}NativeSpecialistRoleSurface\(definition: \.factoring/);
+  assert.match(router, /case \.serviceProvider:[\s\S]{0,120}NativeSpecialistRoleSurface\(definition: \.serviceProvider/);
   assert.equal(
     Object.values(exactRoleMePolicy).filter((policy) => policy === "native-mode-session-only").length,
     9,
+  );
+  assert.equal(
+    Object.values(exactRoleMePolicy).filter((policy) => policy === "native-specialist-session-only").length,
+    3,
   );
 
   const nativeModeMe = router.match(/private struct NativeModeRoleMe:[\s\S]*?private struct NativeModeRouteUnavailable/)?.[0] ?? "";
   assert.match(nativeModeMe, /session\.user\?\.name/);
   assert.doesNotMatch(nativeModeMe, /rolePushDetail|NavSwap|expandedHub|returnAnchor/);
+
+  const specialistMe = router.match(/private var specialistMe: some View[\s\S]*?private func selectDestination/)?.[0] ?? "";
+  assert.match(specialistMe, /session\.user\?\.name/);
+  assert.match(specialistMe, /EusoCardIssuePanel\(/);
+  assert.match(specialistMe, /\.eusoRefreshable\s*\{\s*await store\.refresh\(\)\s*\}/);
+  assert.doesNotMatch(router, /struct WebContinuationSurface: View/);
 });
 
 for (const [role, relativePath] of nativeMeSurfaces) {
@@ -77,7 +87,7 @@ for (const [role, relativePath] of nativeMeSurfaces) {
     assert.match(swift, /@SceneStorage\([^\n]+expanded(?:Hub|Category)/);
     assert.match(swift, /@SceneStorage\([^\n]+returnAnchor/);
     assert.match(swift, /ScrollViewReader\s*\{/);
-    assert.match(swift, /expanded(?:HubId|Category)\s*==/);
+    assert.match(swift, /expanded(?:HubId|Category)\s*==|RoleDisclosureSection\([\s\S]{0,300}expandedID:\s*\$expandedHubId/);
     assert.match(swift, /returnAnchor\s*=\s*(?:"row-|rowAnchor\()/);
     assert.match(swift, /eusoRestoreScrollPosition\s*\(/);
   });

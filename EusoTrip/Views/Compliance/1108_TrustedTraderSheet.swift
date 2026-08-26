@@ -50,8 +50,6 @@ struct TrustedTraderSheet: View {
         case oea   = "OEA"
         case fast  = "FAST"
         var id: String { rawValue }
-        /// Lower-cased slug sent to the server.
-        var slug: String { rawValue.lowercased() }
         var fullName: String {
             switch self {
             case .ctpat: return "Customs-Trade Partnership Against Terrorism"
@@ -441,7 +439,7 @@ struct TrustedTraderSheet: View {
         do {
             let r = try await EusoTripAPI.shared.registration.attachTrustedTrader(
                 companyId: cid,
-                program: program.slug,
+                program: program.rawValue,
                 validUntil: validUntilStr,
                 lastAudit: lastAuditStr
             )

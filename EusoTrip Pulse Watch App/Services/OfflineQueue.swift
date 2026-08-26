@@ -39,6 +39,7 @@ import Network
 enum QueuedAction: Codable, Equatable {
     case voice(text: String, loadId: String?, key: String)
     case hosEvent(status: String, at: Date, key: String)
+    case hosEventLocated(status: String, location: String, at: Date, key: String)
     case acceptLoad(loadId: String, bidId: String?, key: String)
     case arrived(loadId: String, kind: String, at: Date, key: String) // kind: "pickup"|"delivery"
     case sos(reason: String, lat: Double?, lon: Double?, at: Date, key: String)
@@ -48,6 +49,7 @@ enum QueuedAction: Codable, Equatable {
         switch self {
         case .voice(_, _, let k): return k
         case .hosEvent(_, _, let k): return k
+        case .hosEventLocated(_, _, _, let k): return k
         case .acceptLoad(_, _, let k): return k
         case .arrived(_, _, _, let k): return k
         case .sos(_, _, _, _, let k): return k
@@ -60,6 +62,7 @@ enum QueuedAction: Codable, Equatable {
         switch self {
         case .sos:         return .sos
         case .hosEvent:    return .hos
+        case .hosEventLocated: return .hos
         case .acceptLoad:  return .load
         case .arrived:     return .load
         case .voice:       return .voice
@@ -239,9 +242,14 @@ final class OfflineQueue: ObservableObject {
         return k
     }
     @discardableResult
-    func enqueueHOSEvent(status: String, at date: Date) -> String {
-        let k = key()
-        append(.hosEvent(status: status, at: date, key: k))
+    func enqueueHOSEvent(
+        status: String,
+        location: String,
+        at date: Date,
+        idempotencyKey: String? = nil
+    ) -> String {
+        let k = idempotencyKey ?? key()
+        append(.hosEventLocated(status: status, location: location, at: date, key: k))
         return k
     }
     @discardableResult
@@ -394,16 +402,17 @@ final class OfflineQueue: ObservableObject {
                 input: ["text": text, "loadId": loadId ?? "", "idempotencyKey": key, "surface": "watch-offline"]
             )
         case .hosEvent(let status, _, let key):
-            // Real server contract (routers/hos.ts:200-205):
-            // { newStatus: dutyStatusSchema, location: string } — the
-            // old { status, ts, source } shape 400'd forever, so the
-            // lane replayed the identical malformed payload until the
-            // heat death of the queue.
+            throw NSError(
+                domain: "EusoTrip.HOSOutbox",
+                code: 422,
+                userInfo: [NSLocalizedDescriptionKey: "Legacy HOS event \(status) lacks location evidence (\(key))."]
+            )
+        case .hosEventLocated(let status, let location, _, let key):
             _ = try await client.mutateJSON(
                 "hos.changeStatus",
                 input: [
                     "newStatus": HOSStore.serverDutyStatus(status),
-                    "location": "watch",
+                    "location": location,
                     "idempotencyKey": key
                 ]
             )
@@ -514,4 +523,3 @@ final class NetworkReachabilityHub {
         OrbLog.info("net.monitor started")
     }
 }
-

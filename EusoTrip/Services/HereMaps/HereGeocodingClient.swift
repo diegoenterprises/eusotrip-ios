@@ -48,6 +48,7 @@ actor HereGeocodingClient {
     func reverseGeocode(at coordinate: CLLocationCoordinate2D,
                         limit: Int = 1) async throws -> [HereGeocodeItem] {
         _ = limit
+        guard LatLongParser.isValid(coordinate) else { return [] }
         let response: BackendGeocodeResponse = try await EusoTripAPI.shared.query(
             "hereMaps.reverseGeocode",
             input: BackendCoord(coordinate)
@@ -80,10 +81,8 @@ actor HereGeocodingClient {
     /// plus a clean label derived from the resolved structured address.
     struct ResolvedPlace {
         let coordinate: CLLocationCoordinate2D
-        /// "<street/POI>, City, ST" rebuilt from admin fields — never HERE's
-        /// raw, sometimes-malformed `title` ("Barbour Ct, San Pedro, CA" /
-        /// "Part near (of) …").
-        let label: String
+        let formattedAddress: HereFormattedAddress
+        var label: String { formattedAddress.label }
         /// The structured hit we locked onto (city/state/country available).
         let item: HereGeocodeItem
     }
@@ -112,8 +111,11 @@ actor HereGeocodingClient {
     ///     the typed text without bogus coords.
     func resolve(_ hit: HereGeocodeItem) async -> ResolvedPlace? {
         // ── Case 1: the hit carries a sane, usable coordinate. ──────────────
-        if let pos = hit.position, Self.isSane(pos.lat, pos.lng) {
-            let hitCoord = CLLocationCoordinate2D(latitude: pos.lat, longitude: pos.lng)
+        if let pos = hit.position,
+           let hitCoord = LatLongParser.validatedCoordinate(
+               latitude: pos.lat,
+               longitude: pos.lng
+           ) {
 
             if hit.hasExplicitAdmin {
                 // 1b) HAS admin — anchor the forward geocode on the admin-
@@ -122,10 +124,14 @@ actor HereGeocodingClient {
                 let confirmed = (try? await geocode(query: hit.title, near: nil, limit: 5)) ?? []
                 if let chosen = pickBestMatch(for: hit, among: confirmed),
                    let cpos = chosen.position,
+                   let confirmedCoordinate = LatLongParser.validatedCoordinate(
+                       latitude: cpos.lat,
+                       longitude: cpos.lng
+                   ),
                    Self.greatCircleMiles(pos.lat, pos.lng, cpos.lat, cpos.lng) <= 100 {
                     return ResolvedPlace(
-                        coordinate: CLLocationCoordinate2D(latitude: cpos.lat, longitude: cpos.lng),
-                        label: chosen.displayLabel,
+                        coordinate: confirmedCoordinate,
+                        formattedAddress: chosen.formattedAddress(provenance: .hereGeocode),
                         item: chosen
                     )
                 }
@@ -135,7 +141,7 @@ actor HereGeocodingClient {
                 // hit coordinate; clean the label via reverse geocode.
                 return ResolvedPlace(
                     coordinate: hitCoord,
-                    label: await cleanLabel(for: hit, at: hitCoord),
+                    formattedAddress: await cleanAddress(for: hit, at: hitCoord),
                     item: hit
                 )
             }
@@ -145,17 +151,22 @@ actor HereGeocodingClient {
             //     reverse-geocoding to a "City, ST" the user can read.
             return ResolvedPlace(
                 coordinate: hitCoord,
-                label: await cleanLabel(for: hit, at: hitCoord),
+                formattedAddress: await cleanAddress(for: hit, at: hitCoord),
                 item: hit
             )
         }
 
         // ── Case 2: coordless / categorical hit — must forward-geocode. ─────
         let confirmed = (try? await geocode(query: hit.title, near: nil, limit: 5)) ?? []
-        if let chosen = pickBestMatch(for: hit, among: confirmed), let cpos = chosen.position {
+        if let chosen = pickBestMatch(for: hit, among: confirmed),
+           let cpos = chosen.position,
+           let coordinate = LatLongParser.validatedCoordinate(
+               latitude: cpos.lat,
+               longitude: cpos.lng
+           ) {
             return ResolvedPlace(
-                coordinate: CLLocationCoordinate2D(latitude: cpos.lat, longitude: cpos.lng),
-                label: chosen.displayLabel,
+                coordinate: coordinate,
+                formattedAddress: chosen.formattedAddress(provenance: .hereGeocode),
                 item: chosen
             )
         }
@@ -164,40 +175,26 @@ actor HereGeocodingClient {
         return nil
     }
 
-    /// Build a clean, user-facing "POI — City, ST" / "City, ST" label for a
-    /// hit we've decided to trust by its own coordinate. Reverse-geocodes the
-    /// coordinate to recover real admin (the bare-POI hit has none) and joins
-    /// it with the POI name from the hit's title — never echoing HERE's
-    /// malformed raw title ("Part near (of) …") on its own.
-    private func cleanLabel(for hit: HereGeocodeItem,
-                            at coord: CLLocationCoordinate2D) async -> String {
+    /// Reverse-geocode a trusted suggestion coordinate and retain the exact
+    /// HERE source that authored the resulting street/admin components.
+    private func cleanAddress(
+        for hit: HereGeocodeItem,
+        at coord: CLLocationCoordinate2D
+    ) async -> HereFormattedAddress {
         // The POI name = the title's first segment, with HERE's "Part near
         // (of) …" prefix stripped. Empty if the title is purely admin.
         let poiName = Self.poiName(from: hit.title)
 
-        // Recover City, ST from the coordinate itself.
-        var cityST: String? = nil
         if let rev = try? await reverseGeocode(at: coord, limit: 1).first {
-            let city = rev.address.city
-            let region = rev.address.stateCode ?? rev.address.state
-            switch (city, region) {
-            case let (c?, r?): cityST = "\(c), \(r)"
-            case let (c?, nil): cityST = c
-            case let (nil, r?): cityST = r
-            default: cityST = nil
-            }
+            return rev.formattedAddress(
+                provenance: .hereReverseGeocode,
+                place: poiName
+            )
         }
-
-        switch (poiName, cityST) {
-        case let (poi?, cs?) where !poi.isEmpty:
-            // Avoid "Houston, Houston, TX" when the POI already is the city.
-            return poi.lowercased() == cs.split(separator: ",").first?
-                .trimmingCharacters(in: .whitespaces).lowercased()
-                ? cs : "\(poi) — \(cs)"
-        case let (_, cs?):              return cs
-        case let (poi?, nil) where !poi.isEmpty: return poi
-        default:                        return hit.displayLabel
-        }
+        return hit.formattedAddress(
+            provenance: .hereAutosuggest,
+            place: poiName
+        )
     }
 
     /// The POI / place name portion of a HERE title: its first comma segment,
@@ -213,11 +210,9 @@ actor HereGeocodingClient {
         return head.isEmpty ? nil : head
     }
 
-    /// A coordinate is sane when it isn't the null-island (0,0) sentinel and
-    /// is within valid lat/lng ranges.
+    /// A coordinate is sane when both axes are finite and within WGS-84.
     static func isSane(_ lat: Double, _ lng: Double) -> Bool {
-        guard (-90...90).contains(lat), (-180...180).contains(lng) else { return false }
-        return abs(lat) > 0.0001 || abs(lng) > 0.0001
+        LatLongParser.validatedCoordinate(latitude: lat, longitude: lng) != nil
     }
 
     /// Pick the geocode result that best corresponds to the picked hit.
@@ -325,17 +320,18 @@ actor HereGeocodingClient {
 
 extension HereGeocodeItem {
     /// Converts a HERE geocode hit to EusoTrip's `LoadLocation`.
-    /// Returns `nil` for a coordless or null-island/out-of-range hit (e.g. a
-    /// categorical result) — never fabricates a (0,0) coordinate. Callers must
+    /// Returns `nil` for a coordless or out-of-range hit (e.g. a categorical
+    /// result). Missing axes remain missing; `(0,0)` remains valid. Callers must
     /// resolve such hits via `HereGeocodingClient.resolve(_:)` first.
     func asLoadLocation() -> LoadLocation? {
         guard let pos = position, HereGeocodingClient.isSane(pos.lat, pos.lng) else {
             return nil
         }
+        let formatted = formattedAddress(provenance: .hereGeocode)
         return LoadLocation(
-            address:  [address.houseNumber, address.street].compactMap { $0 }.joined(separator: " "),
-            city:     address.city ?? "",
-            state:    address.stateCode ?? address.state ?? "",
+            address:  formatted.street ?? formatted.place ?? "Unknown",
+            city:     formatted.city ?? "Unknown",
+            state:    formatted.state ?? "Unknown",
             zipCode:  address.postalCode ?? "",
             lat:      pos.lat,
             lng:      pos.lng

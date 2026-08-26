@@ -26,6 +26,9 @@
 //      rail:* / intermodal:* → `.esangRefreshSurface` (+ `.eusoNotificationReceived`
 //                            on arrival/tender/demurrage/safety) — S2 closure,
 //                            see the RAIL + INTERMODAL block in dispatch(event:)
+//      dispatch:board_update → `.eusoDispatchBoardUpdated` + `.esangRefreshSurface`
+//                            (trailing-edge coalesced) — S3 closure, the
+//                            dispatcher board/queue/roster wake signal
 //
 //  For the messaging surface the caller emits `conversation:join`/`leave`
 //  frames via `joinConversation(_:)` / `leaveConversation(_:)` so the
@@ -58,6 +61,12 @@ final class RealtimeService: ObservableObject {
     private var task: URLSessionWebSocketTask?
     private var retryAttempt: Int = 0
     private var connectTask: Task<Void, Never>?
+    private var wantsHaulLobby: Bool = false
+
+    /// Trailing-edge coalescer for `dispatch:board_update`. Held so a
+    /// burst of board frames collapses into one notification post — see
+    /// `postDispatchBoardUpdate(event:info:)`.
+    private var boardUpdateCoalesceTask: Task<Void, Never>?
 
     private let session: URLSession = {
         let cfg = URLSessionConfiguration.default
@@ -84,8 +93,11 @@ final class RealtimeService: ObservableObject {
     func disconnect() {
         connectTask?.cancel()
         connectTask = nil
+        boardUpdateCoalesceTask?.cancel()
+        boardUpdateCoalesceTask = nil
         task?.cancel(with: .goingAway, reason: nil)
         task = nil
+        wantsHaulLobby = false
         phase = .disconnected(reason: "signed out")
     }
 
@@ -158,6 +170,9 @@ final class RealtimeService: ObservableObject {
         // reconnect (covers the wake-from-background path where the
         // socket re-handshakes and the prior subscription is gone).
         joinMarketplace()
+        if wantsHaulLobby {
+            sendHaulLobbyJoin()
+        }
     }
 
     private func readLoop() async throws {
@@ -222,6 +237,11 @@ final class RealtimeService: ObservableObject {
             // view appends the message, the inbox bumps the preview +
             // unread count, and UnreadMessageStore re-fetches the total.
             nc.post(name: .eusoMessageReceived, object: nil, userInfo: info)
+        case "haul:lobby:message":
+            // Realtime is a wake-up only. The visible lobby re-queries the
+            // canonical tRPC projection so viewer-relative ownership and
+            // moderation state never depend on an unverified socket payload.
+            nc.post(name: .eusoHaulLobbyMessageReceived, object: nil, userInfo: info)
         case "escort:convoy_envelope",
              "CONVOY_ENVELOPE":
             // F13 — backend fans out signed convoy envelopes here.
@@ -285,6 +305,44 @@ final class RealtimeService: ObservableObject {
             // notification toast so the driver's surfaces re-poll.
             nc.post(name: .eusoNotificationReceived, object: nil, userInfo: info)
             nc.post(name: .esangRefreshSurface, object: event, userInfo: info)
+
+        // ─── Dispatch board fan-out (S3 closure · the deaf console) ───
+        // `dispatch:board_update` is emitted server-side by
+        // `emitDispatchBoardUpdate` (services/socketService.ts:822-825)
+        // onto the `role:dispatch` room, which this client auto-joins on
+        // connect (socket/index.ts). It is the catch-all leg of
+        // `emitDispatchEvent` (_core/websocket.ts:906-907): EVERY dispatch
+        // emit whose `eventType` is not exactly `dispatch:assignment`
+        // lands here — quickCreateLoad (dispatch.ts:2824), bulkAssign
+        // (:2900), the autopilot loops (:123, :148), dispatchPlanner:282,
+        // allocationTracker:250, settlementBatching:406, multiModal:1757,
+        // loadLifecycle:3346, dataSync/scheduler:341, resourceMonitor:176.
+        //
+        // The emitter has been live the whole time; iOS had no case, so
+        // the frames arrived and died in `default:` — a board whose whole
+        // job is watching did not update when the thing it watches
+        // changed. `Views/Dispatch/404` line 9 already documented the
+        // event as EXISTS without anything listening for it.
+        //
+        // Payload is `DispatchEventPayload` (socketService.ts:795-804) and
+        // is forwarded verbatim in `userInfo`; no field is required by the
+        // observers, which simply re-run their loader, so a partial or
+        // extended payload degrades to a plain refresh rather than a drop.
+        //
+        // Posted through `postDispatchBoardUpdate` so a burst (autopilot
+        // assigning a run of loads emits one frame per load) coalesces
+        // into a single wake instead of stacking one reload per frame.
+        case "dispatch:board_update",
+             "DISPATCH_BOARD_UPDATE":
+            // The ALL-CAPS variant is not decoration: `emitDispatchEvent`
+            // stamps `type` from `payload.eventType`, and two callers pass
+            // the CONSTANT NAME rather than its value — dispatch.ts:2827
+            // and :2903 both send `eventType: 'DISPATCH_BOARD_UPDATE'`.
+            // Those reach the raw-WS `dispatch:<companyId>` channel with
+            // the literal ALL-CAPS type. Matching both means quick-create
+            // and bulk-assign wake the board on either transport while the
+            // web team decides whether to correct the constant.
+            postDispatchBoardUpdate(event: event, info: info)
 
         // ─── Bid lifecycle (LOAD_BIDS + COMPANY channels) ───
         // The web shipper accepts/rejects/awards a driver's bid →
@@ -372,11 +430,20 @@ final class RealtimeService: ObservableObject {
             forwardToWatch(event: event, info: info)
 
         // ─── Dispute lifecycle ───
-        // Either party responded to or escalated a dispute. The
+        // A dispute was opened, responded to, or escalated. The
         // counterparty's DisputeListView / DisputeDetailView reloads
         // via the generic refresh notification. Fired by
-        // `disputes.respond` / `disputes.escalate` server-side.
-        case "dispute:responded",
+        // `disputes.respond` / `disputes.escalate` and, for the opening
+        // event, `vesselFreightAudit.flagRecovery` server-side.
+        //
+        // `dispute:created` is added here and emitted in the SAME fire
+        // (oath 2026-08-26 §2). It is deliberately not landed alone:
+        // an emit with no subscriber is systemic fault S2, and a
+        // subscriber with no emit is S1 — the two halves only count
+        // when they ship together.
+        case "dispute:created",
+             "DISPUTE_CREATED",
+             "dispute:responded",
              "DISPUTE_RESPONDED",
              "dispute:escalated",
              "DISPUTE_ESCALATED":
@@ -719,6 +786,59 @@ final class RealtimeService: ObservableObject {
         Task { try? await task?.send(.string(frame)) }
     }
 
+    func joinHaulLobby() {
+        wantsHaulLobby = true
+        sendHaulLobbyJoin()
+    }
+
+    func leaveHaulLobby() {
+        wantsHaulLobby = false
+        let frame = "42[\"haul:lobby:leave\"]"
+        Task { try? await task?.send(.string(frame)) }
+    }
+
+    private func sendHaulLobbyJoin() {
+        let frame = "42[\"haul:lobby:join\"]"
+        Task { try? await task?.send(.string(frame)) }
+    }
+
+    /// Post the dispatch-board wake on a trailing edge.
+    ///
+    /// The server does not rate-limit `dispatch:board_update`. Most call
+    /// sites emit once per mutation (`bulkAssign` deliberately emits a
+    /// single frame for the whole batch — dispatch.ts:2898), but the
+    /// autopilot paths at dispatch.ts:123 and :148 emit inside their
+    /// per-candidate loop, so one autopilot run produces a rapid run of
+    /// frames. Posting each one straight through would start a fresh
+    /// `load()` on every wired board per frame — the refresh storm this
+    /// wiring is meant to avoid.
+    ///
+    /// Cancelling the pending post and re-arming means N frames inside
+    /// the window produce exactly one wake, carrying the newest payload.
+    /// The board state a dispatcher needs is the state after the burst,
+    /// so dropping the intermediate frames loses nothing. Bursts longer
+    /// than the window simply wake once per window rather than once per
+    /// frame, which still bounds the reload rate.
+    private func postDispatchBoardUpdate(event: String, info: [AnyHashable: Any]) {
+        boardUpdateCoalesceTask?.cancel()
+        boardUpdateCoalesceTask = Task { [weak self] in
+            // `try?` swallows the cancellation throw; the explicit check
+            // below is what actually suppresses a superseded post.
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            guard !Task.isCancelled, let self else { return }
+            let nc = NotificationCenter.default
+            nc.post(name: .eusoDispatchBoardUpdated, object: event, userInfo: info)
+            // House convention for the dispatch family: also drive the
+            // generic surface refresh, so screens already observing
+            // `.esangRefreshSurface` (e.g. Views/Dispatch/704) wake on a
+            // board move without needing a second observer. Boards wired
+            // for `.eusoDispatchBoardUpdated` deliberately do NOT also
+            // observe `.esangRefreshSurface` — one reload path per file.
+            nc.post(name: .esangRefreshSurface, object: event, userInfo: info)
+            self.boardUpdateCoalesceTask = nil
+        }
+    }
+
     /// Forward a realtime event from iPhone → paired Apple Watch via
     /// WCSession applicationContext. Lets the watch react to bid
     /// awards, settlement payments, document uploads, etc. that
@@ -747,4 +867,8 @@ final class RealtimeService: ObservableObject {
         // paired or session isn't activated.
         WatchAuthBridge.shared.relayRealtimeEvent(payload)
     }
+}
+
+extension Notification.Name {
+    static let eusoHaulLobbyMessageReceived = Notification.Name("eusoHaulLobbyMessageReceived")
 }

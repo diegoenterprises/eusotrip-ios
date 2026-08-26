@@ -661,7 +661,7 @@ struct NavSlot: Identifiable {
 /// A stable, role-owned dock destination. Screen files may still describe a
 /// local BottomNav for previews, but a signed-in role surface installs one of
 /// these contracts and `Shell` renders it in preference to screen-owned chrome.
-/// This prevents a child screen from changing the user's four primary tools or
+/// This prevents a child screen from changing the user's five-slot dock or
 /// accidentally routing through another role's string aliases.
 struct RoleDockItem: Identifiable {
     let destinationId: String
@@ -672,13 +672,35 @@ struct RoleDockItem: Identifiable {
 }
 
 struct RoleDockContract {
+    /// Immutable signed-in owner. `BottomNav` uses this contract directly,
+    /// including on legacy screens that render their own dock, so a child
+    /// subtree can never substitute another role's icon set or destinations.
+    let ownerRole: EusoRole
     let leading: [RoleDockItem]
     let trailing: [RoleDockItem]
     let activeDestinationId: String
     let select: (String) -> Void
     let openESang: () -> Void
 
+    private init(
+        ownerRole: EusoRole,
+        leading: [RoleDockItem],
+        trailing: [RoleDockItem],
+        activeDestinationId: String,
+        select: @escaping (String) -> Void,
+        openESang: @escaping () -> Void
+    ) {
+        precondition(leading.count == 2 && trailing.count == 2)
+        self.ownerRole = ownerRole
+        self.leading = leading
+        self.trailing = trailing
+        self.activeDestinationId = activeDestinationId
+        self.select = select
+        self.openESang = openESang
+    }
+
     static func four(
+        ownerRole: EusoRole,
         home: RoleDockItem,
         workOne: RoleDockItem,
         workTwo: RoleDockItem,
@@ -688,6 +710,7 @@ struct RoleDockContract {
         openESang: @escaping () -> Void
     ) -> RoleDockContract {
         RoleDockContract(
+            ownerRole: ownerRole,
             leading: [home, workOne],
             trailing: [workTwo, me],
             activeDestinationId: active,
@@ -797,6 +820,7 @@ struct BottomNav: View {
 
     @Environment(\.palette) var palette
     @Environment(\.colorScheme) var scheme
+    @Environment(\.roleDockContract) private var roleDockContract
     /// Guards the orb's tap-vs-hold disambiguation. Set true the instant a
     /// long-press fires so the trailing TapGesture (which SwiftUI still
     /// delivers on release) is suppressed and a hold doesn't ALSO open the
@@ -857,6 +881,33 @@ struct BottomNav: View {
         return truckHandlers ?? platformHandlers ?? modalHandlers
     }
 
+    /// Signed-in role surfaces install a contract above the entire screen.
+    /// Resolve it here, not only in `Shell`, because several production screens
+    /// still render `BottomNav` directly. This is the final fence against a
+    /// route changing the four role-owned destinations or their icons.
+    private var resolvedLeading: [NavSlot] {
+        guard let contract = roleDockContract else { return leading }
+        return contract.leading.map { roleSlot($0, contract: contract) }
+    }
+
+    private var resolvedTrailing: [NavSlot] {
+        guard let contract = roleDockContract else { return trailing }
+        return contract.trailing.map { roleSlot($0, contract: contract) }
+    }
+
+    private var resolvedOrbAction: () -> Void {
+        roleDockContract?.openESang ?? onTapOrb
+    }
+
+    private func roleSlot(_ item: RoleDockItem, contract: RoleDockContract) -> NavSlot {
+        NavSlot(
+            label: item.label,
+            systemImage: item.systemImage,
+            isCurrent: item.destinationId == contract.activeDestinationId,
+            onTap: { contract.select(item.destinationId) }
+        )
+    }
+
     var body: some View {
         ZStack(alignment: .top) {
             // Glassmorphism plate: translucent material backdrop so the
@@ -903,7 +954,7 @@ struct BottomNav: View {
                         radius: 10, y: 4)
 
             HStack(spacing: 0) {
-                ForEach(leading) { slot(for: $0) }
+                ForEach(resolvedLeading) { slot(for: $0) }
                 // Center slot reserves an equal fifth of the width so the
                 // flanking slots land at their Figma-true x-positions (20 %
                 // | 40 % | 60 % | 80 %).  The orb itself is rendered on top
@@ -911,7 +962,7 @@ struct BottomNav: View {
                 // live above the plate without being clipped by the HStack.
                 Color.clear
                     .frame(maxWidth: .infinity)
-                ForEach(trailing) { slot(for: $0) }
+                ForEach(resolvedTrailing) { slot(for: $0) }
             }
             .frame(height: Device.navHeight)
 
@@ -953,10 +1004,12 @@ struct BottomNav: View {
                             longPressFired = false
                             return
                         }
-                        if routesThroughEnvironment, let h = activeNavHandler {
+                        if roleDockContract != nil {
+                            resolvedOrbAction()
+                        } else if routesThroughEnvironment, let h = activeNavHandler {
                             h("esang")
                         } else {
-                            onTapOrb()
+                            resolvedOrbAction()
                         }
                     }
                 )
@@ -1047,7 +1100,9 @@ struct BottomNav: View {
         // through to the slot's local `onTap` — this keeps per-slot
         // closures (and the default no-op) working in isolation.
         Button(action: {
-            if routesThroughEnvironment, let h = activeNavHandler {
+            if roleDockContract != nil {
+                s.onTap()
+            } else if routesThroughEnvironment, let h = activeNavHandler {
                 h(s.label)
             } else {
                 s.onTap()
@@ -1547,6 +1602,12 @@ struct Shell<Content: View, Nav: View>: View {
             ScrollView(.vertical, showsIndicators: false) {
                 content()
                 if let roleDockContract,
+                   RoleSettingsCatalog.needsSharedAvatar(for: roleDockContract) {
+                    RoleProfileAvatarCard(role: roleDockContract.ownerRole)
+                        .padding(.horizontal, Space.s4)
+                        .padding(.top, Space.s4)
+                }
+                if let roleDockContract,
                    RoleSettingsCatalog.needsSharedEntry(for: roleDockContract) {
                     RoleSettingsAccessCard()
                         .padding(.horizontal, Space.s4)
@@ -1554,6 +1615,7 @@ struct Shell<Content: View, Nav: View>: View {
                 }
                 Color.clear.frame(height: Device.navHeight + Device.safeBottom + Space.s4)
             }
+            .eusoRefreshControl(isEnabled: roleDockContract != nil)
             if let roleDockContract {
                 roleDock(roleDockContract)
             } else {

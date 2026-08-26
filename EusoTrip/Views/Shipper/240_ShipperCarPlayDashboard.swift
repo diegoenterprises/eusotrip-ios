@@ -759,11 +759,11 @@ private struct GradientCapsuleCTA: View {
     }
 }
 
-// MARK: - CarPlayMapPreview (100×100 stylized MapKit scene — grid +
-//          curved gradient route + origin/dest pins + truck puck +
-//          compass label. Decorative — production renders a real
-//          MKMapView via UIViewRepresentable from CPMapTemplate's
-//          underlying MKMapView.)
+// MARK: - CarPlayMapPreview (route-readiness preview)
+//
+// This settings surface has lane text but no committed route geometry. The
+// preview therefore shows readiness chrome only; CPMapTemplate owns the real
+// map and exact server route after CarPlay connects.
 
 private struct CarPlayMapPreview: View {
     @Environment(\.palette) var palette
@@ -794,42 +794,18 @@ private struct CarPlayMapPreview: View {
                 .stroke(palette.textPrimary.opacity(0.06), lineWidth: 1)
             }
 
-            Path { path in
-                path.move(to: CGPoint(x: 14, y: 82))
-                path.addQuadCurve(to: CGPoint(x: 50, y: 50), control: CGPoint(x: 34, y: 62))
-                path.addQuadCurve(to: CGPoint(x: 86, y: 18), control: CGPoint(x: 70, y: 36))
+            VStack(spacing: 5) {
+                Image(systemName: "car.front.waves.up")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(palette.textSecondary)
+                Text("ROUTE LOADS")
+                    .font(.system(size: 7, weight: .heavy)).tracking(0.5)
+                    .foregroundStyle(palette.textSecondary)
+                Text("IN CARPLAY")
+                    .font(.system(size: 7, weight: .heavy)).tracking(0.5)
+                    .foregroundStyle(palette.textTertiary)
             }
-            .stroke(LinearGradient.diagonal,
-                    style: StrokeStyle(lineWidth: 3, lineCap: .round))
-
-            ZStack {
-                Circle().fill(Brand.blue)
-                    .frame(width: 12, height: 12)
-                Circle().fill(Color.white)
-                    .frame(width: 4, height: 4)
-            }
-            .offset(x: 8, y: 76)
-
-            ZStack {
-                Circle().fill(Brand.magenta)
-                    .frame(width: 12, height: 12)
-                Circle().fill(Color.white)
-                    .frame(width: 4, height: 4)
-            }
-            .offset(x: 80, y: 12)
-
-            ZStack {
-                Circle()
-                    .fill(palette.bgCard)
-                    .overlay(
-                        Circle().strokeBorder(LinearGradient.primary, lineWidth: 2)
-                    )
-                    .frame(width: 14, height: 14)
-                RoundedRectangle(cornerRadius: 1, style: .continuous)
-                    .fill(LinearGradient.primary)
-                    .frame(width: 6, height: 4)
-            }
-            .offset(x: 43, y: 43)
+            .frame(width: 100, height: 84)
 
             VStack {
                 Spacer()
@@ -843,7 +819,7 @@ private struct CarPlayMapPreview: View {
         }
         .frame(width: 100, height: 100)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("CarPlay map preview · \(laneLabel) · \(distanceLabel)")
+        .accessibilityLabel("CarPlay route readiness preview · \(laneLabel) · \(distanceLabel). Exact geometry loads after CarPlay connects.")
     }
 }
 

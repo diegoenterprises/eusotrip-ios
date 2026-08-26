@@ -930,8 +930,8 @@ private struct InstrumentPanel: View {
             HStack(spacing: 0) {
                 HOSVerticalGauge(
                     title: "DRV",
-                    valueText: hos.current.driveHoursText,
-                    fill: hos.current.drivePct,
+                    valueText: currentHOS?.driveHoursText ?? "—",
+                    fill: currentHOS?.drivePct,
                     gradient: driveGradient,
                     side: .leading
                 )
@@ -942,8 +942,8 @@ private struct InstrumentPanel: View {
                 Spacer(minLength: 0)
                 HOSVerticalGauge(
                     title: "WIN",
-                    valueText: hos.current.windowHoursText,
-                    fill: hos.current.windowPct,
+                    valueText: currentHOS?.windowHoursText ?? "—",
+                    fill: currentHOS?.windowPct,
                     gradient: windowGradient,
                     side: .trailing
                 )
@@ -1001,7 +1001,7 @@ private struct InstrumentPanel: View {
 
     private var bezelLabelDRV: String {
         // Top-left — current duty gauge summary.
-        "DRV \(hos.current.driveHoursText)"
+        "DRV \(currentHOS?.driveHoursText ?? "—")"
     }
 
     private var bezelLabelFATIGUE: String {
@@ -1288,24 +1288,28 @@ private struct InstrumentPanel: View {
             // HOS dial — inner segmented ring visualises drive remaining.
             InstrumentDial(
                 size: 40,
-                ringFill: hos.current.drivePct,
+                ringFill: currentHOS?.drivePct,
                 ringGradient: driveGradient,
-                fillBody: hos.current.status == .driving,
+                fillBody: currentHOS?.status == .driving,
                 bodyColor: hosAccent,
                 accessibilityText: hosDialA11y,
                 content: {
                     VStack(spacing: 0) {
-                        Image(systemName: hos.current.status.symbol)
+                        Image(systemName: currentHOS?.status.symbol ?? "questionmark.circle")
                             .font(.system(size: 12, weight: .bold))
-                        Text(hos.current.status.short)
+                        Text(currentHOS?.status.short ?? "—")
                             .font(.system(size: 7, weight: .heavy))
                             .tracking(0.6)
                     }
-                    .foregroundStyle(hos.current.status == .driving ? Color.white : hosAccent)
+                    .foregroundStyle(currentHOS?.status == .driving ? Color.white : hosAccent)
                 },
                 action: {
                     Task {
-                        let next: HOSStatus = hos.current.status == .driving ? .onDuty : .driving
+                        guard let status = currentHOS?.status else {
+                            WKInterfaceDevice.current().play(.failure)
+                            return
+                        }
+                        let next: HOSStatus = status == .driving ? .onDuty : .driving
                         await hos.changeStatus(to: next, auth: auth, connectivity: connectivity)
                         WKInterfaceDevice.current().play(.click)
                     }
@@ -1388,15 +1392,18 @@ private struct InstrumentPanel: View {
     /// status + remaining drive clock so blind drivers get the same
     /// at-a-glance read as the sighted gauges.
     private var hosDialA11y: String {
+        guard let observation = currentHOS else {
+            return "HOS evidence unavailable. Open Hours of Service to refresh current provider data."
+        }
         let status: String
-        switch hos.current.status {
+        switch observation.status {
         case .driving: status = "driving"
         case .onDuty:  status = "on duty"
         case .sleeper: status = "sleeper berth"
         case .off:     status = "off duty"
         }
-        let next: String = hos.current.status == .driving ? "on duty" : "driving"
-        return "HOS status: \(status). \(hos.current.driveHoursText) drive remaining. Tap to switch to \(next)."
+        let next: String = observation.status == .driving ? "on duty" : "driving"
+        return "HOS status: \(status). \(observation.driveHoursText) drive remaining. Tap to switch to \(next)."
     }
 
     /// VoiceOver description for the phone handoff dial — surfaces
@@ -1412,6 +1419,8 @@ private struct InstrumentPanel: View {
     }
 
     // MARK: Derived
+
+    private var currentHOS: WatchHOS? { hos.currentObservation }
 
     private var orbIntent: EsangOrbWatch.Intent {
         switch esang.state {
@@ -1443,7 +1452,8 @@ private struct InstrumentPanel: View {
     }
 
     private var hosAccent: Color {
-        switch hos.current.status {
+        guard let status = currentHOS?.status else { return .esangTextDim }
+        switch status {
         case .driving: return .esangBlue
         case .onDuty:  return .esangAmber
         case .sleeper: return .esangMagenta
@@ -1566,7 +1576,7 @@ private struct InstrumentPanel: View {
 private struct HOSVerticalGauge: View {
     let title: String
     let valueText: String
-    let fill: Double         // 0...1
+    let fill: Double?        // 0...1 when current evidence exists
     let gradient: LinearGradient
     /// Which side of the bezel this rail hugs. Drives the arc curl
     /// direction so the leading rail bows out left and the trailing
@@ -1576,7 +1586,7 @@ private struct HOSVerticalGauge: View {
 
     enum BezelSide { case leading, trailing }
 
-    @State private var animatedFill: Double = 0
+    @State private var animatedFill: Double?
 
     var body: some View {
         // Title sits ABOVE the curved rail so it never wraps into
@@ -1610,13 +1620,15 @@ private struct HOSVerticalGauge: View {
                     // Lit rail — same arc trimmed to the fill ratio so
                     // the gradient grows from the bottom toward the
                     // top, curling around the bezel corners.
-                    BezelRailShape(side: side, cornerRadius: cornerR)
-                        .trim(from: 1.0 - animatedFill, to: 1.0)
-                        .stroke(
-                            gradient,
-                            style: StrokeStyle(lineWidth: W, lineCap: .round)
-                        )
-                        .shadow(color: .white.opacity(0.18), radius: 1)
+                    if let animatedFill {
+                        BezelRailShape(side: side, cornerRadius: cornerR)
+                            .trim(from: 1.0 - animatedFill, to: 1.0)
+                            .stroke(
+                                gradient,
+                                style: StrokeStyle(lineWidth: W, lineCap: .round)
+                            )
+                            .shadow(color: .white.opacity(0.18), radius: 1)
+                    }
                 }
             }
         }
@@ -1758,7 +1770,7 @@ private struct MiniDial: View {
 
 private struct InstrumentDial<Content: View>: View {
     let size: CGFloat
-    let ringFill: Double          // 0...1 — how much of the ring to paint
+    let ringFill: Double?         // 0...1 when the represented fact is tracked
     let ringGradient: LinearGradient
     var fillBody: Bool = false
     let bodyColor: Color
@@ -1797,15 +1809,17 @@ private struct InstrumentDial<Content: View>: View {
                     .stroke(Color.white.opacity(0.12), lineWidth: 3)
 
                 // Progress arc
-                Circle()
-                    .trim(from: 0, to: max(0.001, ringFill))
-                    .stroke(
-                        ringGradient,
-                        style: StrokeStyle(lineWidth: 3, lineCap: .round)
-                    )
-                    .rotationEffect(.degrees(-90))
-                    .shadow(color: bodyColor.opacity(0.4), radius: 3)
-                    .animation(.easeInOut(duration: 0.45), value: ringFill)
+                if let ringFill {
+                    Circle()
+                        .trim(from: 0, to: max(0, ringFill))
+                        .stroke(
+                            ringGradient,
+                            style: StrokeStyle(lineWidth: 3, lineCap: .round)
+                        )
+                        .rotationEffect(.degrees(-90))
+                        .shadow(color: bodyColor.opacity(0.4), radius: 3)
+                        .animation(.easeInOut(duration: 0.45), value: ringFill)
+                }
 
                 // Body
                 Circle()

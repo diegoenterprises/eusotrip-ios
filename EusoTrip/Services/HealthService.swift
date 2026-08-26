@@ -245,15 +245,14 @@ final class HealthService: NSObject, ObservableObject {
         guard !samples.isEmpty else { return nil }
 
         // Keep only 'asleep*' values. iOS 16 split asleep into Core/Deep/REM;
-        // older payloads use `.asleep` (unspecified). `.inBed` and `.awake`
+        // older payloads use the unspecified asleep value. `.inBed` and `.awake`
         // are excluded so time-in-bed never inflates the figure.
         let asleepValues: Set<Int> = {
-            var v: Set<Int> = [HKCategoryValueSleepAnalysis.asleep.rawValue]
+            var v: Set<Int> = [HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue]
             if #available(iOS 16.0, *) {
                 v.insert(HKCategoryValueSleepAnalysis.asleepCore.rawValue)
                 v.insert(HKCategoryValueSleepAnalysis.asleepDeep.rawValue)
                 v.insert(HKCategoryValueSleepAnalysis.asleepREM.rawValue)
-                v.insert(HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue)
             }
             return v
         }()

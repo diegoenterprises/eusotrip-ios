@@ -130,17 +130,25 @@ final class GeofenceService: NSObject, ObservableObject,
     /// These carry no server id and never post — they only exist so the
     /// approaching screen renders even before/without a server fence row.
     private func registerApproachRegions(for load: Load) {
-        if let p = load.pickupLocation, p.lat != 0 || p.lng != 0 {
+        if let p = load.pickupLocation,
+           let coordinate = LatLongParser.validatedCoordinate(
+               latitude: p.lat,
+               longitude: p.lng
+           ) {
             let region = CLCircularRegion(
-                center: CLLocationCoordinate2D(latitude: p.lat, longitude: p.lng),
+                center: coordinate,
                 radius: 3200, identifier: "pickup-\(load.id)")
             region.notifyOnEntry = true
             region.notifyOnExit  = false
             manager.startMonitoring(for: region)
         }
-        if let d = load.deliveryLocation, d.lat != 0 || d.lng != 0 {
+        if let d = load.deliveryLocation,
+           let coordinate = LatLongParser.validatedCoordinate(
+               latitude: d.lat,
+               longitude: d.lng
+           ) {
             let region = CLCircularRegion(
-                center: CLLocationCoordinate2D(latitude: d.lat, longitude: d.lng),
+                center: coordinate,
                 radius: 3200, identifier: "delivery-\(load.id)")
             region.notifyOnEntry = true
             region.notifyOnExit  = false
@@ -178,10 +186,12 @@ final class GeofenceService: NSObject, ObservableObject,
 
         // Facility coordinates (nil when the load carries no real coord).
         let pickup: (lat: Double, lng: Double)? = load.pickupLocation.flatMap {
-            ($0.lat != 0 || $0.lng != 0) ? ($0.lat, $0.lng) : nil
+            LatLongParser.validatedCoordinate(latitude: $0.lat, longitude: $0.lng)
+                .map { ($0.latitude, $0.longitude) }
         }
         let delivery: (lat: Double, lng: Double)? = load.deliveryLocation.flatMap {
-            ($0.lat != 0 || $0.lng != 0) ? ($0.lat, $0.lng) : nil
+            LatLongParser.validatedCoordinate(latitude: $0.lat, longitude: $0.lng)
+                .map { ($0.latitude, $0.longitude) }
         }
         guard pickup != nil || delivery != nil else { return }
 
@@ -228,13 +238,17 @@ final class GeofenceService: NSObject, ObservableObject,
     /// it). Radius clamped to [150, 3200] m.
     private func registerServerRegion(_ fence: TrackingGeofencesAPI.IdentifiedFence,
                                       kind: String, loadId: Int) {
+        guard let coordinate = LatLongParser.validatedCoordinate(
+            latitude: fence.center.lat,
+            longitude: fence.center.lng
+        ) else { return }
         // Retire the entry-only approach region for this leg.
         if let stale = manager.monitoredRegions.first(where: { $0.identifier == "\(kind)-\(loadId)" }) {
             manager.stopMonitoring(for: stale)
         }
         let id = "srv|\(fence.id)|\(kind)|\(loadId)"
         let region = CLCircularRegion(
-            center: CLLocationCoordinate2D(latitude: fence.center.lat, longitude: fence.center.lng),
+            center: coordinate,
             radius: min(max(fence.radiusMeters, 150), 3200),
             identifier: id)
         region.notifyOnEntry = true
@@ -360,6 +374,13 @@ final class GeofenceService: NSObject, ObservableObject,
         let id = region.identifier
         let center = (region as? CLCircularRegion)?.center
         let fix = manager.location?.coordinate
+        let eventCoordinate = LatLongParser.validatedCoordinate(
+            latitude: fix?.latitude,
+            longitude: fix?.longitude
+        ) ?? LatLongParser.validatedCoordinate(
+            latitude: center?.latitude,
+            longitude: center?.longitude
+        )
         Task { @MainActor in
             if let parsed = self.parseServerRegion(id) {
                 // UI auto-advance (same TripEvent as the approach region)…
@@ -368,7 +389,7 @@ final class GeofenceService: NSObject, ObservableObject,
                 // fall back to the fence center (the boundary just crossed).
                 // Guarded so an already-inside `didDetermineState` post and a
                 // racing crossing can't double-fire the same ENTER.
-                if let coord = fix ?? center, !self.postedEnterIds.contains(id) {
+                if let coord = eventCoordinate, !self.postedEnterIds.contains(id) {
                     self.postedEnterIds.insert(id)
                     self.postServerFence(geofenceId: parsed.geofenceId, kind: parsed.kind,
                                          loadId: parsed.loadId, action: "ENTER", at: coord)
@@ -399,11 +420,18 @@ final class GeofenceService: NSObject, ObservableObject,
         let id = region.identifier
         let center = (region as? CLCircularRegion)?.center
         let fix = manager.location?.coordinate
+        let eventCoordinate = LatLongParser.validatedCoordinate(
+            latitude: fix?.latitude,
+            longitude: fix?.longitude
+        ) ?? LatLongParser.validatedCoordinate(
+            latitude: center?.latitude,
+            longitude: center?.longitude
+        )
         Task { @MainActor in
             guard let parsed = self.parseServerRegion(id),
                   !self.postedEnterIds.contains(id) else { return }
             self.fireApproach(kind: parsed.kind)
-            if let coord = fix ?? center {
+            if let coord = eventCoordinate {
                 self.postedEnterIds.insert(id)
                 self.postServerFence(geofenceId: parsed.geofenceId, kind: parsed.kind,
                                      loadId: parsed.loadId, action: "ENTER", at: coord)
@@ -421,12 +449,19 @@ final class GeofenceService: NSObject, ObservableObject,
         let id = region.identifier
         let center = (region as? CLCircularRegion)?.center
         let fix = manager.location?.coordinate
+        let eventCoordinate = LatLongParser.validatedCoordinate(
+            latitude: fix?.latitude,
+            longitude: fix?.longitude
+        ) ?? LatLongParser.validatedCoordinate(
+            latitude: center?.latitude,
+            longitude: center?.longitude
+        )
         Task { @MainActor in
             // Only server-backed regions carry EXIT (departed → in_transit).
             guard let parsed = self.parseServerRegion(id) else { return }
             // A fresh crossing may post ENTER again after this departure.
             self.postedEnterIds.remove(id)
-            if let coord = fix ?? center {
+            if let coord = eventCoordinate {
                 self.postServerFence(geofenceId: parsed.geofenceId, kind: parsed.kind,
                                      loadId: parsed.loadId, action: "EXIT", at: coord)
             }

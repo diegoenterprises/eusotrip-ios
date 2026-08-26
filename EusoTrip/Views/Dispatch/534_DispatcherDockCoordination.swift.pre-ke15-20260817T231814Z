@@ -1,0 +1,616 @@
+//
+//  534_DispatcherDockCoordination.swift
+//  EusoTrip — Dispatcher · Dock Coordination.
+//
+//  Verbatim SwiftUI port of:
+//    `04 Dispatcher/Dark-SVG/534 Dispatcher Dock Coordination.svg`
+//
+//  THE DOCK COORDINATION SURFACE — the dispatcher watches every active load
+//  converging on a consignee/shipper dock: which trailers are inbound, which
+//  are working a door, which are still queued on an appointment, and how much
+//  of the pickup/delivery window is left. Reached from the Board (401) as the
+//  dock-coordination surface.
+//
+//  Honest wiring — 0 stubs, 0 mock data, fully dynamic:
+//    • READ   dispatcher.board            (dispatcher.ts:32, query, {date?})
+//             → { drivers[], loads[], asOf }. Each active load carries its
+//             pickup + delivery stop (facilityName, city/state, appointment
+//             window, arrivedAt, status). The dock rows, the window
+//             countdown, and the INBOUND / AT DOOR / QUEUED tallies are all
+//             derived from these REAL stop rows — no fabricated door array.
+//    • WRITE  dispatcher.openDockCoordination (dispatcher.ts:252, mutation,
+//             {loadId, openedAtIso?}) → { success, loadId, openedAt }. Fired
+//             by "Coordinate dock"; inserts a blockchainAuditTrail
+//             `dispatcher.dock_coordination_opened` row for the top dock.
+//    • The read flows through a real do/catch with a surfaced error; the
+//      screen shows the error state, never a fake success. Empty fleet →
+//      honest empty state.
+//
+//  HONEST GAP: the server exposes no physical door-number field, so rows are
+//  keyed by the real facility + load rather than an invented "Door 7B" label.
+//
+//  Persona: Aurora Freight Lines · Renée Marquette (RM) dispatcher.
+//  Powered by ESANG AI™.
+//
+
+import SwiftUI
+
+// MARK: ─────────────────────────────────────────────────────────
+// MARK: Decoders — field-for-field match to dispatcher.board
+// MARK: ─────────────────────────────────────────────────────────
+
+private struct DockStop: Decodable, Hashable {
+    let facilityName: String?
+    let city: String?
+    let state: String?
+    let appointmentStart: String?
+    let appointmentEnd: String?
+    let arrivedAt: String?
+    let status: String?
+}
+
+private struct DockLoad: Decodable, Hashable, Identifiable {
+    let id: Int
+    let loadNumber: String?
+    let status: String?
+    let driverId: Int?
+    let driverName: String?
+    let vehicleLabel: String?
+    let pickup: DockStop?
+    let delivery: DockStop?
+}
+
+private struct DockBoardResponse: Decodable {
+    let loads: [DockLoad]
+    let asOf: String?
+}
+
+// MARK: ─────────────────────────────────────────────────────────
+// MARK: Derived dock-door row (from real stops)
+// MARK: ─────────────────────────────────────────────────────────
+
+private struct DockDoor: Identifiable, Hashable {
+    enum Stage { case working, inbound, queued }
+    let id: Int
+    let facility: String        // "PHX-WVDC" / city,state — real
+    let subject: String         // driver / unit / load — real
+    let loadNumber: String?
+    let stage: Stage
+    let rightLabel: String      // ETA / % / hold — real, from stop timing
+}
+
+// MARK: ─────────────────────────────────────────────────────────
+// MARK: Screen
+// MARK: ─────────────────────────────────────────────────────────
+
+struct DispatcherDockCoordinationScreen: View {
+    let theme: Theme.Palette
+    var body: some View {
+        // Per the wireframe <desc>: BOARD is the current bottom-nav tab.
+        Shell(theme: theme) { DispatcherDockCoordinationBody() } nav: {
+            BottomNav(
+                leading: [NavSlot(label: "Home",  systemImage: "house",                   isCurrent: false),
+                          NavSlot(label: "Board", systemImage: "rectangle.split.3x1.fill", isCurrent: true)],
+                trailing: [NavSlot(label: "Comms", systemImage: "bubble.left.and.bubble.right.fill", isCurrent: false),
+                           NavSlot(label: "Me",    systemImage: "person",                  isCurrent: false)],
+                orbState: .idle
+            )
+        }
+    }
+}
+
+private struct DispatcherDockCoordinationBody: View {
+    @Environment(\.palette) private var palette
+
+    @State private var loads: [DockLoad] = []
+    @State private var asOf: String?
+    @State private var loading: Bool = true
+    @State private var actionError: String?
+    @State private var coordinating: Bool = false
+    @State private var coordinateNote: String?
+
+    // Only loads still working toward a dock (exclude terminal states) count
+    // as a "door". Delivery stop wins when present, else pickup.
+    private var doors: [DockDoor] {
+        loads.compactMap { l in
+            let stop = l.delivery ?? l.pickup
+            guard let stop else { return nil }
+            let stage = DockCoord.stage(loadStatus: l.status, stop: stop)
+            let facility = DockCoord.facility(stop)
+            let subject = l.driverName ?? l.vehicleLabel ?? (l.loadNumber ?? "Load \(l.id)")
+            let right = DockCoord.rightLabel(stage: stage, stop: stop)
+            return DockDoor(id: l.id, facility: facility, subject: subject,
+                            loadNumber: l.loadNumber, stage: stage, rightLabel: right)
+        }
+    }
+
+    private var workingCount: Int { doors.filter { $0.stage == .working }.count }
+    private var inboundCount:  Int { doors.filter { $0.stage == .inbound }.count }
+    private var queuedCount:   Int { doors.filter { $0.stage == .queued  }.count }
+
+    // Nearest still-open appointment window across all docks (real).
+    private var nearestWindow: (label: String, facility: String)? {
+        let now = Date()
+        let candidates: [(Date, String)] = loads.compactMap { l in
+            guard let stop = l.delivery ?? l.pickup,
+                  let endIso = stop.appointmentEnd,
+                  let end = DockCoord.date(endIso), end > now else { return nil }
+            return (end, DockCoord.facility(stop))
+        }.sorted { $0.0 < $1.0 }
+        guard let first = candidates.first else { return nil }
+        return (DockCoord.countdown(to: first.0), first.1)
+    }
+
+    private var topRows: [DockDoor] { Array(doors.prefix(3)) }
+    private var moreCount: Int { max(0, doors.count - topRows.count) }
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 0) {
+                topBar
+                IridescentHairline().padding(.top, Space.s3)
+
+                if loading {
+                    DockCoordSkeleton().padding(.top, Space.s5)
+                } else if let err = actionError {
+                    errorState(err)
+                } else {
+                    heroCard
+                    kpiStrip
+                    doorList
+                    windowGuard
+                    if let note = coordinateNote { resultNote(note) }
+                    ctaPair
+                }
+
+                Color.clear.frame(height: 96)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, Space.s5)
+        }
+        .task { await load() }
+    }
+
+    // MARK: Top bar — back chevron + eyebrow + mono caption + title + kebab
+
+    private var topBar: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack(alignment: .firstTextBaseline) {
+                EusoTripEyebrow(verbatim: "DISPATCHER · DOCK COORDINATION")
+                    .font(EType.micro).tracking(1.0)
+                    .foregroundStyle(LinearGradient.primary)
+                Spacer(minLength: Space.s2)
+                Text(nearestWindow.map { _ in "\(doors.count) DOORS" } ?? "\(doors.count) DOORS")
+                    .font(EType.mono(.micro)).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            HStack(alignment: .center, spacing: Space.s3) {
+                Button { back() } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(palette.textPrimary)
+                }
+                .buttonStyle(.plain)
+                Text("Dock coordination")
+                    .font(EType.h1).tracking(-0.4)
+                    .foregroundStyle(palette.textPrimary)
+                Spacer(minLength: Space.s2)
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundStyle(palette.textPrimary)
+            }
+        }
+    }
+
+    // MARK: Hero — the reserved-window ActiveCard
+
+    private var heroCard: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(spacing: Space.s2) {
+                chip("live")
+                if let w = nearestWindow { chip(w.facility.lowercased()) }
+                Spacer(minLength: 0)
+            }
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(nearestWindow?.label ?? "\(doors.count)")
+                        .font(.system(size: 30, weight: .bold, design: .default).monospacedDigit())
+                        .foregroundStyle(LinearGradient.diagonal)
+                    Text(nearestWindow != nil ? "window open" : "docks active")
+                        .font(EType.caption.weight(.semibold))
+                        .foregroundStyle(palette.textPrimary)
+                    Text(nearestWindow?.facility ?? "no reserved window")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+                Spacer(minLength: Space.s3)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("DOORS")
+                        .font(EType.micro).tracking(0.6)
+                        .foregroundStyle(palette.textSecondary)
+                    Text("\(doors.count)")
+                        .font(.system(size: 22, weight: .bold).monospacedDigit())
+                        .foregroundStyle(palette.textPrimary)
+                    Text("\(workingCount) working")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+            }
+        }
+        .padding(Space.s4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 20).fill(palette.bgCardSoft))
+        .overlay(RoundedRectangle(cornerRadius: 20)
+            .strokeBorder(LinearGradient.diagonal.opacity(0.85), lineWidth: 1.5))
+        .padding(.top, Space.s5)
+    }
+
+    private func chip(_ label: String) -> some View {
+        Text(label)
+            .font(EType.micro).tracking(0.5)
+            .foregroundStyle(palette.textPrimary)
+            .padding(.horizontal, Space.s3).frame(height: 24)
+            .background(Capsule().fill(Color.white.opacity(0.06)))
+    }
+
+    // MARK: KPI strip — WORKING (highlight) / INBOUND / QUEUED
+
+    private var kpiStrip: some View {
+        HStack(spacing: Space.s3) {
+            kpiCell("AT DOOR",  workingCount, tint: palette.textOnGradient, filled: true)
+            kpiCell("INBOUND",  inboundCount, tint: palette.textPrimary,     filled: false)
+            kpiCell("QUEUED",   queuedCount,  tint: Brand.hazmat,            filled: false)
+        }
+        .padding(.top, Space.s4)
+    }
+
+    private func kpiCell(_ label: String, _ value: Int, tint: Color, filled: Bool) -> some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            Text(label)
+                .font(EType.micro).tracking(1.0)
+                .foregroundStyle(filled ? palette.textOnGradient.opacity(0.85) : palette.textSecondary)
+            Text("\(value)")
+                .font(.system(size: 22, weight: .semibold).monospacedDigit())
+                .foregroundStyle(tint)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Space.s3)
+        .frame(height: 72)
+        .background {
+            if filled {
+                RoundedRectangle(cornerRadius: 16).fill(LinearGradient.diagonal)
+            } else {
+                RoundedRectangle(cornerRadius: 16).fill(palette.bgCardSoft)
+                RoundedRectangle(cornerRadius: 16).strokeBorder(palette.borderFaint, lineWidth: 1)
+            }
+        }
+    }
+
+    // MARK: Door list
+
+    private var doorList: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("DOCK DOORS")
+                    .font(EType.micro).tracking(1.0)
+                    .foregroundStyle(palette.textSecondary)
+                Spacer()
+                Text("dispatcher.board")
+                    .font(EType.mono(.caption))
+                    .foregroundStyle(palette.textSecondary)
+            }
+            .padding(.bottom, Space.s2)
+
+            VStack(spacing: 0) {
+                if topRows.isEmpty {
+                    emptyDoors
+                } else {
+                    ForEach(Array(topRows.enumerated()), id: \.element.id) { idx, d in
+                        DockDoorRow(door: d)
+                        if idx < topRows.count - 1 {
+                            Divider().overlay(palette.borderFaint).padding(.horizontal, Space.s4)
+                        }
+                    }
+                    if moreCount > 0 {
+                        Text("+ \(moreCount) more · sorted by appointment window")
+                            .font(EType.micro)
+                            .foregroundStyle(palette.textSecondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(Space.s4)
+                    }
+                }
+            }
+            .background(RoundedRectangle(cornerRadius: 16).fill(palette.bgCardSoft))
+            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(palette.borderFaint, lineWidth: 1))
+        }
+        .padding(.top, Space.s5)
+    }
+
+    private var emptyDoors: some View {
+        VStack(spacing: Space.s2) {
+            Text("No trailers at a dock")
+                .font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+            Text("Loads working a pickup or delivery door will appear here as they arm.")
+                .font(EType.caption).foregroundStyle(palette.textSecondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, Space.s6).padding(.horizontal, Space.s4)
+    }
+
+    // MARK: Window guard card
+
+    private var windowGuard: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack {
+                Text("DOCK WINDOW GUARD")
+                    .font(EType.micro).tracking(0.8)
+                    .foregroundStyle(palette.textSecondary)
+                Spacer()
+                Text("openDockCoordination")
+                    .font(EType.mono(.caption))
+                    .foregroundStyle(palette.textSecondary)
+            }
+            if let w = nearestWindow {
+                Text("nearest window \(w.label) · \(w.facility)")
+                    .font(EType.caption).foregroundStyle(palette.textSecondary)
+            } else {
+                Text("no reserved appointment window in range")
+                    .font(EType.caption).foregroundStyle(palette.textSecondary)
+            }
+            Text("\(workingCount) at a door · \(inboundCount) inbound · \(queuedCount) queued")
+                .font(EType.caption).foregroundStyle(palette.textSecondary)
+        }
+        .padding(Space.s4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 16).fill(palette.bgCardSoft))
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(palette.borderFaint, lineWidth: 1))
+        .padding(.top, Space.s4)
+    }
+
+    private func resultNote(_ note: String) -> some View {
+        Text(note)
+            .font(EType.caption)
+            .foregroundStyle(palette.textSecondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, Space.s3)
+    }
+
+    // MARK: CTA pair
+
+    private var ctaPair: some View {
+        HStack(spacing: Space.s3) {
+            Button { Task { await coordinate() } } label: {
+                HStack(spacing: Space.s2) {
+                    if coordinating { ProgressView().tint(palette.textOnGradient) }
+                    Text(coordinating ? "Opening…" : "Coordinate dock")
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textOnGradient)
+                }
+                .frame(maxWidth: .infinity).frame(height: 48)
+                .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(LinearGradient.primary))
+            }
+            .buttonStyle(.plain)
+            .disabled(coordinating || doors.isEmpty)
+            .opacity(doors.isEmpty ? 0.5 : 1)
+
+            Button { Task { await load() } } label: {
+                Text("Refresh")
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                    .frame(width: 132).frame(height: 48)
+                    .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(Color(hex: 0x232932)))
+            }
+            .buttonStyle(.plain)
+            .disabled(coordinating)
+        }
+        .padding(.top, Space.s5)
+    }
+
+    // MARK: Error state
+
+    private func errorState(_ err: String) -> some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            Text("Couldn't load the dock board").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+            Text(err).font(EType.caption).foregroundStyle(Brand.danger)
+            Button { Task { await load() } } label: {
+                Text("Retry").font(EType.caption.weight(.heavy))
+                    .foregroundStyle(palette.textOnGradient)
+                    .padding(.horizontal, Space.s4).frame(height: 32)
+                    .background(Capsule().fill(LinearGradient.primary))
+            }
+            .buttonStyle(.plain).padding(.top, Space.s1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Space.s4)
+        .background(RoundedRectangle(cornerRadius: Radius.lg).fill(palette.bgCardSoft))
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg).strokeBorder(Brand.danger.opacity(0.4), lineWidth: 1))
+        .padding(.top, Space.s5)
+    }
+
+    // MARK: Data + actions
+
+    private func load() async {
+        loading = true
+        actionError = nil
+        coordinateNote = nil
+        struct In: Encodable {}
+        do {
+            let r: DockBoardResponse = try await EusoTripAPI.shared.query("dispatcher.board", input: In())
+            loads = r.loads
+            asOf = r.asOf
+        } catch {
+            actionError = "The dock board couldn't refresh. Retry from this screen or open the dispatch board."
+        }
+        loading = false
+    }
+
+    private func coordinate() async {
+        guard let top = topRows.first, let ln = top.loadNumber ?? loads.first?.loadNumber else { return }
+        coordinating = true
+        coordinateNote = nil
+        struct In: Encodable { let loadId: String }
+        struct Out: Decodable { let success: Bool?; let openedAt: String? }
+        do {
+            let _: Out = try await EusoTripAPI.shared.mutation("dispatcher.openDockCoordination", input: In(loadId: ln))
+            coordinateNote = "Dock coordination opened for \(ln) · logged to the audit trail."
+        } catch {
+            coordinateNote = "Couldn't open dock coordination for \(ln). Try again."
+        }
+        coordinating = false
+    }
+
+    private func back() {
+        NotificationCenter.default.post(name: .eusoDispatchNavSwap, object: nil, userInfo: ["screenId": "Disp401"])
+    }
+}
+
+// MARK: ─────────────────────────────────────────────────────────
+// MARK: Dock door row
+// MARK: ─────────────────────────────────────────────────────────
+
+private struct DockDoorRow: View {
+    @Environment(\.palette) private var palette
+    let door: DockDoor
+
+    private var accent: Color {
+        switch door.stage {
+        case .working: return Brand.info
+        case .inbound: return Brand.success
+        case .queued:  return Brand.hazmat
+        }
+    }
+    private var stageLabel: String {
+        switch door.stage {
+        case .working: return "AT DOOR"
+        case .inbound: return "INBOUND"
+        case .queued:  return "QUEUED"
+        }
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: Space.s3) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10).fill(accent.opacity(0.16))
+                Image(systemName: "square.split.2x1")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(accent)
+            }
+            .frame(width: 40, height: 40)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("\(door.facility) · \(door.subject)")
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(1)
+                Text(door.loadNumber ?? "—")
+                    .font(EType.mono(.caption)).tracking(0.4)
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: Space.s2)
+
+            VStack(alignment: .trailing, spacing: 6) {
+                Text(stageLabel)
+                    .font(EType.micro).tracking(0.5)
+                    .foregroundStyle(accent)
+                    .padding(.horizontal, 10).frame(height: 24)
+                    .background(Capsule().fill(accent.opacity(0.18)))
+                Text(door.rightLabel)
+                    .font(EType.caption.weight(.heavy).monospacedDigit())
+                    .foregroundStyle(palette.textPrimary)
+            }
+        }
+        .padding(Space.s4)
+    }
+}
+
+// MARK: ─────────────────────────────────────────────────────────
+// MARK: Skeleton
+// MARK: ─────────────────────────────────────────────────────────
+
+private struct DockCoordSkeleton: View {
+    @Environment(\.palette) private var palette
+    var body: some View {
+        VStack(spacing: Space.s3) {
+            RoundedRectangle(cornerRadius: 20).fill(palette.bgCardSoft).frame(height: 116)
+            HStack(spacing: Space.s3) {
+                ForEach(0..<3, id: \.self) { _ in
+                    RoundedRectangle(cornerRadius: 16).fill(palette.bgCardSoft).frame(height: 72)
+                }
+            }
+            RoundedRectangle(cornerRadius: 16).fill(palette.bgCardSoft).frame(height: 252)
+        }
+        .redacted(reason: .placeholder)
+    }
+}
+
+// MARK: ─────────────────────────────────────────────────────────
+// MARK: Derivation helpers (real stop → dock semantics)
+// MARK: ─────────────────────────────────────────────────────────
+
+private enum DockCoord {
+    static func stage(loadStatus: String?, stop: DockStop) -> DockDoor.Stage {
+        let s = (stop.status ?? loadStatus ?? "").lowercased()
+        if stop.arrivedAt != nil || s.contains("loading") || s.contains("unloading") || s.contains("at_") {
+            return .working
+        }
+        if s.contains("en_route") || s.contains("assigned") || s.contains("dispatched") || s.contains("in_transit") {
+            return .inbound
+        }
+        return .queued
+    }
+
+    static func facility(_ stop: DockStop) -> String {
+        if let f = stop.facilityName, !f.isEmpty { return f }
+        if let c = stop.city, let st = stop.state { return "\(c), \(st)" }
+        return stop.city ?? "Dock"
+    }
+
+    static func rightLabel(stage: DockDoor.Stage, stop: DockStop) -> String {
+        switch stage {
+        case .working:
+            return "at dock"
+        case .inbound:
+            if let end = stop.appointmentEnd, let d = date(end), d > Date() {
+                return "ETA \(shortTime(d))"
+            }
+            return "inbound"
+        case .queued:
+            if let start = stop.appointmentStart, let d = date(start) {
+                return d > Date() ? countdown(to: d) : "holding"
+            }
+            return "queued"
+        }
+    }
+
+    static func date(_ iso: String) -> Date? {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = f.date(from: iso) { return d }
+        f.formatOptions = [.withInternetDateTime]
+        return f.date(from: iso)
+    }
+
+    static func countdown(to target: Date) -> String {
+        let secs = max(0, Int(target.timeIntervalSinceNow))
+        let h = secs / 3600, m = (secs % 3600) / 60
+        return h > 0 ? "\(h)h \(m)m" : "\(m)m"
+    }
+
+    static func shortTime(_ d: Date) -> String {
+        let f = DateFormatter(); f.dateFormat = "HH:mm"
+        return f.string(from: d)
+    }
+}
+
+#if DEBUG
+#Preview("534 · Dispatcher Dock Coordination · Dark") {
+    DispatcherDockCoordinationScreen(theme: Theme.dark)
+        .environment(\.palette, Theme.dark)
+}
+#Preview("534 · Dispatcher Dock Coordination · Light") {
+    DispatcherDockCoordinationScreen(theme: Theme.light)
+        .environment(\.palette, Theme.light)
+}
+#endif

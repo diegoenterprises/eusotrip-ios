@@ -123,14 +123,19 @@ private struct OceanContainerPos: Decodable, Identifiable {
     /// UN/LOCODE resolved through the in-house `PortDirectory` catalog
     /// (cheat-sheet §B1) — never a fabricated point.
     var fix: HereLatLng? {
-        if let lat = currentLocation?.lat, let lng = currentLocation?.lng,
-           !(lat == 0 && lng == 0) {
-            return HereLatLng(lat, lng)
+        if let coordinate = LatLongParser.validatedCoordinate(
+            latitude: currentLocation?.lat,
+            longitude: currentLocation?.lng
+        ) {
+            return HereLatLng(coordinate.latitude, coordinate.longitude)
         }
         if let code = currentPortUnlocode, !code.isEmpty,
            let p = PortDirectory.find(unlocode: code),
-           !(p.lat == 0 && p.lng == 0) {
-            return HereLatLng(p.lat, p.lng)
+           let coordinate = LatLongParser.validatedCoordinate(
+               latitude: p.lat,
+               longitude: p.lng
+           ) {
+            return HereLatLng(coordinate.latitude, coordinate.longitude)
         }
         return nil
     }
@@ -139,7 +144,7 @@ private struct OceanContainerPos: Decodable, Identifiable {
     /// reads as the en-route puck; everything else reads as a hollow port pin.
     var markerKind: HereMarker.Kind {
         switch (status ?? "").lowercased() {
-        case "on_board", "on_water", "in_transit": return .truck
+        case "on_board", "on_water", "in_transit": return .vessel
         default: return .pickup
         }
     }
@@ -179,7 +184,10 @@ private struct VesselContainerPositionsBody: View {
                 at: fix,
                 kind: c.markerKind,
                 label: c.containerNumber ?? "CTR",
-                id: String(c.id)
+                id: String(c.id),
+                observationState: .degraded,
+                sourceLabel: "Container position feed",
+                accessibilityLabel: "Container \(c.containerNumber ?? String(c.id)); freshness not supplied"
             )
         }
     }
@@ -317,7 +325,14 @@ private struct VesselContainerPositionsBody: View {
                     interactive: true,
                     tilt: 0,
                     layers: [.markers(positionMarkers)],
-                    styleHint: .ocean
+                    styleHint: .ocean,
+                    mapModeContext: .primary(.vessel),
+                    liveOperationsStatus: .init(
+                        availability: .degraded,
+                        sourceLabel: "Container position feed",
+                        detail: "Positions available; freshness not supplied",
+                        observationCount: positionMarkers.count
+                    )
                 )
                 .frame(height: 240)
                 .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
@@ -384,9 +399,9 @@ private struct VesselContainerPositionsBody: View {
                     Image(systemName: "dot.radiowaves.up.forward")
                         .font(.system(size: 26, weight: .semibold))
                         .foregroundStyle(LinearGradient.diagonal)
-                    Text("Awaiting position feed")
+                    Text("No authorized live feed")
                         .font(.system(size: 14, weight: .heavy)).foregroundStyle(palette.textPrimary)
-                    Text("Container fixes light up here the moment the AIS / carrier position feed reports a location. None of the \(containers.count) tracked containers carry coordinates yet.")
+                    Text("None of the \(containers.count) tracked containers carries an authorized AIS or carrier position fix.")
                         .font(EType.caption).multilineTextAlignment(.center)
                         .foregroundStyle(palette.textSecondary)
                         .padding(.horizontal, Space.s4)

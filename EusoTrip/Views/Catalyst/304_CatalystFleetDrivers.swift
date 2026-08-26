@@ -93,8 +93,11 @@ struct CatalystFleetDriversScreen: View {
     }
 }
 
-// Bottom nav — DISPATCH active per Figma (driver roster pairs with
-// vehicles roster as the carrier's two operational asset surfaces).
+// Bottom nav — FLEET-band screen (driver roster pairs with vehicles
+// roster as the carrier's two operational asset surfaces). Routed
+// through the real CarrierNavRoute, whose slot-4 is `.drivers`
+// ("Drivers", CarrierNavController.swift:105) — see the wireframe
+// twin's FLEET slot for the naming divergence logged under KE13-RG-304.
 private func catalystNavLeading_304() -> [NavSlot] {
     CarrierNavRoute.leading(current: .drivers)
 }
@@ -122,6 +125,8 @@ private struct CatalystFleetDrivers: View {
     @State private var drivers: [CatalystAPI.FleetDriver] = []
     @State private var driversLoading: Bool = true
     @State private var driversError: String? = nil
+    @State private var hosEvidence: [HOSFleetDriver] = []
+    @State private var hosWarning: String? = nil
 
     /// T-021 · 2026-05-20 — Drivers filtered by required endorsements.
     /// Canonical pattern: `required.isSubset(of: driver.endorsements)`.
@@ -154,6 +159,13 @@ private struct CatalystFleetDrivers: View {
                 topBar
                 titleRowWithAddButton
                 iridescentHairline
+
+                if let hosWarning {
+                    Text(hosWarning)
+                        .font(EType.caption)
+                        .foregroundStyle(Brand.warning)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
                 // T-021 · 2026-05-20 — Filter banner. Surfaces only when
                 // the screen was opened with `requiredEndorsements` (from
@@ -419,11 +431,13 @@ private struct CatalystFleetDrivers: View {
 
     // 4-stat row inside hero
     private func heroFourStatRow(_ driver: CatalystAPI.FleetDriver) -> some View {
-        HStack(alignment: .top, spacing: 10) {
+        let hos = currentHOS(for: driver)
+        return HStack(alignment: .top, spacing: 10) {
             heroStatTile(
                 eyebrow: "HOS · DRIVE",
-                value: driver.hoursRemaining.map { hosDisplay($0) } ?? "-",
-                meta: driver.hoursRemaining != nil ? "left of 11h" : "no log today",
+                value: hos?.hoursAvailable?.drivingRemaining.map { hosDisplay($0) } ?? "—",
+                meta: hos.map { "\($0.source?.uppercased() ?? "SOURCE UNAVAILABLE") · \(humanISO($0.freshness))" }
+                    ?? "current evidence unavailable",
                 emphasis: .none
             )
             heroStatTile(
@@ -947,11 +961,12 @@ private struct CatalystFleetDrivers: View {
     }
 
     private func otherDriverSubtitle(_ d: CatalystAPI.FleetDriver) -> String {
+        let hos = currentHOS(for: d)
         if let load = d.currentLoad, !load.isEmpty {
-            if let h = d.hoursRemaining {
-                return "\(load) · HOS \(hosDisplay(h)) · \(d.location)"
+            if let h = hos?.hoursAvailable?.drivingRemaining {
+                return "\(load) · HOS \(hosDisplay(h)) · \(hos?.source?.uppercased() ?? "SOURCE UNAVAILABLE") · \(d.location)"
             }
-            return "\(load) · \(d.location)"
+            return "\(load) · HOS unavailable · \(d.location)"
         }
         return "\(d.status.uppercased()) · \(d.location)"
     }
@@ -1132,10 +1147,22 @@ private struct CatalystFleetDrivers: View {
     }
 
     private func activeHaulLine(driver: CatalystAPI.FleetDriver, load: String) -> String {
-        if let h = driver.hoursRemaining {
-            return "\(load) · HOS \(hosDisplay(h)) · \(driver.location)"
+        if let hos = currentHOS(for: driver),
+           let h = hos.hoursAvailable?.drivingRemaining {
+            return "\(load) · HOS \(hosDisplay(h)) · \(hos.source?.uppercased() ?? "SOURCE UNAVAILABLE") · \(driver.location)"
         }
-        return "\(load) · \(driver.location)"
+        return "\(load) · HOS unavailable · \(driver.location)"
+    }
+
+    private func evidence(for driver: CatalystAPI.FleetDriver) -> HOSFleetDriver? {
+        hosEvidence.first { row in
+            row.driverId == driver.id || row.userId.map { String($0) } == driver.id
+        }
+    }
+
+    private func currentHOS(for driver: CatalystAPI.FleetDriver) -> HOSFleetDriver? {
+        guard let evidence = evidence(for: driver), evidence.hasCurrentObservation() else { return nil }
+        return evidence
     }
 
     private func hosDisplay(_ hours: Double) -> String {
@@ -1260,6 +1287,7 @@ private struct CatalystFleetDrivers: View {
     private func loadAll() async {
         driversLoading = true
         driversError = nil
+        hosWarning = nil
         defer { driversLoading = false }
 
         do {
@@ -1269,6 +1297,12 @@ private struct CatalystFleetDrivers: View {
             self.heroDriver = primary
             if let hero = primary {
                 await loadHeroAdjuncts(for: hero)
+            }
+            do {
+                self.hosEvidence = try await EusoTripAPI.shared.queryNoInput("hos.getFleetHOS")
+            } catch {
+                self.hosEvidence = []
+                self.hosWarning = "Current company HOS evidence could not refresh. Duty clocks are withheld."
             }
         } catch {
             self.driversError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

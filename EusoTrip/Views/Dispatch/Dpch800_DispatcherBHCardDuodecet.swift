@@ -342,28 +342,28 @@ private struct DispatcherBHCardBody: View {
                     ("STATE",  "DRIVING",       "in-transit",             .blue),
                     ("DIST",   distanceText,    "lane distance",          .blue),
                     ("ETA",    none,            "no live source",         .blue),
-                    ("HOS",    none,            "no live source",         .green),
+                    ("HOS",    none,            "no live source",         .gray),
                 ]
             case .deliveryApproach:
                 return [
                     ("STATE",  "APPROACH",      "approaching receiver",   .green),
                     ("DIST",   distanceText,    "lane distance",          .blue),
                     ("ETA",    none,            "no live source",         .blue),
-                    ("HOS",    none,            "no live source",         .green),
+                    ("HOS",    none,            "no live source",         .gray),
                 ]
             case .atDelivery:
                 return [
                     ("STATE",  "GATE-IN",       "at receiver",            .orange),
                     ("ETA",    none,            "no live source",         .blue),
                     ("QUEUE",  none,            "no live source",         .green),
-                    ("HOS",    none,            "no live source",         .green),
+                    ("HOS",    none,            "no live source",         .gray),
                 ]
             case .dockedLoading:
                 return [
                     ("DOCK",    none,           "no live source",         .orange),
                     ("PALLETS", none,           "no live source",         .blue),
                     ("DEPART",  none,           "no live source",         .blue),
-                    ("HOS",     none,           "no live source",         .green),
+                    ("HOS",     none,           "no live source",         .gray),
                 ]
             case .bolPreSign:
                 return [
@@ -384,7 +384,7 @@ private struct DispatcherBHCardBody: View {
                     ("BOL",     "FILED",        "packet filed",           .green),
                     ("POD",     "PENDING",      "awaiting submit",        .orange),
                     ("WATCH",   "ARMED",        "POD packet",             .blue),
-                    ("HOS",     none,           "no live source",         .green),
+                    ("HOS",     none,           "no live source",         .gray),
                 ]
             case .closed:
                 return [

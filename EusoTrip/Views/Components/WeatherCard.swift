@@ -137,6 +137,14 @@ struct WeatherCard: View {
 
     private var isNight: Bool { solarState == .night }
 
+    private var liveLaneSegments: [WeatherSnapshot.LaneImpactSegment] {
+        snapshot.renderableLaneImpact(at: displayDate)
+    }
+
+    private var liveLaneWeather: LaneWeather? {
+        lane?.live(at: displayDate)
+    }
+
     var body: some View {
         Group {
             switch style {
@@ -201,7 +209,8 @@ struct WeatherCard: View {
         if let a = snapshot.heroAlert {
             parts.append("Active alert: \(a.title), severity \(a.severity.label)")
         }
-        if let segs = snapshot.laneImpact, !segs.isEmpty {
+        if !liveLaneSegments.isEmpty {
+            let segs = liveLaneSegments
             parts.append("\(segs.count) loads in this cell")
             if let highest = rankedLaneSegments.first {
                 parts.append("Highest risk \(highest.loadId), \(highest.route), \(highest.etaDelayDisplay)")
@@ -414,7 +423,7 @@ struct WeatherCard: View {
     /// existed but was never drawn.
     @ViewBuilder
     private var laneStrip: some View {
-        if let lane, !lane.isEmpty {
+        if let lane = liveLaneWeather {
             VStack(alignment: .leading, spacing: 11) {
                 HStack(spacing: 8) {
                     WeatherIcons.utility(.route, size: 15, tint: WeatherV3.nodeOrigin)
@@ -707,7 +716,8 @@ struct WeatherCard: View {
     /// or when the route tier is absent.
     @ViewBuilder
     private var laneImpactPanel: some View {
-        if let segs = snapshot.laneImpact, !segs.isEmpty {
+        if !liveLaneSegments.isEmpty {
+            let segs = liveLaneSegments
             let ranked = rankedLaneSegments
             let visible = Array(ranked.prefix(showAllLaneImpacts ? ranked.count : min(3, ranked.count)))
             VStack(alignment: .leading, spacing: 0) {
@@ -777,7 +787,7 @@ struct WeatherCard: View {
     }
 
     private var rankedLaneSegments: [WeatherSnapshot.LaneImpactSegment] {
-        (snapshot.laneImpact ?? []).sorted { lhs, rhs in
+        liveLaneSegments.sorted { lhs, rhs in
             if lhs.riskTier.rank != rhs.riskTier.rank {
                 return lhs.riskTier.rank > rhs.riskTier.rank
             }
@@ -789,16 +799,9 @@ struct WeatherCard: View {
         let isOpen = expandedLaneIDs.contains(seg.id)
         return VStack(alignment: .leading, spacing: 11) {
             Button {
-                let shouldAnalyze = !isOpen
-                    && esangAnswers[seg.id] == nil
-                    && esangErrors[seg.id] == nil
-                    && !esangLoading.contains(seg.id)
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.86)) {
                     if isOpen { expandedLaneIDs.remove(seg.id) }
                     else { expandedLaneIDs.insert(seg.id) }
-                }
-                if shouldAnalyze {
-                    Task { await askESANG(about: seg) }
                 }
             } label: {
                 HStack(spacing: 11) {
@@ -837,7 +840,7 @@ struct WeatherCard: View {
             .accessibilityValue(isOpen ? "Expanded" : "Collapsed")
             .accessibilityHint(isOpen
                 ? "Collapses route weather details"
-                : "Expands route weather details and requests grounded ESANG analysis")
+                : "Expands route weather details")
 
             if isOpen {
                 laneSegment(seg)
@@ -883,7 +886,7 @@ struct WeatherCard: View {
                 driverTiles(seg).padding(.top, 11)
             }
 
-            Text(seg.routeWeatherAttribution)
+            Text(seg.routeWeatherProvenance(at: displayDate))
                 .font(.system(size: 9.5, weight: .bold))
                 .tracking(0.4)
                 .foregroundStyle(.white.opacity(0.48))
@@ -894,8 +897,6 @@ struct WeatherCard: View {
             // from ESANG. AI analysis runs only after the operator asks.
             if let rec = seg.recommendation {
                 operationalGuidance(rec).padding(.top, 12)
-            } else if let suggestion = seg.esangSuggestion {
-                operationalGuidance(suggestion).padding(.top, 12)
             }
 
             esangAnalysis(seg).padding(.top, 10)
@@ -1046,25 +1047,12 @@ struct WeatherCard: View {
         return t
     }
 
-    private func operationalGuidance(_ suggestion: String) -> some View {
-        HStack(alignment: .top, spacing: 11) {
-            WeatherIcons.utility(.route, size: 17, tint: WeatherV3.nodeOrigin)
-                .frame(width: 26, height: 26)
-            (Text("Weather guidance").bold().foregroundStyle(.white)
-             + Text(" — \(suggestion)").foregroundStyle(Color(red: 0.93, green: 0.92, blue: 0.96)))
-                .font(.system(size: 13))
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(.horizontal, 12).padding(.vertical, 11)
-        .background(esangBackground)
-        .overlay(
-            RoundedRectangle(cornerRadius: 15, style: .continuous)
-                .strokeBorder(WeatherV3.auroraB.opacity(0.34), lineWidth: 1))
-    }
-
     @ViewBuilder
     private func esangAnalysis(_ seg: WeatherSnapshot.LaneImpactSegment) -> some View {
-        if let answer = esangAnswers[seg.id] {
+        let groundingKey = seg.esangGroundingKey
+        if !seg.canRequestGroundedESang(at: displayDate) {
+            EmptyView()
+        } else if let answer = esangAnswers[groundingKey] {
             HStack(alignment: .top, spacing: 11) {
                 esangOrb
                 VStack(alignment: .leading, spacing: 4) {
@@ -1088,10 +1076,10 @@ struct WeatherCard: View {
                 HStack(spacing: 9) {
                     esangOrb
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(esangLoading.contains(seg.id) ? "ESANG is analyzing…" : "Ask ESANG about this load")
+                        Text(esangLoading.contains(groundingKey) ? "ESANG is analyzing…" : "Ask ESANG about this load")
                             .font(.system(size: 12.5, weight: .bold))
                             .foregroundStyle(.white)
-                        if let error = esangErrors[seg.id] {
+                        if let error = esangErrors[groundingKey] {
                             Text(error)
                                 .font(.system(size: 11))
                                 .foregroundStyle(WeatherV3.danger)
@@ -1102,7 +1090,7 @@ struct WeatherCard: View {
                         }
                     }
                     Spacer(minLength: 0)
-                    if esangLoading.contains(seg.id) {
+                    if esangLoading.contains(groundingKey) {
                         ProgressView().tint(.white)
                     } else {
                         Image(systemName: "arrow.up.right")
@@ -1114,8 +1102,8 @@ struct WeatherCard: View {
                 .background(esangBackground)
             }
             .buttonStyle(.plain)
-            .disabled(esangLoading.contains(seg.id))
-            .accessibilityLabel(esangLoading.contains(seg.id)
+            .disabled(esangLoading.contains(groundingKey))
+            .accessibilityLabel(esangLoading.contains(groundingKey)
                 ? "ESANG is analyzing \(seg.loadId)"
                 : "Ask ESANG about \(seg.loadId)")
             .accessibilityHint("Uses server-grounded live lane and weather facts")
@@ -1124,34 +1112,65 @@ struct WeatherCard: View {
 
     @MainActor
     private func askESANG(about seg: WeatherSnapshot.LaneImpactSegment) async {
-        struct Input: Encodable { let loadId: String }
+        struct Input: Encodable { let loadId: Int }
         struct Output: Decodable {
             let available: Bool
+            let grounded: Bool
             let message: String?
             let reason: String?
+            let provider: String?
+            let source: String?
+            let providerTimestamp: String?
+            let sourceLoadId: Int?
+            let routeReductionFingerprint: String?
         }
 
-        esangLoading.insert(seg.id)
-        esangErrors[seg.id] = nil
-        defer { esangLoading.remove(seg.id) }
+        let groundingKey = seg.esangGroundingKey
+        guard seg.canRequestGroundedESang(at: Date()),
+              let rawAnalysisLoadId = seg.analysisLoadId,
+              let analysisLoadId = Int(rawAnalysisLoadId),
+              analysisLoadId > 0 else {
+            esangErrors[groundingKey] = "Fresh HERE route weather is required for ESANG analysis."
+            return
+        }
+
+        esangLoading.insert(groundingKey)
+        esangErrors[groundingKey] = nil
+        defer { esangLoading.remove(groundingKey) }
 
         do {
             let result: Output = try await EusoTripAPI.shared.mutation(
                 "weather.analyzeLaneImpact",
-                input: Input(loadId: seg.loadId)
+                input: Input(loadId: analysisLoadId)
             )
-            guard result.available else {
-                esangErrors[seg.id] = "ESANG analysis is unavailable right now. Try again."
+            guard liveLaneSegments.contains(where: {
+                $0.esangGroundingKey == groundingKey
+                    && $0.canRequestGroundedESang(at: Date())
+            }) else {
+                esangErrors[groundingKey] = "Route weather changed. Review the refreshed lane before asking again."
+                return
+            }
+            let fingerprint = result.routeReductionFingerprint ?? ""
+            let providerTimestamp = result.providerTimestamp ?? ""
+            guard result.available,
+                  result.grounded,
+                  result.provider == "here",
+                  result.source == "here_destination_weather_v3",
+                  result.sourceLoadId == analysisLoadId,
+                  fingerprint.hasPrefix("sha256:"),
+                  fingerprint.count == 71,
+                  WeatherRouteDataPolicy.parseProviderDate(providerTimestamp) != nil else {
+                esangErrors[groundingKey] = "ESANG analysis is unavailable right now. Try again."
                 return
             }
             guard let answer = result.message?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !answer.isEmpty else {
-                esangErrors[seg.id] = "ESANG returned no analysis. Try again."
+                esangErrors[groundingKey] = "ESANG returned no analysis. Try again."
                 return
             }
-            esangAnswers[seg.id] = answer
+            esangAnswers[groundingKey] = answer
         } catch {
-            esangErrors[seg.id] = "ESANG could not analyze this load. Try again."
+            esangErrors[groundingKey] = "ESANG could not analyze this load. Try again."
         }
     }
 

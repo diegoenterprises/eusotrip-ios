@@ -18,7 +18,14 @@ struct ELDConnectScreen: View {
     let theme: Theme.Palette
     var body: some View {
         Shell(theme: theme) {
-            ELDIntegrationView()
+            ConnectedAppsBody(
+                includedCategories: ["operational_eld"],
+                surfaceTitle: "ELD + fleet telemetry",
+                surfaceSummary: "Authorize the provider account that already owns your fleet data. EusoTrip activates it only after credentials, entitlement, health, and first synchronization are verified.",
+                showsJourney: true,
+                showsAdaptation: false,
+                showsTokens: false
+            )
         } nav: {
             BottomNav(
                 leading: [

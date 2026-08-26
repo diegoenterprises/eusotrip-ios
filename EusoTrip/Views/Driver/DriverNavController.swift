@@ -166,6 +166,21 @@ struct DriverNavBackKey: EnvironmentKey {
     static let defaultValue: (() -> Void)? = nil
 }
 
+/// Opens the dedicated 035 turn-by-turn surface without mutating the load
+/// lifecycle. Navigation presentation and freight status are independent:
+/// entering guidance must never imply arrival, delivery, or another backend
+/// transition.
+struct DriverOpenTurnByTurnKey: EnvironmentKey {
+    static let defaultValue: (() -> Void)? = nil
+}
+
+extension EnvironmentValues {
+    var driverOpenTurnByTurn: (() -> Void)? {
+        get { self[DriverOpenTurnByTurnKey.self] }
+        set { self[DriverOpenTurnByTurnKey.self] = newValue }
+    }
+}
+
 extension EnvironmentValues {
     var driverNavBack: (() -> Void)? {
         get { self[DriverNavBackKey.self] }
