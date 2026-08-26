@@ -78,6 +78,7 @@ private struct VesselOperatorHomeBody: View {
                 // per cold launch; settled on re-visit. Reduce-Motion → fade.
                 StaggeredEntranceStack(alignment: .leading, spacing: Space.s4) {
                     RoleHomeIntro()
+                    ModeAssetAvailabilityLaunchCard(mode: .vessel)
                     if loading {
                         LifecycleCard {
                             Text("Loading vessel dashboard…").font(EType.caption).foregroundStyle(palette.textSecondary)

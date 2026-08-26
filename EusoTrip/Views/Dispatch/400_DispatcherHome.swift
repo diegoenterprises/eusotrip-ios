@@ -64,7 +64,6 @@ private struct DispatcherDriverStatus: Decodable, Identifiable, Hashable {
     let name: String
     let status: String?
     let load: String?
-    let hoursRemaining: Double?
 }
 
 /// `dispatch.getPendingTenders` row — STUB · named-gap EUSO-2122.
@@ -93,6 +92,8 @@ private struct DispatcherHomeBody: View {
     @State private var kpi: DispatcherKPI? = nil
     @State private var issues: [DispatcherIssue] = []
     @State private var drivers: [DispatcherDriverStatus] = []
+    @State private var hosEvidence: [HOSFleetDriver] = []
+    @State private var hosEvidenceError: String? = nil
     @State private var tenders: [PendingTender] = []
 
     @State private var loading = true
@@ -154,6 +155,13 @@ private struct DispatcherHomeBody: View {
         }
         .task { await load() }
         .eusoRefreshable { await load() }
+        // RealtimeService → `dispatch:board_update`. The desk is the
+        // dispatcher's landing surface; every board mutation (assign,
+        // autopilot, tender flip, exception) must land here without
+        // waiting for a pull.
+        .onReceive(NotificationCenter.default.publisher(for: .eusoDispatchBoardUpdated)) { _ in
+            Task { await load() }
+        }
     }
 
     // MARK: TopBar eyebrow
@@ -277,12 +285,23 @@ private struct DispatcherHomeBody: View {
 
     private var idleHosFoot: String {
         let idle = drivers.filter { ($0.status ?? "").lowercased().contains("idle") }
-        let avg = idle.compactMap { $0.hoursRemaining }.reduce(0, +) / Double(max(idle.count, 1))
-        let h = Int(avg); let m = Int((avg - Double(h)) * 60)
-        if idle.isEmpty {
+        guard !idle.isEmpty else {
             let reported = kpi?.driversIdle ?? 0
-            return reported > 0 ? "\(reported) available" : "none available"
+            return reported > 0 ? "HOS evidence unavailable" : "none reported idle"
         }
+        let currentHours = idle.compactMap { driver -> Double? in
+            guard let evidence = evidence(for: driver.id),
+                  evidence.hasCurrentObservation(),
+                  let hours = evidence.hoursAvailable?.drivingRemaining,
+                  hours.isFinite,
+                  hours >= 0 else { return nil }
+            return hours
+        }
+        guard currentHours.count == idle.count else {
+            return hosEvidenceError ?? "HOS evidence incomplete"
+        }
+        let avg = currentHours.reduce(0, +) / Double(currentHours.count)
+        let h = Int(avg); let m = Int((avg - Double(h)) * 60)
         return "avg HOS \(h)h \(m)m"
     }
 
@@ -514,10 +533,14 @@ private struct DispatcherHomeBody: View {
 
     private func esangReason(_ t: PendingTender?) -> String {
         guard let t, let d = drivers.first(where: { $0.name.contains(t.suggestedDriver ?? "∅") }) else {
-            return "live HoS-aware matching from the driver board"
+            return "driver-board recommendation · HOS evidence unavailable"
         }
-        let hos = d.hoursRemaining.map { String(format: "HOS %.0fh %02.0fm", floor($0), ($0 - floor($0)) * 60) } ?? "HOS -"
-        return "\(hos) · home-base near lane · best rate vs avg"
+        guard let evidence = evidence(for: d.id),
+              evidence.hasCurrentObservation(),
+              let hours = evidence.hoursAvailable?.drivingRemaining else {
+            return "driver-board recommendation · HOS evidence unavailable"
+        }
+        return "HOS \(HOSStatus.formatHours(hours)) · \(evidence.source ?? "source unavailable") · driver-board recommendation"
     }
 
     // MARK: Live drivers strip
@@ -598,6 +621,7 @@ private struct DispatcherHomeBody: View {
     private func load() async {
         loading = true; loadError = nil
         struct DriverIn: Encodable { let limit: Int }
+        async let hosRefresh: Void = loadHOSEvidence()
         do {
             async let kpiR: DispatcherKPI = EusoTripAPI.shared.queryNoInput("dispatch.getKPI")
             async let issuesR: [DispatcherIssue] = EusoTripAPI.shared.queryNoInput("dispatch.getActiveIssues")
@@ -610,10 +634,27 @@ private struct DispatcherHomeBody: View {
         } catch {
             loadError = "Dispatch desk couldn't refresh. Pull down to try again."
         }
+        await hosRefresh
         // Tenders load independently so a temporary provider/API issue does
         // not blank the rest of the desk.
         await loadTenders()
         loading = false
+    }
+
+    private func loadHOSEvidence() async {
+        do {
+            hosEvidence = try await EusoTripAPI.shared.queryNoInput("hos.getFleetHOS")
+            hosEvidenceError = nil
+        } catch {
+            hosEvidence = []
+            hosEvidenceError = "HOS evidence unavailable"
+        }
+    }
+
+    private func evidence(for driverId: String) -> HOSFleetDriver? {
+        hosEvidence.first { row in
+            row.driverId == driverId || row.userId.map { String($0) } == driverId
+        }
     }
 
     private func loadTenders() async {

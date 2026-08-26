@@ -342,11 +342,6 @@ struct EusoTripApp: App {
     }
 
     private func handleDeepLink(_ url: URL) {
-        // Vendor OAuth callback — `eusotrip://oauth/callback/<vendor>?code=…&state=…`
-        // Forwarded to the HardwareCapabilitiesView observer so the
-        // form can call `capabilities.exchangeOAuthCode` immediately.
-        if VendorOAuthCallback.handle(url: url) { return }
-
         guard url.scheme == "eusotrip",
               url.host == "reset",
               let token = URLComponents(url: url, resolvingAgainstBaseURL: false)?
@@ -464,6 +459,29 @@ extension Notification.Name {
     /// COMPANY room (auto-joined). My Bids / My Loads / Home should
     /// re-poll, and the toast layer should celebrate the win.
     static let eusoBidAwarded = Notification.Name("eusoBidAwarded")
+
+    /// Fired by `RealtimeService` when the backend fans out a dispatch
+    /// board mutation — `dispatch:board_update` on the `role:dispatch`
+    /// Socket.IO room (`server/services/socketService.ts:822-825`,
+    /// wire constant `shared/websocket-events.ts:205`). Every
+    /// `emitDispatchEvent(...)` call whose `eventType` is not exactly
+    /// `dispatch:assignment` bridges through that emitter
+    /// (`server/_core/websocket.ts:906-907`), so this is the single
+    /// "something on the board moved" signal: quick-create, bulk
+    /// assign, autopilot, reassignment, tender flips, check-call
+    /// sweeps, allocation + settlement batching.
+    ///
+    /// `userInfo` carries the backend `DispatchEventPayload` verbatim
+    /// (`socketService.ts:795-804`): `loadId` (String), `loadNumber`
+    /// (String?), `driverId` (Int?), `vehicleId` (String?),
+    /// `eventType` (String), `priority` ("normal" | "high" |
+    /// "urgent"), `message` (String), `timestamp` (ISO-8601 String).
+    ///
+    /// Dispatcher board / queue / roster surfaces observe this and
+    /// re-run their loader. `RealtimeService` coalesces bursts on a
+    /// trailing edge before posting, so an autopilot run that assigns
+    /// N loads wakes each board once rather than N times.
+    static let eusoDispatchBoardUpdated = Notification.Name("eusoDispatchBoardUpdated")
 }
 
 // MARK: - Tap-outside-to-dismiss keyboard bridge

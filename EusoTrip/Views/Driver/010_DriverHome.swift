@@ -2673,27 +2673,27 @@ struct HosTrackerWidget: View {
                 Image(systemName: "clock.fill")
                     .font(.system(size: 11, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
-                Text("HOS · LIVE")
+                Text(hos.status?.hasCurrentObservation() == true ? "HOS · LIVE" : "HOS · UNAVAILABLE")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(LinearGradient.diagonal)
                 Spacer(minLength: 0)
-                if let s = hos.status {
-                    Text(s.canDrive ? "CAN DRIVE" : "BREAK DUE")
+                if let s = hos.status, s.hasCurrentObservation(), let canDrive = s.canDrive {
+                    Text(canDrive ? "CAN DRIVE" : "NOT ELIGIBLE")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(s.canDrive ? Color.green.opacity(0.85) : Brand.danger)
+                        .background(canDrive ? Color.green.opacity(0.85) : Brand.danger)
                         .clipShape(Capsule())
                 }
             }
-            if let s = hos.status {
+            if let s = hos.status, s.hasCurrentObservation() {
                 HStack(spacing: Space.s2) {
                     HosTile(value: s.drivingRemainingDisplay, label: "DRIVE")
                     HosTile(value: s.onDutyRemainingDisplay, label: "ON-DUTY")
                     HosTile(value: s.cycleRemainingDisplay, label: "CYCLE")
                 }
             } else {
-                Text("Loading HOS…")
+                Text(hos.lastRefreshError ?? "Current HOS evidence is unavailable.")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -3132,9 +3132,9 @@ struct FuelEconomyWidget: View {
 //
 // Driver's assigned-truck glance card. Reads `vehicle.getAssigned` for
 // unit number, year/make/model, fuel level, odometer, and status.
-// Odometer + fuelLevel are 0 until the telematics ELD integration ships
-// (vehicle.ts:138) — the view surfaces a disclosure row when both are
-// zero rather than printing "0 mi / 0%". No fake data.
+// Odometer + fuelLevel remain nil until a telematics source reports them.
+// A real zero is still an observation and must render as such; only absence
+// produces the unavailable disclosure. No fake data.
 
 struct VehicleHealthWidget: View {
     @Environment(\.palette) private var palette
@@ -3191,19 +3191,19 @@ struct VehicleHealthWidget: View {
                 Text("Unit \(v.unitNumber)  ·  \(v.licensePlate)")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
-                if v.fuelLevel > 0 || v.odometer > 0 {
+                if v.fuelLevel != nil || v.odometer != nil {
                     HStack(spacing: 12) {
-                        if v.fuelLevel > 0 {
-                            Label(String(format: "%.0f%% fuel", v.fuelLevel * 100), systemImage: "fuelpump.fill")
+                        if let fuelLevel = v.fuelLevel {
+                            Label(String(format: "%.0f%% fuel", fuelLevel * 100), systemImage: "fuelpump.fill")
                         }
-                        if v.odometer > 0 {
-                            Label("\(v.odometer.formatted()) mi", systemImage: "gauge.with.dots.needle.33percent")
+                        if let odometer = v.odometer {
+                            Label("\(odometer.formatted()) mi", systemImage: "gauge.with.dots.needle.33percent")
                         }
                     }
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(palette.textSecondary)
                 } else {
-                    Text("Telematics pending, ELD sync not yet active.")
+                    Text("Fuel and odometer telemetry are unavailable.")
                         .font(EType.caption)
                         .foregroundStyle(palette.textTertiary)
                         .padding(.top, 2)

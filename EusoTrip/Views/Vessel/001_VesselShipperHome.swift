@@ -124,6 +124,25 @@ private struct VesselISFRow: Decodable {
     let filed: Bool?
 }
 
+// MARK: - Loads ready to book (L03-15)
+//
+// loads.list (role-scoped to this shipper) surfaces the shipper's loads. A
+// vessel/barge load that has no vesselShipmentId is not yet in the booking
+// lifecycle; vesselShipments.promoteLoadToBooking mints its real booking and
+// back-links it. Decoded leniently; the queue is empty (section hidden) when
+// there is nothing to promote — no fabricated row.
+private struct PromotablePlace001: Decodable { let city: String?; let state: String? }
+private struct PromotableLoad001: Decodable, Identifiable {
+    let id: String
+    let loadNumber: String?
+    let transportMode: String?
+    let vesselShipmentId: Int?
+    let commodity: String?
+    let origin: PromotablePlace001?
+    let destination: PromotablePlace001?
+    let rate: Double?
+}
+
 // MARK: - Body
 
 private struct VesselShipperHomeBody: View {
@@ -133,6 +152,9 @@ private struct VesselShipperHomeBody: View {
     @State private var dash: VesselShipperDash? = nil
     @State private var bookings: [VesselBooking] = []
     @State private var attention: [VesselAttentionItem] = []
+    /// Shipper's vessel/barge loads not yet promoted to a booking (L03-15).
+    @State private var promotable: [PromotableLoad001] = []
+    @State private var promotingId: String? = nil
     @State private var loading = true
     @State private var loadError: String? = nil
     @State private var showCreateBooking = false
@@ -172,6 +194,7 @@ private struct VesselShipperHomeBody: View {
                         attentionCard
                         ctaRow
                         statStrip
+                        promotableSection
                         activeBookingsSection
                         esangCard
                     }
@@ -437,6 +460,89 @@ private struct VesselShipperHomeBody: View {
         return String(format: "$%.0fK", s / 1_000)
     }
 
+    // MARK: - Loads ready to book (L03-15 · promoteLoadToBooking)
+
+    @ViewBuilder
+    private var promotableSection: some View {
+        if !promotable.isEmpty {
+            VStack(alignment: .leading, spacing: Space.s3) {
+                HStack {
+                    Text("READY TO BOOK")
+                        .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                        .foregroundStyle(palette.textTertiary)
+                    Spacer()
+                    Text("\(promotable.count)")
+                        .font(EType.caption).foregroundStyle(palette.textSecondary)
+                }
+
+                VStack(spacing: 0) {
+                    ForEach(Array(promotable.enumerated()), id: \.element.id) { idx, load in
+                        if idx > 0 {
+                            Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
+                                .padding(.horizontal, Space.s4)
+                        }
+                        promotableRow(load)
+                    }
+                }
+                .background(palette.bgCardSoft)
+                .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                    .strokeBorder(palette.borderFaint))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+            }
+        }
+    }
+
+    private func promotableRow(_ load: PromotableLoad001) -> some View {
+        let inFlight = promotingId == load.id
+        return HStack(alignment: .top, spacing: Space.s3) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Brand.info.opacity(0.18)).frame(width: 40, height: 40)
+                Image(systemName: (load.transportMode ?? "").lowercased() == "barge" ? "ferry" : "shippingbox.fill")
+                    .font(.system(size: 16, weight: .semibold)).foregroundStyle(Brand.info)
+            }
+            VStack(alignment: .leading, spacing: 5) {
+                Text(promotableRoute(load))
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(1).minimumScaleFactor(0.8)
+                Text(promotableMeta(load))
+                    .font(EType.mono(.caption)).tracking(0.4)
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1).minimumScaleFactor(0.8)
+            }
+            Spacer(minLength: 8)
+            Button {
+                Task { await promote(load) }
+            } label: {
+                Text(inFlight ? "Booking…" : "Promote to booking")
+                    .font(.system(size: 11, weight: .bold)).tracking(0.3)
+                    .foregroundStyle(inFlight ? palette.textTertiary : .white)
+                    .padding(.horizontal, 12).frame(height: 32)
+                    .background(Capsule().fill(inFlight ? AnyShapeStyle(palette.bgCardSoft) : AnyShapeStyle(LinearGradient.primary)))
+            }
+            .buttonStyle(.plain)
+            .disabled(inFlight)
+        }
+        .padding(Space.s4)
+    }
+
+    private func promotableRoute(_ load: PromotableLoad001) -> String {
+        let o = [load.origin?.city, load.origin?.state].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
+        let d = [load.destination?.city, load.destination?.state].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
+        if o.isEmpty && d.isEmpty { return load.loadNumber ?? "Load \(load.id)" }
+        return "\(o.isEmpty ? "—" : o) → \(d.isEmpty ? "—" : d)"
+    }
+
+    private func promotableMeta(_ load: PromotableLoad001) -> String {
+        var parts: [String] = []
+        if let n = load.loadNumber { parts.append(n) }
+        if let m = load.transportMode { parts.append(m) }
+        if let c = load.commodity { parts.append(c) }
+        if let r = load.rate, r > 0 { parts.append(amountStr(r)) }
+        return parts.isEmpty ? "Not yet booked" : parts.joined(separator: " · ")
+    }
+
     // MARK: - Active bookings  (SVG y=518: eyebrow + "See all (n)" + list card)
 
     @ViewBuilder
@@ -698,7 +804,42 @@ private struct VesselShipperHomeBody: View {
         } catch {
             loadError = error.eusoUserCopy
         }
+        // L03-15 (non-fatal): the shipper's vessel/barge loads not yet promoted.
+        await loadPromotable()
         loading = false
+    }
+
+    /// loads.list (role-scoped) → the shipper's vessel/barge loads that carry no
+    /// vesselShipmentId yet. Non-fatal: a failure just hides the queue.
+    private func loadPromotable() async {
+        struct ListIn: Encodable { let limit: Int; let offset: Int }
+        guard let rows: [PromotableLoad001] = try? await EusoTripAPI.shared.query(
+            "loads.list", input: ListIn(limit: 50, offset: 0)) else {
+            promotable = []; return
+        }
+        promotable = rows.filter { row in
+            let mode = (row.transportMode ?? "").lowercased()
+            return (mode == "vessel" || mode == "barge") && row.vesselShipmentId == nil
+        }
+    }
+
+    /// vesselShipments.promoteLoadToBooking — mints the real vessel_shipments
+    /// booking for a vessel/barge load and back-links it. On success the load
+    /// leaves the queue and its booking appears under ACTIVE BOOKINGS.
+    private func promote(_ row: PromotableLoad001) async {
+        promotingId = row.id
+        struct PromoteIn: Encodable { let loadId: Int }
+        struct PromoteOut: Decodable { let alreadyPromoted: Bool?; let vesselShipmentId: Int?; let bookingNumber: String? }
+        do {
+            let _: PromoteOut = try await EusoTripAPI.shared.mutation(
+                "vesselShipments.promoteLoadToBooking",
+                input: PromoteIn(loadId: Int(row.id) ?? 0))
+            await load()
+        } catch {
+            actionError = "Couldn't promote \(row.loadNumber ?? "load \(row.id)") to a booking. "
+                + ((error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription)
+        }
+        promotingId = nil
     }
 
     /// Derive the "needs attention" queue client-side from the demurrage +

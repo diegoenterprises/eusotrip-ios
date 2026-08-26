@@ -552,7 +552,8 @@ final class WatchCommandHandler: NSObject, ObservableObject {
         // then poke HOSClockService so the canonical backend view
         // re-mirrors onto the wrist within ~1s.
         let raw = (message["status"] as? String) ?? ""
-        let location = (message["location"] as? String) ?? "watch"
+        let location = (message["location"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         let duty: HOSDutyCode? = {
             switch raw.lowercased() {
             case "off", "off_duty":       return .offDuty
@@ -563,6 +564,12 @@ final class WatchCommandHandler: NSObject, ObservableObject {
             }
         }()
         if let duty {
+            guard let location, !location.isEmpty else {
+                return [
+                    "ok": false,
+                    "reason": "A current location is required before changing duty status."
+                ]
+            }
             do {
                 _ = try await api.hos.changeStatus(
                     status: duty,
@@ -608,10 +615,13 @@ final class WatchCommandHandler: NSObject, ObservableObject {
             "title": "Wrist SOS — EusoTrip Pulse",
             "description": "Driver-initiated SOS relayed by the paired iPhone. Reason: \(reason).\(silent ? " Duress mode — silent escalation." : "")",
         ]
-        if let lat, let lon {
-            payload["latitude"] = lat
-            payload["longitude"] = lon
-            payload["location"] = String(format: "%.5f, %.5f", lat, lon)
+        if let coordinate = LatLongParser.validatedCoordinate(
+            latitude: lat,
+            longitude: lon
+        ) {
+            payload["latitude"] = coordinate.latitude
+            payload["longitude"] = coordinate.longitude
+            payload["location"] = LatLongParser.displayString(coordinate)
         }
         let body: [String: Any] = ["json": payload]
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
