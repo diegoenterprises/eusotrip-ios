@@ -1090,27 +1090,40 @@ private struct RailDispatcherGatewayMapBody: View {
     private var triCountryBand: some View {
         HStack(spacing: Space.s2) {
             ForEach(Regime713.allCases, id: \.self) { r in
-                Button { regime = r; Task { await load() } } label: {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(r.top).font(.system(size: 8, weight: .heavy)).kerning(0.3)
-                        Text(r.bottom).font(.system(size: 9, weight: .heavy))
-                    }
-                    .foregroundStyle(r == regime ? Brand.info : palette.textSecondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    // 44pt touch floor — this tile was 30pt.
-                    .padding(.horizontal, 10).frame(height: 44)
-                    .background(r == regime ? Brand.blue.opacity(0.12) : palette.bgCardSoft)
-                    .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .strokeBorder(r == regime ? Color.clear : palette.borderSoft))
-                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(spoken713(r.top) + ". " + spoken713(r.bottom) + ".")
-                .accessibilityValue(r == regime ? "Selected" : "Not selected")
-                .accessibilityHint("Re-reads the gateway network scoped to \(r.rawValue)")
-                .accessibilityAddTraits(.isButton)
+                regimeButton(r)
             }
         }
+    }
+
+    private func regimeButton(_ target: Regime713) -> some View {
+        let selected = target == regime
+        return Button {
+            regime = target
+            Task { await load() }
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(target.top)
+                    .font(.system(size: 8, weight: .heavy))
+                    .kerning(0.3)
+                Text(target.bottom)
+                    .font(.system(size: 9, weight: .heavy))
+            }
+            .foregroundStyle(selected ? Brand.info : palette.textSecondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 10)
+            .frame(height: 44)
+            .background(selected ? Brand.blue.opacity(0.12) : palette.bgCardSoft)
+            .overlay {
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .strokeBorder(selected ? Color.clear : palette.borderSoft)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(spoken713(target.top) + ". " + spoken713(target.bottom) + ".")
+        .accessibilityValue(selected ? "Selected" : "Not selected")
+        .accessibilityHint("Re-reads the gateway network scoped to \(target.rawValue)")
+        .accessibilityAddTraits(.isButton)
     }
 
     private var onlineOnlyNote: some View {

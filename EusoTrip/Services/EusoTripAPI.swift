@@ -2166,7 +2166,7 @@ final class EusoTripAPI: ObservableObject {
         let serverError = (try? decoder.decode(PlainAPIErrorEnvelope.self, from: data))?.error
 
         if http.statusCode == 401 {
-            if allowRefreshRetry, await refreshSessionOnce() {
+            if allowRefreshRetry, try await refreshSessionOnce() {
                 return try await performPlainJSON(reissue(request), allowRefreshRetry: false)
             }
             throw EusoTripAPIError.unauthenticated

@@ -1466,6 +1466,7 @@ struct ShipperHome: View {
 //   .half    → two tiles share a row (w = 6 on the 12-col model)
 //   .full    → one tile per row       (w = 12)
 
+#if false // Retained only as migration history; HomeWidgetGrid is the sole runtime authority.
 @available(*, unavailable, message: "Use HomeWidgetGrid as the single layout authority")
 private struct RetiredShipperWidgetBoard: View {
     /// A widget slot + the spans the user may resize it to. `.full` is
@@ -1899,6 +1900,7 @@ private struct CornerGrabberShape: Shape {
         return p
     }
 }
+#endif
 
 // MARK: - Notification names (canonical CTA hooks for the Shipper Home)
 
