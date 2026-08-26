@@ -58,10 +58,9 @@ struct CarrierHome: View {
     @StateObject private var active    = CarrierActiveLoadsStore()
     @StateObject private var recent    = CarrierRecentLoadsStore()
 
-    // Founder ask 2026-05-07: weather pinned top + attention collapsible.
+    // Founder ask 2026-05-07: weather pinned top.
     @State private var weather: WeatherSnapshot? = nil
     @State private var weatherNeedsLocation: Bool = false
-    @State private var attentionExpanded: Bool = (UserDefaults.standard.object(forKey: "carrier.home.attentionExpanded") as? Bool) ?? true
 
     // ── Home-widget customization — uses shared HomeWidgetGrid. ──
     private let widgetLayoutKey = "carrier.home.widgetOrder"
@@ -85,12 +84,9 @@ struct CarrierHome: View {
             // per cold launch; settled on re-visit. Reduce-Motion → fade.
             StaggeredEntranceStack(alignment: .leading, spacing: Space.s4) {
                 header
-                weatherSection
-                kpiStrip
-                collapsibleAttentionStrip
                 HomeWidgetGrid(
                     canonicalOrder: carrierCanonicalOrder,
-                    role: "CARRIER",
+                    role: "CATALYST",
                     storageKey: widgetLayoutKey,
                     render: { id in carrierHomeRender(id) }
                 )
@@ -174,49 +170,6 @@ struct CarrierHome: View {
             .eusoCard(radius: Radius.lg)
         }
         .buttonStyle(.plain)
-    }
-
-    @ViewBuilder
-    private var collapsibleAttentionStrip: some View {
-        if case .loaded(let rows) = alerts.state, !rows.isEmpty {
-            VStack(alignment: .leading, spacing: 0) {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.22)) {
-                        attentionExpanded.toggle()
-                    }
-                    UserDefaults.standard.set(attentionExpanded, forKey: "carrier.home.attentionExpanded")
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(LinearGradient.diagonal)
-                        Text("NEEDS YOUR ATTENTION")
-                            .font(.system(size: 9, weight: .heavy)).tracking(0.8)
-                            .foregroundStyle(palette.textPrimary)
-                        Text("\(rows.count)")
-                            .font(.system(size: 9, weight: .heavy, design: .monospaced))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 5).padding(.vertical, 2)
-                            .background(Capsule().fill(LinearGradient.diagonal))
-                        Spacer(minLength: 0)
-                        Image(systemName: attentionExpanded ? "chevron.up" : "chevron.down")
-                            .font(.system(size: 11, weight: .heavy))
-                            .foregroundStyle(palette.textTertiary)
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                if attentionExpanded {
-                    attentionStrip
-                        .transition(.asymmetric(
-                            insertion: .opacity.combined(with: .move(edge: .top)),
-                            removal: .opacity
-                        ))
-                }
-            }
-        } else {
-            attentionStrip
-        }
     }
 
     // MARK: - Header
@@ -303,61 +256,6 @@ struct CarrierHome: View {
         return "Loading dispatch fabric…"
     }
 
-    // MARK: - KPI strip
-
-    @ViewBuilder
-    private var kpiStrip: some View {
-        switch dashboard.state {
-        case .loading:
-            kpiSkeleton
-        case .loaded(let maybe):
-            if let s = maybe {
-                kpiGrid(s)
-            } else {
-                EusoEmptyState(
-                    systemImage: "chart.bar",
-                    title: "No KPIs yet",
-                    subtitle: "Accept your first offer and the dashboard will populate the moment a driver gets dispatched."
-                )
-            }
-        case .empty:
-            EusoEmptyState(
-                systemImage: "chart.bar",
-                title: "No KPIs yet",
-                subtitle: "Accept your first offer and the dashboard will populate the moment a driver gets dispatched."
-            )
-        case .error(let e):
-            inlineError(e) { Task { await dashboard.refresh() } }
-        }
-    }
-
-    private var kpiSkeleton: some View {
-        LazyVGrid(columns: [GridItem(.flexible(), spacing: Space.s2),
-                            GridItem(.flexible(), spacing: Space.s2)],
-                  spacing: Space.s2) {
-            ForEach(0..<4, id: \.self) { _ in
-                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                    .fill(palette.bgCardSoft)
-                    .frame(height: 72)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                            .strokeBorder(palette.borderFaint)
-                    )
-            }
-        }
-    }
-
-    private func kpiGrid(_ s: CarrierAPI.DashboardStats) -> some View {
-        LazyVGrid(columns: [GridItem(.flexible(), spacing: Space.s2),
-                            GridItem(.flexible(), spacing: Space.s2)],
-                  spacing: Space.s2) {
-            kpiTile(label: "ACTIVE LOADS",   value: "\(s.activeLoads)",       sub: "in flight now")
-            kpiTile(label: "OPEN OFFERS",    value: "\(s.openOffers)",        sub: "awaiting accept")
-            kpiTile(label: "DELIVERED · 7D", value: "\(s.deliveredThisWeek)", sub: "completed this week")
-            kpiTile(label: "REVENUE · 7D",   value: dollars(s.weeklyRevenue), sub: "net this week")
-        }
-    }
-
     private func kpiTile(label: String, value: String, sub: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label)
@@ -384,40 +282,6 @@ struct CarrierHome: View {
         f.maximumFractionDigits = 0
         f.currencyCode = "USD"
         return f.string(from: NSNumber(value: v)) ?? "$\(Int(v))"
-    }
-
-    // MARK: - Attention strip
-
-    @ViewBuilder
-    private var attentionStrip: some View {
-        switch alerts.state {
-        case .loading:
-            EmptyView()
-        case .empty:
-            // Don't render anything — silence is the right empty state
-            // for an alert feed (empty == nothing's wrong).
-            EmptyView()
-        case .loaded(let rows):
-            VStack(alignment: .leading, spacing: Space.s2) {
-                HStack(spacing: 6) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(LinearGradient.diagonal)
-                    Text("NEEDS YOUR ATTENTION")
-                        .font(.system(size: 9, weight: .heavy)).tracking(0.8)
-                        .foregroundStyle(palette.textPrimary)
-                    Spacer()
-                    Text("\(rows.count)")
-                        .font(.system(size: 9, weight: .heavy)).tracking(0.4)
-                        .foregroundStyle(palette.textTertiary)
-                }
-                ForEach(rows) { row in
-                    alertRow(row)
-                }
-            }
-        case .error(let e):
-            inlineError(e) { Task { await alerts.refresh() } }
-        }
     }
 
     private func alertRow(_ row: CarrierAPI.LoadAlert) -> some View {

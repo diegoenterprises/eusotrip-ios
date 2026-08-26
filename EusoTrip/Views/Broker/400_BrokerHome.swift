@@ -87,17 +87,16 @@ struct BrokerHome: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
-                HomeWeatherWidget()
-                kpiStrip
-                attentionStrip
-                laneIntelCTA
-                catalystVettingCTA
                 HomeWidgetGrid(
                     canonicalOrder: brokerCanonicalOrder,
                     role: "BROKER",
                     storageKey: widgetLayoutKey,
                     render: { id in brokerHomeRender(id) }
                 )
+                kpiStrip
+                attentionStrip
+                laneIntelCTA
+                catalystVettingCTA
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14)

@@ -58,6 +58,7 @@
 		A157A4EE31DF3D193DFC8C8A /* 006_PrivacyPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1FC32344EC014D3FAF0ED78 /* 006_PrivacyPolicy.swift */; };
 		A157F689D9AEDCA651044E43 /* 013_ActiveEnroute.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1CF9F9CF4AC5F9B6B739C60 /* 013_ActiveEnroute.swift */; };
 		A15D2066B9DD418D7A98ED9D /* EusoTripAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = A16B82B4BAD14ED9D95C9A26 /* EusoTripAPI.swift */; };
+		EA0825A00000000000000001 /* EusoSessionTokenPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA0825A00000000000000002 /* EusoSessionTokenPolicy.swift */; };
 		A16BC7376B77E8DC7AA73CE6 /* AuthModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1491CB2D389CD10B33FEE22 /* AuthModels.swift */; };
 		A172C53B20BAC24CD40870B0 /* 015_AtGateAwaitingDock.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1FA70836FB725922F39A4E9 /* 015_AtGateAwaitingDock.swift */; };
 		A17EA9A0121947A6C4E1DDE9 /* HOSStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C02F30061DE34AC9D052E1 /* HOSStatus.swift */; };
@@ -696,6 +697,7 @@
 		D2R0900000000000000ABF3 /* 419_ExceptionResponse.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2R0900000000000000ACF3 /* 419_ExceptionResponse.swift */; };
 		D2RATPV0000000000001 /* RatingPromptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RATPV0000000000002 /* RatingPromptView.swift */; };
 		D2RHIN000000000000ABDS /* RoleHomeIntro.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RHIN000000000000ACDS /* RoleHomeIntro.swift */; };
+		HWSY20260825000000000001 /* HomeWidgetSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = HWSY20260825000000000002 /* HomeWidgetSystem.swift */; };
 		D2RIOSBLD110000000000000 /* 1100_IDVLivenessSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RIOSREF110000000000000 /* 1100_IDVLivenessSheet.swift */; };
 		D2RIOSBLD110100000000000 /* 1101_TaxIDValidationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RIOSREF110100000000000 /* 1101_TaxIDValidationSheet.swift */; };
 		D2RIOSBLD110200000000000 /* 1102_OperatingAuthoritySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RIOSREF110200000000000 /* 1102_OperatingAuthoritySheet.swift */; };
@@ -1458,6 +1460,7 @@
 		A14C271DA98CF1117DD59F15 /* 005_TermsOfService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 005_TermsOfService.swift; sourceTree = "<group>"; };
 		A1576D12AB9BE49E47C64A8E /* 018_ActiveEnrouteLoaded.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 018_ActiveEnrouteLoaded.swift; sourceTree = "<group>"; };
 		A16B82B4BAD14ED9D95C9A26 /* EusoTripAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EusoTripAPI.swift; sourceTree = "<group>"; };
+		EA0825A00000000000000002 /* EusoSessionTokenPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EusoSessionTokenPolicy.swift; sourceTree = "<group>"; };
 		A192A329AC526EED829942B1 /* 012_DvirSubmitted.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 012_DvirSubmitted.swift; sourceTree = "<group>"; };
 		A1A11111111111111111API2 /* ShipperAppIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShipperAppIntents.swift; sourceTree = "<group>"; };
 		A1A11111111111111111F005 /* PushService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushService.swift; sourceTree = "<group>"; };
@@ -2058,6 +2061,7 @@
 		D2R0900000000000000ACF3 /* 419_ExceptionResponse.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 419_ExceptionResponse.swift; path = EusoTrip/Views/Shipper/419_ExceptionResponse.swift; sourceTree = SOURCE_ROOT; };
 		D2RATPV0000000000002 /* RatingPromptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RatingPromptView.swift; path = EusoTrip/Views/Components/RatingPromptView.swift; sourceTree = SOURCE_ROOT; };
 		D2RHIN000000000000ACDS /* RoleHomeIntro.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RoleHomeIntro.swift; path = EusoTrip/Views/Components/RoleHomeIntro.swift; sourceTree = SOURCE_ROOT; };
+		HWSY20260825000000000002 /* HomeWidgetSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HomeWidgetSystem.swift; path = EusoTrip/Views/Components/HomeWidgetSystem.swift; sourceTree = SOURCE_ROOT; };
 		D2RIOSREF110000000000000 /* 1100_IDVLivenessSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 1100_IDVLivenessSheet.swift; path = EusoTrip/Views/Compliance/1100_IDVLivenessSheet.swift; sourceTree = SOURCE_ROOT; };
 		D2RIOSREF110100000000000 /* 1101_TaxIDValidationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 1101_TaxIDValidationSheet.swift; path = EusoTrip/Views/Compliance/1101_TaxIDValidationSheet.swift; sourceTree = SOURCE_ROOT; };
 		D2RIOSREF110200000000000 /* 1102_OperatingAuthoritySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 1102_OperatingAuthoritySheet.swift; path = EusoTrip/Views/Compliance/1102_OperatingAuthoritySheet.swift; sourceTree = SOURCE_ROOT; };
@@ -3606,6 +3610,7 @@
 				VWRIT202608140000000002 /* EusoTripAPI+VesselWrites.swift */,
 				A16B82B4BAD14ED9D95C9A26 /* EusoTripAPI.swift */,
 				A13B8109FC394A8921DF752F /* EusoTripSession.swift */,
+				EA0825A00000000000000002 /* EusoSessionTokenPolicy.swift */,
 				FA1F202605200001000600F6 /* FeeMultiplierEngine.swift */,
 				FA1F202605200001000700F7 /* AnimationBindingMap.swift */,
 				FA1F202605200002000100F8 /* ShipperSigningKey.swift */,
@@ -3929,6 +3934,7 @@
 				B1A1F600000000000000AF02 /* PerLoadWeatherCard.swift */,
 				B1A11111111111111111AA0B /* WeatherIcons.swift */,
 				D2RHIN000000000000ACDS /* RoleHomeIntro.swift */,
+				HWSY20260825000000000002 /* HomeWidgetSystem.swift */,
 				SPRK20260521000002 /* SparkBriefCard.swift */,
 				EQPR20260521000002 /* EquipmentRecommenderWidget.swift */,
 				ACSH20260521000002 /* AstraCaptureSheet.swift */,
@@ -4842,6 +4848,7 @@
 				E1D1ED0311111111111111AA /* ELDIntegrationView.swift in Sources */,
 				A15D2066B9DD418D7A98ED9D /* EusoTripAPI.swift in Sources */,
 				A1B1903E9CD06CDB06E71174 /* EusoTripSession.swift in Sources */,
+				EA0825A00000000000000001 /* EusoSessionTokenPolicy.swift in Sources */,
 				A143A81AF94A185B0C5FF8D1 /* DriverHomeViewModel.swift in Sources */,
 				A14CB5B2DAD7FD734291AFDD /* ForgotPasswordViewModel.swift in Sources */,
 				A1C242E22B722C1015AFBEF1 /* LoginViewModel.swift in Sources */,
@@ -5262,6 +5269,7 @@
 				B1A1F600000000000000AF01 /* PerLoadWeatherCard.swift in Sources */,
 				B1A11111111111111111AA0A /* WeatherIcons.swift in Sources */,
 				D2RHIN000000000000ABDS /* RoleHomeIntro.swift in Sources */,
+				HWSY20260825000000000001 /* HomeWidgetSystem.swift in Sources */,
 				SPRK20260521000001 /* SparkBriefCard.swift in Sources */,
 				EQPR20260521000001 /* EquipmentRecommenderWidget.swift in Sources */,
 				ACSH20260521000001 /* AstraCaptureSheet.swift in Sources */,

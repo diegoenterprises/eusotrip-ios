@@ -56,7 +56,6 @@ private struct RailDashboardStats: Decodable {
     let carsRolling: Int?
     let consists: Int?
     let avgTransitDays: Double?
-    let monthlySpend: Double?
 }
 
 private struct RailAttentionAlert: Decodable, Identifiable {
@@ -74,7 +73,6 @@ private struct RailActiveShipment: Decodable, Identifiable {
     let destination: String?
     let meta: String?             // "intermodal · 6 cars · UP"
     let status: String?           // "in_transit" | "interchange" | "spotted"
-    let rate: Double?
     let progress: Double?         // 0…1 along the consist dot strip
     let equipmentKind: String?    // "intermodal" | "tankcar" | "hopper"
     let hazmat: Bool?
@@ -109,6 +107,28 @@ private struct RailShipperHome: View {
     @State private var demurrage: RailDemurrageTip? = nil
     @State private var demurrageError: String? = nil
 
+    private let widgetLayoutKey = "railShipper.home.widgetOrder"
+    private let railCanonicalOrder = [
+        "rail_eusocard", "rail_actions", "rail_attention", "rail_eta_watch",
+        "rail_shipments", "rail_demurrage"
+    ]
+
+    private func railHomeRender(_ id: String) -> AnyView {
+        switch id {
+        case "rail_eusocard":
+            AnyView(EusoCardIssuePanel(
+                title: "EusoCard",
+                subtitle: "Rail shipper spend card for demurrage, accessorials and claims"
+            ))
+        case "rail_actions": AnyView(ctaRow)
+        case "rail_attention": AnyView(attentionCard)
+        case "rail_eta_watch": AnyView(statStrip)
+        case "rail_shipments": AnyView(activeShipmentsSection)
+        case "rail_demurrage": AnyView(esangStrip)
+        default: AnyView(EmptyView())
+        }
+    }
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 0) {
@@ -116,20 +136,14 @@ private struct RailShipperHome: View {
                 IridescentHairline()
                     .padding(.horizontal, Space.s5)
                     .padding(.top, Space.s4)
-                // First-load unlock cascade: each top-level section springs
-                // in top-to-bottom (scale 0.92 + blur 5pt + 50 ms stagger)
-	                // once per cold launch; settled on re-visit.
-	                StaggeredEntranceStack(alignment: .leading, spacing: Space.s5) {
-	                    HomeWeatherWidget()
-	                    EusoCardIssuePanel(
-	                        title: "EusoCard",
-	                        subtitle: "Rail shipper spend card for demurrage, accessorials and claims"
-	                    )
-	                    attentionCard
-                    ctaRow
-                    statStrip
-                    activeShipmentsSection
-                    esangStrip
+                StaggeredEntranceStack(alignment: .leading, spacing: Space.s5) {
+                    HomeWidgetGrid(
+                        canonicalOrder: railCanonicalOrder,
+                        role: "RAIL_SHIPPER",
+                        storageKey: widgetLayoutKey,
+                        weather: { AnyView(HomeWeatherWidget()) },
+                        render: { id in railHomeRender(id) }
+                    )
                     Color.clear.frame(height: 96) // bottom-nav clearance
                 }
                 .padding(.horizontal, Space.s5)
@@ -366,7 +380,7 @@ private struct RailShipperHome: View {
         var lines = [
             activeLine,
             rollingLine,
-            "Transit \(transitLabel) · spend \(spendLabel)"
+            "Transit \(transitLabel) · consists \(stats?.consists.map(String.init) ?? "not reported")"
         ]
         if let tip = demurrage {
             lines.append("\(tip.headline ?? "Demurrage watch") · \(tip.action ?? "review release timing")")
@@ -380,7 +394,7 @@ private struct RailShipperHome: View {
         }
     }
 
-    // MARK: - 4-stat strip (Active · Cars rolling · Avg transit · Mo. spend)
+    // MARK: - Movement-only summary
 
     @ViewBuilder
     private var statStrip: some View {
@@ -400,8 +414,8 @@ private struct RailShipperHome: View {
                          trail: stats?.avgTransitDays == nil ? "not reported" : "live average",
                          trailColor: palette.textSecondary,
                          gradientNumeral: true, valueSize: 22)
-                statTile(label: "Mo. spend", value: spendLabel,
-                         trail: stats?.monthlySpend == nil ? "not reported" : "live booked spend",
+                statTile(label: "Consists", value: stats?.consists.map(String.init) ?? "—",
+                         trail: stats?.consists == nil ? "not reported" : "current shipper scope",
                          trailColor: palette.textSecondary,
                          gradientNumeral: true, valueSize: 22)
             }
@@ -412,12 +426,6 @@ private struct RailShipperHome: View {
         guard let d = stats?.avgTransitDays else { return "—" }
         return String(format: "%.1fd", d)
     }
-    private var spendLabel: String {
-        guard let v = stats?.monthlySpend else { return "—" }
-        if v >= 1000 { return "$\(Int((v / 1000).rounded()))K" }
-        return "$\(Int(v))"
-    }
-
     private func statTile(label: String, value: String,
                           trail: String, trailColor: Color,
                           gradientNumeral: Bool = false,
@@ -521,16 +529,9 @@ private struct RailShipperHome: View {
                 }
             }
             Spacer(minLength: Space.s2)
-            VStack(alignment: .trailing, spacing: 4) {
-                Text(statusText)
-                    .font(.system(size: 11, weight: .bold)).tracking(0.6)
-                    .foregroundStyle(statusColor)
-                if let rate = s.rate {
-                    Text(dollars(rate))
-                        .font(.system(size: 14, weight: .bold)).monospacedDigit()
-                        .foregroundStyle(palette.textPrimary)
-                }
-            }
+            Text(statusText)
+                .font(.system(size: 11, weight: .bold)).tracking(0.6)
+                .foregroundStyle(statusColor)
         }
         .padding(.horizontal, Space.s4)
         .padding(.vertical, 14)

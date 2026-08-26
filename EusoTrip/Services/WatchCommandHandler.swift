@@ -626,10 +626,7 @@ final class WatchCommandHandler: NSObject, ObservableObject {
         let body: [String: Any] = ["json": payload]
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
         do {
-            let (data, response) = try await URLSession.shared.data(for: req)
-            if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-                print("[WatchCommandHandler] SOS declareEmergency HTTP \(http.statusCode): \(String(data: data, encoding: .utf8) ?? "")")
-            }
+            _ = try await api.authenticatedRawRequest(req)
         } catch {
             print("[WatchCommandHandler] SOS declareEmergency failed: \(error.localizedDescription)")
         }
