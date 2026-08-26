@@ -112,13 +112,6 @@ struct ShipperHome: View {
     // Per home-widget doctrine the weather card sits between the
     // attention card and the CTA row across every role.
     @State private var weather: WeatherSnapshot? = nil
-    /// Collapsible state for the attention card. Founder ask
-    /// 2026-05-07: 'loads requiring attention on home screen needs
-    /// to be hideable. not just stretched out no matter what. let
-    /// it be collapsable in a graceful manner.' Default expanded so
-    /// the user sees the urgent context on first paint; persisted
-    /// via UserDefaults so the user's choice carries across sessions.
-    @State private var attentionExpanded: Bool = (UserDefaults.standard.object(forKey: "shipper.home.attentionExpanded") as? Bool) ?? true
     /// Mirrors `DriverHomeViewModel.WeatherAvailability` — same four
     /// states (.pending / .live / .needsLocation / .unavailable) so
     /// the shipper home renders the same enable-location CTA the
@@ -132,30 +125,14 @@ struct ShipperHome: View {
     @State private var avatarImage: UIImage? = nil
 
     // ── Home-widget customization ─────────────────────────────────────
-    // Founder bug 2026-06-02 — "there is no resizing the widget capability
-    // you said you did on homescreen". The shared HomeWidgetGrid DOES carry
-    // a span/resize engine, but the shipper catalog rows
-    // (HomeWidgetCatalog.shipper, owned by 010_DriverHome) all declare a
-    // single `[.full]` span, so its edit-mode size picker never appeared on
-    // the shipper home. Rather than reach into another file's catalog, the
-    // shipper home now owns a bespoke `ShipperWidgetBoard` that surfaces a
-    // real per-widget size chooser (Compact · Half · Full) on EVERY tile and
-    // honors the chosen span in the rendered layout — while persisting to
-    // the *same* UserDefaults cache key + the *same* `users.{get,save}
-    // DashboardLayout` slot shape the shared grid uses, so the size survives
-    // relaunch and stays cross-platform with web's 12-col w/h model.
+    // The shared grid is the cross-role layout authority. It owns resize,
+    // reorder, remove/re-add, reset, server sync, and the offline cache while
+    // this screen supplies Shipper-specific content for each slot.
     private let widgetLayoutKey = "shipper.home.widgetOrder"
 
-    /// Canonical secondary widgets + the spans each may resize to. Every
-    /// shipper tile is span-aware (reads `\.homeWidgetSpan`), so all three
-    /// sizes are offered. `.full` is always the seed.
-    private let shipperWidgetSlots: [ShipperWidgetBoard.Slot] = [
-        .init(id: "activeLoads",      sizes: [.full, .compact]),
-        .init(id: "esang",            sizes: [.full, .half, .compact]),
-        .init(id: "spend_summary",    sizes: [.full, .compact]),
-        .init(id: "attention_alerts", sizes: [.full, .compact]),
-        .init(id: "recent",           sizes: [.full, .compact]),
-        .init(id: "news",             sizes: [.full, .half]),
+    private let shipperHomeCanonicalOrder: [String] = [
+        "weather", "shipper_actions", "shipper_summary", "activeLoads",
+        "esang", "spend_summary", "attention_alerts", "recent", "news",
     ]
 
     /// Per-tile renderer. The span arrives as an EXPLICIT parameter from
@@ -168,6 +145,9 @@ struct ShipperHome: View {
     /// down the call chain makes every size tier actually re-layout.
     private func shipperHomeRender(_ id: String, _ span: HomeWidgetSpan) -> AnyView {
         switch id {
+        case "weather":           AnyView(weatherSection)
+        case "shipper_actions":   AnyView(shipperActionsWidget(span))
+        case "shipper_summary":   AnyView(statRow)
         case "activeLoads":       AnyView(activeLoadsSection(span))
         case "esang":             AnyView(esangStrip(span))
         case "spend_summary":     AnyView(spendSummaryWidget(span))
@@ -188,28 +168,12 @@ struct ShipperHome: View {
                 // into place top-to-bottom (scale 0.92 + blur 5pt + 50 ms
                 // stagger) once per cold launch; settled on re-visit.
                 StaggeredEntranceStack(alignment: .leading, spacing: Space.s5) {
-                    // Founder ask 2026-05-07: weather widget pinned
-                    // to the top of every role's home, everything
-                    // else after.
-                    weatherSection
-                    // ESANG day-part Brief (Spark) — Tier 1 #21 ship
-                    // 2026-05-21. The card adapts its label to the time
-                    // of day (Morning/Afternoon/Evening). Per home-widget
-                    // doctrine sits between weather and the role-specific
-                    // attention card.
-                    SparkBriefCard(role: .shipper)
-                    collapsibleAttentionCard
-                    ctaRow
-                    statRow
-                    // Reorderable + RESIZABLE secondary-widget zone. The
-                    // bespoke ShipperWidgetBoard surfaces a per-widget size
-                    // chooser on every tile and packs the chosen spans into
-                    // the single-column home, persisting across launches.
-                    ShipperWidgetBoard(
-                        slots: shipperWidgetSlots,
+                    HomeWidgetGrid(
+                        canonicalOrder: shipperHomeCanonicalOrder,
                         role: "SHIPPER",
                         storageKey: widgetLayoutKey,
-                        render: { id, span in shipperHomeRender(id, span) }
+                        weather: { AnyView(weatherSection) },
+                        renderWithSpan: { id, span in shipperHomeRender(id, span) }
                     )
                     Color.clear.frame(height: 96) // bottom-nav clearance
                 }
@@ -549,132 +513,65 @@ struct ShipperHome: View {
         .accessibilityHint("Open your account, wallet, network and settings")
     }
 
-    // MARK: - Attention card — gradient-rimmed, danger-washed top
+    // MARK: - Shipper actions widget
 
-    /// Wraps the existing attentionCard with a collapsible chrome —
-    /// header always visible, body slides + fades on toggle. When
-    /// the user collapses it, only the count + chevron remain so
-    /// the home reclaims vertical space.
+    /// The two primary shipper commands stay on Home, but now participate in
+    /// the same move/resize/remove contract as every other role module.
     @ViewBuilder
-    private var collapsibleAttentionCard: some View {
-        if case .loaded(let rows) = alerts.state, !rows.isEmpty {
-            VStack(alignment: .leading, spacing: 0) {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.22)) {
-                        attentionExpanded.toggle()
-                    }
-                    UserDefaults.standard.set(attentionExpanded, forKey: "shipper.home.attentionExpanded")
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 13, weight: .heavy))
-                            .foregroundStyle(LinearGradient.diagonal)
-                        Text("LOADS REQUIRING ATTENTION")
-                            .font(.system(size: 10, weight: .heavy)).tracking(0.8)
-                            .foregroundStyle(palette.textPrimary)
-                        Text("\(rows.count)")
-                            .font(.system(size: 9, weight: .heavy, design: .monospaced))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(Capsule().fill(LinearGradient.diagonal))
-                        Spacer(minLength: 0)
-                        Image(systemName: attentionExpanded ? "chevron.up" : "chevron.down")
-                            .font(.system(size: 11, weight: .heavy))
-                            .foregroundStyle(palette.textTertiary)
-                            .rotationEffect(.degrees(attentionExpanded ? 0 : 0))
-                    }
-                    .padding(.horizontal, Space.s4).padding(.vertical, Space.s3)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                if attentionExpanded {
-                    attentionCard
-                        .transition(.asymmetric(
-                            insertion: .opacity.combined(with: .move(edge: .top)),
-                            removal: .opacity
-                        ))
-                }
-            }
-            .background(palette.bgCard)
-            .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                        .strokeBorder(LinearGradient.diagonal.opacity(0.45), lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
-        } else {
-            // Loading / empty / error states still flow through the
-            // original card so the user gets the same skeleton +
-            // empty + error UX.
-            attentionCard
-        }
-    }
-
-    @ViewBuilder
-    private var attentionCard: some View {
-        switch alerts.state {
-        case .loading:
-            attentionShell { attentionSkeleton }
-        case .loaded(let rows):
-            if rows.isEmpty { EmptyView() }
-            else { attentionShell { attentionRowsList(rows) } }
-        case .empty:
-            EmptyView()  // silence is the right empty for an alert feed
-        case .error(let e):
-            inlineError(e) { Task { await alerts.refresh() } }
-        }
-    }
-
-    @ViewBuilder
-    private func attentionShell<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        // Real alert count from `shippers.getLoadsRequiringAttention`; any
-        // non-loaded state shows 0 rather than an invented figure.
-        let attentionCount: Int = {
-            if case .loaded(let rows) = alerts.state { return rows.count }
-            return 0
-        }()
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: Space.s2) {
-                Image(systemName: "exclamationmark.triangle")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(Brand.danger)
-                Text("Loads requiring attention")
-                    .font(EType.bodyStrong)
+    private func shipperActionsWidget(_ span: HomeWidgetSpan) -> some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(spacing: 6) {
+                Image(systemName: "shippingbox.and.arrow.backward.fill")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("SHIPPER ACTIONS")
+                    .font(EType.micro).tracking(0.8)
                     .foregroundStyle(palette.textPrimary)
-                Spacer()
-                Text("\(attentionCount)")
-                    .font(.system(size: 12, weight: .heavy)).monospacedDigit()
-                    .foregroundStyle(Brand.danger)
-                    .padding(.horizontal, 9).padding(.vertical, 4)
-                    .background(Capsule().fill(palette.tintDanger))
+                Spacer(minLength: 0)
             }
-            .padding(.horizontal, Space.s4)
-            .padding(.vertical, Space.s3)
-            .background(
-                LinearGradient(colors: [Brand.danger.opacity(0.10),
-                                        Brand.warning.opacity(0.10)],
-                               startPoint: .leading, endPoint: .trailing)
-            )
-
-            content()
+            if span == .half {
+                VStack(spacing: Space.s2) {
+                    postLoadAction
+                    browseCarriersAction
+                }
+            } else {
+                HStack(spacing: Space.s2) {
+                    postLoadAction
+                    browseCarriersAction
+                }
+            }
         }
-        .background(palette.bgCard)
-        .clipShape(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
-                .strokeBorder(LinearGradient.diagonal, lineWidth: 1.5)
-        )
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Loads requiring attention, \(attentionCount)")
+        .padding(Space.s3)
+        .eusoCard(radius: Radius.lg)
     }
 
-    @ViewBuilder
-    private func attentionRowsList(_ rows: [ShipperAPI.LoadAlert]) -> some View {
-        ForEach(Array(rows.enumerated()), id: \.element.id) { idx, r in
-            attentionRow(
-                loadId: r.id,
-                meta: "\(r.loadNumber) · \(r.message)",
-                title: r.issue.uppercased()
-            )
-            if idx < rows.count - 1 { Divider().overlay(palette.borderFaint) }
+    private var postLoadAction: some View {
+        CTAButton(title: "Post a load") {
+            NotificationCenter.default.post(name: .eusoShipperLoadCreate, object: nil)
         }
+        .frame(maxWidth: .infinity)
+        .accessibilityLabel("Post a load, primary action")
+    }
+
+    private var browseCarriersAction: some View {
+        Button {
+            NotificationCenter.default.post(name: .eusoShipperBrowseCarriers, object: nil)
+        } label: {
+            Text("Browse carriers")
+                .font(EType.bodyStrong)
+                .foregroundStyle(palette.textPrimary)
+                .frame(maxWidth: .infinity, minHeight: 50)
+                .background(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .fill(palette.bgCard)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.borderSoft, lineWidth: 1)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        }
+        .buttonStyle(.plain)
     }
 
     private func attentionRow(loadId: String, meta: String, title: String) -> some View {

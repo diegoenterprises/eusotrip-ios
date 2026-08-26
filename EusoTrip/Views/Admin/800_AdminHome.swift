@@ -94,10 +94,15 @@ struct AdminHome: View {
 
     // ── Home-widget customization — uses shared HomeWidgetGrid. ──
     private let widgetLayoutKey = "admin.home.widgetOrder"
-    private let adminCanonicalOrder: [String] = ["openTickets", "system_health", "pending_approvals", "recent", "news"]
+    private let adminCanonicalOrder: [String] = [
+        "control_tower", "tenant_registry", "openTickets", "system_health",
+        "pending_approvals", "recent", "news"
+    ]
 
     private func adminHomeRender(_ id: String) -> AnyView {
         switch id {
+        case "control_tower":    AnyView(controlTowerLink)
+        case "tenant_registry":  AnyView(tenantsLink)
         case "openTickets":       AnyView(openTicketsCard)
         case "system_health":     AnyView(systemHealthWidget)
         case "pending_approvals": AnyView(pendingApprovalsWidget)
@@ -121,10 +126,6 @@ struct AdminHome: View {
                     storageKey: widgetLayoutKey,
                     render: { id in adminHomeRender(id) }
                 )
-                kpiStrip
-                controlTowerLink
-                tenantsLink
-                attentionStrip
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, Space.s4)
@@ -324,58 +325,6 @@ struct AdminHome: View {
         return "Loading platform fabric…"
     }
 
-    // MARK: - KPI strip
-
-    @ViewBuilder
-    private var kpiStrip: some View {
-        switch dashboard.state {
-        case .loading:
-            kpiSkeleton
-        case .loaded(let maybe):
-            if let s = maybe {
-                kpiGrid(s)
-            } else {
-                EusoEmptyState(
-                    systemImage: "chart.bar",
-                    title: "No KPIs yet",
-                    subtitle: "Once the first tenant or user signs in, the dashboard will populate with live platform metrics."
-                )
-            }
-        case .empty:
-            EusoEmptyState(
-                systemImage: "chart.bar",
-                title: "No KPIs yet",
-                subtitle: "Once the first tenant or user signs in, the dashboard will populate with live platform metrics."
-            )
-        case .error(let e):
-            inlineError(e) { Task { await dashboard.refresh() } }
-        }
-    }
-
-    private var kpiSkeleton: some View {
-        LazyVGrid(columns: [GridItem(.flexible(), spacing: Space.s2),
-                            GridItem(.flexible(), spacing: Space.s2)],
-                  spacing: Space.s2) {
-            ForEach(0..<4, id: \.self) { _ in
-                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                    .fill(palette.bgCardSoft)
-                    .frame(height: 72)
-                    .eusoCard(radius: Radius.lg)
-            }
-        }
-    }
-
-    private func kpiGrid(_ s: AdminAPI.DashboardStats) -> some View {
-        LazyVGrid(columns: [GridItem(.flexible(), spacing: Space.s2),
-                            GridItem(.flexible(), spacing: Space.s2)],
-                  spacing: Space.s2) {
-            kpiTile(label: "ACTIVE TENANTS",   value: "\(s.activeTenants)",          sub: "30d distinct")
-            kpiTile(label: "ACTIVE USERS · 7D",value: "\(s.activeUsersThisWeek)",    sub: "engaged this week")
-            kpiTile(label: "OPEN TICKETS",     value: "\(s.supportTicketsOpen)",     sub: "unresolved")
-            kpiTile(label: "PENDING APPROVALS",value: "\(s.pendingApprovals)",       sub: "awaiting decision")
-        }
-    }
-
     private func kpiTile(label: String, value: String, sub: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label)
@@ -400,38 +349,6 @@ struct AdminHome: View {
     private func health(_ v: Double) -> String {
         guard v > 0 else { return "-" }
         return "\(Int((v * 100).rounded()))%"
-    }
-
-    // MARK: - Attention strip
-
-    @ViewBuilder
-    private var attentionStrip: some View {
-        switch alerts.state {
-        case .loading:
-            EmptyView()
-        case .empty:
-            EmptyView()
-        case .loaded(let rows):
-            VStack(alignment: .leading, spacing: Space.s2) {
-                HStack(spacing: 6) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(LinearGradient.diagonal)
-                    Text("NEEDS YOUR ATTENTION")
-                        .font(.system(size: 9, weight: .heavy)).tracking(0.8)
-                        .foregroundStyle(palette.textPrimary)
-                    Spacer()
-                    Text("\(rows.count)")
-                        .font(.system(size: 9, weight: .heavy)).tracking(0.4)
-                        .foregroundStyle(palette.textTertiary)
-                }
-                ForEach(rows) { row in
-                    alertRow(row)
-                }
-            }
-        case .error(let e):
-            inlineError(e) { Task { await alerts.refresh() } }
-        }
     }
 
     private func alertRow(_ row: AdminAPI.AdminAlert) -> some View {

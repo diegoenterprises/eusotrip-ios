@@ -120,13 +120,13 @@ struct RoleSurfaceRouter<DriverContent: View>: View {
             // continuation view.
             driverContent()
 
-        case .shipper:
+            case .shipper:
             ShipperSurface(palette: palette)
 
-        case .catalyst:
+            case .catalyst:
             CarrierSurface(palette: palette)
 
-        case .broker:
+            case .broker:
             BrokerSurface(palette: palette)
 
         case .dispatch:
@@ -138,7 +138,7 @@ struct RoleSurfaceRouter<DriverContent: View>: View {
         case .escort:
             EscortSurface(palette: palette)
 
-        case .terminal:
+            case .terminal:
             TerminalSurface(palette: palette)
 
         case .compliance:

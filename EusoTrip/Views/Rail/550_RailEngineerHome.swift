@@ -26,7 +26,6 @@ private struct RailDash: Decodable {
     let activeShipments: Int?
     let carsInTransit: Int?
     let avgTransitDays: Double?
-    let revenue: Double?
 }
 
 private struct RailCompliance550: Decodable {
@@ -69,10 +68,16 @@ private struct RailEngineerHomeBody: View {
     @State private var loadError: String? = nil
 
     private let widgetLayoutKey = "rail.engineer.home.widgetOrder"
-    private let canonicalOrder: [String] = ["shipments_overview", "compliance_status", "crew_hos", "news"]
+    private let canonicalOrder: [String] = [
+        "rail_overview", "asset_availability", "esang", "shipments_overview",
+        "compliance_status", "crew_hos", "news"
+    ]
 
     private func widgetRender(_ id: String) -> AnyView {
         switch id {
+        case "rail_overview":       AnyView(railOverviewWidget)
+        case "asset_availability":  AnyView(ModeAssetAvailabilityLaunchCard(mode: .rail))
+        case "esang":               AnyView(eSangMorningBriefCard())
         case "shipments_overview":  AnyView(shipmentsWidget)
         case "compliance_status":   AnyView(complianceWidget)
         case "crew_hos":            AnyView(crewWidget)
@@ -97,20 +102,6 @@ private struct RailEngineerHomeBody: View {
                         storageKey: widgetLayoutKey,
                         render: { id in widgetRender(id) }
                     )
-                    RoleHomeIntro()
-                    ModeAssetAvailabilityLaunchCard(mode: .rail)
-                    if loading {
-                        LifecycleCard {
-                            Text("Loading rail dashboard…").font(EType.caption).foregroundStyle(palette.textSecondary)
-                        }
-                    } else if let err = loadError {
-                        LifecycleCard(accentDanger: true) {
-                            Text(err).font(EType.caption).foregroundStyle(Brand.danger)
-                        }
-                    } else if let d = dash {
-                        hero(d)
-                        statStrip(d)
-                    }
                     Color.clear.frame(height: 96)
                 }
                 .padding(.horizontal, Space.s5)
@@ -195,6 +186,34 @@ private struct RailEngineerHomeBody: View {
 
     // MARK: - Hero
 
+    @ViewBuilder
+    private var railOverviewWidget: some View {
+        if loading {
+            LifecycleCard {
+                Text("Loading rail operations…")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+            }
+        } else if let loadError {
+            LifecycleCard(accentDanger: true) {
+                Text(loadError)
+                    .font(EType.caption)
+                    .foregroundStyle(Brand.danger)
+            }
+        } else if let dash {
+            VStack(alignment: .leading, spacing: Space.s3) {
+                hero(dash)
+                statStrip(dash)
+            }
+        } else {
+            EusoEmptyState(
+                systemImage: "tram.fill",
+                title: "Rail operations unavailable",
+                subtitle: "Movement evidence will appear when a rail feed is connected."
+            )
+        }
+    }
+
     private func hero(_ d: RailDash) -> some View {
         ZStack(alignment: .topTrailing) {
             VStack(alignment: .leading, spacing: 10) {
@@ -257,15 +276,13 @@ private struct RailEngineerHomeBody: View {
     // MARK: - Stat strip (MetricTile row)
 
     private func statStrip(_ d: RailDash) -> some View {
-        let revStr: String = d.revenue.map { rev in
-            rev >= 1_000_000
-                ? String(format: "$%.1fM", rev / 1_000_000)
-                : String(format: "$%.0fK", rev / 1_000)
-        } ?? "—"
-        return HStack(spacing: Space.s2) {
+        HStack(spacing: Space.s2) {
             MetricTile(label: "SHIPMENTS", value: d.activeShipments.map(String.init) ?? "—", gradientNumeral: true)
             MetricTile(label: "CARS", value: d.carsInTransit.map(String.init) ?? "—")
-            MetricTile(label: "REVENUE",   value: revStr)
+            MetricTile(
+                label: "AVG DAYS",
+                value: d.avgTransitDays.map { String(format: "%.1f", $0) } ?? "—"
+            )
         }
     }
 
@@ -277,6 +294,10 @@ private struct RailEngineerHomeBody: View {
             widgetHeader(icon: "shippingbox.fill", label: "ACTIVE SHIPMENTS", count: dash?.activeShipments)
             if loading {
                 LifecycleCard { Text("Loading…").font(EType.caption).foregroundStyle(palette.textSecondary) }
+            } else if let loadError {
+                LifecycleCard(accentDanger: true) {
+                    Text(loadError).font(EType.caption).foregroundStyle(Brand.danger)
+                }
             } else if let d = dash {
                 HStack(spacing: Space.s2) {
                     LifecycleStatTile(label: "ACTIVE", value: d.activeShipments.map(String.init) ?? "—", icon: "shippingbox")
@@ -306,6 +327,10 @@ private struct RailEngineerHomeBody: View {
                          badge: compliance?.status)
             if loading {
                 LifecycleCard { Text("Loading…").font(EType.caption).foregroundStyle(palette.textSecondary) }
+            } else if let loadError {
+                LifecycleCard(accentDanger: true) {
+                    Text(loadError).font(EType.caption).foregroundStyle(Brand.danger)
+                }
             } else if let c = compliance {
                 HStack(spacing: Space.s2) {
                     LifecycleStatTile(label: "INSPECTIONS", value: (c.totalInspections ?? c.inspections).map(String.init) ?? "—", icon: "doc.text.magnifyingglass")

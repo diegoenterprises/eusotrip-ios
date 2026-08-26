@@ -139,9 +139,8 @@ final class DriverHomeViewModel: ObservableObject {
 
     @Published var phase: Phase = .idle
 
-    /// True when the backend fetch failed and we fell back to on-device demo
-    /// data so the dashboard remains legible. Surface-level banner only — the
-    /// view still renders the full dashboard chrome unchanged.
+    /// True when the backend fetch failed. Server-backed values are cleared;
+    /// no demo payload is substituted.
     @Published var isOffline: Bool = false
 
     /// Active assigned load (summary + full record once hydrated).

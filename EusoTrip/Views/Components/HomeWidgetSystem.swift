@@ -113,7 +113,7 @@ enum HomeWidgetCatalog {
     static let manifests: [String: HomeWidgetManifest] = {
         let entries: [(String, [String])] = [
             ("DRIVER", ["current_route", "next_delivery", "hos_tracker", "earnings_summary", "haul", "compliance"]),
-            ("SHIPPER", ["activeLoads", "esang", "spend_summary", "attention_alerts"]),
+            ("SHIPPER", ["shipper_actions", "shipper_summary", "activeLoads", "esang", "spend_summary", "attention_alerts"]),
             ("CATALYST", ["activeMatches", "gmv_summary", "catalyst_alerts"]),
             ("BROKER", ["openTenders", "margin_summary", "broker_alerts"]),
             ("DISPATCH", ["priority", "tender_queue", "hosWatch", "exceptions_list"]),
@@ -127,11 +127,11 @@ enum HomeWidgetCatalog {
             ("RAIL_SHIPPER", ["rail_shipments", "rail_eta_watch", "rail_demurrage"]),
             ("RAIL_CATALYST", ["rail_yard_operations", "railcar_health", "rail_capacity"]),
             ("RAIL_DISPATCHER", ["rail_consists", "rail_yard_queue", "rail_exceptions"]),
-            ("RAIL_ENGINEER", ["shipments_overview", "compliance_status", "crew_hos"]),
+            ("RAIL_ENGINEER", ["rail_overview", "asset_availability", "shipments_overview", "compliance_status", "crew_hos"]),
             ("RAIL_CONDUCTOR", ["crew_duty", "consist_manifest", "slow_orders"]),
             ("RAIL_BROKER", ["rail_tenders", "rail_rates", "interchange_risk"]),
             ("VESSEL_SHIPPER", ["vessel_bookings", "vessel_eta_watch", "demurrage_watch"]),
-            ("VESSEL_OPERATOR", ["bookings_overview", "compliance_status", "crew_roster"]),
+            ("VESSEL_OPERATOR", ["vessel_overview", "asset_availability", "bookings_overview", "compliance_status", "crew_roster"]),
             ("PORT_MASTER", ["port_lineup", "berth_schedule", "port_exceptions"]),
             ("SHIP_CAPTAIN", ["vessel_position", "crew_rest", "marine_conditions"]),
             ("VESSEL_BROKER", ["vessel_tenders", "booking_pipeline", "port_rates"]),
@@ -161,6 +161,14 @@ enum HomeWidgetCatalog {
         for id in driverExtras { definitions[id] = inferredDefinition(id, role: "DRIVER") }
         let carrierExtras = ["activeLoads", "revenue_summary", "carrier_alerts"]
         for id in carrierExtras { definitions[id] = inferredDefinition(id, role: "CATALYST") }
+        definitions["asset_availability"] = def(
+            "asset_availability",
+            "Asset availability",
+            "Publish and manage mode-native capacity only when readiness evidence is complete",
+            "shippingbox.and.arrow.backward.fill",
+            .operations,
+            ["RAIL_ENGINEER", "VESSEL_OPERATOR"]
+        )
         return definitions
     }()
 
@@ -206,6 +214,8 @@ enum HomeWidgetCatalog {
             "haul": ("The Haul", "Weekly missions, streaks and driver progress", .performance),
             "compliance": ("Compliance countdown", "Driver requirements approaching action dates", .compliance),
             "activeLoads": ("Active loads", "Loads moving through pickup, transit and delivery", .tracking),
+            "shipper_actions": ("Shipper actions", "Post freight or find qualified capacity", .operations),
+            "shipper_summary": ("Shipment summary", "Current load, bid, service and rate evidence", .reporting),
             "esang": ("ESANG brief", "Counsel grounded in the shipper's current work", .planning),
             "spend_summary": ("Freight spend", "Committed freight cost and recent variance", .financial),
             "attention_alerts": ("Shipment attention", "Loads, documents and appointments needing action", .operations),
@@ -247,6 +257,7 @@ enum HomeWidgetCatalog {
             "rail_yard_queue": ("Yard move queue", "Prioritized pulls, spots and switches", .operations),
             "rail_exceptions": ("Rail exceptions", "Interchange, equipment and clearance blockers", .safety),
             "shipments_overview": ("Rail shipments", "Active rail movements", .tracking),
+            "rail_overview": ("Rail operations", "Current cars, movements and transit evidence", .tracking),
             "compliance_status": ("Compliance status", "Documents and operating readiness", .compliance),
             "crew_hos": ("Crew HOS", "Rail crew duty availability", .safety),
             "crew_duty": ("Crew duty board", "Called crews, on-duty windows and relief risk", .safety),
@@ -259,6 +270,7 @@ enum HomeWidgetCatalog {
             "vessel_eta_watch": ("Vessel ETA watch", "Port calls and transshipment connection exposure", .tracking),
             "demurrage_watch": ("Container free time", "Last-free-day and demurrage exposure", .financial),
             "bookings_overview": ("Vessel bookings", "Active ocean bookings", .tracking),
+            "vessel_overview": ("Vessel operations", "Current bookings, containers and voyage evidence", .tracking),
             "crew_roster": ("Crew roster", "Vessel crew readiness", .operations),
             "port_lineup": ("Port lineup", "Expected arrivals, departures and anchorage order", .operations),
             "berth_schedule": ("Berth schedule", "Berth windows, conflicts and turnaround", .planning),
