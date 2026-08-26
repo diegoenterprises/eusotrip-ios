@@ -135,14 +135,9 @@ struct ShipperHome: View {
         "esang", "spend_summary", "attention_alerts", "recent", "news",
     ]
 
-    /// Per-tile renderer. The span arrives as an EXPLICIT parameter from
-    /// ShipperWidgetBoard — NOT via `@Environment(\.homeWidgetSpan)` on
-    /// ShipperHome itself. The previous environment read resolved against
-    /// ShipperHome's OWN environment (always `.full`, since the board's
-    /// `.environment(...)` modifier wraps the rendered tile, not this
-    /// screen), which is why choosing "Compact" in the size picker changed
-    /// nothing on screen — founder evidence 2026-06-11. Passing the span
-    /// down the call chain makes every size tier actually re-layout.
+    /// Per-tile renderer. The shared grid passes the resolved span explicitly,
+    /// so every size tier re-lays out the role-owned content without relying
+    /// on an environment value read above the widget boundary.
     private func shipperHomeRender(_ id: String, _ span: HomeWidgetSpan) -> AnyView {
         switch id {
         case "weather":           AnyView(weatherSection)
@@ -1448,11 +1443,9 @@ struct ShipperHome: View {
         }
     }
 
-    // Reorderable secondary-widget zone is the bespoke ShipperWidgetBoard
-    // (below) — it owns the per-widget RESIZE chooser the founder asked for.
 }
 
-// MARK: - ShipperWidgetBoard — bespoke resizable + reorderable widget zone
+// MARK: - Retired shipper widget board
 //
 // Founder bug 2026-06-02: "there is no resizing the widget capability you
 // said you did on homescreen". The shared HomeWidgetGrid already carries a
@@ -1473,7 +1466,8 @@ struct ShipperHome: View {
 //   .half    → two tiles share a row (w = 6 on the 12-col model)
 //   .full    → one tile per row       (w = 12)
 
-struct ShipperWidgetBoard: View {
+@available(*, unavailable, message: "Use HomeWidgetGrid as the single layout authority")
+private struct RetiredShipperWidgetBoard: View {
     /// A widget slot + the spans the user may resize it to. `.full` is
     /// always the seed when no saved choice exists.
     struct Slot {
@@ -1890,7 +1884,7 @@ struct ShipperWidgetBoard: View {
 // it strokes crisply at any scale and inherits whatever style (gradient
 // while resizing, tertiary at rest) the handle applies.
 
-struct CornerGrabberShape: Shape {
+private struct CornerGrabberShape: Shape {
     func path(in rect: CGRect) -> Path {
         var p = Path()
         // Outer L — full corner.

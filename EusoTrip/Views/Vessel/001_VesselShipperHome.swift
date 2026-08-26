@@ -30,16 +30,6 @@ struct VesselShipperHomeScreen: View {
 
 // MARK: - Data shapes (tRPC vesselShipments.*)
 
-/// vesselShipments.getVesselDashboard (EXISTS :715)
-private struct VesselShipperDash: Decodable {
-    let activeBookings: Int?
-    let teuAfloat: Int?
-    let containersInTransit: Int?
-    let avgTransitDays: Double?
-    let monthlySpend: Double?
-    let vesselsCount: Int?
-}
-
 /// vesselShipments.getVesselShipments (EXISTS :121)
 private struct VesselBookingIdentifier: Decodable, Hashable {
     let value: Int
@@ -149,18 +139,44 @@ private struct VesselShipperHomeBody: View {
     @Environment(\.palette) private var palette
     @EnvironmentObject private var session: EusoTripSession
 
-    @State private var dash: VesselShipperDash? = nil
     @State private var bookings: [VesselBooking] = []
     @State private var attention: [VesselAttentionItem] = []
     /// Shipper's vessel/barge loads not yet promoted to a booking (L03-15).
     @State private var promotable: [PromotableLoad001] = []
     @State private var promotingId: String? = nil
-    @State private var loading = true
-    @State private var loadError: String? = nil
+    @State private var bookingsLoading = true
+    @State private var bookingsError: String? = nil
+    @State private var attentionLoading = true
+    @State private var attentionError: String? = nil
+    @State private var promotableLoading = true
+    @State private var promotableError: String? = nil
     @State private var showCreateBooking = false
     /// Action surface (Create booking · row VIEW taps · ESang CTA) writes
     /// here on failure — never silently swallowed.
     @State private var actionError: String? = nil
+
+    private let widgetLayoutKey = "vesselShipper.home.widgetOrder"
+    private let vesselCanonicalOrder = [
+        "vessel_eusocard", "vessel_actions", "demurrage_watch", "vessel_eta_watch",
+        "vessel_ready_to_book", "vessel_bookings", "vessel_esang"
+    ]
+
+    private func vesselHomeRender(_ id: String) -> AnyView {
+        switch id {
+        case "vessel_eusocard":
+            AnyView(EusoCardIssuePanel(
+                title: "EusoCard",
+                subtitle: "Vessel shipper spend card for D&D, claims and bookings"
+            ))
+        case "vessel_actions": AnyView(ctaRow)
+        case "demurrage_watch": AnyView(attentionCard)
+        case "vessel_eta_watch": AnyView(statStrip)
+        case "vessel_ready_to_book": AnyView(promotableSection)
+        case "vessel_bookings": AnyView(activeBookingsSection)
+        case "vessel_esang": AnyView(esangCard)
+        default: AnyView(EmptyView())
+        }
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -178,26 +194,13 @@ private struct VesselShipperHomeBody: View {
                         actionErrorBanner(actionError)
                     }
 
-	                    HomeWeatherWidget()
-	                    EusoCardIssuePanel(
-	                        title: "EusoCard",
-	                        subtitle: "Vessel shipper spend card for D&D, claims and bookings"
-	                    )
-
-	                    if loading {
-                        loadingState
-                    } else if let err = loadError {
-                        LifecycleCard(accentDanger: true) {
-                            Text(err).font(EType.caption).foregroundStyle(Brand.danger)
-                        }
-                    } else {
-                        attentionCard
-                        ctaRow
-                        statStrip
-                        promotableSection
-                        activeBookingsSection
-                        esangCard
-                    }
+                    HomeWidgetGrid(
+                        canonicalOrder: vesselCanonicalOrder,
+                        role: "VESSEL_SHIPPER",
+                        storageKey: widgetLayoutKey,
+                        weather: { AnyView(HomeWeatherWidget()) },
+                        render: { id in vesselHomeRender(id) }
+                    )
 
                     Color.clear.frame(height: 96)
                 }
@@ -207,7 +210,7 @@ private struct VesselShipperHomeBody: View {
         }
         .task { await load() }
         .eusoRefreshable { await load() }
-            .sheet(isPresented: $showCreateBooking) {
+        .sheet(isPresented: $showCreateBooking) {
             VesselBookingCreateScreen(theme: palette) { _ in
                 showCreateBooking = false
                 actionError = nil
@@ -262,18 +265,32 @@ private struct VesselShipperHomeBody: View {
     }
 
     private var afloatSummary: String {
-        let active = dash?.activeBookings ?? bookings.count
-        let teu = dash?.teuAfloat ?? 0
-        return "\(active) ACTIVE · \(teu) TEU AFLOAT"
+        if bookingsLoading { return "VESSEL BOOKINGS · UPDATING" }
+        if bookingsError != nil { return "VESSEL BOOKINGS · DATA UNAVAILABLE" }
+        let reportedContainers = bookings.compactMap(\.containersCount)
+        guard !reportedContainers.isEmpty else {
+            return "\(bookings.count) ACTIVE · CONTAINERS NOT REPORTED"
+        }
+        return "\(bookings.count) ACTIVE · \(reportedContainers.reduce(0, +)) CONTAINERS"
     }
 
     private var subline: String {
-        let active = dash?.activeBookings ?? bookings.count
-        let needs = attention.count
-        if needs > 0 {
-            return "\(active) active bookings · \(needs) need attention"
+        var facts = ["Vessel shipper workspace"]
+        if bookingsLoading {
+            facts.append("bookings updating")
+        } else if bookingsError != nil {
+            facts.append("booking data unavailable")
+        } else {
+            facts.append("\(bookings.count) active booking\(bookings.count == 1 ? "" : "s")")
         }
-        return "\(active) active bookings"
+        if attentionLoading {
+            facts.append("compliance updating")
+        } else if attentionError != nil {
+            facts.append("compliance data unavailable")
+        } else {
+            facts.append("\(attention.count) need attention")
+        }
+        return facts.joined(separator: " · ")
     }
 
     private var headline: String {
@@ -297,7 +314,26 @@ private struct VesselShipperHomeBody: View {
 
     @ViewBuilder
     private var attentionCard: some View {
-        if !attention.isEmpty {
+        if attentionLoading {
+            widgetLoading("Checking booking exceptions")
+        } else if let attentionError {
+            widgetError(attentionError)
+        } else if attention.isEmpty {
+            LifecycleCard {
+                HStack(spacing: Space.s3) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(Brand.success)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("No current booking exceptions")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(palette.textPrimary)
+                        Text("Demurrage and ISF feeds report no active exceptions")
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textSecondary)
+                    }
+                }
+            }
+        } else {
             VStack(spacing: 0) {
                 // Header strip (danger tint, triangle icon, count pill)
                 HStack(spacing: Space.s3) {
@@ -401,24 +437,43 @@ private struct VesselShipperHomeBody: View {
         }
     }
 
-    // MARK: - Stats  (SVG y=418: ACTIVE · TEU AFLOAT · AVG TRANSIT · MO. SPEND)
+    // MARK: - Movement-only evidence
 
     private var statStrip: some View {
-        let d = dash
-        return HStack(spacing: Space.s2) {
-            statTile(label: "ACTIVE",
-                     value: "\(d?.activeBookings ?? bookings.count)",
-                     footnote: "live bookings", footnoteColor: palette.textSecondary)
-            statTile(label: "TEU AFLOAT",
-                     value: "\(d?.teuAfloat ?? 0)",
-                     footnote: "\(d?.vesselsCount ?? 0) vessels", footnoteColor: palette.textSecondary)
-            statTile(label: "AVG TRANSIT",
-                     value: avgTransitStr, gradientNumeral: true,
-                     footnote: "rolling average", footnoteColor: palette.textSecondary)
-            statTile(label: "MO. SPEND",
-                     value: monthlySpendStr, gradientNumeral: true,
-                     footnote: "current month", footnoteColor: palette.textSecondary)
+        Group {
+            if bookingsLoading || attentionLoading {
+                widgetLoading("Updating vessel movement evidence")
+            } else if let message = bookingsError ?? attentionError {
+                widgetError(message)
+            } else {
+                HStack(spacing: Space.s2) {
+                    statTile(label: "ACTIVE",
+                             value: "\(bookings.count)",
+                             footnote: "bookings", footnoteColor: palette.textSecondary)
+                    statTile(label: "AT SEA",
+                             value: "\(atSeaCount)",
+                             footnote: "reported status", footnoteColor: palette.textSecondary)
+                    statTile(label: "CONTAINERS",
+                             value: reportedContainerCount,
+                             footnote: "reported total", footnoteColor: palette.textSecondary)
+                    statTile(label: "ATTENTION",
+                             value: "\(attention.count)",
+                             footnote: "compliance items", footnoteColor: palette.textSecondary)
+                }
+            }
         }
+    }
+
+    private var atSeaCount: Int {
+        bookings.filter { booking in
+            let status = (booking.status ?? "").lowercased()
+            return status == "at_sea" || status == "in_transit" || status == "loaded_on_vessel"
+        }.count
+    }
+
+    private var reportedContainerCount: String {
+        let values = bookings.compactMap(\.containersCount)
+        return values.isEmpty ? "—" : "\(values.reduce(0, +))"
     }
 
     private func statTile(label: String, value: String,
@@ -449,22 +504,15 @@ private struct VesselShipperHomeBody: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
-    private var avgTransitStr: String {
-        guard let avg = dash?.avgTransitDays, avg > 0 else { return "-" }
-        return "\(Int(avg.rounded()))d"
-    }
-
-    private var monthlySpendStr: String {
-        guard let s = dash?.monthlySpend, s > 0 else { return "-" }
-        if s >= 1_000_000 { return String(format: "$%.1fM", s / 1_000_000) }
-        return String(format: "$%.0fK", s / 1_000)
-    }
-
     // MARK: - Loads ready to book (L03-15 · promoteLoadToBooking)
 
     @ViewBuilder
     private var promotableSection: some View {
-        if !promotable.isEmpty {
+        if promotableLoading {
+            widgetLoading("Checking loads ready to book")
+        } else if let promotableError {
+            widgetError(promotableError)
+        } else {
             VStack(alignment: .leading, spacing: Space.s3) {
                 HStack {
                     Text("READY TO BOOK")
@@ -475,19 +523,27 @@ private struct VesselShipperHomeBody: View {
                         .font(EType.caption).foregroundStyle(palette.textSecondary)
                 }
 
-                VStack(spacing: 0) {
-                    ForEach(Array(promotable.enumerated()), id: \.element.id) { idx, load in
-                        if idx > 0 {
-                            Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
-                                .padding(.horizontal, Space.s4)
+                if promotable.isEmpty {
+                    EusoEmptyState(
+                        systemImage: "shippingbox",
+                        title: "No loads awaiting booking",
+                        subtitle: "Posted vessel and barge loads appear here when they are eligible for booking."
+                    )
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(Array(promotable.enumerated()), id: \.element.id) { idx, load in
+                            if idx > 0 {
+                                Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
+                                    .padding(.horizontal, Space.s4)
+                            }
+                            promotableRow(load)
                         }
-                        promotableRow(load)
                     }
+                    .background(palette.bgCardSoft)
+                    .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                        .strokeBorder(palette.borderFaint))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
                 }
-                .background(palette.bgCardSoft)
-                .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                    .strokeBorder(palette.borderFaint))
-                .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
             }
         }
     }
@@ -563,7 +619,11 @@ private struct VesselShipperHomeBody: View {
                 .buttonStyle(.plain)
             }
 
-            if bookings.isEmpty {
+            if bookingsLoading {
+                widgetLoading("Loading active bookings")
+            } else if let bookingsError {
+                widgetError(bookingsError)
+            } else if bookings.isEmpty {
                 EusoEmptyState(systemImage: "shippingbox.fill",
                                title: "No active bookings",
                                subtitle: "Your vessel bookings will appear here.")
@@ -601,8 +661,15 @@ private struct VesselShipperHomeBody: View {
                         .font(EType.mono(.caption)).tracking(0.4)
                         .foregroundStyle(palette.textSecondary)
                         .lineLimit(1).minimumScaleFactor(0.8)
-                    progressDots(b.progress ?? 0)
-                        .padding(.top, 2)
+                    if let progress = b.progress {
+                        progressDots(progress)
+                            .padding(.top, 2)
+                    } else {
+                        Text("Voyage progress not reported")
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textTertiary)
+                            .padding(.top, 2)
+                    }
                 }
                 Spacer(minLength: 8)
                 VStack(alignment: .trailing, spacing: 4) {
@@ -640,15 +707,16 @@ private struct VesselShipperHomeBody: View {
     /// Progress dots — gradient up to the active node, faint white beyond.
     private func progressDots(_ progress: Double) -> some View {
         let total = 8
-        let filled = max(1, min(total, Int((progress * Double(total)).rounded())))
+        let normalized = min(1, max(0, progress))
+        let filled = min(total, max(0, Int((normalized * Double(total)).rounded())))
         return HStack(spacing: 8) {
             ForEach(0..<total, id: \.self) { i in
                 Circle()
                     .fill(i < filled
                           ? AnyShapeStyle(LinearGradient.primary)
                           : AnyShapeStyle(Color.white.opacity(0.18)))
-                    .frame(width: i == filled - 1 ? 6 : (i < filled ? 5 : 4),
-                           height: i == filled - 1 ? 6 : (i < filled ? 5 : 4))
+                    .frame(width: filled > 0 && i == filled - 1 ? 6 : (i < filled ? 5 : 4),
+                           height: filled > 0 && i == filled - 1 ? 6 : (i < filled ? 5 : 4))
             }
         }
         .frame(height: 8)
@@ -718,6 +786,8 @@ private struct VesselShipperHomeBody: View {
     }
 
     private var esangHeadline: String {
+        if attentionLoading { return "Reviewing booking and compliance evidence" }
+        if attentionError != nil { return "Booking intelligence is temporarily unavailable" }
         if let first = attention.first(where: { $0.kind == .danger }) {
             return "\(first.bookingNumber) requires review"
         }
@@ -725,31 +795,44 @@ private struct VesselShipperHomeBody: View {
     }
 
     private var esangSubline: String {
-        attention.first(where: { $0.kind == .danger })?.detail
+        if attentionLoading {
+            return "ESANG is waiting for current demurrage and ISF evidence"
+        }
+        if let attentionError {
+            return attentionError
+        }
+        return attention.first(where: { $0.kind == .danger })?.detail
             ?? "Demurrage and ISF feeds report no active exceptions"
     }
 
     // MARK: - Loading + error chrome
 
-    private var loadingState: some View {
-        VStack(spacing: Space.s4) {
-            RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
-                .fill(palette.bgCardSoft).frame(height: 148)
-                .overlay(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
-                    .strokeBorder(palette.borderFaint))
-            HStack(spacing: Space.s2) {
-                ForEach(0..<4, id: \.self) { _ in
-                    RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                        .fill(palette.bgCardSoft).frame(height: 80)
-                        .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                            .strokeBorder(palette.borderFaint))
-                }
+    private func widgetLoading(_ message: String) -> some View {
+        LifecycleCard {
+            HStack(spacing: Space.s3) {
+                ProgressView().tint(Brand.blue)
+                Text(message)
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                Spacer()
             }
-            ForEach(0..<3, id: \.self) { _ in
-                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                    .fill(palette.bgCardSoft).frame(height: 72)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                        .strokeBorder(palette.borderFaint))
+        }
+    }
+
+    private func widgetError(_ message: String) -> some View {
+        LifecycleCard(accentDanger: true) {
+            HStack(alignment: .top, spacing: Space.s3) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(Brand.danger)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Data unavailable")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(palette.textPrimary)
+                    Text(message)
+                        .font(EType.caption)
+                        .foregroundStyle(Brand.danger)
+                }
+                Spacer()
             }
         }
     }
@@ -777,63 +860,85 @@ private struct VesselShipperHomeBody: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
-    // MARK: - Load (real loading + error; do/catch — never try?)
+    // MARK: - Load
 
     private func load() async {
-        loading = true; loadError = nil
+        async let bookingsTask: Void = loadBookings()
+        async let attentionTask: Void = loadAttention()
+        async let promotableTask: Void = loadPromotable()
+        _ = await (bookingsTask, attentionTask, promotableTask)
+    }
+
+    private func loadBookings() async {
+        bookingsLoading = true
+        bookingsError = nil
         struct ListIn: Encodable { let limit: Int; let offset: Int }
         do {
-            // getVesselDashboard (EXISTS :715) — hero figures.
-            async let dashTask: VesselShipperDash =
-                EusoTripAPI.shared.queryNoInput("vesselShipments.getVesselDashboard")
-            // getVesselShipments (EXISTS :121) — active bookings list.
-            async let listTask: VesselBookingPage =
-                EusoTripAPI.shared.query("vesselShipments.getVesselShipments",
-                                         input: ListIn(limit: 50, offset: 0))
-            // getVesselDemurrage (EXISTS :632) — demurrage exposure rows.
+            let page: VesselBookingPage = try await EusoTripAPI.shared.query(
+                "vesselShipments.getVesselShipments",
+                input: ListIn(limit: 50, offset: 0)
+            )
+            bookings = page.shipments
+        } catch {
+            bookings = []
+            bookingsError = error.eusoUserCopy
+        }
+        bookingsLoading = false
+    }
+
+    private func loadAttention() async {
+        attentionLoading = true
+        attentionError = nil
+        do {
             async let demTask: [VesselDemurrageRow] =
                 EusoTripAPI.shared.queryNoInput("vesselShipments.getVesselDemurrage")
-            // getISFStatus (EXISTS :815) — ISF 10+2 filing status.
             async let isfTask: [VesselISFRow] =
                 EusoTripAPI.shared.queryNoInput("vesselShipments.getISFStatus")
-
-            let (d, list, dem, isf) = try await (dashTask, listTask, demTask, isfTask)
-            self.dash = d
-            self.bookings = list.shipments
-            self.attention = buildAttention(demurrage: dem, isf: isf)
+            let (demurrage, isf) = try await (demTask, isfTask)
+            attention = buildAttention(demurrage: demurrage, isf: isf)
         } catch {
-            loadError = error.eusoUserCopy
+            attention = []
+            attentionError = error.eusoUserCopy
         }
-        // L03-15 (non-fatal): the shipper's vessel/barge loads not yet promoted.
-        await loadPromotable()
-        loading = false
+        attentionLoading = false
     }
 
     /// loads.list (role-scoped) → the shipper's vessel/barge loads that carry no
-    /// vesselShipmentId yet. Non-fatal: a failure just hides the queue.
+    /// vesselShipmentId yet. Failures stay visible instead of becoming an empty queue.
     private func loadPromotable() async {
+        promotableLoading = true
+        promotableError = nil
         struct ListIn: Encodable { let limit: Int; let offset: Int }
-        guard let rows: [PromotableLoad001] = try? await EusoTripAPI.shared.query(
-            "loads.list", input: ListIn(limit: 50, offset: 0)) else {
-            promotable = []; return
+        do {
+            let rows: [PromotableLoad001] = try await EusoTripAPI.shared.query(
+                "loads.list", input: ListIn(limit: 50, offset: 0)
+            )
+            promotable = rows.filter { row in
+                let mode = (row.transportMode ?? "").lowercased()
+                return (mode == "vessel" || mode == "barge") && row.vesselShipmentId == nil
+            }
+        } catch {
+            promotable = []
+            promotableError = error.eusoUserCopy
         }
-        promotable = rows.filter { row in
-            let mode = (row.transportMode ?? "").lowercased()
-            return (mode == "vessel" || mode == "barge") && row.vesselShipmentId == nil
-        }
+        promotableLoading = false
     }
 
     /// vesselShipments.promoteLoadToBooking — mints the real vessel_shipments
     /// booking for a vessel/barge load and back-links it. On success the load
     /// leaves the queue and its booking appears under ACTIVE BOOKINGS.
     private func promote(_ row: PromotableLoad001) async {
+        guard let loadID = Int(row.id), loadID > 0 else {
+            actionError = "This load does not have a valid server-issued identifier. Refresh and try again."
+            return
+        }
         promotingId = row.id
         struct PromoteIn: Encodable { let loadId: Int }
         struct PromoteOut: Decodable { let alreadyPromoted: Bool?; let vesselShipmentId: Int?; let bookingNumber: String? }
         do {
             let _: PromoteOut = try await EusoTripAPI.shared.mutation(
                 "vesselShipments.promoteLoadToBooking",
-                input: PromoteIn(loadId: Int(row.id) ?? 0))
+                input: PromoteIn(loadId: loadID))
             await load()
         } catch {
             actionError = "Couldn't promote \(row.loadNumber ?? "load \(row.id)") to a booking. "

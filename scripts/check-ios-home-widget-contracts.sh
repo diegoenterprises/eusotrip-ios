@@ -60,8 +60,9 @@ for relative in homes:
     text = (root / 'EusoTrip/Views' / relative).read_text()
     if 'HomeWidgetGrid(' not in text:
         failures.append(f"native home is not on shared grid: {relative}")
-if 'struct ShipperWidgetBoard' in (root / 'EusoTrip/Views/Shipper/200_ShipperHome.swift').read_text():
-    failures.append('legacy ShipperWidgetBoard still exists')
+shipper = (root / 'EusoTrip/Views/Shipper/200_ShipperHome.swift').read_text()
+if 'ShipperWidgetBoard(' in shipper:
+    failures.append('shipper home still invokes the retired layout engine')
 admin = (root / 'EusoTrip/Views/Admin/800_AdminHome.swift').read_text()
 if 'SUPER_ADMIN' not in admin or 'role: widgetRole' not in admin:
     failures.append('ADMIN and SUPER_ADMIN do not use distinct role keys')
@@ -71,21 +72,26 @@ if 'role: "CATALYST"' not in carrier or 'role: "CARRIER"' in carrier:
     failures.append('carrier home does not use the authenticated CATALYST role key')
 
 router = (root / 'EusoTrip/Views/RoleSurfaceRouter.swift').read_text()
+assignment_match = re.search(
+    r'enum RoleSurfaceAssignment: String, CaseIterable \{(.*?)\n\s*static func forRole',
+    router,
+    re.S,
+)
+assignments = re.findall(r'^\s*case\s+[A-Za-z]+\s*=', assignment_match.group(1), re.M) if assignment_match else []
+if len(assignments) != 25:
+    failures.append(f'expected 25 exhaustive native role assignments, found {len(assignments)}')
 for token in [
-    'RailShipperHomeScreen(theme: palette)',
-    'VesselShipperHomeScreen(theme: palette)',
-    'session.user?.role == "SERVICE_PROVIDER"',
-    'ServiceProviderHomeScreen',
+    'var isContinuation: Bool',
+    'NativeModeRoleSurface(definition: .railShipper, palette: palette)',
+    'VesselShipperSurface(palette: palette)',
+    'NativeSpecialistRoleSurface(definition: .serviceProvider, palette: palette)',
     'zeunMechanics.getMyProviderAccount',
     'zeunMechanics.listWorkOrders',
-    'role: "SERVICE_PROVIDER"',
 ]:
     if token not in router:
         failures.append(f'missing native role-home contract token: {token}')
-if 'case .railShipper:\n            WebContinuationSurface' in router:
-    failures.append('rail shipper still routes to a web continuation')
-if 'case .vesselShipper:\n            WebContinuationSurface' in router:
-    failures.append('vessel shipper still routes to a web continuation')
+if 'WebContinuationSurface' in router:
+    failures.append('signed-in role router still contains a web-continuation surface')
 
 if failures:
     print('\n'.join(f'FAIL: {failure}' for failure in failures), file=sys.stderr)
