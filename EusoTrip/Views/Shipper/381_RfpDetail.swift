@@ -13,9 +13,18 @@ import SwiftUI
 
 struct RfpDetailScreen: View {
     let theme: Theme.Palette
-    let rfpId: String
+    let rfpId: String?
     var body: some View {
-        Shell(theme: theme) { RfpDetailBody(rfpId: rfpId) } nav: { shipperLifecycleNav() }
+        if let routedRfpId = ShipperRoutedRecordIdResolver.rfp(rfpId) {
+            Shell(theme: theme) { RfpDetailBody(rfpId: routedRfpId) } nav: { shipperLifecycleNav() }
+        } else {
+            ShipperRecordContextUnavailableScreen(
+                theme: theme,
+                systemImage: "doc.text.magnifyingglass",
+                title: "RFP unavailable",
+                subtitle: "Open an RFP from the inbox to review and award its lanes."
+            )
+        }
     }
 }
 

@@ -8,83 +8,139 @@
 //  RBAC enforcement (a Shipper user can only ever see Shipper screens,
 //  a Driver user can only ever see Driver screens, etc.).
 //
-//  Roles with full native iOS surfaces this session:
-//    • DRIVER   → driverSurface (existing 4-pane: Home/Trips/Loads/Me)
-//    • SHIPPER  → ShipperSurface (200/201/202/204 routed by
-//                  `eusoShipperNavSwap` from `ShipperNavController`)
+//  `RoleSurfaceAssignment` exhaustively binds all 25 backend roles. Every role
+//  mounts a native role-owned surface; no signed-in account is handed to a web
+//  continuation. Shared rail/vessel registries are fenced again by each role's exact
+//  `NativeModeRoleDefinition.allowedRoutes` catalog.
 //
-//  Roles that have a real registered Home screen and route to it:
-//    • CATALYST (Carrier)        → 300_CarrierHome
-//    • BROKER                    → 400_BrokerHome
-//    • ESCORT                    → 600_EscortHome
-//    • TERMINAL_MANAGER          → 700_TerminalHome
-//    • ADMIN / SUPER_ADMIN       → 800_AdminHome
-//
-//  Roles whose iOS surface ships in a later session (Dispatch, Compliance,
-//  Safety, Factoring, all Rail, all Vessel, Customs Broker) route to a
-//  real `WebContinuationView` — an SFSafariViewController loading
-//  `app.eusotrip.com/{role-slug}` over the same Bearer-cookie session
-//  the iOS app already holds. The web app is the production surface for
-//  those roles today; this is not a stub.
-//
-//  RBAC: every cross-role nav request (notification, deep-link, sheet)
-//  passes through `RoleAccess.canRender(role:screenId:)` which short-
-//  circuits to the role's home if the requested screen is not in
-//  `ScreenRegistry.forRole(role)`.
+//  Every surface installs one stable Home/work/work/Me dock around ESANG and
+//  owns its navigation stack. Cross-role notifications are accepted only when
+//  the target is both registered and assigned to the signed-in role.
 //
 
 import SwiftUI
-import PhotosUI
 import SafariServices
 
 // MARK: - Role surface router
 
-struct RoleSurfaceRouter: View {
-    @EnvironmentObject var session: EusoTripSession
-    let palette: Theme.Palette
+/// One exhaustive assignment per backend role. Keeping this separate from the
+/// view switch makes the 25-role contract machine-verifiable: adding an
+/// `EusoRole` cannot silently inherit a family default or a different role's
+/// dock. The raw value is deliberately unique even where two roles share a
+/// proven native container (ADMIN / SUPER_ADMIN).
+enum RoleSurfaceAssignment: String, CaseIterable {
+    case driver = "ContentView.driverSurface"
+    case shipper = "ShipperSurface"
+    case catalyst = "CarrierSurface"
+    case broker = "BrokerSurface"
+    case dispatch = "DispatchSurface"
+    case escort = "EscortSurface"
+    case terminal = "TerminalSurface"
+    case compliance = "ComplianceSurface"
+    case safety = "NativeSpecialistRoleSurface.SAFETY_MANAGER"
+    case admin = "AdminSurface.ADMIN"
+    case superAdmin = "AdminSurface.SUPER_ADMIN"
+    case factoring = "NativeSpecialistRoleSurface.FACTORING"
+    case railShipper = "NativeModeRoleSurface.RAIL_SHIPPER"
+    case railCatalyst = "NativeModeRoleSurface.RAIL_CATALYST"
+    case railDispatch = "NativeModeRoleSurface.RAIL_DISPATCHER"
+    case railEngineer = "RailEngineerSurface"
+    case railConductor = "NativeModeRoleSurface.RAIL_CONDUCTOR"
+    case railBroker = "NativeModeRoleSurface.RAIL_BROKER"
+    case vesselShipper = "VesselShipperSurface"
+    case vesselOperator = "VesselOperatorSurface"
+    case portMaster = "NativeModeRoleSurface.PORT_MASTER"
+    case shipCaptain = "NativeModeRoleSurface.SHIP_CAPTAIN"
+    case vesselBroker = "NativeModeRoleSurface.VESSEL_BROKER"
+    case customsBroker = "NativeModeRoleSurface.CUSTOMS_BROKER"
+    case serviceProvider = "NativeSpecialistRoleSurface.SERVICE_PROVIDER"
 
-    var body: some View {
-        // `session.user` is non-nil whenever `phase == .signedIn` (set
-        // together in `EusoTripSession.signIn` / `bootstrap` /
-        // `signInDemo`). AppRoot guards on phase before mounting
-        // ContentView, but we still resolve defensively here so a
-        // race between sign-out and a stale render doesn't fall back
-        // to Driver-by-accident.
-        let role = session.user?.roleEnum ?? .driver
-
+    static func forRole(_ role: EusoRole) -> RoleSurfaceAssignment {
         switch role {
-        case .driver:
-            // The Driver surface lives inside ContentView because it
-            // owns the `nav: DriverNavController`, `trip:
-            // DriverTripController`, sheet presentations, and orb
-            // state machine. The router is the entry point; the
-            // actual surface is constructed by ContentView when the
-            // role resolves to .driver.
-            DriverSurfaceHost(palette: palette)
+        case .driver: return .driver
+        case .shipper: return .shipper
+        case .catalyst: return .catalyst
+        case .broker: return .broker
+        case .dispatch: return .dispatch
+        case .escort: return .escort
+        case .terminal: return .terminal
+        case .compliance: return .compliance
+        case .safety: return .safety
+        case .admin: return .admin
+        case .superAdmin: return .superAdmin
+        case .factoring: return .factoring
+        case .railShipper: return .railShipper
+        case .railCatalyst: return .railCatalyst
+        case .railDispatch: return .railDispatch
+        case .railEngineer: return .railEngineer
+        case .railConductor: return .railConductor
+        case .railBroker: return .railBroker
+        case .vesselShipper: return .vesselShipper
+        case .vesselOperator: return .vesselOperator
+        case .portMaster: return .portMaster
+        case .shipCaptain: return .shipCaptain
+        case .vesselBroker: return .vesselBroker
+        case .customsBroker: return .customsBroker
+        case .serviceProvider: return .serviceProvider
+        }
+    }
 
-        case .shipper:
+    var isContinuation: Bool {
+        false
+    }
+}
+
+struct RoleSurfaceRouter<DriverContent: View>: View {
+    let role: EusoRole
+    let palette: Theme.Palette
+    private let driverContent: () -> DriverContent
+
+    init(
+        role: EusoRole,
+        palette: Theme.Palette,
+        @ViewBuilder driverContent: @escaping () -> DriverContent
+    ) {
+        self.role = role
+        self.palette = palette
+        self.driverContent = driverContent
+    }
+
+    @ViewBuilder
+    var body: some View {
+        roleSurface(for: role)
+    }
+
+    @ViewBuilder
+    private func roleSurface(for role: EusoRole) -> some View {
+        switch RoleSurfaceAssignment.forRole(role) {
+        case .driver:
+            // Driver owns state in ContentView, but it still enters through
+            // this same exhaustive role switch. The injected closure is the
+            // existing production Driver surface, never a diagnostic or
+            // continuation view.
+            driverContent()
+
+            case .shipper:
             ShipperSurface(palette: palette)
 
-        case .catalyst:
+            case .catalyst:
             CarrierSurface(palette: palette)
 
-        case .broker:
+            case .broker:
             BrokerSurface(palette: palette)
-
-        case .escort:
-            EscortSurface(palette: palette)
-
-        case .terminal:
-            TerminalSurface(palette: palette)
-
-        case .admin, .superAdmin:
-            AdminSurface(palette: palette)
 
         case .dispatch:
             // Dispatch has 13 native iOS files (Dpch700-Dpch712) —
             // surface landed natively 2026-05-01 with the design-
             // token normalization + unshelf of 702-712.
             DispatchSurface(palette: palette)
+
+        case .escort:
+            EscortSurface(palette: palette)
+
+            case .terminal:
+            TerminalSurface(palette: palette)
+
         case .compliance:
             // Compliance has 3 native iOS files (900-902) — surfaces
             // landed natively 2026-05-01 with the resurrection of the
@@ -92,78 +148,510 @@ struct RoleSurfaceRouter: View {
             // to the chrome registry.
             ComplianceSurface(palette: palette)
         case .safety:
-            WebContinuationSurface(role: role, palette: palette,
-                                   pathSlug: "safety")
+            NativeSpecialistRoleSurface(definition: .safety, palette: palette)
+
+        case .admin:
+            AdminSurface(role: role, palette: palette)
+
+        case .superAdmin:
+            AdminSurface(role: role, palette: palette)
+
         case .factoring:
-            WebContinuationSurface(role: role, palette: palette,
-                                   pathSlug: "factoring")
+            NativeSpecialistRoleSurface(definition: .factoring, palette: palette)
+
         case .railShipper:
-            WebContinuationSurface(role: role, palette: palette,
-                                   pathSlug: "rail/shipper")
+            NativeModeRoleSurface(definition: .railShipper, palette: palette)
+
         case .railCatalyst:
-            WebContinuationSurface(role: role, palette: palette,
-                                   pathSlug: "rail/carrier")
+            NativeModeRoleSurface(definition: .railCatalyst, palette: palette)
+
         case .railDispatch:
-            WebContinuationSurface(role: role, palette: palette,
-                                   pathSlug: "rail/dispatch")
+            NativeModeRoleSurface(definition: .railDispatch, palette: palette)
+
         case .railEngineer:
             RailEngineerSurface(palette: palette)
+
         case .railConductor:
-            WebContinuationSurface(role: role, palette: palette,
-                                   pathSlug: "rail/conductor")
+            NativeModeRoleSurface(definition: .railConductor, palette: palette)
+
         case .railBroker:
-            WebContinuationSurface(role: role, palette: palette,
-                                   pathSlug: "rail/broker")
+            NativeModeRoleSurface(definition: .railBroker, palette: palette)
+
         case .vesselShipper:
-            WebContinuationSurface(role: role, palette: palette,
-                                   pathSlug: "vessel/shipper")
+            VesselShipperSurface(palette: palette)
+
         case .vesselOperator:
             VesselOperatorSurface(palette: palette)
+
         case .portMaster:
-            WebContinuationSurface(role: role, palette: palette,
-                                   pathSlug: "vessel/port-master")
+            NativeModeRoleSurface(definition: .portMaster, palette: palette)
+
         case .shipCaptain:
-            WebContinuationSurface(role: role, palette: palette,
-                                   pathSlug: "vessel/captain")
+            NativeModeRoleSurface(definition: .shipCaptain, palette: palette)
+
         case .vesselBroker:
-            WebContinuationSurface(role: role, palette: palette,
-                                   pathSlug: "vessel/broker")
+            NativeModeRoleSurface(definition: .vesselBroker, palette: palette)
+
         case .customsBroker:
-            WebContinuationSurface(role: role, palette: palette,
-                                   pathSlug: "customs-broker")
+            NativeModeRoleSurface(definition: .customsBroker, palette: palette)
+
+        case .serviceProvider:
+            NativeSpecialistRoleSurface(definition: .serviceProvider, palette: palette)
         }
     }
 }
 
-// MARK: - Driver surface host
+// MARK: - Canonical role docks
 
-/// Defensive type used only to make `RoleSurfaceRouter`'s switch
-/// exhaustive over `EusoRole`. **Never rendered in production** —
-/// `ContentView` checks `session.user?.roleEnum == .driver` before
-/// reaching the router and dispatches its own inline `driverSurface`
-/// (which owns the Driver-specific `@StateObject`s, sheet
-/// presenters, and orb state machine). If this view ever paints,
-/// it indicates a routing bug; we surface a real diagnostic instead
-/// of a silent blank.
-struct DriverSurfaceHost: View {
-    let palette: Theme.Palette
+/// Typed four-destination contracts installed by every native role surface.
+/// `Shell` owns the rendering, so child screens and reused cross-mode screens
+/// cannot replace a role's primary navigation or inherit another role's dock.
+enum RoleDockCatalog {
+    static func driver(active: String, select: @escaping (String) -> Void, openESang: @escaping () -> Void) -> RoleDockContract {
+        .four(
+            ownerRole: .driver,
+            home: .init(destinationId: "home", label: "Home", systemImage: "house"),
+            workOne: .init(destinationId: "trips", label: "Trips", systemImage: "truck.box"),
+            workTwo: .init(destinationId: "loads", label: "Loads", systemImage: "shippingbox.fill"),
+            me: .init(destinationId: "me", label: "Me", systemImage: "person"),
+            active: active, select: select, openESang: openESang
+        )
+    }
+
+    static func shipper(active: String, select: @escaping (String) -> Void, openESang: @escaping () -> Void) -> RoleDockContract {
+        .four(
+            ownerRole: .shipper,
+            home: .init(destinationId: "200", label: "Home", systemImage: "house"),
+            workOne: .init(destinationId: "204", label: "Create Load", systemImage: "plus.rectangle.on.rectangle"),
+            workTwo: .init(destinationId: "201", label: "Loads", systemImage: "shippingbox.fill"),
+            me: .init(destinationId: "320", label: "Me", systemImage: "person"),
+            active: active, select: select, openESang: openESang
+        )
+    }
+
+    static func carrier(active: String, select: @escaping (String) -> Void, openESang: @escaping () -> Void) -> RoleDockContract {
+        .four(
+            ownerRole: .catalyst,
+            home: .init(destinationId: "300", label: "Home", systemImage: "house"),
+            workOne: .init(destinationId: "301", label: "Loads", systemImage: "shippingbox.fill"),
+            workTwo: .init(destinationId: "304", label: "Drivers", systemImage: "person.3.fill"),
+            me: .init(destinationId: "350", label: "Me", systemImage: "person"),
+            active: active, select: select, openESang: openESang
+        )
+    }
+
+    static func catalyst(active: String, select: @escaping (String) -> Void, openESang: @escaping () -> Void) -> RoleDockContract {
+        .four(
+            ownerRole: .catalyst,
+            home: .init(destinationId: "500", label: "Home", systemImage: "house"),
+            workOne: .init(destinationId: "501", label: "Matches", systemImage: "point.3.connected.trianglepath.dotted"),
+            workTwo: .init(destinationId: "304", label: "Fleet", systemImage: "truck.box.fill"),
+            me: .init(destinationId: "350", label: "Me", systemImage: "person"),
+            active: active, select: select, openESang: openESang
+        )
+    }
+
+    static func broker(active: String, select: @escaping (String) -> Void, openESang: @escaping () -> Void) -> RoleDockContract {
+        .four(
+            ownerRole: .broker,
+            home: .init(destinationId: "400", label: "Home", systemImage: "house"),
+            workOne: .init(destinationId: "401", label: "Tenders", systemImage: "doc.text.fill"),
+            workTwo: .init(destinationId: "402b", label: "Carriers", systemImage: "truck.box.fill"),
+            me: .init(destinationId: "404B", label: "Me", systemImage: "person"),
+            active: active, select: select, openESang: openESang
+        )
+    }
+
+    static func escort(active: String, select: @escaping (String) -> Void, openESang: @escaping () -> Void) -> RoleDockContract {
+        .four(
+            ownerRole: .escort,
+            home: .init(destinationId: "600", label: "Home", systemImage: "house"),
+            workOne: .init(destinationId: "601", label: "Assignments", systemImage: "shield.fill"),
+            workTwo: .init(destinationId: "602", label: "Corridor", systemImage: "map.fill"),
+            me: .init(destinationId: "620", label: "Me", systemImage: "person"),
+            active: active, select: select, openESang: openESang
+        )
+    }
+
+    static func terminal(active: String, select: @escaping (String) -> Void, openESang: @escaping () -> Void) -> RoleDockContract {
+        .four(
+            ownerRole: .terminal,
+            home: .init(destinationId: "700", label: "Home", systemImage: "house"),
+            workOne: .init(destinationId: "701", label: "Movements", systemImage: "arrow.left.arrow.right"),
+            workTwo: .init(destinationId: "702", label: "Yard", systemImage: "map.fill"),
+            me: .init(destinationId: "703", label: "Me", systemImage: "person"),
+            active: active, select: select, openESang: openESang
+        )
+    }
+
+    static func admin(role: EusoRole, active: String, select: @escaping (String) -> Void, openESang: @escaping () -> Void) -> RoleDockContract {
+        .four(
+            ownerRole: role,
+            home: .init(destinationId: "800", label: "Home", systemImage: "house"),
+            workOne: .init(destinationId: "801", label: "Tickets", systemImage: "ticket.fill"),
+            workTwo: .init(destinationId: "802", label: "Tenants", systemImage: "building.2.fill"),
+            me: .init(destinationId: "804", label: "Me", systemImage: "person"),
+            active: active, select: select, openESang: openESang
+        )
+    }
+
+    static func compliance(active: String, select: @escaping (String) -> Void, openESang: @escaping () -> Void) -> RoleDockContract {
+        .four(
+            ownerRole: .compliance,
+            home: .init(destinationId: "900", label: "Home", systemImage: "house"),
+            workOne: .init(destinationId: "901", label: "Drivers", systemImage: "person.3.fill"),
+            workTwo: .init(destinationId: "902", label: "Audits", systemImage: "checkmark.shield.fill"),
+            me: .init(destinationId: "903", label: "Me", systemImage: "person"),
+            active: active, select: select, openESang: openESang
+        )
+    }
+
+    static func dispatch(active: String, select: @escaping (String) -> Void, openESang: @escaping () -> Void) -> RoleDockContract {
+        .four(
+            ownerRole: .dispatch,
+            home: .init(destinationId: "Disp400", label: "Home", systemImage: "house"),
+            workOne: .init(destinationId: "Disp401", label: "Board", systemImage: "rectangle.split.3x1.fill"),
+            workTwo: .init(destinationId: "Dpch721", label: "Comms", systemImage: "bubble.left.and.bubble.right.fill"),
+            me: .init(destinationId: "Dpch713", label: "Me", systemImage: "person"),
+            active: active, select: select, openESang: openESang
+        )
+    }
+
+    static func railEngineer(active: String, select: @escaping (String) -> Void, openESang: @escaping () -> Void) -> RoleDockContract {
+        .four(
+            ownerRole: .railEngineer,
+            home: .init(destinationId: "Rail550", label: "Home", systemImage: "house"),
+            workOne: .init(destinationId: "Rail551", label: "Shipments", systemImage: "train.side.front.car"),
+            workTwo: .init(destinationId: "Rail552", label: "Compliance", systemImage: "checkmark.shield.fill"),
+            me: .init(destinationId: "Rail556", label: "Me", systemImage: "person"),
+            active: active, select: select, openESang: openESang
+        )
+    }
+
+    static func vesselOperator(active: String, select: @escaping (String) -> Void, openESang: @escaping () -> Void) -> RoleDockContract {
+        .four(
+            ownerRole: .vesselOperator,
+            home: .init(destinationId: "Vesl650", label: "Home", systemImage: "house"),
+            workOne: .init(destinationId: "Vesl651", label: "Shipments", systemImage: "shippingbox.fill"),
+            workTwo: .init(destinationId: "Vesl652", label: "Compliance", systemImage: "checkmark.shield.fill"),
+            me: .init(destinationId: "Vesl656", label: "Me", systemImage: "person"),
+            active: active, select: select, openESang: openESang
+        )
+    }
+
+    static func vesselShipper(active: String, select: @escaping (String) -> Void, openESang: @escaping () -> Void) -> RoleDockContract {
+        .four(
+            ownerRole: .vesselShipper,
+            home: .init(destinationId: "Vesl001", label: "Home", systemImage: "house"),
+            workOne: .init(destinationId: "Vesl011", label: "Bookings", systemImage: "doc.text.fill"),
+            workTwo: .init(destinationId: "Vesl012", label: "Track", systemImage: "location.fill"),
+            me: .init(destinationId: "320", label: "Me", systemImage: "person"),
+            active: active, select: select, openESang: openESang
+        )
+    }
+}
+
+// MARK: - Shared native rail / vessel role contracts
+
+/// A role-specific shell over an existing native mode registry. These
+/// definitions intentionally use only context-free roots whose initial load is
+/// backed by a real server query. Record-detail screens that need an id are not
+/// promoted to a dock destination with a sentinel id.
+struct NativeModeRoleDefinition {
+    enum Mode {
+        case rail
+        case vessel
+    }
+
+    let role: EusoRole
+    let mode: Mode
+    let registryRole: ProductionScreen.Role
+    let nativeHomeScreenId: String
+    let home: RoleDockItem
+    let workOne: RoleDockItem
+    let workTwo: RoleDockItem
+    let me: RoleDockItem
+    let detailRoutes: Set<String>
+    let screensWithOwnBack: Set<String>
+
+    var dockItems: [RoleDockItem] { [home, workOne, workTwo, me] }
+    var tabRoots: Set<String> { Set(dockItems.map(\.destinationId)) }
+    var allowedRoutes: Set<String> {
+        tabRoots.union(detailRoutes)
+    }
+
+    static let railShipper = Self(
+        role: .railShipper,
+        mode: .rail,
+        registryRole: .railEngineer,
+        nativeHomeScreenId: "Rail551",
+        home: .init(destinationId: "RoleRailShipperHome", label: "Home", systemImage: "house"),
+        workOne: .init(destinationId: "Rail551", label: "Shipments", systemImage: "shippingbox.fill"),
+        workTwo: .init(destinationId: "Rail639", label: "Network", systemImage: "point.3.connected.trianglepath.dotted"),
+        me: .init(destinationId: "RoleRailShipperMe", label: "Me", systemImage: "person"),
+        detailRoutes: [],
+        screensWithOwnBack: []
+    )
+
+    static let railCatalyst = Self(
+        role: .railCatalyst,
+        mode: .rail,
+        registryRole: .railEngineer,
+        nativeHomeScreenId: "Rail559",
+        home: .init(destinationId: "RoleRailCatalystHome", label: "Home", systemImage: "house"),
+        workOne: .init(destinationId: "Rail559", label: "Yards", systemImage: "square.grid.3x3.fill"),
+        workTwo: .init(destinationId: "Rail552", label: "Compliance", systemImage: "checkmark.shield.fill"),
+        me: .init(destinationId: "RoleRailCatalystMe", label: "Me", systemImage: "person"),
+        detailRoutes: [],
+        screensWithOwnBack: []
+    )
+
+    static let railDispatch = Self(
+        role: .railDispatch,
+        mode: .rail,
+        registryRole: .railEngineer,
+        nativeHomeScreenId: "Rail555",
+        home: .init(destinationId: "RoleRailDispatchHome", label: "Home", systemImage: "house"),
+        workOne: .init(destinationId: "Rail555", label: "Consists", systemImage: "train.side.front.car"),
+        workTwo: .init(destinationId: "Rail559", label: "Yards", systemImage: "square.grid.3x3.fill"),
+        me: .init(destinationId: "RoleRailDispatchMe", label: "Me", systemImage: "person"),
+        detailRoutes: [],
+        screensWithOwnBack: []
+    )
+
+    static let railConductor = Self(
+        role: .railConductor,
+        mode: .rail,
+        registryRole: .railEngineer,
+        nativeHomeScreenId: "Rail554",
+        home: .init(destinationId: "RoleRailConductorHome", label: "Home", systemImage: "house"),
+        workOne: .init(destinationId: "Rail554", label: "Duty", systemImage: "clock.fill"),
+        workTwo: .init(destinationId: "Rail595", label: "Credentials", systemImage: "person.text.rectangle.fill"),
+        me: .init(destinationId: "RoleRailConductorMe", label: "Me", systemImage: "person"),
+        detailRoutes: [],
+        screensWithOwnBack: []
+    )
+
+    static let railBroker = Self(
+        role: .railBroker,
+        mode: .rail,
+        registryRole: .railEngineer,
+        nativeHomeScreenId: "Rail551",
+        home: .init(destinationId: "RoleRailBrokerHome", label: "Home", systemImage: "house"),
+        workOne: .init(destinationId: "Rail551", label: "Shipments", systemImage: "shippingbox.fill"),
+        workTwo: .init(destinationId: "Rail639", label: "Network", systemImage: "point.3.connected.trianglepath.dotted"),
+        me: .init(destinationId: "RoleRailBrokerMe", label: "Me", systemImage: "person"),
+        detailRoutes: [],
+        screensWithOwnBack: []
+    )
+
+    static let portMaster = Self(
+        role: .portMaster,
+        mode: .vessel,
+        registryRole: .vesselOperator,
+        nativeHomeScreenId: "Vesl697",
+        home: .init(destinationId: "RolePortMasterHome", label: "Home", systemImage: "house"),
+        workOne: .init(destinationId: "Vesl697", label: "Port Ops", systemImage: "ferry.fill"),
+        workTwo: .init(destinationId: "Vesl686", label: "Directory", systemImage: "building.2.fill"),
+        me: .init(destinationId: "RolePortMasterMe", label: "Me", systemImage: "person"),
+        detailRoutes: ["Vesl661", "Vesl834"],
+        screensWithOwnBack: []
+    )
+
+    static let shipCaptain = Self(
+        role: .shipCaptain,
+        mode: .vessel,
+        registryRole: .vesselOperator,
+        nativeHomeScreenId: "Vesl660",
+        home: .init(destinationId: "RoleShipCaptainHome", label: "Home", systemImage: "house"),
+        workOne: .init(destinationId: "Vesl660", label: "Position", systemImage: "location.fill"),
+        workTwo: .init(destinationId: "Vesl711", label: "Crew", systemImage: "person.3.fill"),
+        me: .init(destinationId: "RoleShipCaptainMe", label: "Me", systemImage: "person"),
+        detailRoutes: ["Vesl654", "Vesl834"],
+        screensWithOwnBack: ["Vesl654"]
+    )
+
+    static let vesselBroker = Self(
+        role: .vesselBroker,
+        mode: .vessel,
+        registryRole: .vesselOperator,
+        nativeHomeScreenId: "Vesl651",
+        home: .init(destinationId: "RoleVesselBrokerHome", label: "Home", systemImage: "house"),
+        workOne: .init(destinationId: "Vesl651", label: "Bookings", systemImage: "doc.text.fill"),
+        workTwo: .init(destinationId: "Vesl686", label: "Ports", systemImage: "ferry.fill"),
+        me: .init(destinationId: "RoleVesselBrokerMe", label: "Me", systemImage: "person"),
+        detailRoutes: [],
+        screensWithOwnBack: []
+    )
+
+    static let customsBroker = Self(
+        role: .customsBroker,
+        mode: .vessel,
+        registryRole: .vesselOperator,
+        nativeHomeScreenId: "Vesl789",
+        home: .init(destinationId: "RoleCustomsBrokerHome", label: "Home", systemImage: "house"),
+        workOne: .init(destinationId: "Vesl789", label: "Entries", systemImage: "doc.badge.clock"),
+        workTwo: .init(destinationId: "Vesl814", label: "Filing", systemImage: "doc.badge.plus"),
+        me: .init(destinationId: "RoleCustomsBrokerMe", label: "Me", systemImage: "person"),
+        detailRoutes: [],
+        screensWithOwnBack: []
+    )
+}
+
+extension RoleDockCatalog {
+    static func nativeModeRole(
+        definition: NativeModeRoleDefinition,
+        active: String,
+        select: @escaping (String) -> Void,
+        openESang: @escaping () -> Void
+    ) -> RoleDockContract {
+        .four(
+            ownerRole: definition.role,
+            home: definition.home,
+            workOne: definition.workOne,
+            workTwo: definition.workTwo,
+            me: definition.me,
+            active: active,
+            select: select,
+            openESang: openESang
+        )
+    }
+}
+
+// MARK: - Native specialist role contracts
+
+/// Purpose-specific native roots for the three specialist roles that formerly
+/// opened Safari after sign-in. The destinations are local, typed identities;
+/// none is a URL and none can escape into another role's navigation catalog.
+struct NativeSpecialistRoleDefinition {
+    let role: EusoRole
+    let eyebrow: String
+    let title: String
+    let purpose: String
+    let home: RoleDockItem
+    let workOne: RoleDockItem
+    let workTwo: RoleDockItem
+    let me: RoleDockItem
+
+    var dockItems: [RoleDockItem] { [home, workOne, workTwo, me] }
+
+    static let safety = Self(
+        role: .safety,
+        eyebrow: "SAFETY · COMMAND",
+        title: "Safety register",
+        purpose: "Incidents and authoritative CSA evidence for your company.",
+        home: .init(destinationId: "SafetyHome", label: "Home", systemImage: "house"),
+        workOne: .init(destinationId: "SafetyIncidents", label: "Incidents", systemImage: "exclamationmark.triangle.fill"),
+        workTwo: .init(destinationId: "SafetyCSA", label: "CSA", systemImage: "checkmark.shield.fill"),
+        me: .init(destinationId: "SafetyMe", label: "Me", systemImage: "person")
+    )
+
+    static let factoring = Self(
+        role: .factoring,
+        eyebrow: "FACTORING · FACILITY",
+        title: "Receivables register",
+        purpose: "Underwrite, fund, and monitor the receivables assigned to your facility.",
+        home: .init(destinationId: "FactoringHome", label: "Home", systemImage: "house"),
+        workOne: .init(destinationId: "FactoringPending", label: "Pending", systemImage: "doc.text.fill"),
+        workTwo: .init(destinationId: "FactoringFunded", label: "Funded", systemImage: "banknote.fill"),
+        me: .init(destinationId: "FactoringMe", label: "Me", systemImage: "person")
+    )
+
+    static let serviceProvider = Self(
+        role: .serviceProvider,
+        eyebrow: "ZEUN · SERVICE PROVIDER",
+        title: "Repair operations",
+        purpose: "Accept work, assign qualified mechanics, and return repair progress to the fleet.",
+        home: .init(destinationId: "ZeunProviderHome", label: "Home", systemImage: "house"),
+        workOne: .init(destinationId: "ZeunProviderWork", label: "Work", systemImage: "wrench.and.screwdriver.fill"),
+        workTwo: .init(destinationId: "ZeunProviderTeam", label: "Team", systemImage: "person.3.fill"),
+        me: .init(destinationId: "ZeunProviderMe", label: "Me", systemImage: "person")
+    )
+}
+
+extension RoleDockCatalog {
+    static func specialist(
+        definition: NativeSpecialistRoleDefinition,
+        active: String,
+        select: @escaping (String) -> Void,
+        openESang: @escaping () -> Void
+    ) -> RoleDockContract {
+        .four(
+            ownerRole: definition.role,
+            home: definition.home,
+            workOne: definition.workOne,
+            workTwo: definition.workTwo,
+            me: definition.me,
+            active: active,
+            select: select,
+            openESang: openESang
+        )
+    }
+}
+
+// MARK: - Shipper routed-record resolvers
+
+/// Normalizes opaque record identifiers arriving through NotificationCenter.
+/// Route payloads are normally strings, but push/deep-link bridges may carry
+/// integer primary keys. All actionable routed records reject empty and
+/// non-positive identifiers before a destination screen is constructed.
+enum ShipperRoutedRecordIdResolver {
+    static func string(from raw: Any?) -> String? {
+        let value: String
+        switch raw {
+        case let raw as String: value = raw
+        case let raw as Int: value = String(raw)
+        case let raw as Int64: value = String(raw)
+        case let raw as UInt: value = String(raw)
+        default: return nil
+        }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    static func positiveNumeric(_ raw: Any?) -> String? {
+        guard let id = string(from: raw), let numericId = Int(id), numericId > 0 else {
+            return nil
+        }
+        return id
+    }
+
+    /// RFP rows are emitted as `RFP-<positive id>` by rfpManager, while the
+    /// same procedures also accept the underlying positive numeric string.
+    static func rfp(_ raw: Any?) -> String? {
+        guard let id = string(from: raw) else { return nil }
+        if let numericId = Int(id), numericId > 0 { return id }
+
+        let uppercased = id.uppercased()
+        guard uppercased.hasPrefix("RFP-"),
+              let numericId = Int(uppercased.dropFirst("RFP-".count)),
+              numericId > 0 else {
+            return nil
+        }
+        return id
+    }
+}
+
+/// Honest terminal state for a routed detail that arrived without its record
+/// identifier. The actionable body is never constructed in this branch.
+struct ShipperRecordContextUnavailableScreen: View {
+    let theme: Theme.Palette
+    let systemImage: String
+    let title: String
+    let subtitle: String
+
     var body: some View {
-        Shell(theme: palette) {
-            VStack(spacing: Space.s3) {
-                Image(systemName: "exclamationmark.triangle")
-                    .font(.system(size: 40, weight: .light))
-                    .foregroundStyle(palette.textPrimary)
-                Text("Driver routing fault")
-                    .font(EType.h2)
-                    .foregroundStyle(palette.textPrimary)
-                Text("ContentView should have dispatched the Driver surface directly. Reaching `RoleSurfaceRouter` for `.driver` is a build-time wiring bug. File a defect.")
-                    .font(EType.caption)
-                    .foregroundStyle(palette.textSecondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, Space.s5)
+        Shell(theme: theme) {
+            VStack {
+                Spacer(minLength: Space.s6)
+                EusoEmptyState(systemImage: systemImage, title: title, subtitle: subtitle)
+                    .padding(.horizontal, Space.s4)
+                Spacer(minLength: 96)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } nav: { EmptyView() }
+        } nav: {
+            shipperLifecycleNav()
+        }
     }
 }
 
@@ -201,9 +689,8 @@ enum ShipperLoadIdResolver {
         "search", "new", "filter", "map", "create", "import", "bulk",
     ]
 
-    static func normalize(_ raw: String?) -> String? {
-        guard var id = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !id.isEmpty else { return nil }
+    static func normalize(_ raw: Any?) -> String? {
+        guard var id = ShipperRoutedRecordIdResolver.string(from: raw) else { return nil }
         // Reject reserved action keywords up front (case-insensitive),
         // before any prefix-stripping, so `/loads/search` etc. never
         // survive normalization.
@@ -262,12 +749,28 @@ struct ShipperSurface: View {
     /// UIKit's `UITabBarController` where switching tabs resets the
     /// per-tab back-stack.
     private static let tabRoots: Set<String> = ["200", "201", "204", "320"]
+
+    /// §27 commodity / cross-border addenda — per-load record surfaces
+    /// drilled from 204 Post a Load (204B/204C) and 216 Compliance
+    /// (216B/216D/216F, and 216D again from 216B). Each declares a
+    /// `loadId` initializer parameter, so the routed payload has to be
+    /// captured and forwarded exactly the way 205 / 222 / 261 do — a
+    /// registry mount alone would strand every one of them on its
+    /// "open this from a load" empty state forever.
+    static let commodityAddendaIds: Set<String> = [
+        "204B", "204C", "216B", "216D", "216F",
+    ]
     /// Captured from `.eusoShipperLoadOpen` / `.eusoShipperLoadOpenMap`
     /// / `.eusoShipperSettlementOpenLoad` notification userInfo. When
-    /// non-nil and the current screen is 205 / 222, we construct that
-    /// screen with the real loadId instead of the registry's `"0"`
-    /// sentinel.
+    /// non-nil and the current screen is 205 / 222 / 261, we construct
+    /// that screen with the real loadId instead of a registry sentinel.
     @State private var activeLoadId: String? = nil
+    /// Captured from the 380 RFP inbox when it routes to 381. A bare 381
+    /// navigation clears this value so an earlier RFP can never leak into it.
+    @State private var activeRfpId: String? = nil
+    /// Captured from 434 Partner Detail when it routes to 435. This is the
+    /// partner whose real agreement rows (and agreement ids) may be signed.
+    @State private var activeAgreementPartnerId: String? = nil
     /// Captured from the 424→425 handoff (`.eusoShipperNavSwap` with
     /// `userInfo["product"]`). When non-nil and the current screen is
     /// 425, we construct `PortIntelligenceScreen(product:)` so Port
@@ -285,19 +788,6 @@ struct ShipperSurface: View {
     /// Cleared when the sheet dismisses.
     @State private var webContinuationURL: URL? = nil
 
-    /// Photos picker visibility — toggled by the avatar tap from the
-    /// Me hero. The picked `PhotosPickerItem` resolves to JPEG `Data`
-    /// in `.onChange`, gets uploaded as a base64 data URL via
-    /// `profile.updateAvatar`, and the new URL is mirrored into the
-    /// session user so the Me hero re-renders with the new image
-    /// without a manual refresh.
-    @State private var avatarPickerItem: PhotosPickerItem? = nil
-    @State private var avatarPickerOpen: Bool = false
-    /// Surfaces a failed avatar upload to the user. Was previously a
-    /// silent `try?`/`if let` — on failure nothing happened and the
-    /// user re-picked the photo forever. (the-oath §6 FIX 6.)
-    @State private var avatarUploadError: String? = nil
-
     /// The single generic detail layer pushed in-stack via the shared
     /// `\.rolePushDetail` (aliased to `\.shipperPushDetail` for the four
     /// converted Shipper screens). Sheet→push, NAV remediation
@@ -310,6 +800,44 @@ struct ShipperSurface: View {
     @State private var pushedDetail: RoleDetailPush? = nil
 
     private var current: ProductionScreen {
+        // Record-context destinations always receive the payload captured for
+        // this route. Their screen wrappers independently fail closed when the
+        // value is nil or invalid, so the registry can never create an
+        // actionable surface with a sentinel id.
+        if currentScreenId == "261" {
+            let loadId = activeLoadId
+            return ProductionScreen(id: "261",
+                                    title: "Shipper · Bidding Live Feed",
+                                    role: .shipper) { p in
+                AnyView(BiddingLiveFeedScreen(theme: p, loadId: loadId))
+            }
+        }
+        if currentScreenId == "381" {
+            let rfpId = activeRfpId
+            return ProductionScreen(id: "381",
+                                    title: "Shipper · RFP Detail",
+                                    role: .shipper) { p in
+                AnyView(RfpDetailScreen(theme: p, rfpId: rfpId))
+            }
+        }
+        if currentScreenId == "435" {
+            let partnerId = activeAgreementPartnerId
+            return ProductionScreen(id: "435",
+                                    title: "Shipper · Partner Agreements",
+                                    role: .shipper) { p in
+                AnyView(PartnerAgreementsScreen(theme: p, partnerId: partnerId))
+            }
+        }
+        // §27 commodity / cross-border addenda. These mount with the
+        // routed loadId when one was captured and with an empty id when
+        // none was — the empty case is NOT a failure mode, it is each
+        // screen's own honest "open this from a load" state.
+        if Self.commodityAddendaIds.contains(currentScreenId) {
+            return Self.commodityAddendaScreen(
+                id: currentScreenId,
+                loadId: activeLoadId ?? ""
+            )
+        }
         // Detail screens with a captured loadId override the registry
         // sentinel so the screen renders the real load. This is how
         // load-row taps from 200/201/203 carry into 205.
@@ -374,6 +902,71 @@ struct ShipperSurface: View {
                                 }
     }
 
+    /// Builds the §27 addendum screen for a routed id. Split out of
+    /// `current` so that property keeps its type-checking budget.
+    private static func commodityAddendaScreen(
+        id: String,
+        loadId: String
+    ) -> ProductionScreen {
+        switch id {
+        case "204B":
+            return ProductionScreen(id: "204B",
+                                    title: "Shipper · Reefer Cold-Chain Spec",
+                                    role: .shipper) { p in
+                AnyView(ShipperScreenWrap(palette: p, currentSlot: .none) {
+                    ShipperReeferColdChainSpec(loadId: loadId)
+                })
+            }
+        case "204C":
+            return ProductionScreen(id: "204C",
+                                    title: "Shipper · Hazmat Manifest Gate",
+                                    role: .shipper) { p in
+                AnyView(ShipperScreenWrap(palette: p, currentSlot: .none) {
+                    ShipperHazmatManifestGate(loadId: loadId)
+                })
+            }
+        case "216B":
+            return ProductionScreen(id: "216B",
+                                    title: "Shipper · Cross-Border Customs",
+                                    role: .shipper) { p in
+                AnyView(ShipperScreenWrap(palette: p, currentSlot: .none) {
+                    ShipperCrossBorderCustoms(loadId: loadId)
+                })
+            }
+        case "216D":
+            return ProductionScreen(id: "216D",
+                                    title: "Shipper · USMCA Certificate",
+                                    role: .shipper) { p in
+                AnyView(ShipperScreenWrap(palette: p, currentSlot: .none) {
+                    ShipperUSMCACertificate(loadId: loadId)
+                })
+            }
+        default:
+            return ProductionScreen(id: "216F",
+                                    title: "Shipper · Border Wait",
+                                    role: .shipper) { p in
+                AnyView(ShipperScreenWrap(palette: p, currentSlot: .none) {
+                    ShipperBorderWaitLive(loadId: loadId)
+                })
+            }
+        }
+    }
+
+    private var roleDock: RoleDockContract {
+        RoleDockCatalog.shipper(
+            active: RoleNavigationPathContract.activeTab(
+                in: screenStack, tabRoots: Self.tabRoots, fallback: "200"
+            ),
+            select: { destination in
+                pushedDetail = nil
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    pushOrTab(destination)
+                }
+            },
+            openESang: { showeSang = true }
+        )
+    }
+
     var body: some View {
         // Body kept short to dodge SwiftUI's "compiler unable to
         // type-check this expression in reasonable time" timeout —
@@ -384,6 +977,7 @@ struct ShipperSurface: View {
         // ViewModifier types below.
         current.view(palette)
             .id(currentIdentity)
+            .eusoRefreshSurface("shipper:\(currentIdentity)")
             .transition(.opacity)
             .modifier(ShipperBackOverlay(
                 stackDepth: screenStack.count,
@@ -404,42 +998,31 @@ struct ShipperSurface: View {
                 }
             ))
             .modifier(ShipperEnvInjections())
+            .environment(\.roleDockContract, roleDock)
             .modifier(ShipperNotificationListeners(
                 screenStack: $screenStack,
                 activeLoadId: $activeLoadId,
+                activeRfpId: $activeRfpId,
+                activeAgreementPartnerId: $activeAgreementPartnerId,
                 activePortIntelProduct: $activePortIntelProduct,
                 activeSearchQuery: $activeSearchQuery,
                 activePostLoadDraftId: $activePostLoadDraftId,
-                avatarPickerOpen: $avatarPickerOpen,
                 showeSang: $showeSang,
                 webContinuationURL: $webContinuationURL,
                 pushedDetail: $pushedDetail,
                 pushOrTab: pushOrTab,
                 popOne: popOne,
                 resetPostLoadDraft: { postLoadDraft.reset() },
+                applyIndustryWorkflow: { postLoadDraft.applyIndustryWorkflow($0) },
                 handleMeAction: handleShipperMeAction
             ))
-            .photosPicker(isPresented: $avatarPickerOpen,
-                          selection: $avatarPickerItem,
-                          matching: .images)
-            .onChange(of: avatarPickerItem) { _, newItem in
-                guard let newItem else { return }
-                Task {
-                    await uploadShipperAvatar(item: newItem)
-                    avatarPickerItem = nil
-                }
-            }
-            .alert("Profile photo", isPresented: Binding(
-                get: { avatarUploadError != nil },
-                set: { if !$0 { avatarUploadError = nil } })) {
-                Button("OK", role: .cancel) { avatarUploadError = nil }
-            } message: { Text(avatarUploadError ?? "") }
             .sheet(item: Binding<ShipperWebContinuationItem?>(
                 get: { webContinuationURL.map(ShipperWebContinuationItem.init) },
                 set: { webContinuationURL = $0?.url }
             )) { ident in
                 SafariContinuationView(url: ident.url)
                     .ignoresSafeArea()
+                    .eusoRefreshSurface("modal:web-continuation:shipper")
             }
             // ASC AOd5xzXVfU6CF6hyijTDwgk (build 712): present as a full-
             // screen cover, not a page sheet. The page-sheet peek band let
@@ -461,17 +1044,25 @@ struct ShipperSurface: View {
                     .environment(\.esangActionHandler) { action in
                         eSangRoleDispatcher.dispatch(
                             action,
-                            role: session.user?.roleEnum ?? .shipper,
+                            role: .shipper,
                             dismissSheet: { showeSang = false })
                     }
             }
     }
 
     private var currentIdentity: String {
-        if currentScreenId == "393" {
+        switch currentScreenId {
+        case "261":
+            return "shipper-261-\(activeLoadId ?? "__missing")"
+        case "381":
+            return "shipper-381-\(activeRfpId ?? "__missing")"
+        case "435":
+            return "shipper-435-\(activeAgreementPartnerId ?? "__missing")"
+        case "393":
             return "shipper-393-\(activeSearchQuery ?? "__empty")"
+        default:
+            return "shipper-\(currentScreenId)"
         }
-        return "shipper-\(currentScreenId)"
     }
 
     /// Routes a `MeAction.fire(key)` from any Shipper screen to its
@@ -548,80 +1139,6 @@ struct ShipperSurface: View {
         }
     }
 
-    // MARK: - Avatar upload
-
-    /// Convert the picked photo to a JPEG data URL and ship it through
-    /// `profile.updateAvatar`. The mutation persists `profilePicture`
-    /// on the `users` row so web + iPad read the new image on next
-    /// `profile.getMyProfile`. Best-effort — silent failure leaves
-    /// the previous avatar in place.
-    @MainActor
-    private func uploadShipperAvatar(item: PhotosPickerItem) async {
-        guard let data = try? await item.loadTransferable(type: Data.self),
-              !data.isEmpty else { return }
-        // Compress so the base64 data-URL stays well under the 64KB
-        // `users.profilePicture` TEXT column (max 65535 bytes). A detailed
-        // 512px@0.8 JPEG could base64-inflate past 64KB, and the server
-        // UPDATE then throws "Data too long for column" — surfaced to the
-        // user as "your photo didn't upload". Resize to ~320px, then
-        // iteratively drop quality (and dimension as a backstop) until the
-        // JPEG is < 37KB binary (~49KB base64), with a hard floor so it
-        // ALWAYS terminates and ALWAYS fits.
-        let bytes: Data = {
-            #if canImport(UIKit)
-            guard let img = UIImage(data: data) else { return data }
-            let maxBinary = 37_000   // -> base64 < ~49KB, safely under the 64KB column
-            func encode(at dimension: CGFloat, quality: CGFloat) -> Data? {
-                let scale = min(dimension / max(img.size.width, 1), dimension / max(img.size.height, 1), 1)
-                let size = CGSize(width: max(img.size.width * scale, 1), height: max(img.size.height * scale, 1))
-                let renderer = UIGraphicsImageRenderer(size: size)
-                let resized = renderer.image { _ in img.draw(in: CGRect(origin: .zero, size: size)) }
-                return resized.jpegData(compressionQuality: quality)
-            }
-            var dimension: CGFloat = 320
-            for _ in 0..<4 {                 // dimension backstop: 320 -> ~88
-                var quality: CGFloat = 0.7
-                while quality >= 0.2 {       // quality floor 0.2
-                    if let jpeg = encode(at: dimension, quality: quality), jpeg.count < maxBinary {
-                        return jpeg
-                    }
-                    quality -= 0.15
-                }
-                dimension *= 0.65
-            }
-            // Hard floor — a 96px @0.3 JPEG is a few KB, guaranteed to fit.
-            return encode(at: 96, quality: 0.3) ?? encode(at: 64, quality: 0.3) ?? data
-            #else
-            return data
-            #endif
-        }()
-        let dataURL = "data:image/jpeg;base64,\(bytes.base64EncodedString())"
-
-        struct In: Encodable { let avatarUrl: String }
-        struct Out: Decodable { let success: Bool; let avatarUrl: String }
-        do {
-            let out: Out = try await EusoTripAPI.shared.mutation(
-                "profile.updateAvatar",
-                input: In(avatarUrl: dataURL)
-            )
-            if out.success {
-                // Post the LIVE profile-updated event so avatar-rendering
-                // surfaces re-fetch and pick up the new picture. Was
-                // `.eusoProfileAvatarUpdated`, which had ZERO observers anywhere
-                // (a dead post); `.eusoProfileUpdated` is the event the
-                // real-time profile-refresh path actually listens on.
-                NotificationCenter.default.post(name: .eusoProfileUpdated, object: nil)
-            } else {
-                avatarUploadError = "Your photo didn't upload. Please try again."
-            }
-        } catch {
-            // Was `try?` — a failed upload silently did nothing and the
-            // user re-picked the photo forever. Surface the real error.
-            avatarUploadError = (error as? EusoTripAPIError)?.errorDescription
-                ?? "Your photo didn't upload. Please try again."
-        }
-    }
-
     // MARK: - Navigation stack helpers
 
     /// Push a screen id onto the stack, OR collapse to a tab root.
@@ -630,21 +1147,16 @@ struct ShipperSurface: View {
     /// switching tabs clears the per-tab back-trail. Re-tapping the
     /// current tab is a no-op so duplicate entries don't accumulate.
     private func pushOrTab(_ id: String) {
-        if Self.tabRoots.contains(id) {
-            screenStack = [id]
-            return
-        }
-        if screenStack.last == id { return }   // dedupe consecutive
-        screenStack.append(id)
+        RoleNavigationPathContract.open(
+            id, tabRoots: Self.tabRoots, fallback: "200", stack: &screenStack
+        )
     }
 
     /// Pop one entry off the stack. Never pops below the tab root —
     /// the back overlay is hidden when stack count == 1, but defend
     /// against rogue `.eusoShipperNavBack` posts anyway.
     private func popOne() {
-        if screenStack.count > 1 {
-            screenStack.removeLast()
-        }
+        RoleNavigationPathContract.pop(&screenStack)
     }
 
     private var postLoadWizardScreen: ProductionScreen? {
@@ -715,6 +1227,7 @@ struct ShipperSurface: View {
 /// own header back row — keeping the overlay path off avoids the
 /// double-button collision.
 private struct ShipperBackOverlay: ViewModifier {
+    @Environment(\.eusoRoleDetailPresented) private var detailPresented
     let stackDepth: Int
     /// Screens that ship their own header back chevron — suppressing the
     /// surface overlay for these prevents the double-back collision the
@@ -766,6 +1279,12 @@ private struct ShipperBackOverlay: ViewModifier {
         // 228/229/230 removal above). Removed so the safeAreaInset
         // surface back renders.
         "203",
+        // §27 commodity / cross-border addenda. Every one of these
+        // composes `AddendaHeader` (ShipperCommodityKit.swift:28), which
+        // draws its OWN back chevron wired to `.eusoShipperNavBack`.
+        // Listed here so the floating surface chevron does not paint a
+        // second, redundant back affordance on top of it.
+        "204B", "204C", "216B", "216D", "216F",
     ]
 
     let currentScreenId: String
@@ -783,11 +1302,7 @@ private struct ShipperBackOverlay: ViewModifier {
         content.safeAreaInset(edge: .top, spacing: 0) {
             if stackDepth > 1, !Self.screensWithOwnBack.contains(currentScreenId) {
                 HStack(spacing: 0) {
-                    Button {
-                        NotificationCenter.default.post(
-                            name: .eusoShipperNavBack, object: nil
-                        )
-                    } label: {
+                    Button(action: sendBack) {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 16, weight: .heavy))
                             .foregroundStyle(.white)
@@ -804,6 +1319,14 @@ private struct ShipperBackOverlay: ViewModifier {
                 .padding(.vertical, 8)
             }
         }
+        .modifier(EusoEdgeSwipeBack(
+            isEnabled: stackDepth > 1 && !detailPresented,
+            onBack: sendBack
+        ))
+    }
+
+    private func sendBack() {
+        NotificationCenter.default.post(name: .eusoShipperNavBack, object: nil)
     }
 }
 
@@ -871,16 +1394,18 @@ private struct ShipperEnvInjections: ViewModifier {
 private struct ShipperNotificationListeners: ViewModifier {
     @Binding var screenStack: [String]
     @Binding var activeLoadId: String?
+    @Binding var activeRfpId: String?
+    @Binding var activeAgreementPartnerId: String?
     @Binding var activePortIntelProduct: String?
     @Binding var activeSearchQuery: String?
     @Binding var activePostLoadDraftId: String?
-    @Binding var avatarPickerOpen: Bool
     @Binding var showeSang: Bool
     @Binding var webContinuationURL: URL?
     @Binding var pushedDetail: RoleDetailPush?
     let pushOrTab: (String) -> Void
     let popOne: () -> Void
     let resetPostLoadDraft: () -> Void
+    let applyIndustryWorkflow: (IndustryWorkflowHandoff) -> Void
     let handleMeAction: (String, [AnyHashable: Any]) -> Void
 
     func body(content: Content) -> some View {
@@ -888,15 +1413,17 @@ private struct ShipperNotificationListeners: ViewModifier {
             .modifier(ShipperNavReceivers(
                 screenStack: $screenStack,
                 activeLoadId: $activeLoadId,
+                activeRfpId: $activeRfpId,
+                activeAgreementPartnerId: $activeAgreementPartnerId,
                 activePortIntelProduct: $activePortIntelProduct,
                 activeSearchQuery: $activeSearchQuery,
                 activePostLoadDraftId: $activePostLoadDraftId,
-                avatarPickerOpen: $avatarPickerOpen,
                 showeSang: $showeSang,
                 pushedDetail: $pushedDetail,
                 pushOrTab: pushOrTab,
                 popOne: popOne,
-                resetPostLoadDraft: resetPostLoadDraft
+                resetPostLoadDraft: resetPostLoadDraft,
+                applyIndustryWorkflow: applyIndustryWorkflow
             ))
             .modifier(ShipperLoadReceivers(
                 screenStack: $screenStack,
@@ -914,15 +1441,17 @@ private struct ShipperNotificationListeners: ViewModifier {
 private struct ShipperNavReceivers: ViewModifier {
     @Binding var screenStack: [String]
     @Binding var activeLoadId: String?
+    @Binding var activeRfpId: String?
+    @Binding var activeAgreementPartnerId: String?
     @Binding var activePortIntelProduct: String?
     @Binding var activeSearchQuery: String?
     @Binding var activePostLoadDraftId: String?
-    @Binding var avatarPickerOpen: Bool
     @Binding var showeSang: Bool
     @Binding var pushedDetail: RoleDetailPush?
     let pushOrTab: (String) -> Void
     let popOne: () -> Void
     let resetPostLoadDraft: () -> Void
+    let applyIndustryWorkflow: (IndustryWorkflowHandoff) -> Void
 
     private static let postLoadWizardIds: Set<String> = [
         "250", "251", "252", "253", "254", "255", "256", "257", "258", "259",
@@ -955,9 +1484,33 @@ private struct ShipperNavReceivers: ViewModifier {
                 // (strips `load_NNN`, rejects the `"0"` sentinel).
                 if id == "205" || id == "222" {
                     if let lid = ShipperLoadIdResolver.normalize(
-                        note.userInfo?["loadId"] as? String) {
+                        note.userInfo?["loadId"]) {
                         activeLoadId = lid
                     }
+                }
+                // 261/381/435 are actionable record details. Assign the
+                // normalized optional on every target swap (including nil)
+                // so a payload-less route fails closed instead of reusing the
+                // record from a previous visit.
+                if id == "261" {
+                    activeLoadId = ShipperLoadIdResolver.normalize(note.userInfo?["loadId"])
+                }
+                // §27 commodity / cross-border addenda (204B/204C ·
+                // 216B/216D/216F). Each is a per-load record surface, so
+                // the payload is assigned on EVERY swap to one of them —
+                // including nil — so a payload-less route fails closed to
+                // the screen's own "open this from a load" state rather
+                // than reusing the load from an earlier visit.
+                if ShipperSurface.commodityAddendaIds.contains(id) {
+                    activeLoadId = ShipperLoadIdResolver.normalize(note.userInfo?["loadId"])
+                }
+                if id == "381" {
+                    activeRfpId = ShipperRoutedRecordIdResolver.rfp(note.userInfo?["rfpId"])
+                }
+                if id == "435" {
+                    activeAgreementPartnerId = ShipperRoutedRecordIdResolver.positiveNumeric(
+                        note.userInfo?["partnerId"]
+                    )
                 }
                 // Wave I2 — 424→425 grade handoff. Overwritten on
                 // every 425 swap (nil when absent) so a stale grade
@@ -974,7 +1527,11 @@ private struct ShipperNavReceivers: ViewModifier {
                 }
                 if id == "250" {
                     let lastScreen = screenStack.last
-                    if let rawDraftId = note.userInfo?["draftId"] as? String,
+                    if let handoff = note.userInfo?["industryWorkflow"] as? IndustryWorkflowHandoff {
+                        activePostLoadDraftId = nil
+                        resetPostLoadDraft()
+                        applyIndustryWorkflow(handoff)
+                    } else if let rawDraftId = note.userInfo?["draftId"] as? String,
                        !rawDraftId.isEmpty {
                         if activePostLoadDraftId != rawDraftId {
                             resetPostLoadDraft()
@@ -1005,9 +1562,6 @@ private struct ShipperNavReceivers: ViewModifier {
                     withAnimation(.easeInOut(duration: 0.22)) { popOne() }
                 }
             }
-            .onReceive(NotificationCenter.default.publisher(for: .eusoShipperAvatarPickRequested)) { _ in
-                avatarPickerOpen = true
-            }
             .onReceive(NotificationCenter.default.publisher(for: .eusoShippereSangTapped)) { _ in
                 showeSang = true
             }
@@ -1037,12 +1591,12 @@ private struct ShipperNavReceivers: ViewModifier {
     }
 
     /// Emergency Wave I1 — `activeLoadId` may only be cleared when no
-    /// load-context screen (205 load detail / 222 live tracking)
+    /// load-context screen (205 load detail / 222 live tracking / 261 bids)
     /// remains anywhere on the nav stack. Tab-root pushes collapse the
     /// stack so the clear proceeds; appending pushes keep the drilled
     /// detail alive underneath and the context with it.
     private func clearLoadContextIfUnreferenced() {
-        if !screenStack.contains(where: { $0 == "205" || $0 == "222" }) {
+        if !screenStack.contains(where: { $0 == "205" || $0 == "222" || $0 == "261" }) {
             activeLoadId = nil
         }
     }
@@ -1218,7 +1772,7 @@ enum ShipperWebToNativeMap {
             return "206"
         case "settlement":            return "227"
         case "payment-methods",
-             "payment-method":        return "208"
+             "payment-method":        return "295"
         // `bol`/`bols` → registry id "228" = ShipperBOLs (the BOLs
         // LIST). NOTE: registry ids are NOT the file numbers — file
         // 228_ShipperRFPDetail registers as "228b", and registry "228"
@@ -1405,7 +1959,7 @@ struct CarrierSurface: View {
     /// Founder mandate 2026-05-05 — push/pop nav stack so leaf screens
     /// always have a back path. Bottom-nav tabs reset the stack to a
     /// single entry; non-tab screens append.
-    @State private var screenStack: [String] = ["300"]
+    @State private var screenStack: [String] = ["500"]
     @State private var showeSang: Bool = false
     /// Shared sheet→push detail layer (NAV remediation 2026-05-30).
     /// Ready for the per-role sheet-conversion wave; surfaces the
@@ -1422,7 +1976,7 @@ struct CarrierSurface: View {
     // never reset to its root (350 CarrierMe). Carrier's back-overlay uses a
     // separate `backSuppress` set, so this change only corrects tab-reset
     // semantics. Corrected to the real slot set. (IA recon 2026-05-30.)
-    private static let tabRoots: Set<String> = ["300", "301", "304", "350"]
+    private static let tabRoots: Set<String> = ["500", "501", "304", "350"]
 
     /// Carrier-side suppress list — same purpose as ShipperBackOverlay's
     /// `screensWithOwnBack`. Tab roots + leaves that draw their OWN
@@ -1449,36 +2003,49 @@ struct CarrierSurface: View {
     ///     (the real tab roots are 300/301/304/350). Removed as stale; if
     ///     either is ever pushed it now correctly gets the surface chevron.
     private static let backSuppress: Set<String> = [
-        "300", "301", "304",   // tab roots (Home / Loads / Drivers)
-        "350",                  // CarrierMe tab root (own dismiss)
+        "500", "501", "304", "350", // Catalyst role roots
         "321",                  // Catalyst Driver Profile — own .eusoRoleNavBack
     ]
 
-    private var currentScreenId: String { screenStack.last ?? "300" }
+    private var currentScreenId: String { screenStack.last ?? "500" }
 
     private var current: ProductionScreen {
-        let pool = ScreenRegistry.forRole(.carrier)
-                 + ScreenRegistry.forRole(.catalyst)
+        let pool = ScreenRegistry.forRole(.catalyst)
+                 + ScreenRegistry.forRole(.carrier)
         return pool.first { $0.id == currentScreenId }
-            ?? pool.first { $0.id == "300" }
+            ?? pool.first { $0.id == "500" }
             ?? pool.first
-            ?? ProductionScreen(id: "300",
-                                title: "Carrier · Home",
-                                role: .carrier) { p in
-                                    AnyView(CarrierHomeScreen(theme: p))
+            ?? ProductionScreen(id: "500",
+                                title: "Catalyst · Home",
+                                role: .catalyst) { p in
+                                    AnyView(CatalystHomeScreen(theme: p))
                                 }
     }
 
-    private func pushOrTab(_ id: String) {
-        if Self.tabRoots.contains(id) { screenStack = [id]; return }
-        if screenStack.last == id { return }
-        screenStack.append(id)
+    private var roleDock: RoleDockContract {
+        RoleDockCatalog.catalyst(
+            active: RoleNavigationPathContract.activeTab(
+                in: screenStack, tabRoots: Self.tabRoots, fallback: "500"
+            ),
+            select: { destination in
+                pushedDetail = nil
+                withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(destination) }
+            },
+            openESang: { showeSang = true }
+        )
     }
-    private func popOne() { if screenStack.count > 1 { screenStack.removeLast() } }
+
+    private func pushOrTab(_ id: String) {
+        RoleNavigationPathContract.open(
+            id, tabRoots: Self.tabRoots, fallback: "500", stack: &screenStack
+        )
+    }
+    private func popOne() { RoleNavigationPathContract.pop(&screenStack) }
 
     var body: some View {
         current.view(palette)
             .id("carrier-\(currentScreenId)")
+            .eusoRefreshSurface("catalyst:\(currentScreenId)")
             .transition(.opacity)
             .modifier(RoleNavBackOverlay(
                 stackDepth: screenStack.count,
@@ -1501,10 +2068,11 @@ struct CarrierSurface: View {
             .environment(\.carrierNavHandler) { label in
                 CarrierNavDispatcher.handle(label)
             }
+            .environment(\.roleDockContract, roleDock)
             .onReceive(NotificationCenter.default.publisher(for: .eusoCarrierNavSwap)) { note in
                 guard let id = note.userInfo?["screenId"] as? String else { return }
                 guard RoleAccess.canRender(role: .catalyst, screenId: id) else {
-                    screenStack = ["300"]; return
+                    screenStack = ["500"]; return
                 }
                 // Any explicit swap leaves the detail layer behind.
                 pushedDetail = nil
@@ -1530,7 +2098,7 @@ struct CarrierSurface: View {
                     .environment(\.esangActionHandler) { action in
                         eSangRoleDispatcher.dispatch(
                             action,
-                            role: session.user?.roleEnum ?? .catalyst,
+                            role: .catalyst,
                             dismissSheet: { showeSang = false })
                     }
             }
@@ -1579,15 +2147,29 @@ struct BrokerSurface: View {
     }
 
     private func pushOrTab(_ id: String) {
-        if Self.tabRoots.contains(id) { screenStack = [id]; return }
-        if screenStack.last == id { return }
-        screenStack.append(id)
+        RoleNavigationPathContract.open(
+            id, tabRoots: Self.tabRoots, fallback: "400", stack: &screenStack
+        )
     }
-    private func popOne() { if screenStack.count > 1 { screenStack.removeLast() } }
+    private func popOne() { RoleNavigationPathContract.pop(&screenStack) }
+
+    private var roleDock: RoleDockContract {
+        RoleDockCatalog.broker(
+            active: RoleNavigationPathContract.activeTab(
+                in: screenStack, tabRoots: Self.tabRoots, fallback: "400"
+            ),
+            select: { destination in
+                pushedDetail = nil
+                withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(destination) }
+            },
+            openESang: { showeSang = true }
+        )
+    }
 
     var body: some View {
         current.view(palette)
             .id("broker-\(currentScreenId)")
+            .eusoRefreshSurface("broker:\(currentScreenId)")
             .transition(.opacity)
             .modifier(RoleNavBackOverlay(
                 stackDepth: screenStack.count,
@@ -1599,6 +2181,7 @@ struct BrokerSurface: View {
             .environment(\.brokerNavHandler) { label in
                 BrokerNavDispatcher.handle(label)
             }
+            .environment(\.roleDockContract, roleDock)
             .modifier(RoleDetailLayer(
                 pushedDetail: $pushedDetail,
                 palette: palette,
@@ -1637,7 +2220,7 @@ struct BrokerSurface: View {
                     .environment(\.esangActionHandler) { action in
                         eSangRoleDispatcher.dispatch(
                             action,
-                            role: session.user?.roleEnum ?? .broker,
+                            role: .broker,
                             dismissSheet: { showeSang = false })
                     }
             }
@@ -1681,15 +2264,29 @@ struct EscortSurface: View {
     }
 
     private func pushOrTab(_ id: String) {
-        if Self.tabRoots.contains(id) { screenStack = [id]; return }
-        if screenStack.last == id { return }
-        screenStack.append(id)
+        RoleNavigationPathContract.open(
+            id, tabRoots: Self.tabRoots, fallback: "600", stack: &screenStack
+        )
     }
-    private func popOne() { if screenStack.count > 1 { screenStack.removeLast() } }
+    private func popOne() { RoleNavigationPathContract.pop(&screenStack) }
+
+    private var roleDock: RoleDockContract {
+        RoleDockCatalog.escort(
+            active: RoleNavigationPathContract.activeTab(
+                in: screenStack, tabRoots: Self.tabRoots, fallback: "600"
+            ),
+            select: { destination in
+                pushedDetail = nil
+                withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(destination) }
+            },
+            openESang: { showeSang = true }
+        )
+    }
 
     var body: some View {
         current.view(palette)
             .id("escort-\(currentScreenId)")
+            .eusoRefreshSurface("escort:\(currentScreenId)")
             .transition(.opacity)
             .modifier(RoleNavBackOverlay(
                 stackDepth: screenStack.count,
@@ -1701,6 +2298,7 @@ struct EscortSurface: View {
             .environment(\.escortNavHandler) { label in
                 EscortNavDispatcher.handle(label)
             }
+            .environment(\.roleDockContract, roleDock)
             .modifier(RoleDetailLayer(
                 pushedDetail: $pushedDetail,
                 palette: palette,
@@ -1733,7 +2331,7 @@ struct EscortSurface: View {
                     .environment(\.esangActionHandler) { action in
                         eSangRoleDispatcher.dispatch(
                             action,
-                            role: session.user?.roleEnum ?? .escort,
+                            role: .escort,
                             dismissSheet: { showeSang = false })
                     }
             }
@@ -1778,15 +2376,29 @@ struct TerminalSurface: View {
     }
 
     private func pushOrTab(_ id: String) {
-        if Self.tabRoots.contains(id) { screenStack = [id]; return }
-        if screenStack.last == id { return }
-        screenStack.append(id)
+        RoleNavigationPathContract.open(
+            id, tabRoots: Self.tabRoots, fallback: "700", stack: &screenStack
+        )
     }
-    private func popOne() { if screenStack.count > 1 { screenStack.removeLast() } }
+    private func popOne() { RoleNavigationPathContract.pop(&screenStack) }
+
+    private var roleDock: RoleDockContract {
+        RoleDockCatalog.terminal(
+            active: RoleNavigationPathContract.activeTab(
+                in: screenStack, tabRoots: Self.tabRoots, fallback: "700"
+            ),
+            select: { destination in
+                pushedDetail = nil
+                withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(destination) }
+            },
+            openESang: { showeSang = true }
+        )
+    }
 
     var body: some View {
         current.view(palette)
             .id("terminal-\(currentScreenId)")
+            .eusoRefreshSurface("terminal:\(currentScreenId)")
             .transition(.opacity)
             .modifier(RoleNavBackOverlay(
                 stackDepth: screenStack.count,
@@ -1798,6 +2410,7 @@ struct TerminalSurface: View {
             .environment(\.terminalNavHandler) { label in
                 TerminalNavDispatcher.handle(label)
             }
+            .environment(\.roleDockContract, roleDock)
             .modifier(RoleDetailLayer(
                 pushedDetail: $pushedDetail,
                 palette: palette,
@@ -1830,7 +2443,7 @@ struct TerminalSurface: View {
                     .environment(\.esangActionHandler) { action in
                         eSangRoleDispatcher.dispatch(
                             action,
-                            role: session.user?.roleEnum ?? .terminal,
+                            role: .terminal,
                             dismissSheet: { showeSang = false })
                     }
             }
@@ -1845,6 +2458,7 @@ struct TerminalSurface: View {
 /// level via session-role checks. RBAC at the surface level is the
 /// outer guard via `RoleAccess.canRender(role:.admin)`.
 struct AdminSurface: View {
+    let role: EusoRole
     let palette: Theme.Palette
 
     @EnvironmentObject var session: EusoTripSession
@@ -1878,15 +2492,30 @@ struct AdminSurface: View {
     }
 
     private func pushOrTab(_ id: String) {
-        if Self.tabRoots.contains(id) { screenStack = [id]; return }
-        if screenStack.last == id { return }
-        screenStack.append(id)
+        RoleNavigationPathContract.open(
+            id, tabRoots: Self.tabRoots, fallback: "800", stack: &screenStack
+        )
     }
-    private func popOne() { if screenStack.count > 1 { screenStack.removeLast() } }
+    private func popOne() { RoleNavigationPathContract.pop(&screenStack) }
+
+    private var roleDock: RoleDockContract {
+        RoleDockCatalog.admin(
+            role: role,
+            active: RoleNavigationPathContract.activeTab(
+                in: screenStack, tabRoots: Self.tabRoots, fallback: "800"
+            ),
+            select: { destination in
+                pushedDetail = nil
+                withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(destination) }
+            },
+            openESang: { showeSang = true }
+        )
+    }
 
     var body: some View {
         current.view(palette)
             .id("admin-\(currentScreenId)")
+            .eusoRefreshSurface("admin:\(currentScreenId)")
             .transition(.opacity)
             .modifier(RoleNavBackOverlay(
                 stackDepth: screenStack.count,
@@ -1898,6 +2527,7 @@ struct AdminSurface: View {
             .environment(\.adminNavHandler) { label in
                 AdminNavDispatcher.handle(label)
             }
+            .environment(\.roleDockContract, roleDock)
             .modifier(RoleDetailLayer(
                 pushedDetail: $pushedDetail,
                 palette: palette,
@@ -1930,7 +2560,7 @@ struct AdminSurface: View {
                     .environment(\.esangActionHandler) { action in
                         eSangRoleDispatcher.dispatch(
                             action,
-                            role: session.user?.roleEnum ?? .admin,
+                            role: role,
                             dismissSheet: { showeSang = false })
                     }
             }
@@ -1986,15 +2616,29 @@ struct DispatchSurface: View {
     }
 
     private func pushOrTab(_ id: String) {
-        if Self.tabRoots.contains(id) { screenStack = [id]; return }
-        if screenStack.last == id { return }
-        screenStack.append(id)
+        RoleNavigationPathContract.open(
+            id, tabRoots: Self.tabRoots, fallback: "Disp400", stack: &screenStack
+        )
     }
-    private func popOne() { if screenStack.count > 1 { screenStack.removeLast() } }
+    private func popOne() { RoleNavigationPathContract.pop(&screenStack) }
+
+    private var roleDock: RoleDockContract {
+        RoleDockCatalog.dispatch(
+            active: RoleNavigationPathContract.activeTab(
+                in: screenStack, tabRoots: Self.tabRoots, fallback: "Disp400"
+            ),
+            select: { destination in
+                pushedDetail = nil
+                withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(destination) }
+            },
+            openESang: { showeSang = true }
+        )
+    }
 
     var body: some View {
         current.view(palette)
             .id("dispatch-\(currentScreenId)")
+            .eusoRefreshSurface("dispatch:\(currentScreenId)")
             .transition(.opacity)
             .modifier(RoleNavBackOverlay(
                 stackDepth: screenStack.count,
@@ -2006,6 +2650,7 @@ struct DispatchSurface: View {
             .environment(\.dispatchNavHandler) { label in
                 DispatchNavDispatcher.handle(label)
             }
+            .environment(\.roleDockContract, roleDock)
             .modifier(RoleDetailLayer(
                 pushedDetail: $pushedDetail,
                 palette: palette,
@@ -2053,7 +2698,7 @@ struct DispatchSurface: View {
                     .environment(\.esangActionHandler) { action in
                         eSangRoleDispatcher.dispatch(
                             action,
-                            role: session.user?.roleEnum ?? .dispatch,
+                            role: .dispatch,
                             dismissSheet: { showeSang = false })
                     }
             }
@@ -2108,15 +2753,29 @@ struct ComplianceSurface: View {
     }
 
     private func pushOrTab(_ id: String) {
-        if Self.tabRoots.contains(id) { screenStack = [id]; return }
-        if screenStack.last == id { return }
-        screenStack.append(id)
+        RoleNavigationPathContract.open(
+            id, tabRoots: Self.tabRoots, fallback: "900", stack: &screenStack
+        )
     }
-    private func popOne() { if screenStack.count > 1 { screenStack.removeLast() } }
+    private func popOne() { RoleNavigationPathContract.pop(&screenStack) }
+
+    private var roleDock: RoleDockContract {
+        RoleDockCatalog.compliance(
+            active: RoleNavigationPathContract.activeTab(
+                in: screenStack, tabRoots: Self.tabRoots, fallback: "900"
+            ),
+            select: { destination in
+                pushedDetail = nil
+                withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(destination) }
+            },
+            openESang: { showeSang = true }
+        )
+    }
 
     var body: some View {
         current.view(palette)
             .id("compliance-\(currentScreenId)")
+            .eusoRefreshSurface("compliance:\(currentScreenId)")
             .transition(.opacity)
             .modifier(RoleNavBackOverlay(
                 stackDepth: screenStack.count,
@@ -2128,6 +2787,7 @@ struct ComplianceSurface: View {
             .environment(\.complianceNavHandler) { label in
                 ComplianceNavDispatcher.handle(label)
             }
+            .environment(\.roleDockContract, roleDock)
             .modifier(RoleDetailLayer(
                 pushedDetail: $pushedDetail,
                 palette: palette,
@@ -2160,10 +2820,1990 @@ struct ComplianceSurface: View {
                     .environment(\.esangActionHandler) { action in
                         eSangRoleDispatcher.dispatch(
                             action,
-                            role: session.user?.roleEnum ?? .compliance,
+                            role: .compliance,
                             dismissSheet: { showeSang = false })
                     }
             }
+    }
+}
+
+// MARK: - Shared native mode-role surface
+
+/// Native container for rail and vessel roles whose strongest existing iOS
+/// workspaces live in the shared mode registry. The definition is an exact
+/// role allowlist: child-screen notifications can never broaden the catalog or
+/// replace the role's four dock destinations.
+@MainActor
+struct NativeModeRoleSurface: View {
+    let definition: NativeModeRoleDefinition
+    let palette: Theme.Palette
+
+    @EnvironmentObject private var session: EusoTripSession
+    @State private var screenStack: [String]
+    @State private var showeSang = false
+    @State private var pushedDetail: RoleDetailPush?
+    @State private var routeError: String?
+
+    init(definition: NativeModeRoleDefinition, palette: Theme.Palette) {
+        self.definition = definition
+        self.palette = palette
+        _screenStack = State(initialValue: [definition.home.destinationId])
+    }
+
+    private var currentScreenId: String {
+        screenStack.last ?? definition.home.destinationId
+    }
+
+    /// Rail Shipper's purpose-built 001 home predates the production screen
+    /// registry. Keep that one native root ahead of the registry; all other
+    /// mode roles resolve through their role-specific registered workspace.
+    private var dedicatedHomeView: AnyView? {
+        switch definition.role {
+        case .railShipper:
+            return AnyView(RailShipperHomeScreen(theme: palette))
+        default:
+            return nil
+        }
+    }
+
+    private var currentView: AnyView {
+        if currentScreenId == definition.home.destinationId {
+            if let dedicatedHomeView {
+                return dedicatedHomeView
+            }
+            guard let screen = registeredScreen(definition.nativeHomeScreenId) else {
+                return routeUnavailableView
+            }
+            return screen.view(palette)
+        }
+        if currentScreenId == definition.me.destinationId {
+            return AnyView(NativeModeRoleMe(
+                definition: definition,
+                palette: palette
+            ))
+        }
+        guard definition.allowedRoutes.contains(currentScreenId),
+              let screen = registeredScreen(currentScreenId) else {
+            return routeUnavailableView
+        }
+        return screen.view(palette)
+    }
+
+    private func registeredScreen(_ screenId: String) -> ProductionScreen? {
+        ScreenRegistry.forRole(definition.registryRole)
+            .first(where: { $0.id == screenId })
+    }
+
+    private var routeUnavailableView: AnyView {
+        AnyView(NativeModeRouteUnavailable(
+            definition: definition,
+            palette: palette,
+            returnHome: { selectDockDestination(definition.home.destinationId) }
+        ))
+    }
+
+    private var swapNotification: Notification.Name {
+        switch definition.mode {
+        case .rail: return .eusoRailNavSwap
+        case .vessel: return .eusoVesselNavSwap
+        }
+    }
+
+    private var railNavigation: ((String) -> Void)? {
+        guard definition.mode == .rail else { return nil }
+        return { label in RailEngineerNavDispatcher.handle(label) }
+    }
+
+    private var vesselNavigation: ((String) -> Void)? {
+        guard definition.mode == .vessel else { return nil }
+        return { label in VesselOperatorNavDispatcher.handle(label) }
+    }
+
+    private var roleDock: RoleDockContract {
+        RoleDockCatalog.nativeModeRole(
+            definition: definition,
+            active: RoleNavigationPathContract.activeTab(
+                in: screenStack,
+                tabRoots: definition.tabRoots,
+                fallback: definition.home.destinationId
+            ),
+            select: { destination in selectDockDestination(destination) },
+            openESang: { showeSang = true }
+        )
+    }
+
+    var body: some View {
+        currentView
+            .id("native-mode-role-\(definition.role.rawValue)-\(currentScreenId)")
+            .eusoRefreshSurface("native-mode-role:\(definition.role.rawValue):\(currentScreenId)")
+            .modifier(RoleNavBackOverlay(
+                stackDepth: screenStack.count,
+                currentScreenId: currentScreenId,
+                screensWithOwnBack: definition.screensWithOwnBack.union(definition.tabRoots)
+            ))
+            .environment(\.driverNavHandler, nil)
+            .environment(\.shipperNavHandler, nil)
+            .environment(\.vesselShipperNavHandler, nil)
+            .environment(\.railEngineerNavHandler, railNavigation)
+            .environment(\.vesselOperatorNavHandler, vesselNavigation)
+            .environment(\.roleDockContract, roleDock)
+            .modifier(RoleDetailLayer(
+                pushedDetail: $pushedDetail,
+                palette: palette,
+                onBack: {
+                    NotificationCenter.default.post(name: .eusoRoleNavBack, object: nil)
+                }
+            ))
+            .onReceive(NotificationCenter.default.publisher(for: swapNotification)) { note in
+                guard let screenId = note.userInfo?["screenId"] as? String else { return }
+                openNotificationRoute(screenId)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoRoleNavBack)) { _ in
+                if pushedDetail != nil {
+                    withAnimation(.easeInOut(duration: 0.28)) { pushedDetail = nil }
+                } else if RoleNavigationPathContract.canPop(screenStack) {
+                    withAnimation(.easeInOut(duration: 0.22)) {
+                        _ = RoleNavigationPathContract.pop(&screenStack)
+                    }
+                }
+            }
+            .fullScreenCover(isPresented: $showeSang) {
+                DrivereSangCoachSheet()
+                    .environment(\.palette, palette)
+                    .environmentObject(session)
+                    .environment(\.esangActionHandler) { action in
+                        eSangRoleDispatcher.dispatch(
+                            action,
+                            role: definition.role,
+                            dismissSheet: { showeSang = false }
+                        )
+                    }
+            }
+            .alert("Route unavailable", isPresented: Binding(
+                get: { routeError != nil },
+                set: { if !$0 { routeError = nil } }
+            )) {
+                Button("OK", role: .cancel) { routeError = nil }
+            } message: {
+                Text(routeError ?? "")
+            }
+    }
+
+    private func selectDockDestination(_ destination: String) {
+        guard definition.tabRoots.contains(destination) else {
+            routeError = "That destination is not assigned to the \(definition.role.displayName) dock."
+            return
+        }
+        pushedDetail = nil
+        withAnimation(.easeInOut(duration: 0.22)) {
+            RoleNavigationPathContract.open(
+                destination,
+                tabRoots: definition.tabRoots,
+                fallback: definition.home.destinationId,
+                stack: &screenStack
+            )
+        }
+    }
+
+    private func openNotificationRoute(_ screenId: String) {
+        guard definition.allowedRoutes.contains(screenId),
+              ScreenRegistry.forRole(definition.registryRole)
+                .contains(where: { $0.id == screenId }) else {
+            routeError = "Open this item from its record so EusoTrip can preserve the required context."
+            return
+        }
+        pushedDetail = nil
+        withAnimation(.easeInOut(duration: 0.22)) {
+            RoleNavigationPathContract.open(
+                screenId,
+                tabRoots: definition.tabRoots,
+                fallback: definition.home.destinationId,
+                stack: &screenStack
+            )
+        }
+    }
+}
+
+@MainActor
+private struct NativeModeRoleMe: View {
+    let definition: NativeModeRoleDefinition
+    let palette: Theme.Palette
+
+    @EnvironmentObject private var session: EusoTripSession
+
+    var body: some View {
+        Shell(theme: palette) {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Space.s5) {
+                    Spacer().frame(height: Space.s5)
+                    EusoTripEyebrow(verbatim: "\(definition.role.displayName.uppercased()) · ME")
+                    Text("Account")
+                        .font(EType.h1)
+                        .foregroundStyle(palette.textPrimary)
+
+                    VStack(alignment: .leading, spacing: Space.s3) {
+                        Label(session.user?.name ?? definition.role.displayName,
+                              systemImage: definition.role.iconSystemName)
+                        Label(session.user?.email ?? "", systemImage: "envelope.fill")
+                        if let companyId = session.user?.companyId, !companyId.isEmpty {
+                            Label("Company \(companyId)", systemImage: "building.2.fill")
+                        }
+                    }
+                    .font(EType.body)
+                    .foregroundStyle(palette.textPrimary)
+                    .padding(Space.s4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(palette.bgCard)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                            .strokeBorder(palette.borderFaint)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+
+                    EusoCardIssuePanel(
+                        title: "\(definition.role.displayName) EusoCard",
+                        subtitle: "Operational spend card backed by EusoWallet Treasury"
+                    )
+
+                    Button {
+                        Task { await session.signOut() }
+                    } label: {
+                        Text("Sign out")
+                            .font(EType.bodyStrong)
+                            .foregroundStyle(Brand.danger)
+                            .frame(maxWidth: .infinity, minHeight: 48)
+                            .background(palette.bgCardSoft)
+                            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+
+                    Color.clear.frame(height: 96)
+                }
+                .padding(.horizontal, Space.s5)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        } nav: {
+            EmptyView()
+        }
+    }
+}
+
+@MainActor
+private struct NativeModeRouteUnavailable: View {
+    let definition: NativeModeRoleDefinition
+    let palette: Theme.Palette
+    let returnHome: () -> Void
+
+    var body: some View {
+        Shell(theme: palette) {
+            VStack(spacing: Space.s4) {
+                Spacer().frame(height: Space.s8)
+                Image(systemName: "exclamationmark.shield.fill")
+                    .font(.system(size: 36, weight: .semibold))
+                    .foregroundStyle(Brand.warning)
+                Text("Route unavailable")
+                    .font(EType.h2)
+                    .foregroundStyle(palette.textPrimary)
+                Text("This screen is not assigned to the \(definition.role.displayName) workspace.")
+                    .font(EType.body)
+                    .foregroundStyle(palette.textSecondary)
+                    .multilineTextAlignment(.center)
+                Button("Return Home", action: returnHome)
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, minHeight: 48)
+                    .background(LinearGradient.diagonal)
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            }
+            .padding(.horizontal, Space.s5)
+        } nav: {
+            EmptyView()
+        }
+    }
+}
+
+// MARK: - Native specialist role surface
+
+private enum SpecialistFeedState: Equatable {
+    case idle
+    case loading
+    case available
+    case unavailable(String)
+
+    var unavailableMessage: String? {
+        guard case .unavailable(let message) = self else { return nil }
+        return message
+    }
+}
+
+private struct SpecialistSafetyIncidentEnvelope: Decodable {
+    struct Summary: Decodable {
+        let total: Int
+        let open: Int
+        let critical: Int
+    }
+
+    struct Incident: Decodable, Identifiable {
+        let id: String
+        let incidentNumber: String
+        let type: String
+        let severity: String
+        let status: String
+        let description: String
+        let location: String
+        let date: String
+        let injuries: Int
+        let fatalities: Int
+    }
+
+    let incidents: [Incident]
+    let total: Int
+    let summary: Summary
+    let tracked: Bool
+}
+
+private struct SpecialistCSAScores: Decodable {
+    struct Freshness: Decodable {
+        let providerAsOf: String?
+        let fetchedAt: String?
+        let providerAgeSeconds: Int?
+        let ingestAgeSeconds: Int?
+    }
+
+    struct Basic: Decodable, Identifiable {
+        let id: String
+        let category: String
+        let name: String
+        let description: String
+        let score: Double
+        let percentile: Double
+        let threshold: Double
+        let status: String
+        let alert: Bool
+        let inspections: Int?
+        let violations: Int?
+        let tracked: Bool
+        let source: SpecialistSource?
+        let freshness: Freshness?
+    }
+
+    struct SpecialistSource: Decodable {
+        let provider: String?
+        let dataset: String?
+        let authority: String?
+    }
+
+    let lastUpdated: String?
+    let overallScore: Double?
+    let categoriesPassing: Int?
+    let alertsCount: Int?
+    let alerts: [String]
+    let basics: [Basic]
+    let tracked: Bool
+    let recordFound: Bool
+    let scoreAvailable: Bool
+    let complete: Bool
+    let source: SpecialistSource
+    let freshness: Freshness
+    let unavailableReason: String?
+    let missingBasics: [String]
+}
+
+private struct SpecialistFactoringPending: Decodable {
+    struct Invoice: Decodable, Identifiable {
+        let id: String
+        let invoiceNumber: String
+        let catalyst: String?
+        let amount: Double
+        let status: String
+        let submittedAt: String?
+    }
+
+    let invoices: [Invoice]
+    let total: Int
+    let totalValue: Double
+    let tracked: Bool
+}
+
+private struct SpecialistFactoringFunded: Decodable {
+    struct Invoice: Decodable, Identifiable {
+        let id: String
+        let invoiceNumber: String
+        let catalyst: String?
+        let amount: Double
+        let invoiceAmount: Double
+        let fundedAt: String?
+    }
+
+    let invoices: [Invoice]
+    let totalFunded: Double
+    let count: Int
+    let tracked: Bool
+}
+
+private struct SpecialistFactoringPortfolio: Decodable {
+    let totalValue: Double
+    let activeInvoices: Int
+    let avgInvoiceSize: Double
+    let growthRate: Double
+    let tracked: Bool
+}
+
+private struct SpecialistZeunAccountEnvelope: Decodable {
+    struct Membership: Decodable {
+        let memberId: Int
+        let memberRole: String
+        let memberStatus: String
+        let accountId: Int
+        let providerId: Int
+        let vendorCompanyId: Int
+        let accountStatus: String
+    }
+
+    struct Provider: Decodable {
+        let id: Int
+        let name: String?
+        let providerType: String?
+        let city: String?
+        let state: String?
+    }
+
+    struct Member: Decodable, Identifiable {
+        let id: Int
+        let userId: Int
+        let name: String?
+        let email: String?
+        let role: String
+        let status: String
+        let activatedAt: String?
+    }
+
+    let account: Membership
+    let provider: Provider?
+    let members: [Member]
+}
+
+private struct SpecialistZeunWorkOrders: Decodable {
+    struct WorkOrder: Decodable, Identifiable {
+        let id: Int
+        let reportId: Int?
+        let status: String
+        let serviceType: String?
+        let priority: String?
+        let scheduledDate: String?
+        let acceptedAt: String?
+        let completedAt: String?
+        let createdAt: String?
+        let reportStatus: String
+        let severity: String
+        let issueCategory: String
+        let vehicleId: Int?
+        let providerName: String?
+    }
+
+    let workOrders: [WorkOrder]
+    let side: String
+}
+
+private struct SpecialistZeunWorkOrderDetail: Decodable, Identifiable {
+    struct Assignment: Decodable, Identifiable {
+        let id: Int
+        let status: String
+        let assignedAt: String?
+        let respondedAt: String?
+        let completedAt: String?
+        let mechanicMemberId: Int
+        let mechanicName: String?
+    }
+
+    let id: Int
+    let reportId: Int
+    let status: String
+    let breakdownStatus: String
+    let providerAccountId: Int
+    let serviceType: String?
+    let description: String?
+    let priority: String?
+    let scheduledDate: String?
+    let acceptedAt: String?
+    let completedAt: String?
+    let assignments: [Assignment]
+    let side: String
+}
+
+private struct SpecialistMutationReceipt: Decodable {
+    let success: Bool
+    let id: Int?
+    let status: String?
+    let breakdownStatus: String?
+    let assignmentId: Int?
+    let idempotent: Bool?
+}
+
+@MainActor
+private final class NativeSpecialistRoleStore: ObservableObject {
+    let role: EusoRole
+
+    @Published var incidents: SpecialistSafetyIncidentEnvelope?
+    @Published var csaScores: SpecialistCSAScores?
+    @Published var incidentState: SpecialistFeedState = .idle
+    @Published var csaState: SpecialistFeedState = .idle
+
+    @Published var pendingInvoices: SpecialistFactoringPending?
+    @Published var fundedInvoices: SpecialistFactoringFunded?
+    @Published var portfolio: SpecialistFactoringPortfolio?
+    @Published var pendingState: SpecialistFeedState = .idle
+    @Published var fundedState: SpecialistFeedState = .idle
+    @Published var portfolioState: SpecialistFeedState = .idle
+
+    @Published var providerAccount: SpecialistZeunAccountEnvelope?
+    @Published var providerAccountRead = false
+    @Published var workOrders: SpecialistZeunWorkOrders?
+    @Published var providerState: SpecialistFeedState = .idle
+    @Published var workState: SpecialistFeedState = .idle
+    @Published var selectedWorkOrder: SpecialistZeunWorkOrderDetail?
+    @Published var preparingWorkOrderId: Int?
+
+    @Published var mutationBusy = false
+    @Published var actionError: String?
+    @Published var actionConfirmation: String?
+
+    init(role: EusoRole) {
+        self.role = role
+    }
+
+    func refresh() async {
+        switch role {
+        case .safety:
+            await refreshSafety()
+        case .factoring:
+            await refreshFactoring()
+        case .serviceProvider:
+            await refreshProvider()
+        default:
+            break
+        }
+    }
+
+    private func refreshSafety() async {
+        incidentState = .loading
+        do {
+            let response: SpecialistSafetyIncidentEnvelope = try await EusoTripAPI.shared.query(
+                "safety.listIncidents",
+                input: ["limit": 50, "offset": 0]
+            )
+            incidents = response
+            incidentState = response.tracked
+                ? .available
+                : .unavailable("The company incident register is not currently tracked.")
+        } catch {
+            incidentState = .unavailable(Self.message(for: error, noun: "incident register"))
+        }
+
+        csaState = .loading
+        do {
+            let response: SpecialistCSAScores = try await EusoTripAPI.shared.queryNoInput(
+                "safety.getCSAScores"
+            )
+            csaScores = response
+            csaState = response.tracked
+                ? .available
+                : .unavailable(Self.csaUnavailableMessage(response))
+        } catch {
+            csaState = .unavailable(Self.message(for: error, noun: "CSA record"))
+        }
+    }
+
+    private func refreshFactoring() async {
+        portfolioState = .loading
+        do {
+            let response: SpecialistFactoringPortfolio = try await EusoTripAPI.shared.queryNoInput(
+                "factoring.getPortfolio"
+            )
+            portfolio = response
+            portfolioState = response.tracked
+                ? .available
+                : .unavailable("Portfolio tracking is unavailable for this facility.")
+        } catch {
+            portfolioState = .unavailable(Self.message(for: error, noun: "portfolio"))
+        }
+
+        pendingState = .loading
+        do {
+            let response: SpecialistFactoringPending = try await EusoTripAPI.shared.queryNoInput(
+                "factoring.getPendingInvoices"
+            )
+            pendingInvoices = response
+            pendingState = response.tracked
+                ? .available
+                : .unavailable("Pending receivables are not currently tracked.")
+        } catch {
+            pendingState = .unavailable(Self.message(for: error, noun: "pending receivables"))
+        }
+
+        fundedState = .loading
+        do {
+            let response: SpecialistFactoringFunded = try await EusoTripAPI.shared.queryNoInput(
+                "factoring.getFundedInvoices"
+            )
+            fundedInvoices = response
+            fundedState = response.tracked
+                ? .available
+                : .unavailable("Funded receivables are not currently tracked.")
+        } catch {
+            fundedState = .unavailable(Self.message(for: error, noun: "funding register"))
+        }
+    }
+
+    private func refreshProvider() async {
+        providerState = .loading
+        do {
+            let response: SpecialistZeunAccountEnvelope? = try await EusoTripAPI.shared.queryNoInput(
+                "zeunMechanics.getMyProviderAccount"
+            )
+            providerAccount = response
+            providerAccountRead = true
+            providerState = .available
+        } catch {
+            providerAccountRead = false
+            providerState = .unavailable(Self.message(for: error, noun: "provider account"))
+        }
+
+        workState = .loading
+        do {
+            let response: SpecialistZeunWorkOrders = try await EusoTripAPI.shared.query(
+                "zeunMechanics.listWorkOrders",
+                input: ["limit": 50]
+            )
+            workOrders = response
+            workState = .available
+        } catch {
+            workState = .unavailable(Self.message(for: error, noun: "work-order register"))
+        }
+    }
+
+    func transitionInvoice(
+        _ invoice: SpecialistFactoringPending.Invoice,
+        to status: String,
+        notes: String
+    ) async -> Bool {
+        guard let id = Int(invoice.id) else {
+            actionError = "This receivable has no valid database identity, so no review was recorded."
+            return false
+        }
+        let trimmed = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            actionError = "A review note is required."
+            return false
+        }
+        mutationBusy = true
+        actionError = nil
+        actionConfirmation = nil
+        defer { mutationBusy = false }
+        do {
+            struct Input: Encodable { let id: Int; let status: String; let notes: String }
+            let receipt: SpecialistMutationReceipt = try await EusoTripAPI.shared.mutation(
+                "factoring.update",
+                input: Input(id: id, status: status, notes: trimmed)
+            )
+            guard receipt.success else {
+                actionError = "The receivable review was not confirmed. Nothing was changed."
+                return false
+            }
+            actionConfirmation = receipt.idempotent == true
+                ? "That review had already been recorded."
+                : "Receivable review recorded."
+            await refreshFactoring()
+            return true
+        } catch {
+            actionError = Self.message(for: error, noun: "receivable review")
+            return false
+        }
+    }
+
+    func prepareWorkOrder(_ id: Int) async {
+        preparingWorkOrderId = id
+        actionError = nil
+        defer { preparingWorkOrderId = nil }
+        do {
+            let detail: SpecialistZeunWorkOrderDetail = try await EusoTripAPI.shared.query(
+                "zeunMechanics.getWorkOrder",
+                input: ["workOrderId": id]
+            )
+            selectedWorkOrder = detail
+        } catch {
+            actionError = Self.message(for: error, noun: "work order")
+        }
+    }
+
+    func respondToWorkOrder(id: Int, decision: String, notes: String) async -> Bool {
+        struct Input: Encodable { let workOrderId: Int; let decision: String; let notes: String }
+        return await performProviderMutation(
+            path: "zeunMechanics.respondToWorkOrder",
+            input: Input(workOrderId: id, decision: decision, notes: notes),
+            confirmation: decision == "accept" ? "Work order accepted." : "Work order declined."
+        )
+    }
+
+    func respondToAssignment(id: Int, decision: String, notes: String?) async -> Bool {
+        struct Input: Encodable { let assignmentId: Int; let decision: String; let notes: String? }
+        return await performProviderMutation(
+            path: "zeunMechanics.respondToAssignment",
+            input: Input(assignmentId: id, decision: decision, notes: notes),
+            confirmation: decision == "accept" ? "Mechanic assignment accepted." : "Mechanic assignment declined."
+        )
+    }
+
+    func assignMechanic(workOrderId: Int, memberId: Int, notes: String?) async -> Bool {
+        struct Input: Encodable { let workOrderId: Int; let mechanicMemberId: Int; let notes: String? }
+        return await performProviderMutation(
+            path: "zeunMechanics.assignMechanic",
+            input: Input(workOrderId: workOrderId, mechanicMemberId: memberId, notes: notes),
+            confirmation: "Mechanic assignment recorded."
+        )
+    }
+
+    func advanceWorkOrder(id: Int, status: String, notes: String) async -> Bool {
+        struct Input: Encodable { let workOrderId: Int; let breakdownStatus: String; let notes: String }
+        return await performProviderMutation(
+            path: "zeunMechanics.advanceWorkOrder",
+            input: Input(workOrderId: id, breakdownStatus: status, notes: notes),
+            confirmation: "Repair progress recorded."
+        )
+    }
+
+    private func performProviderMutation<Input: Encodable>(
+        path: String,
+        input: Input,
+        confirmation: String
+    ) async -> Bool {
+        mutationBusy = true
+        actionError = nil
+        actionConfirmation = nil
+        defer { mutationBusy = false }
+        do {
+            let receipt: SpecialistMutationReceipt = try await EusoTripAPI.shared.mutation(
+                path,
+                input: input
+            )
+            guard receipt.success else {
+                actionError = "The Zeun action was not confirmed. Nothing was changed."
+                return false
+            }
+            actionConfirmation = confirmation
+            selectedWorkOrder = nil
+            await refreshProvider()
+            return true
+        } catch {
+            actionError = Self.message(for: error, noun: "Zeun action")
+            return false
+        }
+    }
+
+    private static func csaUnavailableMessage(_ response: SpecialistCSAScores) -> String {
+        switch response.unavailableReason {
+        case "company_dot_missing":
+            return "Add the company's USDOT number before CSA evidence can be retrieved."
+        case "no_authoritative_record":
+            return "No authoritative CSA record was returned for this company's USDOT number."
+        case "basic_scores_unavailable":
+            return "The authoritative record contains no publishable BASIC percentiles."
+        default:
+            return "CSA evidence is unavailable."
+        }
+    }
+
+    private static func message(for error: Error, noun: String) -> String {
+        EusoTripAPIError.bidActionMessage(for: error, noun: noun)
+    }
+}
+
+@MainActor
+struct NativeSpecialistRoleSurface: View {
+    let definition: NativeSpecialistRoleDefinition
+    let palette: Theme.Palette
+
+    @EnvironmentObject private var session: EusoTripSession
+    @StateObject private var store: NativeSpecialistRoleStore
+    @State private var activeDestination: String
+    @State private var showeSang = false
+    @State private var invoiceReview: SpecialistFactoringPending.Invoice?
+
+    init(definition: NativeSpecialistRoleDefinition, palette: Theme.Palette) {
+        self.definition = definition
+        self.palette = palette
+        _store = StateObject(wrappedValue: NativeSpecialistRoleStore(role: definition.role))
+        _activeDestination = State(initialValue: definition.home.destinationId)
+    }
+
+    private var roleDock: RoleDockContract {
+        RoleDockCatalog.specialist(
+            definition: definition,
+            active: activeDestination,
+            select: selectDestination,
+            openESang: { showeSang = true }
+        )
+    }
+
+    var body: some View {
+        screen
+            .id("native-specialist-\(definition.role.rawValue)-\(activeDestination)")
+            .eusoRefreshSurface("native-specialist:\(definition.role.rawValue):\(activeDestination)")
+            .environment(\.roleDockContract, roleDock)
+            .task { await store.refresh() }
+            .sheet(item: $invoiceReview) { invoice in
+                SpecialistFactoringReviewSheet(invoice: invoice, store: store, palette: palette)
+            }
+            .sheet(item: $store.selectedWorkOrder) { detail in
+                SpecialistZeunWorkOrderSheet(detail: detail, store: store, palette: palette)
+            }
+            .fullScreenCover(isPresented: $showeSang) {
+                DrivereSangCoachSheet()
+                    .environment(\.palette, palette)
+                    .environmentObject(session)
+                    .environment(\.esangActionHandler) { action in
+                        handleESang(action)
+                    }
+            }
+    }
+
+    @ViewBuilder
+    private var screen: some View {
+        if activeDestination == definition.me.destinationId {
+            specialistMe
+        } else {
+            Shell(theme: palette) {
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: Space.s5) {
+                        Spacer().frame(height: Space.s5)
+                        EusoTripEyebrow(verbatim: eyebrow)
+                        Text(title)
+                            .font(EType.h1)
+                            .foregroundStyle(palette.textPrimary)
+                        Text(purpose)
+                            .font(EType.body)
+                            .foregroundStyle(palette.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        switch definition.role {
+                        case .safety:
+                            safetyContent
+                        case .factoring:
+                            factoringContent
+                        case .serviceProvider:
+                            providerContent
+                        default:
+                            EmptyView()
+                        }
+
+                        Color.clear.frame(height: 112)
+                    }
+                    .padding(.horizontal, Space.s5)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .eusoRefreshable { await store.refresh() }
+            } nav: {
+                EmptyView()
+            }
+        }
+    }
+
+    private var eyebrow: String {
+        switch activeDestination {
+        case definition.workOne.destinationId:
+            return "\(definition.role.displayName.uppercased()) · \(definition.workOne.label.uppercased())"
+        case definition.workTwo.destinationId:
+            return "\(definition.role.displayName.uppercased()) · \(definition.workTwo.label.uppercased())"
+        default:
+            return definition.eyebrow
+        }
+    }
+
+    private var title: String {
+        switch activeDestination {
+        case definition.workOne.destinationId: return definition.workOne.label
+        case definition.workTwo.destinationId: return definition.workTwo.label
+        default: return definition.title
+        }
+    }
+
+    private var purpose: String {
+        switch activeDestination {
+        case definition.workOne.destinationId where definition.role == .safety:
+            return "The company-scoped incident register. A zero is shown only after the database confirms tracking."
+        case definition.workTwo.destinationId where definition.role == .safety:
+            return "Authoritative FMCSA BASIC percentiles with provider and freshness evidence."
+        case definition.workOne.destinationId where definition.role == .factoring:
+            return "Receivables awaiting a facility review, with durable status transitions and notes."
+        case definition.workTwo.destinationId where definition.role == .factoring:
+            return "Advances that have a real funding timestamp and recorded amount."
+        case definition.workOne.destinationId where definition.role == .serviceProvider:
+            return "Work assigned to this exact Zeun provider account."
+        case definition.workTwo.destinationId where definition.role == .serviceProvider:
+            return "People and permissions attached to this exact Zeun provider account."
+        default:
+            return definition.purpose
+        }
+    }
+
+    @ViewBuilder
+    private var safetyContent: some View {
+        if activeDestination == definition.workTwo.destinationId {
+            csaRegister
+        } else if activeDestination == definition.workOne.destinationId {
+            incidentRegister
+        } else {
+            safetyOverview
+        }
+    }
+
+    private var safetyOverview: some View {
+        VStack(alignment: .leading, spacing: Space.s5) {
+            SpecialistSectionLabel("INCIDENT REGISTER", icon: "exclamationmark.triangle.fill", palette: palette)
+            if let response = store.incidents, response.tracked {
+                SpecialistMetricStrip(metrics: [
+                    ("Open", String(response.summary.open)),
+                    ("Critical", String(response.summary.critical)),
+                    ("Recorded", String(response.summary.total)),
+                ], palette: palette)
+            } else {
+                SpecialistFeedNotice(state: store.incidentState, palette: palette)
+            }
+
+            SpecialistSectionLabel("CSA EVIDENCE", icon: "checkmark.shield.fill", palette: palette)
+            if let csa = store.csaScores, csa.tracked {
+                SpecialistMetricStrip(metrics: [
+                    ("Highest BASIC", csa.overallScore.map { String(format: "%.0f", $0) } ?? "Unknown"),
+                    ("Alerts", csa.alertsCount.map(String.init) ?? "Unknown"),
+                    ("Complete", csa.complete ? "Yes" : "No"),
+                ], palette: palette)
+                SpecialistProvenanceRow(
+                    source: csa.source.provider ?? csa.source.dataset ?? "Authoritative source",
+                    asOf: csa.lastUpdated ?? csa.freshness.providerAsOf ?? csa.freshness.fetchedAt,
+                    palette: palette
+                )
+            } else {
+                SpecialistFeedNotice(state: store.csaState, palette: palette)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var incidentRegister: some View {
+        SpecialistFeedNotice(state: store.incidentState, palette: palette)
+        if let response = store.incidents, response.tracked {
+            if response.incidents.isEmpty {
+                SpecialistEmptyRegister(
+                    title: "No incidents recorded",
+                    message: "The company register was queried successfully and contains no rows.",
+                    palette: palette
+                )
+            } else {
+                SpecialistLiveRegister(palette: palette) {
+                    ForEach(Array(response.incidents.enumerated()), id: \.element.id) { index, incident in
+                        VStack(alignment: .leading, spacing: Space.s2) {
+                            HStack(alignment: .firstTextBaseline) {
+                                Text(incident.incidentNumber)
+                                    .font(EType.bodyStrong)
+                                    .foregroundStyle(palette.textPrimary)
+                                Spacer(minLength: Space.s2)
+                                Text(incident.status.replacingOccurrences(of: "_", with: " ").uppercased())
+                                    .font(EType.micro)
+                                    .foregroundStyle(specialistStatusColor(incident.status))
+                            }
+                            Text("\(incident.type.replacingOccurrences(of: "_", with: " ")) · \(incident.severity)")
+                                .font(EType.caption)
+                                .foregroundStyle(palette.textSecondary)
+                            if !incident.description.isEmpty {
+                                Text(incident.description)
+                                    .font(EType.body)
+                                    .foregroundStyle(palette.textPrimary)
+                            }
+                            if !incident.location.isEmpty || !incident.date.isEmpty {
+                                Text([incident.location, specialistTimestamp(incident.date)]
+                                    .filter { !$0.isEmpty }.joined(separator: " · "))
+                                    .font(EType.caption)
+                                    .foregroundStyle(palette.textTertiary)
+                            }
+                        }
+                        .padding(.vertical, Space.s3)
+                        if index < response.incidents.count - 1 {
+                            Rectangle().fill(palette.borderFaint).frame(height: 1)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var csaRegister: some View {
+        SpecialistFeedNotice(state: store.csaState, palette: palette)
+        if let csa = store.csaScores {
+            SpecialistProvenanceRow(
+                source: csa.source.provider ?? csa.source.dataset ?? "Authoritative source",
+                asOf: csa.lastUpdated ?? csa.freshness.providerAsOf ?? csa.freshness.fetchedAt,
+                palette: palette
+            )
+            if csa.tracked {
+                SpecialistLiveRegister(palette: palette) {
+                    ForEach(Array(csa.basics.enumerated()), id: \.element.id) { index, basic in
+                        HStack(alignment: .top, spacing: Space.s3) {
+                            VStack(alignment: .leading, spacing: Space.s1) {
+                                Text(basic.name)
+                                    .font(EType.bodyStrong)
+                                    .foregroundStyle(palette.textPrimary)
+                                Text(basic.description)
+                                    .font(EType.caption)
+                                    .foregroundStyle(palette.textSecondary)
+                            }
+                            Spacer(minLength: Space.s2)
+                            VStack(alignment: .trailing, spacing: Space.s1) {
+                                Text(String(format: "%.0f", basic.percentile))
+                                    .font(EType.title)
+                                    .foregroundStyle(basic.alert ? Brand.danger : Brand.success)
+                                Text("threshold \(String(format: "%.0f", basic.threshold))")
+                                    .font(EType.micro)
+                                    .foregroundStyle(palette.textTertiary)
+                            }
+                        }
+                        .padding(.vertical, Space.s3)
+                        if index < csa.basics.count - 1 {
+                            Rectangle().fill(palette.borderFaint).frame(height: 1)
+                        }
+                    }
+                }
+            } else if !csa.missingBasics.isEmpty {
+                Text("Unavailable BASICs: \(csa.missingBasics.joined(separator: ", "))")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var factoringContent: some View {
+        if activeDestination == definition.workOne.destinationId {
+            pendingRegister
+        } else if activeDestination == definition.workTwo.destinationId {
+            fundedRegister
+        } else {
+            factoringOverview
+        }
+    }
+
+    private var factoringOverview: some View {
+        VStack(alignment: .leading, spacing: Space.s5) {
+            SpecialistSectionLabel("OPEN PORTFOLIO", icon: "building.columns.fill", palette: palette)
+            SpecialistFeedNotice(state: store.portfolioState, palette: palette)
+            if let portfolio = store.portfolio, portfolio.tracked {
+                SpecialistMetricStrip(metrics: [
+                    ("Open value", specialistCurrency(portfolio.totalValue)),
+                    ("Invoices", String(portfolio.activeInvoices)),
+                    ("Average", specialistCurrency(portfolio.avgInvoiceSize)),
+                ], palette: palette)
+                HStack {
+                    Text("Funded volume change")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                    Spacer()
+                    Text(String(format: "%+.1f%%", portfolio.growthRate))
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                }
+                .padding(.vertical, Space.s2)
+                .overlay(alignment: .bottom) {
+                    Rectangle().fill(palette.borderFaint).frame(height: 1)
+                }
+            }
+
+            SpecialistSectionLabel("WORK QUEUES", icon: "list.bullet.rectangle", palette: palette)
+            SpecialistRegisterLink(
+                title: "Pending review",
+                value: store.pendingInvoices?.tracked == true
+                    ? String(store.pendingInvoices?.total ?? 0) : "Unknown",
+                palette: palette
+            ) { selectDestination(definition.workOne.destinationId) }
+            SpecialistRegisterLink(
+                title: "Funded",
+                value: store.fundedInvoices?.tracked == true
+                    ? String(store.fundedInvoices?.count ?? 0) : "Unknown",
+                palette: palette
+            ) { selectDestination(definition.workTwo.destinationId) }
+        }
+    }
+
+    @ViewBuilder
+    private var pendingRegister: some View {
+        SpecialistFeedNotice(state: store.pendingState, palette: palette)
+        if let pending = store.pendingInvoices, pending.tracked {
+            if pending.invoices.isEmpty {
+                SpecialistEmptyRegister(
+                    title: "No receivables awaiting review",
+                    message: "The facility register was queried successfully and contains no pending rows.",
+                    palette: palette
+                )
+            } else {
+                SpecialistLiveRegister(palette: palette) {
+                    ForEach(Array(pending.invoices.enumerated()), id: \.element.id) { index, invoice in
+                        Button { invoiceReview = invoice } label: {
+                            HStack(alignment: .top, spacing: Space.s3) {
+                                VStack(alignment: .leading, spacing: Space.s1) {
+                                    Text(invoice.invoiceNumber.isEmpty ? "Invoice \(invoice.id)" : invoice.invoiceNumber)
+                                        .font(EType.bodyStrong)
+                                        .foregroundStyle(palette.textPrimary)
+                                    Text([invoice.catalyst, specialistTimestamp(invoice.submittedAt)]
+                                        .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
+                                        .font(EType.caption)
+                                        .foregroundStyle(palette.textSecondary)
+                                    Text(invoice.status.replacingOccurrences(of: "_", with: " ").uppercased())
+                                        .font(EType.micro)
+                                        .foregroundStyle(Brand.warning)
+                                }
+                                Spacer(minLength: Space.s2)
+                                Text(specialistCurrency(invoice.amount))
+                                    .font(EType.bodyStrong)
+                                    .foregroundStyle(palette.textPrimary)
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundStyle(palette.textTertiary)
+                            }
+                            .contentShape(Rectangle())
+                            .padding(.vertical, Space.s3)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityHint("Review this receivable")
+                        if index < pending.invoices.count - 1 {
+                            Rectangle().fill(palette.borderFaint).frame(height: 1)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var fundedRegister: some View {
+        SpecialistFeedNotice(state: store.fundedState, palette: palette)
+        if let funded = store.fundedInvoices, funded.tracked {
+            if funded.invoices.isEmpty {
+                SpecialistEmptyRegister(
+                    title: "No funded receivables recorded",
+                    message: "The funding register was queried successfully and contains no funding timestamps.",
+                    palette: palette
+                )
+            } else {
+                SpecialistLiveRegister(palette: palette) {
+                    ForEach(Array(funded.invoices.enumerated()), id: \.element.id) { index, invoice in
+                        HStack(alignment: .top, spacing: Space.s3) {
+                            VStack(alignment: .leading, spacing: Space.s1) {
+                                Text(invoice.invoiceNumber.isEmpty ? "Invoice \(invoice.id)" : invoice.invoiceNumber)
+                                    .font(EType.bodyStrong)
+                                    .foregroundStyle(palette.textPrimary)
+                                Text([invoice.catalyst, specialistTimestamp(invoice.fundedAt)]
+                                    .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
+                                    .font(EType.caption)
+                                    .foregroundStyle(palette.textSecondary)
+                                Text("Face value \(specialistCurrency(invoice.invoiceAmount))")
+                                    .font(EType.micro)
+                                    .foregroundStyle(palette.textTertiary)
+                            }
+                            Spacer(minLength: Space.s2)
+                            Text(specialistCurrency(invoice.amount))
+                                .font(EType.bodyStrong)
+                                .foregroundStyle(Brand.success)
+                        }
+                        .padding(.vertical, Space.s3)
+                        if index < funded.invoices.count - 1 {
+                            Rectangle().fill(palette.borderFaint).frame(height: 1)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var providerContent: some View {
+        if activeDestination == definition.workOne.destinationId {
+            workOrderRegister
+        } else if activeDestination == definition.workTwo.destinationId {
+            providerTeamRegister
+        } else {
+            providerOverview
+        }
+    }
+
+    private var providerOverview: some View {
+        VStack(alignment: .leading, spacing: Space.s5) {
+            SpecialistSectionLabel("PROVIDER ACCOUNT", icon: "wrench.and.screwdriver.fill", palette: palette)
+            SpecialistFeedNotice(state: store.providerState, palette: palette)
+            if let envelope = store.providerAccount {
+                SpecialistLiveRegister(palette: palette) {
+                    SpecialistKeyValueRow("Provider", envelope.provider?.name ?? "Name unavailable", palette: palette)
+                    Rectangle().fill(palette.borderFaint).frame(height: 1)
+                    SpecialistKeyValueRow("Account", envelope.account.accountStatus.replacingOccurrences(of: "_", with: " "), palette: palette)
+                    Rectangle().fill(palette.borderFaint).frame(height: 1)
+                    SpecialistKeyValueRow("Your role", envelope.account.memberRole.replacingOccurrences(of: "_", with: " "), palette: palette)
+                }
+            } else if store.providerAccountRead {
+                SpecialistEmptyRegister(
+                    title: "No Zeun provider account",
+                    message: "This signed-in user is not a member of a provider account attached to the same company.",
+                    palette: palette
+                )
+            }
+
+            SpecialistSectionLabel("WORK REGISTER", icon: "list.bullet.clipboard.fill", palette: palette)
+            SpecialistFeedNotice(state: store.workState, palette: palette)
+            if let work = store.workOrders {
+                SpecialistRegisterLink(
+                    title: "Assigned work orders",
+                    value: String(work.workOrders.count),
+                    palette: palette
+                ) { selectDestination(definition.workOne.destinationId) }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var workOrderRegister: some View {
+        SpecialistFeedNotice(state: store.workState, palette: palette)
+        if let envelope = store.workOrders {
+            if envelope.workOrders.isEmpty {
+                SpecialistEmptyRegister(
+                    title: "No assigned work orders",
+                    message: "The provider register was queried successfully and contains no rows.",
+                    palette: palette
+                )
+            } else {
+                SpecialistLiveRegister(palette: palette) {
+                    ForEach(Array(envelope.workOrders.enumerated()), id: \.element.id) { index, work in
+                        Button {
+                            Task { await store.prepareWorkOrder(work.id) }
+                        } label: {
+                            HStack(alignment: .top, spacing: Space.s3) {
+                                VStack(alignment: .leading, spacing: Space.s1) {
+                                    Text("Work order \(work.id)")
+                                        .font(EType.bodyStrong)
+                                        .foregroundStyle(palette.textPrimary)
+                                    Text([work.serviceType, work.issueCategory.replacingOccurrences(of: "_", with: " ")]
+                                        .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
+                                        .font(EType.caption)
+                                        .foregroundStyle(palette.textSecondary)
+                                    Text("\(work.status.replacingOccurrences(of: "_", with: " ")) · \(work.reportStatus.replacingOccurrences(of: "_", with: " "))")
+                                        .font(EType.micro)
+                                        .foregroundStyle(specialistStatusColor(work.status))
+                                }
+                                Spacer(minLength: Space.s2)
+                                if store.preparingWorkOrderId == work.id {
+                                    ProgressView().tint(palette.textPrimary)
+                                } else {
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 12, weight: .bold))
+                                        .foregroundStyle(palette.textTertiary)
+                                }
+                            }
+                            .contentShape(Rectangle())
+                            .padding(.vertical, Space.s3)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(store.preparingWorkOrderId != nil)
+                        if index < envelope.workOrders.count - 1 {
+                            Rectangle().fill(palette.borderFaint).frame(height: 1)
+                        }
+                    }
+                }
+            }
+        }
+        SpecialistActionFeedback(store: store, palette: palette)
+    }
+
+    @ViewBuilder
+    private var providerTeamRegister: some View {
+        SpecialistFeedNotice(state: store.providerState, palette: palette)
+        if let account = store.providerAccount {
+            SpecialistLiveRegister(palette: palette) {
+                ForEach(Array(account.members.enumerated()), id: \.element.id) { index, member in
+                    HStack(alignment: .top, spacing: Space.s3) {
+                        Image(systemName: member.role == "mechanic" ? "wrench.adjustable.fill" : "person.fill")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(LinearGradient.diagonal)
+                            .frame(width: 28, height: 28)
+                        VStack(alignment: .leading, spacing: Space.s1) {
+                            Text(member.name ?? "Name unavailable")
+                                .font(EType.bodyStrong)
+                                .foregroundStyle(palette.textPrimary)
+                            Text(member.email ?? "Email unavailable")
+                                .font(EType.caption)
+                                .foregroundStyle(palette.textSecondary)
+                            Text("\(member.role.replacingOccurrences(of: "_", with: " ")) · \(member.status)")
+                                .font(EType.micro)
+                                .foregroundStyle(specialistStatusColor(member.status))
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.vertical, Space.s3)
+                    if index < account.members.count - 1 {
+                        Rectangle().fill(palette.borderFaint).frame(height: 1)
+                    }
+                }
+            }
+        }
+    }
+
+    private var specialistMe: some View {
+        Shell(theme: palette) {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Space.s5) {
+                    Spacer().frame(height: Space.s5)
+                    EusoTripEyebrow(verbatim: "\(definition.role.displayName.uppercased()) · ME")
+                    Text("Account")
+                        .font(EType.h1)
+                        .foregroundStyle(palette.textPrimary)
+                    SpecialistLiveRegister(palette: palette) {
+                        SpecialistKeyValueRow("Name", session.user?.name ?? "Unavailable", palette: palette)
+                        Rectangle().fill(palette.borderFaint).frame(height: 1)
+                        SpecialistKeyValueRow("Email", session.user?.email ?? "Unavailable", palette: palette)
+                        Rectangle().fill(palette.borderFaint).frame(height: 1)
+                        SpecialistKeyValueRow("Role", definition.role.displayName, palette: palette)
+                        if let companyId = session.user?.companyId, !companyId.isEmpty {
+                            Rectangle().fill(palette.borderFaint).frame(height: 1)
+                            SpecialistKeyValueRow("Company", companyId, palette: palette)
+                        }
+                    }
+                    EusoCardIssuePanel(
+                        title: "\(definition.role.displayName) EusoCard",
+                        subtitle: "Operational spend card backed by EusoWallet Treasury"
+                    )
+                    Button {
+                        Task { await session.signOut() }
+                    } label: {
+                        Text("Sign out")
+                            .font(EType.bodyStrong)
+                            .foregroundStyle(Brand.danger)
+                            .frame(maxWidth: .infinity, minHeight: 48)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                                    .strokeBorder(Brand.danger.opacity(0.45))
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    Color.clear.frame(height: 112)
+                }
+                .padding(.horizontal, Space.s5)
+            }
+            .eusoRefreshable { await store.refresh() }
+        } nav: {
+            EmptyView()
+        }
+    }
+
+    private func selectDestination(_ destination: String) {
+        guard definition.dockItems.contains(where: { $0.destinationId == destination }) else { return }
+        withAnimation(.easeInOut(duration: 0.20)) {
+            activeDestination = destination
+        }
+    }
+
+    private func handleESang(_ action: eSangAction) {
+        switch action {
+        case .navigatePath(let path):
+            let normalized = path.lowercased()
+            if normalized.contains("incident") || normalized.contains("pending") || normalized.contains("work-order") {
+                selectDestination(definition.workOne.destinationId)
+            } else if normalized.contains("csa") || normalized.contains("score")
+                        || normalized.contains("fund") || normalized.contains("team") {
+                selectDestination(definition.workTwo.destinationId)
+            } else if normalized.contains("setting") || normalized.contains("profile") || normalized.contains("/me") {
+                selectDestination(definition.me.destinationId)
+            } else if normalized == "/" || normalized.contains("home") || normalized.contains("portfolio") || normalized.contains("provider") {
+                selectDestination(definition.home.destinationId)
+            } else {
+                NotificationCenter.default.post(name: .esangUnhandledCommand, object: path)
+            }
+            showeSang = false
+        case .navigate(let route):
+            if case .home = route { selectDestination(definition.home.destinationId) }
+            showeSang = false
+        case .back:
+            selectDestination(definition.home.destinationId)
+            showeSang = false
+        case .refresh:
+            Task { await store.refresh() }
+        case .closeChat:
+            showeSang = false
+        default:
+            _ = eSangRoleDispatcher.dispatch(
+                action,
+                role: definition.role,
+                dismissSheet: { showeSang = false }
+            )
+        }
+    }
+}
+
+private struct SpecialistFactoringReviewSheet: View {
+    let invoice: SpecialistFactoringPending.Invoice
+    @ObservedObject var store: NativeSpecialistRoleStore
+    let palette: Theme.Palette
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var targetStatus: String
+    @State private var notes = ""
+
+    init(
+        invoice: SpecialistFactoringPending.Invoice,
+        store: NativeSpecialistRoleStore,
+        palette: Theme.Palette
+    ) {
+        self.invoice = invoice
+        self.store = store
+        self.palette = palette
+        _targetStatus = State(initialValue: invoice.status == "submitted" ? "under_review" : "approved")
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: Space.s4) {
+                Text(invoice.invoiceNumber.isEmpty ? "Invoice \(invoice.id)" : invoice.invoiceNumber)
+                    .font(EType.h2)
+                    .foregroundStyle(palette.textPrimary)
+                SpecialistKeyValueRow("Amount", specialistCurrency(invoice.amount), palette: palette)
+                if invoice.status == "submitted" {
+                    Picker("Decision", selection: $targetStatus) {
+                        Text("Review").tag("under_review")
+                        Text("Approve").tag("approved")
+                    }
+                    .pickerStyle(.segmented)
+                } else {
+                    Text("Approve after review")
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                }
+                Text("Review note")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                TextEditor(text: $notes)
+                    .font(EType.body)
+                    .frame(minHeight: 120)
+                    .padding(Space.s2)
+                    .background(palette.bgCardSoft)
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+                SpecialistActionFeedback(store: store, palette: palette)
+                Button {
+                    Task {
+                        if await store.transitionInvoice(invoice, to: targetStatus, notes: notes) {
+                            dismiss()
+                        }
+                    }
+                } label: {
+                    SpecialistActionButtonLabel(
+                        title: targetStatus == "approved" ? "Approve receivable" : "Start review",
+                        busy: store.mutationBusy
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(store.mutationBusy || notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Spacer()
+            }
+            .padding(Space.s5)
+            .background(palette.bgPage.ignoresSafeArea())
+            .navigationTitle("Receivable review")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
+private struct SpecialistZeunWorkOrderSheet: View {
+    let detail: SpecialistZeunWorkOrderDetail
+    @ObservedObject var store: NativeSpecialistRoleStore
+    let palette: Theme.Palette
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var notes = ""
+    @State private var selectedMechanicId: Int?
+    @State private var selectedProgress: String?
+
+    private var membership: SpecialistZeunAccountEnvelope.Membership? {
+        store.providerAccount?.account
+    }
+
+    private var canManage: Bool {
+        guard let role = membership?.memberRole else { return false }
+        return ["owner", "manager", "service_advisor"].contains(role)
+    }
+
+    private var activeMechanics: [SpecialistZeunAccountEnvelope.Member] {
+        store.providerAccount?.members.filter { $0.role == "mechanic" && $0.status == "active" } ?? []
+    }
+
+    private var myPendingAssignment: SpecialistZeunWorkOrderDetail.Assignment? {
+        guard membership?.memberRole == "mechanic", let memberId = membership?.memberId else { return nil }
+        return detail.assignments.first { $0.mechanicMemberId == memberId && $0.status == "assigned" }
+    }
+
+    private var hasAcceptedMechanic: Bool {
+        detail.assignments.contains { $0.status == "accepted" || $0.status == "completed" }
+    }
+
+    private var progressOptions: [String] {
+        switch detail.breakdownStatus {
+        case "ACKNOWLEDGED": return ["EN_ROUTE_TO_SHOP", "AT_SHOP"]
+        case "EN_ROUTE_TO_SHOP": return ["AT_SHOP"]
+        case "AT_SHOP": return ["UNDER_REPAIR", "WAITING_PARTS"]
+        case "UNDER_REPAIR": return ["WAITING_PARTS"]
+        case "WAITING_PARTS": return ["UNDER_REPAIR"]
+        default: return []
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Space.s5) {
+                    EusoTripEyebrow(verbatim: "ZEUN · WORK ORDER \(detail.id)")
+                    SpecialistLiveRegister(palette: palette) {
+                        SpecialistKeyValueRow("Request", detail.status.replacingOccurrences(of: "_", with: " "), palette: palette)
+                        Rectangle().fill(palette.borderFaint).frame(height: 1)
+                        SpecialistKeyValueRow("Breakdown", detail.breakdownStatus.replacingOccurrences(of: "_", with: " "), palette: palette)
+                        if let serviceType = detail.serviceType {
+                            Rectangle().fill(palette.borderFaint).frame(height: 1)
+                            SpecialistKeyValueRow("Service", serviceType.replacingOccurrences(of: "_", with: " "), palette: palette)
+                        }
+                    }
+                    if let description = detail.description, !description.isEmpty {
+                        Text(description)
+                            .font(EType.body)
+                            .foregroundStyle(palette.textPrimary)
+                    }
+
+                    Text("Operational note")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                    TextEditor(text: $notes)
+                        .font(EType.body)
+                        .frame(minHeight: 96)
+                        .padding(Space.s2)
+                        .background(palette.bgCardSoft)
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+
+                    if detail.status == "submitted", canManage {
+                        SpecialistSectionLabel("PROVIDER RESPONSE", icon: "checkmark.circle.fill", palette: palette)
+                        HStack(spacing: Space.s3) {
+                            providerAction("Decline", destructive: true) {
+                                await store.respondToWorkOrder(id: detail.id, decision: "decline", notes: notes)
+                            }
+                            providerAction("Accept", destructive: false) {
+                                await store.respondToWorkOrder(id: detail.id, decision: "accept", notes: notes)
+                            }
+                        }
+                    }
+
+                    if let assignment = myPendingAssignment {
+                        SpecialistSectionLabel("MECHANIC ASSIGNMENT", icon: "person.badge.clock.fill", palette: palette)
+                        HStack(spacing: Space.s3) {
+                            providerAction("Decline", destructive: true) {
+                                await store.respondToAssignment(
+                                    id: assignment.id,
+                                    decision: "decline",
+                                    notes: notes.nilIfBlank
+                                )
+                            }
+                            providerAction("Accept", destructive: false) {
+                                await store.respondToAssignment(
+                                    id: assignment.id,
+                                    decision: "accept",
+                                    notes: notes.nilIfBlank
+                                )
+                            }
+                        }
+                    }
+
+                    if canManage, ["acknowledged", "scheduled", "in_progress"].contains(detail.status) {
+                        SpecialistSectionLabel("MECHANIC", icon: "wrench.adjustable.fill", palette: palette)
+                        if activeMechanics.isEmpty {
+                            SpecialistEmptyRegister(
+                                title: "No active mechanics",
+                                message: "Add and activate a mechanic in this exact provider account before assigning the work order.",
+                                palette: palette
+                            )
+                        } else {
+                            Picker("Mechanic", selection: $selectedMechanicId) {
+                                Text("Select mechanic").tag(nil as Int?)
+                                ForEach(activeMechanics) { member in
+                                    Text(member.name ?? member.email ?? "Member \(member.id)")
+                                        .tag(member.id as Int?)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            if let selectedMechanicId {
+                                providerAction("Assign mechanic", destructive: false) {
+                                    await store.assignMechanic(
+                                        workOrderId: detail.id,
+                                        memberId: selectedMechanicId,
+                                        notes: notes.nilIfBlank
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if !progressOptions.isEmpty {
+                        SpecialistSectionLabel("REPAIR PROGRESS", icon: "arrow.triangle.2.circlepath", palette: palette)
+                        if hasAcceptedMechanic {
+                            Picker("Next state", selection: $selectedProgress) {
+                                Text("Select next state").tag(nil as String?)
+                                ForEach(progressOptions, id: \.self) { option in
+                                    Text(option.replacingOccurrences(of: "_", with: " ").localizedCapitalized)
+                                        .tag(option as String?)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            if let selectedProgress {
+                                providerAction("Record progress", destructive: false) {
+                                    await store.advanceWorkOrder(
+                                        id: detail.id,
+                                        status: selectedProgress,
+                                        notes: notes
+                                    )
+                                }
+                            }
+                        } else {
+                            SpecialistEmptyRegister(
+                                title: "Mechanic acceptance required",
+                                message: "Repair progress remains locked until an assigned mechanic accepts this exact work order.",
+                                palette: palette
+                            )
+                        }
+                    }
+
+                    SpecialistActionFeedback(store: store, palette: palette)
+                    Color.clear.frame(height: Space.s5)
+                }
+                .padding(Space.s5)
+            }
+            .background(palette.bgPage.ignoresSafeArea())
+            .navigationTitle("Work order")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func providerAction(
+        _ title: String,
+        destructive: Bool,
+        action: @escaping @MainActor () async -> Bool
+    ) -> some View {
+        Button {
+            Task {
+                let trimmed = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+                if (title == "Accept" || title == "Decline" || title == "Record progress"), trimmed.count < 3 {
+                    store.actionError = "Enter an operational note of at least three characters."
+                    return
+                }
+                if await action() { dismiss() }
+            }
+        } label: {
+            HStack(spacing: Space.s2) {
+                if store.mutationBusy { ProgressView().tint(.white) }
+                Text(title)
+                    .font(EType.bodyStrong)
+            }
+            .foregroundStyle(destructive ? Brand.danger : Color.white)
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .background(destructive ? palette.bgCardSoft : Brand.blue)
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                    .strokeBorder(destructive ? Brand.danger.opacity(0.45) : Color.clear)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(store.mutationBusy)
+    }
+}
+
+private struct SpecialistSectionLabel: View {
+    let text: String
+    let icon: String
+    let palette: Theme.Palette
+
+    init(_ text: String, icon: String, palette: Theme.Palette) {
+        self.text = text
+        self.icon = icon
+        self.palette = palette
+    }
+
+    var body: some View {
+        HStack(spacing: Space.s2) {
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(LinearGradient.diagonal)
+            Text(text)
+                .font(EType.micro)
+                .foregroundStyle(palette.textSecondary)
+            Spacer(minLength: 0)
+        }
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(palette.iridescentHairline).frame(height: 1).offset(y: Space.s2)
+        }
+    }
+}
+
+private struct SpecialistFeedNotice: View {
+    let state: SpecialistFeedState
+    let palette: Theme.Palette
+
+    var body: some View {
+        switch state {
+        case .idle, .available:
+            EmptyView()
+        case .loading:
+            HStack(spacing: Space.s2) {
+                ProgressView().tint(palette.textPrimary)
+                Text("Refreshing live register")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+            }
+            .frame(minHeight: 44)
+        case .unavailable(let message):
+            HStack(alignment: .top, spacing: Space.s2) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(Brand.warning)
+                Text(message)
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.vertical, Space.s2)
+        }
+    }
+}
+
+private struct SpecialistMetricStrip: View {
+    let metrics: [(String, String)]
+    let palette: Theme.Palette
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 0) {
+            ForEach(Array(metrics.enumerated()), id: \.offset) { index, metric in
+                VStack(alignment: .leading, spacing: Space.s1) {
+                    Text(metric.1)
+                        .font(EType.title)
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    Text(metric.0.uppercased())
+                        .font(EType.micro)
+                        .foregroundStyle(palette.textTertiary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if index < metrics.count - 1 {
+                    Rectangle().fill(palette.borderFaint).frame(width: 1, height: 44)
+                        .padding(.horizontal, Space.s2)
+                }
+            }
+        }
+        .padding(.vertical, Space.s3)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(palette.borderFaint).frame(height: 1)
+        }
+    }
+}
+
+private struct SpecialistLiveRegister<Content: View>: View {
+    let palette: Theme.Palette
+    @ViewBuilder let content: Content
+
+    init(palette: Theme.Palette, @ViewBuilder content: () -> Content) {
+        self.palette = palette
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) { content }
+            .padding(.horizontal, Space.s4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(palette.bgCard)
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                    .strokeBorder(palette.borderFaint)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+    }
+}
+
+private struct SpecialistEmptyRegister: View {
+    let title: String
+    let message: String
+    let palette: Theme.Palette
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.s1) {
+            Text(title)
+                .font(EType.bodyStrong)
+                .foregroundStyle(palette.textPrimary)
+            Text(message)
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.vertical, Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(palette.borderFaint).frame(height: 1)
+        }
+    }
+}
+
+private struct SpecialistProvenanceRow: View {
+    let source: String
+    let asOf: String?
+    let palette: Theme.Palette
+
+    var body: some View {
+        HStack(alignment: .top, spacing: Space.s2) {
+            Image(systemName: "checkmark.seal.fill")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Brand.success)
+            VStack(alignment: .leading, spacing: Space.s1) {
+                Text(source)
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textPrimary)
+                Text(asOf.map { "As of \(specialistTimestamp($0))" } ?? "Provider timestamp unavailable")
+                    .font(EType.micro)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, Space.s2)
+    }
+}
+
+private struct SpecialistRegisterLink: View {
+    let title: String
+    let value: String
+    let palette: Theme.Palette
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: Space.s3) {
+                Text(title)
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                Spacer(minLength: Space.s2)
+                Text(value)
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textSecondary)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(palette.textTertiary)
+            }
+            .frame(minHeight: 48)
+            .contentShape(Rectangle())
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(palette.borderFaint).frame(height: 1)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct SpecialistKeyValueRow: View {
+    let key: String
+    let value: String
+    let palette: Theme.Palette
+
+    init(_ key: String, _ value: String, palette: Theme.Palette) {
+        self.key = key
+        self.value = value
+        self.palette = palette
+    }
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
+            Text(key)
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+            Spacer(minLength: Space.s2)
+            Text(value)
+                .font(EType.bodyStrong)
+                .foregroundStyle(palette.textPrimary)
+                .multilineTextAlignment(.trailing)
+        }
+        .padding(.vertical, Space.s3)
+    }
+}
+
+private struct SpecialistActionFeedback: View {
+    @ObservedObject var store: NativeSpecialistRoleStore
+    let palette: Theme.Palette
+
+    var body: some View {
+        if let error = store.actionError {
+            Label(error, systemImage: "exclamationmark.triangle.fill")
+                .font(EType.caption)
+                .foregroundStyle(Brand.warning)
+                .fixedSize(horizontal: false, vertical: true)
+        } else if let confirmation = store.actionConfirmation {
+            Label(confirmation, systemImage: "checkmark.circle.fill")
+                .font(EType.caption)
+                .foregroundStyle(Brand.success)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+private struct SpecialistActionButtonLabel: View {
+    let title: String
+    let busy: Bool
+
+    var body: some View {
+        HStack(spacing: Space.s2) {
+            if busy { ProgressView().tint(.white) }
+            Text(title)
+                .font(EType.bodyStrong)
+        }
+        .foregroundStyle(Color.white)
+        .frame(maxWidth: .infinity, minHeight: 48)
+        .background(LinearGradient.diagonal)
+        .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+    }
+}
+
+private func specialistCurrency(_ value: Double) -> String {
+    value.formatted(.currency(code: "USD"))
+}
+
+private func specialistTimestamp(_ raw: String?) -> String {
+    guard let raw, !raw.isEmpty else { return "" }
+    return raw.replacingOccurrences(of: "T", with: " ").replacingOccurrences(of: "Z", with: " UTC")
+}
+
+private func specialistStatusColor(_ raw: String) -> Color {
+    switch raw.lowercased() {
+    case "critical", "declined", "cancelled", "revoked", "suspended": return Brand.danger
+    case "reported", "submitted", "under_review", "waiting_parts", "pending": return Brand.warning
+    case "resolved", "completed", "approved", "active", "verified", "funded": return Brand.success
+    default: return Brand.blue
+    }
+}
+
+private extension String {
+    var nilIfBlank: String? {
+        let value = trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
     }
 }
 
@@ -2187,9 +4827,18 @@ struct RailEngineerSurface: View {
     // screen that NO bottom-nav slot reaches — and omitted nothing else
     // (Me resolves to Rail550, already present). Rail553 as a phantom
     // tab-root made the back chevron wrongly suppress when drilled into
-    // 553 and corrupted tab-reset semantics. Corrected to the 3 distinct
-    // slot destinations. (IA recon 2026-05-30.)
+    // 553 and corrupted tab-reset semantics. Corrected to the 4 distinct slot
+    // destinations — home Rail550 · shipments Rail551 · compliance Rail552 ·
+    // me Rail556, matching RailEngineerNavController.swift:35. (IA recon
+    // 2026-05-30; comment said "3" against a 4-entry literal until rail §18.)
     private static let tabRoots: Set<String> = ["Rail550", "Rail551", "Rail552", "Rail556"]
+    /// Screens that draw their OWN top back affordance (a `BespokeBackBar` via
+    /// `.injectBespokeBackBar`) so the surface's `RoleNavBackOverlay` must NOT
+    /// paint a second chevron. Mirrors `VesselOperatorSurface.screensWithOwnBack`
+    /// exactly. 563/564/565/566 each gained a real `BespokeBackBar` in the rail
+    /// §18 nav remediation; before it they had no way out at all at stack depth 1.
+    private static let screensWithOwnBack: Set<String> =
+        tabRoots.union(["Rail563", "Rail564", "Rail565", "Rail566"])
 
     private var currentScreenId: String { screenStack.last ?? "Rail550" }
 
@@ -2205,26 +4854,41 @@ struct RailEngineerSurface: View {
     }
 
     private func pushOrTab(_ id: String) {
-        if Self.tabRoots.contains(id) { screenStack = [id]; return }
-        if screenStack.last == id { return }
-        screenStack.append(id)
+        RoleNavigationPathContract.open(
+            id, tabRoots: Self.tabRoots, fallback: "Rail550", stack: &screenStack
+        )
     }
-    private func popOne() { if screenStack.count > 1 { screenStack.removeLast() } }
+    private func popOne() { RoleNavigationPathContract.pop(&screenStack) }
+
+    private var roleDock: RoleDockContract {
+        RoleDockCatalog.railEngineer(
+            active: RoleNavigationPathContract.activeTab(
+                in: screenStack, tabRoots: Self.tabRoots, fallback: "Rail550"
+            ),
+            select: { destination in
+                pushedDetail = nil
+                withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(destination) }
+            },
+            openESang: { showeSang = true }
+        )
+    }
 
     var body: some View {
         current.view(palette)
             .id("rail-\(currentScreenId)")
+            .eusoRefreshSurface("rail-engineer:\(currentScreenId)")
             .transition(.opacity)
             .modifier(RoleNavBackOverlay(
                 stackDepth: screenStack.count,
                 currentScreenId: currentScreenId,
-                screensWithOwnBack: Self.tabRoots
+                screensWithOwnBack: Self.screensWithOwnBack
             ))
             .environment(\.driverNavHandler, nil)
             .environment(\.shipperNavHandler, nil)
             .environment(\.railEngineerNavHandler) { label in
                 RailEngineerNavDispatcher.handle(label)
             }
+            .environment(\.roleDockContract, roleDock)
             .modifier(RoleDetailLayer(
                 pushedDetail: $pushedDetail,
                 palette: palette,
@@ -2257,10 +4921,439 @@ struct RailEngineerSurface: View {
                     .environment(\.esangActionHandler) { action in
                         eSangRoleDispatcher.dispatch(
                             action,
-                            role: session.user?.roleEnum ?? .railEngineer,
+                            role: .railEngineer,
                             dismissSheet: { showeSang = false })
                     }
             }
+    }
+}
+
+// MARK: - Vessel Shipper surface
+
+/// Owns Vessel Shipper navigation, selected-booking context, and the shared
+/// edge-swipe/detail stack. Mounting `VesselShipperHomeScreen` directly left
+/// every BottomNav event without a history owner and made all drill-ins dead.
+struct VesselShipperSurface: View {
+    let palette: Theme.Palette
+
+    @EnvironmentObject private var session: EusoTripSession
+    @State private var screenStack = ["Vesl001"]
+    @SceneStorage("EusoTrip.vesselShipper.activeShipmentId") private var activeShipmentId = 0
+    @SceneStorage("EusoTrip.vesselShipper.activeBookingNumber") private var activeBookingNumber = ""
+    @SceneStorage("EusoTrip.vesselShipper.activeInvoiceRef") private var activeInvoiceRef = ""
+    @State private var showeSang = false
+    @State private var pushedDetail: RoleDetailPush?
+    @State private var contextResolving = false
+    @State private var contextRecoveryMessage: String?
+
+    private static let tabRoots: Set<String> = [
+        "Vesl001", "Vesl011", "Vesl012", "320",
+    ]
+
+    private static let vesselRoutes: Set<String> = [
+        "Vesl001", "Vesl002", "Vesl003", "Vesl004", "Vesl006",
+        "Vesl010", "Vesl011", "Vesl012",
+        // 2026-08-18 · vessel §17 · VSL-033 cure. 005 Bill of Lading, 007 Confirm &
+        // Book and 010 Freight Bill Audit were all unreachable — no route key, no
+        // case arm, no reference outside their own files. "Vesl013" carries the 010
+        // catalog identity because "Vesl010" is already held by the legacy Create
+        // Booking surface four lines up; re-keying a live route mid-fire is how a
+        // working screen becomes a dead tap, so the renumber is filed for :01 triage.
+        "Vesl005", "Vesl007", "Vesl013",
+    ]
+
+    /// Vessel Shippers share identity, wallet, partner, document, support, and
+    /// account controls with the Shipper registry. Build this allow-list from
+    /// the live Me catalog so newly added rows cannot become silent dead taps.
+    private static let sharedMeRoutes: Set<String> = {
+        var ids: Set<String> = [
+            "320", "320a", "320b", "320c", "320d", "320e", "320f", "320g",
+        ]
+        let catalogs = [
+            MeHubCatalog.account,
+            MeHubCatalog.wallet,
+            MeHubCatalog.operations,
+            MeHubCatalog.network,
+            MeHubCatalog.compliance,
+        ]
+        for sections in catalogs {
+            for section in sections {
+                for cell in section.cells {
+                    if case .screen(let id) = cell.action { ids.insert(id) }
+                }
+            }
+        }
+        // Settings uses its own local catalog in `MeSettingsHubBody`.
+        ids.formUnion(["211", "319", "340", "343", "347", "348", "PULSE"])
+        return ids
+    }()
+
+    private static let screensWithOwnBack: Set<String> = [
+        "Vesl010", "320a", "320b", "320c", "320d", "320e", "320f", "320g",
+        // 005 and 007 draw their own back chevron. 010 deliberately stays OUT — its
+        // Swift header declares none and it relies on RoleNavBackOverlay; listing it
+        // here would leave that screen with no way back at all.
+        "Vesl005", "Vesl007",
+    ]
+
+    private var currentScreenId: String { screenStack.last ?? "Vesl001" }
+
+    private var current: ProductionScreen {
+        switch currentScreenId {
+        case "Vesl001":
+            return ProductionScreen(id: "Vesl001", title: "Vessel Shipper · Home", role: .shipper) { p in
+                AnyView(VesselShipperHomeScreen(theme: p))
+            }
+        case "Vesl002":
+            guard activeShipmentId > 0 else {
+                return ProductionScreen(id: "Vesl011", title: "Vessel Shipper · Bookings", role: .shipper) { p in
+                    AnyView(VesselShipperBookingsScreen(theme: p))
+                }
+            }
+            return ProductionScreen(id: "Vesl002", title: "Vessel Shipper · Booking Detail", role: .shipper) { p in
+                AnyView(VesselBookingDetailScreen(theme: p, shipmentId: activeShipmentId))
+            }
+        case "Vesl003":
+            guard !activeBookingNumber.isEmpty else {
+                return ProductionScreen(id: "Vesl012", title: "Vessel Shipper · Tracking", role: .shipper) { p in
+                    AnyView(VesselShipperTrackingLookupScreen(theme: p))
+                }
+            }
+            return ProductionScreen(id: "Vesl003", title: "Vessel Shipper · Live Tracking", role: .shipper) { p in
+                AnyView(VesselLiveTrackingScreen(theme: p, bookingNumber: activeBookingNumber))
+            }
+        case "Vesl004":
+            guard activeShipmentId > 0 else {
+                return ProductionScreen(id: "Vesl011", title: "Vessel Shipper · Bookings", role: .shipper) { p in
+                    AnyView(VesselShipperBookingsScreen(theme: p))
+                }
+            }
+            return ProductionScreen(id: "Vesl004", title: "Vessel Shipper · Demurrage & Detention", role: .shipper) { p in
+                AnyView(VesselDemurrageDetentionScreen(theme: p, shipmentId: activeShipmentId))
+            }
+        case "Vesl006":
+            return ProductionScreen(id: "Vesl006", title: "Vessel Shipper · Customs", role: .shipper) { p in
+                AnyView(VesselCustomsISFScreen(theme: p))
+            }
+        case "Vesl010":
+            return ProductionScreen(id: "Vesl010", title: "Vessel Shipper · Create Booking", role: .shipper) { p in
+                AnyView(VesselShipperCreateBookingScreen(theme: p))
+            }
+        case "Vesl011":
+            return ProductionScreen(id: "Vesl011", title: "Vessel Shipper · Bookings", role: .shipper) { p in
+                AnyView(VesselShipperBookingsScreen(theme: p))
+            }
+        case "Vesl012":
+            return ProductionScreen(id: "Vesl012", title: "Vessel Shipper · Tracking", role: .shipper) { p in
+                AnyView(VesselShipperTrackingLookupScreen(theme: p))
+            }
+        // 2026-08-18 · vessel §17 · VSL-033 cure — the three arms that made 005, 007
+        // and 010 reachable for the first time. Each guards on the context it needs
+        // and falls back to the surface that can supply it, matching the 002/003/004
+        // pattern above rather than rendering a screen with nothing to draw.
+        case "Vesl005":
+            guard activeShipmentId > 0 else {
+                return ProductionScreen(id: "Vesl011", title: "Vessel Shipper · Bookings", role: .shipper) { p in
+                    AnyView(VesselShipperBookingsScreen(theme: p))
+                }
+            }
+            return ProductionScreen(id: "Vesl005", title: "Vessel Shipper · Bill of Lading", role: .shipper) { p in
+                AnyView(VesselBillOfLadingScreen(theme: p, shipmentId: activeShipmentId))
+            }
+        case "Vesl007":
+            return ProductionScreen(id: "Vesl007", title: "Vessel Shipper · Confirm & Book", role: .shipper) { p in
+                AnyView(VesselShipperCreateBookingScreen(theme: p))
+            }
+        case "Vesl013":
+            guard activeShipmentId > 0, !activeInvoiceRef.isEmpty else {
+                return ProductionScreen(id: "Vesl011", title: "Vessel Shipper · Bookings", role: .shipper) { p in
+                    AnyView(VesselShipperBookingsScreen(theme: p))
+                }
+            }
+            return ProductionScreen(id: "Vesl013", title: "Vessel Shipper · Freight Bill Audit", role: .shipper) { p in
+                AnyView(VesselShipperFreightBillAuditScreen(
+                    theme: p,
+                    shipmentId: activeShipmentId,
+                    invoiceRef: activeInvoiceRef
+                ))
+            }
+        default:
+            if Self.sharedMeRoutes.contains(currentScreenId),
+               let screen = ScreenRegistry.forRole(.shipper).first(where: { $0.id == currentScreenId }) {
+                return screen
+            }
+            return ProductionScreen(id: "Vesl001", title: "Vessel Shipper · Home", role: .shipper) { p in
+                AnyView(VesselShipperHomeScreen(theme: p))
+            }
+        }
+    }
+
+    private var currentIdentity: String {
+        switch currentScreenId {
+        case "Vesl002", "Vesl004":
+            return "vessel-shipper-\(currentScreenId)-\(activeShipmentId)"
+        case "Vesl003":
+            return "vessel-shipper-Vesl003-\(activeBookingNumber.isEmpty ? "missing" : activeBookingNumber)"
+        default:
+            return "vessel-shipper-\(currentScreenId)"
+        }
+    }
+
+    private var roleDock: RoleDockContract {
+        RoleDockCatalog.vesselShipper(
+            active: RoleNavigationPathContract.activeTab(
+                in: screenStack, tabRoots: Self.tabRoots, fallback: "Vesl001"
+            ),
+            select: { destination in
+                pushedDetail = nil
+                withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(destination) }
+            },
+            openESang: { showeSang = true }
+        )
+    }
+
+    var body: some View {
+        current.view(palette)
+            .id(currentIdentity)
+            .eusoRefreshSurface("vessel-shipper:\(currentIdentity)")
+            .transition(.opacity)
+            .modifier(RoleNavBackOverlay(
+                stackDepth: screenStack.count,
+                currentScreenId: currentScreenId,
+                screensWithOwnBack: Self.screensWithOwnBack.union(Self.tabRoots)
+            ))
+            .modifier(RoleDetailLayer(
+                pushedDetail: $pushedDetail,
+                palette: palette,
+                onBack: {
+                    NotificationCenter.default.post(name: .eusoVesselShipperNavBack, object: nil)
+                }
+            ))
+            .environment(\.driverNavHandler, nil)
+            .environment(\.shipperNavHandler, nil)
+            .environment(\.vesselOperatorNavHandler, nil)
+            .environment(\.vesselShipperNavHandler) { label in
+                VesselShipperNavDispatcher.handle(label)
+            }
+            .environment(\.roleDockContract, roleDock)
+            .overlay(alignment: .topTrailing) {
+                if contextResolving {
+                    ProgressView()
+                        .controlSize(.small)
+                        .padding(.top, Device.safeTop + Space.s3)
+                        .padding(.trailing, Space.s4)
+                        .accessibilityLabel("Verifying vessel booking")
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoVesselShipperNavSwap)) { note in
+                handleVesselSwap(note)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoShipperNavSwap)) { note in
+                handleSharedMeSwap(note)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoVesselShipperNavBack)) { _ in
+                popOneLevel()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoRoleNavBack)) { _ in
+                popOneLevel()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoShipperNavBack)) { _ in
+                popOneLevel()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoVesselShippereSangTapped)) { _ in
+                showeSang = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoShippereSangTapped)) { _ in
+                showeSang = true
+            }
+            .alert("Choose a vessel booking", isPresented: Binding(
+                get: { contextRecoveryMessage != nil },
+                set: { if !$0 { contextRecoveryMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) { contextRecoveryMessage = nil }
+            } message: {
+                Text(contextRecoveryMessage ?? "")
+            }
+            .fullScreenCover(isPresented: $showeSang) {
+                ShippereSangCoachSheet()
+                    .environment(\.palette, palette)
+                    .environmentObject(session)
+                    .environment(\.esangActionHandler) { action in
+                        eSangRoleDispatcher.dispatch(
+                            action,
+                            role: .vesselShipper,
+                            dismissSheet: { showeSang = false }
+                        )
+                    }
+            }
+    }
+
+    private func handleVesselSwap(_ note: Notification) {
+        guard let id = note.userInfo?["screenId"] as? String,
+              Self.vesselRoutes.contains(id) || Self.sharedMeRoutes.contains(id) else {
+            return
+        }
+        if id == "Vesl013" {
+            guard
+                let invoiceRef = Self.nonemptyString(
+                    note.userInfo?["invoiceRef"] ?? note.userInfo?["invoiceId"]
+                ),
+                let shipmentId = Self.positiveInteger(note.userInfo?["shipmentId"])
+            else {
+                routeToBookingPicker(
+                    for: id,
+                    message: "Open Freight Bill Audit from a carrier invoice so its shipment and invoice reference can be verified."
+                )
+                return
+            }
+            activeShipmentId = shipmentId
+            activeInvoiceRef = invoiceRef
+            pushedDetail = nil
+            withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(id) }
+            return
+        }
+        if ["Vesl002", "Vesl003", "Vesl004", "Vesl005"].contains(id) {
+            let requestedShipmentId = Self.positiveInteger(note.userInfo?["shipmentId"])
+            let requestedBookingNumber = Self.nonemptyString(note.userInfo?["bookingNumber"])
+            let hasFreshContext = requestedShipmentId != nil || requestedBookingNumber != nil
+            let shipmentId = requestedShipmentId ?? (hasFreshContext || activeShipmentId <= 0 ? nil : activeShipmentId)
+            let bookingNumber = requestedBookingNumber
+                ?? (hasFreshContext || activeBookingNumber.isEmpty ? nil : activeBookingNumber)
+            Task {
+                await resolveBookingContextAndNavigate(
+                    target: id,
+                    shipmentId: shipmentId,
+                    bookingNumber: bookingNumber
+                )
+            }
+            return
+        }
+        pushedDetail = nil
+        withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(id) }
+    }
+
+    @MainActor
+    private func resolveBookingContextAndNavigate(
+        target: String,
+        shipmentId: Int?,
+        bookingNumber: String?
+    ) async {
+        guard shipmentId != nil || bookingNumber != nil else {
+            routeToBookingPicker(for: target, message: nil)
+            return
+        }
+
+        struct Input: Encodable {
+            let shipmentId: Int?
+            let bookingNumber: String?
+        }
+        struct Output: Decodable {
+            let found: Bool
+            let shipmentId: Int?
+            let bookingNumber: String?
+            let canTrack: Bool?
+        }
+
+        contextResolving = true
+        defer { contextResolving = false }
+        var lastError: Error?
+        for attempt in 0..<2 {
+            do {
+                let resolved: Output = try await EusoTripAPI.shared.query(
+                    "vesselShipments.resolveVesselBookingContext",
+                    input: Input(shipmentId: shipmentId, bookingNumber: bookingNumber)
+                )
+                guard resolved.found, let resolvedId = resolved.shipmentId, resolvedId > 0 else {
+                    routeToBookingPicker(
+                        for: target,
+                        message: "Your live vessel bookings are refreshed. Choose the booking you want to continue with."
+                    )
+                    return
+                }
+
+                let resolvedNumber = resolved.bookingNumber?
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                if target == "Vesl003" && (resolved.canTrack != true || resolvedNumber.isEmpty) {
+                    routeToBookingPicker(
+                        for: target,
+                        message: "This booking is yours, but its live tracking reference is not active yet. Choose another booking or open its details."
+                    )
+                    return
+                }
+
+                if activeShipmentId != resolvedId {
+                    activeInvoiceRef = ""
+                }
+                activeShipmentId = resolvedId
+                activeBookingNumber = resolvedNumber
+                pushedDetail = nil
+                withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(target) }
+                return
+            } catch {
+                lastError = error
+                if attempt == 0 {
+                    try? await Task.sleep(nanoseconds: 350_000_000)
+                }
+            }
+        }
+
+        routeToBookingPicker(
+            for: target,
+            message: "Your own booking list is open so you can continue. \(lastError?.eusoUserCopy ?? "")"
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+    }
+
+    @MainActor
+    private func routeToBookingPicker(for target: String, message: String?) {
+        pushedDetail = nil
+        let recoveryRoot = target == "Vesl003" ? "Vesl012" : "Vesl011"
+        withAnimation(.easeInOut(duration: 0.22)) { screenStack = [recoveryRoot] }
+        contextRecoveryMessage = message
+    }
+
+    private func handleSharedMeSwap(_ note: Notification) {
+        guard let id = note.userInfo?["screenId"] as? String else { return }
+        if id == "_logout" {
+            NotificationCenter.default.post(name: Notification.Name("eusoLogoutRequested"), object: nil)
+            return
+        }
+        guard Self.sharedMeRoutes.contains(id),
+              RoleAccess.canRender(role: .vesselShipper, screenId: id) else {
+            return
+        }
+        pushedDetail = nil
+        withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(id) }
+    }
+
+    private func pushOrTab(_ id: String) {
+        RoleNavigationPathContract.open(
+            id, tabRoots: Self.tabRoots, fallback: "Vesl001", stack: &screenStack
+        )
+    }
+
+    private func popOneLevel() {
+        if pushedDetail != nil {
+            withAnimation(.easeInOut(duration: 0.28)) { pushedDetail = nil }
+        } else if RoleNavigationPathContract.canPop(screenStack) {
+            withAnimation(.easeInOut(duration: 0.22)) {
+                _ = RoleNavigationPathContract.pop(&screenStack)
+            }
+        }
+    }
+
+    private static func positiveInteger(_ value: Any?) -> Int? {
+        if let value = value as? Int, value > 0 { return value }
+        if let value = value as? String,
+           let parsed = Int(value.trimmingCharacters(in: .whitespacesAndNewlines)),
+           parsed > 0 { return parsed }
+        return nil
+    }
+
+    private static func nonemptyString(_ value: Any?) -> String? {
+        guard let value = value as? String else { return nil }
+        let cleaned = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleaned.isEmpty ? nil : cleaned
     }
 }
 
@@ -2308,15 +5401,29 @@ struct VesselOperatorSurface: View {
     }
 
     private func pushOrTab(_ id: String) {
-        if Self.tabRoots.contains(id) { screenStack = [id]; return }
-        if screenStack.last == id { return }
-        screenStack.append(id)
+        RoleNavigationPathContract.open(
+            id, tabRoots: Self.tabRoots, fallback: "Vesl650", stack: &screenStack
+        )
     }
-    private func popOne() { if screenStack.count > 1 { screenStack.removeLast() } }
+    private func popOne() { RoleNavigationPathContract.pop(&screenStack) }
+
+    private var roleDock: RoleDockContract {
+        RoleDockCatalog.vesselOperator(
+            active: RoleNavigationPathContract.activeTab(
+                in: screenStack, tabRoots: Self.tabRoots, fallback: "Vesl650"
+            ),
+            select: { destination in
+                pushedDetail = nil
+                withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(destination) }
+            },
+            openESang: { showeSang = true }
+        )
+    }
 
     var body: some View {
         current.view(palette)
             .id("vessel-\(currentScreenId)")
+            .eusoRefreshSurface("vessel-operator:\(currentScreenId)")
             .transition(.opacity)
             .modifier(RoleNavBackOverlay(
                 stackDepth: screenStack.count,
@@ -2328,6 +5435,7 @@ struct VesselOperatorSurface: View {
             .environment(\.vesselOperatorNavHandler) { label in
                 VesselOperatorNavDispatcher.handle(label)
             }
+            .environment(\.roleDockContract, roleDock)
             .modifier(RoleDetailLayer(
                 pushedDetail: $pushedDetail,
                 palette: palette,
@@ -2360,7 +5468,7 @@ struct VesselOperatorSurface: View {
                     .environment(\.esangActionHandler) { action in
                         eSangRoleDispatcher.dispatch(
                             action,
-                            role: session.user?.roleEnum ?? .vesselOperator,
+                            role: .vesselOperator,
                             dismissSheet: { showeSang = false })
                     }
             }
@@ -2384,6 +5492,7 @@ struct VesselOperatorSurface: View {
 // matching the Shipper pattern that prevents the double-back collision.
 
 private struct RoleNavBackOverlay: ViewModifier {
+    @Environment(\.eusoRoleDetailPresented) private var detailPresented
     let stackDepth: Int
     let currentScreenId: String
     let screensWithOwnBack: Set<String>
@@ -2396,11 +5505,7 @@ private struct RoleNavBackOverlay: ViewModifier {
         content.safeAreaInset(edge: .top, spacing: 0) {
             if stackDepth > 1, !screensWithOwnBack.contains(currentScreenId) {
                 HStack(spacing: 0) {
-                    Button {
-                        NotificationCenter.default.post(
-                            name: .eusoRoleNavBack, object: nil
-                        )
-                    } label: {
+                    Button(action: sendBack) {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 16, weight: .heavy))
                             .foregroundStyle(.white)
@@ -2417,121 +5522,14 @@ private struct RoleNavBackOverlay: ViewModifier {
                 .padding(.vertical, 8)
             }
         }
-    }
-}
-
-// MARK: - Web continuation surface (roles without an iOS surface yet)
-
-/// Real production landing for the 14 backend roles that don't ship a
-/// native iOS surface in this session. Loads `app.eusotrip.com` in an
-/// SFSafariViewController on tap. The user is already authenticated via
-/// the same Bearer token cookie the iOS app uses against
-/// `eusotrip-app.azurewebsites.net`, so the web app honors the session
-/// without a re-login.
-struct WebContinuationSurface: View {
-    let role: EusoRole
-    let palette: Theme.Palette
-    /// Path segment under `/` on the web app — e.g. "dispatch", "rail/shipper".
-    let pathSlug: String
-
-    @EnvironmentObject var session: EusoTripSession
-    @State private var presentingWeb = false
-
-    private var continuationURL: URL {
-        // Production web app. Keep this as the public domain rather
-        // than the Azure backend host because the web SPA + cookies
-        // live on eusotrip.com.
-        URL(string: "https://app.eusotrip.com/\(pathSlug)")!
+        .modifier(EusoEdgeSwipeBack(
+            isEnabled: stackDepth > 1 && !detailPresented,
+            onBack: sendBack
+        ))
     }
 
-    var body: some View {
-        Shell(theme: palette) {
-            VStack(spacing: Space.s5) {
-                Spacer().frame(height: Space.s6)
-
-                Image(systemName: role.iconSystemName)
-                    .font(.system(size: 56, weight: .light))
-                    .foregroundStyle(palette.textPrimary)
-                    .padding(Space.s4)
-                    .background(
-                        Circle().fill(palette.bgCardSoft)
-                    )
-
-                VStack(spacing: Space.s2) {
-                    Text(role.displayName)
-                        .font(EType.h1)
-                        .foregroundStyle(palette.textPrimary)
-                    Text(role.shortDescription)
-                        .font(EType.body)
-                        .foregroundStyle(palette.textSecondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, Space.s5)
-                }
-
-                VStack(alignment: .leading, spacing: Space.s2) {
-                    Label("Your \(role.displayName.lowercased()) workspace is ready.",
-                          systemImage: role.iconSystemName)
-                        .font(EType.caption)
-                        .foregroundStyle(palette.textSecondary)
-                    Label("Open the full role workspace on app.eusotrip.com.",
-                          systemImage: "safari")
-                        .font(EType.caption)
-                        .foregroundStyle(palette.textSecondary)
-                    Label("You stay signed in. Your session carries over.",
-                          systemImage: "checkmark.shield")
-                        .font(EType.caption)
-                        .foregroundStyle(palette.textSecondary)
-                }
-                .padding(Space.s4)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                        .fill(palette.bgCardSoft)
-                )
-                .padding(.horizontal, Space.s4)
-
-                EusoCardIssuePanel(
-                    title: "\(role.displayName) EusoCard",
-                    subtitle: "Virtual card backed by EusoWallet"
-                )
-                .padding(.horizontal, Space.s4)
-
-                Button {
-                    presentingWeb = true
-                } label: {
-                    HStack(spacing: Space.s2) {
-                        Image(systemName: "safari")
-                        Text("Continue on app.eusotrip.com")
-                    }
-                    .font(EType.bodyStrong)
-                    .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(
-                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                            .fill(LinearGradient.diagonal)
-                    )
-                    .foregroundStyle(.white)
-                }
-                .padding(.horizontal, Space.s4)
-
-                Button {
-                    Task { await session.signOut() }
-                } label: {
-                    Text("Sign out")
-                        .font(EType.body)
-                        .foregroundStyle(palette.textTertiary)
-                }
-                .padding(.top, Space.s2)
-
-                Spacer()
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        } nav: {
-            EmptyView()
-        }
-        .sheet(isPresented: $presentingWeb) {
-            SafariContinuationView(url: continuationURL)
-                .ignoresSafeArea()
-        }
+    private func sendBack() {
+        NotificationCenter.default.post(name: .eusoRoleNavBack, object: nil)
     }
 }
 
@@ -2596,59 +5594,53 @@ enum RoleAccess {
     static func allowedScreenRoles(for role: EusoRole) -> [ProductionScreen.Role] {
         switch role {
         case .driver:                                   return [.driver]
-        case .shipper, .railShipper, .vesselShipper:    return [.shipper]
+        case .shipper, .vesselShipper:                  return [.shipper]
         // Carrier-track backend roles can navigate into both the
         // canonical Carrier registry (300-320) AND the Catalyst
         // SpectraMatch sub-surface (500-502).
-        case .catalyst, .railCatalyst:                  return [.carrier, .catalyst]
-        case .vesselOperator:                           return [.vesselOperator]
-        case .broker, .railBroker, .vesselBroker,
-             .customsBroker:                            return [.broker]
+        case .catalyst:                                 return [.carrier, .catalyst]
+        case .broker:                                   return [.broker]
         case .escort:                                   return [.escort]
-        case .terminal, .portMaster:                    return [.terminal]
+        case .terminal:                                 return [.terminal]
         case .admin, .superAdmin:                       return [.admin]
         case .compliance:                               return [.compliance]
         case .dispatch:                                 return [.dispatch]
-        case .railEngineer:                             return [.railEngineer]
-        // Roles below have no native chrome — they route to web
-        // continuation in `RoleSurfaceRouter`. Empty list means
-        // every cross-role swap is denied for them, which is the
-        // correct outcome since their surface lives outside the
-        // app entirely.
-        case .safety, .factoring,
-             .railDispatch, .railConductor,
-             .shipCaptain:                              return []
+        // Shared mode registries are deliberately broad enough to mount a
+        // proven native screen. `NativeModeRoleDefinition.allowedRoutes` is
+        // the narrower, role-specific navigation fence.
+        case .railShipper, .railCatalyst, .railDispatch,
+             .railEngineer, .railConductor, .railBroker:
+                                                        return [.railEngineer]
+        case .vesselOperator, .portMaster, .shipCaptain,
+             .vesselBroker, .customsBroker:             return [.vesselOperator]
+        // Specialist roles own typed native destinations rather than a
+        // numbered ScreenRegistry bucket. Their surfaces enforce their own
+        // exact destination catalogs.
+        case .safety, .factoring, .serviceProvider:     return []
         }
     }
 
-    /// Map the 24-role backend enum to the 8-role chrome enum used by
-    /// `ScreenRegistry`. Roles without a registered surface map to
-    /// their nearest analog so RBAC can still answer truthfully (a
-    /// rail-shipper has no registered iOS screens, so every check
-    /// fails — which is the correct outcome).
-    static func productionRole(for role: EusoRole) -> ProductionScreen.Role {
+    /// Map roles backed by a numbered native registry to the bucket that owns
+    /// their implementation. Typed specialist surfaces deliberately return
+    /// nil; they must never be reinterpreted as Driver to satisfy a non-
+    /// optional return type.
+    static func productionRole(for role: EusoRole) -> ProductionScreen.Role? {
         switch role {
-        case .driver:                return .driver
-        case .shipper, .railShipper, .vesselShipper:
-                                     return .shipper
-        case .catalyst, .railCatalyst:
-                                     return .carrier
-        case .vesselOperator:        return .vesselOperator
-        case .broker, .railBroker, .vesselBroker, .customsBroker:
-                                     return .broker
-        case .escort:                return .escort
-        case .terminal, .portMaster: return .terminal
-        case .admin, .superAdmin:    return .admin
-        case .railEngineer:          return .railEngineer
-        // Roles below have no chrome-role analog; map to a sentinel
-        // (.driver) but RoleAccess.canRender still returns false for
-        // them because none of their screen IDs are registered against
-        // .driver. The router routes these to web continuation, never
-        // through the registry path.
-        case .dispatch, .compliance, .safety, .factoring,
-             .railDispatch, .railConductor,
-             .shipCaptain:
-                                     return .driver
+        case .driver:                                   return .driver
+        case .shipper, .vesselShipper:                  return .shipper
+        case .catalyst:                                 return .carrier
+        case .broker:                                   return .broker
+        case .escort:                                   return .escort
+        case .terminal:                                 return .terminal
+        case .admin, .superAdmin:                       return .admin
+        case .compliance:                               return .compliance
+        case .dispatch:                                 return .dispatch
+        case .railShipper, .railCatalyst, .railDispatch,
+             .railEngineer, .railConductor, .railBroker:
+                                                        return .railEngineer
+        case .vesselOperator, .portMaster, .shipCaptain,
+             .vesselBroker, .customsBroker:             return .vesselOperator
+        case .safety, .factoring, .serviceProvider:     return nil
         }
     }
 }
@@ -2694,7 +5686,7 @@ struct HardwareCapabilitiesView: View {
     @State private var carrier: CapabilitiesAPI.CarrierCapabilities?
     @State private var trailerId: String = ""
     @State private var trailer: CapabilitiesAPI.TrailerCapabilities?
-    @State private var oauthSheetUrl: IdentifiableURL? = nil
+    @State private var focusedIntegration: FocusedIntegration? = nil
 
     @State private var newAnchorDoor: String = ""
     @State private var newAnchorVendor: String = "qorvo"
@@ -2711,11 +5703,9 @@ struct HardwareCapabilitiesView: View {
     @State private var newMarkerOffsetX: String = "0.0"
     @State private var newMarkerOffsetY: String = "0.0"
 
-    /// Identifiable wrapper so .sheet(item:) re-presents per-tap when
-    /// the URL changes.
-    struct IdentifiableURL: Identifiable, Hashable {
-        let id: String
-        let url: URL
+    struct FocusedIntegration: Identifiable, Hashable {
+        let providerId: String?
+        var id: String { providerId ?? "camera-integrations" }
     }
 
     enum Tab: String, CaseIterable, Identifiable {
@@ -2801,18 +5791,14 @@ struct HardwareCapabilitiesView: View {
                     selectedTab = first
                 }
             }
-            .sheet(item: $oauthSheetUrl) { wrapped in
-                OAuthSafariSheet(url: wrapped.url)
-                    .ignoresSafeArea()
-            }
-            .onReceive(NotificationCenter.default.publisher(
-                for: .eusoVendorOAuthCallback)) { note in
-                guard let info = note.userInfo,
-                      let vendor = info["vendor"] as? String,
-                      let code = info["code"] as? String else { return }
-                let state = info["state"] as? String ?? ""
-                Task { await completeVendorOAuth(vendor: vendor, code: code, state: state) }
-                oauthSheetUrl = nil
+            .sheet(item: $focusedIntegration, onDismiss: {
+                Task { await loadCarrier() }
+            }) { target in
+                ConnectedAppsScreen(
+                    theme: palette,
+                    initialProviderId: target.providerId,
+                    showsLifecycleNav: false
+                )
             }
         }
     }
@@ -3115,59 +6101,31 @@ struct HardwareCapabilitiesView: View {
         let cap = carrier ?? CapabilitiesAPI.CarrierCapabilities.empty
         sectionCard(title: "DASH CAM VENDOR") {
             VStack(alignment: .leading, spacing: 8) {
-                ForEach(["samsara", "motive", "garmin", "cipia", "none"], id: \.self) { vendor in
-                    HStack {
-                        Image(systemName: cap.dashCam.vendor == vendor
-                              ? "largecircle.fill.circle"
-                              : "circle")
-                            .foregroundStyle(LinearGradient.diagonal)
-                        Text(vendor.capitalized)
-                            .font(EType.body)
-                            .foregroundStyle(palette.textPrimary)
-                        Spacer(minLength: 0)
-                    }
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        var updated = cap
-                        updated = CapabilitiesAPI.CarrierCapabilities(
-                            carrierId: updated.carrierId,
-                            dashCam: CapabilitiesAPI.DashCamVendor(
-                                vendor: vendor,
-                                credentialsToken: nil,
-                                configured: vendor != "none" ? updated.dashCam.configured : false
-                            )
-                        )
-                        carrier = updated
-                    }
-                }
                 if cap.dashCam.configured {
                     HStack(spacing: 6) {
                         Image(systemName: "checkmark.seal.fill")
                             .foregroundStyle(Brand.success)
-                        Text("Connected to \(cap.dashCam.vendor.capitalized)")
+                        Text("Verified company connection · \(cap.dashCam.vendor.capitalized)")
                             .font(EType.caption.weight(.semibold))
                             .foregroundStyle(palette.textPrimary)
                     }
-                } else if cap.dashCam.vendor != "none" {
-                    Button {
-                        Task { await launchVendorOAuth(vendor: cap.dashCam.vendor) }
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "arrow.up.right.square.fill")
-                            Text("Connect \(cap.dashCam.vendor.capitalized)")
-                                .font(EType.body.weight(.semibold))
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(loading)
+                } else {
+                    Label("No verified company dash-camera connection", systemImage: "video.slash")
+                        .font(EType.caption.weight(.semibold))
+                        .foregroundStyle(palette.textSecondary)
                 }
-                Text("Connect opens the vendor's secure OAuth login. After you grant access, drivers see the dash-cam row light up on the dock-cam picker.")
+                Text("Connected Apps determines the required journey for each vendor. Credentials alone do not activate this feature: provider entitlement and the live verification path must also pass.")
                     .font(.system(size: 10))
                     .foregroundStyle(palette.textTertiary)
-                Button("Save vendor selection") {
-                    Task { await saveCarrier() }
+                    .fixedSize(horizontal: false, vertical: true)
+                Button {
+                    focusedIntegration = FocusedIntegration(
+                        providerId: cap.dashCam.vendor == "none" ? nil : cap.dashCam.vendor
+                    )
+                } label: {
+                    Label("Manage camera integrations", systemImage: "rectangle.connected.to.line.below")
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.borderedProminent)
                 .disabled(loading)
             }
         }
@@ -3426,18 +6384,6 @@ struct HardwareCapabilitiesView: View {
         try? await Task.sleep(nanoseconds: 1_400_000_000)
         saveToast = nil
     }
-    private func saveCarrier() async {
-        guard let c = carrier else { return }
-        loading = true; defer { loading = false }
-        do {
-            _ = try await EusoTripAPI.shared.capabilities.setMyCarrier(c)
-            saveToast = "Carrier capabilities saved"
-        } catch {
-            saveToast = "Save failed: \(error.localizedDescription)"
-        }
-        try? await Task.sleep(nanoseconds: 1_400_000_000)
-        saveToast = nil
-    }
     private func saveTrailer() async {
         guard let t = trailer else { return }
         loading = true; defer { loading = false }
@@ -3451,111 +6397,9 @@ struct HardwareCapabilitiesView: View {
         saveToast = nil
     }
 
-    // MARK: Vendor OAuth
-
-    /// Step 1: ask the backend for the vendor's authorize URL +
-    /// CSRF state, then present SFSafariViewController with that
-    /// URL. The user grants permission, vendor redirects back via
-    /// `eusotrip://oauth/callback/<vendor>?code=…&state=…`,
-    /// AppRoot's URL handler captures it, posts
-    /// `.eusoVendorOAuthCallback`, and the observer above calls
-    /// `completeVendorOAuth`.
-    private func launchVendorOAuth(vendor: String) async {
-        loading = true; defer { loading = false }
-        do {
-            let resp = try await EusoTripAPI.shared.capabilities
-                .startVendorOAuth(vendor: vendor)
-            guard let url = URL(string: resp.authorizeUrl) else {
-                saveToast = "Vendor returned an invalid authorize URL"
-                return
-            }
-            oauthSheetUrl = IdentifiableURL(id: "\(vendor)-\(resp.state)", url: url)
-        } catch {
-            saveToast = "Couldn't start \(vendor.capitalized) OAuth: \(error.localizedDescription)"
-        }
-    }
-
-    /// Step 2: trade the authorization code for the vendor's
-    /// long-lived token. Backend stores ciphertext, flips
-    /// `configured = true`, returns the iOS-side truth value. We
-    /// reload the capability envelope so the form state matches
-    /// the backend immediately.
-    private func completeVendorOAuth(vendor: String, code: String, state: String) async {
-        loading = true; defer { loading = false }
-        do {
-            _ = try await EusoTripAPI.shared.capabilities
-                .exchangeOAuthCode(vendor: vendor, code: code, state: state)
-            saveToast = "\(vendor.capitalized) connected"
-            await loadCarrier()
-        } catch {
-            saveToast = "Connect failed: \(error.localizedDescription)"
-        }
-        try? await Task.sleep(nanoseconds: 1_400_000_000)
-        saveToast = nil
-    }
 }
-
-// MARK: - Vendor OAuth launcher + callback notification
-//
-// Per-vendor OAuth handshake for dash-cam (Samsara / Motive / Garmin
-// / Cipia) and trailer dome-cam (Sensata / ORBCOMM / Spireon)
-// integrations. Pattern is uniform per vendor:
-//
-//   1. User taps "Connect <vendor>" in the carrier or trailer tab
-//      of the Hardware Capabilities form.
-//   2. iOS calls `capabilities.startVendorOAuth(vendor)`; backend
-//      mints the authorize URL + opaque CSRF state token.
-//   3. iOS opens the URL in SFSafariViewController. User logs in
-//      to the vendor + grants permission.
-//   4. Vendor redirects to `eusotrip://oauth/callback/<vendor>?code=…&state=…`.
-//   5. AppRoot's `.onOpenURL` handler captures the redirect, posts
-//      `.eusoVendorOAuthCallback` with the parsed query items.
-//   6. The HardwareCapabilitiesView observes that notification +
-//      calls `capabilities.exchangeOAuthCode`. Backend trades the
-//      code for the vendor's long-lived refresh token, stores
-//      ciphertext on the matching capability envelope, flips
-//      `configured = true`. iOS reloads + the matching dock-cam
-//      picker row lights up.
-//
-// Custom URL scheme: `eusotrip://` is registered in Info.plist
-// (CFBundleURLSchemes). Add an entry for `eusotrip` if missing.
 
 import SafariServices
-
-extension Notification.Name {
-    /// Fired by AppRoot's `.onOpenURL` handler when the user finishes
-    /// a vendor OAuth flow and Safari redirects to
-    /// `eusotrip://oauth/callback/<vendor>?code=…&state=…`. userInfo:
-    ///   - "vendor": String
-    ///   - "code":   String
-    ///   - "state":  String?
-    static let eusoVendorOAuthCallback = Notification.Name("eusoVendorOAuthCallback")
-}
-
-/// Helper that parses an incoming `eusotrip://oauth/callback/...` URL
-/// and posts the matching `.eusoVendorOAuthCallback` notification.
-/// Called from `AppRoot` / `ContentView` `.onOpenURL` so the URL
-/// scheme handler stays a single line at the call site.
-enum VendorOAuthCallback {
-    static func handle(url: URL) -> Bool {
-        guard url.scheme == "eusotrip",
-              url.host == "oauth",
-              url.pathComponents.count >= 3,
-              url.pathComponents[1] == "callback" else { return false }
-        let vendor = url.pathComponents[2]
-        let comps = URLComponents(url: url, resolvingAgainstBaseURL: false)
-        let code = comps?.queryItems?.first(where: { $0.name == "code" })?.value
-        let state = comps?.queryItems?.first(where: { $0.name == "state" })?.value
-        guard let code else { return true } // we recognized the URL but couldn't parse — swallow
-        var info: [String: Any] = ["vendor": vendor, "code": code]
-        if let state { info["state"] = state }
-        NotificationCenter.default.post(
-            name: .eusoVendorOAuthCallback,
-            object: nil, userInfo: info
-        )
-        return true
-    }
-}
 
 /// SwiftUI wrapper around SFSafariViewController for OAuth flows.
 /// Pinned to a fresh instance per `present()` because SFSafariVC

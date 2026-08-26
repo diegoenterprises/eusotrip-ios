@@ -25,7 +25,6 @@ struct VesselOperatorHomeScreen: View {
 private struct VesselDash: Decodable {
     let activeBookings: Int?
     let containersInTransit: Int?
-    let revenue: Double?
     let avgTransitDays: Double?
 }
 
@@ -55,10 +54,16 @@ private struct VesselOperatorHomeBody: View {
     @State private var loadError: String? = nil
 
     private let widgetLayoutKey = "vessel.operator.home.widgetOrder"
-    private let canonicalOrder: [String] = ["bookings_overview", "compliance_status", "crew_roster", "news"]
+    private let canonicalOrder: [String] = [
+        "vessel_overview", "asset_availability", "esang", "bookings_overview",
+        "compliance_status", "crew_roster", "news"
+    ]
 
     private func widgetRender(_ id: String) -> AnyView {
         switch id {
+        case "vessel_overview":    AnyView(vesselOverviewWidget)
+        case "asset_availability": AnyView(ModeAssetAvailabilityLaunchCard(mode: .vessel))
+        case "esang":              AnyView(eSangMorningBriefCard())
         case "bookings_overview":  AnyView(bookingsWidget)
         case "compliance_status":  AnyView(complianceWidget)
         case "crew_roster":        AnyView(crewWidget)
@@ -77,25 +82,12 @@ private struct VesselOperatorHomeBody: View {
                 // top-to-bottom (scale 0.92 + blur 5pt + 50 ms stagger) once
                 // per cold launch; settled on re-visit. Reduce-Motion → fade.
                 StaggeredEntranceStack(alignment: .leading, spacing: Space.s4) {
-                    RoleHomeIntro()
-                    if loading {
-                        LifecycleCard {
-                            Text("Loading vessel dashboard…").font(EType.caption).foregroundStyle(palette.textSecondary)
-                        }
-                    } else if let err = loadError {
-                        LifecycleCard(accentDanger: true) {
-                            Text(err).font(EType.caption).foregroundStyle(Brand.danger)
-                        }
-                    } else if let d = dash {
-                        hero(d)
-                        statStrip(d)
-                        HomeWidgetGrid(
-                            canonicalOrder: canonicalOrder,
-                            role: "VESSEL_OPERATOR",
-                            storageKey: widgetLayoutKey,
-                            render: { id in widgetRender(id) }
-                        )
-                    }
+                    HomeWidgetGrid(
+                        canonicalOrder: canonicalOrder,
+                        role: "VESSEL_OPERATOR",
+                        storageKey: widgetLayoutKey,
+                        render: { id in widgetRender(id) }
+                    )
                     Color.clear.frame(height: 96)
                 }
                 .padding(.horizontal, Space.s5)
@@ -157,11 +149,10 @@ private struct VesselOperatorHomeBody: View {
     /// containers figure isn't present yet. No fabricated data — both
     /// numerals are live `VesselDash` fields.
     private func eyebrowContext(_ d: VesselDash) -> String {
-        let active = d.activeBookings ?? 0
-        if let teu = d.containersInTransit {
-            return "\(active) ACTIVE · \(teu) TEU"
+        if d.activeBookings != nil || d.containersInTransit != nil {
+            return "\(reported(d.activeBookings)) ACTIVE · \(reported(d.containersInTransit)) TEU"
         }
-        return "\(active) ACTIVE"
+        return "VESSEL FLEET · NOT REPORTED"
     }
 
     private var headline: String {
@@ -192,11 +183,11 @@ private struct VesselOperatorHomeBody: View {
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                         .foregroundStyle(.white.opacity(0.85))
                 }
-                Text("\(d.activeBookings ?? 0)")
+                Text(reported(d.activeBookings))
                     .font(.system(size: 42, weight: .heavy))
                     .foregroundStyle(.white).monospacedDigit()
                 HStack(spacing: 8) {
-                    Text("CONTAINERS \(d.containersInTransit ?? 0)")
+                    Text("CONTAINERS \(reported(d.containersInTransit))")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 10).padding(.vertical, 4)
@@ -208,11 +199,11 @@ private struct VesselOperatorHomeBody: View {
                             .padding(.horizontal, 10).padding(.vertical, 4)
                             .background(.white.opacity(0.18)).clipShape(Capsule())
                     }
-                    if let c = compliance, (c.failedCount ?? 0) > 0 {
+                    if let failed = compliance?.failedCount, failed > 0 {
                         HStack(spacing: 4) {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .font(.system(size: 8, weight: .heavy))
-                            Text("\(c.failedCount ?? 0) PSC")
+                            Text("\(failed) PSC")
                                 .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                         }
                         .foregroundStyle(.white)
@@ -236,8 +227,8 @@ private struct VesselOperatorHomeBody: View {
             .shadow(color: Brand.blue.opacity(0.28), radius: 16, x: -4, y: 4)
             .shadow(color: Brand.magenta.opacity(0.28), radius: 16, x: 4, y: 4)
 
-            if let c = compliance {
-                let isGood = (c.failedCount ?? 0) == 0
+            if let failed = compliance?.failedCount {
+                let isGood = failed == 0
                 Image(systemName: isGood ? "checkmark.shield.fill" : "exclamationmark.shield.fill")
                     .font(.system(size: 22, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.30))
@@ -249,14 +240,34 @@ private struct VesselOperatorHomeBody: View {
     // MARK: - Stat strip
 
     private func statStrip(_ d: VesselDash) -> some View {
-        let rev = d.revenue ?? 0
-        let revStr = rev >= 1_000_000
-            ? String(format: "$%.1fM", rev / 1_000_000)
-            : String(format: "$%.0fK", rev / 1_000)
-        return HStack(spacing: Space.s2) {
-            MetricTile(label: "BOOKINGS",   value: "\(d.activeBookings ?? 0)",      gradientNumeral: true)
-            MetricTile(label: "CONTAINERS", value: "\(d.containersInTransit ?? 0)")
-            MetricTile(label: "REVENUE",    value: revStr)
+        HStack(spacing: Space.s2) {
+            MetricTile(label: "BOOKINGS",   value: reported(d.activeBookings), gradientNumeral: true)
+            MetricTile(label: "CONTAINERS", value: reported(d.containersInTransit))
+            MetricTile(
+                label: "AVG DAYS",
+                value: d.avgTransitDays.map { String(format: "%.1f", $0) } ?? "—"
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var vesselOverviewWidget: some View {
+        if loading {
+            LifecycleCard {
+                Text("Loading vessel dashboard…").font(EType.caption).foregroundStyle(palette.textSecondary)
+            }
+        } else if let loadError {
+            LifecycleCard(accentDanger: true) {
+                Text(loadError).font(EType.caption).foregroundStyle(Brand.danger)
+            }
+        } else if let dash {
+            VStack(alignment: .leading, spacing: Space.s3) {
+                hero(dash)
+                statStrip(dash)
+            }
+        } else {
+            EusoEmptyState(systemImage: "ferry.fill", title: "No vessel overview",
+                           subtitle: "Vessel dashboard metrics have not been reported yet.")
         }
     }
 
@@ -268,10 +279,14 @@ private struct VesselOperatorHomeBody: View {
             widgetHeader(icon: "calendar.badge.checkmark", label: "BOOKINGS OVERVIEW", count: dash?.activeBookings)
             if loading {
                 LifecycleCard { Text("Loading…").font(EType.caption).foregroundStyle(palette.textSecondary) }
+            } else if let loadError {
+                LifecycleCard(accentDanger: true) {
+                    Text(loadError).font(EType.caption).foregroundStyle(Brand.danger)
+                }
             } else if let d = dash {
                 HStack(spacing: Space.s2) {
-                    LifecycleStatTile(label: "ACTIVE",     value: "\(d.activeBookings ?? 0)",      icon: "calendar.badge.checkmark")
-                    LifecycleStatTile(label: "CONTAINERS", value: "\(d.containersInTransit ?? 0)", icon: "shippingbox.fill")
+                    LifecycleStatTile(label: "ACTIVE",     value: reported(d.activeBookings),      icon: "calendar.badge.checkmark")
+                    LifecycleStatTile(label: "CONTAINERS", value: reported(d.containersInTransit), icon: "shippingbox.fill")
                 }
             } else {
                 EusoEmptyState(systemImage: "calendar.badge.checkmark", title: "No booking data",
@@ -289,12 +304,16 @@ private struct VesselOperatorHomeBody: View {
                          badge: compliance?.status)
             if loading {
                 LifecycleCard { Text("Loading…").font(EType.caption).foregroundStyle(palette.textSecondary) }
+            } else if let loadError {
+                LifecycleCard(accentDanger: true) {
+                    Text(loadError).font(EType.caption).foregroundStyle(Brand.danger)
+                }
             } else if let c = compliance {
                 HStack(spacing: Space.s2) {
-                    LifecycleStatTile(label: "INSPECTIONS", value: "\(c.inspections ?? 0)",   icon: "doc.text.magnifyingglass")
-                    LifecycleStatTile(label: "HAZMAT",      value: "\(c.hazmatPermits ?? 0)", icon: "exclamationmark.triangle")
-                    LifecycleStatTile(label: "FAILED",      value: "\(c.failedCount ?? 0)",   icon: "xmark.circle",
-                                      danger: (c.failedCount ?? 0) > 0)
+                    LifecycleStatTile(label: "INSPECTIONS", value: reported(c.inspections),   icon: "doc.text.magnifyingglass")
+                    LifecycleStatTile(label: "HAZMAT",      value: reported(c.hazmatPermits), icon: "exclamationmark.triangle")
+                    LifecycleStatTile(label: "FAILED",      value: reported(c.failedCount),   icon: "xmark.circle",
+                                      danger: c.failedCount.map { $0 > 0 } ?? false)
                 }
             } else {
                 EusoEmptyState(systemImage: "checkmark.shield.fill", title: "No compliance data",
@@ -320,6 +339,10 @@ private struct VesselOperatorHomeBody: View {
                             .eusoRow(radius: Radius.md)
                     }
                 }
+            } else if let loadError {
+                LifecycleCard(accentDanger: true) {
+                    Text(loadError).font(EType.caption).foregroundStyle(Brand.danger)
+                }
             } else if crew.isEmpty {
                 EusoEmptyState(systemImage: "person.3", title: "No crew data",
                                subtitle: "Vessel crew roster will appear here.")
@@ -343,16 +366,16 @@ private struct VesselOperatorHomeBody: View {
         return HStack(spacing: Space.s3) {
             ZStack {
                 Circle().fill(statusColor.opacity(0.14)).frame(width: 32, height: 32)
-                Text(String(member.name?.prefix(2).uppercased() ?? "-"))
+                Text(initials(member.name))
                     .font(.system(size: 11, weight: .heavy))
                     .foregroundStyle(statusColor)
             }
             VStack(alignment: .leading, spacing: 1) {
-                Text(member.name ?? "-").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-                Text(member.role ?? "-").font(EType.caption).foregroundStyle(palette.textSecondary)
+                Text(reported(member.name)).font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+                Text(reported(member.role)).font(EType.caption).foregroundStyle(palette.textSecondary)
             }
             Spacer()
-            Text((member.status ?? "-").replacingOccurrences(of: "_", with: " ").uppercased())
+            Text(reported(member.status).replacingOccurrences(of: "_", with: " ").uppercased())
                 .font(.system(size: 8, weight: .heavy)).tracking(0.6)
                 .foregroundStyle(statusColor)
                 .padding(.horizontal, 8).padding(.vertical, 3)
@@ -363,6 +386,24 @@ private struct VesselOperatorHomeBody: View {
         // intensity for nested rows) replaces the flat bgCard + borderFaint
         // box so each crew row reads with the signature card language.
         .eusoRow(radius: Radius.md)
+    }
+
+    private func reported(_ value: Int?) -> String {
+        value.map(String.init) ?? "—"
+    }
+
+    private func reported(_ value: String?) -> String {
+        guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
+            return "Not reported"
+        }
+        return value
+    }
+
+    private func initials(_ name: String?) -> String {
+        guard let name = name?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else {
+            return "—"
+        }
+        return String(name.prefix(2)).uppercased()
     }
 
     // MARK: - Widget header helper

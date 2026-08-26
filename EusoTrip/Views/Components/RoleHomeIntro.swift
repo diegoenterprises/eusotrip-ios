@@ -3,9 +3,10 @@
 //  EusoTrip — Canonical Home lead-in for every role.
 //
 //  Doctrine: Driver 010 is the baseline. Every role's Home opens with
-//      ESANG brief  →  Weather  →  role-specific widgets.
+//      movable Weather widget  →  ESANG brief  →  role-specific widgets.
 //
-//  This component renders the first two cards as one reusable unit:
+//  This component renders the ESANG brief. Weather now belongs to the
+//  shared HomeWidgetGrid so the user can move, resize, remove, and re-add it.
 //    • eSangMorningBriefCard  — the "ESANG brief" top coaching card,
 //                               role/vertical-aware, auto-loads on appear.
 //    • WeatherCard            — live snapshot from WeatherService.shared.
@@ -16,7 +17,8 @@
 //
 //  Usage from any role home body:
 //      VStack(alignment: .leading, spacing: Space.s4) {
-//          RoleHomeIntro()                  // ← morning brief + weather
+//          HomeWidgetGrid(...)              // ← movable weather first
+//          RoleHomeIntro()                  // ← morning brief
 //          // …role-specific widgets follow…
 //      }
 //
@@ -37,12 +39,6 @@ struct RoleHomeIntro: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s4) {
             eSangMorningBriefCard()
-
-            // Always-visible bespoke weather surface — owns its own fetch and
-            // honest empty states (data / loading / enable-location /
-            // unavailable). Replaces the previous gated WeatherCard that
-            // vanished whenever the snapshot was nil.
-            HomeWeatherWidget()
         }
     }
 

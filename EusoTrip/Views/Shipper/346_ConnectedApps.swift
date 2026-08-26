@@ -36,8 +36,27 @@ import SwiftUI
 
 struct ConnectedAppsScreen: View {
     let theme: Theme.Palette
+    let initialProviderId: String?
+    let showsLifecycleNav: Bool
+
+    init(
+        theme: Theme.Palette,
+        initialProviderId: String? = nil,
+        showsLifecycleNav: Bool = true
+    ) {
+        self.theme = theme
+        self.initialProviderId = initialProviderId
+        self.showsLifecycleNav = showsLifecycleNav
+    }
+
     var body: some View {
-        Shell(theme: theme) { ConnectedAppsBody() } nav: { shipperLifecycleNav() }
+        Shell(theme: theme) {
+            ConnectedAppsBody(initialProviderId: initialProviderId)
+        } nav: {
+            if showsLifecycleNav {
+                shipperLifecycleNav()
+            }
+        }
     }
 }
 
@@ -209,6 +228,8 @@ private struct IntegrationNetworkBenefit: Identifiable, Hashable {
 }
 
 private struct ConnectedAppsBody: View {
+    let initialProviderId: String?
+
     @Environment(\.palette) private var palette
     @EnvironmentObject private var session: EusoTripSession
 
@@ -281,7 +302,13 @@ private struct ConnectedAppsBody: View {
             }
             .padding(.horizontal, 14).padding(.top, 72)
         }
-        .task { await load() }
+        .task {
+            await load()
+            if let initialProviderId,
+               providers.contains(where: { $0.id == initialProviderId }) {
+                expandedProvider = initialProviderId
+            }
+        }
     }
 
     private var header: some View {

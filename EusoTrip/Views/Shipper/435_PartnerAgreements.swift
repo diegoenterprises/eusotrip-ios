@@ -26,9 +26,18 @@ import SwiftUI
 
 struct PartnerAgreementsScreen: View {
     let theme: Theme.Palette
-    let partnerId: String
+    let partnerId: String?
     var body: some View {
-        Shell(theme: theme) { PartnerAgreementsBody(partnerId: partnerId) } nav: { shipperLifecycleNav() }
+        if let routedPartnerId = ShipperRoutedRecordIdResolver.positiveNumeric(partnerId) {
+            Shell(theme: theme) { PartnerAgreementsBody(partnerId: routedPartnerId) } nav: { shipperLifecycleNav() }
+        } else {
+            ShipperRecordContextUnavailableScreen(
+                theme: theme,
+                systemImage: "doc.badge.ellipsis",
+                title: "Agreements unavailable",
+                subtitle: "Open a partner to review and sign that partner's agreements."
+            )
+        }
     }
 }
 

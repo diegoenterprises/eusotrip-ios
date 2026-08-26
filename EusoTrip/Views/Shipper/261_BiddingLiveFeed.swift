@@ -19,19 +19,28 @@ import SwiftUI
 
 struct BiddingLiveFeedScreen: View {
     let theme: Theme.Palette
-    let loadId: String
+    let loadId: String?
 
     var body: some View {
-        Shell(theme: theme) {
-            LifecycleScaffold(
-                loadId: loadId,
-                eyebrow: "SHIPPER · BIDDING · LIVE · STAGE 2 OF 8",
-                cycleStatus: "bidding"
-            ) { live in
-                BiddingBody(live: live, loadId: loadId)
+        if let routedLoadId = ShipperLoadIdResolver.normalize(loadId) {
+            Shell(theme: theme) {
+                LifecycleScaffold(
+                    loadId: routedLoadId,
+                    eyebrow: "SHIPPER · BIDDING · LIVE · STAGE 2 OF 8",
+                    cycleStatus: "bidding"
+                ) { live in
+                    BiddingBody(live: live, loadId: routedLoadId)
+                }
+            } nav: {
+                shipperLifecycleNav()
             }
-        } nav: {
-            shipperLifecycleNav()
+        } else {
+            ShipperRecordContextUnavailableScreen(
+                theme: theme,
+                systemImage: "hand.raised.slash",
+                title: "Bidding unavailable",
+                subtitle: "Open a posted load with active bidding to view and award its offers."
+            )
         }
     }
 }

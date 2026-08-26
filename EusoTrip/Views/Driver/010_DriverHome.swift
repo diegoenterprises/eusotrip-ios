@@ -22,775 +22,6 @@ import CoreLocation
 import UIKit
 #endif
 
-// MARK: - Home Widget Catalog (mirrors web `client/src/lib/widgetLibrary.ts`)
-//
-// Single iOS-side source of truth for the home-widget customization
-// surface. Widget IDs are kept identical to the web catalog so a
-// layout saved via `users.saveDashboardLayout` on iOS hydrates
-// correctly on web and vice versa.
-//
-// iosRenderable=true means an iOS tile-view exists for this widget
-// id and the home screen's render closure will map to it. false
-// means it shows in the catalog (gated by role) but iOS has no tile
-// view yet — the picker can still surface it as "Coming on iOS"
-// when we wire the per-role widget picker in a follow-up.
-
-/// Mirrors web's `WidgetCategory`.
-enum HomeWidgetCategory: String, Codable, CaseIterable {
-    case analytics, operations, financial, communication
-    case productivity, safety, compliance, performance
-    case planning, tracking, reporting, management
-}
-
-/// User-selectable widget span on the iOS home grid.
-///
-/// The iOS home is a single-column reorderable stack, so the resize
-/// dimension that's genuinely meaningful — and that maps cleanly onto
-/// the existing cross-platform `Slot{w,h}` payload (web is a 12-col
-/// grid) — is the tile's COLUMN SPAN:
-///
-///   • `.half`    → two tiles share a row (w = 6 on the 12-col model)
-///   • `.full`    → one tile per row     (w = 12)
-///   • `.compact` → full width, but the tile renders its condensed
-///                  body (caps tall tiles to a glanceable height; the
-///                  tile reads `\.homeWidgetSpan` from the environment)
-///
-/// Persisted into the same `users.saveDashboardLayout` slot the reorder
-/// already writes, via the `w`/`h` fields the server schema already
-/// accepts (users.ts:2058). Web hydrates the identical w/h.
-enum HomeWidgetSpan: String, Codable, CaseIterable, Hashable {
-    case compact, half, full
-
-    /// (w, h) on the 12-col cross-platform model. `h` mirrors the web
-    /// row-height convention; `w` is what drives iOS row-packing.
-    var grid: (w: Int, h: Int) {
-        switch self {
-        case .compact: return (12, 4)
-        case .half:    return (6, 6)
-        case .full:    return (12, 8)
-        }
-    }
-
-    /// Best-fit span for a saved/legacy `(w,h)` slot coming back from
-    /// the server (which may predate the iOS picker). Width wins; a
-    /// short full-width tile reads as `.compact`.
-    static func from(w: Int, h: Int) -> HomeWidgetSpan {
-        if w <= 6 { return .half }
-        if h <= 4 { return .compact }
-        return .full
-    }
-
-    var menuLabel: String {
-        switch self {
-        case .compact: return "Compact"
-        case .half:    return "Half width"
-        case .full:    return "Full width"
-        }
-    }
-
-    var menuIcon: String {
-        switch self {
-        case .compact: return "rectangle.compress.vertical"
-        case .half:    return "rectangle.split.2x1"
-        case .full:    return "rectangle"
-        }
-    }
-
-    /// True when this span occupies only half a row (packs with a sibling).
-    var isHalf: Bool { self == .half }
-}
-
-/// Environment key so a tile can render a condensed body when the user
-/// chooses `.compact`. Tiles opt in by reading `\.homeWidgetSpan`; tiles
-/// that ignore it simply render their natural body (still valid).
-private struct HomeWidgetSpanKey: EnvironmentKey {
-    static let defaultValue: HomeWidgetSpan = .full
-}
-extension EnvironmentValues {
-    var homeWidgetSpan: HomeWidgetSpan {
-        get { self[HomeWidgetSpanKey.self] }
-        set { self[HomeWidgetSpanKey.self] = newValue }
-    }
-}
-
-/// Mirrors web's `WidgetDefinition`. `id` is the cross-platform key.
-struct HomeWidgetDef: Identifiable, Hashable {
-    let id: String
-    let name: String
-    let summary: String
-    let icon: String                    // SF Symbol
-    let category: HomeWidgetCategory
-    let roles: Set<String>              // role enum strings — RBAC
-    let defaultSize: (w: Int, h: Int)   // matches web grid (12-col)
-    let iosRenderable: Bool
-    /// Spans the user may resize this widget to (edit-mode picker). Every
-    /// widget supports `.full`; data-dense tiles also allow `.half` so two
-    /// can share a row, and glanceable tiles allow `.compact`. Defaults to
-    /// `[.full]` (no resize affordance) when omitted.
-    let availableSizes: [HomeWidgetSpan]
-
-    init(id: String, name: String, summary: String, icon: String,
-         category: HomeWidgetCategory, roles: Set<String>,
-         defaultSize: (w: Int, h: Int), iosRenderable: Bool,
-         availableSizes: [HomeWidgetSpan] = [.full]) {
-        self.id = id; self.name = name; self.summary = summary
-        self.icon = icon; self.category = category; self.roles = roles
-        self.defaultSize = defaultSize; self.iosRenderable = iosRenderable
-        self.availableSizes = availableSizes
-    }
-
-    /// Span the catalog default `(w,h)` maps to — the seed value when no
-    /// user choice has been persisted yet. Clamped to this widget's
-    /// declared `availableSizes` so the seed is always a span the picker
-    /// can also select (falls back to the first available, then `.full`).
-    var defaultSpan: HomeWidgetSpan {
-        let mapped = HomeWidgetSpan.from(w: defaultSize.w, h: defaultSize.h)
-        if availableSizes.contains(mapped) { return mapped }
-        return availableSizes.first ?? .full
-    }
-
-    /// Equatable + Hashable manual (defaultSize tuple isn't auto-hashable).
-    static func == (lhs: HomeWidgetDef, rhs: HomeWidgetDef) -> Bool { lhs.id == rhs.id }
-    func hash(into hasher: inout Hasher) { hasher.combine(id) }
-}
-
-/// Static catalog of all known iOS home widgets — UNIVERSAL + every
-/// active iOS role's slate. Web's full 379-widget catalog is the
-/// long-term ceiling; iOS catalog grows as tile-views ship.
-enum HomeWidgetCatalog {
-
-    /// Universal widgets — available to every role. Mirrors web's
-    /// `UNIVERSAL_WIDGETS` (client/src/lib/widgetLibrary.ts:57).
-    static let universal: [HomeWidgetDef] = [
-        .init(id: "weather",            name: "Weather",            summary: "Live conditions, hourly band, lane weather + 5-day forecast", icon: "sun.max.fill", category: .productivity, roles: allRoles, defaultSize: (6, 6), iosRenderable: true, availableSizes: [.half, .full]),
-        .init(id: "calendar",           name: "Calendar",           summary: "Schedule and appointments",            icon: "calendar",                category: .productivity,   roles: allRoles, defaultSize: (12, 8), iosRenderable: false),
-        .init(id: "notes",              name: "Quick Notes",        summary: "Sticky notes and reminders",           icon: "note.text",               category: .productivity,   roles: allRoles, defaultSize: (6, 6), iosRenderable: false),
-        .init(id: "tasks",              name: "Tasks",              summary: "Personal to-dos",                      icon: "checklist",               category: .productivity,   roles: allRoles, defaultSize: (6, 6), iosRenderable: false),
-        .init(id: "notifications",      name: "Notifications",      summary: "Recent platform alerts",               icon: "bell.fill",               category: .communication,  roles: allRoles, defaultSize: (12, 6), iosRenderable: true),
-        .init(id: "messages",           name: "Messages",           summary: "Unread + active threads",              icon: "message.fill",            category: .communication,  roles: allRoles, defaultSize: (12, 6), iosRenderable: true),
-        .init(id: "quick_actions",      name: "Quick Actions",      summary: "Role-aware shortcuts",                 icon: "bolt.fill",               category: .productivity,   roles: allRoles, defaultSize: (12, 4), iosRenderable: false),
-        .init(id: "search",             name: "Search",             summary: "Loads / docs / contacts",              icon: "magnifyingglass",         category: .productivity,   roles: allRoles, defaultSize: (12, 4), iosRenderable: false),
-        .init(id: "recent_activity",    name: "Recent activity",    summary: "Latest movements + events",            icon: "list.bullet.rectangle",   category: .reporting,      roles: allRoles, defaultSize: (12, 8), iosRenderable: true),
-        .init(id: "performance_summary", name: "Performance",       summary: "Score / rank / trend",                 icon: "chart.line.uptrend.xyaxis", category: .performance, roles: allRoles, defaultSize: (8, 6), iosRenderable: false),
-        .init(id: "live_map",           name: "Live map",           summary: "Fleet / assets / loads on map",        icon: "map.fill",                category: .tracking,       roles: allRoles, defaultSize: (12, 10), iosRenderable: false),
-        .init(id: "news",               name: "Intel feed",         summary: "Role-prioritized rotating headlines",  icon: "newspaper.fill",          category: .reporting,      roles: allRoles, defaultSize: (12, 6), iosRenderable: true),
-        .init(id: "spectra_match",      name: "Spectra match",      summary: "Cross-role lane/carrier match score",  icon: "sparkles",                category: .analytics,      roles: allRoles, defaultSize: (12, 6), iosRenderable: false),
-    ]
-
-    /// Driver-specific widgets (mirrors web DRIVER_WIDGETS:240). iOS
-    /// tile views ship incrementally — current renderables are the
-    /// 5 originally wired in 010_DriverHome.
-    static let driver: [HomeWidgetDef] = [
-        .init(id: "current_route",      name: "Current route",      summary: "Active route navigation",              icon: "location.north.line.fill", category: .operations,    roles: ["DRIVER"], defaultSize: (12, 10), iosRenderable: true),
-        .init(id: "hos_tracker",        name: "HOS tracker",        summary: "Hours of service compliance",          icon: "clock.fill",              category: .compliance,     roles: ["DRIVER"], defaultSize: (12, 6),  iosRenderable: true),
-        .init(id: "earnings_summary",   name: "Earnings",           summary: "Pay and bonuses",                      icon: "dollarsign.circle.fill",  category: .financial,      roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: true, availableSizes: [.half, .full]),
-        .init(id: "next_delivery",      name: "Next delivery",      summary: "Upcoming delivery details",            icon: "mappin.circle.fill",      category: .operations,     roles: ["DRIVER"], defaultSize: (12, 6),  iosRenderable: true, availableSizes: [.half, .full]),
-        .init(id: "fuel_stations",      name: "Fuel stations",      summary: "Nearby fuel stops",                    icon: "fuelpump.fill",           category: .planning,       roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: true, availableSizes: [.half, .full]),
-        .init(id: "rest_areas",         name: "Rest areas",         summary: "Nearby rest stops",                    icon: "bed.double.fill",         category: .planning,       roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: true, availableSizes: [.half, .full]),
-        .init(id: "vehicle_health",     name: "Vehicle health",     summary: "Truck diagnostics",                    icon: "wrench.and.screwdriver.fill", category: .operations,  roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: true, availableSizes: [.half, .full]),
-        .init(id: "weather_alerts",     name: "Weather alerts",     summary: "Route weather conditions",             icon: "cloud.rain.fill",         category: .safety,         roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: true, availableSizes: [.half, .full]),
-        .init(id: "haul",               name: "The Haul weekly",    summary: "XP ring + missions + rank",            icon: "rosette",                 category: .performance,    roles: ["DRIVER"], defaultSize: (12, 6),  iosRenderable: true),
-        .init(id: "compliance",         name: "Compliance countdown", summary: "CDL / medical / hazmat / TWIC expiry", icon: "checkmark.shield.fill", category: .compliance,    roles: ["DRIVER"], defaultSize: (12, 4),  iosRenderable: true, availableSizes: [.full, .half]),
-        .init(id: "hotZones",           name: "Hot zones",          summary: "Live load-to-truck ratios + surges",   icon: "flame.fill",              category: .analytics,      roles: ["DRIVER"], defaultSize: (12, 8),  iosRenderable: true),
-        .init(id: "near_me_intel",      name: "Near me · Load intel", summary: "ESANG near-me lane scoring: L/T ratio, surge & est. earnings", icon: "location.magnifyingglass", category: .analytics, roles: ["DRIVER"], defaultSize: (12, 8),  iosRenderable: true),
-        .init(id: "performance_score",  name: "Performance score",  summary: "Safety · on-time rate · fleet rank",   icon: "chart.line.uptrend.xyaxis", category: .performance,  roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: true, availableSizes: [.half, .full]),
-        .init(id: "mileage_tracker",    name: "Mileage tracker",    summary: "Monthly miles + current load distance", icon: "road.lanes",                 category: .analytics,    roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: true, availableSizes: [.half, .full]),
-        // ── New driver widgets (2026-05-30 #50 catalog expansion) ──
-        .init(id: "wallet_activity",    name: "Wallet activity",    summary: "Latest payouts, bonuses & fees",       icon: "list.bullet.rectangle.portrait.fill", category: .financial, roles: ["DRIVER"], defaultSize: (12, 6), iosRenderable: true, availableSizes: [.compact, .full]),
-        .init(id: "fuel_economy",       name: "Fuel economy",       summary: "Month MPG, fuel spend & cost / mi",    icon: "fuelpump.circle.fill",    category: .analytics,      roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: true, availableSizes: [.half, .full]),
-    ]
-
-    /// Shipper-specific widgets.
-    static let shipper: [HomeWidgetDef] = [
-        .init(id: "activeLoads",        name: "Active loads",       summary: "Live load board",                      icon: "shippingbox.fill",        category: .operations,     roles: ["SHIPPER"], defaultSize: (12, 8), iosRenderable: true),
-        .init(id: "esang",              name: "ESANG strip",        summary: "AI live signals",                      icon: "sparkles",                category: .analytics,      roles: ["SHIPPER"], defaultSize: (12, 6), iosRenderable: true),
-        .init(id: "spend_summary",      name: "Spend summary",      summary: "Monthly spend + bids + on-time rate",  icon: "dollarsign.circle.fill",  category: .financial,      roles: ["SHIPPER"], defaultSize: (10, 6), iosRenderable: true),
-        .init(id: "attention_alerts",   name: "Attention alerts",   summary: "Loads needing immediate action",        icon: "exclamationmark.triangle.fill", category: .operations, roles: ["SHIPPER"], defaultSize: (12, 6), iosRenderable: true),
-    ]
-
-    /// Catalyst-specific widgets.
-    static let catalyst: [HomeWidgetDef] = [
-        .init(id: "activeMatches",      name: "Active matches",     summary: "Match board + bid landscape",          icon: "person.line.dotted.person.fill", category: .operations, roles: ["CATALYST"], defaultSize: (12, 8), iosRenderable: true),
-        .init(id: "gmv_summary",        name: "GMV summary",        summary: "Weekly GMV + fit score + matched",     icon: "chart.bar.fill",                 category: .analytics,  roles: ["CATALYST"], defaultSize: (10, 6), iosRenderable: true),
-        .init(id: "catalyst_alerts",    name: "Catalyst alerts",    summary: "Matches needing immediate action",     icon: "exclamationmark.triangle.fill",  category: .operations, roles: ["CATALYST"], defaultSize: (12, 6), iosRenderable: true),
-    ]
-
-    /// Broker-specific widgets.
-    static let broker: [HomeWidgetDef] = [
-        .init(id: "openTenders",        name: "Open tenders",       summary: "Pending tender pile",                  icon: "tray.full.fill",          category: .operations,     roles: ["BROKER"], defaultSize: (12, 8), iosRenderable: true),
-        .init(id: "margin_summary",     name: "Margin summary",     summary: "Weekly margin + per-load + on-time",   icon: "chart.line.uptrend.xyaxis", category: .financial,    roles: ["BROKER"], defaultSize: (10, 6), iosRenderable: true),
-        .init(id: "broker_alerts",      name: "Broker alerts",      summary: "Loads needing immediate action",       icon: "exclamationmark.triangle.fill", category: .operations, roles: ["BROKER"], defaultSize: (12, 6), iosRenderable: true),
-    ]
-
-    /// Dispatch-specific widgets.
-    static let dispatch: [HomeWidgetDef] = [
-        .init(id: "priority",           name: "Priority queue",     summary: "Top exception driving the day",        icon: "exclamationmark.triangle.fill", category: .operations, roles: ["DISPATCH"], defaultSize: (12, 6), iosRenderable: true),
-        .init(id: "hosWatch",           name: "HOS watchlist",      summary: "Drivers approaching HOS limits",       icon: "clock.badge.exclamationmark.fill", category: .compliance, roles: ["DISPATCH"], defaultSize: (12, 6), iosRenderable: true),
-        .init(id: "exceptions_list",    name: "Exceptions list",    summary: "Top open exceptions with severity",    icon: "list.triangle",                  category: .operations, roles: ["DISPATCH"], defaultSize: (12, 8), iosRenderable: true),
-    ]
-
-    /// Carrier-specific widgets (CATALYST + DISPATCH role overlap on web).
-    static let carrier: [HomeWidgetDef] = [
-        .init(id: "carrierActiveLoads", name: "Active loads",       summary: "Loads under this carrier",             icon: "shippingbox.fill",        category: .operations,     roles: ["CATALYST", "DISPATCH"], defaultSize: (12, 8), iosRenderable: true),
-        .init(id: "revenue_summary",    name: "Revenue summary",    summary: "Weekly revenue + rate + on-time",      icon: "banknote.fill",           category: .financial,      roles: ["CARRIER"],             defaultSize: (10, 6), iosRenderable: true),
-        .init(id: "carrier_alerts",     name: "Carrier alerts",     summary: "Loads needing immediate action",       icon: "exclamationmark.triangle.fill", category: .operations, roles: ["CARRIER"],            defaultSize: (12, 6), iosRenderable: true),
-    ]
-
-    /// Terminal-specific widgets.
-    static let terminal: [HomeWidgetDef] = [
-        .init(id: "activeMovements",    name: "Active movements",   summary: "Yard arrivals / departures live",      icon: "arrow.triangle.swap",     category: .operations,     roles: ["TERMINAL_MANAGER"], defaultSize: (12, 8), iosRenderable: true),
-        .init(id: "throughput_summary", name: "Throughput summary", summary: "Weekly throughput + gate util + dwell", icon: "gauge.with.dots.needle.33percent", category: .analytics, roles: ["TERMINAL_MANAGER"], defaultSize: (10, 6), iosRenderable: true),
-        .init(id: "terminal_alerts",    name: "Terminal alerts",    summary: "Movements needing immediate action",   icon: "exclamationmark.triangle.fill", category: .operations, roles: ["TERMINAL_MANAGER"], defaultSize: (12, 6), iosRenderable: true),
-    ]
-
-    /// Escort-specific widgets.
-    static let escort: [HomeWidgetDef] = [
-        .init(id: "activeAssignments",  name: "Active assignments", summary: "Live escort jobs",                     icon: "car.2.fill",              category: .operations,     roles: ["ESCORT"], defaultSize: (12, 8), iosRenderable: true),
-        .init(id: "escort_revenue",     name: "Escort revenue",     summary: "Weekly revenue + on-time + miles",     icon: "banknote.fill",           category: .financial,      roles: ["ESCORT"], defaultSize: (10, 6), iosRenderable: true),
-        .init(id: "escort_alerts",      name: "Escort alerts",      summary: "Assignments needing immediate action", icon: "exclamationmark.triangle.fill", category: .operations, roles: ["ESCORT"], defaultSize: (12, 6), iosRenderable: true),
-    ]
-
-    /// Admin-specific widgets.
-    static let admin: [HomeWidgetDef] = [
-        .init(id: "openTickets",        name: "Open tickets",       summary: "Support queue + status",               icon: "ticket.fill",             category: .management,     roles: ["ADMIN", "SUPER_ADMIN"], defaultSize: (12, 8), iosRenderable: true),
-        .init(id: "system_health",      name: "System health",      summary: "Health score + tenants + active users", icon: "waveform.path.ecg",      category: .analytics,      roles: ["ADMIN", "SUPER_ADMIN"], defaultSize: (10, 6), iosRenderable: true),
-        .init(id: "pending_approvals",  name: "Pending approvals",  summary: "Platform approvals requiring action",   icon: "checklist.unchecked",    category: .management,     roles: ["ADMIN", "SUPER_ADMIN"], defaultSize: (12, 6), iosRenderable: true),
-    ]
-
-    /// Compliance-specific widgets.
-    static let compliance: [HomeWidgetDef] = [
-        .init(id: "expiringDocs",       name: "Expiring docs",      summary: "60-day rolling expiry watch",          icon: "doc.badge.clock.fill",    category: .compliance,     roles: ["COMPLIANCE_OFFICER"], defaultSize: (12, 6), iosRenderable: true),
-        .init(id: "violations_overview", name: "Violations",        summary: "Open violations + overdue + trend",    icon: "exclamationmark.triangle.fill", category: .compliance, roles: ["COMPLIANCE_OFFICER"], defaultSize: (10, 6), iosRenderable: true),
-        .init(id: "driver_compliance",  name: "Driver compliance",  summary: "Per-driver status + expiry watchlist", icon: "person.crop.circle.badge.checkmark", category: .compliance, roles: ["COMPLIANCE_OFFICER"], defaultSize: (12, 8), iosRenderable: true),
-    ]
-
-    /// All widgets across every role bucket.
-    static let all: [String: HomeWidgetDef] = {
-        var dict: [String: HomeWidgetDef] = [:]
-        for set in [universal, driver, shipper, catalyst, broker, dispatch, carrier, terminal, escort, admin, compliance] {
-            for w in set { dict[w.id] = w }
-        }
-        return dict
-    }()
-
-    /// Widgets a given role is allowed to surface (RBAC).
-    static func allowed(for role: String) -> [HomeWidgetDef] {
-        all.values.filter { $0.roles.contains(role) }.sorted { $0.name < $1.name }
-    }
-
-    /// Widgets a given role is allowed to surface AND have an iOS
-    /// tile-view shipped for. The picker shows allowed-but-not-yet-
-    /// renderable as a "Coming on iOS" stub in a follow-up.
-    static func renderable(for role: String) -> [HomeWidgetDef] {
-        allowed(for: role).filter { $0.iosRenderable }
-    }
-
-    /// All 24 canonical role strings (web extended role set). Used by
-    /// the universal-widget RBAC.
-    static let allRoles: Set<String> = [
-        "SHIPPER","CATALYST","BROKER","DRIVER","DISPATCH","ESCORT",
-        "TERMINAL_MANAGER","COMPLIANCE_OFFICER","SAFETY_MANAGER","FACTORING",
-        "ADMIN","SUPER_ADMIN",
-        "RAIL_SHIPPER","RAIL_CATALYST","RAIL_DISPATCHER","RAIL_ENGINEER","RAIL_CONDUCTOR","RAIL_BROKER",
-        "VESSEL_SHIPPER","VESSEL_OPERATOR","PORT_MASTER","SHIP_CAPTAIN","VESSEL_BROKER","CUSTOMS_BROKER",
-    ]
-}
-
-// MARK: - Shared HomeWidgetGrid (DnD reorder, edit toggle, save/load)
-//
-// Single canonical component for every role home's reorderable
-// secondary widget zone. Consumers pass their canonical ordered
-// widget id list + a render closure mapping id → tile view. The
-// grid owns: edit-mode toggle, drag/drop reorder, hover-stroke
-// feedback, RESET button, hydrate from `users.getDashboardLayout`
-// + UserDefaults cache, persist on edit exit, slot-set reconciliation.
-//
-// Replaces the per-home enum + toolbar + secondaryWidget(for:) +
-// hydrate/persist/reconcile duplication that originally shipped in
-// the 10 home screens. Migrations land file-by-file; the original
-// per-home helpers stay alive until each home is moved over.
-
-struct HomeWidgetGrid: View {
-    @Environment(\.palette) private var palette
-
-    /// Canonical default order for this role's home — used when no
-    /// saved layout exists and as the universe-of-slots reference
-    /// for `reconcile()` (so widgets shipped after a layout save
-    /// still appear).
-    let canonicalOrder: [String]
-    /// Role string for the save/load endpoint (`users.saveDashboardLayout`).
-    let role: String
-    /// Per-user storage key (UserDefaults cache mirror).
-    let storageKey: String
-    /// Render closure: widget id → tile view. Returns EmptyView when
-    /// the host doesn't recognize the id (e.g. a stale saved layout
-    /// references a widget that's since been removed). The grid skips
-    /// rendering when EmptyView is returned.
-    let render: (String) -> AnyView
-
-    @State private var order: [String] = []
-    /// User-chosen span per widget id. Seeded from the catalog default
-    /// span on first hydrate, then overridden by the saved slot `w`/`h`
-    /// and any in-session resize. Persisted in the same store the
-    /// reorder uses (UserDefaults mirror + tRPC slot w/h).
-    @State private var sizes: [String: HomeWidgetSpan] = [:]
-    @State private var editing: Bool = false
-    @State private var hoverSlot: String? = nil
-    @State private var hydrated: Bool = false
-    @State private var showAddSheet: Bool = false
-
-    /// Resolved span for a slot — user choice, else catalog default,
-    /// else `.full`.
-    private func span(for id: String) -> HomeWidgetSpan {
-        sizes[id] ?? HomeWidgetCatalog.all[id]?.defaultSpan ?? .full
-    }
-
-    /// Packs the ordered slot ids into rows: consecutive `.half` widgets
-    /// pair two-per-row; everything else takes a full row. Preserves the
-    /// reorder order exactly — a `.half` tile with no `.half` neighbor
-    /// after it simply renders alone on its row (still half-width).
-    private var packedRows: [[String]] {
-        var rows: [[String]] = []
-        var i = 0
-        while i < order.count {
-            let id = order[i]
-            if span(for: id).isHalf, i + 1 < order.count, span(for: order[i + 1]).isHalf {
-                rows.append([id, order[i + 1]])
-                i += 2
-            } else {
-                rows.append([id])
-                i += 1
-            }
-        }
-        return rows
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            toolbar
-            ForEach(Array(packedRows.enumerated()), id: \.offset) { _, row in
-                if row.count == 2 {
-                    HStack(alignment: .top, spacing: 12) {
-                        slotView(row[0])
-                        slotView(row[1])
-                    }
-                } else {
-                    slotView(row[0])
-                }
-            }
-        }
-        .sheet(isPresented: $showAddSheet) { addSheet }
-        .task {
-            guard !hydrated else { return }
-            hydrated = true
-            order = canonicalOrder
-            await hydrate()
-        }
-    }
-
-    /// Widgets in canonicalOrder that the user has removed from their
-    /// active grid and could add back.
-    private var addableWidgets: [String] {
-        canonicalOrder.filter { !order.contains($0) }
-    }
-
-    private var toolbar: some View {
-        HStack(spacing: 8) {
-            // Tap the pill itself to toggle edit / done+save
-            HStack(spacing: 8) {
-                Image(systemName: editing ? "checkmark.circle.fill" : "rectangle.3.group.bubble")
-                    .font(.system(size: 11, weight: .heavy))
-                Text(editing ? "DONE · Tap to save" : "CUSTOMIZE WIDGETS")
-                    .font(.system(size: 10, weight: .heavy)).tracking(0.6)
-                Spacer(minLength: 0)
-                if editing {
-                    Button {
-                        withAnimation(.easeOut(duration: 0.18)) {
-                            order = canonicalOrder
-                            sizes = [:]
-                            // RESET means "give me back the default
-                            // layout" — that includes clearing every
-                            // record of widgets the user previously
-                            // removed so they don't get filtered out
-                            // on the next hydrate.
-                            Self.saveRemovedSet([], storageKey: storageKey)
-                        }
-                    } label: {
-                        Text("RESET")
-                            .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                            .foregroundStyle(palette.textSecondary)
-                            .padding(.horizontal, 8).padding(.vertical, 4)
-                            .background(palette.bgCard, in: Capsule())
-                    }.buttonStyle(.plain)
-                }
-            }
-            .foregroundStyle(editing ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.textTertiary))
-            .padding(.horizontal, 12).padding(.vertical, 8)
-            .background(
-                Capsule().strokeBorder(
-                    editing ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.borderFaint),
-                    lineWidth: 1
-                )
-            )
-            .contentShape(Capsule())
-            .onTapGesture {
-                withAnimation(.easeOut(duration: 0.18)) {
-                    if editing { editing = false; Task { await persist() } }
-                    else { editing = true }
-                }
-            }
-            // "+" add button — only visible in edit mode when there are off-grid widgets
-            if editing && !addableWidgets.isEmpty {
-                Button { showAddSheet = true } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 13, weight: .heavy))
-                        .foregroundStyle(.white)
-                        .frame(width: 34, height: 34)
-                        .background(LinearGradient.diagonal)
-                        .clipShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .transition(.scale.combined(with: .opacity))
-            }
-        }
-        .animation(.easeOut(duration: 0.18), value: editing)
-    }
-
-    @ViewBuilder
-    private func slotView(_ id: String) -> some View {
-        let activeSpan = span(for: id)
-        // Render the tile at its chosen span: condensed tiles read
-        // `\.homeWidgetSpan` to shrink; half-width tiles keep their
-        // natural body but live in a half-row HStack.
-        let inner = render(id).environment(\.homeWidgetSpan, activeSpan)
-        if editing {
-            let isHover = hoverSlot == id
-            let def = HomeWidgetCatalog.all[id]
-            let label = def?.name ?? id
-            let resizable = (def?.availableSizes.count ?? 0) > 1
-            HStack(alignment: .top, spacing: 8) {
-                Image(systemName: "line.3.horizontal")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(palette.textTertiary)
-                    .padding(.top, 10)
-                inner
-            }
-            .overlay(alignment: .topTrailing) {
-                HStack(spacing: 6) {
-                    Button {
-                        withAnimation(.easeOut(duration: 0.18)) {
-                            order.removeAll { $0 == id }
-                            sizes[id] = nil
-                            // Record the removal so reconcile() won't
-                            // auto-restore this widget after the user
-                            // navigates away and back.
-                            markRemoved(id)
-                        }
-                    } label: {
-                        Image(systemName: "minus.circle.fill")
-                            .font(.system(size: 20))
-                            .symbolRenderingMode(.multicolor)
-                    }
-                    .buttonStyle(.plain)
-                    // Size picker — long-press affordance lives here in
-                    // edit mode. Only widgets that declare >1 available
-                    // span show the chooser; single-span widgets keep
-                    // the static gradient name chip.
-                    if resizable, let def {
-                        Menu {
-                            Picker("Size", selection: sizeBinding(for: id)) {
-                                ForEach(def.availableSizes, id: \.self) { sp in
-                                    Label(sp.menuLabel, systemImage: sp.menuIcon).tag(sp)
-                                }
-                            }
-                        } label: {
-                            HStack(spacing: 3) {
-                                Image(systemName: activeSpan.menuIcon)
-                                    .font(.system(size: 8, weight: .heavy))
-                                Text(label.uppercased())
-                                    .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                                Image(systemName: "chevron.up.chevron.down")
-                                    .font(.system(size: 7, weight: .heavy))
-                            }
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(LinearGradient.diagonal)
-                            .clipShape(Capsule())
-                        }
-                        .menuStyle(.button)
-                        .buttonStyle(.plain)
-                    } else {
-                        Text(label.uppercased())
-                            .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(LinearGradient.diagonal)
-                            .clipShape(Capsule())
-                    }
-                }
-                .padding(6)
-            }
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(
-                        isHover ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.borderFaint),
-                        lineWidth: isHover ? 2 : 1
-                    )
-                    .animation(.easeOut(duration: 0.12), value: hoverSlot)
-            )
-            .draggable(id) {
-                Text(label)
-                    .font(.system(size: 13, weight: .heavy))
-                    .padding(10)
-                    .background(palette.bgCard, in: Capsule())
-                    .shadow(color: .black.opacity(0.25), radius: 10, x: 0, y: 4)
-            }
-            .dropDestination(for: String.self) { droppedIds, _ in
-                guard let dropped = droppedIds.first,
-                      dropped != id,
-                      let fromIdx = order.firstIndex(of: dropped),
-                      let toIdx = order.firstIndex(of: id)
-                else { return false }
-                withAnimation(.easeOut(duration: 0.18)) {
-                    let item = order.remove(at: fromIdx)
-                    order.insert(item, at: min(toIdx, order.count))
-                }
-                return true
-            } isTargeted: { hovering in
-                hoverSlot = hovering ? id : (hoverSlot == id ? nil : hoverSlot)
-            }
-        } else {
-            inner
-        }
-    }
-
-    /// Two-way binding for a widget's span that animates the repack and
-    /// clamps to the widget's declared available sizes.
-    private func sizeBinding(for id: String) -> Binding<HomeWidgetSpan> {
-        Binding(
-            get: { span(for: id) },
-            set: { newSpan in
-                withAnimation(.easeOut(duration: 0.2)) { sizes[id] = newSpan }
-            }
-        )
-    }
-
-    // MARK: - Add widget sheet
-
-    private var addSheet: some View {
-        NavigationStack {
-            Group {
-                if addableWidgets.isEmpty {
-                    VStack(spacing: 16) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 36, weight: .semibold))
-                            .foregroundStyle(LinearGradient.diagonal)
-                        Text("All widgets are on your home screen.")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(palette.textPrimary)
-                            .multilineTextAlignment(.center)
-                    }
-                    .padding()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    List {
-                        Section {
-                            ForEach(addableWidgets, id: \.self) { id in
-                                if let def = HomeWidgetCatalog.all[id] {
-                                    Button {
-                                        withAnimation(.easeOut(duration: 0.18)) {
-                                            order.append(id)
-                                            // User explicitly re-added —
-                                            // clear the removed flag so
-                                            // reconcile() treats this as
-                                            // a normal restore.
-                                            clearRemoved(id)
-                                        }
-                                        if addableWidgets.count <= 1 { showAddSheet = false }
-                                    } label: {
-                                        HStack(spacing: 14) {
-                                            Image(systemName: def.icon)
-                                                .font(.system(size: 18, weight: .semibold))
-                                                .foregroundStyle(LinearGradient.diagonal)
-                                                .frame(width: 36)
-                                            VStack(alignment: .leading, spacing: 2) {
-                                                Text(def.name)
-                                                    .font(.system(size: 14, weight: .semibold))
-                                                    .foregroundStyle(palette.textPrimary)
-                                                Text(def.summary)
-                                                    .font(.system(size: 12, weight: .regular))
-                                                    .foregroundStyle(palette.textSecondary)
-                                            }
-                                            Spacer(minLength: 0)
-                                            Image(systemName: "plus.circle.fill")
-                                                .font(.system(size: 20))
-                                                .foregroundStyle(LinearGradient.diagonal)
-                                        }
-                                        .contentShape(Rectangle())
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
-                        } header: {
-                            Text("TAP TO ADD")
-                                .font(.system(size: 10, weight: .heavy)).tracking(0.8)
-                        }
-                    }
-                    .listStyle(.insetGrouped)
-                }
-            }
-            .navigationTitle("Add Widget")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { showAddSheet = false }
-                }
-            }
-        }
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
-        .environment(\.palette, palette)
-    }
-
-    /// UserDefaults cache row — mirrors the server slot so the offline
-    /// cache carries the chosen span too. Decoded leniently so a legacy
-    /// `[String]` order cache (pre-resize) still hydrates.
-    private struct CachedSlot: Codable { let widgetId: String; let w: Int; let h: Int }
-
-    private func hydrate() async {
-        // Local cache first. New format = [CachedSlot]; fall back to the
-        // legacy plain `[String]` order so existing installs don't reset.
-        if let data = UserDefaults.standard.data(forKey: storageKey) {
-            if let cached = try? JSONDecoder().decode([CachedSlot].self, from: data), !cached.isEmpty {
-                applyServerSlots(cached.map { ($0.widgetId, $0.w, $0.h) })
-            } else if let legacy = try? JSONDecoder().decode([String].self, from: data), !legacy.isEmpty {
-                order = reconcile(legacy)
-            }
-        }
-        struct In: Encodable { let role: String }
-        struct Slot: Decodable { let widgetId: String; let w: Int?; let h: Int? }
-        struct Out: Decodable { let layout: [Slot]?; let updatedAt: String? }
-        do {
-            let r: Out = try await EusoTripAPI.shared.query("users.getDashboardLayout", input: In(role: role))
-            if let server = r.layout, !server.isEmpty {
-                let slots = server.map { ($0.widgetId, $0.w ?? 12, $0.h ?? 8) }
-                await MainActor.run { applyServerSlots(slots) }
-                cacheLocally()
-            }
-        } catch { /* offline / unauth — local cache or canonical default holds */ }
-    }
-
-    /// Reconciles a saved slot set (id + w/h) into `order` + `sizes`:
-    /// preserves saved order, drops unknown ids, appends newly-shipped
-    /// widgets, and maps each slot's `(w,h)` back to a span — clamped to
-    /// the widget's declared available sizes so an old/web w/h that iOS
-    /// doesn't offer falls back to the catalog default span.
-    private func applyServerSlots(_ slots: [(id: String, w: Int, h: Int)]) {
-        order = reconcile(slots.map { $0.id })
-        var resolved: [String: HomeWidgetSpan] = [:]
-        for slot in slots where order.contains(slot.id) {
-            let candidate = HomeWidgetSpan.from(w: slot.w, h: slot.h)
-            let allowed = HomeWidgetCatalog.all[slot.id]?.availableSizes ?? [.full]
-            resolved[slot.id] = allowed.contains(candidate)
-                ? candidate
-                : (HomeWidgetCatalog.all[slot.id]?.defaultSpan ?? .full)
-        }
-        sizes = resolved
-    }
-
-    private func cacheLocally() {
-        let rows = order.map { id -> CachedSlot in
-            let g = span(for: id).grid
-            return CachedSlot(widgetId: id, w: g.w, h: g.h)
-        }
-        if let data = try? JSONEncoder().encode(rows) {
-            UserDefaults.standard.set(data, forKey: storageKey)
-        }
-    }
-
-    private func persist() async {
-        cacheLocally()
-        struct Slot: Encodable { let widgetId: String; let x: Int; let y: Int; let w: Int; let h: Int }
-        struct In: Encodable { let role: String; let layout: [Slot] }
-        struct Out: Decodable { let success: Bool? }
-        // x/y track the packed grid position so web hydrates the same
-        // two-up rows: half-width tiles alternate x = 0 / 6, full tiles
-        // reset to x = 0 on a fresh row. w/h carry the chosen span.
-        var payload: [Slot] = []
-        var cursorX = 0, rowY = 0
-        for id in order {
-            let g = span(for: id).grid
-            if cursorX + g.w > 12 { cursorX = 0; rowY += 1 }
-            payload.append(Slot(widgetId: id, x: cursorX, y: rowY, w: g.w, h: g.h))
-            cursorX += g.w
-            if cursorX >= 12 { cursorX = 0; rowY += 1 }
-        }
-        do {
-            let _: Out = try await EusoTripAPI.shared.mutation(
-                "users.saveDashboardLayout",
-                input: In(role: role, layout: payload)
-            )
-        } catch { /* server unreachable — local cache holds */ }
-    }
-
-    private func reconcile(_ saved: [String]) -> [String] {
-        var seen = Set<String>()
-        var out: [String] = []
-        for s in saved where !seen.contains(s) && canonicalOrder.contains(s) {
-            out.append(s); seen.insert(s)
-        }
-        // Append newly-shipped widgets that the user has NEVER seen — but
-        // skip anything in `removedWidgetIds` so a widget the user
-        // explicitly tapped "−" on doesn't reappear after they navigate
-        // to another tab and return (founder bug 2026-05-31).
-        let removed = Self.loadRemovedSet(storageKey: storageKey)
-        for s in canonicalOrder where !seen.contains(s) && !removed.contains(s) {
-            out.append(s)
-        }
-        return out
-    }
-
-    // MARK: - Removed-widgets persistence
-    //
-    // The "auto-append newly-shipped widget" behaviour above couldn't tell
-    // a widget that was newly added to `canonicalOrder` after a save from
-    // a widget the user explicitly removed. The set below disambiguates:
-    // tapping "−" on a tile adds the id here, tapping "+" in the add
-    // sheet removes it. Persisted under a sibling key so the existing
-    // layout cache format is untouched and old installs migrate cleanly.
-
-    private static func removedKey(_ storageKey: String) -> String {
-        "\(storageKey).removed"
-    }
-
-    fileprivate static func loadRemovedSet(storageKey: String) -> Set<String> {
-        guard let data = UserDefaults.standard.data(forKey: removedKey(storageKey)),
-              let arr = try? JSONDecoder().decode([String].self, from: data)
-        else { return [] }
-        return Set(arr)
-    }
-
-    fileprivate static func saveRemovedSet(_ set: Set<String>, storageKey: String) {
-        if let data = try? JSONEncoder().encode(Array(set)) {
-            UserDefaults.standard.set(data, forKey: removedKey(storageKey))
-        }
-    }
-
-    /// Mark a widget as user-removed so reconcile() won't re-add it.
-    fileprivate func markRemoved(_ id: String) {
-        var s = Self.loadRemovedSet(storageKey: storageKey)
-        s.insert(id)
-        Self.saveRemovedSet(s, storageKey: storageKey)
-    }
-
-    /// Clear a widget's removed flag when the user re-adds it via "+".
-    fileprivate func clearRemoved(_ id: String) {
-        var s = Self.loadRemovedSet(storageKey: storageKey)
-        s.remove(id)
-        Self.saveRemovedSet(s, storageKey: storageKey)
-    }
-}
-
 // MARK: - Screen
 
 struct DriverHome: View {
@@ -855,7 +86,7 @@ struct DriverHome: View {
     // reconciliation, and the UserDefaults offline cache.
     private let widgetLayoutKey = "driver.home.widgetOrder"
     private let driverHomeCanonicalOrder: [String] = [
-        "current_route", "next_delivery", "hos_tracker", "earnings_summary", "weather_alerts",
+        "current_route", "esang", "next_delivery", "hos_tracker", "earnings_summary", "weather_alerts",
         "messages", "notifications", "haul", "compliance", "news", "recent", "hotZones",
         "near_me_intel",
         "performance_score", "vehicle_health", "mileage_tracker", "fuel_economy",
@@ -867,9 +98,10 @@ struct DriverHome: View {
     /// the grid + catalog handle the rest.
     private func driverHomeRender(_ id: String) -> AnyView {
         switch id {
-        case "current_route":   AnyView(CurrentRouteWidget(load: vm.activeLoad))
+        case "current_route":   AnyView(currentWorkWidget)
+        case "esang":           AnyView(eSangMorningBriefCard())
         case "next_delivery":   AnyView(NextDeliveryWidget(summary: vm.activeLoadSummary))
-        case "hos_tracker":     AnyView(HosTrackerWidget())
+        case "hos_tracker":     AnyView(hosHomeWidget)
         case "earnings_summary":AnyView(EarningsSummaryWidget(available: vm.walletAvailable, availableDisplay: vm.walletAvailableDisplay))
         case "weather_alerts":  AnyView(WeatherAlertsWidget(snapshot: vm.weather, lane: vm.laneWeather))
         // Cross-platform layouts saved on web can carry the universal
@@ -932,73 +164,24 @@ struct DriverHome: View {
                 // cold launch. Re-visits in the same session render settled
                 // (first-load gate). Reduce-Motion → clean fade.
                 StaggeredEntranceStack(alignment: .leading, spacing: Space.s5) {
-                    switch vm.phase {
-                    case .idle, .loading:
-                        loadingState
-                    case .loaded:
-                        if vm.isOffline { offlineBanner }
-                        // ESANG Morning Brief — top coaching card from
-                        // the driver's role+vertical+hazmat-aware feed.
-                        eSangMorningBriefCard()
-                        // 75th firing (2026-04-24, hygiene + fallback C):
-                        // render live WeatherCard ONLY when WeatherKit
-                        // resolved a real snapshot for the driver's real
-                        // coordinate. When location is denied/restricted
-                        // we render a neutral gradient CTA to open
-                        // Settings — no fabricated tempF/windMph/visibility.
-                        // When WeatherKit is authorized but momentarily
-                        // unavailable, we silently omit the card rather
-                        // than flash an error — matches the §13 "neutral
-                        // empty state on the client, no fake data" rule.
-                        // Always-visible bespoke weather surface — owns its
-                        // own fetch + honest empty states so it never
-                        // disappears. Lane-aware: passes the active load's
-                        // HERE lane weather through to the card's lane strip.
-                        // Destination-hero policy: while a load is active,
-                        // vm.weather carries the HERE destination snapshot
-                        // (refreshWeatherForUpcomingLoad) — pass it as the
-                        // preferred hero so the card adapts to where the
-                        // truck is GOING, not where it's parked.
-                        HomeWeatherWidget(
-                            lane: vm.laneWeather,
-                            preferredSnapshot: vm.laneWeather != nil ? vm.weather : nil
-                        )
-                        // Pre-trip DVIR status — 49 CFR 396.11. Only
-                        // surfaces when the driver actually has an
-                        // upcoming / active load assigned, since a
-                        // pre-trip outside of that window isn't
-                        // actionable from the Home glance. Silent
-                        // otherwise (returns EmptyView from body).
-                        if vm.activeLoadSummary != nil || vm.activeLoad != nil {
-                            PreTripDVIRStatusPill()
-                        }
-                        if vm.activeLoadSummary != nil || vm.activeLoad != nil {
-                            activeLoadCard
-                        } else {
-                            noActiveLoadCard
-                        }
-                        metricRow
-                        // Reorderable secondary-widget zone via the
-                        // shared HomeWidgetGrid. Canonical order +
-                        // RBAC + persistence all flow through the
-                        // single component; the render closure maps
-                        // catalog widget IDs to the concrete iOS
-                        // tile views this screen wires.
-                        HomeWidgetGrid(
-                            canonicalOrder: driverHomeCanonicalOrder,
-                            role: "DRIVER",
-                            storageKey: widgetLayoutKey,
-                            render: { id in driverHomeRender(id) }
-                        )
-                    case .error(let message):
+                    HomeWidgetGrid(
+                        canonicalOrder: driverHomeCanonicalOrder,
+                        role: "DRIVER",
+                        storageKey: widgetLayoutKey,
+                        weather: {
+                            AnyView(HomeWeatherWidget(
+                                lane: vm.laneWeather,
+                                preferredSnapshot: vm.weather
+                            ))
+                        },
+                        render: { id in driverHomeRender(id) }
+                    )
+
+                    if vm.isOffline {
+                        offlineBanner
+                    }
+                    if case .error(let message) = vm.phase {
                         errorState(message)
-                        metricRow
-                        HomeWidgetGrid(
-                            canonicalOrder: driverHomeCanonicalOrder,
-                            role: "DRIVER",
-                            storageKey: widgetLayoutKey,
-                            render: { id in driverHomeRender(id) }
-                        )
                     }
                     // Reserve clearance under the floating BottomNav
                     // pill so the recent section doesn't tuck behind it.
@@ -1317,6 +500,40 @@ struct DriverHome: View {
 
     // MARK: Loading / empty / error states
 
+    /// The full current-work surface is one movable widget. Its pre-trip
+    /// status and load/browse actions therefore disappear with the widget
+    /// instead of lingering as fixed duplicates below the grid.
+    @ViewBuilder
+    private var currentWorkWidget: some View {
+        switch vm.phase {
+        case .idle, .loading:
+            loadingState
+        case .loaded:
+            VStack(alignment: .leading, spacing: Space.s3) {
+                if vm.activeLoadSummary != nil || vm.activeLoad != nil {
+                    PreTripDVIRStatusPill()
+                    activeLoadCard
+                } else {
+                    noActiveLoadCard
+                }
+            }
+        case .error:
+            EmptyView()
+        }
+    }
+
+    /// Keeps the catalog HOS tile's original drill-down contract after the
+    /// fixed meter strip is removed from Home.
+    private var hosHomeWidget: some View {
+        Button {
+            showHosSheet = true
+        } label: {
+            HosTrackerWidget()
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Opens the HOS duty status port")
+    }
+
     /// Driver Home loading state. Previously leaked backend plumbing
     /// ("Contacting EusoTrip tRPC · loads.search · hos.getStatus") into
     /// production. The rebuilt state shows a dense ambient particle field
@@ -1333,15 +550,15 @@ struct DriverHome: View {
         }
     }
 
-    /// Subtle strip shown above the active-load card when the live backend
-    /// was unreachable and the view fell back to the on-device demo state.
-    /// Keeps the dashboard fully usable while being honest about the state.
+    /// Subtle strip shown when the live backend is unreachable. Server-backed
+    /// widgets remain empty; independently sourced WeatherKit data may remain
+    /// available.
     private var offlineBanner: some View {
         HStack(spacing: Space.s2) {
             Circle()
                 .fill(Brand.warning)
                 .frame(width: 6, height: 6)
-            Text("Offline preview")
+            Text("Offline · server data unavailable")
                 .font(EType.micro).tracking(0.8)
                 .foregroundStyle(palette.textSecondary)
             Spacer()
@@ -1768,36 +985,6 @@ struct DriverHome: View {
             .font(.system(size: 16, weight: .semibold))
             .foregroundStyle(LinearGradient.diagonal)
             .frame(width: 24)
-    }
-
-    // MARK: Metric row — Figma 212:444 two tiles
-    // HOS uses split-gradient numeral (7h blue / 22m magenta) with mini unit suffixes.
-    // Wallet shows plain white bold numeral ($4,118 when wired).
-
-    private var metricRow: some View {
-        // 3-meter §395.3 HOS strip per the Light/Dark PNG canon
-        // (`01 Driver/{Light,Dark}/010 Driver Home.png`):
-        //   DRIVE     · §395.3(a)(3)(i) 11-hour drive limit
-        //   ON-DUTY   · §395.3(a)(2) 14-hour on-duty window
-        //   CYCLE     · §395.3(b) 70-hour/8-day or 60-hour/7-day cycle
-        // The full row tap-target opens the HOS Duty Status port screen
-        // (019_HosDutyStatus) where the same three meters render with live
-        // banks + 24h timeline + per-segment log entries. Wallet moved off
-        // the Home metric row — still reachable via bottom-nav Wallet tab
-        // and from per-row deep-links in the Recent activity card below.
-        Button {
-            showHosSheet = true
-        } label: {
-            HStack(spacing: Space.s3) {
-                HosTile(value: vm.hosDriveLeftDisplay, label: "DRIVE")
-                HosTile(value: vm.hosOnDutyDisplay,    label: "ON-DUTY")
-                HosTile(value: vm.hosCycleDisplay,     label: "CYCLE")
-            }
-        }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Hours of service. Drive \(vm.hosDriveLeftDisplay). On-duty \(vm.hosOnDutyDisplay). Cycle \(vm.hosCycleDisplay).")
-        .accessibilityHint("Opens the HOS duty status port")
     }
 
     // MARK: Recent — three activity rows (Figma 212:444)

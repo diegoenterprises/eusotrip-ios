@@ -34,6 +34,135 @@
 
 import SwiftUI
 
+// MARK: - Shared edge-swipe back gesture
+
+/// Mirrors iOS' interactive-pop intent for EusoTrip's notification-driven
+/// role stacks. The gesture only begins at the physical leading edge and must
+/// be decisively horizontal, so maps, sliders, boards, and ordinary scrolling
+/// keep ownership of their gestures.
+struct EusoEdgeSwipeBack: ViewModifier {
+    let isEnabled: Bool
+    let onBack: () -> Void
+
+    @GestureState private var dragTranslation: CGFloat = 0
+
+    private var interactiveOffset: CGFloat {
+        guard isEnabled else { return 0 }
+        return max(0, dragTranslation)
+    }
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if isEnabled {
+            content
+                // Follow the finger only after the gesture proves it began at
+                // the leading edge and is decisively horizontal. Horizontal
+                // boards, maps, sliders, and carousels elsewhere keep their
+                // normal gesture ownership.
+                .contentShape(Rectangle())
+                .offset(x: interactiveOffset)
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 12, coordinateSpace: .global)
+                    .updating($dragTranslation) { value, state, _ in
+                        let horizontal = value.translation.width
+                        let vertical = abs(value.translation.height)
+                        guard value.startLocation.x <= 36,
+                              horizontal > 0,
+                              horizontal > vertical * 1.25 else { return }
+                        state = horizontal
+                    }
+                    .onEnded { value in
+                        let horizontal = value.translation.width
+                        let vertical = abs(value.translation.height)
+                        guard value.startLocation.x <= 36,
+                              horizontal >= 72,
+                              horizontal > vertical * 1.25,
+                              value.predictedEndTranslation.width >= 90 else { return }
+                        onBack()
+                    }
+                )
+        } else {
+            content
+        }
+    }
+}
+
+// MARK: - Shared role navigation path semantics
+
+/// The state machine for every notification-driven role stack. Role surfaces
+/// still own their route payloads, but tab selection, push de-duplication, and
+/// guarded pop behavior live here so explicit back and edge-swipe back cannot
+/// drift into different navigation semantics.
+enum RoleNavigationPathContract {
+    static func activeTab(
+        in stack: [String],
+        tabRoots: Set<String>,
+        fallback: String
+    ) -> String {
+        guard let root = stack.first, tabRoots.contains(root) else { return fallback }
+        return root
+    }
+
+    static func open(
+        _ destination: String,
+        tabRoots: Set<String>,
+        fallback: String,
+        stack: inout [String]
+    ) {
+        guard !destination.isEmpty else { return }
+        if tabRoots.contains(destination) {
+            stack = [destination]
+            return
+        }
+        if stack.first.map({ !tabRoots.contains($0) }) ?? true {
+            stack = [fallback]
+        }
+        guard stack.last != destination else { return }
+        stack.append(destination)
+    }
+
+    @discardableResult
+    static func pop(_ stack: inout [String]) -> Bool {
+        guard stack.count > 1 else { return false }
+        stack.removeLast()
+        return true
+    }
+
+    static func canPop(_ stack: [String]) -> Bool {
+        stack.count > 1
+    }
+}
+
+/// Restores a notification-driven screen to the row that launched its child.
+/// The first scroll seats the expanded hub; the delayed scroll waits for the
+/// accordion body to enter the hierarchy before targeting the exact row.
+@MainActor
+func eusoRestoreScrollPosition(
+    using proxy: ScrollViewProxy,
+    anchor: String,
+    fallback: String
+) {
+    guard !anchor.isEmpty, !fallback.isEmpty else { return }
+    DispatchQueue.main.async {
+        proxy.scrollTo(fallback, anchor: .top)
+        guard anchor != fallback else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+            proxy.scrollTo(anchor, anchor: .center)
+        }
+    }
+}
+
+private struct EusoRoleDetailPresentedKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var eusoRoleDetailPresented: Bool {
+        get { self[EusoRoleDetailPresentedKey.self] }
+        set { self[EusoRoleDetailPresentedKey.self] = newValue }
+    }
+}
+
 // MARK: - The pushed detail model
 
 /// One pushed detail layer. `id` lets SwiftUI diff/transition between
@@ -111,8 +240,14 @@ struct RoleDetailLayer: ViewModifier {
     func body(content: Content) -> some View {
         ZStack {
             content
+                // A pushed detail is the sole interactive surface while it is
+                // visible. This also prevents an underlying stack owner's
+                // simultaneous edge gesture from firing alongside the detail
+                // gesture and popping two levels on one swipe.
+                .allowsHitTesting(pushedDetail == nil)
             if let detail = pushedDetail {
                 detail.content
+                    .eusoRefreshSurface("role-detail:\(detail.id.uuidString)")
                     .injectBespokeBackBar(title: detail.title, onBack: onBack)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(palette.bgPage.ignoresSafeArea())
@@ -120,6 +255,11 @@ struct RoleDetailLayer: ViewModifier {
                     .zIndex(1)
             }
         }
+        .modifier(EusoEdgeSwipeBack(
+            isEnabled: pushedDetail != nil,
+            onBack: onBack
+        ))
+        .environment(\.eusoRoleDetailPresented, pushedDetail != nil)
         .environment(\.rolePushDetail) { title, builder in
             withAnimation(.easeInOut(duration: 0.22)) {
                 pushedDetail = RoleDetailPush(title: title, content: builder())

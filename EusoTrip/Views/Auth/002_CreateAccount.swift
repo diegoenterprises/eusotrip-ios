@@ -924,6 +924,8 @@ struct CreateAccountView: View {
             portMasterFields
         case .customsBroker:
             customsBrokerFields
+        case .serviceProvider:
+            EmptyView()
         // Factoring
         case .factoring:
             factoringFields

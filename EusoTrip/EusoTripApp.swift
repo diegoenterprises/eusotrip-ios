@@ -68,12 +68,18 @@ struct EusoTripApp: App {
     @StateObject private var hos = HOSClockService.shared
     /// Gates AppRoot behind the branded Lottie intro on cold launch.
     @State private var introFinished = false
+    /// Local-calendar marker used to refresh visible operational evidence after
+    /// a midnight boundary or time-zone change while the app was suspended.
+    @State private var weatherCalendarDay = Calendar.autoupdatingCurrent.startOfDay(for: Date())
     /// True while the app is in `.inactive` / `.background` so the
     /// app-switcher snapshot iOS captures shows the brand splash
     /// instead of the live driver session (PII, payment forms,
     /// signature pads). Privacy hardening per audit (2026-04-25).
     @Environment(\.scenePhase) private var scenePhase
     @State private var isResigning = false
+    /// Carries the fact that this scene entered background across iOS's
+    /// normal intermediate `.inactive` phase on return.
+    @State private var sessionReturnGate = EusoSessionReturnGate()
 
     var body: some Scene {
         WindowGroup {
@@ -146,20 +152,54 @@ struct EusoTripApp: App {
                 withAnimation(.easeInOut(duration: 0.10)) {
                     isResigning = resigning
                 }
-                // FOREGROUND SELF-HEAL — the fix for "I have to log out and
-                // back in to fix things." Returning from the background
-                // re-validates the live session (a token that went stale
-                // while we were away recovers gracefully → re-login, instead
-                // of leaving every screen 401ing) AND broadcasts a refresh so
-                // live surfaces repaint. The session validation otherwise ran
-                // ONLY on cold launch, so mid-session staleness stranded the
-                // whole app until a manual logout. Gated to a true
-                // background→active transition so it never double-fires with
-                // the cold-launch boot().
-                if newPhase == .active && oldPhase == .background {
+                // APP-WIDE FRESHNESS — remember the first inactive edge, then
+                // refresh the visible routed screen when the user returns
+                // after the one-minute staleness ceiling. This covers both a
+                // true background return and a long inactive interruption;
+                // quick Control Center / notification glances do not churn
+                // every operational API.
+                if newPhase != .active {
+                    EusoRefreshCoordinator.shared.appBecameInactive()
+                }
+
+                // ScenePhase normally returns background -> inactive -> active.
+                // Keep that transition as explicit auth evidence instead of
+                // relying only on the immediately previous phase, which misses
+                // the normal intermediate inactive phase.
+                let shouldRevalidate = sessionReturnGate.consumeTransition(
+                    isBackground: newPhase == .background,
+                    isActive: newPhase == .active
+                )
+
+                if newPhase == .active && oldPhase != .active {
+                    let now = Date()
+                    let currentDay = Calendar.autoupdatingCurrent.startOfDay(for: now)
+                    let crossedCalendarDay = currentDay != weatherCalendarDay
+                    weatherCalendarDay = currentDay
+                    NotificationCenter.default.post(
+                        name: .eusoWeatherDisplayClockChanged,
+                        object: nil
+                    )
+                    let needsFreshData = EusoRefreshCoordinator.shared.consumeStaleActivation()
+                        || crossedCalendarDay
+
+                    guard shouldRevalidate || needsFreshData else { return }
                     Task {
-                        await session.revalidate()
-                        NotificationCenter.default.post(name: .esangRefreshSurface, object: nil)
+                        // Auth authority always resolves before the operational
+                        // refresh. A transient renewal failure retains the last
+                        // known screen instead of fanning a wall of 401 errors
+                        // through every role store.
+                        let sessionIsLive = await session.revalidate()
+                        guard sessionIsLive, session.phase == .signedIn else { return }
+                        if needsFreshData {
+                            await EusoRefreshCoordinator.shared.requestRefresh(
+                                reason: .staleForeground
+                            )
+                        }
+                        NotificationCenter.default.post(
+                            name: .esangRefreshSurface,
+                            object: nil
+                        )
                     }
                 }
             }
@@ -253,11 +293,6 @@ struct EusoTripApp: App {
     }
 
     private func handleDeepLink(_ url: URL) {
-        // Vendor OAuth callback — `eusotrip://oauth/callback/<vendor>?code=…&state=…`
-        // Forwarded to the HardwareCapabilitiesView observer so the
-        // form can call `capabilities.exchangeOAuthCode` immediately.
-        if VendorOAuthCallback.handle(url: url) { return }
-
         guard url.scheme == "eusotrip",
               url.host == "reset",
               let token = URLComponents(url: url, resolvingAgainstBaseURL: false)?
@@ -273,6 +308,7 @@ struct EusoTripApp: App {
 
 extension Notification.Name {
     static let eusoResetPasswordDeepLink = Notification.Name("eusoResetPasswordDeepLink")
+    static let eusoWeatherDisplayClockChanged = Notification.Name("eusoWeatherDisplayClockChanged")
     static let eusoWeatherAuthorizationChanged = Notification.Name("eusoWeatherAuthorizationChanged")
     /// Fired by the ESANG autopilot when the assistant reply contains a
     /// `<<<ACTION:refresh>>>` token. Any visible surface can observe this

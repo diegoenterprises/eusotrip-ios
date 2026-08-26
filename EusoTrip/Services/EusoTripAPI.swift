@@ -289,6 +289,10 @@ private struct TRPCInputEnvelope<T: Encodable>: Encodable {
 /// so we declare this at file scope.)
 private struct TRPCEmptyInput: Encodable {}
 
+private struct PlainAPIErrorEnvelope: Decodable {
+    let error: String?
+}
+
 // MARK: - Client
 
 @MainActor
@@ -323,7 +327,7 @@ final class EusoTripAPI: ObservableObject {
     /// reached the backend — silent push-token drop.
     var pushDeviceToken: String?
 
-    // MARK: - Token / session refresh (auto re-auth on 401/403)
+    // MARK: - Token / session refresh (auto re-auth on 401)
     //
     // The high-leverage fix for the build-751 "Authentication required"
     // feedback (075 Safety Score, 082 Violations, and every sibling screen
@@ -333,25 +337,18 @@ final class EusoTripAPI: ObservableObject {
     // time. If the closure returns false (session is genuinely dead), the
     // original `.unauthenticated` error is surfaced honestly — no loop.
     //
-    // `EusoTripSession` installs the handler (it owns the keychain + the
-    // cookie-rehydrate path). EusoTrip's auth model has no dedicated
-    // refresh-token grant: the PRIMARY credential is the server-issued
-    // `app_session_id` cookie (see `authCookieSnapshotJSON`), persisted in
-    // the Keychain. The in-memory `HTTPCookieStorage.shared` jar can drop
-    // that cookie out from under a long-lived session (memory reclaim after
-    // a long background, App Service warm-up), which is exactly what makes a
-    // previously-authenticated screen start 401-ing. The refresh handler
-    // re-hydrates the persisted cookie back into the jar and re-validates
-    // with `auth.me` — if that succeeds the session was only "lost in the
-    // jar", and the retried request now carries the restored credential.
+    // `EusoTripSession` installs the handler because it owns Keychain and the
+    // cookie-rehydrate path. The handler calls the real `auth.refreshSession`
+    // contract without recursively entering this retry path, persists the
+    // rotated credential, and then validates it with `auth.me`.
     //
     // Returns true iff the session is confirmed live after the refresh.
-    var sessionRefreshHandler: (@MainActor () async -> Bool)?
+    var sessionRefreshHandler: (@MainActor () async throws -> Bool)?
 
     /// Coalesces concurrent refresh attempts: when 10 screens 401 at once we
     /// run ONE `auth.me` re-validation and every caller awaits the same
     /// result, rather than stampeding the backend with 10 re-auths.
-    private var inFlightRefresh: Task<Bool, Never>?
+    private var inFlightRefresh: Task<Bool, Error>?
 
     /// True while a refresh's own `auth.me` call is on the wire. The 401/403
     /// branches in `perform` check this and SKIP the refresh-retry while it's
@@ -363,20 +360,23 @@ final class EusoTripAPI: ObservableObject {
 
     /// Single-flight wrapper around `sessionRefreshHandler`. All 401-driven
     /// callers funnel through here so only one refresh runs at a time.
-    private func refreshSessionOnce() async -> Bool {
-        guard let handler = sessionRefreshHandler, !isRefreshing else { return false }
+    private func refreshSessionOnce() async throws -> Bool {
+        // Check the shared task before the recursion guard. Once the first
+        // caller enters its handler `isRefreshing` is true; checking that
+        // flag first made every sibling 401 skip the in-flight rotation and
+        // surface a false auth error instead of awaiting the same result.
         if let existing = inFlightRefresh {
-            return await existing.value
+            return try await existing.value
         }
-        let task = Task<Bool, Never> { @MainActor in
+        guard let handler = sessionRefreshHandler, !isRefreshing else { return false }
+        let task = Task<Bool, Error> { @MainActor in
             isRefreshing = true
             defer { isRefreshing = false }
-            return await handler()
+            return try await handler()
         }
         inFlightRefresh = task
-        let ok = await task.value
-        inFlightRefresh = nil
-        return ok
+        defer { inFlightRefresh = nil }
+        return try await task.value
     }
 
     /// Underlying URLSession (swap for tests).  Wired to HTTPCookieStorage.shared
@@ -457,8 +457,9 @@ final class EusoTripAPI: ObservableObject {
     // `/auth.me` call.
     //
     // These helpers snapshot the auth cookies from the shared jar after
-    // sign-in, and rehydrate them into the jar on boot — with a far-
-    // future `expiresDate` so the jar won't drop them as session cookies.
+    // sign-in, and rehydrate them into the jar on boot. Cookie persistence
+    // does not extend the signed JWT's server-enforced expiry; renewal still
+    // goes through `auth.refreshSession` when the access credential is aging.
     // The bytes we persist are JSON-encoded HTTPCookie properties, which
     // HTTPCookie understands natively on restore.
 
@@ -489,6 +490,9 @@ final class EusoTripAPI: ObservableObject {
         // one-line name-swap on the backend, not an app-side change.
         let keep: Set<String> = [
             "app_session_id",
+            // Opaque rotating credential. It is restored into the cookie
+            // jar for `auth.refreshSession`, never copied into Bearer.
+            "app_refresh_token",
             "token", "auth_token", "session",
             "next-auth.session-token", "__Secure-next-auth.session-token",
             // CSRF companion if the backend ever adds one. Harmless
@@ -517,9 +521,8 @@ final class EusoTripAPI: ObservableObject {
     }
 
     /// Rehydrate auth cookies saved by `authCookieSnapshotJSON()` back
-    /// into the shared jar. Sets `expiresDate` to +1 year so the cookie
-    /// is treated as persistent (the original server-issued cookie was
-    /// Session-scoped, which is what caused the cross-launch 401). Safe
+    /// into the shared jar. Session cookies receive a local persistence date
+    /// so iOS retains the bytes, but that does not change JWT validity. Safe
     /// to call more than once; duplicates are overwritten by name+domain.
     func restoreAuthCookiesFromJSON(_ json: String) {
         guard let data = json.data(using: .utf8),
@@ -558,6 +561,32 @@ final class EusoTripAPI: ObservableObject {
             else { continue }
             store.setCookie(cookie)
         }
+    }
+
+    /// Capture a server-issued or rotated auth cookie as the current Bearer.
+    /// URLSession owns the cookie jar, but native callers also attach an
+    /// Authorization header; both copies must rotate together. This always
+    /// replaces a non-empty old token. The previous `if authToken == nil`
+    /// condition preserved an expired Bearer after `auth.refreshSession`.
+    private func captureSessionToken(from response: HTTPURLResponse, requestURL: URL?) {
+        guard let requestURL else { return }
+        let accepted = Set(["app_session_id", "token", "auth_token"])
+
+        var headerFields: [String: String] = [:]
+        for (key, value) in response.allHeaderFields {
+            headerFields[String(describing: key)] = String(describing: value)
+        }
+        var cookies = HTTPCookie.cookies(
+            withResponseHeaderFields: headerFields,
+            for: requestURL
+        )
+        cookies.append(contentsOf: HTTPCookieStorage.shared.cookies(for: requestURL) ?? [])
+
+        guard let token = cookies
+            .first(where: { accepted.contains($0.name) && !$0.value.isEmpty })?
+            .value
+        else { return }
+        self.authToken = token
     }
 
     // MARK: Routers
@@ -1435,8 +1464,9 @@ final class EusoTripAPI: ObservableObject {
     /// path itself calls. If `auth.me` were allowed to auto-refresh it would
     /// recurse into the refresh handler (and, during a refresh already in
     /// flight, self-await the coalescing task). A 401 here is the honest,
-    /// terminal "session is dead" signal that `boot()` / `revalidate()` /
-    /// `refreshSession()` each absorb with their own 2-strike logic.
+    /// terminal authority signal that `boot()` / `revalidate()` /
+    /// `refreshSession()` interpret only after the refresh grant has had its
+    /// chance. This prevents the probe from self-awaiting the coalesced task.
     func queryNoAutoRefresh<Output: Decodable, Input: Encodable>(
         _ path: String,
         input: Input
@@ -1505,17 +1535,36 @@ final class EusoTripAPI: ObservableObject {
         if let pushDeviceToken {
             req.setValue(pushDeviceToken, forHTTPHeaderField: "x-push-token")
         }
-        let (data, resp) = try await session.data(for: req)
-        guard let http = resp as? HTTPURLResponse else {
-            throw EusoTripAPIError.httpStatus(0, "No HTTP response")
+        let (data, _) = try await authenticatedRawRequest(req)
+        return data
+    }
+
+    /// Executes a hand-authored backend request through the same cookie jar,
+    /// bearer rotation, coalesced 401 recovery, and one-time replay contract
+    /// as typed procedures. Used for security-sensitive watch/SOS/convoy
+    /// bridges whose payloads are intentionally dynamic JSON.
+    func authenticatedRawRequest(
+        _ original: URLRequest
+    ) async throws -> (Data, HTTPURLResponse) {
+        guard let requestURL = original.url,
+              isFirstPartyURL(requestURL)
+        else { throw EusoTripAPIError.badURL }
+
+        var req = original
+        if let authToken {
+            req.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
         }
+        if let pushDeviceToken {
+            req.setValue(pushDeviceToken, forHTTPHeaderField: "x-push-token")
+        }
+        let (data, http) = try await dataWithSessionRecovery(req)
         guard (200..<300).contains(http.statusCode) else {
             throw EusoTripAPIError.httpStatus(
                 http.statusCode,
                 String(data: data, encoding: .utf8) ?? ""
             )
         }
-        return data
+        return (data, http)
     }
 
     /// Fetch raw bytes from an arbitrary HTTPS URL via the session
@@ -1529,19 +1578,26 @@ final class EusoTripAPI: ObservableObject {
         var req = URLRequest(url: url)
         req.httpMethod = "GET"
         req.setValue("application/pdf,image/*,application/octet-stream,*/*", forHTTPHeaderField: "Accept")
-        if let token = authToken,
-           let baseHost = baseURL?.host,
-           let urlHost = url.host,
-           urlHost.caseInsensitiveCompare(baseHost) == .orderedSame {
-            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let isBackendURL = isFirstPartyURL(url)
+        if isBackendURL {
+            if let token = authToken {
+                req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            }
+            if let pushDeviceToken {
+                req.setValue(pushDeviceToken, forHTTPHeaderField: "x-push-token")
+            }
         }
-        if let pushDeviceToken {
-            req.setValue(pushDeviceToken, forHTTPHeaderField: "x-push-token")
+        let result: (Data, HTTPURLResponse)
+        if isBackendURL {
+            result = try await authenticatedRawRequest(req)
+        } else {
+            let (responseData, response) = try await transportData(for: req)
+            guard let responseHTTP = response as? HTTPURLResponse else {
+                throw EusoTripAPIError.httpStatus(0, "No HTTP response")
+            }
+            result = (responseData, responseHTTP)
         }
-        let (data, resp) = try await session.data(for: req)
-        guard let http = resp as? HTTPURLResponse else {
-            throw EusoTripAPIError.httpStatus(0, "No HTTP response")
-        }
+        let (data, http) = result
         guard (200..<300).contains(http.statusCode) else {
             throw EusoTripAPIError.httpStatus(
                 http.statusCode,
@@ -1597,6 +1653,34 @@ final class EusoTripAPI: ObservableObject {
 
     func mutationNoInput<Output: Decodable>(_ path: String) async throws -> Output {
         return try await mutation(path, input: TRPCEmptyInput())
+    }
+
+    /// Auth-lifecycle mutation that deliberately bypasses the automatic
+    /// 401 recovery hook. `auth.refreshSession` is itself the recovery grant;
+    /// allowing it to invoke the hook would recurse into the coalesced task.
+    func mutationNoAutoRefresh<Output: Decodable, Input: Encodable>(
+        _ path: String,
+        input: Input
+    ) async throws -> Output {
+        guard let baseURL else { throw EusoTripAPIError.notConfigured }
+        let url = baseURL
+            .appendingPathComponent("api/trpc")
+            .appendingPathComponent(path)
+        let payload = TRPCInputEnvelope(json: input)
+        let body = try encoder.encode(payload)
+
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let authToken {
+            req.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+        }
+        if let pushDeviceToken {
+            req.setValue(pushDeviceToken, forHTTPHeaderField: "x-push-token")
+        }
+        req.httpBody = body
+        return try await perform(req, allowRefreshRetry: false)
     }
 
     // MARK: Breadcrumb trail (L13-6)
@@ -1749,6 +1833,108 @@ final class EusoTripAPI: ObservableObject {
 
     // MARK: Shared transport
 
+    private func isFirstPartyURL(_ url: URL) -> Bool {
+        guard let baseURL,
+              let baseScheme = baseURL.scheme?.lowercased(),
+              let urlScheme = url.scheme?.lowercased(),
+              let baseHost = baseURL.host?.lowercased(),
+              let urlHost = url.host?.lowercased() else { return false }
+        let basePort = baseURL.port ?? (baseScheme == "https" ? 443 : 80)
+        let urlPort = url.port ?? (urlScheme == "https" ? 443 : 80)
+        return baseScheme == urlScheme && baseHost == urlHost && basePort == urlPort
+    }
+
+    /// One cancellation-aware entry point for every request using the API
+    /// session. The preflight check is important for SwiftUI `.task` callers:
+    /// once their view disappears, an already-canceled task must not create a
+    /// fresh CFNetwork task only to cancel it during setup. The postflight check
+    /// prevents a response that raced dismissal from reaching a dead surface.
+    private func transportData(for original: URLRequest) async throws -> (Data, URLResponse) {
+        try Task.checkCancellation()
+
+        var request = original
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        request.setValue("no-store, no-cache", forHTTPHeaderField: "Cache-Control")
+        request.setValue("no-cache", forHTTPHeaderField: "Pragma")
+
+        let response = try await session.data(for: request)
+        try Task.checkCancellation()
+        return response
+    }
+
+    /// Decodes first-party REST JSON while preserving the same one-shot session
+    /// refresh and 401/403 distinction as tRPC. This is intentionally separate
+    /// from `perform`: REST endpoints do not use the tRPC result envelope.
+    private func performPlainJSON<Output: Decodable>(
+        _ request: URLRequest,
+        allowRefreshRetry: Bool = true
+    ) async throws -> Output {
+        let (data, response) = try await transportData(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw EusoTripAPIError.httpStatus(0, "No HTTP response")
+        }
+        guard data.count <= 64 * 1_024 else {
+            throw EusoTripAPIError.httpStatus(http.statusCode, "Response exceeded the allowed size")
+        }
+        let serverError = (try? decoder.decode(PlainAPIErrorEnvelope.self, from: data))?.error
+
+        if http.statusCode == 401 {
+            if allowRefreshRetry, try await refreshSessionOnce() {
+                return try await performPlainJSON(reissue(request), allowRefreshRetry: false)
+            }
+            throw EusoTripAPIError.unauthenticated
+        }
+        if http.statusCode == 403 {
+            throw EusoTripAPIError.forbidden(
+                EusoTripAPIError.humanize(serverError ?? "You do not have access to this action.")
+            )
+        }
+        guard 200..<300 ~= http.statusCode else {
+            throw EusoTripAPIError.httpStatus(
+                http.statusCode,
+                EusoTripAPIError.humanize(serverError ?? "Request failed")
+            )
+        }
+        do {
+            return try decoder.decode(Output.self, from: data)
+        } catch {
+            throw EusoTripAPIError.decodingFailed(String(describing: error))
+        }
+    }
+
+    /// Raw backend bytes with the same silent 401 rotation/replay contract as
+    /// typed tRPC calls. Watch relays and authenticated document downloads used
+    /// to bypass `perform`, so they could still expose expiry failures after
+    /// every normal screen had recovered.
+    private func dataWithSessionRecovery(
+        _ req: URLRequest,
+        allowRefreshRetry: Bool = true
+    ) async throws -> (Data, HTTPURLResponse) {
+        let (data, response) = try await transportData(for: req)
+        guard let http = response as? HTTPURLResponse else {
+            throw EusoTripAPIError.httpStatus(0, "No HTTP response")
+        }
+        captureSessionToken(from: http, requestURL: req.url)
+
+        let envelopeUnauthorized: Bool = {
+            guard let error = try? decoder.decode(TRPCErrorEnvelope.self, from: data) else {
+                return false
+            }
+            let inner = error.error.json
+            return inner.data?.httpStatus == 401 || inner.data?.code == "UNAUTHORIZED"
+        }()
+        if http.statusCode == 401 || envelopeUnauthorized {
+            if allowRefreshRetry, try await refreshSessionOnce() {
+                return try await dataWithSessionRecovery(
+                    reissue(req),
+                    allowRefreshRetry: false
+                )
+            }
+            throw EusoTripAPIError.unauthenticated
+        }
+        return (data, http)
+    }
+
     /// `allowRefreshRetry` gates the ONE automatic re-auth + retry on a
     /// 401/403. Public entry points (`query`/`mutation`/…) call `perform`
     /// with it true; the single retry recurses with it false so a genuinely
@@ -1762,7 +1948,7 @@ final class EusoTripAPI: ObservableObject {
             throw EusoTripAPIError.httpStatus(0, "No HTTP response")
         }
 
-        // Extract Bearer token from Set-Cookie if the backend issued one.
+        // Extract or rotate the Bearer token whenever the backend issued one.
         // The web platform's canonical session cookie is `app_session_id`
         // (see `frontend/shared/const.ts:1` — `COOKIE_NAME` import in
         // routers.ts powers every res.cookie() call in the auth flow).
@@ -1772,15 +1958,7 @@ final class EusoTripAPI: ObservableObject {
         // the optional bind failed, and the next cold launch had no
         // bearer to restore — kicking the user back to SignIn on every
         // app start. Including `app_session_id` here closes that loop.
-        if let url = req.url,
-           let fields = http.allHeaderFields as? [String: String] {
-            let cookies = HTTPCookie.cookies(withResponseHeaderFields: fields, for: url)
-            for c in cookies where c.name == "app_session_id"
-                                || c.name == "token"
-                                || c.name == "auth_token" {
-                if self.authToken == nil { self.authToken = c.value }
-            }
-        }
+        captureSessionToken(from: http, requestURL: req.url)
 
         // tRPC can return 200 with an error envelope, or 4xx with an error envelope.
         // Decode the envelope FIRST (before the bare 401/403 check) so we can
@@ -1799,8 +1977,18 @@ final class EusoTripAPI: ObservableObject {
                 // gate off). 403/FORBIDDEN deliberately does NOT retry: a
                 // permission or compliance block is not a stale session, and
                 // re-auth would only hide the server's gate message.
-                if allowRefreshRetry, await refreshSessionOnce() {
-                    return try await perform(reissue(req), allowRefreshRetry: false)
+                if allowRefreshRetry {
+                    do {
+                        if try await refreshSessionOnce() {
+                            return try await perform(reissue(req), allowRefreshRetry: false)
+                        }
+                    } catch {
+                        // Renewal transport/server failures are not evidence
+                        // that the user signed out. Propagate the real failure
+                        // instead of painting every role surface with a false
+                        // red "Authentication required" banner.
+                        throw error
+                    }
                 }
                 throw EusoTripAPIError.unauthenticated
             }
@@ -1815,8 +2003,14 @@ final class EusoTripAPI: ObservableObject {
         }
 
         if http.statusCode == 401 {
-            if allowRefreshRetry, await refreshSessionOnce() {
-                return try await perform(reissue(req), allowRefreshRetry: false)
+            if allowRefreshRetry {
+                do {
+                    if try await refreshSessionOnce() {
+                        return try await perform(reissue(req), allowRefreshRetry: false)
+                    }
+                } catch {
+                    throw error
+                }
             }
             throw EusoTripAPIError.unauthenticated
         }
@@ -3030,10 +3224,32 @@ struct AuthAPI {
     /// Runs WITHOUT the API's 401/403 auto-refresh+retry: `auth.me` is the
     /// session probe the refresh path itself calls, so it must surface a real
     /// UNAUTHORIZED honestly instead of recursing into another refresh. The
-    /// session's `boot()` / `revalidate()` / `refreshSession()` each apply
-    /// their own 2-strike absorption around this call.
+    /// session's `boot()` / `revalidate()` / `refreshSession()` decide whether
+    /// that 401 is authoritative or merely follows a transient renewal error.
     func me() async throws -> AuthUser {
         try await api.queryNoAutoRefresh("auth.me", input: TRPCEmptyInput())
+    }
+
+    /// `auth.refreshSession` — rotates the opaque httpOnly refresh cookie and
+    /// issues a fresh access cookie. This call intentionally bypasses the
+    /// normal 401 recovery hook because it is the recovery operation itself.
+    /// No user id or refresh secret is sent in JSON; URLSession attaches the
+    /// restored `app_refresh_token` cookie.
+    func renewSession() async throws -> SessionRefreshResponse {
+        try await api.mutationNoAutoRefresh(
+            "auth.refreshSession",
+            input: TRPCEmptyInput()
+        )
+    }
+
+    /// Rolling-deploy compatibility for servers that have the former
+    /// protected access-token renewal procedure but not `refreshSession` yet.
+    /// Never used after an authoritative UNAUTHORIZED from the new route.
+    func renewLegacyAccessSession() async throws -> GenericMessageResponse {
+        try await api.mutationNoAutoRefresh(
+            "auth.refreshToken",
+            input: TRPCEmptyInput()
+        )
     }
 
     /// `auth.logout` — POST mutation.  Clears server-side session and cookies.

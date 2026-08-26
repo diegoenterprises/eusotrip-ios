@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A82500000000000000000011 /* PricedRouteCommerceClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A82500000000000000000001 /* PricedRouteCommerceClient.swift */; };
+		A82500000000000000000014 /* ModeAssetAvailabilityAuthorityPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A82500000000000000000004 /* ModeAssetAvailabilityAuthorityPanel.swift */; };
+		EDAV20260813000000000001 /* EditableProfileAvatar.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDAV20260813000000000002 /* EditableProfileAvatar.swift */; };
 		BMAPGEOBUILD1 /* Map/BespokeMapGeography.swift in Sources */ = {isa = PBXBuildFile; fileRef = BMAPGEOFREF1 /* Map/BespokeMapGeography.swift */; };
 		HEA1TH5ERV1CE0000000AA01 /* HealthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = HEA1TH5ERV1CE0000000AA02 /* HealthService.swift */; };
 		B1A1F70000000000000B0001 /* WeatherSkyEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A1F70000000000000B0002 /* WeatherSkyEngine.swift */; };
@@ -64,6 +67,7 @@
 		A157A4EE31DF3D193DFC8C8A /* 006_PrivacyPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1FC32344EC014D3FAF0ED78 /* 006_PrivacyPolicy.swift */; };
 		A157F689D9AEDCA651044E43 /* 013_ActiveEnroute.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1CF9F9CF4AC5F9B6B739C60 /* 013_ActiveEnroute.swift */; };
 		A15D2066B9DD418D7A98ED9D /* EusoTripAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = A16B82B4BAD14ED9D95C9A26 /* EusoTripAPI.swift */; };
+		EA0825A00000000000000001 /* EusoSessionTokenPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA0825A00000000000000002 /* EusoSessionTokenPolicy.swift */; };
 		A16BC7376B77E8DC7AA73CE6 /* AuthModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1491CB2D389CD10B33FEE22 /* AuthModels.swift */; };
 		A172C53B20BAC24CD40870B0 /* 015_AtGateAwaitingDock.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1FA70836FB725922F39A4E9 /* 015_AtGateAwaitingDock.swift */; };
 		A17EA9A0121947A6C4E1DDE9 /* HOSStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C02F30061DE34AC9D052E1 /* HOSStatus.swift */; };
@@ -562,6 +566,11 @@
 		D2CMP0200000000000ABDS /* 902_ComplianceViolations.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2CMP0200000000000ACDS /* 902_ComplianceViolations.swift */; };
 		D2CMPNAV0000000000ABDS /* ComplianceNavController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2CMPNAV0000000000ACDS /* ComplianceNavController.swift */; };
 		D2D0000000000000000ABFE /* PostLoadDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2D0000000000000000ACFE /* PostLoadDraft.swift */; };
+		FE6A1311B0F1A2C3D4E5F614 /* 204B_ShipperReeferColdChainSpec.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE6A1322B0F1A2C3D4E5F615 /* 204B_ShipperReeferColdChainSpec.swift */; };
+		FE7B1411B0F1A2C3D4E5F616 /* 204C_ShipperHazmatManifestGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE7B1422B0F1A2C3D4E5F617 /* 204C_ShipperHazmatManifestGate.swift */; };
+		FE8C1511B0F1A2C3D4E5F618 /* 216B_ShipperCrossBorderCustoms.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE8C1522B0F1A2C3D4E5F619 /* 216B_ShipperCrossBorderCustoms.swift */; };
+		FE9D1611B0F1A2C3D4E5F61A /* 216D_ShipperUSMCACertificate.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE9D1622B0F1A2C3D4E5F61B /* 216D_ShipperUSMCACertificate.swift */; };
+		FEAE1711B0F1A2C3D4E5F61C /* 216F_ShipperBorderWaitLive.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEAE1722B0F1A2C3D4E5F61D /* 216F_ShipperBorderWaitLive.swift */; };
 		D2D0100000000000000ABFE /* 250_PostLoadStep1Lane.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2D0100000000000000ACFE /* 250_PostLoadStep1Lane.swift */; };
 		D2D0200000000000000ABFE /* 251_PostLoadStep2Equipment.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2D0200000000000000ACFE /* 251_PostLoadStep2Equipment.swift */; };
 		D2D0300000000000000ABFE /* 252_PostLoadStep3Pricing.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2D0300000000000000ACFE /* 252_PostLoadStep3Pricing.swift */; };
@@ -695,6 +704,7 @@
 		D2R0900000000000000ABF3 /* 419_ExceptionResponse.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2R0900000000000000ACF3 /* 419_ExceptionResponse.swift */; };
 		D2RATPV0000000000001 /* RatingPromptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RATPV0000000000002 /* RatingPromptView.swift */; };
 		D2RHIN000000000000ABDS /* RoleHomeIntro.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RHIN000000000000ACDS /* RoleHomeIntro.swift */; };
+		HWSY20260825000000000001 /* HomeWidgetSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = HWSY20260825000000000002 /* HomeWidgetSystem.swift */; };
 		D2RIOSBLD110000000000000 /* 1100_IDVLivenessSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RIOSREF110000000000000 /* 1100_IDVLivenessSheet.swift */; };
 		D2RIOSBLD110100000000000 /* 1101_TaxIDValidationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RIOSREF110100000000000 /* 1101_TaxIDValidationSheet.swift */; };
 		D2RIOSBLD110200000000000 /* 1102_OperatingAuthoritySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RIOSREF110200000000000 /* 1102_OperatingAuthoritySheet.swift */; };
@@ -1332,6 +1342,9 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		A82500000000000000000001 /* PricedRouteCommerceClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PricedRouteCommerceClient.swift; sourceTree = "<group>"; };
+		A82500000000000000000004 /* ModeAssetAvailabilityAuthorityPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModeAssetAvailabilityAuthorityPanel.swift; sourceTree = "<group>"; };
+		EDAV20260813000000000002 /* EditableProfileAvatar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EditableProfileAvatar.swift; path = EusoTrip/Views/Components/EditableProfileAvatar.swift; sourceTree = SOURCE_ROOT; };
 		BMAPGEOFREF1 /* Map/BespokeMapGeography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Map/BespokeMapGeography.swift; sourceTree = "<group>"; };
 		HEA1TH5ERV1CE0000000AA02 /* HealthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthService.swift; sourceTree = "<group>"; };
 		B1A1F70000000000000B0002 /* WeatherSkyEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherSkyEngine.swift; sourceTree = "<group>"; };
@@ -1388,6 +1401,7 @@
 		A14C271DA98CF1117DD59F15 /* 005_TermsOfService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 005_TermsOfService.swift; sourceTree = "<group>"; };
 		A1576D12AB9BE49E47C64A8E /* 018_ActiveEnrouteLoaded.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 018_ActiveEnrouteLoaded.swift; sourceTree = "<group>"; };
 		A16B82B4BAD14ED9D95C9A26 /* EusoTripAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EusoTripAPI.swift; sourceTree = "<group>"; };
+		EA0825A00000000000000002 /* EusoSessionTokenPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EusoSessionTokenPolicy.swift; sourceTree = "<group>"; };
 		A192A329AC526EED829942B1 /* 012_DvirSubmitted.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 012_DvirSubmitted.swift; sourceTree = "<group>"; };
 		A1A11111111111111111API2 /* ShipperAppIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShipperAppIntents.swift; sourceTree = "<group>"; };
 		A1A11111111111111111F005 /* PushService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushService.swift; sourceTree = "<group>"; };
@@ -1847,6 +1861,11 @@
 		D2CMP0200000000000ACDS /* 902_ComplianceViolations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 902_ComplianceViolations.swift; path = EusoTrip/Views/Compliance/902_ComplianceViolations.swift; sourceTree = SOURCE_ROOT; };
 		D2CMPNAV0000000000ACDS /* ComplianceNavController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ComplianceNavController.swift; path = EusoTrip/Views/Compliance/ComplianceNavController.swift; sourceTree = SOURCE_ROOT; };
 		D2D0000000000000000ACFE /* PostLoadDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PostLoadDraft.swift; path = EusoTrip/Views/Shipper/PostLoadDraft.swift; sourceTree = SOURCE_ROOT; };
+		FE6A1322B0F1A2C3D4E5F615 /* 204B_ShipperReeferColdChainSpec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 204B_ShipperReeferColdChainSpec.swift; path = EusoTrip/Views/Shipper/204B_ShipperReeferColdChainSpec.swift; sourceTree = SOURCE_ROOT; };
+		FE7B1422B0F1A2C3D4E5F617 /* 204C_ShipperHazmatManifestGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 204C_ShipperHazmatManifestGate.swift; path = EusoTrip/Views/Shipper/204C_ShipperHazmatManifestGate.swift; sourceTree = SOURCE_ROOT; };
+		FE8C1522B0F1A2C3D4E5F619 /* 216B_ShipperCrossBorderCustoms.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 216B_ShipperCrossBorderCustoms.swift; path = EusoTrip/Views/Shipper/216B_ShipperCrossBorderCustoms.swift; sourceTree = SOURCE_ROOT; };
+		FE9D1622B0F1A2C3D4E5F61B /* 216D_ShipperUSMCACertificate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 216D_ShipperUSMCACertificate.swift; path = EusoTrip/Views/Shipper/216D_ShipperUSMCACertificate.swift; sourceTree = SOURCE_ROOT; };
+		FEAE1722B0F1A2C3D4E5F61D /* 216F_ShipperBorderWaitLive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 216F_ShipperBorderWaitLive.swift; path = EusoTrip/Views/Shipper/216F_ShipperBorderWaitLive.swift; sourceTree = SOURCE_ROOT; };
 		D2D0100000000000000ACFE /* 250_PostLoadStep1Lane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 250_PostLoadStep1Lane.swift; path = EusoTrip/Views/Shipper/250_PostLoadStep1Lane.swift; sourceTree = SOURCE_ROOT; };
 		D2D0200000000000000ACFE /* 251_PostLoadStep2Equipment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 251_PostLoadStep2Equipment.swift; path = EusoTrip/Views/Shipper/251_PostLoadStep2Equipment.swift; sourceTree = SOURCE_ROOT; };
 		D2D0300000000000000ACFE /* 252_PostLoadStep3Pricing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 252_PostLoadStep3Pricing.swift; path = EusoTrip/Views/Shipper/252_PostLoadStep3Pricing.swift; sourceTree = SOURCE_ROOT; };
@@ -1980,6 +1999,7 @@
 		D2R0900000000000000ACF3 /* 419_ExceptionResponse.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 419_ExceptionResponse.swift; path = EusoTrip/Views/Shipper/419_ExceptionResponse.swift; sourceTree = SOURCE_ROOT; };
 		D2RATPV0000000000002 /* RatingPromptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RatingPromptView.swift; path = EusoTrip/Views/Components/RatingPromptView.swift; sourceTree = SOURCE_ROOT; };
 		D2RHIN000000000000ACDS /* RoleHomeIntro.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RoleHomeIntro.swift; path = EusoTrip/Views/Components/RoleHomeIntro.swift; sourceTree = SOURCE_ROOT; };
+		HWSY20260825000000000002 /* HomeWidgetSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HomeWidgetSystem.swift; path = EusoTrip/Views/Components/HomeWidgetSystem.swift; sourceTree = SOURCE_ROOT; };
 		D2RIOSREF110000000000000 /* 1100_IDVLivenessSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 1100_IDVLivenessSheet.swift; path = EusoTrip/Views/Compliance/1100_IDVLivenessSheet.swift; sourceTree = SOURCE_ROOT; };
 		D2RIOSREF110100000000000 /* 1101_TaxIDValidationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 1101_TaxIDValidationSheet.swift; path = EusoTrip/Views/Compliance/1101_TaxIDValidationSheet.swift; sourceTree = SOURCE_ROOT; };
 		D2RIOSREF110200000000000 /* 1102_OperatingAuthoritySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 1102_OperatingAuthoritySheet.swift; path = EusoTrip/Views/Compliance/1102_OperatingAuthoritySheet.swift; sourceTree = SOURCE_ROOT; };
@@ -2941,6 +2961,11 @@
 				D2130000000000000021CR /* 213_ShipperCatalystScorecard.swift */,
 				D2280000000000000000ACFF /* LifecycleScaffold.swift */,
 				D2D0000000000000000ACFE /* PostLoadDraft.swift */,
+				FE6A1322B0F1A2C3D4E5F615 /* 204B_ShipperReeferColdChainSpec.swift */,
+				FE7B1422B0F1A2C3D4E5F617 /* 204C_ShipperHazmatManifestGate.swift */,
+				FE8C1522B0F1A2C3D4E5F619 /* 216B_ShipperCrossBorderCustoms.swift */,
+				FE9D1622B0F1A2C3D4E5F61B /* 216D_ShipperUSMCACertificate.swift */,
+				FEAE1722B0F1A2C3D4E5F61D /* 216F_ShipperBorderWaitLive.swift */,
 				D2D0CELEB000000000ACFE /* PostLoadCelebration.swift */,
 				D2D0HMWX000000000ACFE /* HomeWeatherWidget.swift */,
 				D2D0100000000000000ACFE /* 250_PostLoadStep1Lane.swift */,
@@ -3434,8 +3459,10 @@
 		A1000000000000000000AAD3 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				A82500000000000000000001 /* PricedRouteCommerceClient.swift */,
 				A16B82B4BAD14ED9D95C9A26 /* EusoTripAPI.swift */,
 				A13B8109FC394A8921DF752F /* EusoTripSession.swift */,
+				EA0825A00000000000000002 /* EusoSessionTokenPolicy.swift */,
 				FA1F202605200001000600F6 /* FeeMultiplierEngine.swift */,
 				FA1F202605200001000700F7 /* AnimationBindingMap.swift */,
 				FA1F202605200002000100F8 /* ShipperSigningKey.swift */,
@@ -3560,6 +3587,8 @@
 		A12E1A1C0010CE0FF1000014 /* Components */ = {
 			isa = PBXGroup;
 			children = (
+				A82500000000000000000004 /* ModeAssetAvailabilityAuthorityPanel.swift */,
+				EDAV20260813000000000002 /* EditableProfileAvatar.swift */,
 				A12E1A1C0010CE0FF1000012 /* HereMapView.swift */,
 				KITRADGFREF1 /* Charts/RadialFillGauge.swift */,
 				KITSCRDFREF1 /* Charts/ScorecardRadar.swift */,
@@ -3751,6 +3780,7 @@
 				B1A1F600000000000000AF02 /* PerLoadWeatherCard.swift */,
 				B1A11111111111111111AA0B /* WeatherIcons.swift */,
 				D2RHIN000000000000ACDS /* RoleHomeIntro.swift */,
+				HWSY20260825000000000002 /* HomeWidgetSystem.swift */,
 				SPRK20260521000002 /* SparkBriefCard.swift */,
 				EQPR20260521000002 /* EquipmentRecommenderWidget.swift */,
 				ACSH20260521000002 /* AstraCaptureSheet.swift */,
@@ -4366,6 +4396,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A82500000000000000000011 /* PricedRouteCommerceClient.swift in Sources */,
+				A82500000000000000000014 /* ModeAssetAvailabilityAuthorityPanel.swift in Sources */,
+				EDAV20260813000000000001 /* EditableProfileAvatar.swift in Sources */,
 				A18C84C77B3CF73706D41A64 /* ContentView.swift in Sources */,
 				FE410000000000000000005B /* 005_RailWaybill.swift in Sources */,
 				FE410000000000000000006B /* 006_RailCrossBorderCustoms.swift in Sources */,
@@ -4600,6 +4633,7 @@
 				E1D1ED0311111111111111AA /* ELDIntegrationView.swift in Sources */,
 				A15D2066B9DD418D7A98ED9D /* EusoTripAPI.swift in Sources */,
 				A1B1903E9CD06CDB06E71174 /* EusoTripSession.swift in Sources */,
+				EA0825A00000000000000001 /* EusoSessionTokenPolicy.swift in Sources */,
 				A143A81AF94A185B0C5FF8D1 /* DriverHomeViewModel.swift in Sources */,
 				A14CB5B2DAD7FD734291AFDD /* ForgotPasswordViewModel.swift in Sources */,
 				A1C242E22B722C1015AFBEF1 /* LoginViewModel.swift in Sources */,
@@ -4981,6 +5015,7 @@
 				B1A1F600000000000000AF01 /* PerLoadWeatherCard.swift in Sources */,
 				B1A11111111111111111AA0A /* WeatherIcons.swift in Sources */,
 				D2RHIN000000000000ABDS /* RoleHomeIntro.swift in Sources */,
+				HWSY20260825000000000001 /* HomeWidgetSystem.swift in Sources */,
 				SPRK20260521000001 /* SparkBriefCard.swift in Sources */,
 				EQPR20260521000001 /* EquipmentRecommenderWidget.swift in Sources */,
 				ACSH20260521000001 /* AstraCaptureSheet.swift in Sources */,
@@ -5079,6 +5114,11 @@
 				D2130000000000000021CS /* 213_ShipperCatalystScorecard.swift in Sources */,
 				D2280000000000000000ABFF /* LifecycleScaffold.swift in Sources */,
 				D2D0000000000000000ABFE /* PostLoadDraft.swift in Sources */,
+				FE6A1311B0F1A2C3D4E5F614 /* 204B_ShipperReeferColdChainSpec.swift in Sources */,
+				FE7B1411B0F1A2C3D4E5F616 /* 204C_ShipperHazmatManifestGate.swift in Sources */,
+				FE8C1511B0F1A2C3D4E5F618 /* 216B_ShipperCrossBorderCustoms.swift in Sources */,
+				FE9D1611B0F1A2C3D4E5F61A /* 216D_ShipperUSMCACertificate.swift in Sources */,
+				FEAE1711B0F1A2C3D4E5F61C /* 216F_ShipperBorderWaitLive.swift in Sources */,
 				D2D0CELEB000000000ABFE /* PostLoadCelebration.swift in Sources */,
 				D2D0HMWX000000000ABFE /* HomeWeatherWidget.swift in Sources */,
 				D2D0100000000000000ABFE /* 250_PostLoadStep1Lane.swift in Sources */,

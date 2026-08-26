@@ -25,6 +25,21 @@ import SwiftUI
 fileprivate typealias FeeCountry = Country
 fileprivate typealias FeeTransportMode = TransportMode
 
+struct IndustryWorkflowHandoff {
+    let sectorId: String
+    let ruleSetId: Int
+    let workflowId: String
+    let productName: String?
+    let cargoType: String?
+    let trailerCode: String?
+    let requiredEndorsements: [String]
+    let specialEquipment: [String]
+    let accessorialAllowList: [String]
+    let hazmatAuthRequired: Bool
+    let preCoolRequired: Bool
+    let continuousMonitoring: Bool
+}
+
 @MainActor
 final class PostLoadDraft: ObservableObject {
 
@@ -142,6 +157,8 @@ final class PostLoadDraft: ObservableObject {
     /// Selected industry vertical (12 canonical buckets). Drives the
     /// trailer filter on Step 2 and the document requirements on Step 4.
     @Published var vertical: Vertical? = nil
+    @Published var industrySectorId: String? = nil
+    @Published var industryRuleSetId: Int? = nil
     /// Selected trailer code. When set, `equipmentType` is kept synced
     /// to `trailer.rawValue` so legacy server-side parsers keep working.
     /// Server payload `shippers.create.trailer` reads this when present.
@@ -296,6 +313,7 @@ final class PostLoadDraft: ObservableObject {
         originLat = nil; originLng = nil; destLat = nil; destLng = nil
         stops = []; cargoType = .general; equipmentType = ""
         vertical = nil; trailer = nil
+        industrySectorId = nil; industryRuleSetId = nil
         attachedDocuments = []
         reportingMarks = ""; aarClass = ""
         bicCode = ""; isoCode = ""; imoNumber = ""; mmsi = ""
@@ -321,6 +339,33 @@ final class PostLoadDraft: ObservableObject {
         isPosting = false; postError = nil
         postedLoadNumber = nil; postedLoadId = nil
         isHydratingDraft = false; hydrateError = nil; hydratedDraftId = nil
+    }
+
+    func applyIndustryWorkflow(_ handoff: IndustryWorkflowHandoff) {
+        industrySectorId = handoff.sectorId
+        industryRuleSetId = handoff.ruleSetId
+        vertical = Vertical(rawValue: handoff.workflowId)
+
+        if let rawCargo = handoff.cargoType,
+           let resolvedCargo = CargoType(rawValue: rawCargo) {
+            cargoType = resolvedCargo
+        }
+        if let rawTrailer = handoff.trailerCode,
+           let resolvedTrailer = TrailerCode(rawValue: rawTrailer) {
+            trailer = resolvedTrailer
+            equipmentType = resolvedTrailer.rawValue
+        }
+        if let productName = handoff.productName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !productName.isEmpty {
+            commodity = productName
+        }
+
+        requiredEndorsements = handoff.requiredEndorsements
+        specialEquipment = handoff.specialEquipment
+        accessorialsAllowed = handoff.accessorialAllowList
+        hazmatAuthRequired = handoff.hazmatAuthRequired
+        preCoolRequired = handoff.preCoolRequired
+        continuousMode = handoff.continuousMonitoring
     }
 
     struct ServerDraft: Decodable {

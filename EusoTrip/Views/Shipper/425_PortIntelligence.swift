@@ -46,6 +46,88 @@ private struct PortRow: Decodable, Identifiable, Hashable {
     let avgDwellHours: Double?
 }
 
+struct PortIntelAssessment: Decodable {
+    let publicId: String
+    let engineVersion: String
+    let preflight: Preflight
+    let strategies: [Strategy]
+    let evidence: [Evidence]
+
+    struct Preflight: Decodable {
+        let gate: String
+        let counts: Counts
+    }
+
+    struct Counts: Decodable {
+        let viable: Int
+        let conditional: Int
+        let insufficientEvidence: Int
+        let blocked: Int
+
+        enum CodingKeys: String, CodingKey {
+            case viable
+            case conditional
+            case insufficientEvidence = "insufficient_evidence"
+            case blocked
+        }
+    }
+
+    struct DecisionReason: Decodable, Hashable {
+        let code: String
+        let message: String
+        let subjectType: String
+        let subjectId: Int?
+        let evidenceId: Int?
+    }
+
+    struct Leg: Decodable, Hashable {
+        let edgeId: Int
+        let fromNodeId: Int
+        let toNodeId: Int
+        let mode: String
+        let edgeType: String
+        let parcelCount: Int?
+        let status: String
+        let hardFailures: [DecisionReason]
+        let unknowns: [DecisionReason]
+        let warnings: [DecisionReason]
+        let evidenceIds: [Int]
+    }
+
+    struct Strategy: Decodable, Identifiable, Hashable {
+        let id: Int
+        let rank: Int
+        let strategyType: String
+        let status: String
+        let destinationNodeId: Int
+        let destinationName: String?
+        let destinationCity: String?
+        let destinationCountryCode: String?
+        let destinationSubdivisionCode: String?
+        let destinationLatitude: Double?
+        let destinationLongitude: Double?
+        let legs: [Leg]
+        let hardFailures: [DecisionReason]
+        let unknowns: [DecisionReason]
+        let warnings: [DecisionReason]
+        let confirmations: [DecisionReason]
+        let knownCostAmount: Double?
+        let knownCostCurrency: String?
+        let missingCostElements: [String]
+        let evidenceIds: [Int]
+    }
+
+    struct Evidence: Decodable, Identifiable, Hashable {
+        let id: Int
+        let sourceKey: String
+        let sourceName: String
+        let evidenceKind: String
+        let sourceUrl: String?
+        let verificationStatus: String
+        let confidence: Double?
+    }
+}
+
 private struct PortIntelBody: View {
     @Environment(\.palette) private var palette
     @State private var product: String

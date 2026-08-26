@@ -163,17 +163,16 @@ struct TerminalHome: View {
             // per cold launch; settled on re-visit. Reduce-Motion → fade.
             StaggeredEntranceStack(alignment: .leading, spacing: Space.s4) {
                 header
-                HomeWeatherWidget()
-                kpiStrip
-                accessControlCTA
-                facilityLocatorCard
-                attentionStrip
                 HomeWidgetGrid(
                     canonicalOrder: terminalCanonicalOrder,
                     role: "TERMINAL_MANAGER",
                     storageKey: widgetLayoutKey,
                     render: { id in terminalHomeRender(id) }
                 )
+                kpiStrip
+                accessControlCTA
+                facilityLocatorCard
+                attentionStrip
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14)

@@ -105,19 +105,18 @@ struct CatalystHome: View {
             // per cold launch; settled on re-visit. Reduce-Motion → fade.
             StaggeredEntranceStack(alignment: .leading, spacing: Space.s4) {
                 header
-                weatherSection         // pinned top per founder doctrine
-                // Catalyst Spark Brief — Tier 1 #24 ship 2026-05-21.
-                // Settlement reconciliation + factoring decisions +
-                // carrier scorecards, overnight via SubagentOrchestrator.
-                SparkBriefCard(role: .catalyst)
-                kpiStrip
-                collapsibleAttentionStrip
                 HomeWidgetGrid(
                     canonicalOrder: catalystCanonicalOrder,
                     role: "CATALYST",
                     storageKey: widgetLayoutKey,
                     render: { id in catalystHomeRender(id) }
                 )
+                // Catalyst Spark Brief — Tier 1 #24 ship 2026-05-21.
+                // Settlement reconciliation + factoring decisions +
+                // carrier scorecards, overnight via SubagentOrchestrator.
+                SparkBriefCard(role: .catalyst)
+                kpiStrip
+                collapsibleAttentionStrip
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14)

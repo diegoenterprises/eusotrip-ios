@@ -2771,6 +2771,38 @@ struct ContentView: View {
     /// a slide-up modal. Back posts the shared `.eusoRoleNavBack`.
     @State private var driverPushedDetail: RoleDetailPush? = nil
 
+    private var driverRoleDock: RoleDockContract {
+        let active: String
+        switch nav.currentTab {
+        case .home: active = "home"
+        case .trips: active = "trips"
+        case .wallet: active = "loads"
+        case .me: active = "me"
+        }
+
+        return RoleDockCatalog.driver(
+            active: active,
+            select: { destination in
+                if driverPushedDetail != nil {
+                    withAnimation(.easeInOut(duration: 0.24)) {
+                        driverPushedDetail = nil
+                    }
+                }
+                nav.showeSang = false
+                switch destination {
+                case "home":
+                    nav.currentTab = .home
+                    trip.jump(to: .idle)
+                case "trips": nav.currentTab = .trips
+                case "loads": nav.currentTab = .wallet
+                case "me": nav.currentTab = .me
+                default: break
+                }
+            },
+            openESang: { nav.showeSang = true }
+        )
+    }
+
 #if DEBUG
     private var screens: [ProductionScreen] {
         ScreenRegistry.forRole(selectedRole)
@@ -2801,23 +2833,14 @@ struct ContentView: View {
             // pill stays visible and the env-routed tap handler keeps the
             // user able to flip back to Home at any point.
             //
-            // Non-driver roles still render the ScreenRegistry placeholder
-            // untouched, preserving the existing chrome-walk behavior.
+            // Every authenticated role resolves through one exhaustive native
+            // assignment. Driver keeps its existing stateful surface, injected
+            // into the same router used by the other 24 roles.
             Group {
-                // Production role-aware dispatch (replaces the previous
-                // Driver-only hardcode + DEBUG-chrome role walker).
-                // `session.user.roleEnum` decides which surface
-                // mounts. The Driver branch stays inline because it
-                // owns this view's `nav` / `trip` `@StateObject`s,
-                // sheet presenters, and orb state machine — moving
-                // it to a separate type would unwire all of that.
-                // Every other role goes through `RoleSurfaceRouter`,
-                // which also handles RBAC + the web-continuation
-                // landing for roles whose native iOS surface ships
-                // in a later release.
-                let role = session.user?.roleEnum ?? .driver
-                if role == .driver {
-                    driverSurface
+                if let role = session.user?.roleEnum {
+                    RoleSurfaceRouter(role: role, palette: register.palette) {
+                        driverSurface
+                            .environment(\.roleDockContract, driverRoleDock)
                         // Push-nav mandate (2026-06-09 / audit M25): the
                         // shared sheet→push detail layer, identical to
                         // every RoleSurfaceRouter surface. Injects
@@ -2843,10 +2866,9 @@ struct ContentView: View {
                                 }
                             }
                         }
-                } else {
-                    RoleSurfaceRouter(palette: register.palette)
-                        .id("role-\(role.rawValue)")
-                        .transition(.opacity)
+                    }
+                    .id("role-\(role.rawValue)")
+                    .transition(.opacity)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

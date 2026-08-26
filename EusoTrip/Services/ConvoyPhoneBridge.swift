@@ -176,10 +176,7 @@ final class ConvoyPhoneBridge {
         req.httpBody = try? JSONSerialization.data(withJSONObject: ["json": payload])
 
         do {
-            let (data, resp) = try await URLSession.shared.data(for: req)
-            guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-                return ["ok": false, "reason": "http \(String(describing: (resp as? HTTPURLResponse)?.statusCode))"]
-            }
+            let (data, _) = try await api.authenticatedRawRequest(req)
             // tRPC wraps mutations as { result: { data: { results: [...] } } }.
             // Peel the onion defensively — the server target here is
             // stable but we don't want a future tRPC batch wrapper
@@ -235,7 +232,7 @@ final class ConvoyPhoneBridge {
         req.httpBody = try? JSONSerialization.data(
             withJSONObject: ["json": payload]
         )
-        _ = try? await URLSession.shared.data(for: req)
+        _ = try? await api.authenticatedRawRequest(req)
     }
 
     // MARK: - Server → Phone → Watch

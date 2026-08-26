@@ -271,6 +271,48 @@ struct eSangMark: View {
     }
 }
 
+// MARK: - EusoTrip brand identity
+
+struct EusoTripBrandMark: View {
+    var size: CGFloat = 12
+
+    var body: some View {
+        Image("EusoTripLogo")
+            .resizable()
+            .renderingMode(.original)
+            .aspectRatio(contentMode: .fit)
+            .frame(width: size, height: size)
+            .scaleEffect(1.45)
+            .offset(y: size * 0.10)
+            .frame(width: size, height: size)
+            .clipped()
+            .accessibilityHidden(true)
+    }
+}
+
+struct EusoTripEyebrow: View {
+    private let title: Text
+    private let spacing: CGFloat
+
+    init(_ title: LocalizedStringKey, spacing: CGFloat = 5) {
+        self.title = Text(title)
+        self.spacing = spacing
+    }
+
+    init(verbatim title: String, spacing: CGFloat = 5) {
+        self.title = Text(verbatim: title)
+        self.spacing = spacing
+    }
+
+    var body: some View {
+        HStack(spacing: spacing) {
+            EusoTripBrandMark()
+            title
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
 // MARK: - GradientLogo
 
 /// Centered EusoTrip lockup — flame/teardrop brand mark stacked above the wordmark.
