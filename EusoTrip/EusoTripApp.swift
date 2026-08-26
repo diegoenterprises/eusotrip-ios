@@ -199,8 +199,8 @@ struct EusoTripApp: App {
 
                 // ScenePhase normally returns background -> inactive -> active.
                 // Keep that transition as explicit auth evidence instead of
-                // relying on `oldPhase == .background`, which misses the normal
-                // intermediate inactive phase.
+                // relying only on the immediately previous phase, which misses
+                // the normal intermediate inactive phase.
                 let shouldRevalidate = sessionReturnGate.consumeTransition(
                     isBackground: newPhase == .background,
                     isActive: newPhase == .active
