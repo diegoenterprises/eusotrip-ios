@@ -135,7 +135,9 @@ final class HOSClockService: ObservableObject {
             status: fresh.status,
             driveRemainingMinutes: drv,
             windowRemainingMinutes: win,
-            cycleRemainingMinutes: cyc
+            cycleRemainingMinutes: cyc,
+            source: "hos.getStatus via iPhone",
+            freshness: ISO8601DateFormatter().string(from: Date())
         )
     }
 

@@ -91,4 +91,51 @@ struct EusoTrip_Pulse_Watch_AppTests {
         #expect(input["longitude"] == nil)
     }
 
+    @Test func hosClockRequiresCurrentSourcedEvidence() {
+        let now = Date(timeIntervalSince1970: 1_800_000_300)
+        let current = WatchHOS(
+            status: .driving,
+            driveRemainingMinutes: 315,
+            windowRemainingMinutes: 480,
+            cycleRemainingMinutes: 2_700,
+            statusSince: now.addingTimeInterval(-900),
+            tracked: true,
+            source: "eld.fused",
+            observedAt: now.addingTimeInterval(-60)
+        )
+
+        #expect(current.hasCurrentObservation(at: now))
+
+        var unsourced = current
+        unsourced.source = "  "
+        #expect(!unsourced.hasCurrentObservation(at: now))
+
+        var untracked = current
+        untracked.tracked = false
+        #expect(!untracked.hasCurrentObservation(at: now))
+    }
+
+    @Test func hosClockRejectsStaleEvidence() {
+        let now = Date(timeIntervalSince1970: 1_800_000_400)
+        let stale = WatchHOS(
+            status: .onDuty,
+            driveRemainingMinutes: 240,
+            windowRemainingMinutes: 360,
+            cycleRemainingMinutes: 2_400,
+            statusSince: now.addingTimeInterval(-3_600),
+            tracked: true,
+            source: "server",
+            observedAt: now.addingTimeInterval(-(16 * 60))
+        )
+
+        #expect(!stale.hasCurrentObservation(at: now))
+    }
+
+    @Test @MainActor func hosDutyStatusUsesCanonicalServerVocabulary() {
+        #expect(HOSStore.serverDutyStatus(HOSStatus.off.rawValue) == "off_duty")
+        #expect(HOSStore.serverDutyStatus(HOSStatus.sleeper.rawValue) == "sleeper")
+        #expect(HOSStore.serverDutyStatus(HOSStatus.driving.rawValue) == "driving")
+        #expect(HOSStore.serverDutyStatus(HOSStatus.onDuty.rawValue) == "on_duty")
+    }
+
 }

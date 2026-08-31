@@ -9,90 +9,293 @@
 import SwiftUI
 
 struct HOSView: View {
+    private enum SyncResult {
+        case sent
+        case queued
+        case unavailable
+
+        var message: String {
+            switch self {
+            case .sent: return "Sent. Open the HOS notification on iPhone."
+            case .queued: return "Queued for iPhone."
+            case .unavailable: return "iPhone bridge unavailable. Open EusoTrip on iPhone."
+            }
+        }
+
+        var symbol: String {
+            switch self {
+            case .sent: return "iphone.and.arrow.forward"
+            case .queued: return "clock.arrow.trianglehead.counterclockwise.rotate.90"
+            case .unavailable: return "exclamationmark.triangle.fill"
+            }
+        }
+    }
+
     @EnvironmentObject var auth: AuthStore
     @EnvironmentObject var connectivity: WatchConnectivityManager
     @EnvironmentObject var hos: HOSStore
 
+    @State private var isSyncing = false
+    @State private var syncResult: SyncResult?
+
     var body: some View {
+        Group {
+            if let observation {
+                verifiedClock(observation)
+            } else {
+                unavailableClock
+            }
+        }
+        .toolbar(.hidden)
+        .watchEdgeGlow()
+        .task {
+            guard observation == nil, auth.isSignedIn else { return }
+            await hos.refresh(auth: auth)
+        }
+    }
+
+    private var observation: WatchHOS? { hos.currentObservation }
+
+    private func verifiedClock(_ observation: WatchHOS) -> some View {
         ZStack {
             ScrollView {
                 VStack(spacing: S.s3) {
-                    statusPill
+                    statusPill(observation)
+                    evidenceState(observation)
+
                     ZStack {
-                        ring(progress: hos.current.cyclePct, color: .esangBlue, lineWidth: 6, inset: 0)
-                        ring(progress: hos.current.windowPct, color: .esangAmber, lineWidth: 6, inset: 16)
-                        ring(progress: hos.current.drivePct, color: .esangGreen, lineWidth: 6, inset: 32)
+                        ring(progress: observation.cyclePct, color: .esangBlue, lineWidth: 6, inset: 0)
+                        ring(progress: observation.windowPct, color: .esangAmber, lineWidth: 6, inset: 16)
+                        ring(progress: observation.drivePct, color: .esangGreen, lineWidth: 6, inset: 32)
                         VStack(spacing: 0) {
-                            Text(hos.current.driveHoursText)
+                            Text(observation.driveHoursText)
                                 .font(.system(size: 22, weight: .bold, design: .rounded))
                             Text("DRIVE")
                                 .font(.system(size: 10, weight: .medium))
                                 .foregroundStyle(.secondary)
                         }
                     }
-                    // Grow the rings so they paint across the full
-                    // wrist face like the orb on Home, instead of
-                    // reading as a letterboxed inset card.
                     .frame(width: 168, height: 168)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Drive time remaining, \(observation.driveHoursText)")
 
-                    hoursRow(label: "Drive",    value: hos.current.driveHoursText,    tint: .esangGreen)
-                    hoursRow(label: "Window",   value: hos.current.windowHoursText,   tint: .esangAmber)
-                    hoursRow(label: "Cycle",    value: minutes(hos.current.cycleRemainingMinutes), tint: .esangBlue)
+                    hoursRow(label: "Drive", value: observation.driveHoursText, tint: .esangGreen)
+                    hoursRow(label: "Window", value: observation.windowHoursText, tint: .esangAmber)
+                    hoursRow(label: "Cycle", value: minutes(observation.cycleRemainingMinutes), tint: .esangBlue)
 
                     statusButtons
-
-                    // Compliance anchor on the HOS surface — the watch's
-                    // HOS screen is the single most-viewed compliance
-                    // surface on the wrist, so we pin the March 23, 2026
-                    // eDVIR rule citation here. Full rule detail + ack
-                    // live on the phone (MeComplianceView's shared
-                    // ComplianceStore); this footer is the wrist-side
-                    // signal that the rule is active and governs the
-                    // DVIR flow the driver just completed.
                     complianceFooter
                 }
-                // Inner padding zeroed on horizontal so the rings + bezel
-                // ticks meet the actual wrist edge. Keep a thin vertical
-                // crumb so the status pill doesn't kiss the system clock.
-                .padding(.horizontal, 0)
-                .padding(.vertical, S.s1)
+                .padding(.horizontal, 8)
+                .padding(.top, 6)
+                .padding(.bottom, 8)
                 .frame(maxWidth: .infinity)
             }
+            .scrollIndicators(.hidden)
 
-            // Modular Ultra bezel — tick rails + HOS corner labels.
-            // Live values so the driver sees the four summary numbers
-            // even before the inner rings render.
             ModularTickBezel(
                 corners: .init(
-                    topLeading:     "DRV \(hos.current.driveHoursText)",
-                    topTrailing:    hos.current.status.short.uppercased(),
-                    bottomLeading:  "WIN \(hos.current.windowHoursText)",
+                    topLeading: "DRV \(observation.driveHoursText)",
+                    topTrailing: observation.status.short.uppercased(),
+                    bottomLeading: "WIN \(observation.windowHoursText)",
                     bottomTrailing: "CYCLE"
                 )
             )
             .allowsHitTesting(false)
         }
-        // Drop the navigationTitle — without a wrapping NavigationStack
-        // it just reserved a chrome strip at the top that letterboxed
-        // the whole tab against the orb's full-bleed look on Home.
-        .toolbar(.hidden)
         .ignoresSafeArea(.container, edges: .all)
-        // Same radial halo HomeView uses behind the orb so the watch's
-        // rounded corners feel lit, not clipped against rectangular
-        // foreground content.
-        .watchEdgeGlow()
     }
 
-    private var statusPill: some View {
+    private var unavailableClock: some View {
+        ZStack {
+            ScrollView {
+                VStack(spacing: 7) {
+                    HStack(spacing: 9) {
+                        ZStack {
+                            Circle()
+                                .fill(Color.white.opacity(0.06))
+                                .overlay(Circle().strokeBorder(Color.esangAmber.opacity(0.5), lineWidth: 1))
+                            Image(systemName: "shield.slash")
+                                .font(.system(size: 20, weight: .semibold))
+                                .foregroundStyle(Color.esangAmber)
+                        }
+                        .frame(width: 44, height: 44)
+                        .accessibilityHidden(true)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("HOS EVIDENCE")
+                                .font(.system(size: 8, weight: .bold, design: .rounded))
+                                .tracking(1.1)
+                                .foregroundStyle(Color.esangAmber)
+                            Text("Clock unavailable")
+                                .font(.system(size: 17, weight: .bold, design: .rounded))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.82)
+                        }
+                        Spacer(minLength: 0)
+                    }
+
+                    Text("No current ELD observation. Duty changes stay locked until GPS and server evidence agree.")
+                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    HStack(spacing: 6) {
+                        evidenceChip(
+                            label: "ACCOUNT",
+                            value: auth.isSignedIn ? "READY" : "SIGN IN",
+                            ready: auth.isSignedIn
+                        )
+                        evidenceChip(
+                            label: "IPHONE",
+                            value: connectivity.isReachable ? "LINKED" : "AWAY",
+                            ready: connectivity.isReachable
+                        )
+                    }
+
+                    Button {
+                        Task { await requestEvidenceSync() }
+                    } label: {
+                        HStack(spacing: 7) {
+                            if isSyncing {
+                                ProgressView()
+                                    .controlSize(.small)
+                                Text("Checking evidence")
+                                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                                    .lineLimit(1)
+                            } else if let syncResult {
+                                Image(systemName: syncResult.symbol)
+                                    .font(.system(size: 12, weight: .bold))
+                                Text(syncResult.message)
+                                    .font(.system(size: 9, weight: .bold, design: .rounded))
+                                    .lineLimit(2)
+                                    .minimumScaleFactor(0.82)
+                                    .multilineTextAlignment(.leading)
+                            } else {
+                                Image(systemName: "arrow.triangle.2.circlepath")
+                                    .font(.system(size: 13, weight: .bold))
+                                Text("Request HOS sync")
+                                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.82)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, minHeight: syncResult == nil ? 38 : 44)
+                        .foregroundStyle(.white)
+                        .background(LinearGradient.esangPrimary, in: RoundedRectangle(cornerRadius: 12))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isSyncing)
+                    .accessibilityLabel(
+                        syncResult.map { "\($0.message) Double tap to retry." }
+                            ?? (isSyncing ? "Checking HOS evidence" : "Request HOS sync")
+                    )
+                }
+                .padding(.horizontal, 12)
+                .padding(.top, 4)
+                .padding(.bottom, 8)
+                .frame(maxWidth: .infinity)
+            }
+            .scrollIndicators(.hidden)
+
+            ModularTickBezel(
+                corners: .init(
+                    topLeading: "HOS",
+                    topTrailing: "EVIDENCE",
+                    bottomLeading: connectivity.isReachable ? "PHONE LINKED" : "PHONE AWAY",
+                    bottomTrailing: "LOCKED"
+                )
+            )
+            .allowsHitTesting(false)
+        }
+        .ignoresSafeArea(.container, edges: .all)
+        .accessibilityElement(children: .contain)
+    }
+
+    private func statusPill(_ observation: WatchHOS) -> some View {
         HStack(spacing: 6) {
-            Image(systemName: hos.current.status.symbol)
+            Image(systemName: observation.status.symbol)
                 .foregroundStyle(.white)
-            Text(hos.current.status.label)
+            Text(observation.status.label)
                 .font(.system(size: 13, weight: .semibold))
         }
         .padding(.horizontal, 10).padding(.vertical, 4)
         .background(LinearGradient.esangPrimary, in: Capsule())
         .foregroundStyle(.white)
+    }
+
+    @ViewBuilder
+    private func evidenceState(_ observation: WatchHOS) -> some View {
+        Text("\(observation.source ?? "Source unavailable") · observed \(observation.observedAt?.formatted(date: .omitted, time: .shortened) ?? "time unavailable")")
+            .font(.system(size: 9, weight: .medium, design: .rounded))
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+        if let error = hos.lastMutationError {
+            Text(error)
+                .font(.system(size: 9, weight: .semibold, design: .rounded))
+                .foregroundStyle(.orange)
+                .multilineTextAlignment(.center)
+        }
+    }
+
+    private func evidenceChip(label: String, value: String, ready: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(label)
+                .font(.system(size: 7, weight: .bold, design: .rounded))
+                .tracking(0.7)
+                .foregroundStyle(.tertiary)
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(ready ? Color.esangGreen : Color.esangAmber)
+                    .frame(width: 5, height: 5)
+                Text(value)
+                    .font(.system(size: 9, weight: .bold, design: .rounded))
+                    .lineLimit(1)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(label), \(value)")
+    }
+
+    @MainActor
+    private func requestEvidenceSync() async {
+        guard !isSyncing else { return }
+        withAnimation(.easeInOut(duration: 0.15)) {
+            isSyncing = true
+            syncResult = nil
+        }
+
+        connectivity.requestAuthMirror()
+        if auth.isSignedIn {
+            await hos.refresh(auth: auth)
+        }
+
+        guard hos.currentObservation == nil else {
+            isSyncing = false
+            return
+        }
+
+        let dispatch = connectivity.requestPhoneActivation(
+            transcript: nil,
+            reply: "Review and synchronize HOS evidence in EusoTrip.",
+            destination: .hos
+        )
+        withAnimation(.easeInOut(duration: 0.2)) {
+            switch dispatch {
+            case .sent:
+                syncResult = .sent
+            case .queued:
+                syncResult = .queued
+            case .unavailable:
+                syncResult = .unavailable
+            }
+            isSyncing = false
+        }
     }
 
     // MARK: Compliance footer — Mar 23, 2026 wave anchor
