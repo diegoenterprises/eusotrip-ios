@@ -1152,12 +1152,14 @@ struct DriverConversationView: View {
             didLoad = true
             lastErrorMessage = nil
 
-            // Mark-as-read once the transcript is visible. Fire-and-forget
-            // so the UI doesn't wait on the mutation.
+            // Mark as read once the transcript is visible. Local unread
+            // evidence clears only after the server confirms the write.
             Task {
-                _ = try? await EusoTripAPI.shared.messaging.markAsRead(
+                if let receipt = try? await EusoTripAPI.shared.messaging.markAsRead(
                     conversationId: thread.id
-                )
+                ), receipt.success {
+                    UnreadMessageStore.shared.didConfirmRead(thread.id)
+                }
                 UnreadMessageStore.shared.refresh()
             }
         } catch EusoTripAPIError.unauthenticated {

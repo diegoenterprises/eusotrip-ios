@@ -73,6 +73,96 @@ struct EusoTrip_Pulse_Watch_AppTests {
         #expect(payload["autoSubmit"] as? Bool == false)
     }
 
+    @Test func inboxContinuationCarriesTheExactConversationIdentity() {
+        let payload = PhoneActivationRequest(
+            destination: .messages,
+            transcript: "open conversation thread-42",
+            reply: "Opening this conversation on your iPhone.",
+            beginListening: false,
+            autoSubmit: false,
+            conversationId: "thread-42"
+        ).payload()
+
+        #expect(payload["destination"] as? String == "messages")
+        #expect(payload["conversationId"] as? String == "thread-42")
+        #expect(payload["beginListening"] as? Bool == false)
+        #expect(payload["autoSubmit"] as? Bool == false)
+    }
+
+    @Test func phoneZeroUnreadRemainsAuthoritativeOverOlderServerRows() {
+        let phoneAt = Date(timeIntervalSince1970: 1_800_000_010)
+        var evidence = InboxUnreadEvidence(userId: "user-a")
+
+        let acceptedPhone = evidence.applyPhone(
+            total: 0,
+            map: [:],
+            userId: "user-a",
+            observedAt: phoneAt
+        )
+        let acceptedServer = evidence.applyServer(
+            map: ["thread-stale": 4],
+            userId: "user-a",
+            observedAt: phoneAt.addingTimeInterval(-30)
+        )
+
+        #expect(acceptedPhone)
+        #expect(!acceptedServer)
+        #expect(evidence.total == 0)
+        #expect(evidence.unread(for: "thread-stale", serverFallback: 4) == 0)
+    }
+
+    @Test func unreadEvidenceRejectsAnotherIdentity() {
+        var evidence = InboxUnreadEvidence(userId: "user-a")
+        let accepted = evidence.applyPhone(
+            total: 7,
+            map: ["thread-b": 7],
+            userId: "user-b",
+            observedAt: Date(timeIntervalSince1970: 1_800_000_020)
+        )
+
+        #expect(!accepted)
+        #expect(evidence.userId == "user-a")
+        #expect(evidence.total == 0)
+        #expect(evidence.byConversation.isEmpty)
+    }
+
+    @Test @MainActor func missingOrMalformedMessageTimeStaysUnknown() {
+        #expect(InboxStore.parseTimestamp(nil) == nil)
+        #expect(InboxStore.parseTimestamp("") == nil)
+        #expect(InboxStore.parseTimestamp("not-a-timestamp") == nil)
+    }
+
+    @Test @MainActor func inboxDeliveryQueuesOnlyRetryableOrAmbiguousFailures() {
+        let offline = InboxDeliveryPolicy.shouldQueue(
+            URLError(.notConnectedToInternet)
+        )
+        let unavailable = InboxDeliveryPolicy.shouldQueue(
+            EsangError.server(status: 503, body: "")
+        )
+        let ambiguousReceipt = InboxDeliveryPolicy.shouldQueue(
+            EsangError.decoding("missing receipt")
+        )
+        let forbidden = InboxDeliveryPolicy.shouldQueue(
+            EsangError.server(status: 403, body: "")
+        )
+        let unauthorized = InboxDeliveryPolicy.shouldQueue(
+            EsangError.unauthorized
+        )
+
+        #expect(offline)
+        #expect(unavailable)
+        #expect(ambiguousReceipt)
+        #expect(!forbidden)
+        #expect(!unauthorized)
+    }
+
+    @Test @MainActor func compactInboxAgePreservesConversationTitleSpace() {
+        let now = Date(timeIntervalSince1970: 1_800_000_100)
+        #expect(InboxStore.compactAge(now.addingTimeInterval(-45), at: now) == "NOW")
+        #expect(InboxStore.compactAge(now.addingTimeInterval(-180), at: now) == "3M")
+        #expect(InboxStore.compactAge(now.addingTimeInterval(-7_200), at: now) == "2H")
+    }
+
     @Test func routeEvidenceCannotCrossLoadIdentity() {
         let receivedAt = Date(timeIntervalSince1970: 1_800_000_050)
         let loadA = RouteProgressPayload(

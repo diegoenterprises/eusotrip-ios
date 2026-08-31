@@ -86,11 +86,25 @@ final class UnreadMessageStore: ObservableObject {
         }
     }
 
-    /// Called when the user opens a conversation. While a conversation
-    /// is active we zero its local count AND suppress optimistic bumps
-    /// for `message:new` events on that thread.
+    func reset() {
+        refreshTask?.cancel()
+        refreshTask = nil
+        activeConversationId = nil
+        total = 0
+        byConversation = [:]
+        NotificationCenter.default.post(
+            name: .eusoUnreadCountChanged, object: nil
+        )
+    }
+
+    /// Called when the user opens a conversation. Opening suppresses
+    /// optimistic bumps for that thread, but does not clear its unread
+    /// evidence until `messages.markAsRead` confirms the server write.
     func didOpenConversation(_ conversationId: String) {
         activeConversationId = conversationId
+    }
+
+    func didConfirmRead(_ conversationId: String) {
         let local = byConversation[conversationId] ?? 0
         if local > 0 {
             byConversation[conversationId] = 0

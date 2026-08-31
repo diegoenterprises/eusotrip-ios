@@ -149,6 +149,8 @@ final class WatchAuthBridge: NSObject {
             "ts": Date().timeIntervalSince1970
         ]
         cachedAuth = nil
+        cachedUnreadSnapshot = nil
+        mergedContext.removeValue(forKey: "unread")
         publishContext(channel: "auth", payload: context)
         if session.isReachable {
             session.sendMessage(context, replyHandler: nil) { _ in }
@@ -295,9 +297,12 @@ final class WatchAuthBridge: NSObject {
     /// rows even when it's offline. The watch receiver interprets the
     /// `messaging.unread` op (see `WatchConnectivityManager.applyContext`).
     func pushUnreadCount(total: Int, byConversation: [String: Int]) {
-        guard let session else { return }
+        guard let session,
+              let userId = cachedAuth?["userId"] as? String,
+              !userId.isEmpty else { return }
         let ctx: [String: Any] = [
             "op": "messaging.unread",
+            "userId": userId,
             "total": total,
             "byConversation": byConversation,
             "ts": Date().timeIntervalSince1970

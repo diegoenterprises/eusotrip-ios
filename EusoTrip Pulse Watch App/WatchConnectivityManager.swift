@@ -22,6 +22,7 @@ enum PhoneActivationDestination: String, Equatable {
     case esang
     case wallet
     case hos
+    case messages
     case maps
     case dispatch
     case hazmat
@@ -42,6 +43,23 @@ struct PhoneActivationRequest {
     let reply: String
     let beginListening: Bool
     let autoSubmit: Bool
+    let conversationId: String?
+
+    init(
+        destination: PhoneActivationDestination?,
+        transcript: String,
+        reply: String,
+        beginListening: Bool,
+        autoSubmit: Bool,
+        conversationId: String? = nil
+    ) {
+        self.destination = destination
+        self.transcript = transcript
+        self.reply = reply
+        self.beginListening = beginListening
+        self.autoSubmit = autoSubmit
+        self.conversationId = conversationId
+    }
 
     func payload(at date: Date = Date()) -> [String: Any] {
         var payload: [String: Any] = [
@@ -54,6 +72,9 @@ struct PhoneActivationRequest {
         ]
         if let destination {
             payload["destination"] = destination.rawValue
+        }
+        if let conversationId, !conversationId.isEmpty {
+            payload["conversationId"] = conversationId
         }
         return payload
     }
@@ -277,7 +298,8 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
         reply: String?,
         destination: PhoneActivationDestination? = nil,
         beginListening: Bool = false,
-        autoSubmit: Bool = false
+        autoSubmit: Bool = false,
+        conversationId: String? = nil
     ) -> PhoneActivationDispatch {
         guard let session, session.activationState == .activated else { return .unavailable }
         let payload = PhoneActivationRequest(
@@ -285,7 +307,8 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
             transcript: transcript ?? "",
             reply: reply ?? "",
             beginListening: beginListening,
-            autoSubmit: autoSubmit
+            autoSubmit: autoSubmit,
+            conversationId: conversationId
         ).payload()
 
         if session.isReachable {
@@ -886,14 +909,21 @@ extension WatchConnectivityManager: WCSessionDelegate {
                     return s
                 }
                 if cleared {
+                    InboxStore.shared.resetForIdentity(nil)
                     AuthStore.shared?.update(token: nil, userId: nil, userName: nil, role: nil)
                 } else if let token = normalize(rawToken) {
                     // Additive update: only overwrite when we actually
                     // have a token. Missing user/name/role are allowed —
                     // keep the existing ones rather than clobbering.
+                    let nextUserId = normalize(rawUserId) ?? AuthStore.shared?.userId
+                    if let currentUserId = AuthStore.shared?.userId,
+                       let nextUserId,
+                       currentUserId != nextUserId {
+                        InboxStore.shared.resetForIdentity(nextUserId)
+                    }
                     AuthStore.shared?.update(
                         token: token,
-                        userId: normalize(rawUserId) ?? AuthStore.shared?.userId,
+                        userId: nextUserId,
                         userName: normalize(rawUserName) ?? AuthStore.shared?.userName,
                         role: normalize(rawRole) ?? AuthStore.shared?.role
                     )
@@ -949,9 +979,18 @@ extension WatchConnectivityManager: WCSessionDelegate {
             // the thread list to stamp a dot on the right rows even
             // without a fresh tRPC call.
             Task { @MainActor in
+                guard let userId = ctx["userId"] as? String,
+                      !userId.isEmpty,
+                      userId == AuthStore.shared?.userId else { return }
                 let total = ctx["total"] as? Int ?? 0
                 let map = ctx["byConversation"] as? [String: Int] ?? [:]
-                InboxStore.shared.applyRemoteUnread(total: total, map: map)
+                let observedAt = (ctx["ts"] as? TimeInterval).map(Date.init(timeIntervalSince1970:)) ?? Date()
+                InboxStore.shared.applyRemoteUnread(
+                    total: total,
+                    map: map,
+                    userId: userId,
+                    observedAt: observedAt
+                )
             }
         case "bol.result":
             // F15 — scan result from the iPhone companion. The phone
