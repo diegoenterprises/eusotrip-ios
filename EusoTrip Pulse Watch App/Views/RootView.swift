@@ -33,9 +33,25 @@ struct RootView: View {
     @ObservedObject private var dispatcher = VoiceActionDispatcher.shared
     @ObservedObject private var emergency = EmergencyController.shared
     @State private var sheetRoute: WatchRoute?
-    @State private var selectedTab = 0
+    @State private var selectedTab: Int
 
-    private var tabs: [WatchTab] { RoleComposition.tabs(for: auth.role) }
+    init() {
+        #if targetEnvironment(simulator)
+        let visualState = ProcessInfo.processInfo.environment["EUSOTRIP_PULSE_VISUAL_STATE"]
+        _selectedTab = State(initialValue: visualState?.hasPrefix("route") == true ? 2 : 0)
+        #else
+        _selectedTab = State(initialValue: 0)
+        #endif
+    }
+
+    private var tabs: [WatchTab] {
+        #if targetEnvironment(simulator)
+        if ProcessInfo.processInfo.environment["EUSOTRIP_PULSE_VISUAL_STATE"]?.hasPrefix("route") == true {
+            return RoleComposition.tabs(for: "DRIVER")
+        }
+        #endif
+        return RoleComposition.tabs(for: auth.role)
+    }
 
     var body: some View {
         // Role-aware tab composition — see RoleComposition.swift for the

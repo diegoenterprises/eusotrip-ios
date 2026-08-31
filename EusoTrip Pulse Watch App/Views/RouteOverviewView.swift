@@ -2,9 +2,8 @@
 //  RouteOverviewView.swift
 //  EusoTrip Watch App
 //
-//  Driver persona's 5th tab — a micro route overview for the active
-//  load: ETA, miles remaining, next waypoint, weather flag, plus
-//  "Find rest stop" and "Navigate on iPhone" handoffs.
+//  Driver route evidence for the active load. Every estimate is scoped to
+//  the current load identity and every iPhone action reports its handoff state.
 //
 
 import SwiftUI
@@ -16,176 +15,454 @@ struct RouteOverviewView: View {
     @EnvironmentObject var connectivity: WatchConnectivityManager
     @EnvironmentObject var loads: LoadStore
     @StateObject private var route = RouteProgressStore.shared
+    @State private var phoneOutcome: RoutePhoneOutcome?
+
+    private var activeLoad: WatchLoad? {
+        #if targetEnvironment(simulator)
+        if isActiveRouteVisualQA {
+            return WatchLoad(
+                id: "visual-route-7c3a",
+                displayId: "LD-7C3A",
+                originCity: "Los Angeles",
+                originState: "CA",
+                destCity: "Phoenix",
+                destState: "AZ",
+                pickupAt: nil,
+                deliverBy: nil,
+                ratePerMile: nil,
+                totalRate: nil,
+                miles: 372,
+                status: "in_transit",
+                hazmat: false,
+                temperatureF: 38,
+                equipment: "reefer",
+                brokerName: nil
+            )
+        }
+        #endif
+        return loads.active
+    }
+
+    private var activeLoadId: String? { activeLoad?.id }
+
+    private var isActiveRouteVisualQA: Bool {
+        #if targetEnvironment(simulator)
+        return ProcessInfo.processInfo.environment["EUSOTRIP_PULSE_VISUAL_STATE"] == "route-active"
+        #else
+        return false
+        #endif
+    }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: S.s2) {
-                if let load = loads.active {
-                    header(load)
-                    statRow
-                    waypointRow
-                    if let err = route.lastError, route.etaText == "—" {
-                        // Distinguish "route data unreachable" from "no
-                        // route data on this load" — staleness must be
-                        // visible, never a permanent silent Pending.
-                        HStack(spacing: 4) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .font(.system(size: 10))
-                                .foregroundStyle(Color.esangAmber)
-                            Text(err)
-                                .font(.system(size: 9, weight: .medium))
-                                .foregroundStyle(Color.esangAmber)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(6)
-                        .background(Color.orange.opacity(0.15), in: RoundedRectangle(cornerRadius: R.sm))
-                    }
-                    actions
-                } else {
-                    emptyState
+        VStack(spacing: 6) {
+            if let load = activeLoad {
+                routeHeader(load)
+                metricRail
+                routeEvidencePanel
+                routeActions(load)
+            } else {
+                emptyState
+                if let phoneOutcome {
+                    phoneHandoffReceipt(phoneOutcome)
                 }
             }
-            .padding(.vertical, S.s1)
-            .padding(.horizontal, S.s2)
         }
+        .frame(maxHeight: .infinity, alignment: .top)
+        .padding(.horizontal, S.s2)
+        .padding(.vertical, 2)
         .navigationTitle("Route")
-        .task { await route.refresh(auth: auth, loadId: loads.active?.id) }
-        // The one-shot .task used to fire BEFORE the phone pushed the
-        // active load, leaving "—/—/Pending" up forever. Re-run the
-        // fetch whenever the active load or the auth mirror lands.
+        .task {
+            #if targetEnvironment(simulator)
+            if isActiveRouteVisualQA {
+                route.installActiveRouteVisualQA(loadId: "visual-route-7c3a")
+                return
+            }
+            #endif
+            await route.refresh(auth: auth, loadId: activeLoadId)
+        }
         .onChange(of: loads.active?.id) { _, newId in
+            guard !isActiveRouteVisualQA else { return }
+            phoneOutcome = nil
             Task { await route.refresh(auth: auth, loadId: newId) }
         }
-        .onChange(of: auth.isSignedIn) { _, signedIn in
-            guard signedIn else { return }
-            Task { await route.refresh(auth: auth, loadId: loads.active?.id) }
-        }
-        // Mask overscroll bleed of the brand-gradient route header +
-        // colored stat cards into the curved bezel corners.
-        .clipShape(ContainerRelativeShape())
-    }
-
-    @ViewBuilder
-    private func header(_ load: WatchLoad) -> some View {
-        VStack(spacing: 2) {
-            Text(load.displayId)
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(.secondary)
-            Text("\(load.originShort) → \(load.destShort)")
-                .font(.system(size: 13, weight: .semibold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 6)
-        .background(LinearGradient.esangPrimary, in: RoundedRectangle(cornerRadius: R.md))
-    }
-
-    private var statRow: some View {
-        HStack(spacing: 6) {
-            statCard(value: route.etaText, label: "ETA", tint: .esangBlue)
-            statCard(value: route.milesRemainingText, label: "MILES", tint: .esangGreen)
+        .onChange(of: auth.isSignedIn) { _, _ in
+            guard !isActiveRouteVisualQA else { return }
+            Task { await route.refresh(auth: auth, loadId: activeLoadId) }
         }
     }
 
-    @ViewBuilder
-    private func statCard(value: String, label: String, tint: Color) -> some View {
-        VStack(spacing: 1) {
-            Text(value)
-                .font(.system(size: 13, weight: .bold, design: .rounded))
-                .monospacedDigit()
-                .foregroundStyle(tint)
-            Text(label)
-                .font(.system(size: 8, weight: .medium))
-                .foregroundStyle(.secondary)
-                .tracking(1)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 6)
-        .background(Color.esangCard, in: RoundedRectangle(cornerRadius: R.sm))
-    }
-
-    private var waypointRow: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("NEXT WAYPOINT")
-                .font(.system(size: 8, weight: .medium))
-                .tracking(1)
-                .foregroundStyle(.secondary)
-            HStack {
-                Circle().fill(Color.esangBlue).frame(width: 6, height: 6)
-                Text(route.nextWaypoint)
-                    .font(.system(size: 11, weight: .semibold))
-                    .lineLimit(2)
+    private func routeHeader(_ load: WatchLoad) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(route.evidenceColor)
+                    .frame(width: 6, height: 6)
+                Text("ACTIVE ROUTE")
+                    .font(.system(size: 8, weight: .bold))
+                    .tracking(1)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 4)
+                Text(load.displayId)
+                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
-            // Bespoke per-load weather chip — glyph from WatchWeatherGlyph
-            // (ported verbatim from the lane-impact reference), text from
-            // the REAL flag/headline the pipeline handed down. No SF
-            // Symbol, no emoji. Renders nothing when there is no signal.
-            if let severity = route.weatherSeverity {
-                WatchWeatherChip(severity: severity, label: route.weatherFlagDisplay)
-                    .padding(.top, 2)
+
+            Text("\(load.originCity) -> \(load.destCity)")
+                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+
+            TimelineView(.periodic(from: .now, by: 60)) { context in
+                Text(route.evidenceLabel(at: context.date))
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(route.evidenceColor)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(8)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(Color.esangCard, in: RoundedRectangle(cornerRadius: R.md))
+        .overlay {
+            RoundedRectangle(cornerRadius: R.md)
+                .stroke(route.evidenceColor.opacity(0.55), lineWidth: 1)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var metricRail: some View {
+        HStack(spacing: 0) {
+            routeMetric(value: route.etaText, label: "ETA")
+            Rectangle()
+                .fill(Color.white.opacity(0.12))
+                .frame(width: 1, height: 27)
+            routeMetric(value: route.milesRemainingText, label: "MILES LEFT")
+        }
+        .padding(.vertical, 3)
+        .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: R.sm))
+    }
+
+    private func routeMetric(value: String, label: String) -> some View {
+        VStack(spacing: 2) {
+            Text(value)
+                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(Color.esangBlue)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text(label)
+                .font(.system(size: 7, weight: .bold))
+                .tracking(0.8)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(label), \(value == "-" ? "not supplied" : value)")
+    }
+
+    @ViewBuilder
+    private var routeEvidencePanel: some View {
+        if let phoneOutcome {
+            phoneHandoffReceipt(phoneOutcome)
+        } else if let message = route.failureMessage {
+            evidenceWarning(message)
+        } else {
+            waypointPanel
+        }
+    }
+
+    private var waypointPanel: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text("NEXT ROUTED STOP")
+                .font(.system(size: 7, weight: .bold))
+                .tracking(0.9)
+                .foregroundStyle(.secondary)
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: route.nextWaypoint == nil ? "location.slash" : "location.fill")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(route.nextWaypoint == nil ? Color.esangAmber : Color.esangBlue)
+                Text(route.nextWaypoint ?? "No routed stop supplied")
+                    .font(.system(size: 10, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+            if let severity = route.weatherSeverity {
+                WatchWeatherChip(severity: severity, label: route.weatherFlagDisplay)
+                    .frame(maxHeight: 16)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 5)
         .background(Color.esangCard, in: RoundedRectangle(cornerRadius: R.sm))
     }
 
-    private var actions: some View {
-        VStack(spacing: 4) {
-            actionButton(
-                label: "Find rest stop",
-                systemImage: "fork.knife",
-                gradient: .esangPrimary
+    private func evidenceWarning(_ message: String) -> some View {
+        HStack(alignment: .top, spacing: 5) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 8))
+                .foregroundStyle(Color.esangAmber)
+            Text(message)
+                .font(.system(size: 8, weight: .medium))
+                .foregroundStyle(Color.esangAmber)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(6)
+        .background(Color.esangAmber.opacity(0.12), in: RoundedRectangle(cornerRadius: R.sm))
+    }
+
+    private func routeActions(_ load: WatchLoad) -> some View {
+        HStack(spacing: 5) {
+            routeActionButton(
+                label: "Navigate",
+                systemImage: "location.north.fill"
             ) {
-                connectivity.requestPhoneActivation(
-                    transcript: "find rest stop",
-                    reply: "Searching rest stops on your iPhone."
+                sendToPhone(
+                    .navigation,
+                    transcript: "navigate to \(load.destShort)",
+                    destination: .maps,
+                    reply: "Opening driving directions on your iPhone."
                 )
             }
-            actionButton(
-                label: "Navigate on iPhone",
-                systemImage: "map.fill",
-                gradient: .esangPrimary
+
+            routeActionButton(
+                label: "Rest stop",
+                systemImage: "bed.double.fill"
             ) {
-                connectivity.requestPhoneActivation(
-                    transcript: "navigate to \(loads.active?.destShort ?? "")",
-                    reply: "Opening Maps on your iPhone."
+                sendToPhone(
+                    .restStop,
+                    transcript: "rest stop near my route to \(load.destShort)",
+                    destination: .maps,
+                    reply: "Searching for a rest stop on your iPhone."
                 )
             }
         }
     }
 
-    @ViewBuilder
-    private func actionButton(label: String, systemImage: String, gradient: LinearGradient, action: @escaping () -> Void) -> some View {
+    private func routeActionButton(
+        label: String,
+        systemImage: String,
+        action: @escaping () -> Void
+    ) -> some View {
         Button {
             WKInterfaceDevice.current().play(.click)
             action()
         } label: {
-            HStack(spacing: 4) {
+            HStack(spacing: 5) {
                 Image(systemName: systemImage)
-                Text(label).font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 10, weight: .bold))
+                Text(label)
+                    .font(.system(size: 11, weight: .semibold))
             }
+            .padding(.horizontal, 7)
             .frame(maxWidth: .infinity, minHeight: 28)
-            .background(gradient, in: RoundedRectangle(cornerRadius: R.sm))
             .foregroundStyle(.white)
+            .background(LinearGradient.esangPrimary, in: RoundedRectangle(cornerRadius: R.sm))
         }
         .buttonStyle(.plain)
     }
 
     private var emptyState: some View {
-        VStack(spacing: 6) {
-            Image(systemName: "map")
-                .font(.system(size: 24))
-                .foregroundStyle(.secondary)
-            Text("No active route")
-                .font(.system(size: 12, weight: .semibold))
-            Text("Ask Esang for loads.")
-                .font(.system(size: 10))
-                .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 7) {
+                Image(systemName: "point.bottomleft.forward.to.point.topright.scurvepath")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(Color.esangBlue)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("No active route")
+                        .font(.system(size: 14, weight: .bold))
+                    Text("Pulse has no active load from EusoTrip.")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            routeActionButton(label: "Find load with ESANG", systemImage: "waveform") {
+                sendToPhone(
+                    .findLoad,
+                    transcript: "Find an active load for me",
+                    destination: .esang,
+                    reply: "Continuing load search with ESANG on your iPhone.",
+                    autoSubmit: true
+                )
+            }
         }
-        .padding(.vertical, 20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(Color.esangCard, in: RoundedRectangle(cornerRadius: R.md))
+        .overlay {
+            RoundedRectangle(cornerRadius: R.md)
+                .stroke(Color.esangBlue.opacity(0.45), lineWidth: 1)
+        }
+    }
+
+    private func phoneHandoffReceipt(_ outcome: RoutePhoneOutcome) -> some View {
+        HStack(alignment: .top, spacing: 5) {
+            Image(systemName: outcome.systemImage)
+                .font(.system(size: 9, weight: .bold))
+            Text(outcome.message)
+                .font(.system(size: 9, weight: .medium))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .foregroundStyle(outcome.color)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(7)
+        .background(outcome.color.opacity(0.12), in: RoundedRectangle(cornerRadius: R.sm))
+        .accessibilityElement(children: .combine)
+    }
+
+    private func sendToPhone(
+        _ intent: RoutePhoneIntent,
+        transcript: String,
+        destination: PhoneActivationDestination,
+        reply: String,
+        autoSubmit: Bool = false
+    ) {
+        let dispatch = connectivity.requestPhoneActivation(
+            transcript: transcript,
+            reply: reply,
+            destination: destination,
+            beginListening: false,
+            autoSubmit: autoSubmit
+        )
+        phoneOutcome = RoutePhoneOutcome(intent: intent, dispatch: dispatch)
+    }
+}
+
+enum RoutePhoneIntent: String, Equatable {
+    case findLoad = "ESANG request"
+    case restStop = "Rest-stop request"
+    case navigation = "Directions request"
+}
+
+struct RoutePhoneOutcome: Equatable {
+    let intent: RoutePhoneIntent
+    let dispatch: PhoneActivationDispatch
+
+    var message: String {
+        switch dispatch {
+        case .sent:
+            return "\(intent.rawValue) sent to iPhone."
+        case .queued:
+            return "\(intent.rawValue) queued until iPhone reconnects."
+        case .unavailable:
+            return "iPhone bridge unavailable. Open EusoTrip on iPhone."
+        }
+    }
+
+    var systemImage: String {
+        switch dispatch {
+        case .sent: return "checkmark.circle.fill"
+        case .queued: return "clock.arrow.circlepath"
+        case .unavailable: return "iphone.slash"
+        }
+    }
+
+    var color: Color {
+        switch dispatch {
+        case .sent: return .esangGreen
+        case .queued: return .esangAmber
+        case .unavailable: return .esangDanger
+        }
+    }
+}
+
+struct RouteProgressPayload: Decodable, Equatable {
+    let etaMinutes: Int?
+    let milesRemaining: Double?
+    let nextWaypoint: String?
+    let weatherFlag: String?
+}
+
+struct RouteProgressEvidence: Equatable {
+    enum Phase: Equatable {
+        case idle
+        case needsSignIn
+        case loading
+        case received
+        case failed
+        #if targetEnvironment(simulator)
+        case visualQA
+        #endif
+    }
+
+    var loadId: String?
+    var etaMinutes: Int?
+    var milesRemaining: Double?
+    var nextWaypoint: String?
+    var weatherFlag: String?
+    var weatherHeadline: String?
+    var receivedAt: Date?
+    var lastError: String?
+    var phase: Phase = .idle
+
+    var hasRouteValues: Bool {
+        etaMinutes != nil || milesRemaining != nil || nextWaypoint != nil
+    }
+
+    mutating func begin(loadId: String?, signedIn: Bool) {
+        guard signedIn else {
+            self = RouteProgressEvidence(
+                loadId: loadId,
+                lastError: "Sign in on iPhone to request route evidence.",
+                phase: .needsSignIn
+            )
+            return
+        }
+        guard let loadId else {
+            self = RouteProgressEvidence()
+            return
+        }
+        if self.loadId != loadId {
+            self = RouteProgressEvidence(loadId: loadId, phase: .loading)
+        } else {
+            phase = .loading
+            lastError = nil
+        }
+    }
+
+    @discardableResult
+    mutating func applyProgress(
+        _ payload: RouteProgressPayload,
+        for loadId: String,
+        receivedAt: Date
+    ) -> Bool {
+        guard self.loadId == loadId else { return false }
+        etaMinutes = payload.etaMinutes
+        milesRemaining = payload.milesRemaining
+        nextWaypoint = payload.nextWaypoint?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        weatherFlag = payload.weatherFlag?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        weatherHeadline = nil
+        self.receivedAt = receivedAt
+        lastError = nil
+        phase = .received
+        return true
+    }
+
+    @discardableResult
+    mutating func fail(for loadId: String, message: String) -> Bool {
+        guard self.loadId == loadId else { return false }
+        lastError = message
+        phase = .failed
+        return true
+    }
+
+    @discardableResult
+    mutating func applyLaneImpact(
+        riskTier: String,
+        headline: String?,
+        for loadId: String
+    ) -> Bool {
+        guard self.loadId == loadId else { return false }
+        let tier = riskTier.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !tier.isEmpty, tier != "none" else { return false }
+        weatherFlag = tier
+        weatherHeadline = headline?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        return true
     }
 }
 
@@ -193,50 +470,115 @@ struct RouteOverviewView: View {
 final class RouteProgressStore: ObservableObject {
     static let shared = RouteProgressStore()
 
-    @Published var etaText: String = "—"
-    @Published var milesRemainingText: String = "—"
-    @Published var nextWaypoint: String = "Pending"
-    /// Last transport failure — rendered as a small banner when the
-    /// stats are still placeholders so "unreachable" is distinguishable
-    /// from "no route data on this load".
-    @Published var lastError: String?
+    @Published private(set) var evidence = RouteProgressEvidence()
+    private var requestGeneration = 0
 
-    /// The raw, REAL weather signal that reached the wrist. Sourced (in
-    /// priority order) from:
-    ///   1. `weather.forLoad → laneImpact` — the canonical per-load
-    ///      tri-modal severity (riskTier + headline) that the phone's v3
-    ///      card renders. This is the strongest signal: it's the same
-    ///      WeatherKit-backed lane analysis the founder's weather surface
-    ///      uses.
-    ///   2. `routeOptimization.getProgress.weatherFlag` — a coarse route-
-    ///      level flag string ("severe-thunderstorm" | "wind-advisory" | …).
-    ///      Used only when laneImpact is unavailable.
-    /// Stays nil when neither source reports weather — we never fabricate.
-    @Published var weatherFlag: String?
-
-    /// Human-readable label for the chip. The lane-impact headline when we
-    /// have it, otherwise a prettified flag string. Honest "—" never shown
-    /// here because the chip itself is hidden when `weatherSeverity == nil`.
-    @Published var weatherHeadline: String?
-
-    /// Bespoke glyph bucket derived from the real signal. nil → the view
-    /// renders no weather chip at all (honest empty, not a default storm).
-    var weatherSeverity: WatchWeatherSeverity? { WatchWeatherSeverity.from(flag: weatherFlag) }
-
-    /// The string the chip prints: the real lane-impact headline if the
-    /// server sent one, else the flag prettified ("wind-advisory" → "Wind
-    /// advisory"). Both come straight from server fields.
-    var weatherFlagDisplay: String {
-        if let h = weatherHeadline, !h.isEmpty { return h }
-        guard let f = weatherFlag, !f.isEmpty else { return "—" }
-        return f.replacingOccurrences(of: "-", with: " ").capitalizedFirst
+    var etaText: String {
+        guard let minutes = evidence.etaMinutes else { return "-" }
+        let hours = minutes / 60
+        let remainder = minutes % 60
+        if hours == 0 { return "\(remainder)m" }
+        return String(format: "%dh %02dm", hours, remainder)
     }
 
-    func refresh(auth: AuthStore, loadId: String?) async {
-        guard auth.isSignedIn, let loadId else { return }
-        let client = EsangClient(auth: auth)
+    var milesRemainingText: String {
+        guard let miles = evidence.milesRemaining else { return "-" }
+        return String(format: "%.0f", miles)
+    }
 
-        // --- Route progress (ETA / miles / waypoint + coarse weather flag) ---
+    var nextWaypoint: String? { evidence.nextWaypoint }
+
+    var weatherSeverity: WatchWeatherSeverity? {
+        WatchWeatherSeverity.from(flag: evidence.weatherFlag)
+    }
+
+    var weatherFlagDisplay: String {
+        if let headline = evidence.weatherHeadline { return headline }
+        guard let flag = evidence.weatherFlag else { return "-" }
+        return flag.replacingOccurrences(of: "-", with: " ").capitalizedFirst
+    }
+
+    var evidenceColor: Color {
+        switch evidence.phase {
+        case .received where evidence.hasRouteValues:
+            return .esangGreen
+        case .failed:
+            return evidence.receivedAt == nil ? .esangDanger : .esangAmber
+        case .needsSignIn, .received:
+            return .esangAmber
+        case .idle, .loading:
+            return .esangBlue
+        #if targetEnvironment(simulator)
+        case .visualQA:
+            return .esangBlue
+        #endif
+        }
+    }
+
+    var failureMessage: String? {
+        switch evidence.phase {
+        case .needsSignIn, .failed:
+            return evidence.lastError
+        case .received where !evidence.hasRouteValues:
+            return "The server supplied no ETA, distance, or routed stop for this load."
+        #if targetEnvironment(simulator)
+        case .visualQA:
+            return nil
+        #endif
+        default:
+            return nil
+        }
+    }
+
+    func evidenceLabel(at now: Date) -> String {
+        switch evidence.phase {
+        case .idle:
+            return "NO ACTIVE ROUTE EVIDENCE"
+        case .needsSignIn:
+            return "IPHONE IDENTITY REQUIRED"
+        case .loading:
+            if let receivedAt = evidence.receivedAt {
+                return "REFRESHING · LAST SERVER RESPONSE \(ageLabel(receivedAt, at: now))"
+            }
+            return "REQUESTING SERVER ROUTE EVIDENCE"
+        case .received:
+            guard evidence.hasRouteValues else { return "SERVER RESPONSE · ROUTE DATA MISSING" }
+            return "SERVER RESPONSE · \(ageLabel(evidence.receivedAt, at: now))"
+        case .failed:
+            if let receivedAt = evidence.receivedAt {
+                return "LAST SERVER RESPONSE \(ageLabel(receivedAt, at: now)) · REFRESH FAILED"
+            }
+            return "ROUTE SERVICE UNREACHABLE"
+        #if targetEnvironment(simulator)
+        case .visualQA:
+            return "LAYOUT QA · SIMULATOR FIXTURE"
+        #endif
+        }
+    }
+
+    #if targetEnvironment(simulator)
+    func installActiveRouteVisualQA(loadId: String) {
+        evidence = RouteProgressEvidence(
+            loadId: loadId,
+            etaMinutes: 258,
+            milesRemaining: 241,
+            nextWaypoint: "Quartzsite, AZ",
+            weatherFlag: "wind-advisory",
+            weatherHeadline: "Crosswind advisory",
+            receivedAt: nil,
+            lastError: nil,
+            phase: .visualQA
+        )
+    }
+    #endif
+
+    func refresh(auth: AuthStore, loadId: String?) async {
+        requestGeneration += 1
+        let generation = requestGeneration
+        evidence.begin(loadId: loadId, signedIn: auth.isSignedIn)
+        guard auth.isSignedIn, let loadId else { return }
+
+        let client = EsangClient(auth: auth)
         do {
             let data = try await client.queryJSON(
                 "routeOptimization.getProgress",
@@ -244,38 +586,19 @@ final class RouteProgressStore: ObservableObject {
             )
             struct Envelope: Decodable {
                 struct Result: Decodable {
-                    struct DataContainer: Decodable { let json: Progress }
+                    struct DataContainer: Decodable { let json: RouteProgressPayload }
                     let data: DataContainer
                 }
                 let result: Result
             }
-            struct Progress: Decodable {
-                let etaMinutes: Int?
-                let milesRemaining: Double?
-                let nextWaypoint: String?
-                let weatherFlag: String?
-            }
-            let env = try JSONDecoder().decode(Envelope.self, from: data)
-            let p = env.result.data.json
-            etaText = p.etaMinutes.map { formatEta($0) } ?? etaText
-            milesRemainingText = p.milesRemaining.map { String(format: "%.0f", $0) } ?? milesRemainingText
-            nextWaypoint = p.nextWaypoint ?? nextWaypoint
-            // Coarse route flag is the baseline weather signal.
-            weatherFlag = p.weatherFlag
-            weatherHeadline = nil
-            lastError = nil
+            let payload = try JSONDecoder().decode(Envelope.self, from: data).result.data.json
+            guard generation == requestGeneration else { return }
+            evidence.applyProgress(payload, for: loadId, receivedAt: Date())
         } catch {
-            // keep last known — honest staleness, no fabrication —
-            // but record the failure so the view can badge it.
-            lastError = (error as? LocalizedError)?.errorDescription
-                ?? "Can't reach route progress"
+            guard generation == requestGeneration else { return }
+            evidence.fail(for: loadId, message: compactError(error))
         }
 
-        // --- Canonical per-load lane impact (preferred weather signal) ---
-        // weather.forLoad is the same tRPC the phone's v3 card uses. When
-        // it reports an actionable riskTier we override the coarse route
-        // flag with the richer severity + headline. When it's unavailable
-        // or returns `none`, we keep whatever getProgress gave us.
         do {
             let data = try await client.queryJSON(
                 "weather.forLoad",
@@ -296,35 +619,47 @@ final class RouteProgressStore: ObservableObject {
                 }
                 let laneImpact: LaneImpact?
             }
-            let env = try JSONDecoder().decode(Envelope.self, from: data)
-            if let li = env.result.data.json.laneImpact,
-               li.available == true,
-               let tier = li.riskTier?.lowercased(),
-               tier != "none", !tier.isEmpty {
-                // Lane impact wins — feed the bespoke severity off the
-                // canonical riskTier, label off the canonical headline.
-                weatherFlag = tier
-                weatherHeadline = li.headline
-            }
+            let forLoad = try JSONDecoder().decode(Envelope.self, from: data).result.data.json
+            guard generation == requestGeneration,
+                  let laneImpact = forLoad.laneImpact,
+                  laneImpact.available == true,
+                  let riskTier = laneImpact.riskTier else { return }
+            evidence.applyLaneImpact(
+                riskTier: riskTier,
+                headline: laneImpact.headline,
+                for: loadId
+            )
         } catch {
-            // weather.forLoad unreachable → fall back to the route flag
-            // already set above. Honest: no fabricated severity.
+            // The route response may still carry a coarse weather flag.
         }
     }
 
-    private func formatEta(_ minutes: Int) -> String {
-        let h = minutes / 60
-        let m = minutes % 60
-        if h == 0 { return "\(m)m" }
-        return String(format: "%dh %02dm", h, m)
+    private func compactError(_ error: Error) -> String {
+        let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty || trimmed.count > 96 {
+            return "Can't refresh route evidence from EusoTrip."
+        }
+        return trimmed
+    }
+
+    private func ageLabel(_ date: Date?, at now: Date) -> String {
+        guard let date else { return "NOW" }
+        let seconds = max(0, Int(now.timeIntervalSince(date)))
+        if seconds < 60 { return "NOW" }
+        let minutes = seconds / 60
+        if minutes < 60 { return "\(minutes)M AGO" }
+        let hours = minutes / 60
+        if hours < 24 { return "\(hours)H AGO" }
+        return "\(hours / 24)D AGO"
     }
 }
 
 private extension String {
-    /// Capitalises only the first character, leaving the rest as-is — so
-    /// "wind advisory" → "Wind advisory" (not "Wind Advisory").
+    var nilIfEmpty: String? { isEmpty ? nil : self }
+
     var capitalizedFirst: String {
-        guard let first = first else { return self }
+        guard let first else { return self }
         return first.uppercased() + dropFirst()
     }
 }

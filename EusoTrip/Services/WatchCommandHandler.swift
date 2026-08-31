@@ -425,14 +425,26 @@ final class WatchCommandHandler: NSObject, ObservableObject {
                 autoSubmit: autoSubmit,
                 beginListening: beginListening || transcript.isEmpty
             )
-        } else if destination == "home"
-                    || transcript.isEmpty
-                    || lower.contains("open eusotrip")
-                    || lower.contains("home") {
+        } else if destination == "home" {
             // Plain "open the app" request from the wrist (pairing gate
             // / Open-on-iPhone pill). Landing on the Home screen IS the
             // destination — set NO deeplink so no sheet covers it; the
             // local notification below is the one-tap opener.
+            pendingDeeplink = nil
+        } else if destination == "wallet" {
+            pendingDeeplink = .wallet
+        } else if destination == "hos" {
+            pendingDeeplink = .hos
+        } else if destination == "maps" {
+            pendingDeeplink = .maps(query: transcript)
+        } else if destination == "dispatch" {
+            pendingDeeplink = .dispatchCall
+        } else if destination == "hazmat" {
+            pendingDeeplink = .hazmatEscort
+        } else if transcript.isEmpty
+                    || lower.contains("open eusotrip")
+                    || lower.contains("home") {
+            // Legacy Pulse builds predate the explicit destination field.
             pendingDeeplink = nil
         } else if lower.contains("wallet") {
             pendingDeeplink = .wallet

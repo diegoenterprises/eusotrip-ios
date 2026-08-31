@@ -58,6 +58,76 @@ struct EusoTrip_Pulse_Watch_AppTests {
         #expect(payload["autoSubmit"] as? Bool == false)
     }
 
+    @Test func routeDirectionsTargetMapsWithoutVoiceFallback() {
+        let payload = PhoneActivationRequest(
+            destination: .maps,
+            transcript: "navigate to Dallas, TX",
+            reply: "Opening driving directions on your iPhone.",
+            beginListening: false,
+            autoSubmit: false
+        ).payload()
+
+        #expect(payload["destination"] as? String == "maps")
+        #expect(payload["transcript"] as? String == "navigate to Dallas, TX")
+        #expect(payload["beginListening"] as? Bool == false)
+        #expect(payload["autoSubmit"] as? Bool == false)
+    }
+
+    @Test func routeEvidenceCannotCrossLoadIdentity() {
+        let receivedAt = Date(timeIntervalSince1970: 1_800_000_050)
+        let loadA = RouteProgressPayload(
+            etaMinutes: 95,
+            milesRemaining: 72,
+            nextWaypoint: "Dallas, TX",
+            weatherFlag: "wind-advisory"
+        )
+        var evidence = RouteProgressEvidence()
+
+        evidence.begin(loadId: "load-a", signedIn: true)
+        let acceptedLoadA = evidence.applyProgress(loadA, for: "load-a", receivedAt: receivedAt)
+        #expect(acceptedLoadA)
+        #expect(evidence.etaMinutes == 95)
+
+        evidence.begin(loadId: "load-b", signedIn: true)
+        #expect(evidence.loadId == "load-b")
+        #expect(evidence.etaMinutes == nil)
+        #expect(evidence.nextWaypoint == nil)
+        #expect(evidence.weatherFlag == nil)
+        let rejectedStaleLoadA = evidence.applyProgress(loadA, for: "load-a", receivedAt: receivedAt)
+        #expect(!rejectedStaleLoadA)
+        #expect(evidence.etaMinutes == nil)
+    }
+
+    @Test func routeServerNullsClearPriorValuesForTheSameLoad() {
+        let receivedAt = Date(timeIntervalSince1970: 1_800_000_060)
+        var evidence = RouteProgressEvidence(loadId: "load-a", phase: .loading)
+        let complete = RouteProgressPayload(
+            etaMinutes: 30,
+            milesRemaining: 18,
+            nextWaypoint: "Waco, TX",
+            weatherFlag: nil
+        )
+        let missing = RouteProgressPayload(
+            etaMinutes: nil,
+            milesRemaining: nil,
+            nextWaypoint: nil,
+            weatherFlag: nil
+        )
+
+        let acceptedComplete = evidence.applyProgress(complete, for: "load-a", receivedAt: receivedAt)
+        #expect(acceptedComplete)
+        #expect(evidence.hasRouteValues)
+        let acceptedMissing = evidence.applyProgress(
+            missing,
+            for: "load-a",
+            receivedAt: receivedAt.addingTimeInterval(30)
+        )
+        #expect(acceptedMissing)
+        #expect(!evidence.hasRouteValues)
+        #expect(evidence.etaMinutes == nil)
+        #expect(evidence.nextWaypoint == nil)
+    }
+
     @Test func emergencyRelayCarriesStableIdentityAndSilentContract() {
         let instant = Date(timeIntervalSince1970: 1_800_000_100)
         let payload = EmergencyPhoneRelayRequest(
