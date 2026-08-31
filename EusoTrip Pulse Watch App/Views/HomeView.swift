@@ -129,7 +129,11 @@ private struct IdleOrbPage: View {
                 longPressAction: { Task { await handleOrbLongPress() } },
                 longPressReleaseAction: { Task { await handleOrbPttRelease() } }
             )
-            .offset(y: drift)
+            // The unpaired state has a second, truthful action beneath
+            // the hint. Lift the orb just enough to reserve a stable
+            // footer zone instead of letting the hint ride over its
+            // lower arc on 46 mm hardware.
+            .offset(y: drift + (auth.isSignedIn ? 0 : -20))
             // When idle + signed in, stack two shadows (cool blue
             // offset up-left, warm magenta offset down-right) so the
             // outer halo reads as the brand gradient rather than a
@@ -325,7 +329,7 @@ private struct IdleOrbPage: View {
     /// VoiceOver label that reflects the current orb state so a visually
     /// impaired driver hears the same information a glance would convey.
     private var orbAccessibilityLabel: String {
-        if !auth.isSignedIn { return "Esang orb — waiting to pair with iPhone" }
+        if !auth.isSignedIn { return "Esang orb — unpaired; tap to ask on Apple Watch" }
         switch esang.state {
         case .idle:      return "Esang orb — idle"
         case .listening: return "Esang orb — listening"
@@ -335,9 +339,8 @@ private struct IdleOrbPage: View {
         }
     }
 
-    /// Bottom hint. Empty when signed out — the idle page is orb-only so
-    /// nothing competes with the brand; the orb itself is the pairing
-    /// affordance and tapping it requests the auth mirror silently.
+    /// Bottom hint. The orb stays usable while signed out, so the idle
+    /// instruction remains visible beside the separate iPhone continuation.
     /// Once signed in, renders per-state strings (listening / thinking /
     /// done / error) and a whisper mantra while idle.
     @ViewBuilder
@@ -479,6 +482,8 @@ private struct IdleOrbPage: View {
                         .font(.system(size: 9, weight: .bold))
                     Text("Continue on iPhone")
                         .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
                 }
                 .foregroundStyle(.white)
                 .padding(.horizontal, 10)
