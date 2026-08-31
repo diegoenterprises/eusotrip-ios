@@ -89,6 +89,51 @@ struct EusoTrip_Pulse_Watch_AppTests {
         #expect(payload["autoSubmit"] as? Bool == false)
     }
 
+    @Test func walletContinuationTargetsEusoWalletWithoutVoiceInference() {
+        let payload = PhoneActivationRequest(
+            destination: .wallet,
+            transcript: "",
+            reply: "Review EusoWallet on your iPhone.",
+            beginListening: false,
+            autoSubmit: false
+        ).payload()
+
+        #expect(payload["destination"] as? String == "wallet")
+        #expect(payload["transcript"] as? String == "")
+        #expect(payload["beginListening"] as? Bool == false)
+        #expect(payload["autoSubmit"] as? Bool == false)
+    }
+
+    @Test @MainActor func walletTimestampsStayUnknownWhenEvidenceIsMissing() {
+        #expect(WalletStore.parseTimestamp(nil) == nil)
+        #expect(WalletStore.parseTimestamp("") == nil)
+        #expect(WalletStore.parseTimestamp("not-a-timestamp") == nil)
+        #expect(WalletStore.parseTimestamp("2026-08-31") != nil)
+    }
+
+    @Test @MainActor func walletEntryDirectionUsesLedgerSemantics() {
+        #expect(WatchWalletEntryFlow.resolve(type: "earnings", amount: 1900) == .incoming)
+        #expect(WatchWalletEntryFlow.resolve(type: "payout", amount: 850) == .outgoing)
+        #expect(WatchWalletEntryFlow.resolve(type: "adjustment", amount: -42) == .outgoing)
+        #expect(WatchWalletEntryFlow.resolve(type: nil, amount: nil) == .neutral)
+    }
+
+    @Test @MainActor func walletEvidenceClearsWhenIdentityChanges() {
+        let store = WalletStore()
+        #if targetEnvironment(simulator)
+        store.installVisualQA(mode: "wallet-active")
+        #expect(store.balance != nil)
+        #expect(!store.recent.isEmpty)
+        #endif
+
+        store.resetForIdentity("another-user")
+        #expect(store.boundUserId == "another-user")
+        #expect(store.balance == nil)
+        #expect(store.recent.isEmpty)
+        #expect(!store.hasLoadedBalance)
+        #expect(!store.hasLoadedActivity)
+    }
+
     @Test func phoneZeroUnreadRemainsAuthoritativeOverOlderServerRows() {
         let phoneAt = Date(timeIntervalSince1970: 1_800_000_010)
         var evidence = InboxUnreadEvidence(userId: "user-a")
