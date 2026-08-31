@@ -127,6 +127,11 @@ struct MeSafetyCoach: View {
     @EnvironmentObject private var session: EusoTripSession
     @StateObject private var store = SafetyCoachStore()
     @FocusState private var focusFieldActive: Bool
+    private let onClose: (() -> Void)?
+
+    init(onClose: (() -> Void)? = nil) {
+        self.onClose = onClose
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -142,7 +147,11 @@ struct MeSafetyCoach: View {
                     errorBanner(e)
                 case .loaded(let pack):
                     heroSummary(pack)
-                    coachList(pack)
+                    if pack.items.isEmpty {
+                        generationUnavailable(pack)
+                    } else {
+                        coachList(pack)
+                    }
                 }
                 disclosureFooter
             }
@@ -162,12 +171,16 @@ struct MeSafetyCoach: View {
                 Text("Safety Coach")
                     .font(EType.h1)
                     .foregroundStyle(LinearGradient.diagonal)
-                Text("ESANG · role + vertical aware")
+                Text("ESANG · grounded advisory")
                     .font(EType.caption)
                     .foregroundStyle(palette.textTertiary)
             }
             Spacer()
             OrbeSang(state: store.isLoading ? .thinking : .idle, diameter: 40)
+            if let onClose {
+                SheetCloseButton(action: onClose)
+                    .accessibilityLabel("Close Safety Coach")
+            }
         }
     }
 
@@ -263,7 +276,7 @@ struct MeSafetyCoach: View {
                 .frame(height: 12)
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("\(pack.items.count) TAILORED ITEMS")
+                    Text("\(pack.items.count) ADVISORY ITEMS")
                         .font(EType.micro)
                         .tracking(1.3)
                         .foregroundStyle(palette.textTertiary)
@@ -279,11 +292,25 @@ struct MeSafetyCoach: View {
                     Text(Self.relativeTime(epochMillis: pack.generatedAt))
                         .font(EType.caption)
                         .foregroundStyle(palette.textTertiary)
-                    Text("UPDATED")
+                    Text(sourceLabel(pack.source))
                         .font(EType.micro)
                         .tracking(1.3)
                         .foregroundStyle(palette.textTertiary)
                 }
+            }
+            if let evidence = pack.evidence {
+                Divider().overlay(palette.borderFaint)
+                HStack(spacing: 0) {
+                    signalMetric("INCIDENTS", evidence.incidents)
+                    Divider().overlay(palette.borderFaint)
+                    signalMetric("HOS", evidence.violations)
+                    Divider().overlay(palette.borderFaint)
+                    signalMetric("NEAR-MISS", evidence.nearMisses)
+                }
+                Text("VERIFIED \(evidence.windowDays)-DAY EUSOTRIP SIGNAL")
+                    .font(EType.micro)
+                    .tracking(1.1)
+                    .foregroundStyle(palette.textTertiary)
             }
             tickCircumference
                 .frame(height: 12)
@@ -327,6 +354,22 @@ struct MeSafetyCoach: View {
         }
     }
 
+    private func signalMetric(_ label: String, _ value: Int) -> some View {
+        VStack(spacing: 2) {
+            Text("\(value)")
+                .font(EType.title)
+                .monospacedDigit()
+                .foregroundStyle(value == 0 ? AnyShapeStyle(palette.textPrimary) : AnyShapeStyle(Brand.warning))
+            Text(label)
+                .font(EType.micro)
+                .tracking(0.7)
+                .foregroundStyle(palette.textTertiary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
     private func coachCard(_ item: eSangCoachAPI.CoachingItem) -> some View {
         let severity = CoachSeverity(item.severity)
         return VStack(alignment: .leading, spacing: Space.s2) {
@@ -352,21 +395,6 @@ struct MeSafetyCoach: View {
                         .font(EType.body)
                         .foregroundStyle(palette.textSecondary)
                 }
-            }
-            if let cfr = item.cfr, !cfr.isEmpty {
-                HStack(spacing: Space.s1) {
-                    Image(systemName: "text.book.closed")
-                        .font(.system(size: 11, weight: .medium))
-                    Text(cfr)
-                        .font(EType.caption)
-                }
-                .foregroundStyle(palette.textSecondary)
-                .padding(.horizontal, Space.s2)
-                .padding(.vertical, 4)
-                .background(
-                    Capsule()
-                        .fill(palette.tintNeutral.opacity(0.55))
-                )
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -436,9 +464,40 @@ struct MeSafetyCoach: View {
     private var quietDayEmpty: some View {
         EusoEmptyState(
             systemImage: "checkmark.seal",
-            title: "Quiet day - no coaching needed right now",
-            subtitle: "ESANG didn't find anything worth flagging for your role + recent signal. Pull to refresh, or type a focus above to request a specific topic."
+            title: "No coaching payload returned",
+            subtitle: "Pull to refresh. EusoTrip will not substitute generic advice for a missing grounded response."
         )
+    }
+
+    private func generationUnavailable(_ pack: eSangCoachAPI.ForDriverResponse) -> some View {
+        VStack(spacing: Space.s2) {
+            Image(systemName: "exclamationmark.bubble")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(Brand.warning)
+            Text("Coaching generation unavailable")
+                .font(EType.title)
+                .foregroundStyle(palette.textPrimary)
+            Text(pack.evidence == nil
+                 ? "EusoTrip did not return a verified signal or advisory pack."
+                 : "Your verified signal is shown above. No generic replacement advice was inserted.")
+                .font(EType.caption)
+                .foregroundStyle(palette.textTertiary)
+                .multilineTextAlignment(.center)
+            Button {
+                Task { await store.refresh() }
+            } label: {
+                Label("Retry coach", systemImage: "arrow.clockwise")
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, Space.s4)
+                    .padding(.vertical, Space.s2)
+                    .background(Capsule().fill(LinearGradient.diagonal))
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(Space.s4)
+        .eusoCard(radius: Radius.lg)
     }
 
     private func errorBanner(_ err: Error) -> some View {
@@ -476,7 +535,7 @@ struct MeSafetyCoach: View {
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .multilineTextAlignment(.center)
-            Text("Hazmat coaching always cites the tightest applicable CFR (49 CFR 171-180, 33 CFR 160, IMDG) when EusoTrip flags it.")
+            Text("The signal comes from EusoTrip incident and HOS records. Regulatory citations appear only when a verified service supplies them.")
                 .font(EType.micro)
                 .foregroundStyle(palette.textTertiary.opacity(0.85))
                 .multilineTextAlignment(.center)
@@ -508,6 +567,14 @@ struct MeSafetyCoach: View {
         if seconds < 3600      { return "\(Int(seconds / 60))m ago" }
         if seconds < 86_400    { return "\(Int(seconds / 3600))h ago" }
         return "\(Int(seconds / 86_400))d ago"
+    }
+
+    private func sourceLabel(_ source: String?) -> String {
+        switch source?.lowercased() {
+        case "ai_grounded": return "AI + DATA"
+        case "unavailable": return "COACH OFFLINE"
+        default: return "SERVER PACK"
+        }
     }
 }
 

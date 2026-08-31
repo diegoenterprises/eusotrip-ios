@@ -22,6 +22,7 @@ enum PhoneActivationDestination: String, Equatable {
     case esang
     case wallet
     case hos
+    case safetyCoach
     case messages
     case maps
     case dispatch

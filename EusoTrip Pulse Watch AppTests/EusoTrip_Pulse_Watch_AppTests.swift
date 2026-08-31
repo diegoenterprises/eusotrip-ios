@@ -104,6 +104,36 @@ struct EusoTrip_Pulse_Watch_AppTests {
         #expect(payload["autoSubmit"] as? Bool == false)
     }
 
+    @Test func safetyCoachContinuationTargetsTheNativePhoneSurface() {
+        let payload = PhoneActivationRequest(
+            destination: .safetyCoach,
+            transcript: "",
+            reply: "Review Safety Coach evidence on your iPhone.",
+            beginListening: false,
+            autoSubmit: false
+        ).payload()
+
+        #expect(payload["destination"] as? String == "safetyCoach")
+        #expect(payload["transcript"] as? String == "")
+        #expect(payload["beginListening"] as? Bool == false)
+        #expect(payload["autoSubmit"] as? Bool == false)
+    }
+
+    @Test @MainActor func safetyCoachEvidenceClearsWhenIdentityChanges() {
+        let store = WristSafetyCoachStore()
+        #if targetEnvironment(simulator)
+        store.installVisualQA(mode: "safety-active")
+        #expect(store.evidence != nil)
+        #expect(!store.items.isEmpty)
+        #endif
+
+        store.resetForIdentity("another-user")
+        #expect(store.boundUserId == "another-user")
+        #expect(store.evidence == nil)
+        #expect(store.items.isEmpty)
+        #expect(!store.hasLoadedOnce)
+    }
+
     @Test @MainActor func walletTimestampsStayUnknownWhenEvidenceIsMissing() {
         #expect(WalletStore.parseTimestamp(nil) == nil)
         #expect(WalletStore.parseTimestamp("") == nil)

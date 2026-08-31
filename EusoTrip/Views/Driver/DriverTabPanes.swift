@@ -3350,6 +3350,7 @@ struct DriverMePane: View {
         .init(route: .referrals,    glyph: "person.2",                 title: "Referrals",        sub: "Invite other drivers"),
         .init(route: .zeun,         glyph: "cpu",                      title: "Zeun Mechanics",   sub: "Diagnostics · DVIR · maintenance"),
         .init(route: .eld,          glyph: "waveform.path.ecg",        title: "ELD",              sub: "Duty status · drive clock · HoS"),
+        .init(route: .safetyCoach,  glyph: "shield.lefthalf.filled",   title: "Safety Coach",     sub: "30-day signal · ESANG advisory"),
         .init(route: .fleet,        glyph: "truck.box",                title: "Fleet Management", sub: "Vehicles · trailers · IFTA"),
         .init(route: .haul,         glyph: "trophy",                   title: "The Haul",         sub: "Missions · badges · rewards · leaderboard"),
         .init(route: .news,         glyph: "newspaper",                title: "Driver Intel",     sub: "News · regulations · market"),
