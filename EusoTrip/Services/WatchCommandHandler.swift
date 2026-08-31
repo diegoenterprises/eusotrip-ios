@@ -721,12 +721,15 @@ final class WatchCommandHandler: NSObject, ObservableObject {
             if let rawBidId = message["bidId"] as? String,
                let bidId = Int(rawBidId) {
                 let ack = try await api.loadBidding.accept(bidId: bidId)
-                return [
+                var response: [String: Any] = [
                     "ok": true,
                     "loadId": loadId,
                     "bidId": rawBidId,
-                    "status": ack.status,
                 ]
+                if let status = ack.status, !status.isEmpty {
+                    response["status"] = status
+                }
+                return response
             }
 
             let suppliedKey = message["idempotencyKey"] as? String
