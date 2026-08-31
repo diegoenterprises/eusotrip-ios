@@ -3566,11 +3566,10 @@ final class HaulStore: ObservableObject, DynamicStore {
 //
 // Drives brick 087 Me · Safety Coach. Stores the most recently
 // loaded ESANG coaching pack plus the driver's optional focus-text
-// so the view can re-query on Enter without re-typing. Count
-// inputs (recent incidents / violations / near-misses) are sent as
-// nil by default so the server pulls live values from the user's
-// compliance history — driver-supplied override is possible but not
-// currently surfaced in 087.
+// so the view can re-query on Enter without re-typing. Recent incident,
+// violation, and near-miss counts are collected only by the server from
+// the signed-in user's persisted records; the client cannot override
+// that evidence.
 //
 // 79th firing.
 
@@ -3596,12 +3595,10 @@ final class SafetyCoachStore: BaseDynamicStore<eSangCoachAPI.ForDriverResponse> 
     override func foldState(
         _ value: eSangCoachAPI.ForDriverResponse
     ) -> RemoteState<eSangCoachAPI.ForDriverResponse> {
-        // Server contract: we always get at least the deterministic
-        // fallback items when Gemini is down, so a truly empty
-        // response is a real API surface bug rather than a normal
-        // state. Treat the edge as `.empty` so the view shows the
-        // branded "No coaching available" rather than blank cards.
-        value.items.isEmpty ? .empty : .loaded(value)
+        // Keep the response even when generation is unavailable. Its
+        // evidence object remains useful and lets the view distinguish
+        // verified zero signals from a failed coaching service.
+        .loaded(value)
     }
 }
 

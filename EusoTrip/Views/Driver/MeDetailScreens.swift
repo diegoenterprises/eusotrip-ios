@@ -66,7 +66,7 @@ enum MeAction {
 // MARK: - Route
 
 enum MeDetailRoute: String, Identifiable, CaseIterable {
-    case carrier, authority, earnings, rateSheet, documents, eusoTicket, tax, dvir, availability, missions, rewards, badges, referrals, zeun, eld, fleet, haul, news, pulse, notifications, settings, disputes, counterInbox, compliance
+    case carrier, authority, earnings, rateSheet, documents, eusoTicket, tax, dvir, availability, missions, rewards, badges, referrals, zeun, eld, safetyCoach, fleet, haul, news, pulse, notifications, settings, disputes, counterInbox, compliance
 
     var id: String { rawValue }
 
@@ -87,6 +87,7 @@ enum MeDetailRoute: String, Identifiable, CaseIterable {
         case .referrals:     return "Invite & Earn"
         case .zeun:          return "Zeun Mechanics"
         case .eld:           return "ELD"
+        case .safetyCoach:   return "Safety Coach"
         case .fleet:         return "Fleet Management"
         case .haul:          return "The Haul"
         case .news:          return "Driver Intel"
@@ -116,6 +117,7 @@ enum MeDetailRoute: String, Identifiable, CaseIterable {
         case .referrals:     return "Code · QR · share · stage funnel · rewards"
         case .zeun:          return "Diagnostics · DVIR · maintenance · breakdowns"
         case .eld:           return "Duty status · drive clock · HoS violations"
+        case .safetyCoach:   return "Verified 30-day signal · grounded ESANG advisory"
         case .fleet:         return "Vehicles · trailers · geofences · IFTA"
         case .haul:          return "Lobby · missions · rewards · leaderboard"
         case .news:          return "News · regulations · market · safety"
@@ -153,11 +155,13 @@ struct MeDetailContainer: View {
     //                 SheetCloseButton) above its ScrollView.
     //   • .earnings → DriverWalletPane's pinned EusoHeader carries the
     //                 canonical SheetCloseButton in its trailing slot.
+    //   • .safetyCoach → MeSafetyCoach receives the sheet dismiss action
+    //                    and renders its own close control in the header.
     // Adding a route here WITHOUT its own header X re-creates the
     // no-close-affordance bug this contract exists to prevent.
     private var ownsOwnChrome: Bool {
         switch route {
-        case .news, .earnings: return true
+        case .news, .earnings, .safetyCoach: return true
         default:               return false
         }
     }
@@ -254,6 +258,7 @@ struct MeDetailContainer: View {
         case .referrals:    MeReferrals()  // brick 088 — full Invite & Earn surface (hero code + QR poster + stage funnel + events + reward schedule). Replaces legacy MeReferralsView, which only showed the bare referral list and read as a placeholder.
         case .zeun:         MeZeunView()
         case .eld:          MeEldView()
+        case .safetyCoach:  MeSafetyCoach(onClose: { dismiss() })
         case .fleet:        MeFleetView()
         case .haul:         MeHaulView()
         case .news:         MeNewsView()

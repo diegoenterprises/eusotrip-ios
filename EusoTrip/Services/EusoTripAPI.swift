@@ -12926,11 +12926,10 @@ struct CsaScoresAPI {
 //
 // Mirrors `frontend/server/routers/esangCoach.ts`. Today's iOS-
 // relevant surface is the `forDriver` query, which returns 3–10
-// coaching items personalized to the driver's role + vertical +
-// recent compliance signal. The server may ship either a Gemini-
-// authored payload or the deterministic fallback when Gemini is
-// down; the iOS client treats both identically — we render whatever
-// items the server returned.
+// advisory coaching items grounded in a server-collected 30-day
+// compliance signal. The response names its generation source and
+// carries the evidence counts separately, so an unavailable model is
+// never rendered as a personalized fallback pack.
 
 struct eSangCoachAPI {
     unowned let api: EusoTripAPI
@@ -12938,9 +12937,6 @@ struct eSangCoachAPI {
     // MARK: Server-shaped input / output
 
     struct ForDriverInput: Encodable {
-        let recentIncidents: Int?
-        let recentViolations: Int?
-        let recentNearMisses: Int?
         let focus: String?
         let limit: Int?
     }
@@ -12968,12 +12964,28 @@ struct eSangCoachAPI {
     }
 
     struct ForDriverResponse: Decodable, Equatable {
+        struct Evidence: Decodable, Equatable {
+            let windowDays: Int
+            let incidents: Int
+            let violations: Int
+            let nearMisses: Int
+            let hazmatEndorsed: Bool?
+            let driverProfileMatched: Bool
+            let collectedAt: Double
+        }
+
         let items: [CoachingItem]
         /// Echoed user role from ctx; used by the view to render the
         /// "For <role-label>" subheader.
         let role: String
         /// "truck" | "rail" | "vessel" | "cross"
         let vertical: String
+        /// `ai_grounded` when ESANG generated against the evidence
+        /// object; `unavailable` when the verified signal loaded but
+        /// generation did not. Optional during rolling deployment.
+        let source: String?
+        let advisory: Bool?
+        let evidence: Evidence?
         /// Server clock epoch millis. UI shows relative time
         /// ("Updated 2m ago") keyed off this.
         let generatedAt: Double
@@ -12987,18 +12999,12 @@ struct eSangCoachAPI {
     /// omit to let the server pull the signed-in driver's own
     /// counts from the database.
     func forDriver(
-        recentIncidents: Int? = nil,
-        recentViolations: Int? = nil,
-        recentNearMisses: Int? = nil,
         focus: String? = nil,
         limit: Int = 6
     ) async throws -> ForDriverResponse {
         try await api.query(
             "esangCoach.forDriver",
             input: ForDriverInput(
-                recentIncidents: recentIncidents,
-                recentViolations: recentViolations,
-                recentNearMisses: recentNearMisses,
                 focus: (focus?.isEmpty ?? true) ? nil : focus,
                 limit: limit
             )

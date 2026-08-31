@@ -3595,6 +3595,8 @@ struct ContentView: View {
             routeWatchDestination(driverRoute: .earnings, fallbackPath: "/wallet")
         case "hos":
             routeWatchDestination(driverRoute: .eld, fallbackPath: "/compliance/hos")
+        case "safetyCoach":
+            routeWatchDestination(driverRoute: .safetyCoach, fallbackPath: "/compliance/safety-coach")
         case "messages":
             let threadId = note.userInfo?["threadId"] as? String
             if session.user?.roleEnum == .driver {

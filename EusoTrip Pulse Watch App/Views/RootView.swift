@@ -44,6 +44,8 @@ struct RootView: View {
             _selectedTab = State(initialValue: 3)
         } else if visualState?.hasPrefix("wallet") == true {
             _selectedTab = State(initialValue: 4)
+        } else if visualState?.hasPrefix("safety-") == true {
+            _selectedTab = State(initialValue: 5)
         } else {
             _selectedTab = State(initialValue: 0)
         }
@@ -57,7 +59,8 @@ struct RootView: View {
         let visualState = ProcessInfo.processInfo.environment["EUSOTRIP_PULSE_VISUAL_STATE"]
         if visualState?.hasPrefix("route") == true
             || visualState?.hasPrefix("inbox") == true
-            || visualState?.hasPrefix("wallet") == true {
+            || visualState?.hasPrefix("wallet") == true
+            || visualState?.hasPrefix("safety-") == true {
             return RoleComposition.tabs(for: "DRIVER")
         }
         #endif
