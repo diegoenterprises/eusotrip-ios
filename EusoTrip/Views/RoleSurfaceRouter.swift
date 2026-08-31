@@ -91,23 +91,64 @@ enum RoleSurfaceAssignment: String, CaseIterable {
 }
 
 struct RoleSurfaceRouter<DriverContent: View>: View {
+    @EnvironmentObject private var session: EusoTripSession
+
     let role: EusoRole
     let palette: Theme.Palette
     private let driverContent: () -> DriverContent
+    private let driverESangAction: (eSangAction) -> Void
+    @State private var showWatchESang = false
 
     init(
         role: EusoRole,
         palette: Theme.Palette,
+        driverESangAction: @escaping (eSangAction) -> Void,
         @ViewBuilder driverContent: @escaping () -> DriverContent
     ) {
         self.role = role
         self.palette = palette
+        self.driverESangAction = driverESangAction
         self.driverContent = driverContent
     }
 
     @ViewBuilder
     var body: some View {
         roleSurface(for: role)
+            .watchESangHandoff(isPresented: $showWatchESang)
+            .fullScreenCover(isPresented: $showWatchESang) {
+                watchESangSurface
+            }
+    }
+
+    @ViewBuilder
+    private var watchESangSurface: some View {
+        if role == .shipper || role == .vesselShipper {
+            ShippereSangCoachSheet()
+                .environment(\.palette, palette)
+                .environmentObject(session)
+                .environment(\.esangActionHandler) { action in
+                    _ = eSangRoleDispatcher.dispatch(
+                        action,
+                        role: role,
+                        dismissSheet: { showWatchESang = false }
+                    )
+                }
+        } else {
+            DrivereSangCoachSheet()
+                .environment(\.palette, palette)
+                .environmentObject(session)
+                .environment(\.esangActionHandler) { action in
+                    if role == .driver {
+                        driverESangAction(action)
+                    } else {
+                        _ = eSangRoleDispatcher.dispatch(
+                            action,
+                            role: role,
+                            dismissSheet: { showWatchESang = false }
+                        )
+                    }
+                }
+        }
     }
 
     @ViewBuilder
@@ -804,6 +845,14 @@ struct ShipperSurface: View {
         // this route. Their screen wrappers independently fail closed when the
         // value is nil or invalid, so the registry can never create an
         // actionable surface with a sentinel id.
+        if currentScreenId == "260" {
+            let loadId = activeLoadId
+            return ProductionScreen(id: "260",
+                                    title: "Shipper · Posted · Awaiting Bids",
+                                    role: .shipper) { p in
+                AnyView(PostedAwaitingBidsScreen(theme: p, loadId: loadId))
+            }
+        }
         if currentScreenId == "261" {
             let loadId = activeLoadId
             return ProductionScreen(id: "261",
@@ -1052,6 +1101,8 @@ struct ShipperSurface: View {
 
     private var currentIdentity: String {
         switch currentScreenId {
+        case "260":
+            return "shipper-260-\(activeLoadId ?? "__missing")"
         case "261":
             return "shipper-261-\(activeLoadId ?? "__missing")"
         case "381":
@@ -1488,11 +1539,20 @@ private struct ShipperNavReceivers: ViewModifier {
                         activeLoadId = lid
                     }
                 }
-                // 261/381/435 are actionable record details. Assign the
+                // 260/261/381/435 are actionable record details. Assign the
                 // normalized optional on every target swap (including nil)
                 // so a payload-less route fails closed instead of reusing the
                 // record from a previous visit.
-                if id == "261" {
+                if id == "260" || id == "261" {
+                    activeLoadId = ShipperLoadIdResolver.normalize(note.userInfo?["loadId"])
+                }
+                // §27 commodity / cross-border addenda (204B/204C ·
+                // 216B/216D/216F). Each is a per-load record surface, so
+                // the payload is assigned on EVERY swap to one of them —
+                // including nil — so a payload-less route fails closed to
+                // the screen's own "open this from a load" state rather
+                // than reusing the load from an earlier visit.
+                if ShipperSurface.commodityAddendaIds.contains(id) {
                     activeLoadId = ShipperLoadIdResolver.normalize(note.userInfo?["loadId"])
                 }
                 // §27 commodity / cross-border addenda (204B/204C ·

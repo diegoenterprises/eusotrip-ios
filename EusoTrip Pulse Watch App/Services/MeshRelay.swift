@@ -241,8 +241,8 @@ final class MeshRelay: ObservableObject {
 
     private func payloadKind(for action: QueuedAction) -> String {
         switch action {
-        case .sos:        return "sos"
-        case .hosEvent:   return "hos.event"
+        case .sos, .sosV2: return "sos"
+        case .hosEvent, .hosEventLocated: return "hos.event"
         case .voice:      return "voice"
         case .acceptLoad: return "load.accept"
         case .arrived:    return "load.arrived"

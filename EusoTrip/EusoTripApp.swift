@@ -212,6 +212,21 @@ struct EusoTripApp: App {
                 MockDataGuard.runSelfCheck()
                 #endif
                 await session.boot()
+                // A persisted credential can restore `session.user` before
+                // SwiftUI delivers an `onChange` edge. Activate the exact
+                // environment epoch after boot as well, otherwise the home
+                // widget has a valid scoped request while WeatherService still
+                // rejects every fetch because no active context exists.
+                if let user = session.user {
+                    WeatherService.shared.activateContext(
+                        WeatherRequestContext(
+                            identity: WeatherRequestIdentity(user: user),
+                            sessionEpoch: weatherSessionEpoch
+                        )
+                    )
+                } else {
+                    WeatherService.shared.deactivateContext()
+                }
                 // Proactively trigger the iOS "Allow EusoTrip to use
                 // your location?" prompt at app launch. WeatherService
                 // also requests it lazily on first fetch, but that
