@@ -57,13 +57,19 @@ struct WatchLoadDetailView: View {
                 // happen. This wakes the phone in the background; the
                 // phone posts the one-tap "Open EusoTrip" notification.
                 Button {
-                    let sent = connectivity.requestPhoneActivation(
+                    let dispatch = connectivity.requestPhoneActivation(
                         transcript: "open eusotrip home",
-                        reply: "Opening EusoTrip on your iPhone."
+                        reply: "Opening EusoTrip on your iPhone.",
+                        destination: .home
                     )
-                    statusNote = sent
-                        ? "Sent — tap the EusoTrip notification on your iPhone."
-                        : "Can't reach your iPhone — bring it nearby and try again."
+                    switch dispatch {
+                    case .sent:
+                        statusNote = "Sent - tap the EusoTrip notification on your iPhone."
+                    case .queued:
+                        statusNote = "Queued for your iPhone."
+                    case .unavailable:
+                        statusNote = "iPhone bridge unavailable - bring it nearby and try again."
+                    }
                 } label: {
                     Label("Open on iPhone", systemImage: "iphone.and.arrow.forward")
                         .font(.system(size: 10, weight: .semibold))

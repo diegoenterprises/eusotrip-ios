@@ -903,7 +903,7 @@ enum ScreenRegistry {
         // from `shippers.getLifecycleSnapshot` + cancels via the real
         // `loads.cancel` proc. 254 "Track this load" deep-links here
         // for a freshly posted load (POSTED / awaiting-bids state).
-        list.append(.init(id: "260", title: "Shipper · Posted · Awaiting Bids", role: .shipper) { p in AnyView(PostedAwaitingBidsScreen(theme: p, loadId: "0")) })
+        list.append(.init(id: "260", title: "Shipper · Posted · Awaiting Bids", role: .shipper) { p in AnyView(PostedAwaitingBidsScreen(theme: p, loadId: nil)) })
         // 261-269 lifecycle surfaces (load-context detail screens).
         // 261 is actionable, so its registry entry carries no sentinel:
         // ShipperSurface injects the routed load id, while a bare registry
@@ -2957,6 +2957,12 @@ struct ContentView: View {
     /// a slide-up modal. Back posts the shared `.eusoRoleNavBack`.
     @State private var driverPushedDetail: RoleDetailPush? = nil
 
+    /// Destinations handed off from EusoTrip Pulse. These are owned by the
+    /// signed-in iPhone shell so a Watch command lands on the same live
+    /// source-backed surfaces as a direct iPhone tap.
+    @State private var watchMeDetail: MeDetailRoute? = nil
+    @State private var watchEmergencyRelay: WatchEmergencyRelay? = nil
+
     private var driverRoleDock: RoleDockContract {
         let active: String
         switch nav.currentTab {
@@ -3029,7 +3035,11 @@ struct ContentView: View {
                 // prevents split routing and leaves no constructible login
                 // fallback or web continuation.
                 if let role = session.user?.roleEnum {
-                    RoleSurfaceRouter(role: role, palette: register.palette) {
+                    RoleSurfaceRouter(
+                        role: role,
+                        palette: register.palette,
+                        driverESangAction: { action in handleeSangAction(action) }
+                    ) {
                         driverSurface
                             .environment(\.roleDockContract, driverRoleDock)
                             .modifier(EusoEdgeSwipeBack(
@@ -3317,6 +3327,19 @@ struct ContentView: View {
                     .preferredColorScheme(register.preferredColorScheme)
             }
 
+            .sheet(item: $watchMeDetail) { route in
+                MeDetailContainer(route: route)
+                    .environment(\.palette, register.palette)
+                    .environmentObject(session)
+                    .preferredColorScheme(register.preferredColorScheme)
+            }
+
+            .sheet(item: $watchEmergencyRelay) { relay in
+                WatchEmergencyRelaySheet(relay: relay)
+                    .environment(\.palette, register.palette)
+                    .preferredColorScheme(register.preferredColorScheme)
+            }
+
             // Document drawer sheet for the active load.
             .sheet(isPresented: $docDrawerActive) {
                 DriverDocumentDrawerSheet(
@@ -3505,6 +3528,9 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .eusoLoadConversationOpen)) { note in
             handleLoadConversationOpen(note)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoWatchDestinationRequested)) { note in
+            handleWatchDestination(note)
+        }
         // Universal hands-free autopilot — mounted ONCE at the root so the
         // orb press-and-hold activates continuous voice for WHATEVER role
         // is signed in (driver / ship captain / rail engineer / shipper /
@@ -3556,6 +3582,50 @@ struct ContentView: View {
                     handleeSangAction(action)
                 }
         }
+    }
+
+    private func handleWatchDestination(_ note: Notification) {
+        guard let destination = note.userInfo?["destination"] as? String else { return }
+
+        switch destination {
+        case "emergency":
+            guard let relay = note.object as? WatchEmergencyRelay else { return }
+            watchEmergencyRelay = relay
+        case "wallet":
+            routeWatchDestination(driverRoute: .earnings, fallbackPath: "/wallet")
+        case "hos":
+            routeWatchDestination(driverRoute: .eld, fallbackPath: "/compliance/hos")
+        case "dispatch":
+            if session.user?.roleEnum == .driver {
+                messagingSheetTarget = MessagingSheetTarget(threadId: nil)
+            } else {
+                routeWatchPath("/messages")
+            }
+        case "hazmat":
+            routeWatchDestination(driverRoute: .compliance, fallbackPath: "/compliance/hazmat")
+        default:
+            NotificationCenter.default.post(name: .esangUnhandledCommand, object: destination)
+        }
+    }
+
+    private func routeWatchDestination(driverRoute: MeDetailRoute, fallbackPath: String) {
+        if session.user?.roleEnum == .driver {
+            watchMeDetail = driverRoute
+        } else {
+            routeWatchPath(fallbackPath)
+        }
+    }
+
+    private func routeWatchPath(_ path: String) {
+        guard let role = session.user?.roleEnum else {
+            NotificationCenter.default.post(name: .esangUnhandledCommand, object: path)
+            return
+        }
+        _ = eSangRoleDispatcher.dispatch(
+            .navigatePath(path),
+            role: role,
+            dismissSheet: {}
+        )
     }
 
     // MARK: - ESANG autopilot dispatcher

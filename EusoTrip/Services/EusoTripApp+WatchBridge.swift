@@ -16,6 +16,77 @@
 
 import SwiftUI
 import MapKit
+#if canImport(UIKit)
+import UIKit
+#endif
+
+struct WatchESangHandoffRequest: Codable, Equatable, Identifiable {
+    let id: UUID
+    let prompt: String
+    let autoSubmit: Bool
+    let beginListening: Bool
+    let receivedAt: Date
+}
+
+@MainActor
+final class WatchESangHandoffCenter: ObservableObject {
+    static let shared = WatchESangHandoffCenter()
+
+    @Published private(set) var pending: WatchESangHandoffRequest?
+
+    private let defaultsKey = "com.eusorone.EusoTrip.watch.esangHandoff"
+    private let maximumAge: TimeInterval = 30 * 60
+
+    private init() {
+        guard let data = UserDefaults.standard.data(forKey: defaultsKey),
+              let request = try? JSONDecoder().decode(WatchESangHandoffRequest.self, from: data),
+              Date().timeIntervalSince(request.receivedAt) <= maximumAge else {
+            UserDefaults.standard.removeObject(forKey: defaultsKey)
+            return
+        }
+        pending = request
+    }
+
+    var hasPendingRequest: Bool {
+        guard let pending else { return false }
+        return Date().timeIntervalSince(pending.receivedAt) <= maximumAge
+    }
+
+    func stage(prompt: String?, autoSubmit: Bool, beginListening: Bool) {
+        let request = WatchESangHandoffRequest(
+            id: UUID(),
+            prompt: prompt?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
+            autoSubmit: autoSubmit,
+            beginListening: beginListening,
+            receivedAt: Date()
+        )
+        pending = request
+        if let data = try? JSONEncoder().encode(request) {
+            UserDefaults.standard.set(data, forKey: defaultsKey)
+        }
+        NotificationCenter.default.post(name: .eusoWatchESangRequested, object: request.id)
+    }
+
+    func consume() -> WatchESangHandoffRequest? {
+        guard hasPendingRequest else {
+            clear()
+            return nil
+        }
+        let request = pending
+        clear()
+        return request
+    }
+
+    private func clear() {
+        pending = nil
+        UserDefaults.standard.removeObject(forKey: defaultsKey)
+    }
+}
+
+extension Notification.Name {
+    static let eusoWatchESangRequested = Notification.Name("eusoWatchESangRequested")
+    static let eusoWatchDestinationRequested = Notification.Name("eusoWatchDestinationRequested")
+}
 
 extension View {
     /// Attach once on the iOS app's root view.
@@ -26,11 +97,6 @@ extension View {
 
 private struct EusoTripWatchBridgeModifier: ViewModifier {
     @StateObject private var handler = WatchCommandHandler.shared
-    @State private var esangSeed: String?
-    @State private var showeSang = false
-    @State private var showWallet = false
-    @State private var showHOS = false
-    @State private var showEmergency = false
 
     func body(content: Content) -> some View {
         content
@@ -43,67 +109,53 @@ private struct EusoTripWatchBridgeModifier: ViewModifier {
                 handler.pendingDeeplink = nil
             }
             .onContinueUserActivity("com.eusotrip.esang.activate") { activity in
-                // Watch → phone Handoff. An empty transcript means the
-                // wrist just wants the app OPEN (pairing gate / "Open
-                // on iPhone") — landing on Home is the whole point, so
-                // don't cover it with a handoff sheet. A non-empty
-                // transcript seeds the ESANG chat hand-off sheet.
-                let transcript = activity.userInfo?["transcript"] as? String
-                if let transcript, !transcript.isEmpty {
-                    esangSeed = transcript
-                    showeSang = true
+                let destination = activity.userInfo?["destination"] as? String
+                let transcript = activity.userInfo?["transcript"] as? String ?? ""
+                if destination == "esang" || !transcript.isEmpty {
+                    WatchESangHandoffCenter.shared.stage(
+                        prompt: transcript,
+                        autoSubmit: activity.userInfo?["autoSubmit"] as? Bool ?? false,
+                        beginListening: activity.userInfo?["beginListening"] as? Bool ?? transcript.isEmpty
+                    )
                 }
-            }
-            .sheet(isPresented: $showeSang) {
-                // Presented as a simple reminder for now — the full
-                // eSang chat surface in ContentView can observe the
-                // same seed if the product team prefers to route it
-                // there. Safe default keeps the build clean.
-                eSangWatchHandoffSheet(seed: esangSeed)
-            }
-            .sheet(isPresented: $showWallet) {
-                WatchHandoffPlaceholder(
-                    title: "EusoWallet",
-                    systemImage: "creditcard.fill",
-                    message: "Open the Wallet tab on your iPhone to see the full surface."
-                )
-            }
-            .sheet(isPresented: $showHOS) {
-                WatchHandoffPlaceholder(
-                    title: "Hours of Service",
-                    systemImage: "clock.badge.checkmark",
-                    message: "Your HOS status is updated. Open the ELD surface for the full log."
-                )
-            }
-            .sheet(isPresented: $showEmergency) {
-                WatchHandoffPlaceholder(
-                    title: "Emergency",
-                    systemImage: "exclamationmark.triangle.fill",
-                    message: "Dispatch has been notified. Tap below if you need to place a call."
-                )
             }
     }
 
     private func route(_ link: WatchDeeplink) {
         switch link {
         case .wallet:
-            showWallet = true
+            postDestination("wallet")
         case .hos:
-            showHOS = true
-        case .esangChat(let seed):
-            esangSeed = seed
-            showeSang = true
+            postDestination("hos")
+        case .esangChat(let seed, let autoSubmit, let beginListening):
+            WatchESangHandoffCenter.shared.stage(
+                prompt: seed,
+                autoSubmit: autoSubmit,
+                beginListening: beginListening
+            )
         case .maps(let query):
             openMaps(query: query)
         case .dispatchCall:
-            if let url = URL(string: "tel://18005551234") {
-                UIApplication.shared.open(url)
-            }
+            postDestination("dispatch")
         case .hazmatEscort:
-            showeSang = true // hazmat escort surface reuses the chat for now
-        case .emergency:
-            showEmergency = true
+            postDestination("hazmat")
+        case .emergency(let relay):
+            postDestination("emergency", object: relay)
         }
+    }
+
+    private func postDestination(
+        _ destination: String,
+        object: Any? = nil,
+        userInfo: [AnyHashable: Any] = [:]
+    ) {
+        var payload = userInfo
+        payload["destination"] = destination
+        NotificationCenter.default.post(
+            name: .eusoWatchDestinationRequested,
+            object: object,
+            userInfo: payload
+        )
     }
 
     private func openMaps(query: String) {
@@ -126,85 +178,216 @@ private struct EusoTripWatchBridgeModifier: ViewModifier {
     }
 }
 
-// Lightweight sheet body so the watch handoff doesn't require us to
-// navigate the real iOS app's TabView state machine. When the product
-// team wires these into ContentView directly, the sheets below become
-// no-ops.
+private struct WatchESangPresentationModifier: ViewModifier {
+    @Binding var isPresented: Bool
 
-private struct eSangWatchHandoffSheet: View {
-    let seed: String?
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 8) {
-                    Image(systemName: "waveform.circle.fill")
-                        .font(.system(size: 28))
-                        .foregroundStyle(.tint)
-                    VStack(alignment: .leading) {
-                        Text("From your watch").font(.caption)
-                            .foregroundStyle(.secondary)
-                        Text("eSang handoff").font(.headline)
-                    }
-                    Spacer()
-                }
-                if let seed, !seed.isEmpty {
-                    Text("\"\(seed)\"")
-                        .font(.body)
-                        .padding(10)
-                        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
-                }
-                Text("Open the eSang tab to continue the conversation on your iPhone.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button {
-                    dismiss()
-                } label: {
-                    Text("Got it")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                }
-                .buttonStyle(.borderedProminent)
+    func body(content: Content) -> some View {
+        content
+            .onAppear { presentIfPending() }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoWatchESangRequested)) { _ in
+                presentIfPending()
             }
-            .padding()
-            .navigationTitle("eSang")
-            .navigationBarTitleDisplayMode(.inline)
-        }
+    }
+
+    private func presentIfPending() {
+        guard WatchESangHandoffCenter.shared.hasPendingRequest else { return }
+        isPresented = true
     }
 }
 
-private struct WatchHandoffPlaceholder: View {
-    let title: String
-    let systemImage: String
-    let message: String
+extension View {
+    func watchESangHandoff(isPresented: Binding<Bool>) -> some View {
+        modifier(WatchESangPresentationModifier(isPresented: isPresented))
+    }
+}
+
+struct WatchEmergencyRelaySheet: View {
+    @Environment(\.palette) private var palette
     @Environment(\.dismiss) private var dismiss
 
-    var content: some View {
-        VStack(spacing: 18) {
-            Image(systemName: systemImage)
-                .font(.system(size: 44))
-                .foregroundStyle(.tint)
-            Text(title).font(.title2.bold())
-            Text(message)
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal)
-            Spacer()
-            Button {
-                dismiss()
-            } label: {
-                Text("Dismiss")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity, minHeight: 44)
-            }
-            .buttonStyle(.borderedProminent)
-        }
-        .padding()
+    let relay: WatchEmergencyRelay
+
+    @State private var retriedCallOpened: Bool?
+    @State private var isOpeningCall = false
+
+    private var callHandoffOpened: Bool? {
+        retriedCallOpened ?? relay.callHandoffOpened
     }
 
     var body: some View {
-        NavigationStack { content.navigationTitle(title).navigationBarTitleDisplayMode(.inline) }
+        VStack(spacing: 0) {
+            header
+            Divider().overlay(palette.borderFaint)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    relaySummary
+                    evidenceRows
+
+                    if !relay.silent, callHandoffOpened != true {
+                        callEmergencyButton
+                    }
+                }
+                .padding(20)
+            }
+        }
+        .background(palette.bgPage.ignoresSafeArea())
+    }
+
+    private var header: some View {
+        HStack(spacing: 12) {
+            Image(systemName: relay.silent ? "lock.shield.fill" : "sos.circle.fill")
+                .font(.system(size: 26, weight: .semibold))
+                .foregroundStyle(relay.silent ? palette.tintWarning : Color.red)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(relay.silent ? "Silent SOS relay" : "SOS relay")
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(palette.textPrimary)
+                Text("EusoTrip Pulse evidence")
+                    .font(.system(size: 13))
+                    .foregroundStyle(palette.textSecondary)
+            }
+
+            Spacer()
+
+            Button(action: { dismiss() }) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 15, weight: .bold))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(palette.textPrimary)
+            .accessibilityLabel("Close SOS relay")
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 14)
+    }
+
+    private var relaySummary: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(relay.serverAcknowledged ? palette.tintSuccess : Color.red)
+                    .frame(width: 9, height: 9)
+                Text(relay.serverAcknowledged ? "SERVER ACKNOWLEDGED" : "NO SERVER RECEIPT")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(relay.serverAcknowledged ? palette.tintSuccess : Color.red)
+            }
+
+            Text(relay.reason.isEmpty ? "Driver-initiated emergency" : relay.reason)
+                .font(.system(size: 24, weight: .bold))
+                .foregroundStyle(palette.textPrimary)
+
+            Text(relay.serverAcknowledged
+                 ? "The emergency service returned a confirmation reference."
+                 : "The phone did not receive a confirmation from the emergency service.")
+                .font(.system(size: 14))
+                .foregroundStyle(palette.textSecondary)
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(relay.serverAcknowledged ? palette.tintSuccess : Color.red, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var evidenceRows: some View {
+        VStack(spacing: 0) {
+            evidenceRow(
+                icon: "number",
+                label: "Event reference",
+                value: relay.emergencyId ?? relay.id
+            )
+            Divider().overlay(palette.borderFaint)
+            evidenceRow(
+                icon: "iphone.radiowaves.left.and.right",
+                label: "Emergency Call",
+                value: emergencyCallStatus
+            )
+            Divider().overlay(palette.borderFaint)
+            evidenceRow(
+                icon: "location.fill",
+                label: "Location evidence",
+                value: locationEvidence
+            )
+            Divider().overlay(palette.borderFaint)
+            evidenceRow(
+                icon: "clock.fill",
+                label: "Received on iPhone",
+                value: relay.receivedAt.formatted(date: .abbreviated, time: .standard)
+            )
+        }
+        .background(palette.bgCard)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func evidenceRow(icon: String, label: String, value: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(palette.tintInfo)
+                .frame(width: 24)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(label)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(palette.textSecondary)
+                Text(value)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(palette.textPrimary)
+                    .textSelection(.enabled)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+    }
+
+    private var callEmergencyButton: some View {
+        Button {
+            guard let url = URL(string: "tel://911") else { return }
+            isOpeningCall = true
+            Task {
+                retriedCallOpened = await UIApplication.shared.open(url)
+                isOpeningCall = false
+            }
+        } label: {
+            HStack(spacing: 10) {
+                if isOpeningCall {
+                    ProgressView().tint(.white)
+                } else {
+                    Image(systemName: "phone.fill")
+                }
+                Text("Call 911")
+                    .font(.system(size: 17, weight: .bold))
+            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity, minHeight: 50)
+            .background(Color.red)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+        .disabled(isOpeningCall)
+    }
+
+    private var emergencyCallStatus: String {
+        if relay.silent { return "Not requested in silent mode" }
+        switch callHandoffOpened {
+        case true: return "Opened on iPhone"
+        case false: return "Could not open"
+        case nil: return "No outcome received"
+        }
+    }
+
+    private var locationEvidence: String {
+        guard let latitude = relay.latitude, let longitude = relay.longitude else {
+            return "Unavailable"
+        }
+        return String(format: "%.5f, %.5f", latitude, longitude)
     }
 }

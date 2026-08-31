@@ -65,17 +65,7 @@ struct HomeView: View {
     }
 
     private var brandBackground: some View {
-        ZStack {
-            Color.esangBg
-            RadialGradient(
-                colors: [.esangMagenta.opacity(0.22), .esangBlue.opacity(0.08), .clear],
-                center: .init(x: 0.5, y: 0.45),
-                startRadius: 2,
-                endRadius: 220
-            )
-            .blendMode(.plusLighter)
-            .allowsHitTesting(false)
-        }
+        Color.esangBg
     }
 }
 
@@ -239,13 +229,18 @@ private struct IdleOrbPage: View {
         //
         // Handoff publisher — while the wrist is unpaired, advertise
         // the continuation activity so the EusoTrip icon appears on the
-        // iPhone lock screen / App Switcher for a one-tap open. The iOS
-        // side declares + handles com.eusotrip.esang.activate; an empty
-        // transcript lands the user on Home with no sheet.
+        // iPhone lock screen / App Switcher for a one-tap continuation.
+        // The destination is explicit so iOS opens the real ESANG surface
+        // and starts voice capture only after the user foregrounds it.
         .userActivity(EusoTripConfig.handoffActivityType,
                       isActive: !auth.isSignedIn) { activity in
-            activity.title = "Open EusoTrip"
-            activity.userInfo = ["transcript": ""]
+            activity.title = "Continue with ESANG"
+            activity.userInfo = [
+                "destination": "esang",
+                "transcript": "",
+                "beginListening": true,
+                "autoSubmit": false,
+            ]
             activity.isEligibleForHandoff = true
         }
         .onAppear {
@@ -458,14 +453,21 @@ private struct IdleOrbPage: View {
         } else {
             Button {
                 WKInterfaceDevice.current().play(.click)
-                let sent = connectivity.requestPhoneActivation(
-                    transcript: "open eusotrip home",
-                    reply: "Opening EusoTrip on your iPhone."
+                let dispatch = connectivity.requestPhoneActivation(
+                    transcript: nil,
+                    reply: "Continue with ESANG on your iPhone.",
+                    destination: .esang,
+                    beginListening: true
                 )
                 withAnimation(.easeInOut(duration: 0.15)) {
-                    openOnPhoneNote = sent
-                        ? "Sent — tap the EusoTrip notification on your iPhone (or its icon in the App Switcher)."
-                        : "Can't reach your iPhone — bring it nearby and try again."
+                    switch dispatch {
+                    case .sent:
+                        openOnPhoneNote = "Sent - tap Continue with ESANG on your iPhone."
+                    case .queued:
+                        openOnPhoneNote = "Queued for your iPhone."
+                    case .unavailable:
+                        openOnPhoneNote = "iPhone bridge unavailable - bring it nearby and try again."
+                    }
                 }
                 Task { @MainActor in
                     try? await Task.sleep(for: .seconds(6))
@@ -475,7 +477,7 @@ private struct IdleOrbPage: View {
                 HStack(spacing: 4) {
                     Image(systemName: "iphone.and.arrow.forward")
                         .font(.system(size: 9, weight: .bold))
-                    Text("Open on iPhone")
+                    Text("Continue on iPhone")
                         .font(.system(size: 10, weight: .semibold, design: .rounded))
                 }
                 .foregroundStyle(.white)
@@ -517,6 +519,12 @@ private struct IdleOrbPage: View {
         if !auth.isSignedIn {
             connectivity.requestAuthMirror()
             mirrorAttempts = min(mirrorAttempts + 1, 99)
+            _ = connectivity.requestPhoneActivation(
+                transcript: nil,
+                reply: "Continue with ESANG on your iPhone.",
+                destination: .esang,
+                beginListening: true
+            )
         }
         WKInterfaceDevice.current().play(.click)
         switch esang.state {
@@ -539,8 +547,18 @@ private struct IdleOrbPage: View {
             //   • Anything else → fresh mic cycle.
             if let kind = esang.lastErrorKind {
                 if kind.blocksAutoRetry {
-                    // Hint card already on screen; skip the haptic
-                    // so we don't signal the tap "did" something.
+                    let dispatch = connectivity.requestPhoneActivation(
+                        transcript: nil,
+                        reply: "Continue with ESANG on your iPhone.",
+                        destination: .esang,
+                        beginListening: true
+                    )
+                    if dispatch.accepted {
+                        esang.setError(
+                            "Watch voice input is unavailable. Continue from the ESANG notification on iPhone.",
+                            kind: kind
+                        )
+                    }
                     return
                 }
                 switch kind {
@@ -552,11 +570,14 @@ private struct IdleOrbPage: View {
                     } else if auth.isSignedIn {
                         await esang.startListening(auth: auth, connectivity: connectivity)
                     } else {
-                        // Still signed out after an auth-mirror
-                        // kick — leave the card up so the driver
-                        // knows the phone's still not reachable.
+                        _ = connectivity.requestPhoneActivation(
+                            transcript: nil,
+                            reply: "Continue with ESANG on your iPhone.",
+                            destination: .esang,
+                            beginListening: true
+                        )
                         esang.setError(
-                            "Still can't reach iPhone — open EusoTrip on your phone.",
+                            "Sign in or continue with ESANG from the iPhone notification.",
                             kind: .phonePairing
                         )
                     }
@@ -578,8 +599,14 @@ private struct IdleOrbPage: View {
                         esang.resetToIdle()
                         await esang.startListening(auth: auth, connectivity: connectivity)
                     } else {
+                        _ = connectivity.requestPhoneActivation(
+                            transcript: nil,
+                            reply: "Continue with ESANG on your iPhone.",
+                            destination: .esang,
+                            beginListening: true
+                        )
                         esang.setError(
-                            "Still can't reach iPhone — open EusoTrip on your phone.",
+                            "Continue with ESANG from the iPhone notification.",
                             kind: .phonePairing
                         )
                     }
@@ -911,6 +938,7 @@ private struct InstrumentPanel: View {
     @ObservedObject private var convoySig = ConvoySignatureObservable.shared
 
     @State private var pingPhoneTimestamp: Date?
+    @State private var phoneActivationDispatch: PhoneActivationDispatch?
     @State private var now: Date = Date()
     @State private var showDebugHealth: Bool = false
     /// See IdleOrbPage: open only while THIS hold's chain-group PTT
@@ -1342,7 +1370,11 @@ private struct InstrumentPanel: View {
                 },
                 action: {
                     WKInterfaceDevice.current().play(.click)
-                    connectivity.requestPhoneActivation(transcript: nil, reply: nil)
+                    phoneActivationDispatch = connectivity.requestPhoneActivation(
+                        transcript: nil,
+                        reply: "Open EusoTrip on your iPhone.",
+                        destination: .home
+                    )
                     pingPhoneTimestamp = Date()
                 }
             )
@@ -1411,7 +1443,12 @@ private struct InstrumentPanel: View {
     /// has a spoken twin.
     private var phoneDialA11y: String {
         if let ts = pingPhoneTimestamp, Date().timeIntervalSince(ts) < 2.5 {
-            return "Phone ping sent. Tap to ping again."
+            switch phoneActivationDispatch {
+            case .sent: return "Phone activation sent. Tap to send again."
+            case .queued: return "Phone activation queued. Tap to queue again."
+            case .unavailable: return "Phone bridge unavailable. Tap to retry."
+            case nil: break
+            }
         }
         return connectivity.isReachable
             ? "iPhone reachable. Tap to ping the phone."
@@ -1441,13 +1478,25 @@ private struct InstrumentPanel: View {
 
     private var phoneSymbol: String {
         if let ts = pingPhoneTimestamp, Date().timeIntervalSince(ts) < 2.5 {
-            return "checkmark"
+            switch phoneActivationDispatch {
+            case .sent: return "checkmark"
+            case .queued: return "clock.arrow.circlepath"
+            case .unavailable: return "exclamationmark"
+            case nil: break
+            }
         }
         return connectivity.isReachable ? "iphone.and.arrow.forward" : "iphone.slash"
     }
 
     private var phoneTileLabel: String {
-        if let ts = pingPhoneTimestamp, Date().timeIntervalSince(ts) < 2.5 { return "SENT" }
+        if let ts = pingPhoneTimestamp, Date().timeIntervalSince(ts) < 2.5 {
+            switch phoneActivationDispatch {
+            case .sent: return "SENT"
+            case .queued: return "QUEUED"
+            case .unavailable: return "FAILED"
+            case nil: break
+            }
+        }
         return connectivity.isReachable ? "PING" : "—"
     }
 
@@ -1494,6 +1543,12 @@ private struct InstrumentPanel: View {
         // routes to VoiceDispatch + OfflineQueue.
         if !auth.isSignedIn {
             connectivity.requestAuthMirror()
+            _ = connectivity.requestPhoneActivation(
+                transcript: nil,
+                reply: "Continue with ESANG on your iPhone.",
+                destination: .esang,
+                beginListening: true
+            )
         }
         WKInterfaceDevice.current().play(.click)
         switch esang.state {

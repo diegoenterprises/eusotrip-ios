@@ -117,6 +117,20 @@ struct ShippereSangCoachSheet: View {
                 let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
                 draft = trimmed.isEmpty ? transcript : "\(trimmed) \(transcript)"
             }
+            if let handoff = WatchESangHandoffCenter.shared.consume() {
+                if !handoff.prompt.isEmpty {
+                    if handoff.autoSubmit {
+                        send(handoff.prompt)
+                    } else {
+                        draft = handoff.prompt
+                        composerFocused = true
+                    }
+                } else if handoff.beginListening {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                        if !voice.isRecording { voice.toggle() }
+                    }
+                }
+            }
         }
         // Cancel any in-flight recording cleanly on dismiss so the mic
         // and audio session release without a leak.

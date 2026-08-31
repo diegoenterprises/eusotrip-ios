@@ -4655,6 +4655,20 @@ struct DrivereSangCoachSheet: View {
                     send(transcript)
                 }
             }
+            if let handoff = WatchESangHandoffCenter.shared.consume() {
+                if !handoff.prompt.isEmpty {
+                    if handoff.autoSubmit {
+                        send(handoff.prompt)
+                    } else {
+                        draft = handoff.prompt
+                        composerFocused = true
+                    }
+                } else if handoff.beginListening {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                        if !voice.isRecording { voice.toggle() }
+                    }
+                }
+            }
         }
         // Mic hot → orb flips to `.listening` so the particle field
         // locks into a travelling waveform and the halo shifts to blue.

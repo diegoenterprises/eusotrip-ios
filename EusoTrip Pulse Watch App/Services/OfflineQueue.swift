@@ -43,6 +43,7 @@ enum QueuedAction: Codable, Equatable {
     case acceptLoad(loadId: String, bidId: String?, key: String)
     case arrived(loadId: String, kind: String, at: Date, key: String) // kind: "pickup"|"delivery"
     case sos(reason: String, lat: Double?, lon: Double?, at: Date, key: String)
+    case sosV2(reason: String, silent: Bool, lat: Double?, lon: Double?, at: Date, key: String)
     case message(loadId: String?, to: String, text: String, key: String)
 
     var key: String {
@@ -53,6 +54,7 @@ enum QueuedAction: Codable, Equatable {
         case .acceptLoad(_, _, let k): return k
         case .arrived(_, _, _, let k): return k
         case .sos(_, _, _, _, let k): return k
+        case .sosV2(_, _, _, _, _, let k): return k
         case .message(_, _, _, let k): return k
         }
     }
@@ -60,7 +62,7 @@ enum QueuedAction: Codable, Equatable {
     /// Priority lane this action belongs on. Lower == higher priority.
     var lane: OutboxLane {
         switch self {
-        case .sos:         return .sos
+        case .sos, .sosV2: return .sos
         case .hosEvent:    return .hos
         case .hosEventLocated: return .hos
         case .acceptLoad:  return .load
@@ -265,9 +267,23 @@ final class OfflineQueue: ObservableObject {
         return k
     }
     @discardableResult
-    func enqueueSOS(reason: String, lat: Double?, lon: Double?) -> String {
-        let k = key()
-        append(.sos(reason: reason, lat: lat, lon: lon, at: Date(), key: k))
+    func enqueueSOS(
+        reason: String,
+        silent: Bool = false,
+        lat: Double?,
+        lon: Double?,
+        idempotencyKey: String? = nil
+    ) -> String {
+        let k = idempotencyKey ?? key()
+        guard !entries.contains(where: { $0.id == k }) else { return k }
+        append(.sosV2(
+            reason: reason,
+            silent: silent,
+            lat: lat,
+            lon: lon,
+            at: Date(),
+            key: k
+        ))
         return k
     }
     @discardableResult
@@ -451,12 +467,26 @@ final class OfflineQueue: ObservableObject {
         case .sos(let reason, let lat, let lon, let at, _):
             // `emergencyProtocols.activate` does not exist — the real
             // proc is declareEmergency (emergencyProtocols.ts:497).
-            _ = try await client.mutateJSON(
+            let data = try await client.mutateJSON(
                 "emergencyProtocols.declareEmergency",
                 input: EmergencyController.declareEmergencyInput(
                     reason: reason, lat: lat, lon: lon, at: at
                 )
             )
+            _ = try EmergencyController.emergencyReference(from: data)
+        case .sosV2(let reason, let silent, let lat, let lon, let at, let eventId):
+            let data = try await client.mutateJSON(
+                "emergencyProtocols.declareEmergency",
+                input: EmergencyController.declareEmergencyInput(
+                    eventId: eventId,
+                    reason: reason,
+                    silent: silent,
+                    lat: lat,
+                    lon: lon,
+                    at: at
+                )
+            )
+            _ = try EmergencyController.emergencyReference(from: data)
         case .message(let loadId, let to, let text, let key):
             // `messaging.send` does not exist. The real sender is
             // messages.sendMessage { conversationId, content, type } —
