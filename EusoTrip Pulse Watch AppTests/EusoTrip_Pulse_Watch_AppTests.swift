@@ -44,6 +44,20 @@ struct EusoTrip_Pulse_Watch_AppTests {
         #expect(payload["autoSubmit"] as? Bool == false)
     }
 
+    @Test func hosRecoveryTargetsThePhoneHOSSurfaceWithoutStartingVoice() {
+        let payload = PhoneActivationRequest(
+            destination: .hos,
+            transcript: "",
+            reply: "Review and synchronize HOS evidence in EusoTrip.",
+            beginListening: false,
+            autoSubmit: false
+        ).payload()
+
+        #expect(payload["destination"] as? String == "hos")
+        #expect(payload["beginListening"] as? Bool == false)
+        #expect(payload["autoSubmit"] as? Bool == false)
+    }
+
     @Test func emergencyRelayCarriesStableIdentityAndSilentContract() {
         let instant = Date(timeIntervalSince1970: 1_800_000_100)
         let payload = EmergencyPhoneRelayRequest(

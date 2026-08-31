@@ -252,6 +252,24 @@ struct EusoTripWatchApp: App {
                             }
                         }
                     }
+                    #if targetEnvironment(simulator)
+                    // Native-pixel visual QA can enter either emergency
+                    // mode without seeding a receipt or bypassing the real
+                    // relay controller. This code is absent from physical
+                    // Watch builds.
+                    if let visualState = ProcessInfo.processInfo.environment["EUSOTRIP_PULSE_VISUAL_STATE"],
+                       visualState == "emergency-loud" || visualState == "emergency-silent" {
+                        Task { @MainActor in
+                            try? await Task.sleep(for: .milliseconds(900))
+                            await EmergencyController.shared.activate(
+                                reason: "manual-home",
+                                auth: auth,
+                                connectivity: connectivity,
+                                silent: visualState == "emergency-silent"
+                            )
+                        }
+                    }
+                    #endif
                 }
                 .onChange(of: auth.isSignedIn) { _, signed in
                     // Drive OrbStateMachine off the live auth flip —

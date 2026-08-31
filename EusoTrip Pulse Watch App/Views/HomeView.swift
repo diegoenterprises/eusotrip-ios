@@ -45,7 +45,13 @@ struct HomeView: View {
     @EnvironmentObject var loads: LoadStore
     @EnvironmentObject var ergo: ErgoMonitor
 
-    @State private var page: Int = 0
+    @State private var page: Int = {
+        #if targetEnvironment(simulator)
+        ProcessInfo.processInfo.environment["EUSOTRIP_PULSE_VISUAL_STATE"] == "instrument" ? 1 : 0
+        #else
+        0
+        #endif
+    }()
 
     var body: some View {
         TabView(selection: $page) {
@@ -944,13 +950,10 @@ private struct InstrumentPanel: View {
 
     @State private var pingPhoneTimestamp: Date?
     @State private var phoneActivationDispatch: PhoneActivationDispatch?
-    @State private var now: Date = Date()
     @State private var showDebugHealth: Bool = false
     /// See IdleOrbPage: open only while THIS hold's chain-group PTT
     /// transmission is live, so release keys the radio down exactly once.
     @State private var pttTransmitting: Bool = false
-
-    private let clock = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
 
     var body: some View {
         ZStack {
@@ -960,30 +963,32 @@ private struct InstrumentPanel: View {
             // read as deliberate instrument-panel rails (rather than
             // hairlines that look like rendering glitches). The bezel
             // hardware does the corner mask.
-            HStack(spacing: 0) {
-                HOSVerticalGauge(
-                    title: "DRV",
-                    valueText: currentHOS?.driveHoursText ?? "—",
-                    fill: currentHOS?.drivePct,
-                    gradient: driveGradient,
-                    side: .leading
-                )
-                .frame(width: 8)
-                .padding(.leading, 3)
-                .padding(.top, 6)
-                .padding(.bottom, 10)
-                Spacer(minLength: 0)
-                HOSVerticalGauge(
-                    title: "WIN",
-                    valueText: currentHOS?.windowHoursText ?? "—",
-                    fill: currentHOS?.windowPct,
-                    gradient: windowGradient,
-                    side: .trailing
-                )
-                .frame(width: 8)
-                .padding(.trailing, 3)
-                .padding(.top, 6)
-                .padding(.bottom, 10)
+            if let currentHOS {
+                HStack(spacing: 0) {
+                    HOSVerticalGauge(
+                        title: "Drive",
+                        valueText: currentHOS.driveHoursText,
+                        fill: currentHOS.drivePct,
+                        gradient: driveGradient,
+                        side: .leading
+                    )
+                    .frame(width: 6)
+                    .padding(.leading, 8)
+                    .padding(.top, 24)
+                    .padding(.bottom, 18)
+                    Spacer(minLength: 0)
+                    HOSVerticalGauge(
+                        title: "Window",
+                        valueText: currentHOS.windowHoursText,
+                        fill: currentHOS.windowPct,
+                        gradient: windowGradient,
+                        side: .trailing
+                    )
+                    .frame(width: 6)
+                    .padding(.trailing, 14)
+                    .padding(.top, 24)
+                    .padding(.bottom, 18)
+                }
             }
 
             // Content column — uses the whole face. Horizontal padding
@@ -996,62 +1001,14 @@ private struct InstrumentPanel: View {
                 loadStrip
                 actionDialRow
             }
-            .padding(.horizontal, 14)
+            .padding(.horizontal, 18)
             .padding(.vertical, 0)
-
-            // Modular Ultra-style tick-mark bezel. Sits on top of the
-            // instrument panel, outside the content column, so it
-            // never competes with the live data. Purely decorative —
-            // brings the Apple Watch Ultra "Modular Ultra" aesthetic
-            // (tick rails + corner labels) that the user anchored as
-            // the design language for EusoTrip Pulse. Allocates only
-            // a Canvas draw, so it does not affect frame cost.
-            ModularTickBezel(
-                corners: .init(
-                    topLeading:     bezelLabelDRV,
-                    topTrailing:    bezelLabelFATIGUE,
-                    bottomLeading:  bezelLabelLINK,
-                    bottomTrailing: bezelLabelCONVOY
-                )
-            )
-            .allowsHitTesting(false)
         }
         // NOTE: previously clipped to ContainerRelativeShape() to keep
         // glows off the rounded corners, but the shape's inset made the
         // instrument panel sit inside a visible square instead of
         // filling the watch face. Trust the hardware bezel to do the
         // final mask.
-        .onReceive(clock) { now = $0 }
-    }
-
-    // MARK: Modular Ultra corner-label strings
-    //
-    // Four short letter-spaced labels that adopt the watch-face's
-    // TRAINING / VITALS / NO WORKOUTS / TYPICAL aesthetic but describe
-    // the instrument panel's live data rather than the watch's fitness
-    // stats. Each label stays four to seven characters so the tracking
-    // doesn't collide with the tick rail at the bezel's curve.
-
-    private var bezelLabelDRV: String {
-        // Top-left — current duty gauge summary.
-        "DRV \(currentHOS?.driveHoursText ?? "—")"
-    }
-
-    private var bezelLabelFATIGUE: String {
-        // Top-right — ErgoMonitor fatigue label, uppercased for parity
-        // with Apple's treatment of "TYPICAL"/"NO WORKOUTS".
-        ergo.fatigueLabel.uppercased()
-    }
-
-    private var bezelLabelLINK: String {
-        // Bottom-left — iPhone pairing state.
-        connectivity.isReachable ? "LINK" : "OFFLINE"
-    }
-
-    private var bezelLabelCONVOY: String {
-        // Bottom-right — convoy size when we're in one, otherwise SOLO.
-        let n = convoy.members.count
-        return n > 0 ? "CONVOY \(n)" : "SOLO"
     }
 
     // MARK: Top row — small instrument-style complications.
@@ -1085,16 +1042,23 @@ private struct InstrumentPanel: View {
                     symbol: "iphone",
                     tint: .esangTextDim,
                     pulse: false,
-                    caption: "—"
+                    caption: "AWAY"
                 )
             }
             Spacer()
-            Text(timeLabel)
-                .font(.system(size: 11, weight: .bold, design: .rounded))
-                .monospacedDigit()
-                .tracking(0.5)
-                .foregroundStyle(.white.opacity(0.85))
-                // L5c — triple-tap the time label to open DebugHealth.
+            VStack(spacing: 1) {
+                Text("HOS")
+                    .font(.system(size: 7, weight: .heavy, design: .rounded))
+                    .tracking(0.8)
+                    .foregroundStyle(.tertiary)
+                Text(currentHOS?.driveHoursText ?? "UNVERIFIED")
+                    .font(.system(size: 9, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(currentHOS == nil ? Color.esangAmber : Color.white.opacity(0.85))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+            }
+                // L5c — triple-tap the HOS evidence label to open DebugHealth.
                 // DEBUG-only so production drivers can't stumble into
                 // the diagnostic surface.
                 #if DEBUG
@@ -1339,7 +1303,8 @@ private struct InstrumentPanel: View {
                 action: {
                     Task {
                         guard let status = currentHOS?.status else {
-                            WKInterfaceDevice.current().play(.failure)
+                            WKInterfaceDevice.current().play(.click)
+                            VoiceActionDispatcher.shared.currentRoute = .hos
                             return
                         }
                         let next: HOSStatus = status == .driving ? .onDuty : .driving
@@ -1400,7 +1365,7 @@ private struct InstrumentPanel: View {
                 fillBody: false,
                 bodyColor: .esangDanger,
                 emphasize: true,
-                accessibilityText: "Emergency SOS. Tap to send an SOS to dispatch and emergency contacts.",
+                accessibilityText: "Emergency SOS. Tap to start the emergency relay.",
                 content: {
                     VStack(spacing: 0) {
                         Image(systemName: "exclamationmark.triangle.fill")
@@ -1430,7 +1395,7 @@ private struct InstrumentPanel: View {
     /// at-a-glance read as the sighted gauges.
     private var hosDialA11y: String {
         guard let observation = currentHOS else {
-            return "HOS evidence unavailable. Open Hours of Service to refresh current provider data."
+            return "HOS evidence unavailable. Tap to open Hours of Service and request current provider data."
         }
         let status: String
         switch observation.status {
@@ -1474,13 +1439,6 @@ private struct InstrumentPanel: View {
         }
     }
 
-    private var timeLabel: String {
-        _ = now
-        let f = DateFormatter()
-        f.dateFormat = "h:mm"
-        return f.string(from: now)
-    }
-
     private var phoneSymbol: String {
         if let ts = pingPhoneTimestamp, Date().timeIntervalSince(ts) < 2.5 {
             switch phoneActivationDispatch {
@@ -1502,7 +1460,7 @@ private struct InstrumentPanel: View {
             case nil: break
             }
         }
-        return connectivity.isReachable ? "PING" : "—"
+        return connectivity.isReachable ? "PING" : "AWAY"
     }
 
     private var hosAccent: Color {
@@ -1649,18 +1607,7 @@ private struct HOSVerticalGauge: View {
     @State private var animatedFill: Double?
 
     var body: some View {
-        // Title sits ABOVE the curved rail so it never wraps into
-        // vertical letters; the rail itself follows the watch's
-        // rounded-corner arc top→middle→bottom on the chosen side.
-        VStack(spacing: 2) {
-            Text(title)
-                .font(.system(size: 8, weight: .heavy, design: .rounded))
-                .foregroundStyle(.white.opacity(0.65))
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
-                .minimumScaleFactor(0.7)
-
-            GeometryReader { geo in
+        GeometryReader { geo in
                 let W = geo.size.width
                 let H = geo.size.height
                 // Corner radius mirrors the bezel curve. Apple Watch
@@ -1690,7 +1637,6 @@ private struct HOSVerticalGauge: View {
                             .shadow(color: .white.opacity(0.18), radius: 1)
                     }
                 }
-            }
         }
         .onAppear { animatedFill = fill }
         .onChange(of: fill) { _, new in
