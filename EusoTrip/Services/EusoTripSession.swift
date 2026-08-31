@@ -555,6 +555,7 @@ final class EusoTripSession: ObservableObject {
         keychain.delete(key: kCredentialBundle)
         keychain.delete(key: kLegacyUnauthStrikes)
         WatchAuthBridge.shared.clear()
+        UnreadMessageStore.shared.reset()
 
         // Preserve the old cookie in memory only inside this bounded task so
         // the public logout route can revoke its refresh family even when the
@@ -635,6 +636,7 @@ final class EusoTripSession: ObservableObject {
         phase = .signedOut
         recoveryUnavailable = false
         WatchAuthBridge.shared.clear()
+        UnreadMessageStore.shared.reset()
     }
 
     // MARK: Cached profile helpers

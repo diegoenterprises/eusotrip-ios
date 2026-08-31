@@ -127,6 +127,12 @@ private struct EusoTripWatchBridgeModifier: ViewModifier {
             postDestination("wallet")
         case .hos:
             postDestination("hos")
+        case .messages(let threadId):
+            var userInfo: [AnyHashable: Any] = [:]
+            if let threadId, !threadId.isEmpty {
+                userInfo["threadId"] = threadId
+            }
+            postDestination("messages", userInfo: userInfo)
         case .esangChat(let seed, let autoSubmit, let beginListening):
             WatchESangHandoffCenter.shared.stage(
                 prompt: seed,

@@ -3375,6 +3375,13 @@ struct ContentView: View {
             routeWatchDestination(driverRoute: .earnings, fallbackPath: "/wallet")
         case "hos":
             routeWatchDestination(driverRoute: .eld, fallbackPath: "/compliance/hos")
+        case "messages":
+            let threadId = note.userInfo?["threadId"] as? String
+            if session.user?.roleEnum == .driver {
+                messagingSheetTarget = MessagingSheetTarget(threadId: threadId)
+            } else {
+                routeWatchPath("/messages")
+            }
         case "dispatch":
             if session.user?.roleEnum == .driver {
                 messagingSheetTarget = MessagingSheetTarget(threadId: nil)

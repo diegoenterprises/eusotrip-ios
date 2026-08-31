@@ -287,8 +287,14 @@ final class OfflineQueue: ObservableObject {
         return k
     }
     @discardableResult
-    func enqueueMessage(loadId: String?, to recipient: String, text: String) -> String {
-        let k = key()
+    func enqueueMessage(
+        loadId: String?,
+        to recipient: String,
+        text: String,
+        idempotencyKey: String? = nil
+    ) -> String {
+        let k = idempotencyKey ?? key()
+        guard !entries.contains(where: { $0.id == k }) else { return k }
         append(.message(loadId: loadId, to: recipient, text: text, key: k))
         return k
     }

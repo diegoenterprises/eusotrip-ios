@@ -435,6 +435,9 @@ final class WatchCommandHandler: NSObject, ObservableObject {
             pendingDeeplink = .wallet
         } else if destination == "hos" {
             pendingDeeplink = .hos
+        } else if destination == "messages" {
+            let threadId = (message["conversationId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            pendingDeeplink = .messages(threadId: threadId?.isEmpty == false ? threadId : nil)
         } else if destination == "maps" {
             pendingDeeplink = .maps(query: transcript)
         } else if destination == "dispatch" {
@@ -790,6 +793,7 @@ final class WatchCommandHandler: NSObject, ObservableObject {
 enum WatchDeeplink: Equatable {
     case wallet
     case hos
+    case messages(threadId: String?)
     case esangChat(seed: String, autoSubmit: Bool, beginListening: Bool)
     case maps(query: String)
     case dispatchCall
