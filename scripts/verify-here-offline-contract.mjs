@@ -39,6 +39,19 @@ const relative = {
   sampleConfig: "EusoTrip.xcconfig.sample",
   project: "EusoTrip.xcodeproj/project.pbxproj",
   scheme: "EusoTrip.xcodeproj/xcshareddata/xcschemes/EusoTrip.xcscheme",
+  deployScript: "scripts/deploy-testflight.sh",
+  exportOptions: "scripts/exportOptions.testflight.plist",
+  ipaPreflight: "scripts/preflight-exported-ipa.mjs",
+  ipaPreflightTests: "scripts/preflight-exported-ipa.test.mjs",
+  simulatorSelector: "scripts/select-available-ios-simulator.mjs",
+  simulatorSelectorTests: "scripts/select-available-ios-simulator.test.mjs",
+  productionGate: "scripts/here-production-gate.mjs",
+  artifactHasher: "scripts/hash-release-artifact.mjs",
+  artifactHasherTests: "scripts/hash-release-artifact.test.mjs",
+  ladderStatus: "scripts/release-ladder-status.mjs",
+  ladderStatusTests: "scripts/release-ladder-status.test.mjs",
+  ascBuildStatus: "scripts/asc-build-status.mjs",
+  ascBuildStatusTests: "scripts/asc-build-status.test.mjs",
   manifest: "EusoTrip/Services/HereMaps/Offline/HERE_SDK_SUPPLY_CHAIN.json",
   styleManifest: "EusoTrip/Services/HereMaps/Offline/HERE_NATIVE_STYLE_SUPPLY_CHAIN.json",
   credentialAttestation: "security/HERE_CREDENTIAL_REMEDIATION.json",
@@ -56,16 +69,197 @@ const retainedCredentialExposurePaths = [
   relative.integrationRiskRegister,
 ];
 
+const releaseInputPaths = [
+  relative.deployScript,
+  relative.exportOptions,
+  relative.ipaPreflight,
+  relative.ipaPreflightTests,
+  relative.simulatorSelector,
+  relative.simulatorSelectorTests,
+  relative.productionGate,
+  relative.artifactHasher,
+  relative.artifactHasherTests,
+  relative.ladderStatus,
+  relative.ladderStatusTests,
+  relative.ascBuildStatus,
+  relative.ascBuildStatusTests,
+];
+
 const absolute = value => path.join(root, value);
-const exists = value => fs.existsSync(absolute(value));
-const read = value => fs.readFileSync(absolute(value), "utf8");
-const sha256 = file => crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+const resolvedRoot = fs.realpathSync(root);
+const reportedUnsafeInputs = new Set();
+const committedInputBytes = new Map();
+
+function pathIsWithin(candidate, directory, allowSame = false) {
+  const relativePath = path.relative(directory, candidate);
+  return (allowSame && relativePath === "") || (
+    relativePath !== "" &&
+    relativePath !== ".." &&
+    !relativePath.startsWith(`..${path.sep}`) &&
+    !path.isAbsolute(relativePath)
+  );
+}
+
+function reportUnsafeRepositoryInput(value, context = "repository input") {
+  const key = `${context}\0${value}`;
+  if (reportedUnsafeInputs.has(key)) return;
+  reportedUnsafeInputs.add(key);
+  failures.push(`${value}: ${context} must be a regular non-symlink file within the repository root`);
+}
+
+function repositoryEntryStatus(value, expectedKind = "file", context = "repository input") {
+  if (!safeRepositoryRelativePath(value)) {
+    reportUnsafeRepositoryInput(value, context);
+    return { status: "unsafe" };
+  }
+  const candidate = absolute(value);
+  if (!fs.existsSync(candidate)) return { status: "missing" };
+
+  let cursor = root;
+  const components = value.split("/");
+  try {
+    for (let index = 0; index < components.length; index += 1) {
+      cursor = path.join(cursor, components[index]);
+      const metadata = fs.lstatSync(cursor, { bigint: true });
+      if (metadata.isSymbolicLink()) {
+        reportUnsafeRepositoryInput(value, context);
+        return { status: "unsafe" };
+      }
+      const isLast = index === components.length - 1;
+      if (!isLast && !metadata.isDirectory()) {
+        reportUnsafeRepositoryInput(value, context);
+        return { status: "unsafe" };
+      }
+      if (isLast && ((expectedKind === "file" && !metadata.isFile()) ||
+          (expectedKind === "directory" && !metadata.isDirectory()))) {
+        reportUnsafeRepositoryInput(value, context);
+        return { status: "unsafe" };
+      }
+    }
+    const realPath = fs.realpathSync(candidate);
+    if (!pathIsWithin(realPath, resolvedRoot)) {
+      reportUnsafeRepositoryInput(value, context);
+      return { status: "unsafe" };
+    }
+    return {
+      status: "ok",
+      path: candidate,
+      realPath,
+      metadata: fs.lstatSync(candidate, { bigint: true }),
+    };
+  } catch {
+    reportUnsafeRepositoryInput(value, context);
+    return { status: "unsafe" };
+  }
+}
+
+function statIdentity(metadata) {
+  return [
+    metadata.dev,
+    metadata.ino,
+    metadata.mode,
+    metadata.size,
+    metadata.mtimeNs,
+    metadata.ctimeNs,
+  ].map(value => String(value)).join(":");
+}
+
+function withPinnedRegularFile(file, allowedRoot, callback, expectedPathMetadata = null) {
+  const resolvedAllowedRoot = fs.realpathSync(allowedRoot);
+  const beforePath = fs.lstatSync(file, { bigint: true });
+  if (!beforePath.isFile() || beforePath.isSymbolicLink()) throw new Error("UnsafeRegularFile");
+  if (expectedPathMetadata && statIdentity(beforePath) !== statIdentity(expectedPathMetadata)) {
+    throw new Error("ChangedBeforeOpen");
+  }
+  const beforeRealPath = fs.realpathSync(file);
+  if (!pathIsWithin(beforeRealPath, resolvedAllowedRoot)) throw new Error("OutOfRootFile");
+
+  const noFollow = fs.constants.O_NOFOLLOW ?? 0;
+  const descriptor = fs.openSync(file, fs.constants.O_RDONLY | noFollow);
+  try {
+    const beforeDescriptor = fs.fstatSync(descriptor, { bigint: true });
+    if (!beforeDescriptor.isFile() ||
+        beforeDescriptor.dev !== beforePath.dev ||
+        beforeDescriptor.ino !== beforePath.ino) {
+      throw new Error("ChangedBeforeOpen");
+    }
+    const value = callback(descriptor, beforeDescriptor);
+    const afterDescriptor = fs.fstatSync(descriptor, { bigint: true });
+    const afterPath = fs.lstatSync(file, { bigint: true });
+    const afterRealPath = fs.realpathSync(file);
+    if (statIdentity(afterDescriptor) !== statIdentity(beforeDescriptor) ||
+        afterPath.isSymbolicLink() ||
+        statIdentity(afterPath) !== statIdentity(afterDescriptor) ||
+        afterRealPath !== beforeRealPath ||
+        !pathIsWithin(afterRealPath, resolvedAllowedRoot)) {
+      throw new Error("ChangedDuringRead");
+    }
+    return value;
+  } finally {
+    fs.closeSync(descriptor);
+  }
+}
+
+function readRepositoryBytesUncached(value, context = "repository input") {
+  const entry = repositoryEntryStatus(value, "file", context);
+  if (entry.status !== "ok") return null;
+  try {
+    return withPinnedRegularFile(entry.path, root, descriptor => fs.readFileSync(descriptor));
+  } catch {
+    reportUnsafeRepositoryInput(value, context);
+    return null;
+  }
+}
+
+function readRepositoryBytes(value, context = "repository input") {
+  const committed = committedInputBytes.get(value);
+  return committed ? Buffer.from(committed) : readRepositoryBytesUncached(value, context);
+}
+
+const exists = value => repositoryEntryStatus(value).status === "ok";
+const read = value => readRepositoryBytes(value)?.toString("utf8") ?? "";
+
+function sha256PinnedFile(file, allowedRoot) {
+  return withPinnedRegularFile(file, allowedRoot, descriptor => {
+    const hash = crypto.createHash("sha256");
+    const chunk = Buffer.allocUnsafe(1024 * 1024);
+    while (true) {
+      const bytesRead = fs.readSync(descriptor, chunk, 0, chunk.length, null);
+      if (bytesRead === 0) break;
+      hash.update(chunk.subarray(0, bytesRead));
+    }
+    return hash.digest("hex");
+  });
+}
+
+function sha256RepositoryFile(value, context = "repository input") {
+  const entry = repositoryEntryStatus(value, "file", context);
+  if (entry.status !== "ok") return null;
+  try {
+    return sha256PinnedFile(entry.path, root);
+  } catch {
+    reportUnsafeRepositoryInput(value, context);
+    return null;
+  }
+}
+
+const sha256 = file => sha256PinnedFile(file, path.dirname(file));
 
 function parsePlist(file) {
   return JSON.parse(execFileSync(
     "/usr/bin/plutil",
     ["-convert", "json", "-o", "-", file],
     { encoding: "utf8" },
+  ));
+}
+
+function parseRepositoryPlist(value) {
+  const contents = readRepositoryBytes(value);
+  if (!contents) throw new Error("UnsafeRepositoryPlist");
+  return JSON.parse(execFileSync(
+    "/usr/bin/plutil",
+    ["-convert", "json", "-o", "-", "-"],
+    { encoding: "utf8", input: contents },
   ));
 }
 
@@ -87,24 +281,52 @@ function walkAbsolute(directory) {
 function canonicalTreeHash(directory) {
   const hash = crypto.createHash("sha256");
   const entries = [];
+  const rootMetadata = fs.lstatSync(directory, { bigint: true });
+  if (!rootMetadata.isDirectory() || rootMetadata.isSymbolicLink()) {
+    throw new Error("UnsafeTreeRoot");
+  }
+  const resolvedTreeRoot = fs.realpathSync(directory);
+  const mode = metadata => (Number(metadata.mode) & 0o7777).toString(8).padStart(4, "0");
+  const seals = [];
   const visit = current => {
     for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
       const entryPath = path.join(current, entry.name);
+      const metadata = fs.lstatSync(entryPath, { bigint: true });
+      if (metadata.isSymbolicLink() || (!metadata.isDirectory() && !metadata.isFile())) {
+        throw new Error("UnsafeTreeEntry");
+      }
+      const resolvedEntry = fs.realpathSync(entryPath);
+      if (!pathIsWithin(resolvedEntry, resolvedTreeRoot)) throw new Error("OutOfRootTreeEntry");
       entries.push(entryPath);
-      if (entry.isDirectory()) visit(entryPath);
+      if (metadata.isDirectory()) visit(entryPath);
     }
   };
   visit(directory);
+  hash.update(`R\0${mode(rootMetadata)}\0`);
   for (const entryPath of entries.sort((left, right) => left.localeCompare(right))) {
     const relativePath = path.relative(directory, entryPath).split(path.sep).join("/");
-    const metadata = fs.lstatSync(entryPath);
-    if (metadata.isSymbolicLink()) {
-      hash.update(`L\0${relativePath}\0${fs.readlinkSync(entryPath)}\0`);
-    } else if (metadata.isDirectory()) {
-      hash.update(`D\0${relativePath}\0`);
+    const metadata = fs.lstatSync(entryPath, { bigint: true });
+    if (metadata.isDirectory()) {
+      hash.update(`D\0${relativePath}\0${mode(metadata)}\0`);
     } else if (metadata.isFile()) {
-      hash.update(`F\0${relativePath}\0${metadata.size}\0`);
-      hash.update(fs.readFileSync(entryPath));
+      hash.update(`F\0${relativePath}\0${mode(metadata)}\0${metadata.size}\0`);
+      hash.update(withPinnedRegularFile(
+        entryPath,
+        directory,
+        descriptor => fs.readFileSync(descriptor),
+        metadata,
+      ));
+    }
+    seals.push({ entryPath, identity: statIdentity(metadata), realPath: fs.realpathSync(entryPath) });
+  }
+  if (statIdentity(fs.lstatSync(directory, { bigint: true })) !== statIdentity(rootMetadata) ||
+      fs.realpathSync(directory) !== resolvedTreeRoot) {
+    throw new Error("ChangedTreeRoot");
+  }
+  for (const seal of seals) {
+    if (statIdentity(fs.lstatSync(seal.entryPath, { bigint: true })) !== seal.identity ||
+        fs.realpathSync(seal.entryPath) !== seal.realPath) {
+      throw new Error("ChangedTreeEntry");
     }
   }
   return hash.digest("hex");
@@ -146,6 +368,8 @@ function normalizedFrameworkHash(frameworkDirectory) {
       }
     } else return null;
     return canonicalTreeHash(copy);
+  } catch {
+    return null;
   } finally {
     fs.rmSync(temporaryRoot, { recursive: true, force: true });
   }
@@ -490,17 +714,35 @@ function denyText(file, snippets) {
 }
 
 function gitPathIsTrackedAndUnchanged(file) {
+  const entry = repositoryEntryStatus(file);
+  if (entry.status !== "ok") return false;
   const tracked = spawnSync(
     "/usr/bin/git",
     ["ls-files", "--error-unmatch", "--", file],
     { cwd: root, stdio: "ignore" },
   );
-  const unchanged = spawnSync(
+  if (tracked.status !== 0) return false;
+  const treeEntry = spawnSync(
     "/usr/bin/git",
-    ["diff", "--quiet", "HEAD", "--", file],
-    { cwd: root, stdio: "ignore" },
+    ["ls-tree", "HEAD", "--", file],
+    { cwd: root, encoding: "utf8" },
   );
-  return tracked.status === 0 && unchanged.status === 0;
+  const match = treeEntry.status === 0
+    ? treeEntry.stdout.match(/^(100644|100755)\s+blob\s+[a-f0-9]+\t/m)
+    : null;
+  if (!match) return false;
+  const headBlob = spawnSync(
+    "/usr/bin/git",
+    ["show", `HEAD:${file}`],
+    { cwd: root, encoding: null, maxBuffer: 64 * 1024 * 1024 },
+  );
+  const currentBytes = readRepositoryBytesUncached(file);
+  if (headBlob.status !== 0 || !Buffer.isBuffer(headBlob.stdout) || !currentBytes) return false;
+  const headExecutable = match[1] === "100755";
+  const currentExecutable = (Number(entry.metadata.mode) & 0o111) !== 0;
+  if (headExecutable !== currentExecutable || !headBlob.stdout.equals(currentBytes)) return false;
+  committedInputBytes.set(file, Buffer.from(currentBytes));
+  return true;
 }
 
 function containsProductionShapedHERECredentialLiteral(source) {
@@ -561,18 +803,48 @@ function fileContainsAnyByteSequence(file, sequences) {
 }
 
 function walkFiles(directory, extension) {
-  if (!exists(directory)) return [];
+  const rootEntry = repositoryEntryStatus(directory, "directory", "repository source tree");
+  if (rootEntry.status === "missing") return [];
+  if (rootEntry.status !== "ok") return [];
   const files = [];
-  const queue = [absolute(directory)];
+  const queue = [rootEntry.path];
   while (queue.length) {
     const current = queue.pop();
     for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
       const entryPath = path.join(current, entry.name);
-      if (entry.isDirectory()) queue.push(entryPath);
+      const relativeEntryPath = path.relative(root, entryPath).split(path.sep).join("/");
+      let metadata;
+      try {
+        metadata = fs.lstatSync(entryPath, { bigint: true });
+      } catch {
+        reportUnsafeRepositoryInput(relativeEntryPath, "repository source tree entry");
+        continue;
+      }
+      if (metadata.isSymbolicLink() || (!metadata.isDirectory() && !metadata.isFile())) {
+        reportUnsafeRepositoryInput(relativeEntryPath, "repository source tree entry");
+        continue;
+      }
+      let resolvedEntry;
+      try {
+        resolvedEntry = fs.realpathSync(entryPath);
+      } catch {
+        reportUnsafeRepositoryInput(relativeEntryPath, "repository source tree entry");
+        continue;
+      }
+      if (!pathIsWithin(resolvedEntry, resolvedRoot)) {
+        reportUnsafeRepositoryInput(relativeEntryPath, "repository source tree entry");
+        continue;
+      }
+      if (metadata.isDirectory()) queue.push(entryPath);
       else if (!extension || entry.name.endsWith(extension)) files.push(entryPath);
     }
   }
   return files;
+}
+
+function readWalkedRepositoryFile(file, context = "repository source tree entry") {
+  const value = path.relative(root, file).split(path.sep).join("/");
+  return readRepositoryBytes(value, context)?.toString("utf8") ?? "";
 }
 
 requireFiles([
@@ -592,6 +864,19 @@ requireFiles([
   relative.sampleConfig,
   relative.project,
   relative.scheme,
+  relative.deployScript,
+  relative.exportOptions,
+  relative.ipaPreflight,
+  relative.ipaPreflightTests,
+  relative.simulatorSelector,
+  relative.simulatorSelectorTests,
+  relative.productionGate,
+  relative.artifactHasher,
+  relative.artifactHasherTests,
+  relative.ladderStatus,
+  relative.ladderStatusTests,
+  relative.ascBuildStatus,
+  relative.ascBuildStatusTests,
   relative.manifest,
   relative.styleManifest,
   relative.credentialAttestation,
@@ -607,10 +892,18 @@ for (const [file, label] of [
   [relative.manifest, "HERE SDK supply-chain manifest"],
   [relative.styleManifest, "HERE native-style supply-chain manifest"],
   [relative.credentialAttestation, "HERE credential-remediation attestation"],
+  ...releaseInputPaths.map(file => [file, `release input ${file}`]),
   ...retainedCredentialExposurePaths.map(file => [file, `sanitized credential-incident file ${file}`]),
 ]) {
   if (!gitPathIsTrackedAndUnchanged(file)) {
     blockers.push(`${label} is not committed unchanged in HEAD`);
+  }
+}
+
+for (const executable of [relative.deployScript, relative.ascBuildStatus]) {
+  const entry = repositoryEntryStatus(executable);
+  if (entry.status === "ok" && (Number(entry.metadata.mode) & 0o111) === 0) {
+    failures.push(`${executable}: release entrypoint must retain an executable POSIX mode`);
   }
 }
 
@@ -748,7 +1041,7 @@ for (const file of [
   ...walkFiles(relative.offlineRoot, ".swift"),
   ...walkFiles(relative.offlineUIRoot, ".swift"),
 ]) {
-  const source = fs.readFileSync(file, "utf8");
+  const source = readWalkedRepositoryFile(file);
   const display = path.relative(root, file);
   for (const forbidden of [
     "fatalError(",
@@ -855,14 +1148,17 @@ if (!projectInspector.resourceRegistered(relative.styleManifest)) {
 }
 
 const releaseAutomationCandidates = [
-  absolute(relative.scheme),
-  absolute("scripts/deploy-testflight.sh"),
-  absolute("azure-pipelines.yml"),
-  absolute("fastlane/Fastfile"),
+  relative.scheme,
+  relative.deployScript,
+  "azure-pipelines.yml",
+  "fastlane/Fastfile",
   ...walkFiles(".github/workflows"),
   ...walkFiles(".azure-pipelines"),
-].filter(file => fs.existsSync(file) && fs.lstatSync(file).isFile());
-const releaseAutomationSources = releaseAutomationCandidates.map(file => fs.readFileSync(file, "utf8"));
+].map(file => path.isAbsolute(file)
+  ? path.relative(root, file).split(path.sep).join("/")
+  : file)
+  .filter(file => repositoryEntryStatus(file).status === "ok");
+const releaseAutomationSources = releaseAutomationCandidates.map(file => read(file));
 const archiveGateIsWired = releaseAutomationSources.some(source =>
   source.includes("verify-here-offline-contract.mjs") &&
   source.includes("--release") &&
@@ -873,6 +1169,57 @@ const regressionHarnessIsWired = releaseAutomationSources.some(source =>
   source.includes("verify-here-offline-contract.test.mjs"));
 if (!archiveGateIsWired || !regressionHarnessIsWired) {
   blockers.push("authoritative archive/CI automation does not enforce the HERE release gate and regression harness");
+}
+const deployScriptSource = exists(relative.deployScript) ? read(relative.deployScript) : "";
+const deployExecutableSource = deployScriptSource
+  .split("\n")
+  .filter(line => !line.trimStart().startsWith("#"))
+  .join("\n");
+let exportOptions = {};
+if (exists(relative.exportOptions)) {
+  try {
+    exportOptions = parseRepositoryPlist(relative.exportOptions);
+  } catch {
+    failures.push(`${relative.exportOptions}: plist could not be parsed safely`);
+  }
+}
+const explicitUploadCount = (deployExecutableSource.match(/^\s*--upload-app\s*\\?\s*$/gm) ?? []).length;
+const archiveProductGateIndex = deployExecutableSource.indexOf(
+  '--built-app="${ARCHIVED_APP_PATH}"',
+);
+const localExportIndex = deployExecutableSource.indexOf("-exportArchive");
+const ipaPreflightIndex = deployExecutableSource.indexOf(
+  'preflight-exported-ipa.mjs" --ipa="$IPA_PATH"',
+);
+const extractionIndex = deployExecutableSource.indexOf("/usr/bin/ditto -x -k");
+const exportedProductGateIndex = deployExecutableSource.indexOf(
+  '--built-app="${EXPORTED_APP_PATH}"',
+);
+const explicitUploadIndex = deployExecutableSource.indexOf("--upload-app");
+const releaseOrderIsSafe =
+  archiveProductGateIndex >= 0 &&
+  archiveProductGateIndex < localExportIndex &&
+  localExportIndex < ipaPreflightIndex &&
+  ipaPreflightIndex < extractionIndex &&
+  extractionIndex < exportedProductGateIndex &&
+  exportedProductGateIndex < explicitUploadIndex;
+const finalExportedProductIsGated =
+  deployExecutableSource.includes("EXPORTED_APP_PATH=") &&
+  deployExecutableSource.includes("preflight-exported-ipa.test.mjs") &&
+  deployExecutableSource.includes("hash-release-artifact.test.mjs") &&
+  deployExecutableSource.includes("select-available-ios-simulator.test.mjs") &&
+  deployExecutableSource.includes("release-ladder-status.test.mjs") &&
+  deployExecutableSource.includes("asc-build-status.test.mjs") &&
+  deployExecutableSource.includes("here-production-gate.mjs") &&
+  deployExecutableSource.includes("EUSOTRIP_APPROVED_RELEASE_COMMIT") &&
+  deployExecutableSource.includes("-only-testing:EusoTripOfflineTests") &&
+  deployExecutableSource.includes("-parallel-testing-enabled NO") &&
+  deployExecutableSource.includes('LADDER_TESTED="pass"') &&
+  exportOptions.destination === "export" &&
+  explicitUploadCount === 1 &&
+  releaseOrderIsSafe;
+if (!finalExportedProductIsGated) {
+  blockers.push("TestFlight automation can upload before the final exported app passes HERE production and offline release gates");
 }
 
 const appEntryCode = exists(relative.appEntry) ? compiledSwiftCodeOnly(read(relative.appEntry)) : "";
@@ -1150,12 +1497,19 @@ if (styleManifest) {
       continue;
     }
     uniquePaths.add(entry.relativePath);
-    const stylePath = absolute(entry.relativePath);
-    const styleExists = fs.existsSync(stylePath) && fs.statSync(stylePath).isFile();
+    const styleEntry = repositoryEntryStatus(
+      entry.relativePath,
+      "file",
+      "approved HERE-native style",
+    );
+    const styleExists = styleEntry.status === "ok";
     if (!styleExists) missingStyleFiles += 1;
     if (!/^[a-f0-9]{64}$/i.test(entry.sha256 ?? "")) unapprovedHashes += 1;
-    else if (styleExists && sha256(stylePath).toLowerCase() !== entry.sha256.toLowerCase()) {
-      mismatchedStyleHashes += 1;
+    else if (styleExists) {
+      const actualHash = sha256RepositoryFile(entry.relativePath, "approved HERE-native style");
+      if (actualHash && actualHash.toLowerCase() !== entry.sha256.toLowerCase()) {
+        mismatchedStyleHashes += 1;
+      }
     }
     if (!projectInspector.resourceRegistered(entry.relativePath)) unregisteredStyleFiles += 1;
   }
@@ -1258,9 +1612,13 @@ if (manifest) {
   if (!/^[a-f0-9]{64}$/i.test(manifest.frameworkTreeSHA256 ?? "")) {
     blockers.push("vendor xcframework canonical tree SHA-256 has not been approved");
   } else if (frameworkIsDirectory) {
-    const actual = canonicalTreeHash(frameworkPath);
-    if (actual.toLowerCase() !== manifest.frameworkTreeSHA256.toLowerCase()) {
-      failures.push(`${manifest.frameworkRelativePath}: canonical tree SHA-256 does not match the approved manifest`);
+    try {
+      const actual = canonicalTreeHash(frameworkPath);
+      if (actual.toLowerCase() !== manifest.frameworkTreeSHA256.toLowerCase()) {
+        failures.push(`${manifest.frameworkRelativePath}: canonical tree SHA-256 does not match the approved manifest`);
+      }
+    } catch {
+      failures.push(`${manifest.frameworkRelativePath}: canonical tree contains an unsafe or unstable filesystem entry`);
     }
   }
   if (!/^[a-f0-9]{64}$/i.test(manifest.legalNoticeSHA256 ?? "")) {
