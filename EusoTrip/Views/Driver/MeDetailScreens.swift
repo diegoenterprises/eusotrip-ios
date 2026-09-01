@@ -3509,7 +3509,7 @@ struct HaulRewardsTab: View {
                 RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                     .fill(palette.tintNeutral.opacity(0.55))
                 if let urlStr = r.imageUrl, let url = URL(string: urlStr) {
-                    AsyncImage(url: url) { phase in
+                    AppRadioSilenceAsyncImage(url: url) { phase in
                         if let img = phase.image {
                             img.resizable().scaledToFit().padding(6)
                         } else {
@@ -4744,9 +4744,13 @@ private struct MeCarrierInAppSafari: UIViewControllerRepresentable {
         let cfg = SFSafariViewController.Configuration()
         cfg.entersReaderIfAvailable = false
         cfg.barCollapsingEnabled = true
-        let vc = SFSafariViewController(url: url, configuration: cfg)
+        let vc = SFSafariViewController(
+            url: AppRadioSilenceDirectTransportController.shared.gatedRemoteURL(url),
+            configuration: cfg
+        )
         vc.dismissButtonStyle = .done
         vc.preferredControlTintColor = UIColor(Brand.magenta)
+        AppRadioSilenceDirectTransportController.shared.track(safariController: vc)
         return vc
     }
     func updateUIViewController(_ uiViewController: SFSafariViewController, context: Context) {}

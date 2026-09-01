@@ -14,6 +14,7 @@ struct CanonicalOfflineRouteItineraryView: View {
     let package: CanonicalRoutePackage
 
     @Environment(\.palette) private var palette
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s3) {
@@ -46,6 +47,21 @@ struct CanonicalOfflineRouteItineraryView: View {
                         .font(EType.caption)
                         .foregroundStyle(palette.textTertiary)
                 }
+            }
+
+            if let composition = OfflineMapProductionComposition.shared,
+               package.mode == .rail || package.mode == .vessel {
+                OfflineNativeCoverageMapSurfaceHost(
+                    composition: composition,
+                    offlineSnapshot: composition.owner.snapshot,
+                    identity: .init(
+                        mode: package.mode == .rail ? .rail : .vessel,
+                        family: .operational,
+                        theme: colorScheme == .dark ? .dark : .light
+                    ),
+                    journeyProjection: .serverCanonical(package)
+                )
+                .frame(minHeight: 260)
             }
 
             Text("OFFLINE ITINERARY")
@@ -85,6 +101,8 @@ struct CanonicalOfflineRouteItineraryView: View {
 
     private var modeLabel: String {
         switch package.mode {
+        case .road:
+            return "road"
         case .truck:
             return "truck"
         case .rail:
@@ -99,7 +117,7 @@ struct CanonicalOfflineRouteItineraryView: View {
         switch package.mode {
         case .vessel:
             return String(format: "%.0f nautical miles", meters / 1_852)
-        case .truck, .rail:
+        case .road, .truck, .rail:
             return String(format: "%.0f miles", meters / 1_609.344)
         }
     }

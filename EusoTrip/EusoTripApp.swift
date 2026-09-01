@@ -351,6 +351,18 @@ struct EusoTripApp: App {
             }
             // Deep link: eusotrip://reset?token=<uuid>
             .onOpenURL { handleDeepLink($0) }
+            // SwiftUI Link/openURL can otherwise hand an HTTP URL to Safari
+            // from a still-mounted surface behind the offline desk. Keep
+            // user-controlled telephony/mail/system schemes available; only
+            // app-initiated web navigation is part of this transport gate.
+            .environment(\.openURL, OpenURLAction { url in
+                let scheme = url.scheme?.lowercased()
+                if (scheme == "http" || scheme == "https"),
+                   EusoTripAPI.shared.isAppRadioSilenceEnforced {
+                    return .discarded
+                }
+                return .systemAction(url)
+            })
         }
     }
 

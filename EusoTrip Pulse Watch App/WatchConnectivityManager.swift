@@ -105,6 +105,10 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
 
     func activate() {
         guard let session else { return }
+        // Read the durable snapshot synchronously before activation callbacks or
+        // reachability hooks can schedule work. A fresh install remains closed
+        // when the context has not arrived yet.
+        applyContext(session.receivedApplicationContext)
         session.delegate = self
         session.activate()
     }
@@ -655,9 +659,14 @@ extension WatchConnectivityManager: WCSessionDelegate {
 
     nonisolated func sessionReachabilityDidChange(_ session: WCSession) {
         let reachable = session.isReachable
+        let context = session.receivedApplicationContext
         Task { @MainActor [weak self] in
             guard let self else { return }
             self.applyReachability(reachable)
+            // Re-apply the durable policy snapshot before any reconnect-driven
+            // outbox drain. WCSession may report reachability before delivering
+            // its delegate callback for the latest applicationContext.
+            self.applyContext(context)
             // Phone just came back in range. If we don't already have
             // a mirrored token, pull it so the UI can flip out of the
             // pairing-hint state before the driver even taps anything.
@@ -718,9 +727,10 @@ extension WatchConnectivityManager: WCSessionDelegate {
             // "load": ..., "hos": ..., "unread": ..., "settings": ...]
             // — so a cold-launched watch restores all of them instead
             // of only whichever op the phone happened to push last.
-            // Auth is applied FIRST so the other domains land on a
-            // signed-in store.
-            let channelOrder = ["auth", "load", "hos", "unread", "settings"]
+            // Radio silence is applied before every data channel so a cold
+            // launch cannot start refresh/replay work while restoring auth.
+            // Auth remains first among the application-data domains.
+            let channelOrder = ["radioSilence", "auth", "load", "hos", "unread", "settings"]
             var dispatched = false
             for channel in channelOrder {
                 if let sub = ctx[channel] as? [String: Any], sub["op"] is String {
@@ -732,6 +742,21 @@ extension WatchConnectivityManager: WCSessionDelegate {
             return
         }
         switch op {
+        case "app.radioSilence":
+            guard let enforced = ctx["enforced"] as? Bool,
+                  let epoch = ctx["epoch"] as? String,
+                  !epoch.isEmpty else { return }
+            let revision: Int? = {
+                if let value = ctx["revision"] as? Int { return value }
+                return (ctx["revision"] as? NSNumber)?.intValue
+            }()
+            guard let revision else { return }
+            AppRadioSilenceWatchPolicy.shared.apply(
+                enforced: enforced,
+                revision: revision,
+                epoch: epoch
+            )
+            return
         case "realtime.event":
             // iPhone forwarded one of its WebSocket events. Re-broadcast
             // locally so any watch view that cares (HomeView, HOSView,

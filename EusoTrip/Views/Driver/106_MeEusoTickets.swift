@@ -525,7 +525,11 @@ private struct IdentifiedURL: Identifiable {
 private struct SafariView: UIViewControllerRepresentable {
     let url: URL
     func makeUIViewController(context: Context) -> SFSafariViewController {
-        SFSafariViewController(url: url)
+        let vc = SFSafariViewController(
+            url: AppRadioSilenceDirectTransportController.shared.gatedRemoteURL(url)
+        )
+        AppRadioSilenceDirectTransportController.shared.track(safariController: vc)
+        return vc
     }
     func updateUIViewController(_ vc: SFSafariViewController, context: Context) {}
 }

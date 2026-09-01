@@ -608,7 +608,7 @@ struct DriverConversationView: View {
             }
         } else if let urlStr = m.imageURL, let url = URL(string: urlStr) {
             attachmentImage {
-                AsyncImage(url: url) { phase in
+                AppRadioSilenceAsyncImage(url: url) { phase in
                     switch phase {
                     case .empty:
                         RoundedRectangle(cornerRadius: Radius.md)
@@ -713,7 +713,7 @@ struct DriverConversationView: View {
             // `data:` URLs decode in-memory; plain https URLs pull
             // over the network. `AsyncImage` handles both.
             imageBubble(outbound: m.from == .me, caption: m.text) {
-                AsyncImage(url: url) { phase in
+                AppRadioSilenceAsyncImage(url: url) { phase in
                     switch phase {
                     case .empty:
                         RoundedRectangle(cornerRadius: Radius.md)

@@ -47,6 +47,8 @@ final class AppleAuthProvider: NSObject {
 
     private var pendingContinuation: CheckedContinuation<ASAuthorization, Error>?
     private var presentationAnchor: ASPresentationAnchor?
+    private var activeAuthorizationController: ASAuthorizationController?
+    private var transportRegistration: AppRadioSilenceDirectTransportController.Registration?
 
     // MARK: — Sign in with Apple
 
@@ -187,6 +189,9 @@ final class AppleAuthProvider: NSObject {
     // MARK: — Controller plumbing
 
     private func perform(requests: [ASAuthorizationRequest], preferImmediately: Bool = false) async throws -> ASAuthorization {
+        guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else {
+            throw EusoAuthError.radioSilence
+        }
         // Guard against concurrent presentations — ASAuthorization
         // expects exactly one in-flight controller.
         if pendingContinuation != nil {
@@ -198,12 +203,34 @@ final class AppleAuthProvider: NSObject {
             let controller = ASAuthorizationController(authorizationRequests: requests)
             controller.delegate = self
             controller.presentationContextProvider = self
+            activeAuthorizationController = controller
+            transportRegistration = AppRadioSilenceDirectTransportController.shared.register(
+                stop: { [weak self, weak controller] in
+                    controller?.cancel()
+                    self?.cancelForAppRadioSilence(controller)
+                }
+            )
             if preferImmediately {
                 controller.performRequests(options: .preferImmediatelyAvailableCredentials)
             } else {
                 controller.performRequests()
             }
         }
+    }
+
+    private func cancelForAppRadioSilence(_ controller: ASAuthorizationController?) {
+        if let controller, activeAuthorizationController !== controller { return }
+        finishAuthorizationController(controller)
+        let cont = pendingContinuation
+        pendingContinuation = nil
+        cont?.resume(throwing: EusoAuthError.radioSilence)
+    }
+
+    private func finishAuthorizationController(_ controller: ASAuthorizationController?) {
+        if let controller, activeAuthorizationController !== controller { return }
+        AppRadioSilenceDirectTransportController.shared.unregister(transportRegistration)
+        transportRegistration = nil
+        activeAuthorizationController = nil
     }
 
     // MARK: — Crypto / encoding helpers
@@ -255,6 +282,7 @@ enum EusoAuthError: Error, LocalizedError {
     case malformedPasskeyOptions
     case unexpectedPasskeyResponse
     case authorizationInProgress
+    case radioSilence
     case userCanceled
     case underlying(String)
 
@@ -264,6 +292,7 @@ enum EusoAuthError: Error, LocalizedError {
         case .malformedPasskeyOptions:  return "Passkey setup options were invalid. Try again."
         case .unexpectedPasskeyResponse: return "Passkey response shape didn't match. Try again."
         case .authorizationInProgress:  return "Another sign-in is already in progress."
+        case .radioSilence:             return "Sign-in is paused while the offline journey is active."
         case .userCanceled:             return "Sign-in canceled."
         case .underlying(let m):        return m
         }
@@ -279,7 +308,12 @@ extension AppleAuthProvider: ASAuthorizationControllerDelegate {
             guard let self else { return }
             let cont = self.pendingContinuation
             self.pendingContinuation = nil
-            cont?.resume(returning: authorization)
+            self.finishAuthorizationController(controller)
+            if EusoTripAPI.shared.isAppRadioSilenceEnforced {
+                cont?.resume(throwing: EusoAuthError.radioSilence)
+            } else {
+                cont?.resume(returning: authorization)
+            }
         }
     }
 
@@ -289,6 +323,11 @@ extension AppleAuthProvider: ASAuthorizationControllerDelegate {
             guard let self else { return }
             let cont = self.pendingContinuation
             self.pendingContinuation = nil
+            self.finishAuthorizationController(controller)
+            if EusoTripAPI.shared.isAppRadioSilenceEnforced {
+                cont?.resume(throwing: EusoAuthError.radioSilence)
+                return
+            }
             // ASAuthorizationError.canceled is the routine cancel path —
             // surface a friendlier error so the UI can no-op silently.
             if let asErr = error as? ASAuthorizationError, asErr.code == .canceled {

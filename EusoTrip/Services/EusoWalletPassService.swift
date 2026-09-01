@@ -71,6 +71,8 @@ enum EusoWalletPassResult {
 final class EusoWalletPassService {
 
     static let shared = EusoWalletPassService()
+    private var activeAddPassController: PKAddPassesViewController?
+    private var transportRegistration: AppRadioSilenceDirectTransportController.Registration?
     private init() {}
 
     /// Normalize only the display-id forms the app actually emits. Never
@@ -101,6 +103,9 @@ final class EusoWalletPassService {
     /// the caller. Returns a `EusoWalletPassResult` so the call site
     /// can render the right UX (toast, inline fallback, error banner).
     func addPass(forLoadId loadId: String) async -> EusoWalletPassResult {
+        guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else {
+            return .failure(message: "Apple Wallet is paused while the offline journey is active.")
+        }
         // 0. Normalize the app's known display ids. Unknown or malformed
         //    forms remain untouched and fail the server's strict numeric-id
         //    contract instead of being lossy-converted to another load.
@@ -164,6 +169,9 @@ final class EusoWalletPassService {
             } else { msg = error.localizedDescription }
             return .failure(message: msg)
         }
+        guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else {
+            return .failure(message: "Apple Wallet is paused while the offline journey is active.")
+        }
 
         // 2. If the server didn't ship a .pkpass bundle (signing
         //    pipeline offline, free-tier dev account, etc.), short-
@@ -225,6 +233,9 @@ final class EusoWalletPassService {
                  expectedTheme: EusoTripAPI.WalletThemeMetadata,
                  expectedPassTypeIdentifier: String,
                  expectedSerialNumber: String) async -> EusoWalletPassResult {
+        guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else {
+            return .failure(message: "Apple Wallet is paused while the offline journey is active.")
+        }
         // Pull through the app's bounded, auth-aware transport. It adds the
         // bearer only for EusoTrip hosts and leaves Azure SAS URLs untouched.
         let data: Data
@@ -232,6 +243,9 @@ final class EusoWalletPassService {
             data = try await EusoTripAPI.shared.fetchBoundedWalletPassData(url)
         } catch {
             return .failure(message: "Couldn't download the wallet pass.")
+        }
+        guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else {
+            return .failure(message: "Apple Wallet is paused while the offline journey is active.")
         }
 
         // 4. Parse with PassKit. `PKPass(data:)` validates the bundle
@@ -267,6 +281,9 @@ final class EusoWalletPassService {
         //    sheet leaves the old design installed and may reject a duplicate.
         let library = PKPassLibrary()
         if library.containsPass(pkpass) {
+            guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else {
+                return .failure(message: "Apple Wallet is paused while the offline journey is active.")
+            }
             guard library.replacePass(with: pkpass),
                   let installed = library.pass(
                     withPassTypeIdentifier: expectedPassType,
@@ -290,8 +307,27 @@ final class EusoWalletPassService {
         guard let presenter = topPresenter() else {
             return .failure(message: "Couldn't find a screen to add the pass to.")
         }
+        guard activeAddPassController == nil,
+              !EusoTripAPI.shared.isAppRadioSilenceEnforced else {
+            return .failure(message: "Apple Wallet is unavailable while another protected flow is active.")
+        }
+        addVC.delegate = self
+        activeAddPassController = addVC
+        transportRegistration = AppRadioSilenceDirectTransportController.shared.register(
+            stop: { [weak self, weak addVC] in
+                addVC?.dismiss(animated: false)
+                self?.finishAddPassController(addVC)
+            }
+        )
         presenter.present(addVC, animated: true)
         return .presented
+    }
+
+    private func finishAddPassController(_ controller: PKAddPassesViewController?) {
+        if let controller, activeAddPassController !== controller { return }
+        AppRadioSilenceDirectTransportController.shared.unregister(transportRegistration)
+        transportRegistration = nil
+        activeAddPassController = nil
     }
 
     private func currentThemeSelection() async throws -> ThemeSelection {
@@ -386,6 +422,16 @@ final class EusoWalletPassService {
             top = presented
         }
         return top
+    }
+}
+
+extension EusoWalletPassService: PKAddPassesViewControllerDelegate {
+    nonisolated func addPassesViewControllerDidFinish(_ controller: PKAddPassesViewController) {
+        controller.dismiss(animated: true) {
+            Task { @MainActor in
+                self.finishAddPassController(controller)
+            }
+        }
     }
 }
 

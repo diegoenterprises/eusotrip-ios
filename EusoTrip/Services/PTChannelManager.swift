@@ -90,6 +90,8 @@ final class PTChannelManager: NSObject, ObservableObject {
     /// The descriptor of the channel we asked to join, retained so we can
     /// leave cleanly and so the restoration delegate can re-join it.
     private var activeChannelUUID: UUID?
+    private var activeDisplayName: String?
+    private var suspendedMembership: (chainGroupId: String, displayName: String)?
 
     private override init() {
         super.init()
@@ -105,6 +107,7 @@ final class PTChannelManager: NSObject, ObservableObject {
     /// it's invoked the first time a chain-group screen wants PTT, so the
     /// "framework refused" cost is paid once and cached.
     func bootstrapIfNeeded() async {
+        guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else { return }
         guard channelManager == nil else { return }
         do {
             // The completion handler returns `(manager, error)`; the
@@ -125,6 +128,7 @@ final class PTChannelManager: NSObject, ObservableObject {
                     }
                 }
             }
+            guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else { return }
             self.channelManager = manager
             self.isAvailable = true
             self.unavailableReason = nil
@@ -157,8 +161,10 @@ final class PTChannelManager: NSObject, ObservableObject {
     /// - Returns: true once we're (or already were) joined.
     @discardableResult
     func join(chainGroupId: String, displayName: String) async -> Bool {
+        guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else { return false }
         await bootstrapIfNeeded()
-        guard isAvailable, let manager = channelManager else { return false }
+        guard !EusoTripAPI.shared.isAppRadioSilenceEnforced,
+              isAvailable, let manager = channelManager else { return false }
 
         let uuid = Self.channelUUID(forChainGroup: chainGroupId)
 
@@ -186,6 +192,7 @@ final class PTChannelManager: NSObject, ObservableObject {
         // record the intent so the ephemeral-token delegate (which can
         // arrive first) knows which chain-group to register against.
         joinedChainGroupId = chainGroupId
+        activeDisplayName = displayName
         activeChannelUUID = uuid
         manager.requestJoinChannel(channelUUID: uuid, descriptor: descriptor)
         return true
@@ -194,13 +201,19 @@ final class PTChannelManager: NSObject, ObservableObject {
     /// Leave the current chain-group channel (e.g. when the load is
     /// delivered or the driver signs off the haul).
     func leave() async {
+        // An explicit/user-owned leave cancels any membership retained by
+        // radio-silence suspension. Otherwise the final lease release could
+        // unexpectedly rejoin a channel the driver deliberately left.
+        suspendedMembership = nil
         guard let manager = channelManager, let uuid = activeChannelUUID else {
             joinedChainGroupId = nil
             activeChannelUUID = nil
+            activeDisplayName = nil
             return
         }
         manager.leaveChannel(channelUUID: uuid)
         activeChannelUUID = nil
+        activeDisplayName = nil
         joinedChainGroupId = nil
         isTransmitting = false
     }
@@ -211,7 +224,8 @@ final class PTChannelManager: NSObject, ObservableObject {
     /// the wrist long-press DOWN. No-op when PTT is unavailable or we're
     /// not joined (caller falls back to ESANG).
     func transmit() async {
-        guard isAvailable, let manager = channelManager,
+        guard !EusoTripAPI.shared.isAppRadioSilenceEnforced,
+              isAvailable, let manager = channelManager,
               let uuid = activeChannelUUID, !isTransmitting else { return }
         // Synchronous request; `didBeginTransmittingFrom` confirms and
         // `failedToBeginTransmittingInChannel` corrects. Optimistically
@@ -229,6 +243,41 @@ final class PTChannelManager: NSObject, ObservableObject {
         }
         manager.stopTransmitting(channelUUID: uuid)
         isTransmitting = false
+    }
+
+    // MARK: - App-wide radio silence
+
+    /// PushToTalk is an Apple-managed provider, not a URLSession task. Leave
+    /// the channel synchronously on engagement and retain only the minimum
+    /// membership needed to rejoin after the final offline lease releases.
+    func suspendForAppRadioSilence() {
+        if let chainGroupId = joinedChainGroupId {
+            suspendedMembership = (
+                chainGroupId: chainGroupId,
+                displayName: activeDisplayName ?? chainGroupId
+            )
+        }
+        if let manager = channelManager, let uuid = activeChannelUUID {
+            if isTransmitting {
+                manager.stopTransmitting(channelUUID: uuid)
+            }
+            manager.leaveChannel(channelUUID: uuid)
+        }
+        activeChannelUUID = nil
+        activeDisplayName = nil
+        joinedChainGroupId = nil
+        isTransmitting = false
+    }
+
+    func resumeAfterAppRadioSilence() {
+        guard let membership = suspendedMembership else { return }
+        suspendedMembership = nil
+        Task { @MainActor [weak self] in
+            _ = await self?.join(
+                chainGroupId: membership.chainGroupId,
+                displayName: membership.displayName
+            )
+        }
     }
 
     // MARK: - Channel UUID derivation
@@ -365,7 +414,9 @@ extension PTChannelManager: PTChannelManagerDelegate {
         receivedEphemeralPushToken pushToken: Data
     ) {
         Task { @MainActor [weak self] in
-            guard let self, let chainGroupId = self.joinedChainGroupId else { return }
+            guard let self,
+                  !EusoTripAPI.shared.isAppRadioSilenceEnforced,
+                  let chainGroupId = self.joinedChainGroupId else { return }
             await self.registerEphemeralToken(pushToken, chainGroupId: chainGroupId)
         }
     }
@@ -377,7 +428,12 @@ extension PTChannelManager: PTChannelManagerDelegate {
         reason: PTChannelJoinReason
     ) {
         Task { @MainActor [weak self] in
-            self?.activeChannelUUID = channelUUID
+            guard let self else { return }
+            guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else {
+                channelManager.leaveChannel(channelUUID: channelUUID)
+                return
+            }
+            self.activeChannelUUID = channelUUID
         }
     }
 
@@ -391,6 +447,7 @@ extension PTChannelManager: PTChannelManagerDelegate {
             guard let self else { return }
             if self.activeChannelUUID == channelUUID {
                 self.activeChannelUUID = nil
+                self.activeDisplayName = nil
                 self.joinedChainGroupId = nil
                 self.isTransmitting = false
             }
@@ -404,7 +461,13 @@ extension PTChannelManager: PTChannelManagerDelegate {
         didBeginTransmittingFrom source: PTChannelTransmitRequestSource
     ) {
         Task { @MainActor [weak self] in
-            self?.isTransmitting = true
+            guard let self else { return }
+            guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else {
+                channelManager.stopTransmitting(channelUUID: channelUUID)
+                self.isTransmitting = false
+                return
+            }
+            self.isTransmitting = true
         }
     }
 
@@ -429,6 +492,9 @@ extension PTChannelManager: PTChannelManagerDelegate {
         channelUUID: UUID,
         pushPayload: [String: Any]
     ) -> PTPushResult {
+        if AppRadioSilenceSharedState.isEnforced {
+            return .leaveChannel
+        }
         let name = (pushPayload["activeParticipant"] as? String)
             ?? (pushPayload["speakerName"] as? String)
             ?? "EusoTrip Convoy"
@@ -443,6 +509,10 @@ extension PTChannelManager: PTChannelManagerDelegate {
         _ channelManager: PushToTalk.PTChannelManager,
         didActivate audioSession: AVAudioSession
     ) {
+        guard !AppRadioSilenceSharedState.isEnforced else {
+            try? audioSession.setActive(false, options: [.notifyOthersOnDeactivation])
+            return
+        }
         configureRadioSession(audioSession)
     }
 
@@ -474,6 +544,11 @@ extension PTChannelManager: PTChannelRestorationDelegate {
     nonisolated func channelDescriptor(
         restoredChannelUUID channelUUID: UUID
     ) -> PTChannelDescriptor {
+        if AppRadioSilenceSharedState.isEnforced {
+            Task { @MainActor [weak self] in
+                self?.channelManager?.leaveChannel(channelUUID: channelUUID)
+            }
+        }
         PTChannelDescriptor(name: "EusoTrip Convoy", image: nil)
     }
 }

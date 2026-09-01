@@ -51,10 +51,14 @@ struct EusoInAppSafari: UIViewControllerRepresentable {
         let cfg = SFSafariViewController.Configuration()
         cfg.entersReaderIfAvailable = enterReaderIfAvailable
         cfg.barCollapsingEnabled = true
-        let vc = SFSafariViewController(url: url, configuration: cfg)
+        let vc = SFSafariViewController(
+            url: AppRadioSilenceDirectTransportController.shared.gatedRemoteURL(url),
+            configuration: cfg
+        )
         vc.dismissButtonStyle = .done
         // Brand magenta — matches LinearGradient.diagonal's terminal stop.
         vc.preferredControlTintColor = UIColor(red: 0.745, green: 0.004, blue: 1.0, alpha: 1)
+        AppRadioSilenceDirectTransportController.shared.track(safariController: vc)
         return vc
     }
 

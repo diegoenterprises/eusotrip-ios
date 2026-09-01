@@ -173,6 +173,9 @@ final class OfflineQueue: ObservableObject {
     /// Flat list, kept as the source of truth. Consumers render by lane
     /// via `laneCount(_:)` / `entries(in:)`.
     @Published private(set) var entries: [OutboxEntry] = []
+    private var isAppRadioSilenceSuspended = false
+    private var isFlushing = false
+    private var radioSilenceResumeTask: Task<Void, Never>?
 
     /// Back-compat projection — the old `pending: [QueuedAction]` surface.
     /// Existing call sites that read `OfflineQueue.shared.pending` keep
@@ -347,25 +350,39 @@ final class OfflineQueue: ObservableObject {
     }
 
     func flush(auth: AuthStore) async {
-        guard auth.isSignedIn else { return }
+        guard !isAppRadioSilenceSuspended,
+              !Task.isCancelled,
+              auth.isSignedIn else { return }
+        guard !isFlushing else { return }
         sweepStale()
         guard !entries.isEmpty else { return }
+
+        isFlushing = true
+        defer { isFlushing = false }
 
         let client = EsangClient(auth: auth)
         let now = Date()
 
         // Process lanes strictly in priority order.
         for lane in OutboxLane.allCases {
+            guard !isAppRadioSilenceSuspended, !Task.isCancelled else { return }
             // Snapshot this lane's ready entries in enqueue order.
             let ready = entries
                 .filter { $0.lane == lane && $0.isReady(now: now) }
                 .sorted { $0.enqueuedAt < $1.enqueuedAt }
 
             for entry in ready {
+                guard !isAppRadioSilenceSuspended, !Task.isCancelled else { return }
                 do {
                     try await attempt(entry.action, with: client)
+                    guard !isAppRadioSilenceSuspended, !Task.isCancelled else { return }
                     remove(id: entry.id)
                 } catch {
+                    if isAppRadioSilenceSuspended
+                        || Task.isCancelled
+                        || error is AppRadioSilenceWatchTransportError {
+                        return
+                    }
                     updateFailure(id: entry.id, error: error)
                     // For SOS keep trying the next SOS in the same flush
                     // pass — everything else breaks to the next lane so
@@ -375,6 +392,32 @@ final class OfflineQueue: ObservableObject {
             }
         }
         persist()
+    }
+
+    func suspendForAppRadioSilence() {
+        guard !isAppRadioSilenceSuspended else { return }
+        isAppRadioSilenceSuspended = true
+        radioSilenceResumeTask?.cancel()
+        radioSilenceResumeTask = nil
+    }
+
+    func resumeAfterAppRadioSilence() {
+        guard isAppRadioSilenceSuspended else { return }
+        isAppRadioSilenceSuspended = false
+        guard !entries.isEmpty, let auth = AuthStore.shared else { return }
+        radioSilenceResumeTask?.cancel()
+        radioSilenceResumeTask = Task { @MainActor [weak self, weak auth] in
+            do {
+                try await Task.sleep(for: .seconds(1))
+            } catch {
+                return
+            }
+            guard let self, let auth,
+                  !self.isAppRadioSilenceSuspended,
+                  !Task.isCancelled else { return }
+            self.radioSilenceResumeTask = nil
+            await self.flushAll(auth: auth)
+        }
     }
 
     private func remove(id: String) {
@@ -514,4 +557,3 @@ final class NetworkReachabilityHub {
         OrbLog.info("net.monitor started")
     }
 }
-

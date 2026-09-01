@@ -310,7 +310,7 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
             zoom: zoom,
             tilt: tilt
         )
-        if AppRadioSilenceCoordinator.shared.isEnforced {
+        if EusoTripAPI.shared.isAppRadioSilenceEnforced {
             // A view rebuilt during an active offline lease must never create
             // a remote HERE JS navigation, even transiently.
             webView.loadHTMLString("", baseURL: nil)
@@ -322,7 +322,7 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
-        guard !AppRadioSilenceCoordinator.shared.isEnforced else {
+        guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else {
             context.coordinator.disposeForAppRadioSilence()
             return
         }

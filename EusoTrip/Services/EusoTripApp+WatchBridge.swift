@@ -31,6 +31,8 @@ private struct EusoTripWatchBridgeModifier: ViewModifier {
     @State private var showWallet = false
     @State private var showHOS = false
     @State private var showEmergency = false
+    @State private var mapSearch: MKLocalSearch?
+    @State private var mapSearchRegistration: AppRadioSilenceDirectTransportController.Registration?
 
     func body(content: Content) -> some View {
         content
@@ -107,6 +109,10 @@ private struct EusoTripWatchBridgeModifier: ViewModifier {
     }
 
     private func openMaps(query: String) {
+        guard AppRadioSilenceDirectTransportController.shared.transportAllowed else { return }
+        mapSearch?.cancel()
+        AppRadioSilenceDirectTransportController.shared.unregister(mapSearchRegistration)
+
         // Strip the transcript prefix "navigate to "
         let trimmed = query.replacingOccurrences(
             of: "navigate to ",
@@ -116,12 +122,26 @@ private struct EusoTripWatchBridgeModifier: ViewModifier {
         let request = MKLocalSearch.Request()
         request.naturalLanguageQuery = trimmed.isEmpty ? "rest stop" : trimmed
         let search = MKLocalSearch(request: request)
+        let registration = AppRadioSilenceDirectTransportController.shared.register {
+            [weak search] in search?.cancel()
+        }
+        guard let registration else { return }
+        mapSearch = search
+        mapSearchRegistration = registration
         search.start { response, _ in
-            let item = response?.mapItems.first
-            let destination = item ?? MKMapItem.forCurrentLocation()
-            destination.openInMaps(launchOptions: [
-                MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDriving
-            ])
+            Task { @MainActor in
+                AppRadioSilenceDirectTransportController.shared.unregister(registration)
+                mapSearch = nil
+                mapSearchRegistration = nil
+                guard AppRadioSilenceDirectTransportController.shared.transportAllowed else {
+                    return
+                }
+                let item = response?.mapItems.first
+                let destination = item ?? MKMapItem.forCurrentLocation()
+                destination.openInMaps(launchOptions: [
+                    MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDriving
+                ])
+            }
         }
     }
 }

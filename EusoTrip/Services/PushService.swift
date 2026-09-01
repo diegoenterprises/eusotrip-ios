@@ -445,6 +445,12 @@ final class PushService: NSObject, ObservableObject,
 /// plugs this class in so we can receive the APNs callbacks.
 final class EusoTripAppDelegate: NSObject, UIApplicationDelegate {
 
+    /// A killed process has no surviving in-memory offline lease, but a
+    /// background-only wake must preserve the prior atomic ENFORCED marker.
+    /// Release it exactly once, only when UIKit confirms a real foreground
+    /// activation. Later active transitions cannot clear a live lease.
+    private var preparedRadioSilenceForForeground = false
+
     func application(
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions:
@@ -462,6 +468,19 @@ final class EusoTripAppDelegate: NSObject, UIApplicationDelegate {
             WatchAuthBridge.shared.activate()
         }
         return true
+    }
+
+    func applicationDidBecomeActive(_ application: UIApplication) {
+        guard !preparedRadioSilenceForForeground else { return }
+        preparedRadioSilenceForForeground = true
+
+        // UIKit calls this delegate on the main thread. Keep the durable
+        // marker, process-local gate, providers, and Watch mirror in one
+        // synchronous main-actor transition.
+        MainActor.assumeIsolated {
+            _ = AppRadioSilenceCoordinator.shared
+                .recoverSharedStateOnFirstForegroundActivation()
+        }
     }
 
     func application(

@@ -199,6 +199,8 @@ import WebKit
 struct LegalWebDoc: UIViewRepresentable {
     let url: URL
 
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
     func makeUIView(context: Context) -> WKWebView {
         let cfg = WKWebViewConfiguration()
         let pref = WKWebpagePreferences()
@@ -208,10 +210,36 @@ struct LegalWebDoc: UIViewRepresentable {
         v.isOpaque = false
         v.backgroundColor = .clear
         v.scrollView.backgroundColor = .clear
-        v.load(URLRequest(url: url))
+        context.coordinator.transportRegistration =
+            AppRadioSilenceDirectTransportController.shared.register(
+                webView: v,
+                resume: { [weak v] in
+                    guard let v else { return }
+                    AppRadioSilenceDirectTransportController.shared.loadRemote(
+                        URLRequest(url: url),
+                        into: v
+                    )
+                }
+            )
+        AppRadioSilenceDirectTransportController.shared.loadRemote(
+            URLRequest(url: url),
+            into: v
+        )
         return v
     }
     func updateUIView(_ uiView: WKWebView, context: Context) {}
+
+    static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
+        uiView.stopLoading()
+        AppRadioSilenceDirectTransportController.shared.unregister(
+            coordinator.transportRegistration
+        )
+        coordinator.transportRegistration = nil
+    }
+
+    final class Coordinator {
+        var transportRegistration: AppRadioSilenceDirectTransportController.Registration?
+    }
 }
 #else
 struct LegalWebDoc: View {

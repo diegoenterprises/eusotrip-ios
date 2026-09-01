@@ -38,8 +38,8 @@ import UIKit
 #endif
 
 private struct AppleWeatherAttributionAsset: Sendable {
-    let lightMarkURL: URL?
-    let darkMarkURL: URL?
+    let lightMarkData: Data?
+    let darkMarkData: Data?
     let legalURL: URL
 }
 
@@ -67,18 +67,41 @@ private actor AppleWeatherAttributionLoader {
             return nil
         }
         do {
-            let (data, response) = try await URLSession.shared.data(from: endpoint)
+            let request = URLRequest(url: endpoint)
+            let (data, response) = try await EusoTripAPI.shared
+                .appRadioSilenceGatedData(for: request)
             guard let http = response as? HTTPURLResponse,
                   (200..<300).contains(http.statusCode) else { return nil }
             let payload = try JSONDecoder().decode(Payload.self, from: data)
             let base = URL(string: "https://weatherkit.apple.com")!
+            let lightURL = payload.light.flatMap { URL(string: $0, relativeTo: base)?.absoluteURL }
+            let darkURL = payload.dark.flatMap { URL(string: $0, relativeTo: base)?.absoluteURL }
+            async let lightMarkData = Self.loadMark(lightURL)
+            async let darkMarkData = Self.loadMark(darkURL)
             let asset = AppleWeatherAttributionAsset(
-                lightMarkURL: payload.light.flatMap { URL(string: $0, relativeTo: base)?.absoluteURL },
-                darkMarkURL: payload.dark.flatMap { URL(string: $0, relativeTo: base)?.absoluteURL },
+                lightMarkData: await lightMarkData,
+                darkMarkData: await darkMarkData,
                 legalURL: URL(string: "https://weatherkit.apple.com/legal-attribution.html")!
             )
+            guard !Task.isCancelled else { return nil }
             cache[safeTag] = asset
             return asset
+        } catch {
+            return nil
+        }
+    }
+
+    private static func loadMark(_ url: URL?) async -> Data? {
+        guard let url else { return nil }
+        do {
+            let (data, response) = try await EusoTripAPI.shared
+                .appRadioSilenceGatedData(for: URLRequest(url: url))
+            guard !Task.isCancelled,
+                  data.count <= 512 * 1_024,
+                  let http = response as? HTTPURLResponse,
+                  (200..<300).contains(http.statusCode),
+                  http.mimeType?.hasPrefix("image/") == true else { return nil }
+            return data
         } catch {
             return nil
         }
@@ -1276,21 +1299,22 @@ struct WeatherCard: View {
         // contrasts in both schemes.
         Group {
             if snapshot.dataSource == .weatherKit || snapshot.dataSource == .appleWeather {
-                // Apple provides the current localized mark URLs from its
-                // attribution endpoint. The legal page and official alert
-                // links remain tappable; copied brand artwork is not bundled.
+                // Apple provides the current localized marks from its
+                // attribution endpoint. The gated loader retains only bounded
+                // in-memory bytes; copied brand artwork is not bundled.
                 HStack(spacing: 4) {
+                    #if canImport(UIKit)
                     if let asset = appleWeatherAttribution,
-                       let markURL = (scheme == .dark ? asset.darkMarkURL : asset.lightMarkURL) {
+                       let markData = (scheme == .dark ? asset.darkMarkData : asset.lightMarkData),
+                       let mark = UIImage(data: markData) {
                         Link(destination: asset.legalURL) {
-                            AsyncImage(url: markURL) { image in
-                                image.resizable().scaledToFit()
-                            } placeholder: {
-                                Color.clear
-                            }
-                            .frame(height: 12)
+                            Image(uiImage: mark)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(height: 12)
                         }
                     }
+                    #endif
                     Text(snapshot.attributionLine)
                     Link(
                         "Legal",

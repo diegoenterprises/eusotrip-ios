@@ -33,6 +33,7 @@ struct EusoTripWatchApp: App {
     private let loads = LoadStore.shared
     private let ergo = ErgoMonitor.shared
     private let offline = OfflineQueue.shared
+    private let radioSilence = AppRadioSilenceWatchPolicy.shared
 
     @Environment(\.scenePhase) private var scenePhase
 
@@ -80,6 +81,7 @@ struct EusoTripWatchApp: App {
                     // a single step throwing kicked the app back to the
                     // watch home screen before any view could render.
                     Task { @MainActor in
+                        safeStep("radioSilence.bootstrap") { radioSilence.bootstrap() }
                         safeStep("auth.restore")        { auth.restore() }
                         safeStep("hos.restore")         { hos.restore() }
                         safeStep("loads.restore")       { loads.restore() }
@@ -267,6 +269,7 @@ struct EusoTripWatchApp: App {
                 .onChange(of: scenePhase) { _, phase in
                     switch phase {
                     case .active:
+                        guard !radioSilence.isEnforced else { return }
                         Task { await loads.refresh(auth: auth) }
                         Task { await hos.refresh(auth: auth) }
                         Task { await offline.flush(auth: auth) }

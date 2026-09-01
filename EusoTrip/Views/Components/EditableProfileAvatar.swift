@@ -103,7 +103,7 @@ struct EditableProfileAvatar: View {
                 .resizable()
                 .scaledToFill()
         } else if let remoteAvatarURL {
-            AsyncImage(url: remoteAvatarURL) { phase in
+            AppRadioSilenceAsyncImage(url: remoteAvatarURL) { phase in
                 switch phase {
                 case .success(let image):
                     image.resizable().scaledToFill()

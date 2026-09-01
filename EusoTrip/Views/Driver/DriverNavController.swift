@@ -1699,7 +1699,7 @@ struct DriverMessagingSheet: View {
         case "image", "document", "file":
             if let urlStr = m.metadata?.fileUrl, !urlStr.isEmpty,
                let url = URL(string: urlStr) {
-                AsyncImage(url: url) { phase in
+                AppRadioSilenceAsyncImage(url: url) { phase in
                     switch phase {
                     case .empty:
                         RoundedRectangle(cornerRadius: Radius.md, style: .continuous)

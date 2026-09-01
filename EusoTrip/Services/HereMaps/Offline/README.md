@@ -107,8 +107,36 @@ artifacts beyond the signed application's required mobile configuration.
   region are all present. It immediately obscures and removes accessibility
   exposure when eligibility is lost. The production road-journey screen uses
   the same app-owned composition for local search, road/truck alternatives,
-  maneuvers, guidance, and coverage state; it requires a fresh precise
-  nonsimulated device fix and never fabricates truck constraints.
+  native route-line and accepted-GNSS projection, maneuvers, guidance, and
+  coverage state; it requires a fresh precise nonsimulated device fix and never
+  fabricates truck constraints.
+- The radio-silent road journey owns a reference-counted application transport
+  lease. Its first owner cancels and gates app API traffic, realtime, location
+  uploads, HOS, reminders, outbox, geofence, direct auxiliary sessions, and the
+  companion watch policy; only the final valid release resumes services that
+  still request activity. This is an application-initiated transport boundary,
+  not a claim that an app can disable iOS radios or OS-managed APNs delivery.
+- Cross-process authority is a fixed-format marker atomically replaced in the
+  entitled app-group container. Missing, unreadable, malformed, or unavailable
+  shared state is interpreted as ENFORCED. Every lease acquisition republishes
+  ENFORCED before native readiness is admitted; a failed propagation attempt
+  leaves this process's transports closed and readiness unavailable. A process
+  killed during a journey therefore remains fail-closed for background push,
+  WatchConnectivity, and App Intent wakes. Only the first genuine foreground
+  activation of a cold main-app process with no live lease may durably publish
+  RELEASED, and no provider resumes unless that write succeeds. The phone and
+  watch mirrors use versioned single-record snapshots with per-epoch revision
+  ordering and retired-epoch replay rejection; incomplete, corrupt, or
+  unsupported state is enforced rather than guessed open.
+- The boundary is wider than URLSession cancellation. It cancels structured
+  WeatherKit and CLGeocoder work; suspends remote-image and news metadata
+  fetches; leaves PushToTalk channels; and gates or terminates app-created
+  MapKit searches, WebKit/WebRTC loads, remote AVPlayer streams, Safari sheets,
+  Apple authorization, PassKit/Apple Pay, and App Attest work. Local bundled
+  media is not classified as a transport. Controllers handed to Apple and
+  other opaque system services can involve out-of-process daemons the app
+  cannot enumerate or packet-filter, so source gates alone never prove zero
+  device traffic.
 
 ## Current integration blockers
 
@@ -126,11 +154,17 @@ vendor privacy material, dedicated rotated Navigate credentials, all 18
 approved native style exports and hashes, and a rightsholder-approved signed
 coverage catalog/public key/manifest matching real installed SDK inventory.
 The current active Rail/Vessel movement map still uses the online JavaScript
-surface; replacing it without losing route geometry, endpoints, live position,
-camera/follow state, or failure truth requires a typed native scene-projection
-API and signed-geometry adapter. Until that is implemented and device-proven,
-the Settings preview and road-journey screen are the native offline surfaces,
-not a universal replacement for every map in the app.
+surface. The road journey now has a typed native scene projection for its
+verified HERE-local geometry and accepted device position, and the verified
+Rail/Vessel fallback itinerary, when Radio Silent is explicitly engaged,
+projects only its signed canonical geometry onto the matching native style.
+Merely displaying a fallback never acquires the application transport lease,
+so a transient online failure cannot prevent the parent screen from retrying.
+The live Rail/Vessel movement screens still
+need a native handoff for server-observed position and follow-camera state;
+offline fallback deliberately does not relabel stale AIS or rail telemetry as
+live. Until that handoff is implemented and device-proven, these native offline
+surfaces are not a universal replacement for every live map in the app.
 
 `verify-here-offline-contract.mjs` is a source/artifact gate only; it cannot
 prove physical-device behavior or radio silence.
@@ -185,9 +219,13 @@ Simulator and cache-only checks are insufficient. On a real iPhone:
 5. Exercise pause/resume/cancel, low storage, interrupted install, update,
    corruption repair, delete, redownload, account switch, and stale canonical
    route handling.
-6. Capture network traffic and prove zero HERE SDK requests during the
-   radio-silent run. Audit unrelated EusoTrip API activity separately instead
-   of treating the offline-map subsystem as a global app network switch.
+6. Capture network traffic and prove zero HERE SDK requests and zero
+   app-initiated iPhone/watch transports during the radio-silent journey.
+   Record OS-managed APNs, telephony, and any opaque Apple/system-process flows
+   separately. The application does not claim authority to disable hardware
+   radios, packet-filter operating-system daemons, or guarantee zero total
+   packets; unexplained system-process traffic remains a release-review
+   residual even when the app-owned transport assertion passes.
 7. Archive from clean DerivedData and inspect the signed app for the approved
    SDK, `HERE_NOTICE`, required privacy disclosure, and unintended credentials.
 
