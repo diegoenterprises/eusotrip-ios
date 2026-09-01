@@ -315,7 +315,7 @@ private struct RailDemurrageAnalyticsBody: View {
                     Image(systemName: "chart.bar")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(palette.textTertiary)
-                    Text("8-week trend series not yet wired")
+                    Text("No verified 8-week trend is available")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(palette.textTertiary)
                 }

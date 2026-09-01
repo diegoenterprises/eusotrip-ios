@@ -1,33 +1,33 @@
 # TestFlight Feedback Ledger
 
-Generated: 2026-07-29T18:18:02.492Z
-Source: /tmp/asc/feedback-20260729/_summary.json
+Generated: 2026-08-25T01:09:05.345Z
+Source: /Users/diegousoro/Desktop/_the_oath_reports/asc_feedback_20260824_live/_summary.json
 
-Total: 144
+Total: 145
 Screenshots: 135
-Crashes: 9
+Crashes: 10
 
 ## Status Counts
 
 | Status | Count |
 | --- | ---: |
-| fixed-pending-testflight | 135 |
-| open | 8 |
+| fixed-pending-testflight | 144 |
 | blocked-missing-crash-log | 1 |
 
 ## Cluster Counts
 
 | Cluster | Count |
 | --- | ---: |
-| unclassified-feedback | 18 |
 | live-location-weather-here | 15 |
-| crash-or-freeze | 13 |
+| crash-or-freeze | 14 |
+| unclassified-feedback | 14 |
 | design-polish-dev-copy | 11 |
 | esang-brief-chat-search | 9 |
 | market-hotzones-rate-intel | 8 |
 | compliance-safety-eld-csa | 5 |
 | wallet-money-apple-pay | 5 |
 | documents-bol-eusoticket | 4 |
+| shipper-metric-responsive-presentation | 3 |
 | profile-account-export | 3 |
 | bids-counteroffers-booking | 3 |
 | posting-loads-and-drafts | 2 |
@@ -38,6 +38,7 @@ Crashes: 9
 | freight-operations-dispatch | 2 |
 | csa-scorecard-decoder-contract | 2 |
 | integrations-api-tokens | 2 |
+| haul-lobby-lossless-delivery | 1 |
 | esang-time-aware-briefs | 1 |
 | dispatch-dq-compliance-design | 1 |
 | dispatch-dq-onboarding-cold-resolve | 1 |
@@ -77,14 +78,15 @@ Crashes: 9
 
 | Severity | Status | Kind | Build | ASC ID | Owner Area | Cluster | Comment |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| P2 | open | screenshot | 766 | ABQzz1vS1HxeP4QekQ2wmAk | triage | unclassified-feedback | Not clean fix  |
-| P2 | open | screenshot | 766 | AKkbjG9z5vSG4juH8_4zFcs | triage | unclassified-feedback | Total spend needs appropriate commas  |
-| P0 | open | crash | 766 | AE6MJdjbc_wr1PLzzUZlvSM | ios-stability-navigation | crash-or-freeze | Keeps crashing on boot  |
-| P0 | open | crash | 766 | ACR8W1zIsMyMYeb2nZNtBe0 | ios-stability-navigation | crash-or-freeze | Keeps crashing on boot  |
-| P2 | open | screenshot | 766 | AOrONPG4DfUYHlooCjemMI4 | triage | unclassified-feedback | We must fix this.  |
-| P1 | open | screenshot | 765 | ALvZ-ACztb5ZseBVMapiQmU | here-weather-location | live-location-weather-here | This initially said no valid route and to choose another carrier. If that’s the case this shouldn’t have posted? |
-| P1 | open | screenshot | 760 | AGrOyMlhvDCKQaOIIob4w64 | here-weather-location | live-location-weather-here | This is a vessel. Why is the route continental Instead of through the ocean  |
-| P2 | open | screenshot | 755 | AOD_VpqykkHuGV8gSCDYq7Q | triage | unclassified-feedback | Can’t post message in haul |
+| P0 | fixed-pending-testflight | crash | 850 | AEIVDhm-Gp1_qpFZtIdNZPY | ios-post-load-runtime-stability | crash-or-freeze | Crash on Step 1 of Post a Load when “Continue” clicked  |
+| P2 | fixed-pending-testflight | screenshot | 766 | ABQzz1vS1HxeP4QekQ2wmAk | ios-shipper-metric-presentation | shipper-metric-responsive-presentation | Not clean fix  |
+| P2 | fixed-pending-testflight | screenshot | 766 | AKkbjG9z5vSG4juH8_4zFcs | ios-shipper-metric-presentation | shipper-metric-responsive-presentation | Total spend needs appropriate commas  |
+| P0 | fixed-pending-testflight | crash | 766 | AE6MJdjbc_wr1PLzzUZlvSM | ios-weather-startup-stability | crash-or-freeze | Keeps crashing on boot  |
+| P0 | fixed-pending-testflight | crash | 766 | ACR8W1zIsMyMYeb2nZNtBe0 | ios-weather-startup-stability | crash-or-freeze | Keeps crashing on boot  |
+| P2 | fixed-pending-testflight | screenshot | 766 | AOrONPG4DfUYHlooCjemMI4 | ios-shipper-metric-presentation | shipper-metric-responsive-presentation | We must fix this.  |
+| P1 | fixed-pending-testflight | screenshot | 765 | ALvZ-ACztb5ZseBVMapiQmU | here-weather-location | live-location-weather-here | This initially said no valid route and to choose another carrier. If that’s the case this shouldn’t have posted? |
+| P1 | fixed-pending-testflight | screenshot | 760 | AGrOyMlhvDCKQaOIIob4w64 | here-weather-location | live-location-weather-here | This is a vessel. Why is the route continental Instead of through the ocean  |
+| P0 | fixed-pending-testflight | screenshot | 755 | AOD_VpqykkHuGV8gSCDYq7Q | ios-web-haul-lobby-delivery | haul-lobby-lossless-delivery | Can’t post message in haul |
 | P1 | fixed-pending-testflight | screenshot | 755 | API1qD1OZjqvKicyFBYMWuM | esang-ai-ios-server | esang-time-aware-briefs | It’s 12:25p why does esang say good evening  |
 | P2 | fixed-pending-testflight | screenshot | 755 | AKdfvzJqMBWjMEiGfdMP8Vw | triage | unclassified-feedback | This the add remark box looks terrible this needs to be fixed  |
 | P2 | fixed-pending-testflight | screenshot | 755 | ADQ2eDjsPJGO0u2MBUSx1bY | design-authority-copy | design-polish-dev-copy | Please do not have my app looking like a basic Claude II design with this shit. My app is bespoke everything  |

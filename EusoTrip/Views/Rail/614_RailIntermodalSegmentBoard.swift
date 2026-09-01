@@ -58,9 +58,19 @@
 //                     no method override, so the CTA was permanently dead on iOS
 //                     while it worked on web — fault class S4. This file is
 //                     mutation() from the first commit.
-//   NAMED GAP         multiModal.dispatchDrayage         DOES NOT EXIST — zero
-//                     hits across the whole frontend/ tree. See the drayage
-//                     truth row below; the TS shape is proposed in the report.
+//   NAMED GAP CLOSED  multiModal.dispatchDrayage         NOW EXISTS —
+//                     server/routers/multiModal.ts:1250 (isolatedApprovedProcedure
+//                     + in-handler role allowlist, TWIC compliance gate, FOR
+//                     UPDATE commit with idempotent replay, hash-chain audit,
+//                     blockchainAuditTrail row, driver notification, 3-way WS
+//                     fan-out). The "DOES NOT EXIST" claim below was true when
+//                     written and is false as of 2026-08-17; the dispatch
+//                     affordance is live on 617 (the drayage board that owns
+//                     the verb). THIS board still names no driver, because the
+//                     entity-mismatch reason below is unchanged and real: a
+//                     drayage `loads` row carries no intermodalShipmentId, so
+//                     it cannot be joined to a segment on this board without
+//                     lying about which box is which. Corrected by the-oath §6.
 //
 //  WHAT THIS ROUTER WRITES, HONESTLY. advanceSegment updates intermodal_segments
 //  (completed + arrivedAt), promotes the next leg to booked, INSERTS an
@@ -1167,10 +1177,12 @@ private struct RailIntermodalSegmentBoardBody614: View {
     // and multiModal.createDrayageOrder (multiModal.ts:917) both read and write
     // the `loads` table with vertical='drayage' — a DIFFERENT entity that carries
     // no intermodalShipmentId at all, so neither can be joined to a row on this
-    // board without lying about which box is which. And the one verb that would
-    // actually dispatch a dray, multiModal.dispatchDrayage, does not exist
-    // anywhere in the tree. So no driver is named here, no ETA is implied, and
-    // the affordance is drawn dead with the reason on it.
+    // board without lying about which box is which. That reason is unchanged.
+    // The verb itself is NO LONGER missing — multiModal.dispatchDrayage ships at
+    // multiModal.ts:1250 and is live on 617, the board whose rows ARE drayage
+    // loads and can therefore supply a real loadId. This board still names no
+    // driver and implies no ETA, because the join is the blocker here, not the
+    // endpoint. (Stale "does not exist" claim corrected by the-oath §6.)
 
     private var drayDispatchTruth: some View {
         let drayLegs = legs("TRUCK")

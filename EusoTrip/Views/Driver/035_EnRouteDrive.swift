@@ -3,61 +3,19 @@
 //  EusoTrip 2027 UI — Wave 2 (main haul · turn-by-turn)
 //
 //  Screen 035 · En Route Drive — the driver has departed the pickup (034)
-//  and is now on the main haul. Turn-by-turn is live, the route polyline
-//  is painted as the iridescent brand gradient, ESANG is quiet but ready,
-//  the EusoShield in-transit binder is live and surfaced as a status chip,
-//  and a hazmat reroute note confirms the tunnel/viaduct that was skipped
-//  when the binder was written. The screen is map-first: the nav banner,
-//  map controls, speed limit card, and bottom summary card all float on
-//  the map canvas and the driver's only primary actions are:
+//  and is now on the main haul. The route is the exact server-owned,
+//  source-bound geometry and is painted as the single uncased EusoLine
+//  gradient. A server-projected current observation may release tilted close
+//  guidance, speed/course, ETA/remaining, and the next instruction. Stale,
+//  off-route, unobserved, unlicensed, version-mismatched, or unavailable
+//  evidence pauses those claims. The screen never uploads a device-authored
+//  coordinate, progress, speed, course, ETA, or maneuver.
+//
+//  The screen is map-first: the verified maneuver banner, map controls,
+//  execution truth chip, live speed/course card, and bottom summary float on
+//  the map canvas. The driver's only primary actions are:
 //      • Exit (red) — stop nav + open exception flow
 //      • Mute/voice — toggle ESANG voice coaching
-//
-//  Moment (Dark):  22:42 local, I-83 N after Curtis Bay. 1.4 mi to exit 4
-//                  for Forrest Ave → Shrewsbury PA, then merge right onto
-//                  I-83 N. Current speed 58 mph, limit 65. ETA 21:14, 52
-//                  mi remaining, 1h 32m drive. HOS 6h 12m drive left.
-//                  EusoShield $5M NH₃ binder live. Fort McHenry Tunnel
-//                  skipped by routing.
-//  Moment (Light): 10:14 local, US-30 W after Lancaster PA. 0.6 mi to
-//                  exit 286 for Old Rt 30 → Gap PA, then continue US-30
-//                  W. Current speed 53 mph, limit 55. ETA 10:42, 16 mi
-//                  remaining, 28m drive. HOS 8h 48m drive left.
-//                  EusoShield $2M gasoline binder live. Lincoln Hwy
-//                  Viaduct skipped by routing.
-//
-//  93rd-firing visible-copy retrofit (Cohort A → Cohort B under M2):
-//
-//      Mirrors the 92nd-firing pass on 036 ESANG Smart Stop. All
-//      register-keyed Figma fixtures (turn distances, exit chips,
-//      lane shields, hard-coded speeds, ETA strings, hazmat reroute
-//      vignettes, binder value vignettes) become live-or-neutral:
-//
-//        clockTime         — live wall-clock HH:mm
-//        hosDriveLeft      — live HOSLiveStore.status.drivingRemaining
-//        hazmatReroute     — already ctx-driven (hides on non-hazmat)
-//        shieldValue       — already ctx-driven (per-product binder)
-//        turnDistance/exit/headline/subhead/waypointShield
-//                          — em-dash placeholders until HERE Routing
-//                            turn-by-turn data lands in the screen
-//        speedLimit/currentSpeed
-//                          — em-dash placeholders until ELD/CoreLocation
-//                            speed wires in
-//        etaBig/etaSub     — em-dash placeholders until HERE Routing
-//                            ETA lands
-//        crossStreetLabels — em-dash placeholders (97th-firing finish).
-//                            Was the last register-keyed text fixture
-//                            on this screen ("West Aire Rd"/"Old
-//                            Lincoln Hwy" etc.); awaiting HERE Routing
-//                            cross-street annotations.
-//
-//      Result: in production with a live load + active HOS, the
-//      screen renders live wall-clock, live HOS bank, ctx-driven
-//      hazmat band, ctx-driven binder coverage, plus the live HERE
-//      EnRouteRoadIntelStrip / HereCurrentLocationChip /
-//      HereTypicalSpeedChip already attached. Without those signals,
-//      the floating cards render em-dash placeholders — never
-//      fixture data, never Figma vignettes.
 //
 //  Doctrine refs:
 //    §2  nav invariants — no secondary chrome; BottomNav with Trips current.
@@ -66,15 +24,10 @@
 //    §6   dual register; both Dark + Light previews at the bottom.
 //    §7   breathe density; map is the canvas, discs and cards float.
 //    §8   Driver rhythm — turn banner → map → speed + summary card.
-//    §11  visible copy is store-driven, not Figma-keyed. Cohort B under M2.
-//
-//  93rd firing (initial M2 retrofit).
-//  97th firing (cross-street label finish — closes the last borderline
-//               register-keyed text fixture; M2 strict 0 / borderline 0).
+//    §11  visible operational copy is server-evidence-driven, never fixture data.
 //
 
 import SwiftUI
-import CoreLocation
 
 // MARK: - Screen
 
@@ -83,6 +36,7 @@ struct EnRouteDrive: View {
     @Environment(\.lifecycleExit) private var lifecycleExit
     @Environment(\.driverToggleVoiceMute) private var toggleVoiceMute
     @EnvironmentObject private var session: EusoTripSession
+    @AppStorage("com.eusorone.EusoTrip.voice.muted") private var voiceCoachMuted = false
 
     @StateObject private var lifecycle = TripLifecycleStore()
     @StateObject private var hos = HOSLiveStore()
@@ -97,12 +51,21 @@ struct EnRouteDrive: View {
     /// so every weather affordance HIDES until a real actionable risk lands.
     @StateObject private var wx = WeatherCardStore()
 
-    /// Decoded HERE Routing v8 section polyline for the main-haul leg
-    /// (pickup → delivery, truck-aware). Drives the live route line on
-    /// the HERE basemap. Empty until the route resolves — when empty
-    /// the map falls back to the straight pickup→delivery base line so
-    /// the corridor still renders honestly, never a fabricated path.
-    @State private var routePolyline: [HereLatLng] = []
+    /// Exact independent lines released by the committed server route binding.
+    /// No device-authored endpoints, profile, geometry, or mode coercion.
+    @State private var canonicalRouteLines: [[HereLatLng]] = []
+    @State private var canonicalRouteStatus: String?
+    @State private var canonicalRouteVersion: Int?
+    @State private var canonicalRoutePlanVersionID: CanonicalRoutePlanClient.UnsignedBigIntID?
+    @State private var canonicalRouteMode: CanonicalRoutePlanClient.Mode?
+
+    /// The server is the sole execution authority. This screen never uploads a
+    /// coordinate, speed, course, progress, ETA, or maneuver claim. A decoded
+    /// state is retained only when it names the exact route-plan version that
+    /// is currently rendered above.
+    @State private var canonicalExecutionState: CanonicalRoutePlanClient.ExecutionState?
+    @State private var canonicalExecutionStatusOverride: String?
+    @State private var mapRecenterGeneration = 0
 
     /// §3c receiver fence on the main-haul corridor terminus (map-layer
     /// adoption 2026-06-10). Resolved from a REAL `tracking.getGeofences`
@@ -125,47 +88,157 @@ struct EnRouteDrive: View {
         LifecycleProductContext(load: activeLoad, role: session.user?.role)
     }
 
-    // MARK: live or neutral copy (§11) — 93rd firing M2 retrofit
-    //
-    // Each accessor below is one of two states:
-    //   (a) LIVE — derived from the wall-clock, HOSLiveStore, ctx, or
-    //       a HERE strip already attached to the screen.
-    //   (b) NEUTRAL — em-dash placeholder when the upstream signal
-    //       (HERE Routing turn-by-turn / ELD speed / live ETA) hasn't
-    //       wired into the floating card yet.
-    //
-    // No more `register == .dark ? "Figma dark" : "Figma light"`. The
-    // screen looks identical in both registers — the palette is what
-    // makes register-aware visual decisions, not copy.
+    // MARK: Canonical live guidance
 
-    /// Live wall-clock in `HH:mm`, recomputed when the body draws.
-    private var clockTime: String {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "HH:mm"
-        return f.string(from: Date())
+    /// A second identity check at the final presentation boundary. Even if a
+    /// stale async request completes after a new route is rendered, its state
+    /// cannot move the camera or release navigation facts.
+    private var canonicalGuidance: CanonicalRoutePlanClient.ExecutionGuidanceSnapshot? {
+        guard let expectedVersionID = canonicalRoutePlanVersionID,
+              let state = canonicalExecutionState,
+              state.assignment.routePlanVersionId == expectedVersionID,
+              state.mode == canonicalRouteMode else { return nil }
+        return state.guidanceSnapshot
     }
 
-    /// Em-dash until HERE Routing turn-by-turn lands in the card.
-    private var turnDistance: String         { "-" }
-    private var turnDistanceUnit: String     { "mi" }
-    /// Em-dash until HERE Routing returns the next exit / waypoint.
-    private var exitChip: String             { "-" }
-    private var turnHeadline: String         { "Awaiting live route" }
-    private var turnSubhead: String          { "TURN-BY-TURN PENDING" }
-    private var thenPillText: String         { "THEN" }
+    private var executionPollIdentity: String {
+        "\(activeLoad?.id ?? 0):\(canonicalRoutePlanVersionID?.rawValue ?? "pending")"
+    }
+
+    private var executionStatusText: String {
+        if let canonicalExecutionStatusOverride { return canonicalExecutionStatusOverride }
+        guard canonicalRoutePlanVersionID != nil else { return "ROUTE AUTHORITY PENDING" }
+        guard let state = canonicalExecutionState else { return "LIVE POSITION PENDING" }
+        if let guidance = canonicalGuidance {
+            return guidance.evidenceState == .arrived
+                ? "ARRIVAL VERIFIED"
+                : "LIVE · \(guidance.observation.provider.uppercased())"
+        }
+        if state.observation?.operationalUseAllowed == false {
+            return "GUIDANCE PAUSED · SOURCE NOT RELEASED"
+        }
+        if let observation = state.observation,
+           observation.freshnessState != .current {
+            return "GUIDANCE PAUSED · POSITION STALE"
+        }
+        if let observation = state.observation,
+           observation.qualityState == .conflicted || observation.qualityState == .rejected {
+            return "GUIDANCE PAUSED · POSITION UNVERIFIED"
+        }
+        switch state.evidenceState {
+        case .unobserved:
+            return "LIVE POSITION PENDING"
+        case .stale:
+            return "GUIDANCE PAUSED · POSITION STALE"
+        case .offRoute:
+            return "OFF ROUTE · VERIFIED REROUTE REQUIRED"
+        case .arrived:
+            return "ARRIVAL OBSERVED · GUIDANCE PAUSED"
+        case .current:
+            if state.projection?.status == .offRoute {
+                return "OFF ROUTE · VERIFIED REROUTE REQUIRED"
+            }
+            return "GUIDANCE PAUSED · EVIDENCE INCOMPLETE"
+        }
+    }
+
+    private var turnDistanceValue: (value: String, unit: String, spoken: String)? {
+        guard let guidance = canonicalGuidance,
+              let instruction = guidance.nextInstruction,
+              let trigger = instruction.triggerDistanceMeters?.uint64Value,
+              let travelled = guidance.projection.distanceAlongMeters?.uint64Value,
+              trigger >= travelled else { return nil }
+        return Self.distanceDisplay(meters: trigger - travelled)
+    }
+
+    private var turnDistance: String { turnDistanceValue?.value ?? "—" }
+    private var turnDistanceUnit: String { turnDistanceValue?.unit ?? "" }
+
+    private var turnHeadline: String {
+        if let instruction = canonicalGuidance?.nextInstruction { return instruction.title }
+        if canonicalGuidance?.evidenceState == .arrived { return "Arrival verified" }
+        return canonicalExecutionState == nil ? "Awaiting live position" : "Guidance paused"
+    }
+
+    private var turnSubhead: String {
+        canonicalGuidance?.nextInstruction?.visualText ?? executionStatusText
+    }
+
+    private var turnInstructionAccessibility: String {
+        guard let instruction = canonicalGuidance?.nextInstruction else {
+            return executionStatusText
+        }
+        if let distance = turnDistanceValue {
+            return "In \(distance.spoken), \(instruction.accessibilityText)"
+        }
+        return instruction.accessibilityText
+    }
+
+    private var turnSystemImage: String {
+        guard let guidance = canonicalGuidance else { return "pause.fill" }
+        guard guidance.evidenceState != .arrived else { return "flag.checkered" }
+        let type = guidance.nextInstruction?.instructionType.lowercased() ?? ""
+        if type.contains("u_turn") || type.contains("uturn") {
+            return type.contains("left") ? "arrow.uturn.left" : "arrow.uturn.right"
+        }
+        if type.contains("left") { return "arrow.turn.up.left" }
+        if type.contains("right") { return "arrow.turn.up.right" }
+        return "arrow.up"
+    }
 
     /// Hazmat reroute callout — ctx-driven. Returns empty for
     /// non-hazmat loads so the band hides. Empty when no live load
     /// either (the band is meaningless without a hazmat context).
     private var hazmatReroute: String { ctx.enRouteHazmatBand }
 
-    /// Em-dash until ELD speed signal wires in.
-    private var speedLimit: String   { "-" }
-    private var currentSpeed: String { "-" }
-    /// Em-dash until HERE Routing ETA wires into the bottom card.
-    private var etaBig: String       { "-" }
-    private var etaSub: String       { "AWAITING LIVE ETA" }
+    /// Speed and course are released only from the accepted observation. The
+    /// route-execution contract does not yet carry a speed limit, so this
+    /// screen deliberately renders no speed-limit sign.
+    private var currentSpeed: String {
+        guard let metersPerSecond = canonicalGuidance?.observation.speedMetersPerSecond else {
+            return "—"
+        }
+        return String(Int((metersPerSecond * 2.236_936_292_054_4).rounded()))
+    }
+
+    private var currentCourse: String? {
+        guard let degrees = canonicalGuidance?.observation.courseDegrees else { return nil }
+        let normalized = Int(degrees.rounded()) % 360
+        return String(format: "COURSE %03d°", normalized)
+    }
+
+    private var currentSpeedAccessibility: String {
+        guard canonicalGuidance?.observation.speedMetersPerSecond != nil else {
+            return "Current speed unavailable; \(executionStatusText.lowercased())"
+        }
+        var label = "Current speed \(currentSpeed) miles per hour"
+        if let currentCourse { label += ", \(currentCourse.lowercased())" }
+        return label
+    }
+
+    private var etaBig: String {
+        guard let guidance = canonicalGuidance else { return "—" }
+        if guidance.projection.status == .arrived { return "ARRIVED" }
+        guard let eta = guidance.projection.eta,
+              let date = Self.parseExecutionInstant(eta) else { return "—" }
+        let formatter = DateFormatter()
+        formatter.locale = .autoupdatingCurrent
+        formatter.timeZone = .autoupdatingCurrent
+        formatter.dateFormat = "h:mm a"
+        return formatter.string(from: date)
+    }
+
+    private var etaSub: String {
+        guard let guidance = canonicalGuidance else { return executionStatusText }
+        var parts: [String] = []
+        if let seconds = guidance.projection.remainingSeconds?.uint64Value {
+            parts.append(Self.durationDisplay(seconds: seconds))
+        }
+        if let meters = guidance.projection.remainingMeters?.uint64Value {
+            parts.append("\(Self.distanceDisplay(meters: meters).spoken) remaining")
+        }
+        return parts.isEmpty ? executionStatusText : parts.joined(separator: " · ")
+    }
 
     /// Live HOS drive bank from HOSLiveStore. `drivingRemaining` is
     /// hours-remaining-in-the-11h drive window (Double). Uses the
@@ -173,7 +246,8 @@ struct EnRouteDrive: View {
     /// "Xh YYm" string the HOS dashboard renders shows up here.
     /// Em-dash until the store hydrates a status snapshot.
     private var hosDriveLeft: String {
-        hos.status?.drivingRemainingDisplay ?? "-"
+        guard let status = hos.status, status.hasCurrentObservation() else { return "—" }
+        return status.drivingRemainingDisplay
     }
 
     /// In-transit binder summary — product-aware at runtime, neutral
@@ -254,7 +328,7 @@ struct EnRouteDrive: View {
             let head = (li.headline ?? "").trimmingCharacters(in: .whitespaces)
             return (head.isEmpty ? "WEATHER ON NEXT LEG" : head.uppercased(),
                     li.riskTier.color)
-        case .watch, .none:
+        case .watch, .none, .unknown:
             return nil
         }
     }
@@ -263,16 +337,15 @@ struct EnRouteDrive: View {
         ZStack(alignment: .top) {
             // Map canvas — fills the whole screen behind every overlay
             mapBackground
-                .frame(height: 760)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .ignoresSafeArea()
                 .clipped()
 
-            // Floating top: turn banner + THEN preview pill + hazmat band + road intel
+            // Floating top: verified maneuver with integrated execution evidence,
+            // followed only by mode-relevant exception intelligence.
             VStack(spacing: 10) {
                 turnBanner
                     .padding(.horizontal, 14)
-                thenPreviewPill
-                    .padding(.leading, 22)
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 if !hazmatReroute.isEmpty {
                     hazmatBand
                         .padding(.horizontal, 14)
@@ -297,42 +370,34 @@ struct EnRouteDrive: View {
             }
             .padding(.top, 8)
 
-            // Right rail of map control discs
-            VStack {
-                Spacer().frame(height: 260)
-                HStack {
-                    Spacer()
-                    mapControlRail
-                        .padding(.trailing, 14)
-                }
-                Spacer()
-            }
+            // Responsive map chrome. Relative placement preserves the
+            // authored right rail and lower-left speed cluster without the
+            // fixed spacer heights that collided on compact-height devices.
+            GeometryReader { proxy in
+                let controlY = min(
+                    max(proxy.size.height * 0.43, 210),
+                    max(210, proxy.size.height - 250)
+                )
+                let speedY = min(
+                    max(proxy.size.height * 0.68, controlY + 82),
+                    max(controlY + 82, proxy.size.height - 185)
+                )
 
-            // Speed limit + speedometer (bottom-left over the map)
-            VStack {
-                Spacer()
-                HStack(alignment: .bottom) {
-                    speedCluster
-                        .padding(.leading, 14)
-                        .padding(.bottom, 6)
-                    Spacer()
-                }
-                .padding(.bottom, 160)
+                mapControlRail
+                    .position(x: proxy.size.width - 36, y: controlY)
+
+                speedCluster
+                    .fixedSize()
+                    .position(x: 58, y: speedY)
             }
 
             // Bottom summary card (ETA + mute + Exit + HOS/Shield chips)
             VStack(spacing: 6) {
                 Spacer()
-                // HERE reverse-geocode chip — surfaces the live cross-
-                // street + city under the summary so the driver sees
-                // where ESANG actually thinks they are. Hides cleanly
-                // when location is denied or HERE returns empty.
-                HereCurrentLocationChip()
-                    .padding(.horizontal, 14)
-                // HERE Traffic Analytics — typical speed for the live
-                // viewport, anchoring the driver's self-pacing against
-                // the corridor's historical pattern.
-                HereTypicalSpeedChip()
+                // One source-of-truth chip replaces client-local location and
+                // typical-traffic estimates. It can never outrun the exact
+                // server execution state driving this screen.
+                executionTruthChip
                     .padding(.horizontal, 14)
                 bottomSummaryCard
                     .padding(.horizontal, 14)
@@ -344,8 +409,14 @@ struct EnRouteDrive: View {
         // Uniform cafe-door entrance.
         .screenTileRoot()
         .eusoRefreshTask { await hydrateLiveTrip() }
-        // §3 weather store stops with the screen (cancels the 30s active poll).
-        .onDisappear { wx.stop() }
+        // The task is bound to both load and exact route-plan version. SwiftUI
+        // cancels it when the screen disappears or either identity changes.
+        .task(id: executionPollIdentity) { await pollCanonicalExecution() }
+        .onDisappear {
+            wx.stop()
+            canonicalExecutionState = nil
+            canonicalExecutionStatusOverride = nil
+        }
     }
 
     private func hydrateLiveTrip() async {
@@ -364,6 +435,8 @@ struct EnRouteDrive: View {
             // §3 weather for the active haul — in-progress refresh (~30s).
             // Idempotent: startAutoRefresh stops any prior poll first.
             wx.startAutoRefresh(loadId: String(load.id), inProgress: true)
+        } else {
+            clearCanonicalRouteAndExecution()
         }
         _ = await hosBoot
     }
@@ -377,62 +450,195 @@ struct EnRouteDrive: View {
     @MainActor
     private func resolveReceiverFence(for load: Load) async {
         guard let delivery = load.deliveryLocation,
-              !(delivery.lat == 0 && delivery.lng == 0) else {
+              let coordinate = delivery.coordinatePair else {
             receiverFence = nil
             return
         }
         receiverFence = await EusoTripAPI.shared.trackingGeofences
-            .fence(near: delivery.lat, delivery.lng)
+            .fence(near: coordinate.lat, coordinate.lng)
     }
 
-    /// Resolves the truck-aware main-haul corridor (pickup → delivery)
-    /// via HERE Routing v8 and decodes its section polyline into the
-    /// live route line painted on the basemap. Mirrors 013's live-leg
-    /// pattern. On any failure (missing coords, HERE error) the polyline
-    /// stays empty and the map renders the straight pickup→delivery base
-    /// line instead — never a fabricated path.
+    /// Resolves the exact server-owned active-job route. Mode, waypoints,
+    /// assigned profile, graph, evidence, constraints, and geometry never come
+    /// from this screen.
     @MainActor
     private func refreshRoutePolyline(for load: Load) async {
-        guard let pickup = load.pickupLocation,
-              let delivery = load.deliveryLocation,
-              !(pickup.lat == 0 && pickup.lng == 0),
-              !(delivery.lat == 0 && delivery.lng == 0) else {
-            routePolyline = []
+        canonicalRouteLines = []
+        canonicalRouteStatus = nil
+        canonicalRouteVersion = nil
+        canonicalRoutePlanVersionID = nil
+        canonicalRouteMode = nil
+        canonicalExecutionState = nil
+        canonicalExecutionStatusOverride = nil
+        do {
+            let result = try await CanonicalRoutePlanClient.shared.planLoad(
+                id: load.id,
+                purpose: .activeJob
+            )
+            switch result {
+            case .persisted(let persisted):
+                applyCanonicalRoute(persisted.route)
+            case .pending(let pending):
+                canonicalRouteStatus = pending.blockers.first?.message
+                    ?? "Canonical mode-native route pending verified authority"
+                await readExistingCanonicalRoute(loadId: load.id)
+            }
+        } catch {
+            canonicalRouteStatus = error.eusoUserCopy
+            await readExistingCanonicalRoute(loadId: load.id)
+        }
+    }
+
+    @MainActor
+    private func readExistingCanonicalRoute(loadId: Int) async {
+        do {
+            applyCanonicalRoute(
+                try await CanonicalRoutePlanClient.shared.getBoundLoad(id: loadId)
+            )
+        } catch {
+            if canonicalRouteStatus == nil { canonicalRouteStatus = error.eusoUserCopy }
+        }
+    }
+
+    @MainActor
+    private func applyCanonicalRoute(_ route: CanonicalRoutePlanClient.BoundRoutePlan) {
+        guard let payload = route.rendererPayload else {
+            clearCanonicalRouteAndExecution()
+            canonicalRouteStatus = "Canonical route exists but is not released for rendering"
             return
         }
-        let stops = HereStops(
-            origin: CLLocationCoordinate2D(latitude: pickup.lat, longitude: pickup.lng),
-            destination: CLLocationCoordinate2D(latitude: delivery.lat, longitude: delivery.lng)
-        )
-        let profile = TruckProfile.from(load: load)
-        do {
-            let resp = try await HereRoutingClient.shared.route(stops: stops, profile: profile)
-            guard let section = resp.routes.first?.sections.first else {
-                routePolyline = []
+        let routePlanVersionID = payload.identity.routePlanVersionId
+        if canonicalRoutePlanVersionID != routePlanVersionID ||
+            canonicalRouteMode != payload.identity.mode {
+            canonicalExecutionState = nil
+            canonicalExecutionStatusOverride = nil
+        }
+        canonicalRouteLines = payload.lines
+        canonicalRouteVersion = payload.identity.version
+        canonicalRoutePlanVersionID = routePlanVersionID
+        canonicalRouteMode = payload.identity.mode
+        canonicalRouteStatus = nil
+    }
+
+    @MainActor
+    private func clearCanonicalRouteAndExecution() {
+        canonicalRouteLines = []
+        canonicalRouteVersion = nil
+        canonicalRoutePlanVersionID = nil
+        canonicalRouteMode = nil
+        canonicalExecutionState = nil
+        canonicalExecutionStatusOverride = nil
+    }
+
+    /// Polls the canonical runtime while this view and this exact route version
+    /// remain active. `refreshExecution(subject:)` sends only the load identity;
+    /// all observation ingestion and route projection happen server-side.
+    @MainActor
+    private func pollCanonicalExecution() async {
+        guard let loadID = activeLoad?.id,
+              let expectedVersionID = canonicalRoutePlanVersionID,
+              let expectedMode = canonicalRouteMode else { return }
+
+        while !Task.isCancelled {
+            await refreshCanonicalExecution(
+                loadID: loadID,
+                expectedVersionID: expectedVersionID,
+                expectedMode: expectedMode
+            )
+            do {
+                try await Task.sleep(nanoseconds: 5_000_000_000)
+            } catch {
                 return
             }
-            let coords = HereRoutingClient.polyline(for: section)
-            routePolyline = coords.count >= 2 ? coords.map { HereLatLng($0) } : []
-        } catch {
-            // Honest failure: leave the polyline empty so the map draws
-            // the straight pickup→delivery base line, not a stale path.
-            routePolyline = []
         }
+    }
+
+    @MainActor
+    private func refreshCanonicalExecution(
+        loadID: Int,
+        expectedVersionID: CanonicalRoutePlanClient.UnsignedBigIntID,
+        expectedMode: CanonicalRoutePlanClient.Mode
+    ) async {
+        do {
+            let state = try await CanonicalRoutePlanClient.shared.refreshExecution(
+                subject: .load(loadID)
+            )
+            guard !Task.isCancelled,
+                  activeLoad?.id == loadID,
+                  canonicalRoutePlanVersionID == expectedVersionID,
+                  canonicalRouteMode == expectedMode else { return }
+            guard state.assignment.routePlanVersionId == expectedVersionID,
+                  state.mode == expectedMode else {
+                canonicalExecutionState = nil
+                canonicalExecutionStatusOverride = "GUIDANCE PAUSED · ROUTE VERSION CHANGED"
+                return
+            }
+            canonicalExecutionState = state
+            canonicalExecutionStatusOverride = nil
+        } catch is CancellationError {
+            return
+        } catch {
+            guard !Task.isCancelled,
+                  activeLoad?.id == loadID,
+                  canonicalRoutePlanVersionID == expectedVersionID else { return }
+            canonicalExecutionState = nil
+            canonicalExecutionStatusOverride = "GUIDANCE PAUSED · VERIFICATION UNAVAILABLE"
+        }
+    }
+
+    private static func distanceDisplay(
+        meters: UInt64
+    ) -> (value: String, unit: String, spoken: String) {
+        let metersValue = Double(meters)
+        let miles = metersValue / 1_609.344
+        if miles >= 10 {
+            let rounded = Int(miles.rounded())
+            return (String(rounded), "mi", "\(rounded) miles")
+        }
+        if miles >= 0.1 {
+            let value = String(format: "%.1f", miles)
+            return (value, "mi", "\(value) miles")
+        }
+        let feet = Int((metersValue * 3.280_839_895).rounded())
+        return (String(feet), "ft", "\(feet) feet")
+    }
+
+    private static func durationDisplay(seconds: UInt64) -> String {
+        let totalMinutes = seconds / 60
+        if totalMinutes >= 60 {
+            let hours = totalMinutes / 60
+            let minutes = totalMinutes % 60
+            return minutes == 0 ? "\(hours)h remaining" : "\(hours)h \(minutes)m remaining"
+        }
+        if totalMinutes > 0 { return "\(totalMinutes)m remaining" }
+        return seconds == 0 ? "0m remaining" : "<1m remaining"
+    }
+
+    private static func parseExecutionInstant(_ value: String) -> Date? {
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = fractional.date(from: value) { return date }
+        let wholeSeconds = ISO8601DateFormatter()
+        wholeSeconds.formatOptions = [.withInternetDateTime]
+        return wholeSeconds.date(from: value)
     }
 
     // MARK: Turn-by-turn banner
 
     private var turnBanner: some View {
         HStack(alignment: .top, spacing: 12) {
-            // Big right-turn arrow
-            Image(systemName: "arrow.turn.up.right")
+            // The glyph is selected from the exact server instruction type.
+            // A paused state uses a pause glyph rather than inventing a turn.
+            Image(systemName: turnSystemImage)
                 .font(.system(size: 22, weight: .semibold))
                 .foregroundStyle(Color.white)
                 .frame(width: 40, height: 40)
                 .background(Color.white.opacity(0.14))
                 .clipShape(RoundedRectangle(cornerRadius: Radius.sm))
 
-            // Distance + exit chip + headline + subhead
+            // Distance-to-trigger + exact maneuver text. The runtime does not
+            // currently expose a structured exit identifier, so no exit chip
+            // is rendered or inferred from free text.
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     HStack(alignment: .firstTextBaseline, spacing: 2) {
@@ -443,18 +649,9 @@ struct EnRouteDrive: View {
                             .font(EType.mono(.caption)).tracking(0.5)
                             .foregroundStyle(Color.white.opacity(0.85))
                     }
-                    Text(exitChip)
-                        .font(EType.mono(.micro)).tracking(0.6)
-                        .foregroundStyle(Color.white)
-                        .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(Color.white.opacity(0.18))
-                        .clipShape(RoundedRectangle(cornerRadius: Radius.sm))
                     LoadModeBadge(modeRaw: activeLoad?.transportMode,
                                   multiVehicleCount: activeLoad?.multiVehicleCount,
                                   compact: true)
-                    Image(systemName: "arrow.down")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(Color.white.opacity(0.85))
                 }
                 Text(turnHeadline)
                     .font(EType.body).fontWeight(.semibold)
@@ -464,18 +661,20 @@ struct EnRouteDrive: View {
                     .font(EType.mono(.micro)).tracking(0.6)
                     .foregroundStyle(Color.white.opacity(0.75))
                     .lineLimit(1)
+                HStack(spacing: 5) {
+                    Image(systemName: canonicalGuidance == nil
+                          ? "pause.circle.fill"
+                          : "checkmark.shield.fill")
+                        .font(.system(size: 10, weight: .semibold))
+                    Text(executionStatusText)
+                        .font(EType.mono(.micro)).tracking(0.55)
+                        .lineLimit(1)
+                }
+                .foregroundStyle(Color.white.opacity(0.9))
+                .padding(.horizontal, 8).padding(.vertical, 4)
+                .background(Color.white.opacity(0.12), in: Capsule())
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-
-            // Trailing ESANG orb — small, gradient
-            Circle()
-                .fill(LinearGradient.diagonal)
-                .frame(width: 36, height: 36)
-                .overlay(
-                    Circle().strokeBorder(Color.white.opacity(0.25), lineWidth: 1)
-                )
-                .shadow(color: Brand.magenta.opacity(0.45), radius: 10, y: 4)
-                .accessibilityLabel("ESANG AI")
         }
         .padding(14)
         .background(
@@ -495,27 +694,7 @@ struct EnRouteDrive: View {
         .shadow(color: Brand.blue.opacity(0.32), radius: 16, x: -2, y: 6)
         .shadow(color: Brand.magenta.opacity(0.32), radius: 16, x: 2, y: 6)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("In \(turnDistance) miles, \(turnHeadline), \(turnSubhead)")
-    }
-
-    // MARK: THEN preview pill
-
-    private var thenPreviewPill: some View {
-        HStack(spacing: 6) {
-            Text(thenPillText)
-                .font(EType.mono(.micro)).tracking(0.8)
-                .foregroundStyle(palette.textSecondary)
-            Image(systemName: "arrow.turn.up.right")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(LinearGradient.diagonal)
-        }
-        .padding(.horizontal, 10).padding(.vertical, 5)
-        .background(.ultraThinMaterial)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.pill)
-                .strokeBorder(palette.borderSoft)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.pill))
+        .accessibilityLabel(turnInstructionAccessibility)
     }
 
     // MARK: Hazmat reroute band
@@ -616,12 +795,14 @@ struct EnRouteDrive: View {
         .accessibilityLabel(weatherBandA11y(tier: tier))
     }
 
-    /// The Canvas showpiece — a curved route stroke with a translucent
-    /// vertical hazard column over the peak leg + origin/dest nodes + a
-    /// peak marker. Mirrors `RouteCellDiagram`'s truck idiom on a compact
-    /// 320×46 stage. Pure geometry + the live tier — no fabricated data.
+    /// Compact risk-position chart. It deliberately avoids an EusoLine-like
+    /// path: only exact route-plan geometry may carry the owned route gradient.
+    /// The live tier instead appears as a chart band and peak marker.
     private func weatherBandCanvas(tier: LaneRiskTier) -> some View {
         Canvas { ctx, size in
+            // Unknown is absence of classified lane risk, not a safe or
+            // hazardous location. Draw no band or marker for that state.
+            guard tier != .unknown else { return }
             let w = size.width, h = size.height
             func P(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
                 CGPoint(x: x / 320.0 * w, y: y / 46.0 * h)
@@ -633,6 +814,7 @@ struct EnRouteDrive: View {
                 case .elevated: return 206
                 case .watch:    return 232
                 case .none:     return 256
+                case .unknown:  return 0 // unreachable after the guard above
                 }
             }()
             let bandColor = tier == .watch ? Brand.warning : WeatherV3.danger
@@ -647,26 +829,22 @@ struct EnRouteDrive: View {
                     startPoint: CGPoint(x: bx - bw / 2, y: 0),
                     endPoint: CGPoint(x: bx + bw / 2, y: 0)))
 
-            // route curve — base stroke + dashed iridescent centerline.
-            var road = Path()
-            road.move(to: P(20, 34))
-            road.addCurve(to: P(300, 16), control1: P(110, 8), control2: P(160, 40))
-            ctx.stroke(road, with: .color(Color.white.opacity(0.18)),
-                       style: StrokeStyle(lineWidth: 6, lineCap: .round))
-            ctx.stroke(road, with: .linearGradient(
-                Gradient(colors: [WeatherV3.auroraA, WeatherV3.auroraB, WeatherV3.auroraC]),
-                startPoint: .zero, endPoint: CGPoint(x: w, y: 0)),
-                style: StrokeStyle(lineWidth: 2.4, lineCap: .round, dash: [1, 7]))
-
-            // origin + dest nodes.
-            func node(_ p: CGPoint, ring: Color) {
-                let r: CGFloat = 4
-                let rect = CGRect(x: p.x - r, y: p.y - r, width: r * 2, height: r * 2)
-                ctx.fill(Path(ellipseIn: rect), with: .color(.black.opacity(0.6)))
-                ctx.stroke(Path(ellipseIn: rect), with: .color(ring), style: StrokeStyle(lineWidth: 2))
+            // Quiet chart baseline and ticks: unmistakably analytical chrome,
+            // never a navigable route or alternate geometry.
+            var baseline = Path()
+            baseline.move(to: P(20, 34))
+            baseline.addLine(to: P(300, 34))
+            ctx.stroke(
+                baseline,
+                with: .color(palette.textTertiary.opacity(0.34)),
+                style: StrokeStyle(lineWidth: 1, lineCap: .round)
+            )
+            for x in stride(from: CGFloat(20), through: 300, by: 56) {
+                var tick = Path()
+                tick.move(to: P(x, 31))
+                tick.addLine(to: P(x, 37))
+                ctx.stroke(tick, with: .color(palette.textTertiary.opacity(0.32)), lineWidth: 1)
             }
-            node(P(20, 34), ring: WeatherV3.nodeOrigin)
-            node(P(300, 16), ring: WeatherV3.nodeDest)
 
             // peak marker on the band.
             let mk = P(bandX, 26)
@@ -707,33 +885,48 @@ struct EnRouteDrive: View {
 
     private var mapControlRail: some View {
         VStack(spacing: 10) {
-            glassDisc("magnifyingglass", label: "Search along route")
-            glassDisc("speaker.wave.2.fill", label: "Toggle voice coaching")
-            glassDisc("location.north.circle.fill", label: "Re-center map")
-            glassDisc("exclamationmark.triangle.fill",
-                      label: "ESANG alerts",
-                      tinted: true)
+            mapControlButton(
+                voiceCoachMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
+                label: voiceCoachMuted ? "Unmute voice coaching" : "Mute voice coaching",
+                action: { toggleVoiceMute?() }
+            )
+            if canonicalGuidance != nil {
+                mapControlButton(
+                    "location.north.circle.fill",
+                    label: "Re-center on verified position",
+                    tinted: true,
+                    action: { mapRecenterGeneration &+= 1 }
+                )
+            }
         }
     }
 
     @ViewBuilder
-    private func glassDisc(_ systemName: String, label: String, tinted: Bool = false) -> some View {
-        ZStack {
-            Circle()
-                .fill(.ultraThinMaterial)
-            Circle()
-                .strokeBorder(palette.borderSoft, lineWidth: 1)
-            if tinted {
-                Image(systemName: systemName)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(LinearGradient.diagonal)
-            } else {
-                Image(systemName: systemName)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
+    private func mapControlButton(
+        _ systemName: String,
+        label: String,
+        tinted: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            ZStack {
+                Circle()
+                    .fill(.ultraThinMaterial)
+                Circle()
+                    .strokeBorder(palette.borderSoft, lineWidth: 1)
+                if tinted {
+                    Image(systemName: systemName)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(LinearGradient.diagonal)
+                } else {
+                    Image(systemName: systemName)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(palette.textPrimary)
+                }
             }
+            .frame(width: 44, height: 44)
         }
-        .frame(width: 40, height: 40)
+        .buttonStyle(.plain)
         .accessibilityLabel(label)
     }
 
@@ -741,34 +934,24 @@ struct EnRouteDrive: View {
 
     private var speedCluster: some View {
         HStack(alignment: .bottom, spacing: 10) {
-            // Speed limit sign (white card, black text)
-            VStack(spacing: 2) {
-                Text("LIMIT")
-                    .font(EType.mono(.micro)).tracking(0.7)
-                    .foregroundStyle(Color.black.opacity(0.7))
-                Text(speedLimit)
-                    .font(.system(size: 24, weight: .heavy, design: .rounded))
-                    .foregroundStyle(Color.black)
-            }
-            .frame(width: 54, height: 68)
-            .background(Color.white)
-            .overlay(
-                RoundedRectangle(cornerRadius: Radius.sm)
-                    .strokeBorder(Color.black.opacity(0.22), lineWidth: 3)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: Radius.sm))
-            .shadow(color: .black.opacity(0.25), radius: 6, y: 2)
-            .accessibilityLabel("Speed limit \(speedLimit) miles per hour")
-
-            // Live speed (big numeric + MPH)
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text(currentSpeed)
-                    .font(.system(size: 40, weight: .bold, design: .rounded))
-                    .foregroundStyle(palette.textPrimary)
-                Text("MPH")
-                    .font(EType.mono(.micro)).tracking(0.6)
-                    .foregroundStyle(palette.textSecondary)
-                    .padding(.bottom, 8)
+            // No speed-limit sign appears until the canonical execution
+            // contract actually releases one. Speed and course below are the
+            // accepted observation's values, never device-local estimates.
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text(currentSpeed)
+                        .font(.system(size: 40, weight: .bold, design: .rounded))
+                        .foregroundStyle(palette.textPrimary)
+                    Text("MPH")
+                        .font(EType.mono(.micro)).tracking(0.6)
+                        .foregroundStyle(palette.textSecondary)
+                        .padding(.bottom, 8)
+                }
+                if let currentCourse {
+                    Text(currentCourse)
+                        .font(EType.mono(.micro)).tracking(0.55)
+                        .foregroundStyle(palette.textSecondary)
+                }
             }
             .padding(.horizontal, 12).padding(.vertical, 8)
             .background(.ultraThinMaterial)
@@ -777,8 +960,82 @@ struct EnRouteDrive: View {
                     .strokeBorder(palette.borderSoft)
             )
             .clipShape(RoundedRectangle(cornerRadius: Radius.md))
-            .accessibilityLabel("Current speed \(currentSpeed) miles per hour")
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(currentSpeedAccessibility)
         }
+    }
+
+    private var executionTruthChip: some View {
+        let isLive = canonicalGuidance != nil
+        return HStack(spacing: 7) {
+            Circle()
+                .fill(isLive ? Brand.success : Brand.warning)
+                .frame(width: 7, height: 7)
+            Text(executionStatusText)
+                .font(EType.mono(.micro)).tracking(0.55)
+                .fontWeight(.semibold)
+                .foregroundStyle(palette.textPrimary)
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            if let guidance = canonicalGuidance {
+                Text(guidance.observation.dataset.uppercased())
+                    .font(EType.mono(.micro)).tracking(0.45)
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.horizontal, 11).padding(.vertical, 7)
+        .background(.ultraThinMaterial)
+        .overlay(
+            Capsule().strokeBorder(
+                (isLive ? Brand.success : Brand.warning).opacity(0.5),
+                lineWidth: 1
+            )
+        )
+        .clipShape(Capsule())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(executionTruthAccessibility)
+    }
+
+    private var executionTruthAccessibility: String {
+        guard let guidance = canonicalGuidance else { return executionStatusText }
+        return "\(executionStatusText). Source \(guidance.observation.attribution). " +
+            "Observed \(guidance.observation.observedAt)."
+    }
+
+    private var canonicalRouteVisualState: HereRouteVisualState {
+        if let guidance = canonicalGuidance {
+            return guidance.evidenceState == .arrived ? .completed : .active
+        }
+        switch canonicalExecutionState?.evidenceState {
+        case .stale: return .stale
+        case .offRoute: return .offRoute
+        case .arrived: return .stale
+        case .current: return .stale
+        case .unobserved, .none: return .planned
+        }
+    }
+
+    private var canonicalLiveOperationsStatus: HereLiveOperationsStatus {
+        let observation = canonicalExecutionState?.observation
+        let availability: HereLiveOperationsStatus.Availability
+        if canonicalGuidance != nil {
+            availability = .live
+        } else {
+            switch canonicalExecutionState?.evidenceState {
+            case .stale: availability = .stale
+            case .offRoute, .current, .arrived: availability = .degraded
+            case .unobserved: availability = .empty
+            case .none: availability = canonicalRoutePlanVersionID == nil ? .unavailable : .empty
+            }
+        }
+        return HereLiveOperationsStatus(
+            availability: availability,
+            sourceLabel: observation?.provider,
+            freshnessLabel: observation?.freshnessState.rawValue,
+            detail: executionStatusText,
+            observationCount: observation == nil ? 0 : 1
+        )
     }
 
     // MARK: Bottom summary card
@@ -815,20 +1072,6 @@ struct EnRouteDrive: View {
                     }
                 }
                 Spacer()
-                // Voice mute toggle
-                Button { toggleVoiceMute?() } label: {
-                    Image(systemName: "speaker.slash.fill")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(palette.textPrimary)
-                        .frame(width: 40, height: 40)
-                        .background(palette.bgCardSoft)
-                        .overlay(
-                            Circle().strokeBorder(palette.borderSoft)
-                        )
-                        .clipShape(Circle())
-                }
-                .accessibilityLabel("Mute voice coaching")
-
                 // Exit (red)
                 Button { lifecycleExit?() } label: {
                     Text("Exit")
@@ -901,11 +1144,12 @@ struct EnRouteDrive: View {
 
     // MARK: Map background
 
-    /// Live HERE basemap gate (D-maps mandate · mirrors 013). When a live
-    /// load carries real pickup + delivery coordinates, the map is the
-    /// canonical OMV vector `HereLiveMapView` fed the load endpoints and
-    /// the decoded HERE Routing v8 section polyline — the same live route
-    /// 013 paints, NOT a decorative canvas. The coord gate matches 013:
+    /// Live HERE basemap gate (D-maps mandate · mirrors 013). When a load
+    /// carries real pickup + delivery coordinates, the map is
+    /// the canonical OMV vector `HereLiveMapView` fed the exact persisted
+    /// server-owned active-job plan. Independent route lines remain
+    /// independent; this screen never repairs, joins, or substitutes geometry.
+    /// The coordinate gate matches 013:
     /// the server's geocode self-heal can return a load whose location
     /// JSON is present but whose lat/lng are still 0; drawing those frames
     /// the map on null island, so we require a real fix on BOTH endpoints
@@ -915,18 +1159,51 @@ struct EnRouteDrive: View {
         if let load = activeLoad,
            let pickup = load.pickupLocation,
            let delivery = load.deliveryLocation,
-           !(pickup.lat == 0 && pickup.lng == 0),
-           !(delivery.lat == 0 && delivery.lng == 0) {
-            let line: [HereLatLng] = routePolyline.count >= 2 ? routePolyline : []
+           let pickupCoordinate = pickup.coordinatePair,
+           let deliveryCoordinate = delivery.coordinatePair {
+            let mapTransportMode = EusoTripMapTransportMode(
+                canonicalValue: load.transportMode
+            )
+            let guidance = canonicalGuidance
+            let mapCenter = guidance.map {
+                HereLatLng($0.liveCoordinate.lat, $0.liveCoordinate.lng)
+            } ?? HereLatLng(pickupCoordinate.lat, pickupCoordinate.lng)
             let markerLayer = HereMapLayer.markers([
-                .init(at: .init(pickup.lat, pickup.lng), kind: .pickup,
+                .init(at: .init(pickupCoordinate.lat, pickupCoordinate.lng), kind: .pickup,
                       label: pickup.optionalMapDisplayLabel),
-                .init(at: .init(delivery.lat, delivery.lng), kind: .delivery,
+                .init(at: .init(deliveryCoordinate.lat, deliveryCoordinate.lng), kind: .delivery,
                       label: delivery.optionalMapDisplayLabel)
             ])
-            let routeLayers: [HereMapLayer] = line.count >= 2
-                ? [.route(polyline: line, colorHex: "#1473FF"), markerLayer]
-                : [markerLayer]
+            let livePositionLayers: [HereMapLayer] = guidance.map { snapshot in
+                let kind: HereMarker.Kind
+                switch snapshot.mode {
+                case .truck: kind = .truck
+                case .rail: kind = .rail
+                case .vessel: kind = .vessel
+                }
+                let marker = HereMarker(
+                    at: .init(snapshot.liveCoordinate.lat, snapshot.liveCoordinate.lng),
+                    kind: kind,
+                    label: "LIVE",
+                    observationState: .current,
+                    sourceLabel: snapshot.observation.provider,
+                    accessibilityLabel: "Current projected \(snapshot.mode.rawValue.lowercased()) position. " +
+                        "\(snapshot.observation.attribution)."
+                )
+                // `.missionPins` preserves the caller-owned source and
+                // freshness fields; it does not downgrade a current mode pin.
+                return .missionPins([marker])
+            }.map { [$0] } ?? []
+            let routeLabel = canonicalRouteVersion.map {
+                "Eusorone \(mapTransportMode.rawValue) route plan version \($0)"
+            }
+            let routeLayers: [HereMapLayer] = canonicalRouteLines.enumerated().map { index, line in
+                .eusoRoute(
+                    polyline: line,
+                    state: canonicalRouteVisualState,
+                    label: index == 0 ? routeLabel : nil
+                )
+            } + [markerLayer]
             // §3c receiver fence at the corridor terminus — ONLY when a
             // real `tracking.getGeofences` row covers the receiver
             // (resolveReceiverFence). Absent row ⇒ absent layer.
@@ -937,13 +1214,30 @@ struct EnRouteDrive: View {
                                breachAt: nil)]
             } ?? []
             HereLiveMapView(
-                center: .init(pickup.lat, pickup.lng),
-                zoom: 7,
-                firstPerson: true,
-                route: line,
-                baseLayers: routeLayers + fenceLayers,
-                addOns: .driverEnRoute
+                center: mapCenter,
+                zoom: guidance == nil ? 7 : 16,
+                firstPerson: guidance != nil,
+                route: [],
+                baseLayers: routeLayers + livePositionLayers + fenceLayers,
+                addOns: mapTransportMode == .truck ? .driverEnRoute : [],
+                activeJob: true,
+                mapModeContext: .unconfirmed(mapTransportMode),
+                liveOperationsStatus: canonicalLiveOperationsStatus
             )
+            .id("verified-camera-\(mapRecenterGeneration)")
+            .overlay(alignment: .bottomLeading) {
+                if let canonicalRouteStatus {
+                    Text(canonicalRouteStatus)
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(palette.textSecondary)
+                        .padding(.horizontal, 10).padding(.vertical, 6)
+                        .background(palette.bgCard.opacity(0.92))
+                        .overlay(Capsule().strokeBorder(Brand.warning.opacity(0.45)))
+                        .clipShape(Capsule())
+                        .padding(10)
+                        .accessibilityLabel(canonicalRouteStatus)
+                }
+            }
         } else {
             mapPlaceholder
         }

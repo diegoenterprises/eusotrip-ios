@@ -142,12 +142,17 @@ struct HosDutyStatus: View {
     // Status.png` "70-HOUR / 8-DAY compliant" caption. Pairs with the
     // "§395.8 compliant" line just below it so the driver can
     // glance-confirm the shift is inside FMCSA property-carrier limits.
-    private let cycleName  = "70-hour / 8-day compliant"
+    private let cycleName = "70-hour / 8-day cycle"
 
     // MARK: Live-driven state
 
-    private var current: Duty {
-        Duty.from(store.currentDuty)
+    private var current: Duty? {
+        store.currentDuty.map(Duty.from)
+    }
+
+    private var currentObservation: HOSStatus? {
+        guard let status = store.status, status.hasCurrentObservation(now: now) else { return nil }
+        return status
     }
 
     private var clockTime: String {
@@ -165,24 +170,36 @@ struct HosDutyStatus: View {
             .reversed()
             .compactMap { $0.locationDescription }
             .first { !$0.isEmpty }
-            ?? "Awaiting GPS fix"
+            ?? "Location unavailable"
     }
 
-    private var driveBank: (h: Int, m: Int) {
-        toHM(store.status?.drivingRemaining ?? 0)
+    private var dutyChangeLocation: String? {
+        guard store.today?.hasCurrentLogEvidence == true,
+              let location = store.today?.entries
+                .last(where: { $0.endDate == nil })?
+                .locationDescription?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+              !location.isEmpty else {
+            return nil
+        }
+        return location
     }
-    private var onBank: (h: Int, m: Int) {
-        toHM(store.status?.onDutyRemaining ?? 0)
+
+    private var driveBank: String {
+        HOSStatus.formatHours(currentObservation?.drivingRemaining)
     }
-    private var cycleBank: (h: Int, m: Int) {
-        toHM(store.status?.cycleRemaining ?? 0)
+    private var onBank: String {
+        HOSStatus.formatHours(currentObservation?.onDutyRemaining)
+    }
+    private var cycleBank: String {
+        HOSStatus.formatHours(currentObservation?.cycleRemaining)
     }
 
     /// 30-min break resume clock, projected forward from nextBreakDue if
     /// we're inside the break, otherwise "-".
     private var resumeAt: String {
-        guard let status = store.status else { return "-" }
-        if status.breakRequired,
+        guard let status = currentObservation else { return "—" }
+        if status.breakRequired == true,
            let iso = status.nextBreakDue,
            let date = ISO8601DateFormatter().date(from: iso) {
             return HosDutyStatus.clockFormatter.string(from: date).uppercased()
@@ -192,7 +209,7 @@ struct HosDutyStatus: View {
            let date = ISO8601DateFormatter().date(from: iso) {
             return "at " + HosDutyStatus.clockFormatter.string(from: date).uppercased()
         }
-        return "-"
+        return "—"
     }
 
     private var beforeNextBreak: String {
@@ -200,27 +217,31 @@ struct HosDutyStatus: View {
             if mins <= 0 { return "0h 00m · break due" }
             return "\(mins / 60)h \(String(format: "%02d", mins % 60))m · until next break"
         }
-        return "no break scheduled"
+        return "Break timing unavailable"
     }
 
-    private var breakElapsedMinutes: Int {
+    private var breakElapsedMinutes: Int? {
         // When break is required, nextBreakDue is in the future — clamp to 0
         // and measure from the start-of-current-segment (best proxy without
         // a dedicated "break start" field on the server payload).
-        guard let start = currentSegmentStart() else { return 0 }
+        guard currentObservation != nil,
+              current == .off || current == .sb,
+              let start = currentSegmentStart() else { return nil }
         return max(0, Int(now.timeIntervalSince(start) / 60))
     }
 
-    private var breakProgress: CGFloat {
+    private var breakProgress: CGFloat? {
         // 30-minute rule
-        min(1.0, CGFloat(breakElapsedMinutes) / 30.0)
+        breakElapsedMinutes.map { min(1.0, CGFloat($0) / 30.0) }
     }
 
     /// Segments for the 24-hour timeline, normalised to the 04:00 – 04:00
     /// log day. Values are decimal hours from the 04:00 baseline (4.0–28.0
     /// internally; renderer maps back).
     private var segments: [Segment] {
-        guard let entries = store.today?.entries, !entries.isEmpty else { return [] }
+        guard store.today?.hasCurrentLogEvidence == true,
+              let entries = store.today?.entries,
+              !entries.isEmpty else { return [] }
         let cal = Calendar(identifier: .gregorian)
         // Log day starts at 04:00 local
         let logDayStart: Date = {
@@ -233,7 +254,8 @@ struct HosDutyStatus: View {
         }()
 
         return entries.compactMap { entry -> Segment? in
-            let startDelta = entry.startDate.timeIntervalSince(logDayStart) / 3600.0
+            guard let startDate = entry.startDate, let duty = entry.duty else { return nil }
+            let startDelta = startDate.timeIntervalSince(logDayStart) / 3600.0
             let endDelta: Double = {
                 if let end = entry.endDate {
                     return end.timeIntervalSince(logDayStart) / 3600.0
@@ -247,7 +269,7 @@ struct HosDutyStatus: View {
             return Segment(
                 start: 4.0 + s,
                 end: 4.0 + e,
-                duty: Duty.from(entry.duty),
+                duty: Duty.from(duty),
                 note: entry.locationDescription ?? entry.remark ?? "",
                 live: entry.endDate == nil
             )
@@ -333,15 +355,12 @@ struct HosDutyStatus: View {
 
     // MARK: Helpers
 
-    private func toHM(_ hours: Double) -> (h: Int, m: Int) {
-        let mins = Int((hours * 60).rounded())
-        return (max(0, mins / 60), max(0, mins % 60))
-    }
-
     /// Start of the driver's current (open) segment — used for the
     /// break elapsed countdown.
     private func currentSegmentStart() -> Date? {
-        guard let last = store.today?.entries.last, last.endDate == nil else {
+        guard store.today?.hasCurrentLogEvidence == true,
+              let last = store.today?.entries.last,
+              last.endDate == nil else {
             return nil
         }
         return last.startDate
@@ -399,7 +418,7 @@ struct HosDutyStatus: View {
                 Text(cycleName.uppercased())
                     .font(EType.micro).tracking(0.6)
                     .foregroundStyle(palette.textTertiary)
-                Text("§395.8 compliant")
+                Text(hosEvidenceLabel)
                     .font(EType.mono(.micro)).tracking(0.4)
                     .foregroundStyle(palette.textSecondary)
             }
@@ -419,10 +438,10 @@ struct HosDutyStatus: View {
                         .font(EType.micro).tracking(0.6)
                         .foregroundStyle(palette.textTertiary)
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text(current.title)
+                        Text(current?.title ?? "Duty status unavailable")
                             .font(.system(size: 34, weight: .semibold))
                             .foregroundStyle(LinearGradient.diagonal)
-                        Text("break · 30 min")
+                        Text(current == nil ? "No current observation" : "§395.8 duty state")
                             .font(.system(size: 13, weight: .medium)).tracking(0.4)
                             .foregroundStyle(palette.textSecondary)
                     }
@@ -459,7 +478,7 @@ struct HosDutyStatus: View {
     private var dutyPicker: some View {
         HStack(spacing: Space.s2) {
             ForEach(Duty.allCases, id: \.self) { d in
-                dutyChip(duty: d, live: d == current)
+                dutyChip(duty: d, live: current == d)
             }
         }
     }
@@ -467,16 +486,10 @@ struct HosDutyStatus: View {
     @ViewBuilder
     private func dutyChip(duty: Duty, live: Bool) -> some View {
         Button {
-            // Optimistic transition — the store rolls back if the server
-            // rejects. Disabled while a previous change is in flight to
-            // prevent double-taps from stacking log entries.
-            guard !store.isChangingStatus, duty.hosCode != store.currentDuty else { return }
-            // TODO: 019 doesn't yet observe DriverHomeViewModel, so we
-            // pass "" for the §395.8(h) location_description. Wire a
-            // shared LocationService (e.g. surface a published string on
-            // GeofenceService.shared) and forward it here so the log
-            // entry carries a real place instead of the empty fallback.
-            Task { await store.changeStatus(to: duty.hosCode, location: "") }
+            guard !store.isChangingStatus,
+                  duty.hosCode != store.currentDuty,
+                  let dutyChangeLocation else { return }
+            Task { await store.changeStatus(to: duty.hosCode, location: dutyChangeLocation) }
         } label: {
             VStack(spacing: 4) {
                 Text(duty.rawValue)
@@ -500,9 +513,9 @@ struct HosDutyStatus: View {
                     .strokeBorder(live ? Color.clear : palette.borderSoft)
             )
             .clipShape(RoundedRectangle(cornerRadius: Radius.md))
-            .opacity(store.isChangingStatus ? 0.6 : 1.0)
+            .opacity((store.isChangingStatus || dutyChangeLocation == nil) ? 0.6 : 1.0)
         }
-        .disabled(store.isChangingStatus)
+        .disabled(store.isChangingStatus || dutyChangeLocation == nil)
         .accessibilityLabel("\(duty.title)\(live ? ", currently selected" : "")")
     }
 
@@ -660,17 +673,17 @@ struct HosDutyStatus: View {
         HStack(spacing: Space.s2) {
             metricCell(
                 label: ctx.hosDriveWord,
-                big: "\(driveBank.h)h \(String(format: "%02d", driveBank.m))m",
+                big: driveBank,
                 sub: "of 11h"
             )
             metricCell(
                 label: "ON-DUTY",
-                big: "\(onBank.h)h \(String(format: "%02d", onBank.m))m",
+                big: onBank,
                 sub: "of 14h"
             )
             metricCell(
                 label: "CYCLE",
-                big: "\(cycleBank.h)h \(String(format: "%02d", cycleBank.m))m",
+                big: cycleBank,
                 sub: "70h / 8d"
             )
         }
@@ -723,29 +736,44 @@ struct HosDutyStatus: View {
                         Capsule()
                             .fill(palette.borderSoft)
                             .frame(height: 6)
-                        Capsule()
-                            .fill(LinearGradient.diagonal)
-                            .frame(width: min(g.size.width, g.size.width * breakProgress), height: 6)
-                            .animation(
-                                reduceMotion
-                                    ? nil
-                                    : .timingCurve(0.4, 0, 0.2, 1, duration: 0.6),
-                                value: breakProgress
-                            )
+                        if let breakProgress {
+                            Capsule()
+                                .fill(LinearGradient.diagonal)
+                                .frame(
+                                    width: min(g.size.width, g.size.width * breakProgress),
+                                    height: 6
+                                )
+                                .animation(
+                                    reduceMotion
+                                        ? nil
+                                        : .timingCurve(0.4, 0, 0.2, 1, duration: 0.6),
+                                    value: breakProgress
+                                )
+                        }
                     }
                 }
                 .frame(height: 6)
                 .accessibilityElement()
                 .accessibilityLabel("30-minute break progress")
-                .accessibilityValue("\(Int((breakProgress * 100).rounded())) percent of 30-minute break logged")
+                .accessibilityValue(breakProgress.map {
+                    "\(Int(($0 * 100).rounded())) percent of 30-minute break logged"
+                } ?? "Break evidence unavailable")
 
                 HStack {
-                    let elapsedH = breakElapsedMinutes / 60
-                    let elapsedM = breakElapsedMinutes % 60
-                    Text(String(format: "%d:%02d elapsed", elapsedH, elapsedM))
+                    if let breakElapsedMinutes {
+                        let elapsedH = breakElapsedMinutes / 60
+                        let elapsedM = breakElapsedMinutes % 60
+                        Text(String(format: "%d:%02d elapsed", elapsedH, elapsedM))
+                    } else {
+                        Text("— elapsed")
+                    }
                     Spacer()
-                    let remaining = max(0, 30 - breakElapsedMinutes)
-                    Text(String(format: "0:%02d to resume", remaining))
+                    if let breakElapsedMinutes {
+                        let remaining = max(0, 30 - breakElapsedMinutes)
+                        Text(String(format: "0:%02d to resume", remaining))
+                    } else {
+                        Text("— to resume")
+                    }
                 }
                 .font(EType.mono(.micro)).tracking(0.4)
                 .foregroundStyle(palette.textSecondary)
@@ -866,10 +894,7 @@ struct HosDutyStatus: View {
 
     private var fineprint: some View {
         VStack(alignment: .leading, spacing: 3) {
-            // Provenance strings come from the driver's ELD + load when
-            // available, falling back to generic §395.8 descriptors if
-            // we're not attached to a load yet.
-            Text(store.status == nil ? "ELD · §395.15 compliant" : "ELD · linked · §395.15 compliant")
+            Text(hosProvenanceLabel)
                 .font(EType.mono(.micro)).tracking(0.3)
                 .foregroundStyle(palette.textTertiary)
             if let today = store.today {
@@ -877,11 +902,48 @@ struct HosDutyStatus: View {
                     .font(EType.mono(.micro)).tracking(0.3)
                     .foregroundStyle(palette.textTertiary)
             }
-            Text("Self-certified record, \(store.today?.certified == true ? "certified" : "uncertified")")
+            Text(certificationLabel)
                 .font(EType.mono(.micro)).tracking(0.3)
                 .foregroundStyle(palette.textTertiary)
+            if let malformed = store.today?.malformedEntryCount, malformed > 0 {
+                Text("\(malformed) log \(malformed == 1 ? "entry" : "entries") unavailable to decode")
+                    .font(EType.mono(.micro)).tracking(0.3)
+                    .foregroundStyle(Brand.warning)
+            }
         }
         .padding(.top, Space.s2)
+    }
+
+    private var hosEvidenceLabel: String {
+        guard let status = store.status else { return "HOS evidence unavailable" }
+        guard status.tracked == true, status.trackingState == .tracked else {
+            return status.trackingState?.displayName ?? "HOS tracking unavailable"
+        }
+        switch status.freshnessState(now: now) {
+        case .current: return "HOS evidence current"
+        case .stale: return "HOS evidence stale"
+        case .unavailable, .invalid: return "HOS freshness unavailable"
+        }
+    }
+
+    private var hosProvenanceLabel: String {
+        guard let status = store.status else { return "HOS source · unavailable" }
+        let rawSource = status.source?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let source: String
+        if let rawSource, !rawSource.isEmpty {
+            source = rawSource
+        } else {
+            source = "unavailable"
+        }
+        return "HOS source · \(source) · \(hosEvidenceLabel.lowercased())"
+    }
+
+    private var certificationLabel: String {
+        switch store.today?.certified {
+        case true?: return "Daily log certification · confirmed"
+        case false?: return "Daily log certification · not recorded"
+        case nil: return "Daily log certification · unavailable"
+        }
     }
 }
 

@@ -43,13 +43,27 @@
 //           report client-side from the assignment + settlement rows,
 //           which is exactly why every ACTUAL cell is an em-dash.
 //
-//  CHAIN — ACCEPT is ONE-SIDED. `escorts.acceptJob` writes the accepted
-//  row and returns with NO websocket fan-out at all, unlike
-//  `applyForJob` (escorts.ts:890) which broadcasts to the LOAD channel
-//  and to the catalyst + driver USER channels. The missing half is the
-//  acceptance event. This screen therefore never tells the operator that
-//  dispatch has been notified — the post-accept line says the opposite,
-//  out loud.
+//  WRITE PATH — the only DB row this screen creates is written by
+//  `escorts.acceptJob` (escorts.ts:1148) into `escortAssignments`: an
+//  update to status 'accepted' where a non-cancelled row exists, else an
+//  insert at position 'lead' carrying driverUserId / carrierUserId off
+//  the load.
+//    blockchainAuditTrail — NOT WRITTEN. The table EXISTS
+//    (drizzle/schema.ts:10018) and is appended by wallet.ts:1190 and
+//    detentionAccessorials.ts:909, but escorts.ts references
+//    `blockchainAuditTrail` ZERO times. Taking an escort seat on a
+//    154,200 lb oversize move leaves no chain-of-custody record. Named
+//    gap; the missing half is a blockchainAuditTrail insert on the
+//    acceptJob transaction.
+//    WS broadcast — NONE. `applyForJob` (escorts.ts:890) imports
+//    wsService at escorts.ts:912 and fans out on WS_CHANNELS.LOAD plus
+//    the catalyst, driver and escort USER channels at escorts.ts:915-918.
+//    acceptJob emits nothing.
+//
+//  CHAIN — ACCEPT is therefore ONE-SIDED. The missing half is the
+//  acceptance event. This screen never tells the operator that dispatch
+//  has been notified and never implies the commit was notarised — the
+//  post-accept line says the opposite, out loud.
 //
 //  OFFLINE (§W): offer terms + envelope READ_CACHED(10m) via
 //  `EscortOfflineCache`, with `EscortOfflineCache.stalenessLine(age:)`
@@ -59,10 +73,26 @@
 //  itself with an honest reason and never queues a commit it cannot
 //  make. No queue badge is ever drawn.
 //
-//  RBAC: `protectedProcedure` + `resolveEscortUserId` row-scoping; the
-//  detail proc re-checks `escortUserId` per row and 404s foreign rows.
-//  No shipper identity, no carrier margin, no shipper-side `loads.rate`
-//  is bound anywhere in this file.
+//  RBAC: `roleProcedure`. escorts.ts:11 imports `escortProcedure` under
+//  the LOCAL ALIAS `protectedProcedure`, and `escortProcedure` IS
+//  `roleProcedure(ROLES.ESCORT)` — EXISTS server/_core/trpc.ts:228. Every
+//  read on this surface and the ACCEPT mutation therefore sit behind a
+//  genuine ROLE gate, not the generic protectedProcedure the alias reads
+//  like. Row ownership on top via `resolveEscortUserId` (escorts.ts:138);
+//  the detail proc re-checks `escortUserId` per row and answers
+//  honest-null for foreign rows. No shipper identity, no carrier margin,
+//  no shipper-side `loads.rate` is bound anywhere in this file.
+//
+//  WEB PARITY: there is NO .tsx route for a single escort assignment.
+//  client/src/App.tsx registers /escort, /escort/active-trip,
+//  /escort/cert-reciprocity, /escort/profile, /escort/incidents,
+//  /escort/jobs, /escort/marketplace, /escort/schedule, /escort/earnings
+//  and /escort/certifications (App.tsx:931-946) and nothing at
+//  /escort/assignment/:id. The nearest web surface is /escort/jobs =
+//  client/src/pages/EscortJobs.tsx (App.tsx:940), a LIST that carries the
+//  same ACCEPT control inline (escorts.acceptJob useMutation,
+//  EscortJobs.tsx:32) and never opens a detail. `escorts.getJobDetails`
+//  has ZERO web callers. This surface is iOS-first; no route is claimed.
 //
 //  Powered by ESANG AI™.
 //
@@ -187,8 +217,10 @@ struct EscortAssignmentDetailES10: View {
         VStack(alignment: .leading, spacing: Space.s4) {
             eyebrowRow
             titleRow
-            metaRow
+            // The ONE iridescent hairline. DETAIL archetype rule: it sits
+            // directly under the H1 (SVG y138), never below a meta row.
             IridescentHairline()
+            metaRow
             content
         }
         .padding(.horizontal, Space.s5)
@@ -213,8 +245,9 @@ struct EscortAssignmentDetailES10: View {
     }
 
     private var titleRow: some View {
+        // DETAIL H1 ramp: 28 / 700 / -0.4.
         Text(routeTitle)
-            .font(.system(size: 26, weight: .bold)).tracking(-0.4)
+            .font(.system(size: 28, weight: .bold)).tracking(-0.4)
             .foregroundStyle(LinearGradient.primary)
             .lineLimit(1).minimumScaleFactor(0.65)
     }
@@ -670,9 +703,11 @@ struct EscortAssignmentDetailES10: View {
         .padding(.horizontal, 8).padding(.vertical, 7)
         .background(ringed ? AnyShapeStyle(hpOrange.opacity(isDark ? 0.16 : 0.10))
                            : AnyShapeStyle(palette.bgCardSoft))
-        .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+        // 14-kit inner radius (rx14). Radius has no 14 token; the literal
+        // matches the SVG twins cell-for-cell.
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         // SafetyRing — only around a cell that actually trips a rule.
-        .overlay(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
             .strokeBorder(ringed ? hpOrange.opacity(0.65) : .clear, lineWidth: 1.5))
     }
 

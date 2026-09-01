@@ -34,14 +34,13 @@
 //                 §12 (both previews).
 
 import SwiftUI
-import CoreLocation
 
 // MARK: - Screen
 
 struct ActiveEnrouteLoaded: View {
     @Environment(\.palette) var palette
     @Environment(\.driverNavBack) private var navBack
-    @Environment(\.driverToggleMapLayers) private var toggleMapLayers
+    @Environment(\.driverOpenTurnByTurn) private var openTurnByTurn
     @Environment(\.driverOpenTripLog) private var openTripLog
     @EnvironmentObject private var session: EusoTripSession
 
@@ -49,12 +48,12 @@ struct ActiveEnrouteLoaded: View {
     @StateObject private var hos = HOSLiveStore()
     @State private var activeLoad: Load?
 
-    /// Decoded HERE Routing v8 section polyline for the pickup→delivery
-    /// corridor — the real road geometry painted on the basemap, not a
-    /// 2-point great-circle straight segment. Empty until the route
-    /// resolves; the map then falls back to the straight pickup→delivery
-    /// base line (never a fabricated path). Mirrors 013 / 035.
-    @State private var routePolyline: [HereLatLng] = []
+    /// Independent lines from the exact committed server `route.plan` binding.
+    /// MultiLineString discontinuities remain separate and no client/provider
+    /// fallback may replace a missing Truck, Rail, or Vessel plan.
+    @State private var canonicalRouteLines: [[HereLatLng]] = []
+    @State private var canonicalRouteStatus: String?
+    @State private var canonicalRouteVersion: Int?
 
     /// §3c receiver fence on the loaded-approach corridor (map-layer
     /// adoption 2026-06-10). Resolved from a REAL `tracking.getGeofences`
@@ -251,14 +250,16 @@ struct ActiveEnrouteLoaded: View {
     /// Live HOS drive bank from HOSLiveStore. Em-dash when the store
     /// hasn't hydrated.
     private var hosDriveLeft: String {
-        guard let s = hos.status else { return "- left" }
+        guard let s = hos.status, s.hasCurrentObservation() else { return "— left" }
         return "\(s.drivingRemainingDisplay) left"
     }
     /// Live break-due hint pulled from HOSLiveStore.status when the
     /// next break is queued. Empty otherwise (the dot before this
     /// chip hides cleanly when the suffix is empty).
     private var hosBreakAt: String {
-        guard let iso = hos.status?.nextBreakDue else { return "" }
+        guard let status = hos.status,
+              status.hasCurrentObservation(),
+              let iso = status.nextBreakDue else { return "" }
         let inFmt = ISO8601DateFormatter()
         inFmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let parsed = inFmt.date(from: iso) ?? ISO8601DateFormatter().date(from: iso)
@@ -272,7 +273,8 @@ struct ActiveEnrouteLoaded: View {
         ZStack(alignment: .top) {
             // Map canvas — fills behind everything
             mapBackground
-                .frame(height: 800)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .ignoresSafeArea()
                 .clipped()
 
             // Floating TopBar + HERE road intel chips
@@ -348,44 +350,63 @@ struct ActiveEnrouteLoaded: View {
     @MainActor
     private func resolveReceiverFence(for load: Load) async {
         guard let delivery = load.deliveryLocation,
-              !(delivery.lat == 0 && delivery.lng == 0) else {
+              let coordinate = delivery.coordinatePair else {
             receiverFence = nil
             return
         }
         receiverFence = await EusoTripAPI.shared.trackingGeofences
-            .fence(near: delivery.lat, delivery.lng)
+            .fence(near: coordinate.lat, coordinate.lng)
     }
 
-    /// Resolves the pickup→delivery corridor via HERE Routing v8 and decodes
-    /// its section polyline into the live route line painted on the basemap —
-    /// real curved road geometry, not a 2-point great-circle straight segment.
-    /// On any failure (missing coords, HERE error) the polyline stays empty
-    /// and the map draws the straight pickup→delivery base line instead.
+    /// Requests the singular server route authority. The client supplies only
+    /// the load identity and purpose; mode, endpoints, profile, graph, rights,
+    /// evidence, and geometry are resolved and committed server-side.
     @MainActor
     private func refreshRoutePolyline(for load: Load) async {
-        guard let pickup = load.pickupLocation,
-              let delivery = load.deliveryLocation,
-              !(pickup.lat == 0 && pickup.lng == 0),
-              !(delivery.lat == 0 && delivery.lng == 0) else {
-            routePolyline = []
+        canonicalRouteLines = []
+        canonicalRouteStatus = nil
+        canonicalRouteVersion = nil
+        do {
+            let result = try await CanonicalRoutePlanClient.shared.planLoad(
+                id: load.id,
+                purpose: .activeJob
+            )
+            switch result {
+            case .persisted(let persisted):
+                applyCanonicalRoute(persisted.route)
+            case .pending(let pending):
+                canonicalRouteStatus = pending.blockers.first?.message
+                    ?? "Canonical mode-native route pending verified authority"
+                await readExistingCanonicalRoute(loadId: load.id)
+            }
+        } catch {
+            canonicalRouteStatus = error.eusoUserCopy
+            await readExistingCanonicalRoute(loadId: load.id)
+        }
+    }
+
+    @MainActor
+    private func readExistingCanonicalRoute(loadId: Int) async {
+        do {
+            applyCanonicalRoute(
+                try await CanonicalRoutePlanClient.shared.getBoundLoad(id: loadId)
+            )
+        } catch {
+            if canonicalRouteStatus == nil { canonicalRouteStatus = error.eusoUserCopy }
+        }
+    }
+
+    @MainActor
+    private func applyCanonicalRoute(_ route: CanonicalRoutePlanClient.BoundRoutePlan) {
+        guard let payload = route.rendererPayload else {
+            canonicalRouteLines = []
+            canonicalRouteVersion = nil
+            canonicalRouteStatus = "Canonical route exists but is not released for rendering"
             return
         }
-        let stops = HereStops(
-            origin: CLLocationCoordinate2D(latitude: pickup.lat, longitude: pickup.lng),
-            destination: CLLocationCoordinate2D(latitude: delivery.lat, longitude: delivery.lng)
-        )
-        let profile = TruckProfile.from(load: load)
-        do {
-            let resp = try await HereRoutingClient.shared.route(stops: stops, profile: profile)
-            guard let section = resp.routes.first?.sections.first else {
-                routePolyline = []
-                return
-            }
-            let coords = HereRoutingClient.polyline(for: section)
-            routePolyline = coords.count >= 2 ? coords.map { HereLatLng($0) } : []
-        } catch {
-            routePolyline = []
-        }
+        canonicalRouteLines = payload.lines
+        canonicalRouteVersion = payload.identity.version
+        canonicalRouteStatus = nil
     }
 
     // MARK: Floating top bar
@@ -425,8 +446,6 @@ struct ActiveEnrouteLoaded: View {
             .background(.ultraThinMaterial)
             .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(palette.borderSoft))
             .clipShape(RoundedRectangle(cornerRadius: Radius.md))
-
-            glassIconButton(systemName: "square.stack.3d.up", label: "Map layers")
         }
         .padding(.horizontal, 14)
     }
@@ -434,16 +453,12 @@ struct ActiveEnrouteLoaded: View {
     @ViewBuilder
     private func glassIconButton(systemName: String, label: String) -> some View {
         Button {
-            switch label {
-            case "Back":        navBack?()
-            case "Map layers":  toggleMapLayers?()
-            default:            break
-            }
+            if label == "Back" { navBack?() }
         } label: {
             Image(systemName: systemName)
                 .font(.system(size: 18, weight: .regular))
                 .foregroundStyle(palette.textPrimary)
-                .frame(width: 40, height: 40)
+                .frame(width: 44, height: 44)
                 .background(.ultraThinMaterial)
                 .overlay(Circle().strokeBorder(palette.borderSoft))
                 .clipShape(Circle())
@@ -464,22 +479,28 @@ struct ActiveEnrouteLoaded: View {
         if let load = activeLoad,
            let pickup = load.pickupLocation,
            let delivery = load.deliveryLocation,
-           // Coord gate (D-maps-basemap 2026-06-01): the server's geocode
-           // self-heal can return a load whose pickup/delivery JSON is
-           // present but whose lat/lng are still 0 (HERE geocode not yet
-           // run). Drawing those frames the map on null island (0,0).
-           // Require a real fix on BOTH endpoints; otherwise fall to the
-           // honest placeholder until the next read lands coords.
-           !(pickup.lat == 0 && pickup.lng == 0),
-           !(delivery.lat == 0 && delivery.lng == 0) {
-            let line: [HereLatLng] = routePolyline.count >= 2 ? routePolyline : []
+           let pickupCoordinate = pickup.coordinatePair,
+           let deliveryCoordinate = delivery.coordinatePair {
+            let mapTransportMode = EusoTripMapTransportMode(
+                canonicalValue: load.transportMode
+            )
             let markerLayer = HereMapLayer.markers([
-                .init(at: .init(pickup.lat, pickup.lng), kind: .pickup, label: originName),
-                .init(at: .init(delivery.lat, delivery.lng), kind: .delivery, label: destFlagText)
+                .init(at: .init(pickupCoordinate.lat, pickupCoordinate.lng),
+                      kind: .pickup,
+                      label: originName),
+                .init(at: .init(deliveryCoordinate.lat, deliveryCoordinate.lng),
+                      kind: .delivery,
+                      label: destFlagText)
             ])
-            let routeLayers: [HereMapLayer] = line.count >= 2
-                ? [.route(polyline: line, colorHex: "#1473FF"), markerLayer]
-                : [markerLayer]
+            let routeLayers: [HereMapLayer] = canonicalRouteLines.enumerated().map { index, line in
+                .eusoRoute(
+                    polyline: line,
+                    state: .active,
+                    label: index == 0
+                        ? "Eusorone \(mapTransportMode.rawValue) route plan version \(canonicalRouteVersion ?? 0)"
+                        : nil
+                )
+            } + [markerLayer]
             // §3c receiver fence at the corridor terminus — ONLY when a
             // real `tracking.getGeofences` row covers the receiver
             // (resolveReceiverFence). Absent row ⇒ absent layer.
@@ -490,13 +511,28 @@ struct ActiveEnrouteLoaded: View {
                                breachAt: nil)]
             } ?? []
             HereLiveMapView(
-                center: .init(pickup.lat, pickup.lng),
+                center: .init(pickupCoordinate.lat, pickupCoordinate.lng),
                 zoom: 7,
                 firstPerson: true,
-                route: line,
+                route: [],
                 baseLayers: routeLayers + fenceLayers,
-                addOns: .driverEnRoute
+                addOns: mapTransportMode == .truck ? .driverEnRoute : [],
+                activeJob: true,
+                mapModeContext: .unconfirmed(mapTransportMode)
             )
+            .overlay(alignment: .bottomLeading) {
+                if let canonicalRouteStatus {
+                    Text(canonicalRouteStatus)
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(palette.textSecondary)
+                        .padding(.horizontal, 10).padding(.vertical, 6)
+                        .background(palette.bgCard.opacity(0.92))
+                        .overlay(Capsule().strokeBorder(Brand.warning.opacity(0.45)))
+                        .clipShape(Capsule())
+                        .padding(10)
+                        .accessibilityLabel(canonicalRouteStatus)
+                }
+            }
         } else {
             mapPlaceholder
         }
@@ -657,10 +693,10 @@ struct ActiveEnrouteLoaded: View {
 
             // Actions
             HStack(spacing: Space.s2) {
-                LifecycleCTAButton(title: "Navigate")
+                CTAButton(title: "Navigate") { openTurnByTurn?() }
                     .accessibilityLabel("Resume turn-by-turn navigation")
                 Button { openTripLog?() } label: {
-                    Text("Find stop")
+                    Text("Trip log")
                         .font(EType.body).fontWeight(.medium)
                         .foregroundStyle(palette.textPrimary)
                         .frame(maxWidth: .infinity, minHeight: 48)
@@ -668,7 +704,7 @@ struct ActiveEnrouteLoaded: View {
                         .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(palette.borderSoft))
                         .clipShape(RoundedRectangle(cornerRadius: Radius.md))
                 }
-                .accessibilityLabel("Find a stop along the route")
+                .accessibilityLabel("Open this load's trip log")
             }
         }
         .padding(.horizontal, 18)

@@ -36,23 +36,61 @@ private struct CrewAvailability584: Decodable {
     let boardStatus: String?
     let yardName: String?
     let yardRailroad: String?
-    
+    let tracked: Bool?
+    let trackingState: HOSTrackingState?
+    let source: String?
+    let freshness: String?
+
+    var hasCurrentEvidence: Bool {
+        tracked == true
+            && trackingState == .tracked
+            && source?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            && HOSObservationClock.freshness(freshness).isCurrent
+    }
+
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         // Server returns totalAvailable/totalOnDuty/railroad; iOS uses callableNow/calledCount/yardRailroad.
-        self.callableNow    = try (c.decodeIfPresent(Int.self, forKey: .callableNow) ?? c.decodeIfPresent(Int.self, forKey: .totalAvailable))
-        self.calledCount    = try (c.decodeIfPresent(Int.self, forKey: .calledCount) ?? c.decodeIfPresent(Int.self, forKey: .totalOnDuty))
-        self.extraBoardDepth = try c.decodeIfPresent(Int.self, forKey: .extraBoardDepth)
-        self.avgTurnHours   = try c.decodeIfPresent(Double.self, forKey: .avgTurnHours)
+        self.callableNow = Self.decodeInt(c, .callableNow) ?? Self.decodeInt(c, .totalAvailable)
+        self.calledCount = Self.decodeInt(c, .calledCount) ?? Self.decodeInt(c, .totalOnDuty)
+        self.extraBoardDepth = Self.decodeInt(c, .extraBoardDepth)
+        self.avgTurnHours = Self.decodeDouble(c, .avgTurnHours)
         self.boardStatus    = try c.decodeIfPresent(String.self, forKey: .boardStatus)
         self.yardName       = try c.decodeIfPresent(String.self, forKey: .yardName)
         self.yardRailroad   = try (c.decodeIfPresent(String.self, forKey: .yardRailroad) ?? c.decodeIfPresent(String.self, forKey: .railroad))
+        self.tracked = try c.decodeIfPresent(Bool.self, forKey: .tracked)
+        self.trackingState = try c.decodeIfPresent(HOSTrackingState.self, forKey: .trackingState)
+        self.source = try (c.decodeIfPresent(String.self, forKey: .source)
+            ?? c.decodeIfPresent(String.self, forKey: .provider))
+        self.freshness = try (c.decodeIfPresent(String.self, forKey: .freshness)
+            ?? c.decodeIfPresent(String.self, forKey: .asOf))
     }
-    
+
     enum CodingKeys: String, CodingKey {
         case callableNow, calledCount, extraBoardDepth, avgTurnHours, boardStatus, yardName, yardRailroad
-        // Server's actual key names mapped above.
-        case totalAvailable, totalOnDuty, railroad
+        case totalAvailable, totalOnDuty, railroad, tracked, trackingState, source, provider, freshness, asOf
+    }
+
+    private static func decodeInt(
+        _ container: KeyedDecodingContainer<CodingKeys>,
+        _ key: CodingKeys
+    ) -> Int? {
+        if let value = try? container.decode(Int.self, forKey: key) { return value }
+        if let value = try? container.decode(Double.self, forKey: key), value.isFinite {
+            return Int(value)
+        }
+        if let raw = try? container.decode(String.self, forKey: key) { return Int(raw) }
+        return nil
+    }
+
+    private static func decodeDouble(
+        _ container: KeyedDecodingContainer<CodingKeys>,
+        _ key: CodingKeys
+    ) -> Double? {
+        if let value = try? container.decode(Double.self, forKey: key), value.isFinite { return value }
+        if let raw = try? container.decode(String.self, forKey: key),
+           let value = Double(raw), value.isFinite { return value }
+        return nil
     }
 }
 
@@ -60,28 +98,62 @@ private struct CrewMember584: Decodable {
     let crewId: String?
     let craft: String?
     let boardPosition: String?
-    let hosAvailableHours: Double?
+    let hoursOnDuty: Double?
+    let hoursOfServiceCompliant: Bool?
     let status: String?
-    
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        
-        // Server fields from railCrewAssignments table
-        let userId = try container.decodeIfPresent(Int.self, forKey: .userId)
-        let role = try container.decodeIfPresent(String.self, forKey: .role)
-        let hoursOnDuty = try container.decodeIfPresent(String.self, forKey: .hoursOnDuty)
-        let hoursOfServiceCompliant = try container.decodeIfPresent(Bool.self, forKey: .hoursOfServiceCompliant)
-        
-        // Map server fields to iOS struct fields
-        self.crewId = userId.map { String($0) }
-        self.craft = role
-        self.boardPosition = nil
-        self.hosAvailableHours = hoursOnDuty.flatMap { Double($0) }
-        self.status = hoursOfServiceCompliant == true ? "callable" : "unavailable"
+    let tracked: Bool?
+    let trackingState: HOSTrackingState?
+    let source: String?
+    let freshness: String?
+
+    var hasCurrentHOSEvidence: Bool {
+        tracked == true
+            && trackingState == .tracked
+            && source?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            && HOSObservationClock.freshness(freshness).isCurrent
     }
-    
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.crewId = Self.decodeIdentifier(c, .crewId)
+            ?? Self.decodeIdentifier(c, .userId)
+            ?? Self.decodeIdentifier(c, .id)
+        self.craft = try c.decodeIfPresent(String.self, forKey: .role)
+        self.boardPosition = try c.decodeIfPresent(String.self, forKey: .boardPosition)
+        self.hoursOnDuty = Self.decodeDouble(c, .hoursOnDuty)
+        self.hoursOfServiceCompliant = try c.decodeIfPresent(Bool.self, forKey: .hoursOfServiceCompliant)
+        self.status = try c.decodeIfPresent(String.self, forKey: .status)
+        self.tracked = try c.decodeIfPresent(Bool.self, forKey: .tracked)
+        self.trackingState = try c.decodeIfPresent(HOSTrackingState.self, forKey: .trackingState)
+        self.source = try (c.decodeIfPresent(String.self, forKey: .source)
+            ?? c.decodeIfPresent(String.self, forKey: .provider))
+        self.freshness = try (c.decodeIfPresent(String.self, forKey: .freshness)
+            ?? c.decodeIfPresent(String.self, forKey: .observedAt)
+            ?? c.decodeIfPresent(String.self, forKey: .updatedAt))
+    }
+
     enum CodingKeys: String, CodingKey {
-        case userId, role, hoursOnDuty, hoursOfServiceCompliant
+        case id, crewId, userId, role, boardPosition, hoursOnDuty, hoursOfServiceCompliant, status
+        case tracked, trackingState, source, provider, freshness, observedAt, updatedAt
+    }
+
+    private static func decodeIdentifier(
+        _ container: KeyedDecodingContainer<CodingKeys>,
+        _ key: CodingKeys
+    ) -> String? {
+        if let raw = try? container.decode(String.self, forKey: key), !raw.isEmpty { return raw }
+        if let value = try? container.decode(Int.self, forKey: key) { return String(value) }
+        return nil
+    }
+
+    private static func decodeDouble(
+        _ container: KeyedDecodingContainer<CodingKeys>,
+        _ key: CodingKeys
+    ) -> Double? {
+        if let value = try? container.decode(Double.self, forKey: key), value.isFinite { return value }
+        if let raw = try? container.decode(String.self, forKey: key),
+           let value = Double(raw), value.isFinite { return value }
+        return nil
     }
 }
 
@@ -98,12 +170,17 @@ private struct NextCall584: Decodable {
     let maxAllowedHours: Double?
     let fraComplianceStatus: String?
     let consecutiveDaysWorked: Int?
-    
-    // Computed accessors for legacy iOS view code
-    var trainSymbol: String? { nil }
-    var consistLead: String? { nil }
-    var onDutyInMinutes: Int? { hoursOnDuty.map { Int($0 * 60) } }
-    var railId: String? { nil }
+    let tracked: Bool?
+    let trackingState: HOSTrackingState?
+    let source: String?
+    let freshness: String?
+
+    var hasCurrentEvidence: Bool {
+        tracked == true
+            && trackingState == .tracked
+            && source?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            && HOSObservationClock.freshness(freshness ?? lastReportTime).isCurrent
+    }
 }
 
 private struct YardIdIn584: Encodable { let yardId: String }
@@ -117,27 +194,42 @@ private struct RailCrewCallBoardBody: View {
     @State private var availability: CrewAvailability584? = nil
     @State private var crew: [CrewMember584] = []
     @State private var nextCall: NextCall584? = nil
-    @State private var isCalling = false
+    @State private var isLoading = true
+    @State private var boardLoadError: String? = nil
+    @State private var crewLoadError: String? = nil
+    @State private var hosLoadError: String? = nil
 
     // MARK: Derived
 
-    private var yardLabel: String      { availability?.yardName?.uppercased() ?? yardId.uppercased() }
-    private var callableNow: Int       { availability?.callableNow      ?? 0 }
-    private var calledCount: Int       { availability?.calledCount       ?? 0 }
-    private var boardSize: Int         { availability?.extraBoardDepth   ?? 0 }
+    private var yardLabel: String { availability?.yardName?.uppercased() ?? yardId.uppercased() }
+    private var currentBoard: CrewAvailability584? {
+        availability?.hasCurrentEvidence == true ? availability : nil
+    }
+    private var callableNow: Int? { currentBoard?.callableNow }
+    private var calledCount: Int? { currentBoard?.calledCount }
+    private var boardSize: Int? { currentBoard?.extraBoardDepth }
+    private var callableNowLabel: String { callableNow.map(String.init) ?? "—" }
+    private var calledCountLabel: String { calledCount.map(String.init) ?? "—" }
+    private var boardSizeLabel: String { boardSize.map(String.init) ?? "—" }
     private var avgTurnLabel: String   {
-        guard let t = availability?.avgTurnHours else { return "-" }
+        guard let t = currentBoard?.avgTurnHours else { return "—" }
         return String(format: "%.1fh", t)
     }
     private var boardStatusLabel: String {
-        switch (availability?.boardStatus ?? "open").lowercased() {
+        guard let status = currentBoard?.boardStatus?.lowercased() else { return "BOARD UNVERIFIED" }
+        switch status {
+        case "open":       return "BOARD OPEN"
         case "closed":     return "BOARD CLOSED"
         case "restricted": return "RESTRICTED"
-        default:           return "BOARD OPEN"
+        default:           return "STATUS UNKNOWN"
         }
     }
     private var boardStatusOpen: Bool {
-        (availability?.boardStatus ?? "open").lowercased() == "open"
+        currentBoard?.boardStatus?.lowercased() == "open"
+    }
+    private var boardStatusColor: Color {
+        guard currentBoard != nil else { return Brand.warning }
+        return boardStatusOpen ? Brand.success : Brand.danger
     }
     private var yardNamePill: String {
         let name = availability?.yardName ?? yardId
@@ -153,6 +245,24 @@ private struct RailCrewCallBoardBody: View {
                 eyebrow
                 headline
                 IridescentHairline()
+                if isLoading {
+                    LifecycleCard {
+                        Text("Loading crew and HOS evidence…")
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textSecondary)
+                    }
+                }
+                if !evidenceIssues.isEmpty {
+                    LifecycleCard(accentDanger: true) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(evidenceIssues, id: \.self) { issue in
+                                Text(issue)
+                                    .font(EType.caption)
+                                    .foregroundStyle(Brand.warning)
+                            }
+                        }
+                    }
+                }
                 heroCard
                 kpiStrip
                 crewSection
@@ -213,8 +323,8 @@ private struct RailCrewCallBoardBody: View {
                         .kerning(0.5)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 5)
-                        .background(Capsule().fill((boardStatusOpen ? Brand.success : Brand.danger).opacity(0.14)))
-                        .foregroundColor(boardStatusOpen ? Brand.success : Brand.danger)
+                        .background(Capsule().fill(boardStatusColor.opacity(0.14)))
+                        .foregroundColor(boardStatusColor)
 
                     Text(yardNamePill)
                         .font(.system(size: 11, weight: .bold))
@@ -228,14 +338,14 @@ private struct RailCrewCallBoardBody: View {
                 // Callable figure + called right
                 HStack(alignment: .lastTextBaseline, spacing: 0) {
                     HStack(alignment: .lastTextBaseline, spacing: Space.s2) {
-                        Text("\(callableNow)")
+                        Text(callableNowLabel)
                             .font(.system(size: 34, weight: .bold).monospacedDigit())
                             .foregroundStyle(LinearGradient.diagonal)
                         VStack(alignment: .leading, spacing: 2) {
                             Text("callable now")
                                 .font(.system(size: 11, weight: .semibold))
                                 .foregroundColor(palette.textSecondary)
-                            Text("extra board depth \(boardSize) · turn \(avgTurnLabel)")
+                            Text("extra board depth \(boardSizeLabel) · turn \(avgTurnLabel)")
                                 .font(.system(size: 11))
                                 .foregroundColor(palette.textTertiary)
                         }
@@ -246,7 +356,7 @@ private struct RailCrewCallBoardBody: View {
                             .font(.system(size: 10, weight: .black))
                             .kerning(0.6)
                             .foregroundColor(palette.textTertiary)
-                        Text("\(calledCount)")
+                        Text(calledCountLabel)
                             .font(.system(size: 22, weight: .bold).monospacedDigit())
                             .foregroundColor(palette.textPrimary)
                         Text("on assignment")
@@ -264,9 +374,13 @@ private struct RailCrewCallBoardBody: View {
 
     private var kpiStrip: some View {
         HStack(spacing: Space.s2) {
-            MetricTile(label: "AVAILABLE", value: "\(callableNow)", accent: callableNow > 0 ? Brand.success : Brand.danger)
-            MetricTile(label: "CALLED",    value: "\(calledCount)")
-            MetricTile(label: "BOARD",     value: "\(boardSize)")
+            MetricTile(
+                label: "AVAILABLE",
+                value: callableNowLabel,
+                accent: callableNow.map { $0 > 0 ? Brand.success : Brand.danger } ?? Brand.warning
+            )
+            MetricTile(label: "CALLED", value: calledCountLabel)
+            MetricTile(label: "BOARD", value: boardSizeLabel)
         }
     }
 
@@ -280,6 +394,13 @@ private struct RailCrewCallBoardBody: View {
                 .foregroundColor(palette.textTertiary)
 
             VStack(spacing: 0) {
+                if crew.isEmpty {
+                    Text(crewLoadError == nil ? "No crew rows were returned." : "Crew roster unavailable.")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(Space.s4)
+                }
                 ForEach(Array(crew.enumerated()), id: \.offset) { idx, member in
                     if idx > 0 {
                         Divider()
@@ -302,11 +423,12 @@ private struct RailCrewCallBoardBody: View {
 
     @ViewBuilder
     private func crewRow(_ member: CrewMember584) -> some View {
-        let (chipColor, pillLabel, pillColor) = crewStatusInfo(member.status)
+        let (chipColor, pillLabel, pillColor) = crewStatusInfo(member)
         let craftTitle = [member.craft, member.crewId].compactMap { $0 }.joined(separator: " · ")
-        let hosHours   = member.hosAvailableHours.map { String(format: "%.1fh", $0) } ?? "-"
-        let hosWord    = (member.status ?? "").lowercased() == "on_call" ? "left" : "avail"
-        let subText    = "\(member.boardPosition ?? "-") · HOS \(hosHours) \(hosWord)"
+        let hosHours = member.hasCurrentHOSEvidence
+            ? member.hoursOnDuty.map { String(format: "%.1fh", $0) } ?? "—"
+            : "—"
+        let subText = "\(member.boardPosition ?? "—") · on duty \(hosHours)"
 
         HStack(spacing: Space.s3) {
             ZStack {
@@ -342,12 +464,17 @@ private struct RailCrewCallBoardBody: View {
     // MARK: Next call strip
 
     private var nextCallStrip: some View {
-        let trainLine   = nextCall.map { "Train \($0.trainSymbol ?? "-") · consist \($0.consistLead ?? "-") lead" } ?? "-"
-        let dutyLine    = nextCall.map { nc -> String in
-            let dutyStr = nc.onDutyInMinutes.map { formatOnDuty($0) } ?? "on-duty -"
-            let rid     = nc.railId ?? "-"
-            return "\(dutyStr) · \(rid)"
-        } ?? "-"
+        let nextCallLine = nextCall.flatMap { row -> String? in
+            guard row.hasCurrentEvidence else { return nil }
+            guard let identity = row.crewMemberName ?? row.crewMemberId else { return nil }
+            return [identity, row.role].compactMap { $0 }.joined(separator: " · ")
+        } ?? "No current next-call evidence"
+        let dutyLine = nextCall.flatMap { row -> String? in
+            guard row.hasCurrentEvidence else { return nil }
+            let onDuty = row.hoursOnDuty.map { "on duty " + HOSStatus.formatHours($0) }
+            let available = row.hoursAvailable.map { "available " + HOSStatus.formatHours($0) }
+            return [onDuty, available].compactMap { $0 }.joined(separator: " · ")
+        }.flatMap { $0.isEmpty ? nil : $0 } ?? "HOS counters unavailable"
 
         return VStack(alignment: .leading, spacing: 6) {
             HStack {
@@ -357,7 +484,7 @@ private struct RailCrewCallBoardBody: View {
                     .foregroundColor(palette.textTertiary)
                 Spacer()
             }
-            Text(trainLine)
+            Text(nextCallLine)
                 .font(.system(size: 11))
                 .foregroundColor(palette.textSecondary)
             Text(dutyLine)
@@ -381,17 +508,18 @@ private struct RailCrewCallBoardBody: View {
         var lines = [
             "Yard: \(yardLabel)",
             "Railroad: \(availability?.yardRailroad ?? "-")",
-            "Callable now: \(callableNow)",
-            "Called count: \(calledCount)",
-            "Extra board depth: \(boardSize)",
+            "Callable now: \(callableNowLabel)",
+            "Called count: \(calledCountLabel)",
+            "Extra board depth: \(boardSizeLabel)",
             "Average turn: \(avgTurnLabel)"
         ]
         if let nextCall {
             lines.append("Next call: \(nextCall.crewMemberName ?? nextCall.crewMemberId ?? "-")")
-            lines.append("FRA status: \(nextCall.fraComplianceStatus ?? "-")")
+            lines.append("FRA status: \(nextCall.hasCurrentEvidence ? nextCall.fraComplianceStatus ?? "unavailable" : "unverified")")
+            lines.append("HOS source: \(nextCall.source ?? "unavailable")")
         }
         for member in crew.prefix(4) {
-            lines.append("\(member.crewId ?? "-") - \(member.craft ?? "crew") - \(member.status ?? "-")")
+            lines.append("\(member.crewId ?? "unavailable") - \(member.craft ?? "crew") - \(crewStatusInfo(member).1)")
         }
         return lines
     }
@@ -399,11 +527,12 @@ private struct RailCrewCallBoardBody: View {
     private var ctaPair: some View {
         HStack(spacing: Space.s3) {
             CTAButton(
-                title: "Call crew",
-                action: { isCalling = true; Task { await callCrew() } },
-                leadingIcon: "plus",
-                isLoading: isCalling
+                title: "Call channel unavailable",
+                action: {},
+                leadingIcon: "exclamationmark.shield"
             )
+            .disabled(true)
+            .opacity(0.55)
             RailSecondaryActionButton(
                 title: "HOS roster",
                 sheetTitle: "Crew HOS roster",
@@ -416,27 +545,28 @@ private struct RailCrewCallBoardBody: View {
 
     // MARK: Helpers
 
-    private func crewStatusInfo(_ status: String?) -> (Color, String, Color) {
-        switch (status ?? "callable").lowercased() {
-        case "callable":   return (Brand.success, "CALLABLE", Brand.success)
-        case "on_call":    return (Brand.warning,  "ON CALL",  Brand.warning)
-        case "called":     return (Brand.info,     "CALLED",   Brand.info)
-        case "unavailable":return (Brand.danger,   "UNAVAIL",  Brand.danger)
-        default:           return (Brand.success,  "CALLABLE", Brand.success)
+    private func crewStatusInfo(_ member: CrewMember584) -> (Color, String, Color) {
+        guard member.hasCurrentHOSEvidence else {
+            return (Brand.warning, "UNVERIFIED", Brand.warning)
         }
-    }
-
-    private func formatOnDuty(_ minutes: Int) -> String {
-        let h = minutes / 60
-        let m = minutes % 60
-        if h > 0 && m > 0 { return "on-duty in \(h)h \(m)m" }
-        if h > 0           { return "on-duty in \(h)h" }
-        return "on-duty in \(m)m"
+        switch member.hoursOfServiceCompliant {
+        case true:  return (Brand.success, "HOS VERIFIED", Brand.success)
+        case false: return (Brand.danger, "HOS HOLD", Brand.danger)
+        case nil:   return (Brand.warning, "UNVERIFIED", Brand.warning)
+        }
     }
 
     // MARK: Data loading
 
     private func loadAll() async {
+        isLoading = true
+        boardLoadError = nil
+        crewLoadError = nil
+        hosLoadError = nil
+        availability = nil
+        crew = []
+        nextCall = nil
+
         async let availTask: CrewAvailability584 = EusoTripAPI.shared.query(
             "railShipments.getCrewAvailability",
             input: YardIdIn584(yardId: yardId)
@@ -450,17 +580,27 @@ private struct RailCrewCallBoardBody: View {
             input: YardIdIn584(yardId: yardId)
         )
 
-        availability = try? await availTask
-        crew         = (try? await crewTask) ?? []
-        nextCall     = try? await nextCallTask
+        do { availability = try await availTask }
+        catch { boardLoadError = "Crew board source unavailable: \(error.eusoUserCopy)" }
+
+        do { crew = try await crewTask }
+        catch { crewLoadError = "Crew roster source unavailable: \(error.eusoUserCopy)" }
+
+        do { nextCall = try await nextCallTask }
+        catch { hosLoadError = "Crew HOS source unavailable: \(error.eusoUserCopy)" }
+
+        isLoading = false
     }
 
-    private func callCrew() async {
-        defer { isCalling = false }
-        let result: [CrewMember584]? = try? await EusoTripAPI.shared.query(
-            "railShipments.getRailCrew",
-            input: YardIdIn584(yardId: yardId)
-        )
-        if let r = result { crew = r }
+    private var evidenceIssues: [String] {
+        var issues = [boardLoadError, crewLoadError, hosLoadError].compactMap { $0 }
+        if !isLoading, availability != nil, currentBoard == nil {
+            issues.append("Crew board evidence is untracked, stale, or missing provenance.")
+        }
+        if !isLoading, nextCall != nil, nextCall?.hasCurrentEvidence != true {
+            issues.append("Next-call HOS evidence is untracked, stale, or missing provenance.")
+        }
+        issues.append("No authorized crew-call write channel is configured; no call was sent.")
+        return issues
     }
 }

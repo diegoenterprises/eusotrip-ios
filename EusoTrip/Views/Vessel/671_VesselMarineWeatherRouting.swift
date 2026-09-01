@@ -3,37 +3,19 @@
 //  EusoTrip — Vessel Operator · Marine Weather Routing.
 //
 //  Bespoke port of canonical wireframe 671 (06 Vessel · Dark). MapCanvas hero
-//  shows the per-voyage route arc with weather waypoints; voyage legs + ESang
-//  advisory below.
+//  shows the exact current EusoMarine route plan with provider weather sampled
+//  only at its authored vertices; voyage legs + provider-authored guidance sit
+//  below.
 //
-//  ───────── REAL PER-VOYAGE ENDPOINTS (same chain Vessel 660 uses) ─────────
-//  This screen is per-voyage: it loads ONE booking and routes/weathers THAT
-//  voyage. The origin + destination ports come from the booking, not literals:
-//
-//    vesselShipments.getVesselShipmentDetail({ id })  (EXISTS :263)
-//        → returns full `ports` rows as originPort / destinationPort, each
-//          carrying `unlocode` AND `coordinates {lat,lng}` (schema.ts :10269).
-//        → coords resolve from the DB `coordinates` field (primary) or
-//          PortDirectory.find(unlocode:) (fallback) — the SAME great-circle
-//          endpoint path 660 + Vessel 003 use. NO hardcoded coordinate array.
-//
-//  Map hero = the canonical ocean register `VesselOceanTrackMap`
-//  (→ BespokeMapCanvas style:.ocean) drawn on the resolved real port coords +
-//  the live AIS feed keyed by the booking's vessel IMO. The route-weather
-//  waypoints handed to getRouteWeather are the great circle BETWEEN the two
-//  resolved real ports (BespokeMapProjection.greatCircle), never literals.
-//
-//  Weather VALUES (per-leg wind / swell / sea-state) come strictly from:
-//    vesselShipments.getRouteWeather({ waypoints })   (EXISTS :1804)
-//    vesselShipments.getMarineWeather({ lat, lng })   (EXISTS :1790)
-//  Both DTN-backed procs return `null` when the marine-weather feed is not
-//  configured/seeded (the wireframe's flagged seed gap). We honor that with a
-//  real "feed unavailable" empty state — the route geometry (from real ports)
-//  still draws; the forecast values simply omit. Never fabricated.
-//
-//  Default booking = the live in-transit voyage (real DB row). Coord gate
-//  (Driver 013 pattern): the ocean map draws only when BOTH ports resolve —
-//  otherwise a neutral "awaiting endpoints" placeholder, never null island.
+//  The phone sends exactly `{shipmentId}` to
+//  `vesselShipments.getCanonicalRouteWeather`. The server resolves the
+//  authorized shipment, assigned vessel/IMO, exact current checksum-bound
+//  route.plan, ports, source rights/freshness, and weather-provider calls. It
+//  samples existing vertices independently for every LineString member; the
+//  client never sends waypoints, interpolates a great circle, joins disjoint
+//  geometry, or substitutes endpoint chords. When no shipment is supplied by
+//  navigation, the newest authorized non-terminal shipment is selected from
+//  the tenant-scoped list—never a hardcoded demo row.
 //
 
 import SwiftUI
@@ -41,18 +23,15 @@ import SwiftUI
 struct VesselMarineWeatherRoutingScreen: View {
     let theme: Theme.Palette
     var shipmentId: Int
-    var imoNumber: String
 
-    // Default = the live in-transit booking (real DB row id 8 · MV Pacific Star
-    // · IMO 9876545 · ARBUE → AUBNE). A design-time default only — overwritten
-    // by whatever booking is routed in; the ports + coords come from the read.
-    init(theme: Theme.Palette, shipmentId: Int = 8, imoNumber: String = "9876545") {
-        self.theme = theme; self.shipmentId = shipmentId; self.imoNumber = imoNumber
+    init(theme: Theme.Palette, shipmentId: Int = 0) {
+        self.theme = theme
+        self.shipmentId = shipmentId
     }
 
     var body: some View {
         Shell(theme: theme) {
-            VesselMarineWeatherRoutingBody(shipmentId: shipmentId, imoNumber: imoNumber)
+            VesselMarineWeatherRoutingBody(shipmentId: shipmentId)
         } nav: {
             BottomNav(
                 leading: [NavSlot(label: "Home",      systemImage: "house",            isCurrent: false),
@@ -67,24 +46,37 @@ struct VesselMarineWeatherRoutingScreen: View {
 
 // MARK: - Data shapes (mirror server/routers/vesselShipments.ts)
 
-/// Port join from getVesselShipmentDetail (:289 returns the full `ports` row).
-/// Carries UN/LOCODE + name + the DB `coordinates {lat,lng}` JSON. The coords
-/// resolve the great-circle endpoints — real-coordinate path identical to 660.
+/// Server-resolved canonical shipment/route-weather contract. Unused server
+/// evidence fields are intentionally ignored by Decodable, while every field
+/// that releases map/weather UI is required and rechecked below.
 private struct PortCoords671: Decodable { let lat: Double?; let lng: Double? }
 private struct VesselPort671: Decodable {
     let name: String?
     let unlocode: String?
     let coordinates: PortCoords671?
 }
-private struct VesselDetail671: Decodable {
+private struct CanonicalWeatherShipment671: Decodable {
+    let id: Int
     let bookingNumber: String?
-    let originPort: VesselPort671?
-    let destinationPort: VesselPort671?
+    let status: String?
+}
+private struct CanonicalWeatherVessel671: Decodable {
+    let id: Int
+    let name: String
+    let imoNumber: String?
+    let mmsiNumber: String?
+}
+private struct CanonicalWeatherRoutePlan671: Decodable {
+    let version: Int
+    let purpose: String
+    let operational: Bool
+    let rightsState: String
+    let freshnessState: String
 }
 
 /// One segment of the route-weather response. All numerics optional so a
 /// partial/null DTN payload decodes without throwing.
-private struct RouteWeatherSegment671: Decodable, Identifiable {
+private struct RouteWeatherSegment671: Decodable {
     let segmentIndex: Int?
     let startLat: Double?
     let startLng: Double?
@@ -100,7 +92,6 @@ private struct RouteWeatherSegment671: Decodable, Identifiable {
     let optimalSpeed: Double?
     let timestamp: String?
 
-    var id: Int { segmentIndex ?? Int.random(in: Int.min...Int.max) }
 }
 
 private struct RouteWeatherResponse671: Decodable {
@@ -127,6 +118,49 @@ private struct MarineForecast671: Decodable {
     let current: MarineForecastCurrent671?
 }
 
+private struct CanonicalRouteWarning671: Decodable {
+    let lineIndex: Int
+    let message: String
+}
+private struct CanonicalRouteDeparture671: Decodable {
+    let lineIndex: Int
+    let value: String
+}
+private struct CanonicalRouteWeatherLine671: Decodable, Identifiable {
+    let lineIndex: Int
+    let authoredVertexCount: Int
+    let sampledVertexCount: Int
+    let weather: RouteWeatherResponse671?
+    var id: Int { lineIndex }
+}
+private struct CanonicalRouteWeatherAuthority671: Decodable {
+    let availability: String
+    let overallRisk: String?
+    let warnings: [CanonicalRouteWarning671]
+    let recommendedDepartures: [CanonicalRouteDeparture671]
+    let lines: [CanonicalRouteWeatherLine671]
+}
+private struct CanonicalMarineForecastAuthority671: Decodable {
+    let forecast: MarineForecast671?
+}
+private struct CanonicalRouteWeatherEnvelope671: Decodable {
+    let shipment: CanonicalWeatherShipment671
+    let assignedVessel: CanonicalWeatherVessel671
+    let originPort: VesselPort671?
+    let destinationPort: VesselPort671?
+    let routePlan: CanonicalWeatherRoutePlan671
+    let routeWeather: CanonicalRouteWeatherAuthority671
+    let marineForecast: CanonicalMarineForecastAuthority671
+}
+
+private struct VesselShipmentListRow671: Decodable {
+    let id: Int
+    let status: String?
+}
+private struct VesselShipmentListEnvelope671: Decodable {
+    let shipments: [VesselShipmentListRow671]
+}
+
 /// Per-port berthing conditions from getPortWeather → DTNMarineWeatherService
 /// `PortConditions` (vesselShipments.ts :2119 / DTNMarineWeatherService.ts :101).
 /// `berthingSafety` is the published Safe/Caution/Restricted/Closed assessment
@@ -146,18 +180,19 @@ private struct PortConditions671: Decodable {
 
 private struct VesselMarineWeatherRoutingBody: View {
     @Environment(\.palette) private var palette
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let shipmentId: Int
-    let imoNumber: String
 
-    // Booking endpoints (getVesselShipmentDetail) — nil until the booking read
-    // lands. The ocean map + the getRouteWeather waypoints both gate on these,
-    // so nothing routes until the REAL ports resolve.
+    // Exact identities and endpoints resolved by the server authority.
+    @State private var resolvedShipmentId: Int? = nil
+    @State private var resolvedImoNumber: String? = nil
+    @State private var canonicalRouteVersion: Int? = nil
+    @State private var canonicalRoutePurpose: CanonicalRoutePlanClient.Purpose = .activeJob
     @State private var originPort: VesselPort671? = nil
     @State private var destinationPort: VesselPort671? = nil
     @State private var bookingRef: String? = nil
 
     @State private var route: RouteWeatherResponse671? = nil
+    @State private var routeWeatherLines: [CanonicalRouteWeatherLine671] = []
     @State private var marine: MarineForecast671? = nil
     // Per-port berthing conditions (getPortWeather, keyed by the port UN/LOCODE).
     // nil until the enterprise marine key lands (server returns null today) — the
@@ -171,6 +206,7 @@ private struct VesselMarineWeatherRoutingBody: View {
     @State private var feedUnavailable = false
     /// True when the booking has no routable origin/destination ports.
     @State private var endpointsUnavailable = false
+    @State private var subjectUnavailable = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -181,7 +217,7 @@ private struct VesselMarineWeatherRoutingBody: View {
                 marineConditions
                 berthingSafetySection
                 voyageLegs
-                esangAdvisory
+                routeGuidance
                 cta
             }
             .padding(.horizontal, Space.s4)
@@ -192,23 +228,21 @@ private struct VesselMarineWeatherRoutingBody: View {
         .eusoRefreshable { await load() }
     }
 
-    // MARK: - Origin / destination resolution (DB coords → PortDirectory fallback)
+    // MARK: - Server-resolved origin / destination coordinates
 
-    /// Origin great-circle endpoint — the booking's origin port. Resolves from
-    /// the DB `coordinates {lat,lng}` field first (the proc returns the full
-    /// `ports` row), else the UN/LOCODE through PortDirectory (660 / 003 path).
-    /// nil until a real booking lands ⇒ the coord gate keeps the placeholder.
+    /// Display pins come only from the authorized server response. Missing
+    /// coordinates fail closed; the client does not repair route endpoints from
+    /// a bundled directory or use them to create geometry.
     private var originCoord: HereLatLng? { coord(for: originPort) }
     private var destinationCoord: HereLatLng? { coord(for: destinationPort) }
 
     private func coord(for port: VesselPort671?) -> HereLatLng? {
         guard let port else { return nil }
-        if let lat = port.coordinates?.lat, let lng = port.coordinates?.lng,
-           !(lat == 0 && lng == 0) {
-            return HereLatLng(lat, lng)
-        }
-        if let code = port.unlocode, !code.isEmpty, let p = PortDirectory.find(unlocode: code) {
-            return HereLatLng(p.lat, p.lng)
+        if let coordinate = LatLongParser.validatedCoordinate(
+            latitude: port.coordinates?.lat,
+            longitude: port.coordinates?.lng
+        ) {
+            return HereLatLng(coordinate.latitude, coordinate.longitude)
         }
         return nil
     }
@@ -244,10 +278,10 @@ private struct VesselMarineWeatherRoutingBody: View {
     }
 
     private var topSubtitle: String {
-        if let o = originCoord, let d = destinationCoord, o.lat != 0 || d.lat != 0 {
-            return "Route weather · \(originCode) → \(destCode) · live AIS track"
+        if originCoord != nil, destinationCoord != nil {
+            return "Canonical route weather · \(originCode) → \(destCode) · authorized vessel observations"
         }
-        return "Route weather · per-voyage · live AIS track"
+        return "Canonical route weather · per-voyage authority"
     }
 
     // MARK: - MapCanvas hero · ocean register on real port endpoints
@@ -259,15 +293,19 @@ private struct VesselMarineWeatherRoutingBody: View {
                     .fill(Color(hex: 0x0B1422))
 
                 VStack(alignment: .leading, spacing: 10) {
-                    // The canonical OCEAN register — fed the booking's REAL
-                    // origin/dest coords (great circle) + live AIS keyed by IMO.
-                    // Coord gate: draw only when both endpoints resolve.
+                    // The canonical OCEAN register. Route geometry comes from
+                    // route.plan; ports are markers and AIS remains observation
+                    // evidence. No client geometry crosses this boundary.
                     ZStack {
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
                             .fill(Color(hex: 0x0E1B2E))
-                        if !imoNumber.isEmpty, let o = originCoord, let d = destinationCoord {
+                        if let subjectId = resolvedShipmentId,
+                           let o = originCoord,
+                           let d = destinationCoord {
                             VesselOceanTrackMap(
-                                imoNumber: imoNumber,
+                                imoNumber: resolvedImoNumber ?? "",
+                                vesselShipmentId: subjectId,
+                                routePurpose: canonicalRoutePurpose,
                                 origin: o,
                                 destination: d,
                                 originLabel: originLabel,
@@ -307,10 +345,10 @@ private struct VesselMarineWeatherRoutingBody: View {
         )
     }
 
-    // MARK: - Marine conditions strip (getMarineWeather · route midpoint)
+    // MARK: - Marine conditions strip (server-chosen authored route vertex)
 
-    /// The marine forecast at the resolved route midpoint — significant
-    /// wave / wind gust / visibility from `getMarineWeather.current`,
+    /// The marine forecast at the exact authored route vertex selected by the
+    /// server — significant wave / wind gust / visibility from the provider,
     /// rendered through the canonical metric-tile idiom with the bespoke
     /// WeatherIcons `.wave` / `.wind` / `.eye` glyphs (the PerLoadWeatherCard
     /// metricsGrid pattern). Honest: hidden entirely until the feed resolves
@@ -318,6 +356,8 @@ private struct VesselMarineWeatherRoutingBody: View {
     @ViewBuilder
     private var marineConditions: some View {
         if let c = marine?.current, marineHasAnyValue(c) {
+            let gust = marineWind(c.windGust)
+            let sustainedWind = marineWind(c.windSpeed)
             VStack(alignment: .leading, spacing: Space.s2) {
                 Text("MARINE CONDITIONS · mid-voyage")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
@@ -325,61 +365,49 @@ private struct VesselMarineWeatherRoutingBody: View {
                 HStack(spacing: 8) {
                     // Significant wave height (sig wave) — .wave glyph.
                     marineTile(.wave,
-                               value: c.waveHeight.map { String(format: "%.1f m", $0) },
+                               value: marineWave(c.waveHeight).map { String(format: "%.1f m", $0) },
                                key: "SIG WAVE")
                     // Wind gust — .wind glyph (gust preferred, sustained fallback).
                     marineTile(.wind,
-                               value: (c.windGust ?? c.windSpeed).map { String(format: "%.0f kt", $0) },
-                               key: c.windGust != nil ? "GUST" : "WIND")
+                               value: (gust ?? sustainedWind).map { String(format: "%.0f kt", $0) },
+                               key: gust != nil ? "GUST" : "WIND")
                     // Visibility — .eye glyph.
                     marineTile(.eye,
-                               value: c.visibility.map { String(format: "%.0f nm", $0) },
+                               value: marineVisibility(c.visibility).map { String(format: "%.0f nm", $0) },
                                key: "VIS")
                 }
             }
-            // build-751: the continuous animated sky engine as a SUBTLE backdrop
-            // behind the marine strip — bound ONLY to the REAL midpoint wind +
-            // visibility (the marine feed carries no sky-condition code, so the
-            // engine renders its neutral scene with real wind motion + low-vis
-            // choke; nothing fabricated). Reduce Motion → static frame.
             .padding(14)
             .background(
-                WeatherSkyView(snapshot: marineSkySnapshot(c), animated: !reduceMotion)
-                    .opacity(0.55)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .allowsHitTesting(false)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color.white.opacity(0.04))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .strokeBorder(palette.borderFaint)
+                    )
             )
         }
-    }
-
-    /// A REAL `WeatherSnapshot` for the sky engine, built strictly from the
-    /// marine midpoint feed: wind (kt → mph proxy for the wind-shear/streak
-    /// layer), visibility (nm → mi proxy for the low-visibility choke), and the
-    /// resolved midpoint latitude (hemisphere/season). `weatherCode` stays 0 —
-    /// the marine feed has NO sky-condition classification, so the engine draws
-    /// its honest neutral scene rather than an invented precipitation type.
-    private func marineSkySnapshot(_ c: MarineForecastCurrent671) -> WeatherSnapshot {
-        let windMph = Int(((c.windGust ?? c.windSpeed) ?? 0).rounded())
-        let visMi = Int((c.visibility ?? 10).rounded())
-        var snap = WeatherSnapshot(
-            city: "",
-            tempF: 0,
-            windMph: max(0, windMph),
-            visibilityMi: max(0, visMi),
-            condition: "",
-            symbol: "cloud.fill",
-            nextAlert: nil,
-            accent: .calm
-        )
-        snap.weatherCode = 0                  // unknown → engine neutral scene
-        snap.latitude = marine?.lat ?? originCoord?.lat
-        return snap
     }
 
     /// True when the marine current carries at least one of the three fields
     /// we surface — so the strip never frames on an all-"—" payload.
     private func marineHasAnyValue(_ c: MarineForecastCurrent671) -> Bool {
-        c.waveHeight != nil || c.windGust != nil || c.windSpeed != nil || c.visibility != nil
+        marineWave(c.waveHeight) != nil ||
+        marineWind(c.windGust) != nil ||
+        marineWind(c.windSpeed) != nil ||
+        marineVisibility(c.visibility) != nil
+    }
+
+    private func marineWave(_ value: Double?) -> Double? {
+        WeatherNumeric.finite(value, allowed: 0...100)
+    }
+
+    private func marineWind(_ value: Double?) -> Double? {
+        WeatherNumeric.finite(value, allowed: 0...500)
+    }
+
+    private func marineVisibility(_ value: Double?) -> Double? {
+        WeatherNumeric.finite(value, allowed: 0...1_000)
     }
 
     /// One marine metric tile — the PerLoadWeatherCard.metricTile idiom:
@@ -411,8 +439,8 @@ private struct VesselMarineWeatherRoutingBody: View {
 
     // MARK: - Berthing safety (getPortWeather · per-port)
 
-    /// Per-port BERTHING-SAFETY chips. getRouteWeather/getMarineWeather are
-    /// route-centric (open-water sea-state); the Safe/Caution/Restricted/Closed
+    /// Per-port BERTHING-SAFETY chips. Canonical route weather is route-centric
+    /// (open-water sea-state); the Safe/Caution/Restricted/Closed
     /// berthing assessment + gust AT THE BERTH live on getPortWeather keyed by
     /// the port UN/LOCODE — so this screen calls it for the resolved origin AND
     /// destination ports. Honest: the whole section is HIDDEN until at least one
@@ -462,7 +490,9 @@ private struct VesselMarineWeatherRoutingBody: View {
     /// A berthing payload counts only when it carries the verdict OR a gust —
     /// so an all-empty enterprise-gated row never frames the chip.
     private func berthingHasValue(_ c: PortConditions671) -> Bool {
-        (c.berthingSafety?.isEmpty == false) || c.windGust != nil || c.windSpeed != nil
+        (c.berthingSafety?.isEmpty == false) ||
+        marineWind(c.windGust) != nil ||
+        marineWind(c.windSpeed) != nil
     }
 
     /// Maps the published berthing verdict → palette accent + StatusPill kind.
@@ -484,7 +514,7 @@ private struct VesselMarineWeatherRoutingBody: View {
         let (accent, pillKind) = berthingTone(chip.conditions.berthingSafety)
         let verdict = (chip.conditions.berthingSafety?.isEmpty == false)
             ? chip.conditions.berthingSafety! : nil
-        let gust = (chip.conditions.windGust ?? chip.conditions.windSpeed)
+        let gust = (marineWind(chip.conditions.windGust) ?? marineWind(chip.conditions.windSpeed))
             .map { String(format: "%.0f kt", $0) }
         return HStack(alignment: .top, spacing: Space.s3) {
             // Bespoke port pin in an accent-tinted chip (never an SF Symbol).
@@ -544,35 +574,37 @@ private struct VesselMarineWeatherRoutingBody: View {
         .accessibilityLabel("\(chip.role) port \(chip.portLabel). Berthing \(chip.conditions.berthingSafety ?? "unknown").")
     }
 
-    /// No-endpoints / no-IMO placeholder so the hero never frames on null island.
+    /// Honest subject/endpoints seam so the hero never frames on invalid data.
     private var heroAwaiting: some View {
         VStack(spacing: 4) {
             // Bespoke route glyph — never an SF Symbol.
             WeatherIcons.utility(.route, size: 18, tint: Color(hex: 0x6E8198))
-            Text(loading ? "Resolving voyage endpoints…" : "Awaiting routable ports")
+            Text(loading
+                 ? "Resolving canonical voyage authority…"
+                 : subjectUnavailable
+                    ? "Select an authorized vessel shipment"
+                    : "Awaiting server-resolved ports")
                 .font(.system(size: 10, weight: .bold))
                 .foregroundStyle(Color(hex: 0x8FA3BF))
         }
     }
 
     private var heroCaption: String {
-        if loading { return "Loading route weather…" }
-        if endpointsUnavailable { return "Booking has no routable origin/destination ports" }
-        // HONEST enterprise-gate state (the DTN marine key isn't configured —
-        // the server genuinely returns null): the real route geometry IS shown,
-        // so we say so plainly without the alarming banned word. NEVER a
-        // fabricated marine reading.
-        if feedUnavailable { return "Live marine conditions on the enterprise feed · route geometry shown" }
-        // Transient fetch error → framed as an in-progress update (the
-        // `.eusoRefreshable`/`.task` path silently re-fetches), never "unavailable".
-        if loadError != nil { return "Updating route weather…" }
+        if loading { return "Resolving exact route and weather authority…" }
+        if subjectUnavailable { return "No authorized non-terminal vessel shipment was returned" }
+        if endpointsUnavailable { return "Shipment is missing verified port coordinates" }
+        if feedUnavailable {
+            return "Canonical EusoMarine route shown · provider returned no current marine conditions"
+        }
+        if let loadError { return loadError }
         let segs = route?.segments?.count ?? 0
-        if segs == 0 { return "No route-weather segments returned" }
+        let version = canonicalRouteVersion.map { "v\($0) · " } ?? ""
+        if segs == 0 { return "EusoMarine \(version)no route-weather segments returned" }
         let risk = (route?.overallRisk ?? "-")
-        return "\(originCode) → \(destCode) · \(segs) legs · overall \(risk.uppercased()) on swell"
+        return "EusoMarine \(version)\(originCode) → \(destCode) · \(segs) sampled legs · \(risk.uppercased())"
     }
 
-    // MARK: - Voyage legs (getRouteWeather)
+    // MARK: - Voyage legs (independent canonical route members)
 
     private var voyageLegs: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
@@ -591,39 +623,52 @@ private struct VesselMarineWeatherRoutingBody: View {
                 }
                 .padding(Space.s3)
                 .background(legCardBackground)
-            } else if loadError != nil {
-                // Transient fetch error → a soft "Updating route weather…"
-                // pane (no alarming danger card, never "unavailable"). The
-                // screen's `.eusoRefreshable`/`.task` path re-fetches; pull-to-
-                // refresh re-runs `load()`. NEVER a fabricated reading.
+            } else if let loadError {
                 marineEmptyPane(
                     glyph: .route,
-                    title: "Updating route weather…",
-                    subtitle: "Re-fetching per-leg sea-state for this voyage. Pull to refresh if it doesn't land in a moment.")
+                    title: "Route weather not released",
+                    subtitle: loadError)
+            } else if subjectUnavailable {
+                marineEmptyPane(
+                    glyph: .route,
+                    title: "No authorized voyage selected",
+                    subtitle: "Open an active vessel shipment or create one with an assigned vessel. No demo shipment is substituted.")
             } else if endpointsUnavailable {
                 marineEmptyPane(
                     glyph: .route,
                     title: "No routable voyage",
                     subtitle: "This booking has no origin/destination ports on file, so route weather can't be computed. Assign a loading + discharge port and per-leg sea-state populates here.")
             } else if feedUnavailable {
-                // HONEST enterprise-gate state: the marine feed key isn't
-                // configured for this tenant (the server genuinely returns
-                // null) — this is a real data-coverage state, NOT a failure to
-                // paper over, and NOT fabricated. The real route geometry is
-                // still rendered on the hero; this pane explains the per-leg
-                // sea-state needs the enterprise feed, without the banned word.
                 marineEmptyPane(
                     glyph: .wave,
-                    title: "Live marine conditions on the enterprise feed",
-                    subtitle: "Route geometry is shown from the real voyage ports. Per-leg significant wave, wind gust and visibility light up the moment the enterprise marine feed is live for this account.",
-                    comingSoon: true
+                    title: "No current provider conditions",
+                    subtitle: "The exact EusoMarine route remains visible. Weather stays empty until the licensed provider returns current conditions for its authored route vertices."
                 )
-            } else if let segs = route?.segments, !segs.isEmpty {
+            } else if routeWeatherLines.contains(where: { !($0.weather?.segments?.isEmpty ?? true) }) {
                 VStack(spacing: 0) {
-                    ForEach(Array(segs.enumerated()), id: \.element.id) { idx, seg in
-                        legRow(seg, isFirst: idx == 0, isLast: idx == segs.count - 1)
-                        if idx != segs.count - 1 {
-                            Rectangle().fill(palette.borderFaint).frame(height: 1)
+                    ForEach(routeWeatherLines) { line in
+                        if let segments = line.weather?.segments, !segments.isEmpty {
+                            HStack {
+                                Text("ROUTE MEMBER \(line.lineIndex + 1)")
+                                    .font(EType.micro)
+                                    .tracking(0.8)
+                                    .foregroundStyle(LinearGradient.primary)
+                                Spacer()
+                                Text("\(line.sampledVertexCount)/\(line.authoredVertexCount) authored vertices sampled")
+                                    .font(EType.caption)
+                                    .foregroundStyle(palette.textTertiary)
+                            }
+                            .padding(.vertical, Space.s2)
+                            ForEach(Array(segments.enumerated()), id: \.offset) { idx, segment in
+                                legRow(
+                                    segment,
+                                    isFirst: idx == 0,
+                                    isLast: idx == segments.count - 1
+                                )
+                                if idx != segments.count - 1 {
+                                    Rectangle().fill(palette.borderFaint).frame(height: 1)
+                                }
+                            }
                         }
                     }
                 }
@@ -642,7 +687,7 @@ private struct VesselMarineWeatherRoutingBody: View {
     /// WeatherIcons glyph in the gradient chip (ZERO SF Symbols). Used for
     /// the no-route / feed-unavailable honest states so the screen reads
     /// well now and lights up the moment the marine key lands.
-    private func marineEmptyPane(glyph: WeatherIcons.Utility, title: String, subtitle: String, comingSoon: Bool = false) -> some View {
+    private func marineEmptyPane(glyph: WeatherIcons.Utility, title: String, subtitle: String) -> some View {
         VStack(alignment: .center, spacing: Space.s4) {
             ZStack {
                 RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
@@ -660,9 +705,6 @@ private struct VesselMarineWeatherRoutingBody: View {
                     .foregroundStyle(palette.textSecondary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
-            }
-            if comingSoon {
-                StatusPill(text: "Coming soon", kind: .info)
             }
         }
         .frame(maxWidth: .infinity)
@@ -700,7 +742,7 @@ private struct VesselMarineWeatherRoutingBody: View {
         let color = riskColor(seg.riskLevel)
         let title = legTitle(seg, isFirst: isFirst, isLast: isLast)
         let seaState = (seg.riskLevel ?? "-").uppercased()
-        let waveStr = seg.waveHeight.map { String(format: "%.1f m", $0) } ?? "-"
+        let waveStr = marineWave(seg.waveHeight).map { String(format: "%.1f m", $0) } ?? "-"
         return VStack(spacing: 6) {
             HStack(alignment: .top, spacing: Space.s3) {
                 Circle().fill(color).frame(width: 10, height: 10)
@@ -729,22 +771,25 @@ private struct VesselMarineWeatherRoutingBody: View {
 
     /// The per-leg metric row: wind (.wind), swell (.wave), visibility
     /// (.eye) — each glyph + value rendered only when its field is present,
-    /// then any server risk factors as supporting text. Honest "getMarineWeather"
-    /// caption when the segment is value-less (partial DTN payload).
+    /// then any server risk factors as supporting text. A value-less provider
+    /// segment remains explicit rather than receiving a client estimate.
     @ViewBuilder
     private func legMetrics(_ seg: RouteWeatherSegment671) -> some View {
         let glyphTint = Color(red: 0.81, green: 0.88, blue: 1.0)
+        let wind = marineWind(seg.windSpeed)
+        let swell = marineWave(seg.swellHeight)
+        let visibility = marineVisibility(seg.visibility)
         HStack(spacing: 10) {
-            if let w = seg.windSpeed {
+            if let w = wind {
                 metricInline(.wind, String(format: "%.0f kt", w), tint: glyphTint)
             }
-            if let s = seg.swellHeight {
+            if let s = swell {
                 metricInline(.wave, String(format: "swell %.1f m", s), tint: glyphTint)
             }
-            if let v = seg.visibility {
+            if let v = visibility {
                 metricInline(.eye, String(format: "%.0f nm", v), tint: glyphTint)
             }
-            if seg.windSpeed == nil && seg.swellHeight == nil && seg.visibility == nil,
+            if wind == nil && swell == nil && visibility == nil,
                (seg.riskFactors?.isEmpty ?? true) {
                 Text("no marine weather reported for this leg")
                     .font(.system(size: 11))
@@ -784,50 +829,56 @@ private struct VesselMarineWeatherRoutingBody: View {
         return "Open-water leg"
     }
 
-    // MARK: - ESang advisory
+    // MARK: - Provider route guidance
 
-    private var esangAdvisory: some View {
-        HStack(alignment: .top, spacing: Space.s3) {
-            ZStack {
-                Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
-                Circle()
-                    .fill(RadialGradient(colors: [.white.opacity(0.75), .white.opacity(0)],
-                                         center: .init(x: 0.35, y: 0.30),
-                                         startRadius: 0, endRadius: 16))
-                    .frame(width: 22, height: 22)
-                    .offset(x: -5, y: -5)
+    @ViewBuilder
+    private var routeGuidance: some View {
+        if routeWarning != nil || routeDeparture != nil {
+            VStack(alignment: .leading, spacing: Space.s2) {
+                HStack(spacing: Space.s2) {
+                    WeatherIcons.utility(.alert, size: 14, tint: Brand.warning)
+                    Text("ROUTE GUIDANCE")
+                        .font(.system(size: 9, weight: .heavy))
+                        .tracking(1.0)
+                        .foregroundStyle(palette.textSecondary)
+                    Spacer(minLength: 0)
+                }
+                if let warning = routeWarning {
+                    Text(warning)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(palette.textPrimary)
+                }
+                if let departure = routeDeparture {
+                    Text("Recommended departure window: \(departure)")
+                        .font(.system(size: 11))
+                        .foregroundStyle(palette.textSecondary)
+                }
             }
-            VStack(alignment: .leading, spacing: 4) {
-                Text(esangHeadline)
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(palette.textPrimary)
-                Text(esangSub)
-                    .font(.system(size: 11))
-                    .foregroundStyle(palette.textSecondary)
-            }
-            Spacer(minLength: 0)
+            .padding(Space.s4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                    .fill(Color(hex: 0x1C2128))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                            .strokeBorder(palette.borderFaint)
+                    )
+            )
         }
-        .padding(Space.s4)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .fill(Color(hex: 0x1C2128))
-                .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                    .strokeBorder(palette.borderFaint))
-        )
     }
 
-    private var esangHeadline: String {
-        // Surface the server's own routing warning when present; otherwise a
-        // neutral coaching line (no fabricated forecast figures).
-        if let w = route?.warnings?.first, !w.isEmpty { return "ESang: \(w)" }
-        return "ESang: route to skip the swell core"
+    private var routeWarning: String? {
+        route?.warnings?
+            .lazy
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first(where: { !$0.isEmpty })
     }
-    private var esangSub: String {
-        if let dep = route?.recommendedDeparture, !dep.isEmpty {
-            return "Recommended departure window: \(dep)"
-        }
-        return "Holds ETA · cuts slamming risk on the stacks"
+
+    private var routeDeparture: String? {
+        guard let value = route?.recommendedDeparture?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !value.isEmpty else { return nil }
+        return value
     }
 
     // MARK: - CTA
@@ -847,54 +898,148 @@ private struct VesselMarineWeatherRoutingBody: View {
     // MARK: - Load
 
     private func load() async {
-        loading = true; loadError = nil; feedUnavailable = false; endpointsUnavailable = false
-        originBerth = nil; destinationBerth = nil
-        struct DetailIn: Encodable { let id: Int }
-        do {
-            // 1. Resolve the booking's REAL origin/destination ports first.
-            let detail: VesselDetail671? = try await EusoTripAPI.shared.query(
-                "vesselShipments.getVesselShipmentDetail", input: DetailIn(id: shipmentId))
-            applyDetail(detail)
+        loading = true
+        loadError = nil
+        feedUnavailable = false
+        endpointsUnavailable = false
+        subjectUnavailable = false
+        resolvedShipmentId = nil
+        resolvedImoNumber = nil
+        canonicalRouteVersion = nil
+        canonicalRoutePurpose = .activeJob
+        originPort = nil
+        destinationPort = nil
+        bookingRef = nil
+        route = nil
+        routeWeatherLines = []
+        marine = nil
+        originBerth = nil
+        destinationBerth = nil
 
-            guard let o = originCoord, let d = destinationCoord else {
-                // No routable endpoints → honest empty state, no fabricated route.
-                endpointsUnavailable = true
+        do {
+            guard let subjectId = try await resolveShipmentSubject() else {
+                subjectUnavailable = true
                 loading = false
                 return
             }
+            struct CanonicalInput: Encodable { let shipmentId: Int }
+            let authority: CanonicalRouteWeatherEnvelope671 = try await EusoTripAPI.shared.query(
+                "vesselShipments.getCanonicalRouteWeather",
+                input: CanonicalInput(shipmentId: subjectId)
+            )
+            guard authority.shipment.id == subjectId,
+                  authority.assignedVessel.id > 0,
+                  authority.routePlan.version > 0,
+                  authority.routePlan.operational,
+                  authority.routePlan.rightsState == "valid",
+                  authority.routePlan.freshnessState == "current",
+                  let routePurpose = CanonicalRoutePlanClient.Purpose(
+                    rawValue: authority.routePlan.purpose
+                  ),
+                  routePurpose != .posting else {
+                loadError = "The canonical voyage response did not retain its exact operational route authority. No route weather was released."
+                loading = false
+                return
+            }
+            applyCanonicalAuthority(authority, routePurpose: routePurpose)
 
-            // 2. Build the route-weather waypoints from the great circle BETWEEN
-            //    the two resolved real ports — derived geometry, not literals.
-            let waypoints = BespokeMapProjection
-                .greatCircle(from: o, to: d, count: 5)
-                .map { Waypoint671(lat: $0.lat, lng: $0.lng) }
-            let mid = waypoints[waypoints.count / 2]
-
-            struct RouteIn: Encodable { let waypoints: [Waypoint671] }
-            struct MarineIn: Encodable { let lat: Double; let lng: Double }
-            async let r: RouteWeatherResponse671? = EusoTripAPI.shared.query(
-                "vesselShipments.getRouteWeather", input: RouteIn(waypoints: waypoints))
-            async let m: MarineForecast671? = EusoTripAPI.shared.query(
-                "vesselShipments.getMarineWeather", input: MarineIn(lat: mid.lat, lng: mid.lng))
-            // Per-port berthing safety (getPortWeather) — keyed by the resolved
-            // port UN/LOCODE. Concurrent with the route/marine fetch; each stays
-            // nil until the enterprise marine key lands (server returns null today).
+            // Berth conditions are requested only from server-authorized port
+            // identities returned above; they never influence route geometry.
             async let ob: PortConditions671? = portWeather(for: originPort?.unlocode)
             async let db: PortConditions671? = portWeather(for: destinationPort?.unlocode)
-            let (routeRes, marineRes, originRes, destRes) = try await (r, m, ob, db)
-            self.route = routeRes
-            self.marine = marineRes
+            let (originRes, destRes) = await (ob, db)
             self.originBerth = originRes
             self.destinationBerth = destRes
-            // Both DTN procs return `null` when the feed isn't configured —
-            // surface that as a real "feed unavailable" state, no fabrication.
-            if routeRes == nil && marineRes == nil {
-                self.feedUnavailable = true
-            }
         } catch {
             loadError = error.eusoUserCopy
         }
         loading = false
+    }
+
+    /// Uses the explicit navigation subject when supplied. The registry entry
+    /// has no subject, so it selects from the authenticated tenant-scoped list,
+    /// preferring active voyages and never substituting a demo identity.
+    private func resolveShipmentSubject() async throws -> Int? {
+        if shipmentId > 0 { return shipmentId }
+        struct ListInput: Encodable { let limit: Int; let offset: Int }
+        let envelope: VesselShipmentListEnvelope671 = try await EusoTripAPI.shared.query(
+            "vesselShipments.getVesselShipments",
+            input: ListInput(limit: 50, offset: 0)
+        )
+        let terminal: Set<String> = [
+            "cancelled", "canceled", "delivered", "gate_out", "invoiced",
+            "settled", "paid", "closed"
+        ]
+        let activePriority: [String] = [
+            "in_transit", "at_sea", "sailing", "departed", "loaded",
+            "at_port", "arrived"
+        ]
+        let candidates = envelope.shipments.filter {
+            !terminal.contains(normalizedStatus($0.status))
+        }
+        for status in activePriority {
+            if let shipment = candidates.first(where: {
+                normalizedStatus($0.status) == status
+            }) {
+                return shipment.id
+            }
+        }
+        return candidates.first?.id
+    }
+
+    private func normalizedStatus(_ value: String?) -> String {
+        (value ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "-", with: "_")
+            .replacingOccurrences(of: " ", with: "_")
+    }
+
+    private func applyCanonicalAuthority(
+        _ authority: CanonicalRouteWeatherEnvelope671,
+        routePurpose: CanonicalRoutePlanClient.Purpose
+    ) {
+        resolvedShipmentId = authority.shipment.id
+        resolvedImoNumber = normalizedImo(authority.assignedVessel.imoNumber)
+        canonicalRouteVersion = authority.routePlan.version
+        canonicalRoutePurpose = routePurpose
+        originPort = authority.originPort
+        destinationPort = authority.destinationPort
+        bookingRef = authority.shipment.bookingNumber
+        routeWeatherLines = authority.routeWeather.lines
+        marine = authority.marineForecast.forecast
+
+        let weatherResponses = authority.routeWeather.lines.compactMap(\.weather)
+        let segments = weatherResponses.flatMap { $0.segments ?? [] }
+        let authorityWarnings = authority.routeWeather.warnings.map {
+            "Route member \($0.lineIndex + 1): \($0.message)"
+        }
+        let providerWarnings = authority.routeWeather.lines.flatMap { line in
+            (line.weather?.warnings ?? []).map {
+                "Route member \(line.lineIndex + 1): \($0)"
+            }
+        }
+        let departure = authority.routeWeather.recommendedDepartures
+            .sorted { $0.lineIndex < $1.lineIndex }
+            .lazy
+            .map(\.value)
+            .first { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+        route = RouteWeatherResponse671(
+            segments: segments,
+            overallRisk: authority.routeWeather.overallRisk,
+            warnings: authorityWarnings + providerWarnings,
+            recommendedDeparture: departure,
+            generatedAt: weatherResponses.compactMap(\.generatedAt).first
+        )
+        endpointsUnavailable = originCoord == nil || destinationCoord == nil
+        let hasWeather = !segments.isEmpty || marine?.current != nil
+        feedUnavailable = authority.routeWeather.availability == "unavailable" || !hasWeather
+    }
+
+    private func normalizedImo(_ value: String?) -> String? {
+        let digits = (value ?? "").filter(\.isNumber)
+        return digits.count == 7 ? digits : nil
     }
 
     /// getPortWeather for one port, keyed by its UN/LOCODE (the canonical port
@@ -908,16 +1053,7 @@ private struct VesselMarineWeatherRoutingBody: View {
             "vesselShipments.getPortWeather", input: PortIn(portId: code))
     }
 
-    private func applyDetail(_ d: VesselDetail671?) {
-        originPort = d?.originPort
-        destinationPort = d?.destinationPort
-        bookingRef = d?.bookingNumber
-    }
 }
-
-/// Waypoint for getRouteWeather — the INPUT geometry derived from the resolved
-/// real ports, NOT forecast data. Weather values come only from the response.
-private struct Waypoint671: Encodable { let lat: Double; let lng: Double }
 
 #Preview("671 · Vessel Marine Weather Routing · Night") {
     VesselMarineWeatherRoutingScreen(theme: Theme.dark)

@@ -198,8 +198,15 @@ final class WalletCardStore: ObservableObject {
             ) else {
                 // A genuinely unconfigured signer preserves the real inline
                 // credential. Signing, storage, and update failures surface.
-                NotificationCenter.default.post(name: .eusoFallbackToInlineQR,
-                                                object: nil, userInfo: ["shortCode": cred.shortCode])
+                NotificationCenter.default.post(
+                    name: .eusoFallbackToInlineQR,
+                    object: nil,
+                    userInfo: [
+                        "shortCode": cred.shortCode,
+                        "qrPayload": cred.accessToken,
+                        "expiresAt": cred.expiresAt,
+                    ]
+                )
                 return
             }
             guard let urlString = passURLText, let url = URL(string: urlString) else {
@@ -218,15 +225,19 @@ final class WalletCardStore: ObservableObject {
                   signedTheme.id == chosenTheme.id,
                   signedTheme.revision == revision,
                   signedTheme.digest == digest,
+                  Self.matches(signedTheme, theme: chosenTheme, credentialKind: .pickup),
                   cred.theme == signedTheme,
-                  !(cred.manifestDigest ?? "").isEmpty else {
+                  let manifestDigest = cred.manifestDigest?.nilIfEmpty else {
                 throw WalletPassValidationError.themeMismatch
             }
             switch await EusoWalletPassService.shared.addPass(
                 from: url,
                 expectedTheme: signedTheme,
+                expectedVisualTheme: chosenTheme,
+                expectedManifestDigest: manifestDigest,
                 expectedPassTypeIdentifier: passTypeIdentifier,
-                expectedSerialNumber: serialNumber
+                expectedSerialNumber: serialNumber,
+                credentialKind: .pickup
             ) {
             case .presented:
                 errorMessage = nil
@@ -301,15 +312,19 @@ final class WalletCardStore: ObservableObject {
                   signedTheme.id == chosenTheme.id,
                   signedTheme.revision == revision,
                   signedTheme.digest == digest,
+                  Self.matches(signedTheme, theme: chosenTheme, credentialKind: .staffAccess),
                   cred.theme == signedTheme,
-                  !(cred.manifestDigest ?? "").isEmpty else {
+                  let manifestDigest = cred.manifestDigest?.nilIfEmpty else {
                 throw WalletPassValidationError.themeMismatch
             }
             switch await EusoWalletPassService.shared.addPass(
                 from: url,
                 expectedTheme: signedTheme,
+                expectedVisualTheme: chosenTheme,
+                expectedManifestDigest: manifestDigest,
                 expectedPassTypeIdentifier: passTypeIdentifier,
-                expectedSerialNumber: serialNumber
+                expectedSerialNumber: serialNumber,
+                credentialKind: .staffAccess
             ) {
             case .presented:
                 errorMessage = nil
@@ -328,6 +343,20 @@ final class WalletCardStore: ObservableObject {
     private static func nonEmpty(_ value: String?) -> String? {
         let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private static func matches(_ metadata: EusoTripAPI.WalletThemeMetadata,
+                                theme: WalletCardTheme,
+                                credentialKind: EusoWalletCredentialKind) -> Bool {
+        let expectedPassStyle = credentialKind == .staffAccess
+            ? "eventTicket"
+            : theme.passStyle
+        return metadata.id == theme.id
+            && metadata.revision == theme.revision
+            && metadata.digest == theme.digest
+            && metadata.manifestVersion == theme.manifestVersion
+            && metadata.passStyle == expectedPassStyle
+            && metadata.artSlot?.nilIfEmpty?.lowercased() == theme.normalizedArtSlot
     }
 
     private static func place(_ primary: LoadsAPI.LoadCityState?, fallback: LoadsAPI.LoadAddress?) -> String {
@@ -368,13 +397,15 @@ private enum WalletPassValidationError: LocalizedError {
 }
 
 private extension String {
-    var nilIfEmpty: String? { isEmpty ? nil : self }
+    var nilIfEmpty: String? {
+        let value = trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
 }
 
 extension Notification.Name {
     static let eusoFallbackToInlineQR = Notification.Name("eusoFallbackToInlineQR")
-    /// Posted when a STAFF ACCESS CARD mint succeeds but PassKit isn't yet
-    /// configured server-side (pkpassUrl == nil): the holder UI shows the
-    /// inline QR (`qrPayload`) + the real 6-digit `accessCode`.
+    /// Posted when a STAFF ACCESS CARD mint succeeds but PassKit signing is
+    /// not configured: the holder UI shows the real server-issued QR and code.
     static let eusoAccessFallbackToInlineQR = Notification.Name("eusoAccessFallbackToInlineQR")
 }

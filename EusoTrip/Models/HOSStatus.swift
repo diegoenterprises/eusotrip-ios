@@ -8,21 +8,151 @@
 //
 //  All time values the backend exposes on getStatus are *hours* (Float).
 //  getCurrentStatus exposes per-limit {used, limit, remaining} in *minutes* (Int).
+//  Operational fields are nullable by design: an untracked or stale driver is
+//  not equivalent to a driver with zero hours, an off-duty status, or a failed
+//  compliance gate.
 //
 
 import Foundation
 
+// MARK: - Observation truth
+
+enum HOSTrackingState: Hashable, Codable {
+    case tracked
+    case partial
+    case notTracked
+    case unknown(String)
+
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        switch raw {
+        case "tracked": self = .tracked
+        case "partial": self = .partial
+        case "not_tracked": self = .notTracked
+        default: self = .unknown(raw)
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .tracked: try container.encode("tracked")
+        case .partial: try container.encode("partial")
+        case .notTracked: try container.encode("not_tracked")
+        case .unknown(let raw): try container.encode(raw)
+        }
+    }
+
+    var displayName: String {
+        switch self {
+        case .tracked: return "Tracked"
+        case .partial: return "Partially tracked"
+        case .notTracked: return "Not tracked"
+        case .unknown: return "Tracking state unavailable"
+        }
+    }
+}
+
+struct HOSFieldTracking: Codable, Hashable {
+    let status: Bool?
+    let counters: Bool?
+    let `break`: Bool?
+    let violations: Bool?
+    let todayLog: Bool?
+}
+
+enum HOSFreshnessState: Hashable {
+    case current(observedAt: Date)
+    case stale(observedAt: Date)
+    case unavailable
+    case invalid
+
+    var isCurrent: Bool {
+        if case .current = self { return true }
+        return false
+    }
+}
+
+enum HOSAssignmentEligibility: Hashable {
+    case eligible
+    case notTracked
+    case partial
+    case sourceUnavailable
+    case freshnessUnavailable
+    case stale
+    case statusUnavailable
+    case countersUnavailable
+    case breakEvidenceUnavailable
+    case serverBlocked
+
+    var reason: String? {
+        switch self {
+        case .eligible: return nil
+        case .notTracked: return "HOS is not tracked for this driver."
+        case .partial: return "HOS evidence is only partially tracked."
+        case .sourceUnavailable: return "HOS source is unavailable."
+        case .freshnessUnavailable: return "HOS freshness is unavailable."
+        case .stale: return "HOS evidence is stale."
+        case .statusUnavailable: return "Current duty status is unavailable."
+        case .countersUnavailable: return "HOS counters are unavailable."
+        case .breakEvidenceUnavailable: return "Break evidence is unavailable."
+        case .serverBlocked: return "The current HOS observation does not allow assignment."
+        }
+    }
+}
+
+enum HOSObservationClock {
+    /// Matches the authoritative RIOS ELD policy and Smart Assign gate.
+    static let maximumCurrentAge: TimeInterval = 15 * 60
+    private static let futureClockTolerance: TimeInterval = 5 * 60
+
+    static func parse(_ raw: String?) -> Date? {
+        guard let raw, !raw.isEmpty else { return nil }
+        return fractional.date(from: raw) ?? internet.date(from: raw)
+    }
+
+    static func freshness(
+        _ raw: String?,
+        now: Date = Date(),
+        maximumAge: TimeInterval = maximumCurrentAge
+    ) -> HOSFreshnessState {
+        guard let raw, !raw.isEmpty else { return .unavailable }
+        guard let observedAt = parse(raw) else { return .invalid }
+        let age = now.timeIntervalSince(observedAt)
+        guard age >= -futureClockTolerance, age <= maximumAge else {
+            return .stale(observedAt: observedAt)
+        }
+        return .current(observedAt: observedAt)
+    }
+
+    private static let fractional: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private static let internet: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+}
+
 // MARK: - Dashboard widget shape (hos.getStatus)
 
 struct HOSStatus: Codable, Hashable {
-    let drivingRemaining: Double   // hours
-    let onDutyRemaining: Double    // hours
-    let cycleRemaining: Double     // hours
-    let breakRequired: Bool
-    let nextBreakDue: String?      // ISO-8601
-    let status: String             // off_duty | sleeper | driving | on_duty
-    let canDrive: Bool
-    let canAcceptLoad: Bool
+    let trackingState: HOSTrackingState?
+    let tracked: Bool?
+    let source: String?
+    let freshness: String?
+    let drivingRemaining: Double?   // hours
+    let onDutyRemaining: Double?    // hours
+    let cycleRemaining: Double?     // hours
+    let breakRequired: Bool?
+    let nextBreakDue: String?       // ISO-8601
+    let status: String?             // off_duty | sleeper | driving | on_duty
+    let canDrive: Bool?
+    let canAcceptLoad: Bool?
 
     /// "7h 22m"
     var drivingRemainingDisplay: String {
@@ -39,7 +169,8 @@ struct HOSStatus: Codable, Hashable {
         HOSStatus.formatHours(cycleRemaining)
     }
 
-    static func formatHours(_ hours: Double) -> String {
+    static func formatHours(_ hours: Double?) -> String {
+        guard let hours, hours.isFinite, hours >= 0 else { return "—" }
         let totalMin = Int((hours * 60).rounded())
         let h = totalMin / 60
         let m = totalMin % 60
@@ -47,14 +178,53 @@ struct HOSStatus: Codable, Hashable {
         if m == 0 { return "\(h)h" }
         return "\(h)h \(m)m"
     }
+
+    func freshnessState(now: Date = Date()) -> HOSFreshnessState {
+        HOSObservationClock.freshness(freshness, now: now)
+    }
+
+    func hasCurrentObservation(now: Date = Date()) -> Bool {
+        tracked == true
+            && trackingState == .tracked
+            && source?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            && freshnessState(now: now).isCurrent
+    }
+
+    func assignmentEligibility(now: Date = Date()) -> HOSAssignmentEligibility {
+        guard tracked == true else { return .notTracked }
+        guard trackingState == .tracked else { return .partial }
+        guard source?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else {
+            return .sourceUnavailable
+        }
+        switch freshnessState(now: now) {
+        case .current: break
+        case .unavailable, .invalid: return .freshnessUnavailable
+        case .stale: return .stale
+        }
+        guard status.flatMap(HOSDutyCode.init(rawValue:)) != nil else { return .statusUnavailable }
+        guard let drivingRemaining,
+              let onDutyRemaining,
+              let cycleRemaining,
+              drivingRemaining.isFinite,
+              onDutyRemaining.isFinite,
+              cycleRemaining.isFinite,
+              drivingRemaining >= 0,
+              onDutyRemaining >= 0,
+              cycleRemaining >= 0 else {
+            return .countersUnavailable
+        }
+        guard breakRequired != nil else { return .breakEvidenceUnavailable }
+        guard canAcceptLoad == true, canDrive == true else { return .serverBlocked }
+        return .eligible
+    }
 }
 
 // MARK: - Detailed shape (hos.getCurrentStatus)
 
 struct HOSLimit: Codable, Hashable {
-    let used: Int       // minutes
+    let used: Int?      // minutes
     let limit: Int      // minutes
-    let remaining: Int  // minutes
+    let remaining: Int? // minutes
 }
 
 struct HOSLimits: Codable, Hashable {
@@ -65,15 +235,121 @@ struct HOSLimits: Codable, Hashable {
 
 struct HOSCurrentStatus: Codable, Hashable {
     let driverId: String
-    let currentStatus: String
-    let statusStartTime: String
+    let trackingState: HOSTrackingState?
+    let tracked: Bool?
+    let source: String?
+    let freshness: String?
+    let fieldTracking: HOSFieldTracking?
+    let currentStatus: String?
+    let statusStartTime: String?
     let limits: HOSLimits
-    let breakRequired: Bool
+    let breakRequired: Bool?
     let nextBreakDue: String?
     let lastRestartDate: String?
     let violations: [HOSViolation]
-    let canDrive: Bool
-    let canAcceptLoad: Bool
+    let canDrive: Bool?
+    let canAcceptLoad: Bool?
+
+    func freshnessState(now: Date = Date()) -> HOSFreshnessState {
+        HOSObservationClock.freshness(freshness, now: now)
+    }
+
+    func hasCurrentObservation(now: Date = Date()) -> Bool {
+        tracked == true
+            && trackingState == .tracked
+            && source?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            && freshnessState(now: now).isCurrent
+    }
+
+    func assignmentEligibility(now: Date = Date()) -> HOSAssignmentEligibility {
+        guard tracked == true else { return .notTracked }
+        guard trackingState == .tracked else { return .partial }
+        guard source?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else {
+            return .sourceUnavailable
+        }
+        switch HOSObservationClock.freshness(freshness, now: now) {
+        case .current: break
+        case .unavailable, .invalid: return .freshnessUnavailable
+        case .stale: return .stale
+        }
+        guard currentStatus.flatMap(HOSDutyCode.init(rawValue:)) != nil,
+              fieldTracking?.status == true else {
+            return .statusUnavailable
+        }
+        guard fieldTracking?.counters == true,
+              limits.driving.remaining != nil,
+              limits.onDuty.remaining != nil,
+              limits.cycle.remaining != nil else {
+            return .countersUnavailable
+        }
+        guard fieldTracking?.break == true, breakRequired != nil else {
+            return .breakEvidenceUnavailable
+        }
+        guard canAcceptLoad == true, canDrive == true else { return .serverBlocked }
+        return .eligible
+    }
+}
+
+/// Company-scoped driver evidence returned by `hos.getFleetHOS`. This is the
+/// only driver-list shape that is allowed to decide assignment availability;
+/// employment or active-load state alone is not HOS evidence.
+struct HOSFleetDriver: Decodable, Hashable, Identifiable {
+    let driverId: String
+    let userId: Int?
+    let name: String?
+    let driverState: String?
+    let identityState: String?
+    let observationState: String?
+    let trackingState: HOSTrackingState?
+    let tracked: Bool?
+    let source: String?
+    let freshness: String?
+    let status: String?
+    let canDrive: Bool?
+    let canAcceptLoad: Bool?
+    let breakRequired: Bool?
+    let violations: Int?
+    let hoursAvailable: HOSHoursAvailable?
+    let unavailableReason: String?
+
+    var id: String { driverId }
+
+    func hasCurrentObservation(now: Date = Date()) -> Bool {
+        tracked == true
+            && trackingState == .tracked
+            && identityState == "linked"
+            && observationState == "current"
+            && source?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            && HOSObservationClock.freshness(freshness, now: now).isCurrent
+    }
+
+    func assignmentEligibility(now: Date = Date()) -> HOSAssignmentEligibility {
+        guard identityState == "linked", observationState == "current" else {
+            return .notTracked
+        }
+        guard tracked == true else { return .notTracked }
+        guard trackingState == .tracked else { return .partial }
+        guard source?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else {
+            return .sourceUnavailable
+        }
+        switch HOSObservationClock.freshness(freshness, now: now) {
+        case .current: break
+        case .unavailable, .invalid: return .freshnessUnavailable
+        case .stale: return .stale
+        }
+        guard status.flatMap(HOSDutyCode.init(rawValue:)) != nil else {
+            return .statusUnavailable
+        }
+        guard let hoursAvailable,
+              hoursAvailable.drivingRemaining != nil,
+              hoursAvailable.onDutyRemaining != nil,
+              hoursAvailable.cycleRemaining != nil else {
+            return .countersUnavailable
+        }
+        guard breakRequired != nil else { return .breakEvidenceUnavailable }
+        guard canDrive == true, canAcceptLoad == true else { return .serverBlocked }
+        return .eligible
+    }
 }
 
 struct HOSViolation: Codable, Hashable {
@@ -112,26 +388,6 @@ extension HOSViolation {
         if ts == nil { ts = try c.decodeIfPresent(String.self, forKey: .occurredAt) }
         timestamp = ts
         cfr = try c.decodeIfPresent(String.self, forKey: .cfr)
-    }
-}
-
-// MARK: - Demo fixture (offline fallback)
-
-extension HOSStatus {
-    /// A mid-shift "on-duty, driving" snapshot — 7h 22m drive / 11h 48m
-    /// on-duty / 58h cycle remaining. Used when the backend is unreachable
-    /// so the tile renders its split-gradient hour/minute design.
-    static func demoOnDuty() -> HOSStatus {
-        HOSStatus(
-            drivingRemaining: 7.0 + 22.0 / 60.0,
-            onDutyRemaining: 11.0 + 48.0 / 60.0,
-            cycleRemaining: 58.0,
-            breakRequired: false,
-            nextBreakDue: nil,
-            status: "driving",
-            canDrive: true,
-            canAcceptLoad: true
-        )
     }
 }
 
@@ -192,35 +448,30 @@ struct HOSLogEntry: Codable, Hashable, Identifiable {
     /// server id is absent (current open segment).
     var stableId: String { id ?? "live:\(startAt)" }
 
-    /// Decoded duty code with a safe fallback.
-    var duty: HOSDutyCode {
-        HOSDutyCode(rawValue: status) ?? .offDuty
+    /// A provider status outside the canonical duty enum is unknown. It must
+    /// never be rendered or replayed as OFF duty.
+    var duty: HOSDutyCode? {
+        HOSDutyCode(rawValue: status)
     }
 
-    /// Parsed start date or the epoch, so the timeline renders even if
-    /// the server's clock drifts.
-    var startDate: Date {
-        HOSLogEntry.iso.date(from: startAt) ?? Date(timeIntervalSince1970: 0)
+    /// A malformed timestamp is unavailable. Epoch is a real timestamp and
+    /// must not be used as an error sentinel.
+    var startDate: Date? {
+        HOSObservationClock.parse(startAt)
     }
 
     /// Parsed end date; nil means "still active".
     var endDate: Date? {
         guard let endAt else { return nil }
-        return HOSLogEntry.iso.date(from: endAt)
+        return HOSObservationClock.parse(endAt)
     }
-
-    private static let iso: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f
-    }()
 
     /// Best-effort minutes for this segment: explicit duration first,
     /// else the start→end span. Open segments (endAt == nil) return nil
     /// — we never extrapolate "now" into a stored log total.
     var resolvedMinutes: Int? {
-        if let durationMinutes { return durationMinutes }
-        guard let end = endDate else { return nil }
+        if let durationMinutes, durationMinutes >= 0 { return durationMinutes }
+        guard let startDate, let end = endDate else { return nil }
         let span = end.timeIntervalSince(startDate)
         guard span > 0 else { return nil }
         return Int((span / 60).rounded())
@@ -317,11 +568,16 @@ extension HOSLogEntry {
 /// §395.8(f) totals the driver has to sign off on.
 struct HOSDailyLog: Codable, Hashable, Identifiable {
     let date: String                    // YYYY-MM-DD (local to carrier tz)
+    let trackingState: HOSTrackingState?
+    let tracked: Bool?
+    let source: String?
+    let freshness: String?
     let entries: [HOSLogEntry]
-    let drivingMinutes: Int
-    let onDutyMinutes: Int              // on-duty NOT driving (server totals.onDuty semantics)
+    let malformedEntryCount: Int
+    let drivingMinutes: Int?
+    let onDutyMinutes: Int?             // on-duty NOT driving (server totals.onDuty semantics)
     let milesDriven: Double?
-    let certified: Bool
+    let certified: Bool?
     let certifiedAt: String?
     let signature: String?              // sha256 of driver signature token
     let violations: [HOSViolation]
@@ -330,26 +586,17 @@ struct HOSDailyLog: Codable, Hashable, Identifiable {
 
     /// 11h 00m / 14h 00m / 58 mi style formatter used by both the ELD
     /// overview tiles and the 019 certify row.
-    var drivingDisplay: String { HOSStatus.formatHours(Double(drivingMinutes) / 60.0) }
-    var onDutyDisplay:  String { HOSStatus.formatHours(Double(onDutyMinutes)  / 60.0) }
+    var drivingDisplay: String { HOSStatus.formatHours(drivingMinutes.map { Double($0) / 60.0 }) }
+    var onDutyDisplay:  String { HOSStatus.formatHours(onDutyMinutes.map { Double($0) / 60.0 }) }
 
-    /// Copy of this day with the §395.8(g) certification stamped on —
-    /// used by HOSLiveStore to reconcile a successful `certifyLog` ack
-    /// (the server returns `{success, date, certifiedAt}` without
-    /// echoing the day).
-    func certifiedCopy(at certifiedAtISO: String?) -> HOSDailyLog {
-        HOSDailyLog(
-            date: date,
-            entries: entries,
-            drivingMinutes: drivingMinutes,
-            onDutyMinutes: onDutyMinutes,
-            milesDriven: milesDriven,
-            certified: true,
-            certifiedAt: certifiedAtISO ?? certifiedAt,
-            signature: signature,
-            violations: violations
-        )
+    var hasCurrentLogEvidence: Bool {
+        tracked == true
+            && trackingState == .tracked
+            && source?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            && HOSObservationClock.freshness(freshness).isCurrent
+            && malformedEntryCount == 0
     }
+
 }
 
 // Tolerant decoder — `hos.getDailyLog` returns
@@ -364,7 +611,7 @@ struct HOSDailyLog: Codable, Hashable, Identifiable {
 // durations when the wire omits them — never invented.
 extension HOSDailyLog {
     private enum WireKeys: String, CodingKey {
-        case date, entries, totals
+        case date, trackingState, tracked, source, freshness, entries, totals
         case drivingMinutes, onDutyMinutes
         case milesDriven, certified, certifiedAt, signature, violations
     }
@@ -377,11 +624,25 @@ extension HOSDailyLog {
 
         // Segments — lossy: a malformed row is skipped, it never kills the day.
         let boxes = (try? c.decodeIfPresent([HOSLossyRow<HOSLogEntry>].self, forKey: .entries)) ?? nil
-        entries = (boxes ?? []).compactMap(\.value)
+        let decodedRows = boxes ?? []
+        entries = decodedRows.compactMap(\.value)
+        malformedEntryCount = decodedRows.filter { $0.value == nil }.count
 
         // Date — wire field, else derived from the first segment's start stamp.
         let rawDate = try c.decodeIfPresent(String.self, forKey: .date)
-        date = rawDate ?? String((entries.first?.startAt ?? "").prefix(10))
+        let resolvedDate = rawDate ?? entries.first.map { String($0.startAt.prefix(10)) }
+        guard let resolvedDate, !resolvedDate.isEmpty else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .date,
+                in: c,
+                debugDescription: "HOS daily log has neither a date nor a valid dated segment"
+            )
+        }
+        date = resolvedDate
+        trackingState = try c.decodeIfPresent(HOSTrackingState.self, forKey: .trackingState)
+        tracked = try c.decodeIfPresent(Bool.self, forKey: .tracked)
+        source = try c.decodeIfPresent(String.self, forKey: .source)
+        freshness = try c.decodeIfPresent(String.self, forKey: .freshness)
 
         // Totals (minutes): flat keys → nested `totals` → summed from the
         // day's own segments. Driving and on-duty-not-driving stay separate.
@@ -392,12 +653,12 @@ extension HOSDailyLog {
             if driving == nil { driving = try? t.decodeIfPresent(Int.self, forKey: .driving) ?? nil }
             if onDuty == nil { onDuty = try? t.decodeIfPresent(Int.self, forKey: .onDuty) ?? nil }
         }
-        let summed = HOSDailyLog.summedMinutes(entries)
-        drivingMinutes = driving ?? summed.driving
-        onDutyMinutes  = onDuty ?? summed.onDutyNotDriving
+        let summed = malformedEntryCount == 0 ? HOSDailyLog.summedMinutes(entries) : nil
+        drivingMinutes = driving ?? summed?.driving
+        onDutyMinutes  = onDuty ?? summed?.onDutyNotDriving
 
         milesDriven = try? c.decodeIfPresent(Double.self, forKey: .milesDriven) ?? nil
-        certified   = (try? c.decodeIfPresent(Bool.self, forKey: .certified) ?? nil) ?? false
+        certified   = try? c.decodeIfPresent(Bool.self, forKey: .certified) ?? nil
         certifiedAt = try? c.decodeIfPresent(String.self, forKey: .certifiedAt) ?? nil
         signature   = try? c.decodeIfPresent(String.self, forKey: .signature) ?? nil
         let vBoxes = (try? c.decodeIfPresent([HOSLossyRow<HOSViolation>].self, forKey: .violations)) ?? nil
@@ -406,12 +667,13 @@ extension HOSDailyLog {
 
     /// Sum real segment durations per duty bucket. Open segments
     /// contribute nothing (we don't extrapolate "now").
-    static func summedMinutes(_ entries: [HOSLogEntry]) -> (driving: Int, onDutyNotDriving: Int) {
+    static func summedMinutes(_ entries: [HOSLogEntry]) -> (driving: Int, onDutyNotDriving: Int)? {
+        guard !entries.isEmpty else { return nil }
         var driving = 0
         var onDuty = 0
         for e in entries {
-            guard let m = e.resolvedMinutes else { continue }
-            switch e.duty {
+            guard let m = e.resolvedMinutes, let duty = e.duty else { return nil }
+            switch duty {
             case .driving: driving += m
             case .onDuty:  onDuty += m
             case .offDuty, .sleeperBerth: break
@@ -482,7 +744,7 @@ struct HOSChangeStatusResult: Codable, Hashable {
     let newStatus: String
     let timestamp: String?
     let location: String?
-    let canDrive: Bool
+    let canDrive: Bool?
     let violations: [HOSViolation]
     /// Server-computed object with per-limit remaining hours. Decoded
     /// loosely because the server occasionally adds fields here.
@@ -500,12 +762,6 @@ struct HOSChangeStatusResult: Codable, Hashable {
     var snapshot: HOSStatus? { nil }
     /// Ditto.
     var entry: HOSLogEntry? { nil }
-    /// Optional human-readable blurb the toast falls back to. We
-    /// synthesise it locally since the server doesn't emit one —
-    /// `"Status set to <NEW>"` reads as a successful confirmation.
-    var message: String? {
-        "Status set to \(newStatus.replacingOccurrences(of: "_", with: " "))"
-    }
 }
 
 /// The server's `hoursAvailable` sub-object on `changeStatus`. All
@@ -529,10 +785,8 @@ struct HOSHoursAvailable: Codable, Hashable {
 ///   { success, date, certifiedAt, certifiedBy }
 /// The old struct required a key the server never sends (`ok`) so every
 /// successful certification decoded as a failure (audit B4). `ok`, `log`
-/// and `message` stay as computed properties so existing call-sites keep
-/// compiling. NOTE (§395.8(g)): the server currently acknowledges
-/// without persisting the certification — flagged upstream, do not paper
-/// over it client-side.
+/// Confirmation is emitted only after `success` is decoded and the store
+/// verifies the resulting certification through a fresh read.
 struct CertifyLogResult: Codable, Hashable {
     let success: Bool
     let date: String?
@@ -540,18 +794,15 @@ struct CertifyLogResult: Codable, Hashable {
 
     /// Legacy alias — same pattern as HOSChangeStatusResult.ok.
     var ok: Bool { success }
-    /// The server doesn't echo the certified day; HOSLiveStore stamps
-    /// the local copy via `HOSDailyLog.certifiedCopy(at:)` instead.
+    /// The server doesn't echo the certified daily-log record. The store
+    /// therefore refetches rather than synthesizing a local certification.
     var log: HOSDailyLog? { nil }
-    /// Locally-synthesised toast copy (UI string, not wire data).
-    var message: String? { success ? "Log certified" : nil }
 }
 
 /// Response from `hos.addRemark`. Real server shape (hos.ts:217-221):
 ///   { success, remarkId, addedAt }
 /// The old struct required `ok` → every remark read as failed even when
-/// the server accepted it (audit B5). NOTE: the server currently
-/// acknowledges without persisting the remark — flagged upstream.
+/// the server accepted it (audit B5).
 struct AddRemarkResult: Codable, Hashable {
     let success: Bool
     let remarkId: String?
@@ -561,6 +812,4 @@ struct AddRemarkResult: Codable, Hashable {
     var ok: Bool { success }
     /// The server doesn't echo a segment; the store refetches the log.
     var entry: HOSLogEntry? { nil }
-    /// Locally-synthesised toast copy (UI string, not wire data).
-    var message: String? { success ? "Remark added" : nil }
 }

@@ -45,6 +45,15 @@ private struct ActiveBody: View {
             .padding(.horizontal, 14).padding(.top, 8)
         }
         .eusoRefreshTask { await load() }
+        // RealtimeService → `bid:received` (server socketService.ts
+        // emit to room `role:broker`) is re-posted as
+        // `.esangRefreshSurface` (Services/RealtimeService.swift:375),
+        // which also carries the load status flips that move a deal
+        // through this in-flight board.
+        // eusotrip-killers-elite :01 §20 · 2026-08-25
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task { await load() }
+        }
     }
 
     private var header: some View {

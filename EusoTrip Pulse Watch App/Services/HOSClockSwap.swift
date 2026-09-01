@@ -34,13 +34,13 @@ final class HOSClockSwap: ObservableObject {
     static let shared = HOSClockSwap()
 
     /// Live, 1-second-extrapolated snapshot. UI reads from here.
-    @Published private(set) var liveDriveRemaining: Int = 0   // seconds
-    @Published private(set) var liveWindowRemaining: Int = 0  // seconds
-    @Published private(set) var liveCycleRemaining: Int = 0   // seconds
+    @Published private(set) var liveDriveRemaining: Int?   // seconds
+    @Published private(set) var liveWindowRemaining: Int?  // seconds
+    @Published private(set) var liveCycleRemaining: Int?   // seconds
     @Published private(set) var swappedAt: Date?
 
     private var lastSnapshotAt: Date?
-    private var lastStatus: String = "off"
+    private var lastStatus: String?
     private var timer: Timer?
     private var cancellables: [AnyCancellable] = []
     private let swapThresholdSeconds: Int = 120
@@ -76,6 +76,10 @@ final class HOSClockSwap: ObservableObject {
     /// our local extrapolation has drifted far enough to count as a
     /// "swap" event (the UI can animate that).
     private func absorb(from snapshot: WatchHOS) {
+        guard snapshot.hasCurrentObservation(), let observedAt = snapshot.observedAt else {
+            clearObservation()
+            return
+        }
         let status = snapshot.status.rawValue
         let driveMin = snapshot.driveRemainingMinutes
         let windowMin = snapshot.windowRemainingMinutes
@@ -87,7 +91,7 @@ final class HOSClockSwap: ObservableObject {
 
         // Drift check against our local extrapolation — only meaningful
         // if we already have a prior snapshot.
-        if lastSnapshotAt != nil {
+        if lastSnapshotAt != nil, let liveDriveRemaining {
             let drift = abs(liveDriveRemaining - driveSec)
             if drift >= swapThresholdSeconds {
                 swappedAt = now
@@ -101,7 +105,7 @@ final class HOSClockSwap: ObservableObject {
         liveWindowRemaining = windowSec
         liveCycleRemaining  = cycleSec
         lastStatus = status
-        lastSnapshotAt = now
+        lastSnapshotAt = observedAt
     }
 
     /// Local tick — decrement drive clock by 1s when driving, clamp to 0.
@@ -109,20 +113,36 @@ final class HOSClockSwap: ObservableObject {
     /// Cycle clock is the 60/70-hour 7/8-day total; it decrements only on
     /// driving / on_duty minutes as well.
     private func tick() {
-        guard lastSnapshotAt != nil else { return }
+        guard let lastSnapshotAt,
+              Date().timeIntervalSince(lastSnapshotAt) <= 15 * 60 else {
+            clearObservation()
+            return
+        }
         switch lastStatus {
         case "driving":
-            if liveDriveRemaining > 0 { liveDriveRemaining -= 1 }
-            if liveWindowRemaining > 0 { liveWindowRemaining -= 1 }
-            if liveCycleRemaining > 0 { liveCycleRemaining -= 1 }
+            liveDriveRemaining = decremented(liveDriveRemaining)
+            liveWindowRemaining = decremented(liveWindowRemaining)
+            liveCycleRemaining = decremented(liveCycleRemaining)
         case "on_duty":
-            if liveWindowRemaining > 0 { liveWindowRemaining -= 1 }
-            if liveCycleRemaining > 0 { liveCycleRemaining -= 1 }
+            liveWindowRemaining = decremented(liveWindowRemaining)
+            liveCycleRemaining = decremented(liveCycleRemaining)
         case "sleeper", "off", "off_duty":
             break
         default:
             break
         }
+    }
+
+    private func decremented(_ value: Int?) -> Int? {
+        value.map { max(0, $0 - 1) }
+    }
+
+    private func clearObservation() {
+        liveDriveRemaining = nil
+        liveWindowRemaining = nil
+        liveCycleRemaining = nil
+        lastStatus = nil
+        lastSnapshotAt = nil
     }
 }
 

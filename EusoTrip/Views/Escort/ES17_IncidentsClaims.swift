@@ -13,7 +13,17 @@
 //    REAL  escorts.getIncidents             :2691  ledger rows (severity/status/location)
 //    REAL  escorts.getIncidentStats         :2719  {total, open, resolved, critical}
 //    REAL  escorts.getClearanceEventHistory :4559  escort-scoped clearance events
-//    REAL  escorts.getReports               :2738  claims-packet documents
+//    REAL  escorts.getProfile               :3081  escortCompany for the eyebrow slot
+//    NOT WIRED  escorts.getReports          :2738  the claims-packet slots this screen
+//          draws are PER-INCIDENT (photo · narrative · carrier notice · insurer packet).
+//          getReports returns documents rows scoped to documents.userId only
+//          (id/type/name/fileUrl/status/expiryDate/createdAt, escorts.ts:2751) with NO
+//          incidentId, claimId or assignmentId on the row — nothing on the wire ties a
+//          document to the incident it belongs to, so it cannot fill a per-row slot.
+//          Fetching it and never rendering it was a wiring claim the screen could not
+//          keep, so the call is gone rather than decorative. Same for getReportStats
+//          (:2763), which returns only {total,thisMonth,submitted,drafts} — a
+//          document-drawer count, not a packet state.
 //    STUB  incident capture / packet writes         GAP-085 — no escort-callable
 //          incident-write procedure exists anywhere in escorts.ts. The capture
 //          affordance renders LOCKED with its reason on glass and calls nothing.
@@ -92,18 +102,15 @@ private struct ES17ClearanceEvent: Codable, Identifiable, Hashable {
 }
 private struct ES17ClearanceInput: Encodable { let limit: Int }
 
-/// `escorts.getReports` row (escorts.ts:2738) — the packet's document slots.
-private struct ES17Report: Codable, Identifiable, Hashable {
-    let id: String
-    let type: String?
-    let name: String?
-    let status: String?
-    let createdAt: String?
+/// `escorts.getProfile` (escorts.ts:3081) — only the one field this screen paints.
+/// `escortCompany` is escorts.ts:3142 (metadata.escortProfile.escortCompany, '' when
+/// the escort is independent). Every other field on that payload is deliberately
+/// unmodelled so nothing else can leak onto this surface.
+private struct ES17Profile: Codable, Hashable {
+    let escortCompany: String?
 }
-private struct ES17ReportsInput: Encodable {
-    var type: String? = nil
-    var search: String? = nil
-    var status: String? = nil
+private struct ES17ProfileInput: Encodable {
+    var escortId: String? = nil
 }
 
 /// The disk snapshot this screen caches (READ_CACHED 30m).
@@ -111,7 +118,7 @@ private struct ES17Snapshot: Codable {
     var stats: ES17Stats
     var incidents: [ES17Incident]
     var clearanceEvents: [ES17ClearanceEvent]
-    var reportCount: Int
+    var escortCompany: String?
 }
 
 /// A ledger row after the two reads are unioned. `fromClearanceEvent` earns the ES-02
@@ -130,6 +137,9 @@ private struct ES17LedgerRow: Identifiable, Hashable {
     var haulStopped = false
     var photoCount = 0
     var packetStepsOnFile = 0
+    /// Relative age, kept on the row so the folded MINOR summary can print the oldest
+    /// member without re-parsing an ISO stamp.
+    var ageStamp: String? = nil
 }
 
 private enum ES17Band: String, CaseIterable, Identifiable {
@@ -167,10 +177,14 @@ struct EscortIncidentsClaims: View {
     @State private var stats: ES17Stats? = nil
     @State private var incidents: [ES17Incident] = []
     @State private var clearanceEvents: [ES17ClearanceEvent] = []
-    @State private var reportCount: Int = 0
+    /// escorts.getProfile → escortCompany (escorts.ts:3142). Nil until a read supplies
+    /// it; the eyebrow slot stays empty rather than naming somebody else's company.
+    @State private var escortCompany: String? = nil
     @State private var stalenessLine: String? = nil
     @State private var errorMessage: String? = nil
     @State private var expandedRowId: String? = nil
+    /// The MINOR band ships folded, exactly as the twins draw it. The "+N" chip unfolds.
+    @State private var minorFolded = true
 
     private static let cacheKey = "es17-incidents-claims"
     private static let cacheTTL: TimeInterval = 30 * 60   // READ_CACHED(30m)
@@ -210,17 +224,32 @@ struct EscortIncidentsClaims: View {
                 .font(EType.micro).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer(minLength: Space.s2)
-            Text("EASTBOUND ESCORT LLC")
-                .font(EType.micro).tracking(1.0)
-                .foregroundStyle(palette.textTertiary)
+            // The company name is served (escorts.getProfile → escortCompany,
+            // escorts.ts:3142) or it is not drawn at all. An independent escort has ''
+            // on that field and gets an empty slot, not somebody else's letterhead.
+            if let company = escortCompany, !company.isEmpty {
+                Text(company.uppercased())
+                    .font(EType.micro).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+                    .lineLimit(1).minimumScaleFactor(0.75)
+            }
         }
+    }
+
+    /// Numbers-first H1, cut from getIncidentStats — the same discipline ES-15 and
+    /// ES-16 use. Before the stats land there is no figure to lead with, so the
+    /// pre-data string is the only bare one and it is transient.
+    private var headline: String {
+        guard let s = stats else { return "Incidents on file" }
+        return "\(s.open) open of \(s.total) on file"
     }
 
     private var titleBlock: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Incidents & Claims")
+            Text(headline)
                 .font(.system(size: 24, weight: .bold)).tracking(-0.4)
                 .foregroundStyle(LinearGradient.primary)
+                .lineLimit(1).minimumScaleFactor(0.7)
             HStack(spacing: 12) {
                 if let s = stats {
                     Text("\(s.open) OPEN")
@@ -328,19 +357,77 @@ struct EscortIncidentsClaims: View {
                     }
                 }
                 Spacer(minLength: 0)
-                Text(rows.isEmpty ? "CLEAR" : "\(rows.count) ROW\(rows.count == 1 ? "" : "S")")
+                Text(bandCountLabel(rows))
                     .font(EType.mono(.micro))
                     .foregroundStyle(rows.isEmpty ? Brand.success : palette.textTertiary)
             }
 
-            ForEach(rows) { row in
-                if expandedRowId == row.id {
-                    expandedRow(row)
-                } else {
-                    compactRow(row)
+            // The twins fold the MINOR band's resolved rows into one summary line with
+            // a "+N" chip (Light-SVG L144–L152). Port and wireframe agree here.
+            let folded = foldableMinorRows(band, rows)
+            if !folded.isEmpty {
+                foldedMinorRow(folded)
+                ForEach(rows.filter { r in !folded.contains(where: { $0.id == r.id }) }) { row in
+                    if expandedRowId == row.id { expandedRow(row) } else { compactRow(row) }
+                }
+            } else {
+                ForEach(rows) { row in
+                    if expandedRowId == row.id {
+                        expandedRow(row)
+                    } else {
+                        compactRow(row)
+                    }
                 }
             }
         }
+    }
+
+    /// The MINOR band folds only when it is folded AND every candidate is resolved —
+    /// an open minor row is never hidden behind a summary chip.
+    private func foldableMinorRows(_ band: ES17Band, _ rows: [ES17LedgerRow]) -> [ES17LedgerRow] {
+        guard band == .minor, minorFolded, rows.count > 1 else { return [] }
+        let resolved = rows.filter { $0.status.lowercased() == "resolved" }
+        return resolved.count > 1 ? resolved : []
+    }
+
+    private func bandCountLabel(_ rows: [ES17LedgerRow]) -> String {
+        if rows.isEmpty { return "CLEAR" }
+        let open = rows.filter { $0.status.lowercased() != "resolved" }.count
+        let stem = "\(rows.count) ROW\(rows.count == 1 ? "" : "S")"
+        return open == 0 ? "\(stem) · ALL RESOLVED" : "\(stem) · \(open) OPEN"
+    }
+
+    /// One summary line in place of N resolved rows. The "+N" chip unfolds the band so
+    /// nothing on the ledger becomes unreachable.
+    private func foldedMinorRow(_ rows: [ES17LedgerRow]) -> some View {
+        HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("\(rows.count) minor · all resolved")
+                    .font(.system(size: 10.5, weight: .bold)).foregroundStyle(palette.textPrimary)
+                Text(foldSummary(rows))
+                    .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+            }
+            Spacer(minLength: 6)
+            Text("+\(rows.count)")
+                .font(EType.mono(.micro)).fontWeight(.heavy)
+                .foregroundStyle(palette.textTertiary)
+        }
+        .padding(.horizontal, Space.s3).padding(.vertical, Space.s2)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCardSoft)
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .contentShape(Rectangle())
+        .onTapGesture { withAnimation(.easeOut(duration: 0.16)) { minorFolded = false } }
+        .accessibilityLabel("\(rows.count) minor incidents, all resolved. Tap to list them.")
+    }
+
+    /// getIncidents returns occurredAt DESC (escorts.ts:2691), so the last row is the
+    /// oldest — the age is read off the row, never invented.
+    private func foldSummary(_ rows: [ES17LedgerRow]) -> String {
+        let titles = rows.map { $0.title.uppercased() }.joined(separator: " · ")
+        guard let oldest = rows.last?.ageStamp else { return titles }
+        return "\(titles) · OLDEST \(oldest.uppercased())"
     }
 
     private func expandedRow(_ row: ES17LedgerRow) -> some View {
@@ -478,7 +565,7 @@ struct EscortIncidentsClaims: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 6)
-            Text("STUB")
+            Text("UNAVAILABLE")
                 .font(.system(size: 8, weight: .heavy)).tracking(0.5)
                 .foregroundStyle(palette.textTertiary)
                 .padding(.horizontal, 10).padding(.vertical, 4)
@@ -616,7 +703,10 @@ struct EscortIncidentsClaims: View {
                     haulStopped: ev.haulStopped ?? false,
                     photoCount: photos,
                     // Steps 1–2 only: photos on the event + a narrative when notes exist.
-                    packetStepsOnFile: (photos > 0 ? 1 : 0) + ((ev.notes?.isEmpty == false) ? 1 : 0)
+                    // Steps 3–4 have no feed at all: no procedure ties a document to an
+                    // incident row, so they can never light from this surface.
+                    packetStepsOnFile: (photos > 0 ? 1 : 0) + ((ev.notes?.isEmpty == false) ? 1 : 0),
+                    ageStamp: relativeStamp(ev.occurredAt)
                 )
             }
     }
@@ -630,7 +720,8 @@ struct EscortIncidentsClaims: View {
                 locationLine: [i.location.isEmpty ? nil : i.location, relativeStamp(i.occurredAt)]
                     .compactMap { $0 }.joined(separator: " · ").uppercased(),
                 severity: i.severity,
-                status: i.status
+                status: i.status,
+                ageStamp: relativeStamp(i.occurredAt)
             )
         }
     }
@@ -663,9 +754,13 @@ struct EscortIncidentsClaims: View {
             stats = cached.value.stats
             incidents = cached.value.incidents
             clearanceEvents = cached.value.clearanceEvents
-            reportCount = cached.value.reportCount
+            escortCompany = cached.value.escortCompany
             stalenessLine = EscortOfflineCache.stalenessLine(age: cached.age)
             phase = .loaded
+            // A cold offline open lands on the same composition the twins draw: the
+            // open strike row blown out. Doing this only on the live path left the
+            // snapshot render with every row collapsed.
+            if expandedRowId == nil { expandedRowId = strikeRows.first?.id }
         }
 
         async let statsCall: ES17Stats? = try? await EusoTripAPI.shared.query(
@@ -674,10 +769,10 @@ struct EscortIncidentsClaims: View {
             "escorts.getIncidents", input: ES17IncidentsInput())
         async let clearanceCall: [ES17ClearanceEvent]? = try? await EusoTripAPI.shared.query(
             "escorts.getClearanceEventHistory", input: ES17ClearanceInput(limit: 50))
-        async let reportsCall: [ES17Report]? = try? await EusoTripAPI.shared.query(
-            "escorts.getReports", input: ES17ReportsInput())
+        async let profileCall: ES17Profile? = try? await EusoTripAPI.shared.query(
+            "escorts.getProfile", input: ES17ProfileInput())
 
-        let (s, r, c, docs) = await (statsCall, rowsCall, clearanceCall, reportsCall)
+        let (s, r, c, prof) = await (statsCall, rowsCall, clearanceCall, profileCall)
 
         guard let s else {
             if stats == nil {
@@ -690,7 +785,9 @@ struct EscortIncidentsClaims: View {
         stats = s
         incidents = r ?? []
         clearanceEvents = c ?? []
-        reportCount = docs?.count ?? 0
+        // Keep the last known company if the profile read alone failed; never
+        // substitute a literal.
+        if let served = prof?.escortCompany { escortCompany = served }
         stalenessLine = nil            // live read is on glass now
         errorMessage = nil
         phase = .loaded
@@ -698,7 +795,7 @@ struct EscortIncidentsClaims: View {
 
         EscortOfflineCache.store(
             ES17Snapshot(stats: s, incidents: incidents,
-                         clearanceEvents: clearanceEvents, reportCount: reportCount),
+                         clearanceEvents: clearanceEvents, escortCompany: escortCompany),
             key: Self.cacheKey)
     }
 }

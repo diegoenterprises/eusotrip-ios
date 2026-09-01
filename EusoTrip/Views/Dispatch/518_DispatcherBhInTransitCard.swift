@@ -4,10 +4,10 @@
 //
 //  Wireframe slot: 04 Dispatcher / 518 Dispatcher BH In-Transit Card (Light+Dark SVG,
 //  golden re-port 2026-06-21 — replaces the stamped Dpch800 duodecet body for this id).
-//  Composition (SVG-verbatim): live route-spine tracking hero (origin/destination pins +
-//  dashed route + truck marker + remaining-miles readout + ETA chip) → HOS / DRIVE LEFT /
+//  Composition: live position-evidence hero (origin/destination labels +
+//  source-truth state + remaining-miles readout + ETA chip) → HOS / DRIVE LEFT /
 //  SEAL KPI triple → driver row with hail button → 3-row geotag breadcrumb → CTA pair
-//  (Hail driver / Live map).
+//  (Hail driver / Live position).
 //
 //  Wiring manifest (code-traced against frontend/server/routers):
 //    READ  loads.getById                        — load + lane + parties + economics.
@@ -95,7 +95,7 @@ private struct BH518Body: View {
         .task { await refresh() }
         .eusoRefreshable { await refresh() }
         .onReceive(clock) { now = $0 }
-        .sheet(isPresented: $showMapSheet) { BH518MapSheet(load: load, tracking: tracking) }
+        .sheet(isPresented: $showMapSheet) { BH518MapSheet(tracking: tracking) }
     }
 
     // MARK: Header
@@ -124,14 +124,14 @@ private struct BH518Body: View {
             Spacer()
             Menu {
                 Button("Refresh") { Task { await refresh() } }
-                Button("Live map") { showMapSheet = true }
+                Button("Live position") { showMapSheet = true }
             } label: {
                 Image(systemName: "ellipsis").font(.system(size: 15, weight: .semibold)).foregroundStyle(palette.textSecondary)
             }
         }
     }
 
-    // MARK: Hero — route-spine tracking canvas
+    // MARK: Hero — position evidence (no inferred route geometry)
 
     private var heroCard: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
@@ -146,7 +146,7 @@ private struct BH518Body: View {
                 Text(heartbeatLabel)
                     .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
             }
-            BH518RouteSpine(progress: progressFraction, hasFix: hasFix)
+            BH518PositionEvidence(hasFix: hasFix)
                 .frame(height: 110)
             HStack {
                 Text(originLabel).font(EType.mono(.micro)).foregroundStyle(palette.textSecondary)
@@ -191,7 +191,7 @@ private struct BH518Body: View {
         HStack(spacing: Space.s2) {
             BH518Kpi(label: "HOS LEFT",
                      value: hosText,
-                     sub: hosText == "—" ? "not on the live driver board" : "drive window",
+                     sub: hosText == "—" ? "driver hours not reported" : "reported · freshness unavailable",
                      tint: nil)
             BH518Kpi(label: "DRIVE LEFT",
                      value: driveLeftText,
@@ -286,7 +286,7 @@ private struct BH518Body: View {
             .disabled(hailInFlight)
 
             Button { showMapSheet = true } label: {
-                Text("Live map").font(EType.body.weight(.semibold))
+                Text("Live position").font(EType.body.weight(.semibold))
                     .frame(maxWidth: .infinity, minHeight: 48)
                     .foregroundStyle(palette.textPrimary)
                     .background(Capsule().fill(palette.bgCard))
@@ -310,13 +310,6 @@ private struct BH518Body: View {
         let secs = max(0, Int(now.timeIntervalSince(d)))
         if secs < 90 { return "GPS HB +\(secs)s" }
         return "GPS HB \(secs / 60)m ago"
-    }
-
-    private var progressFraction: CGFloat {
-        guard let remaining = tracking?.eta?.remainingMiles,
-              let total = tracking?.route?.distanceMiles ?? load?.distance,
-              total > 0 else { return 0.04 }
-        return CGFloat(min(0.96, max(0.04, 1.0 - remaining / total)))
     }
 
     private var remainingMilesText: String {
@@ -484,72 +477,67 @@ private struct BH518Body: View {
     }
 }
 
-// MARK: - Route-spine canvas
+// MARK: - Position evidence
 
-private struct BH518RouteSpine: View {
+/// The tracking response exposes a point fix and numeric ETA, but no exact
+/// committed route geometry. Keep those facts separate instead of placing a
+/// truck on an authored curve that looks operational.
+private struct BH518PositionEvidence: View {
     @Environment(\.palette) private var palette
-    let progress: CGFloat
     let hasFix: Bool
 
     var body: some View {
-        GeometryReader { geo in
-            let w = geo.size.width, h = geo.size.height
+        HStack(spacing: 14) {
             ZStack {
-                // Faint map-grid backdrop
-                Path { p in
-                    for i in 1..<4 {
-                        let y = h * CGFloat(i) / 4
-                        p.move(to: CGPoint(x: 0, y: y)); p.addLine(to: CGPoint(x: w, y: y))
-                    }
-                    for i in 1..<6 {
-                        let x = w * CGFloat(i) / 6
-                        p.move(to: CGPoint(x: x, y: 0)); p.addLine(to: CGPoint(x: x, y: h))
-                    }
-                }
-                .stroke(palette.borderFaint, lineWidth: 0.5)
-
-                // Dashed route arc from origin (bottom-left) to destination (mid-right)
-                let origin = CGPoint(x: w * 0.10, y: h * 0.72)
-                let dest = CGPoint(x: w * 0.90, y: h * 0.38)
-                let control = CGPoint(x: w * 0.50, y: h * 0.10)
-                Path { p in
-                    p.move(to: origin)
-                    p.addQuadCurve(to: dest, control: control)
-                }
-                .stroke(palette.borderStrong, style: StrokeStyle(lineWidth: 1.5, dash: [3, 4]))
-
-                // Origin pin
-                Circle().strokeBorder(Brand.blue, lineWidth: 2.5).frame(width: 14, height: 14).position(origin)
-                // Destination ring
-                Circle().strokeBorder(palette.borderStrong, lineWidth: 2).frame(width: 16, height: 16).position(dest)
-                Circle().fill(palette.textTertiary).frame(width: 5, height: 5).position(dest)
-
-                // Truck marker along the curve
-                if hasFix {
-                    let t = min(max(progress, 0), 1)
-                    let mt = 1 - t
-                    let x = mt * mt * origin.x + 2 * mt * t * control.x + t * t * dest.x
-                    let y = mt * mt * origin.y + 2 * mt * t * control.y + t * t * dest.y
-                    Circle().fill(LinearGradient.diagonal).frame(width: 22, height: 22)
-                        .overlay(Image(systemName: "truck.box.fill").font(.system(size: 9, weight: .bold)).foregroundStyle(.white))
-                        .position(CGPoint(x: x, y: y))
-                } else {
-                    Text("Position paints on the next GPS heartbeat")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(palette.textTertiary)
-                        .position(CGPoint(x: w * 0.5, y: h * 0.5))
-                }
+                Circle().fill((hasFix ? Brand.success : Brand.warning).opacity(0.14))
+                    .frame(width: 52, height: 52)
+                Image(systemName: hasFix ? "location.fill.viewfinder" : "location.slash")
+                    .font(.system(size: 21, weight: .semibold))
+                    .foregroundStyle(hasFix ? Brand.success : Brand.warning)
             }
+            VStack(alignment: .leading, spacing: 5) {
+                Text(hasFix ? "GPS OBSERVATION ON FILE" : "AWAITING GPS OBSERVATION")
+                    .font(.system(size: 10, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(hasFix ? Brand.success : Brand.warning)
+                Text(hasFix
+                     ? "Open Live position for the exact reported coordinate."
+                     : "The exact coordinate appears after the next authorized heartbeat.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                Text("Route geometry is not bound to this dispatch read.")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(palette.textTertiary)
+            }
+            Spacer(minLength: 0)
+            Image(systemName: "truck.box.fill")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(palette.textTertiary)
+                .accessibilityHidden(true)
         }
+        .padding(.horizontal, 14)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .fill(palette.bgCardSoft)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(palette.borderFaint)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            hasFix
+                ? "GPS observation on file. Exact reported coordinate is available in Live position. Route geometry is not bound."
+                : "Awaiting GPS observation. Route geometry is not bound."
+        )
     }
 }
 
-// MARK: - Live-map sheet
+// MARK: - Live-position sheet
 
 private struct BH518MapSheet: View {
     @Environment(\.palette) private var palette
     @Environment(\.dismiss) private var dismiss
-    let load: LoadsAPI.LoadDetail?
     let tracking: BH518Tracking?
 
     var body: some View {
@@ -558,7 +546,7 @@ private struct BH518MapSheet: View {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: Space.s3) {
                     HStack {
-                        Text("Live map").font(EType.h2).foregroundStyle(palette.textPrimary)
+                        Text("Live position").font(EType.h2).foregroundStyle(palette.textPrimary)
                         Spacer()
                         Button { dismiss() } label: {
                             Image(systemName: "xmark.circle.fill").font(.system(size: 22)).foregroundStyle(palette.textTertiary)
@@ -566,17 +554,24 @@ private struct BH518MapSheet: View {
                         .buttonStyle(.plain)
                     }
                     LifecycleCard {
-                        BH518RouteSpine(progress: sheetProgress, hasFix: tracking?.position != nil)
+                        BH518PositionEvidence(hasFix: tracking?.position != nil)
                             .frame(height: 220)
                     }
                     LifecycleCard {
                         if let p = tracking?.position {
-                            row("GPS", String(format: "%.4f, %.4f", p.lat ?? 0, p.lng ?? 0))
+                            if let coordinate = LatLongParser.validatedCoordinate(
+                                latitude: p.lat,
+                                longitude: p.lng
+                            ) {
+                                row("GPS", LatLongParser.displayString(coordinate))
+                            } else {
+                                row("GPS", "Not recorded")
+                            }
                             row("Speed", p.speed.map { String(format: "%.0f mph", $0) } ?? "—")
                             row("Remaining", tracking?.eta?.remainingMiles.map { "\(Int($0.rounded())) mi" } ?? "—")
                             row("Predicted", tracking?.eta?.predictedEta ?? "—")
                         } else {
-                            Text("No GPS fix has posted for this load — the map paints when the truck reports.")
+                            Text("No GPS fix has posted for this load — the exact position appears when the truck reports.")
                                 .font(EType.caption).foregroundStyle(palette.textSecondary)
                         }
                     }
@@ -586,13 +581,6 @@ private struct BH518MapSheet: View {
             }
         }
         .presentationDetents([.large])
-    }
-
-    private var sheetProgress: CGFloat {
-        guard let remaining = tracking?.eta?.remainingMiles,
-              let total = tracking?.route?.distanceMiles ?? load?.distance,
-              total > 0 else { return 0.04 }
-        return CGFloat(min(0.96, max(0.04, 1.0 - remaining / total)))
     }
 
     private func row(_ label: String, _ value: String) -> some View {

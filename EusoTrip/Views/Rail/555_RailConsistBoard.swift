@@ -2,6 +2,30 @@
 //  555_RailConsistBoard.swift
 //  EusoTrip — Rail Engineer · Consist Board (carrier vantage).
 //
+//  VERIFIED COUNTER-PARTIES (live source, dist/ excluded)
+//    railShipments.getTrainConsists   EXISTS railShipments.ts:1332  QUERY
+//                                     railReadProcedure — RAIL_ENGINEER in cohort
+//    railShipments.createConsist      EXISTS railShipments.ts:1454  MUTATION
+//                                     railOpsWriteProcedure — RAIL_ENGINEER in cohort
+//
+//  WHY THIS BOARD DOES NOT CALL createConsist ITSELF
+//    createConsist REQUIRES { trainId, carrierId, originYardId,
+//    destinationYardId, railcarIds[] }. This screen is a read-only roster: it
+//    folds the yard IDs into display strings and never resolves a railcar, so
+//    it cannot supply a single field of that payload without inventing one.
+//    The real cut composer is Rail688 (RailConsistBoard_688, registered
+//    `.railEngineer` at ContentView.swift:2424), which sources every field
+//    from decoded rows and calls createConsist for real. The primary CTA hands
+//    off to that composer rather than firing a no-op.
+//
+//  §W OFFLINE POLICY — ONLINE_ONLY
+//    Reason: a consist's car makeup and its corridor crosswind are live yard /
+//    live weather state. A cached makeup is a safety claim about which cars are
+//    coupled right now, and a cached gust is a speed-restriction claim; neither
+//    may be replayed from disk. Honoured by construction: this screen writes no
+//    cache and enqueues nothing — a failed read renders the transport error in
+//    place of the roster, never a stale or defaulted one.
+//
 
 import SwiftUI
 
@@ -66,7 +90,26 @@ private struct TrainConsist: Decodable, Identifiable {
         let destYardId = try c.decodeIfPresent(Int.self, forKey: .destinationYardId)
         self.originYard = originYardId.map { "Yard #\($0)" }
         self.destinationYard = destYardId.map { "Yard #\($0)" }
-        // Server doesn't provide assignedCars or hazmatCars; default to nil.
+        // ROOT CAUSE of the two nils below — this is NOT a decode workaround.
+        // `getTrainConsists` runs a bare `db.select().from(trainConsists)`
+        // (railShipments.ts:1346) and spreads only `crosswind` on top, so the
+        // payload is exactly the `train_consists` row. That table
+        // (drizzle/schema.ts:11250-11268) has NO `assignedCars` column and NO
+        // `hazmatCars` column — the server cannot return either field today.
+        //
+        // Both ARE derivable server-side and simply are not derived:
+        //   assignedCars = COUNT(consist_cars WHERE consistId = c.id
+        //                        AND status = 'coupled')      schema.ts:11277
+        //   hazmatCars   = COUNT(consist_cars JOIN rail_shipments
+        //                        ON consist_cars.shipmentId = rail_shipments.id
+        //                        WHERE rail_shipments.hazmatClass IS NOT NULL)
+        //                                                     schema.ts:11214
+        // (`railcars` itself carries no hazmat flag — hazmat lives on the
+        // shipment, so the car-level answer must come through that join.)
+        //
+        // Until getTrainConsists computes them, nil is the only honest value.
+        // The render side MUST NOT coalesce these — see `consistCard`.
+        // STUB · named-gap: RAIL-GAP-555-CONSIST-AGGREGATES.
         self.assignedCars = nil
         self.hazmatCars = nil
         self.note = nil
@@ -82,10 +125,8 @@ private struct ConsistsResponse: Decodable {
 private struct RailConsistBoardBody: View {
     @Environment(\.palette) private var palette
     @State private var consists: [TrainConsist] = []
-    @State private var totalCars = 0
     @State private var loading = true
     @State private var loadError: String? = nil
-    @State private var building = false
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -100,8 +141,7 @@ private struct RailConsistBoardBody: View {
                                    subtitle: "Building and rolling consists will appear here.")
                 } else {
                     VStack(spacing: Space.s2) { ForEach(consists) { consistCard($0) } }
-                    CTAButton(title: building ? "Building…" : "Build new consist",
-                              action: { Task { await buildConsist() } }, leadingIcon: "plus")
+                    buildConsistCTA
                 }
                 Color.clear.frame(height: 96)
             }
@@ -119,25 +159,66 @@ private struct RailConsistBoardBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             Text("Consist board").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
-            Text("\(consists.count) consists building / rolling · \(totalCars) cars total")
+            Text(rosterSummary)
                 .font(EType.caption).foregroundStyle(palette.textSecondary)
+                .accessibilityLabel(rosterSummary)
         }
     }
 
+    /// The fleet car total is a sum of REPORTED counts only. The old
+    /// `reduce(0) { $0 + ($1.totalCars ?? 0) }` folded every unreported consist
+    /// in as a zero and then presented the short sum as "cars total", which
+    /// under-reports the roster without saying so. When any consist withholds
+    /// its count the figure is labelled as partial instead.
+    private var rosterSummary: String {
+        let reported = consists.compactMap { $0.totalCars }
+        let unreported = consists.count - reported.count
+        let head = "\(consists.count) consists on the board"
+        guard !reported.isEmpty else { return "\(head) · car counts not reported" }
+        let sum = reported.reduce(0, +)
+        return unreported == 0
+            ? "\(head) · \(sum) cars total"
+            : "\(head) · \(sum) cars across \(reported.count) consists · \(unreported) not reporting a count"
+    }
+
     private func consistCard(_ c: TrainConsist) -> some View {
-        let rolling = (c.status ?? "").lowercased() == "rolling"
-        let total = c.totalCars ?? 0
-        let assigned = min(c.assignedCars ?? total, total)
-        let hazmat = min(c.hazmatCars ?? 0, total)
+        // `train_consists.status` is the enum building | ready | departed |
+        // in_transit | arrived | broken_up (drizzle/schema.ts:11262). "rolling"
+        // is NOT a member, so the previous `== "rolling"` test could never be
+        // true — which silently killed the crosswind speed-restriction banner
+        // below. Mirror the server's own ROLLING set (railShipments.ts:1370).
+        let statusRaw = (c.status ?? "").lowercased()
+        let rolling = statusRaw == "departed" || statusRaw == "in_transit"
+        // NO `?? 0` and NO `?? total` — an unreported count stays unreported.
+        let total = c.totalCars
+        let assigned = c.assignedCars.map { min($0, total ?? $0) }
+        let hazmat = c.hazmatCars.map { min($0, total ?? $0) }
+        // The makeup line reports what the feed actually said. It never spells
+        // an unreported assignment as "48/48" (fabricated 100% completion).
+        let makeupText: String = {
+            guard let total else { return "car count not reported" }
+            guard let assigned else { return "\(total) cars · makeup not reported" }
+            return "\(assigned)/\(total) cars"
+        }()
+        let routeText = "\(c.originYard ?? "-") → \(c.destinationYard ?? "-") · \(makeupText)\(c.note.map { " · \($0)" } ?? "")"
         return VStack(alignment: .leading, spacing: Space.s2) {
             HStack {
                 Text(c.consistNumber ?? "-").font(.system(size: 15, weight: .bold)).monospaced().foregroundStyle(palette.textPrimary)
                 Spacer()
                 StatusPill(text: (c.status ?? "-").uppercased(), kind: rolling ? .info : .neutral)
             }
-            Text("\(c.originYard ?? "-") → \(c.destinationYard ?? "-") · \(assigned)/\(total) cars\(c.note.map { " · \($0)" } ?? "")")
+            Text(routeText)
                 .font(EType.caption).foregroundStyle(palette.textSecondary)
             ConsistCarStrip555(total: total, assigned: assigned, hazmat: hazmat, trackTint: palette.textTertiary)
+            // SUPPRESS THE VERDICT — hazmat is a safety judgement and the feed
+            // does not carry the input. Say so in words rather than let the
+            // strip paint a clean consist out of a missing count.
+            if hazmat == nil {
+                Text("Hazmat cars not reported — this strip cannot show which cars carry hazardous materials. Check the consist's shipping papers.")
+                    .font(EType.caption)
+                    .foregroundStyle(Brand.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             // Crosswind speed-restriction banner — only on a ROLLING consist
             // with a REAL available gust. Honestly hidden otherwise (enterprise
             // gate today). The screen decides the verdict from the raw gust.
@@ -149,6 +230,36 @@ private struct RailConsistBoardBody: View {
         .background(palette.bgCard)
         .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Consist \(c.consistNumber ?? "unnamed"), status \(c.status ?? "not reported")")
+        .accessibilityValue(
+            routeText
+                + (hazmat == nil
+                   ? ". Hazmat cars not reported; hazardous materials cannot be shown for this consist."
+                   : "")
+        )
+    }
+
+    /// `railShipments.createConsist` EXISTS (railShipments.ts:1454) and the
+    /// Rail Engineer is inside `railOpsWriteProcedure`'s cohort — the gap is
+    /// NOT the procedure. It is that this read-only roster holds none of the
+    /// five required inputs (trainId, carrierId, originYardId,
+    /// destinationYardId, railcarIds[]) and may not invent them. Rail688 is
+    /// the registered composer that does hold them, so the CTA stays live and
+    /// hands off there instead of running the old empty body.
+    private var buildConsistCTA: some View {
+        CTAButton(
+            title: "Build new consist",
+            action: {
+                NotificationCenter.default.post(
+                    name: .eusoRailNavSwap, object: nil,
+                    userInfo: ["screenId": "Rail688"])
+            },
+            leadingIcon: "plus",
+            subtitle: "OPENS THE CUT COMPOSER"
+        )
+        .accessibilityLabel("Build new consist")
+        .accessibilityHint("Opens the consist cut composer, where the yards and railcars for the new consist are selected.")
     }
 
     private func load() async {
@@ -158,16 +269,10 @@ private struct RailConsistBoardBody: View {
             let result: ConsistsResponse = try await EusoTripAPI.shared.query(
                 "railShipments.getTrainConsists", input: ConsistsIn(limit: 20, offset: 0))
             self.consists = result.consists
-            self.totalCars = result.consists.reduce(0) { $0 + ($1.totalCars ?? 0) }
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
         loading = false
-    }
-
-    private func buildConsist() async {
-        building = true
-        building = false
     }
 }
 
@@ -298,6 +403,18 @@ private struct CrosswindRestrictionBanner555: View {
 // coupled (the real build/load fraction assigned/total), and the trailing
 // `hazmat` cars carry the IMDG/hazmat tint.
 //
+// UNKNOWN IS ITS OWN STATE. `total`, `assigned` and `hazmat` are all optional
+// and arrive nil whenever the server did not report them, which is the case
+// for `assigned`/`hazmat` today (see the decoder's root-cause note). A nil is
+// never coalesced here:
+//  • hazmat nil  → NO car may paint Brand.success. Green on this strip asserts
+//    "coupled and free of hazardous material"; with no count that assertion is
+//    unsupported, so coupled cars paint neutral ink and the card prints the
+//    missing-input line. A hazmat consist can therefore never render clean.
+//  • assigned nil → no car is drawn as coupled and the empty slots take the
+//    warning stroke, so the strip reads "makeup unknown" rather than "0 of 48".
+//  • total nil    → the strip draws no tiles at all.
+//
 // Motion:
 //  • Build sequence — on appear/change, the assigned cars settle in
 //    left-to-right with a short per-car stagger and a decelerating spring
@@ -312,10 +429,12 @@ private struct CrosswindRestrictionBanner555: View {
 private struct ConsistCarStrip555: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// Real values from the data model.
-    let total: Int
-    let assigned: Int
-    let hazmat: Int
+    /// Real values from the data model. `nil` means the server did not report
+    /// the count — it is NEVER coalesced to 0 or to `total`, because either
+    /// coalesce is read off this strip as a measurement.
+    let total: Int?
+    let assigned: Int?
+    let hazmat: Int?
     /// Tint for empty / unassigned coupler slots.
     let trackTint: Color
 
@@ -325,15 +444,33 @@ private struct ConsistCarStrip555: View {
     /// Drives the seamless hazmat breathing loop.
     @State private var pulsing = false
 
-    private var hasHazmat: Bool { hazmat > 0 && total > 0 }
+    /// Hazmat is only ever asserted off a REAL reported count.
+    private var hasHazmat: Bool { (hazmat ?? 0) > 0 && (total ?? 0) > 0 }
     private var pulse: Bool { hasHazmat && !reduceMotion }
+    /// GREEN on a car means "coupled AND reported free of hazardous material".
+    /// With no hazmat count in the payload that claim cannot be made, so the
+    /// green paint is withheld from every car until the count is reported.
+    private var hazmatReported: Bool { hazmat != nil }
+
+    /// The strip is pure colour, so VoiceOver gets the same three states in words.
+    private var stripVoice: String {
+        guard let total else { return "Car count not reported." }
+        let coupled = assigned.map { "\($0) of \(total) cars coupled" }
+            ?? "\(total) cars, coupled makeup not reported"
+        let hazmatVoice = hazmat.map { $0 > 0 ? "\($0) hazmat cars" : "no hazmat cars reported" }
+            ?? "hazmat count not reported"
+        return "\(coupled). \(hazmatVoice)."
+    }
 
     var body: some View {
         HStack(spacing: 4) {
-            ForEach(0..<max(total, 0), id: \.self) { idx in
+            ForEach(0..<max(total ?? 0, 0), id: \.self) { idx in
                 car(idx)
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Consist car strip")
+        .accessibilityValue(stripVoice)
         .onAppear { settle() }
         .onChange(of: assigned) { _, _ in settle() }
         .onChange(of: total) { _, _ in settle() }
@@ -342,18 +479,27 @@ private struct ConsistCarStrip555: View {
 
     @ViewBuilder
     private func car(_ idx: Int) -> some View {
-        let isAssigned = idx < assigned
-        let isHazmat = isAssigned && idx >= (total - hazmat)
+        let isAssigned = assigned.map { idx < $0 } ?? false
+        let isHazmat = hazmatReported && isAssigned && idx >= ((total ?? 0) - (hazmat ?? 0))
         let shown = idx < built          // has this assigned car settled in yet?
-        let fill: AnyShapeStyle = !isAssigned
-            ? AnyShapeStyle(Color.clear)
-            : (isHazmat ? AnyShapeStyle(Brand.warning) : AnyShapeStyle(Brand.success))
+        // Three states, not two: coupled+clean (green) · coupled+hazmat
+        // (warning) · coupled but hazmat UNREPORTED (neutral ink, never green).
+        let fill: AnyShapeStyle = {
+            guard isAssigned else { return AnyShapeStyle(Color.clear) }
+            if isHazmat { return AnyShapeStyle(Brand.warning) }
+            return hazmatReported ? AnyShapeStyle(Brand.success) : AnyShapeStyle(trackTint)
+        }()
+        // An unreported makeup must not read as "0 cars coupled", so its empty
+        // slots carry the warning stroke rather than the plain track stroke.
+        let strokeTint: Color = isAssigned
+            ? Color.clear
+            : (assigned == nil ? Brand.warning.opacity(0.55) : trackTint)
 
         RoundedRectangle(cornerRadius: 1.5, style: .continuous)
             .fill(fill)
             .overlay(
                 RoundedRectangle(cornerRadius: 1.5)
-                    .strokeBorder(isAssigned ? Color.clear : trackTint, lineWidth: 1.2)
+                    .strokeBorder(strokeTint, lineWidth: 1.2)
             )
             .frame(width: 11, height: 14)
             // Hazmat live-safety glow — seamless autoreversing loop.
@@ -365,17 +511,20 @@ private struct ConsistCarStrip555: View {
     }
 
     private func settle() {
+        // An unreported makeup animates nothing — there is no true count to
+        // build up to, and a 0-length build is not a claim that 0 are coupled.
+        let target = max(assigned ?? 0, 0)
         if reduceMotion {
-            built = assigned
+            built = target
             pulsing = false
             return
         }
         // Re-run the build from empty so a data change re-couples cleanly.
         built = 0
-        for i in 0..<max(assigned, 0) {
+        for i in 0..<target {
             // Decelerating spring, staggered left-to-right (cap stagger so very
             // long consists still finish promptly — UI beat stays < 600ms tail).
-            let delay = Double(i) * min(0.045, 0.4 / Double(max(assigned, 1)))
+            let delay = Double(i) * min(0.045, 0.4 / Double(max(target, 1)))
             withAnimation(.spring(response: 0.42, dampingFraction: 0.78).delay(delay)) {
                 built = i + 1
             }

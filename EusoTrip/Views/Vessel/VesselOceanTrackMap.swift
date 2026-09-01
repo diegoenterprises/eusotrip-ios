@@ -2,18 +2,15 @@
 //  VesselOceanTrackMap.swift
 //  EusoTrip — live AIS ocean-tracking map for 003 Vessel Live Tracking.
 //
-//    • ordered historical AIS positions as the only route geometry,
-//    • the live AIS vessel marker dropped at the real position from
-//      `vesselShipments.liveVesselPosition` (the route splits solid/traveled →
-//      dashed/remaining at THIS coordinate inside the canvas),
+//    • the latest authorized AIS/terminal observation from
+//      `liveOperations.latestForAsset`,
 //    • origin / destination port pins,
 //    • the speed / heading / coords callout chip + ETA — driven by the live
 //      AIS fix, NOT static.
 //
-//  Data: `EusoTripAPI.shared.vesselTrack` →
-//    liveVesselPosition(imoNumber)  (the AIS orb + chip + ETA)
-//    getVesselTrack(imoNumber)      (historical track; used to bias the live
-//                                    split when the AIS fix is momentarily nil)
+//  The old direct MarineTraffic reads are deliberately not used here. The
+//  server resolves the exact vessel through tenant access, provider licence,
+//  consent, freshness, and immutable evidence before returning a position.
 //
 //  When the AIS feed is unavailable, the labeled basemap and real booking-port
 //  markers remain visible without inventing a marine route.
@@ -27,27 +24,30 @@ import SwiftUI
 
 @MainActor
 final class VesselOceanTrackStore: ObservableObject {
-    @Published var position: VesselTrackAPI.VesselPosition?
-    @Published var track: [VesselTrackAPI.RoutePosition] = []
+    @Published var result: LiveOperationsClient.AssetResult?
     @Published var loadError: String?
     @Published var loading = true
 
-    /// Pull the live AIS fix + historical track. Both procs `return null` on a
-    /// caught error server-side, so each result is independently optional.
     func load(imoNumber: String) async {
         loading = true; loadError = nil
-        let api = EusoTripAPI.shared.vesselTrack
         do {
-            async let posTask = api.liveVesselPosition(imoNumber: imoNumber)
-            async let trackTask = api.getVesselTrack(imoNumber: imoNumber)
-            let (pos, trk) = try await (posTask, trackTask)
-            self.position = pos
-            self.track = trk ?? []
+            result = try await LiveOperationsClient.shared.latestVessel(
+                imoNumber: imoNumber
+            )
         } catch {
             self.loadError = error.eusoUserCopy
+            result = nil
         }
         self.loading = false
     }
+
+    func clear() {
+        result = nil
+        loadError = nil
+        loading = false
+    }
+
+    var position: LiveOperationsClient.Observation? { result?.observation }
 }
 
 // MARK: - Live ocean-track map
@@ -55,6 +55,12 @@ final class VesselOceanTrackStore: ObservableObject {
 struct VesselOceanTrackMap: View {
     /// Vessel IMO that keys the AIS feed.
     let imoNumber: String
+    /// Exact canonical freight subject. Without it the map can show licensed
+    /// observations and ports, but it cannot request or render voyage geometry.
+    let vesselShipmentId: Int?
+    /// Exact server purpose expected by this surface. Active tracking defaults
+    /// to active_job; planning/weather previews may explicitly request planning.
+    let routePurpose: CanonicalRoutePlanClient.Purpose
     /// Authored booking origin (port of loading).
     let origin: HereLatLng
     /// Authored booking destination (port of discharge).
@@ -66,15 +72,22 @@ struct VesselOceanTrackMap: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.palette) private var palette
     @StateObject private var store = VesselOceanTrackStore()
+    @StateObject private var nearbyVesselStore = LiveOperationsNearbyStore(mode: .vessel)
+    @State private var canonicalRoute: CanonicalRoutePlanClient.BoundRoutePlan?
+    @State private var canonicalRouteStatus: String?
 
     init(
         imoNumber: String,
+        vesselShipmentId: Int? = nil,
+        routePurpose: CanonicalRoutePlanClient.Purpose = .activeJob,
         origin: HereLatLng,
         destination: HereLatLng,
         originLabel: String,
         destinationLabel: String
     ) {
         self.imoNumber = imoNumber
+        self.vesselShipmentId = vesselShipmentId
+        self.routePurpose = routePurpose
         self.origin = origin
         self.destination = destination
         self.originLabel = originLabel
@@ -85,12 +98,11 @@ struct VesselOceanTrackMap: View {
     /// D-maps-basemap — matches Escort 602's `validFix`. A reusable map surface
     /// must not trust its caller's coordinate validity blindly.
     private func validFix(_ lat: Double, _ lng: Double) -> Bool {
-        lat.isFinite && lng.isFinite && !(lat == 0 && lng == 0)
+        LatLongParser.validatedCoordinate(latitude: lat, longitude: lng) != nil
     }
 
-    /// Whether BOTH authored endpoints are real fixes. When false the component
-    /// draws an honest 'awaiting port coordinates' seam instead of a
-    /// great-circle arc across null island.
+    /// Whether BOTH authored endpoint markers are real fixes. When false the
+    /// component draws an honest awaiting seam and requests no route repair.
     private var endpointsValid: Bool {
         validFix(origin.lat, origin.lng) && validFix(destination.lat, destination.lng)
     }
@@ -98,64 +110,121 @@ struct VesselOceanTrackMap: View {
     /// Live AIS coordinate (real fix), else `nil`. Coord-gated so a null-island
     /// AIS fix can't drop an orb on (0,0).
     private var aisCoord: HereLatLng? {
-        guard let p = store.position, validFix(p.lat, p.lng) else { return nil }
-        return HereLatLng(p.lat, p.lng)
+        store.position?.position.coordinate
     }
 
-    /// Ordered historical AIS fixes. No great-circle or endpoint interpolation:
-    /// when the provider has no track, the map is marker-only.
-    private var routePolyline: [HereLatLng] {
-        guard endpointsValid else { return [] }
-        var points = store.track.compactMap { fix -> HereLatLng? in
-            guard validFix(fix.lat, fix.lng) else { return nil }
-            return HereLatLng(fix.lat, fix.lng)
+    private var aisObservationState: HereObservationState {
+        if store.loadError != nil { return .degraded }
+        return store.position?.markerState ?? .offline
+    }
+
+    private var aisLiveOperationsStatus: HereLiveOperationsStatus {
+        if nearbyVesselStore.result != nil || nearbyVesselStore.errorMessage != nil {
+            return nearbyVesselStore.status
         }
-        if let live = aisCoord,
-           points.last.map({ $0.lat != live.lat || $0.lng != live.lng }) ?? true {
-            points.append(live)
+        guard aisCoord != nil else {
+            return .init(
+                availability: store.loadError == nil ? .empty : .degraded,
+                sourceLabel: "AIS",
+                detail: store.loadError == nil
+                    ? "No authorized live feed"
+                    : "AIS feed unavailable",
+                observationCount: 0
+            )
         }
-        return points.count >= 2 ? points : []
+        let observation = store.position
+        let availability: HereLiveOperationsStatus.Availability
+        if aisObservationState == .current,
+           observation?.operationalUseAllowed == true {
+            availability = .live
+        } else if aisObservationState == .stale {
+            availability = .stale
+        } else {
+            availability = .degraded
+        }
+        return .init(
+            availability: availability,
+            sourceLabel: observation?.provider.id ?? "Authorized vessel feed",
+            freshnessLabel: observation?.freshnessState.rawValue ?? "unknown",
+            detail: observation.map {
+                "\($0.quality.state.rawValue) · \($0.asset.accessBasis) · area coverage not claimed"
+            } ?? "No authorized live feed",
+            observationCount: 1
+        )
     }
 
     /// The callout chip text: speed / heading on line 1, coords on line 2 —
     /// VERBATIM to the 003 chip, but LIVE off the AIS fix.
     private var aisChipLabel: String? {
-        guard let p = store.position else { return nil }
-        let kn = p.speed.map { String(format: "%.1f kn", $0) } ?? "- kn"
-        let hdg = p.heading.map { String(format: "hdg %03.0f°", $0) } ?? "hdg -"
-        let coords = "\(Self.formatLat(p.lat)) \(Self.formatLng(p.lng))"
+        guard let p = store.position,
+              let coordinate = LatLongParser.validatedCoordinate(
+                  latitude: p.position.latitude,
+                  longitude: p.position.longitude
+              ) else { return nil }
+        let kn = p.position.speedMetersPerSecond
+            .map { String(format: "%.1f kn", $0 / 0.5144444444) } ?? "- kn"
+        let hdg = p.position.courseDegrees
+            .map { String(format: "course %03.0f°", $0) } ?? "course -"
+        let coords = LatLongParser.displayString(coordinate)
         return "\(kn) · \(hdg)\n\(coords)"
     }
 
-    /// Map layers: real booking ports, the reported AIS trail, and the current
-    /// AIS position when available.
+    /// Map layers: real booking ports and the authorized reported position.
+    /// Historical lines remain absent until an authorized observation-history
+    /// contract exists; a sequence of raw AIS dots is not voyage route truth.
     private var layers: [HereMapLayer] {
-        var out: [HereMapLayer] = [
+        var out: [HereMapLayer] = []
+        if let payload = canonicalRoute?.rendererPayload {
+            for (index, line) in payload.lines.enumerated() {
+                out.append(.eusoRoute(
+                    polyline: line,
+                    state: .active,
+                    label: index == 0
+                        ? "EusoMarine route plan version \(payload.identity.version)"
+                        : nil
+                ))
+            }
+        }
+        out.append(
             .markers([
                 HereMarker(at: origin, kind: .pickup, label: originLabel),
                 HereMarker(at: destination, kind: .delivery, label: destinationLabel)
             ])
-        ]
-        let poly = routePolyline
-        if !poly.isEmpty {
-            out.append(.route(polyline: poly, colorHex: "#1473FF"))
-        }
+        )
         if let ais = aisCoord {
             out.append(.markers([
-                HereMarker(at: ais, kind: .truck, label: aisChipLabel, id: imoNumber)
+                HereMarker(
+                    at: ais,
+                    kind: .vessel,
+                    label: aisChipLabel,
+                    id: imoNumber,
+                    observationState: aisObservationState,
+                    sourceLabel: store.position?.provider.id ?? "Authorized vessel feed",
+                    accessibilityLabel: "Vessel \(imoNumber), \(aisObservationState.displayName), \(store.position?.accessibleEvidenceLabel ?? "authorized observation evidence unavailable")"
+                )
             ]))
+        }
+        if !nearbyVesselStore.markers.isEmpty {
+            out.append(.markers(nearbyVesselStore.markers))
         }
         return out
     }
 
-    /// Camera center: live AIS, then reported-track midpoint, then the booking
-    /// endpoint midpoint. The midpoint is camera framing only, never route data.
+    /// Camera center: authorized observation, then endpoint midpoint. The
+    /// midpoint is camera framing only, never route data.
     private var cameraCenter: HereLatLng {
         if let ais = aisCoord { return ais }
-        let poly = routePolyline
-        if !poly.isEmpty { return poly[poly.count / 2] }
-        return HereLatLng((origin.lat + destination.lat) / 2,
-                          (origin.lng + destination.lng) / 2)
+        if let routePoint = canonicalRoute?.rendererPayload?.lines.lazy.compactMap(\.first).first {
+            return routePoint
+        }
+        let longitudeDelta = ((destination.lng - origin.lng + 540)
+            .truncatingRemainder(dividingBy: 360)) - 180
+        let midpointLongitude = ((origin.lng + longitudeDelta / 2 + 540)
+            .truncatingRemainder(dividingBy: 360)) - 180
+        return HereLatLng(
+            (origin.lat + destination.lat) / 2,
+            midpointLongitude
+        )
     }
 
     var body: some View {
@@ -167,13 +236,15 @@ struct VesselOceanTrackMap: View {
                     interactive: true,
                     tilt: 0,
                     layers: layers,
-                    styleHint: .ocean
+                    styleHint: .ocean,
+                    mapModeContext: .primary(.vessel),
+                    liveOperationsStatus: aisLiveOperationsStatus
                 )
             } else {
                 // Honest seam (matches Escort 602's `mapAwaitingSeam`): when the
                 // authored origin/destination aren't real coordinates — non-finite
-                // or null-island (0,0) — we DON'T paint a great circle across null
-                // island with port pins on (0,0). REAL coords only.
+                // or null-island (0,0) — we render no route repair or invalid
+                // port pins. Real coordinates only.
                 mapAwaitingSeam
             }
         }
@@ -182,7 +253,101 @@ struct VesselOceanTrackMap: View {
         // historical frame.zero blank-bug trap) can't collapse it to nothing.
         // Callers that want a specific height still override with `.frame`.
         .frame(minHeight: 220)
-        .task(id: imoNumber) { await store.load(imoNumber: imoNumber) }
+        .task(id: imoNumber) {
+            guard !imoNumber.isEmpty else {
+                store.clear()
+                return
+            }
+            while !Task.isCancelled {
+                await store.load(imoNumber: imoNumber)
+                do {
+                    try await Task.sleep(nanoseconds: 60_000_000_000)
+                } catch {
+                    break
+                }
+            }
+        }
+        .task(id: "\(vesselShipmentId ?? 0):\(routePurpose.rawValue)") {
+            await loadCanonicalRoute()
+        }
+        .task(id: "vessel-nearby-\(cameraCenter.lat)-\(cameraCenter.lng)") {
+            await nearbyVesselStore.poll(
+                around: cameraCenter,
+                radiusMeters: 200_000,
+                limit: 150
+            )
+        }
+        .overlay(alignment: .bottomLeading) {
+            if let canonicalRouteStatus {
+                Text(canonicalRouteStatus)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(palette.textSecondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(palette.bgCard.opacity(0.92))
+                    .overlay(Capsule().strokeBorder(Brand.warning.opacity(0.45)))
+                    .clipShape(Capsule())
+                    .padding(10)
+                    .accessibilityLabel(canonicalRouteStatus)
+            }
+        }
+    }
+
+    @MainActor
+    private func loadCanonicalRoute() async {
+        canonicalRoute = nil
+        canonicalRouteStatus = nil
+        guard let vesselShipmentId, vesselShipmentId > 0 else {
+            canonicalRouteStatus = "Canonical voyage subject unavailable · ports and authorized position only"
+            return
+        }
+
+        do {
+            let result = try await CanonicalRoutePlanClient.shared.planVesselShipment(
+                id: vesselShipmentId,
+                purpose: routePurpose
+            )
+            switch result {
+            case .persisted(let persisted):
+                applyCanonicalRoute(persisted.route)
+            case .pending(let pending):
+                canonicalRouteStatus = pending.blockers.first?.message
+                    ?? "Canonical EusoMarine route pending verified profile and graph authority"
+                await readExistingCanonicalRoute(vesselShipmentId: vesselShipmentId)
+            }
+        } catch {
+            canonicalRouteStatus = error.eusoUserCopy
+            await readExistingCanonicalRoute(vesselShipmentId: vesselShipmentId)
+        }
+    }
+
+    @MainActor
+    private func readExistingCanonicalRoute(vesselShipmentId: Int) async {
+        do {
+            let existing = try await CanonicalRoutePlanClient.shared.getBoundVesselShipment(
+                id: vesselShipmentId
+            )
+            applyCanonicalRoute(existing)
+        } catch {
+            // Preserve a more specific planning blocker when one exists; when
+            // it does not, expose the exact binding read failure.
+            if canonicalRouteStatus == nil {
+                canonicalRouteStatus = error.eusoUserCopy
+            }
+        }
+    }
+
+    @MainActor
+    private func applyCanonicalRoute(_ route: CanonicalRoutePlanClient.BoundRoutePlan) {
+        guard route.plan.purpose == routePurpose,
+              route.plan.identity.mode == .vessel,
+              route.rendererPayload != nil else {
+            canonicalRoute = nil
+            canonicalRouteStatus = "Canonical \(routePurpose.rawValue) voyage plan is present but not released for rendering"
+            return
+        }
+        canonicalRoute = route
+        canonicalRouteStatus = nil
     }
 
     /// Honest seam shown until the caller supplies real port coordinates. No
@@ -197,7 +362,7 @@ struct VesselOceanTrackMap: View {
                 Text("Awaiting port coordinates")
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
-                Text("The map appears once the booking's ports are geocoded. AIS route geometry appears only after the vessel provider reports positions.")
+                Text("The map appears once the booking's ports are geocoded. Voyage geometry appears only after the route is verified; AIS observations remain position evidence.")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -213,18 +378,4 @@ struct VesselOceanTrackMap: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
-    // MARK: Formatting
-
-    /// "37.8°N" / "33.9°S" — the 003 chip's latitude readout (paired with the
-    /// longitude so the position line is a complete fix, not lng-only).
-    static func formatLat(_ lat: Double) -> String {
-        let hemi = lat >= 0 ? "N" : "S"
-        return String(format: "%.1f°%@", abs(lat), hemi)
-    }
-
-    /// "168.4°E" / "122.3°W" — the 003 chip's longitude readout.
-    static func formatLng(_ lng: Double) -> String {
-        let hemi = lng >= 0 ? "E" : "W"
-        return String(format: "%.1f°%@", abs(lng), hemi)
-    }
 }

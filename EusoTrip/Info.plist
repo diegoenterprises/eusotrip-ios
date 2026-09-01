@@ -153,5 +153,7 @@
 	     server-side and are never packaged in the application bundle. -->
 	<key>HEREJSApiKey</key>
 	<string>$(HERE_JS_API_KEY)</string>
+	<key>HERECustomMapStylesEnabled</key>
+	<string>$(HERE_CUSTOM_MAP_STYLES_ENABLED)</string>
 </dict>
 </plist>

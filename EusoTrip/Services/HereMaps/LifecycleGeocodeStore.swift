@@ -95,22 +95,36 @@ final class LifecycleGeocodeStore: ObservableObject {
                 lat: Double?,
                 lng: Double?,
                 addressLine: String) -> CLLocationCoordinate2D? {
+        let key = cacheKey(loadId: loadId, side: side)
+
         // 1. Snapshot wins. If the backend has already geocoded, use
         //    those coords and update our cache so the next cold read
         //    on the SAME loadId+side hits memory instead of disk.
-        if let lat, let lng, lat != 0 || lng != 0 {
-            let key = cacheKey(loadId: loadId, side: side)
+        if let coordinate = LatLongParser.validatedCoordinate(
+            latitude: lat,
+            longitude: lng
+        ) {
             if coords[key] == nil {
-                coords[key] = Coord(lat: lat, lng: lng, resolvedAt: Date())
+                coords[key] = Coord(
+                    lat: coordinate.latitude,
+                    lng: coordinate.longitude,
+                    resolvedAt: Date()
+                )
                 persistToDisk()
             }
-            return CLLocationCoordinate2D(latitude: lat, longitude: lng)
+            return coordinate
         }
 
         // 2. Cache hit — return what we resolved before.
-        let key = cacheKey(loadId: loadId, side: side)
-        if let cached = coords[key] {
-            return CLLocationCoordinate2D(latitude: cached.lat, longitude: cached.lng)
+        if let cached = coords[key],
+           let coordinate = LatLongParser.validatedCoordinate(
+               latitude: cached.lat,
+               longitude: cached.lng
+           ) {
+            return coordinate
+        }
+        if coords.removeValue(forKey: key) != nil {
+            persistToDisk()
         }
 
         // 3. No coords + no cache. Kick off a background geocode if
@@ -164,8 +178,8 @@ final class LifecycleGeocodeStore: ObservableObject {
             let lat = resolved.coordinate.latitude
             let lng = resolved.coordinate.longitude
 
-            // Final mapping-doctrine gate: never cache null-island (0,0) or an
-            // out-of-range coordinate, since the cache never auto-expires.
+            // Final mapping gate: cache only finite in-range coordinates.
+            // Unknown axes stay nil upstream; `(0,0)` is valid WGS-84 data.
             guard HereGeocodingClient.isSane(lat, lng) else { return }
 
             let coord = Coord(

@@ -114,15 +114,12 @@ struct EscortAssignmentDetail: View {
     /// (null-island gate) so a brand-new load with no geocode never draws.
     @State private var corridorCoords: EscortCorridorCoords? = nil
 
-    /// Decoded HERE Routing v8 section polyline for the escort corridor's
-    /// origin→destination — the real curved road geometry painted on the
-    /// route-preview map, not a straight 2-point segment. Empty until the
-    /// fetch lands (or on any failure), at which point `routePreviewCard`
-    /// falls back to the straight origin→destination base line, never a
-    /// fabricated path. An escort corridor is always a heavy-haul road
-    /// route (pilot/chase vehicles), so no water-mode skip is needed.
-    /// Mirrors the sibling 373/305/502 pattern.
-    @State private var routePolyline: [HereLatLng] = []
+    /// Exact, independent renderer members from the load's canonical Truck
+    /// plan. The escort client never turns assignment endpoints into a route.
+    @State private var canonicalRouteLines: [[HereLatLng]] = []
+    @State private var canonicalRouteStatus: String?
+    @State private var canonicalRouteVersion: Int?
+    @State private var canonicalResolvedPurpose: CanonicalRoutePlanClient.Purpose?
 
     /// Route-wide wind-gust go/no-go envelope for the high-profile load —
     /// decoded from the Wave-4 `escorts.getCorridor.windGate` block (the
@@ -286,29 +283,46 @@ struct EscortAssignmentDetail: View {
     private func routePreviewCard(_ d: EscortAPI.AssignmentDetail) -> some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             sectionHeader("ROUTE PREVIEW", icon: "map.fill")
-            if let coords = corridorCoords, coords.isRoutable {
-                let pickup = HereLatLng(coords.originLat, coords.originLng)
-                let delivery = HereLatLng(coords.destLat, coords.destLng)
-                let line: [HereLatLng] = routePolyline.count >= 2 ? routePolyline : []
+            if let coords = corridorCoords,
+               let origin = coords.originCoordinate,
+               let destination = coords.destinationCoordinate {
+                let pickup = HereLatLng(origin.latitude, origin.longitude)
+                let delivery = HereLatLng(destination.latitude, destination.longitude)
+                let requestedPurpose = canonicalRoutePurpose(for: d.status)
                 let markerLayer = HereMapLayer.markers([
                     HereMarker(at: pickup, kind: .pickup, label: d.origin.isEmpty ? nil : d.origin),
                     HereMarker(at: delivery, kind: .delivery, label: d.destination.isEmpty ? nil : d.destination)
                 ])
-                let mapLayers: [HereMapLayer] = line.count >= 2
-                    ? [.route(polyline: line, colorHex: "#1473FF"), markerLayer]
-                    : [markerLayer]
-                HereLiveMapView(
-                    center: HereLatLng(
-                        (coords.originLat + coords.destLat) / 2,
-                        (coords.originLng + coords.destLng) / 2
-                    ),
-                    zoom: 6,
-                    interactive: false,
-                    route: line,
-                    baseLayers: mapLayers,
-                    addOns: .shipperTracking,
-                    showTicker: false
-                )
+                let mapLayers: [HereMapLayer] = canonicalRouteLines.enumerated().map { index, line in
+                    .eusoRoute(
+                        polyline: line,
+                        state: canonicalResolvedPurpose == .activeJob ? .active : .planned,
+                        label: index == 0
+                            ? "Eusorone truck escort route plan version \(canonicalRouteVersion ?? 0)"
+                            : nil
+                    )
+                } + [markerLayer]
+                ZStack(alignment: .bottomLeading) {
+                    HereLiveMapView(
+                        center: canonicalRouteLines.lazy.compactMap(\.first).first
+                            ?? HereLatLng(
+                                (origin.latitude + destination.latitude) / 2,
+                                (origin.longitude + destination.longitude) / 2
+                            ),
+                        zoom: 6,
+                        interactive: false,
+                        route: [],
+                        baseLayers: mapLayers,
+                        addOns: .shipperTracking,
+                        showTicker: false,
+                        activeJob: requestedPurpose == .activeJob,
+                        mapModeContext: .escort(activeRoadEscort: true)
+                    )
+                    if let canonicalRouteStatus {
+                        canonicalRouteStatusPill(canonicalRouteStatus)
+                            .padding(10)
+                    }
+                }
                 .frame(height: 180)
                 .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 .overlay(
@@ -346,6 +360,13 @@ struct EscortAssignmentDetail: View {
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
+                if let canonicalRouteStatus {
+                    Text(canonicalRouteStatus)
+                        .font(EType.micro)
+                        .foregroundStyle(Brand.warning)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityLabel(canonicalRouteStatus)
+                }
             }
             Spacer(minLength: 0)
         }
@@ -1027,7 +1048,7 @@ struct EscortAssignmentDetail: View {
             localConfirmed = (v.routeConfirmed == true)
         }
         await loadCorridorCoords()
-        await refreshRoutePolyline()
+        await refreshCanonicalRoute()
         await loadWindGate()
     }
 
@@ -1054,36 +1075,99 @@ struct EscortAssignmentDetail: View {
         }
     }
 
-    /// Resolves the corridor's origin→destination via HERE Routing v8 and
-    /// decodes its section polyline into the route-preview line — the real
-    /// curved road geometry, not a straight 2-point segment. Truck-aware
-    /// via the default `.standardUSSemiLoaded` profile (an escort corridor
-    /// is a heavy-haul road route). Depends on `corridorCoords` already
-    /// being resolved, so it runs after `loadCorridorCoords()`. On any
-    /// failure (no coords, null-island endpoint, HERE error) the polyline
-    /// stays empty and the preview remains marker-only.
+    private func canonicalRoutePurpose(for status: String) -> CanonicalRoutePlanClient.Purpose {
+        let normalized = status
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "-", with: "_")
+            .replacingOccurrences(of: " ", with: "_")
+        let active: Set<String> = [
+            "accepted", "active", "dispatched", "en_route", "enroute",
+            "at_origin", "at_destination"
+        ]
+        return active.contains(normalized) ? .activeJob : .planning
+    }
+
+    /// Escort assignments route through their underlying load subject. The
+    /// assignment envelope must expose that exact binding; assignment IDs are
+    /// never guessed to be load IDs. Until the server adds `loadId`, the map
+    /// remains endpoint-reference-only with an explicit pending message.
     @MainActor
-    private func refreshRoutePolyline() async {
-        guard let coords = corridorCoords, coords.isRoutable else {
-            routePolyline = []
+    private func refreshCanonicalRoute() async {
+        canonicalRouteLines = []
+        canonicalRouteVersion = nil
+        canonicalResolvedPurpose = nil
+        canonicalRouteStatus = "Verified escort route is still being prepared"
+        guard let loadId = corridorCoords?.loadId, loadId > 0 else {
+            canonicalRouteStatus = "This escort assignment is not yet linked to its load"
             return
         }
-        let stops = HereStops(
-            origin: CLLocationCoordinate2D(latitude: coords.originLat, longitude: coords.originLng),
-            destination: CLLocationCoordinate2D(latitude: coords.destLat, longitude: coords.destLng)
-        )
+        let status = (detailStore.state.value ?? nil)?.status ?? ""
+        let expectedPurpose = canonicalRoutePurpose(for: status)
         do {
-            let resp = try await HereRoutingClient.shared.route(
-                stops: stops, profile: .standardUSSemiLoaded)
-            guard let section = resp.routes.first?.sections.first else {
-                routePolyline = []
-                return
+            let result = try await CanonicalRoutePlanClient.shared.planLoad(
+                id: loadId,
+                purpose: expectedPurpose
+            )
+            switch result {
+            case .persisted(let persisted):
+                applyCanonicalRoute(persisted.route, expectedPurpose: expectedPurpose)
+            case .pending(let pending):
+                canonicalRouteStatus = pending.blockers.first?.message
+                    ?? "Canonical mode-native escort route pending verified authority"
+                await readExistingCanonicalRoute(loadId: loadId, expectedPurpose: expectedPurpose)
             }
-            let decoded = HereRoutingClient.polyline(for: section)
-            routePolyline = decoded.count >= 2 ? decoded.map { HereLatLng($0) } : []
         } catch {
-            routePolyline = []
+            canonicalRouteStatus = error.eusoUserCopy
+            await readExistingCanonicalRoute(loadId: loadId, expectedPurpose: expectedPurpose)
         }
+    }
+
+    @MainActor
+    private func readExistingCanonicalRoute(
+        loadId: Int,
+        expectedPurpose: CanonicalRoutePlanClient.Purpose
+    ) async {
+        do {
+            applyCanonicalRoute(
+                try await CanonicalRoutePlanClient.shared.getBoundLoad(id: loadId),
+                expectedPurpose: expectedPurpose
+            )
+        } catch {
+            if canonicalRouteStatus == nil { canonicalRouteStatus = error.eusoUserCopy }
+        }
+    }
+
+    @MainActor
+    private func applyCanonicalRoute(
+        _ route: CanonicalRoutePlanClient.BoundRoutePlan,
+        expectedPurpose: CanonicalRoutePlanClient.Purpose
+    ) {
+        guard route.plan.purpose == expectedPurpose,
+              route.plan.identity.mode == .truck,
+              let payload = route.rendererPayload else {
+            canonicalRouteLines = []
+            canonicalRouteVersion = nil
+            canonicalResolvedPurpose = nil
+            canonicalRouteStatus = "Canonical truck escort route exists but is not released for rendering"
+            return
+        }
+        canonicalRouteLines = payload.lines
+        canonicalRouteVersion = payload.identity.version
+        canonicalResolvedPurpose = route.plan.purpose
+        canonicalRouteStatus = nil
+    }
+
+    private func canonicalRouteStatusPill(_ message: String) -> some View {
+        Text(message)
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(palette.textSecondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(palette.bgCard.opacity(0.92))
+            .overlay(Capsule().strokeBorder(Brand.warning.opacity(0.45)))
+            .clipShape(Capsule())
+            .accessibilityLabel(message)
     }
 
     /// Decode the route-wide `windGate` envelope off the SAME corridor proc
@@ -1220,38 +1304,48 @@ private struct EscortCorridorCoordsInput: Encodable {
 
 /// Coordinate-only projection of the `escorts.getActiveAssignmentDetail`
 /// envelope. The proc returns the full assignment detail; this struct
-/// decodes ONLY the four real corridor-endpoint coordinate fields the
-/// route-preview map needs, ignoring everything else. The fields come
+/// decodes the optional exact load binding plus the four real corridor-
+/// endpoint coordinate fields the route-preview map needs, ignoring
+/// everything else. The fields come
 /// straight off `loads.pickupLocation.lat/lng` + `loads.deliveryLocation`
 /// (`fmtLoc`), the same real columns the shipper LoadDetail hero map reads.
 ///
-/// All four default to `0` when the proc omits them (older deploy) or the
-/// load has no geocode — `isRoutable` then reports `false` and the UI shows
-/// the awaiting state. No coordinate is ever synthesized here.
+/// Missing or partial endpoints stay nil when an older proc omits them or a
+/// load has no geocode. No coordinate is synthesized here.
 private struct EscortCorridorCoords: Decodable {
-    let originLat: Double
-    let originLng: Double
-    let destLat: Double
-    let destLng: Double
+    /// Exact load subject behind the escort assignment. Older server
+    /// envelopes omit it; nil is an intentional fail-closed state.
+    let loadId: Int?
+    let originLat: Double?
+    let originLng: Double?
+    let destLat: Double?
+    let destLng: Double?
 
     enum CodingKeys: String, CodingKey {
-        case originLat, originLng, destLat, destLng
+        case loadId, originLat, originLng, destLat, destLng
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        originLat = try c.decodeIfPresent(Double.self, forKey: .originLat) ?? 0
-        originLng = try c.decodeIfPresent(Double.self, forKey: .originLng) ?? 0
-        destLat   = try c.decodeIfPresent(Double.self, forKey: .destLat) ?? 0
-        destLng   = try c.decodeIfPresent(Double.self, forKey: .destLng) ?? 0
+        if let value = try? c.decode(Int.self, forKey: .loadId) {
+            loadId = value
+        } else if let raw = try? c.decode(String.self, forKey: .loadId) {
+            loadId = Int(raw)
+        } else {
+            loadId = nil
+        }
+        originLat = try c.decodeIfPresent(Double.self, forKey: .originLat)
+        originLng = try c.decodeIfPresent(Double.self, forKey: .originLng)
+        destLat = try c.decodeIfPresent(Double.self, forKey: .destLat)
+        destLng = try c.decodeIfPresent(Double.self, forKey: .destLng)
     }
 
-    /// True only when BOTH endpoints carry a real (non-null-island) fix.
-    /// A `(0,0)` endpoint means the load isn't geocoded yet — the map
-    /// must not draw a corridor to null island, so the UI shows its
-    /// awaiting state instead.
-    var isRoutable: Bool {
-        !(originLat == 0 && originLng == 0) && !(destLat == 0 && destLng == 0)
+    var originCoordinate: CLLocationCoordinate2D? {
+        LatLongParser.validatedCoordinate(latitude: originLat, longitude: originLng)
+    }
+
+    var destinationCoordinate: CLLocationCoordinate2D? {
+        LatLongParser.validatedCoordinate(latitude: destLat, longitude: destLng)
     }
 }
 

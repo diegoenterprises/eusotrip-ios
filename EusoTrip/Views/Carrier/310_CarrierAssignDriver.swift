@@ -49,8 +49,10 @@ private struct AssignDriverBody: View {
     @Environment(\.palette) private var palette
     let loadId: String
     @State private var drivers: [AvailableDriver] = []
+    @State private var hosEvidence: [HOSFleetDriver] = []
     @State private var loading = true
     @State private var loadError: String? = nil
+    @State private var hosWarning: String? = nil
     @State private var selected: String? = nil
     @State private var assigning = false
     @State private var actionError: String? = nil
@@ -81,6 +83,11 @@ private struct AssignDriverBody: View {
                         Text(err).font(EType.caption).foregroundStyle(Brand.danger)
                     }
                 }
+                if let hosWarning {
+                    LifecycleCard(accentDanger: true) {
+                        Text(hosWarning).font(EType.caption).foregroundStyle(Brand.warning)
+                    }
+                }
                 dropZone
                 content
                 ctaRow
@@ -109,6 +116,10 @@ private struct AssignDriverBody: View {
                 .font(EType.caption).foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    private var eligibleDrivers: [AvailableDriver] {
+        drivers.filter { evidence(for: $0.id)?.assignmentEligibility() == .eligible }
     }
 
     private var dropZone: some View {
@@ -158,7 +169,7 @@ private struct AssignDriverBody: View {
         )
         .dropDestination(for: String.self) { droppedIds, _ in
             guard let driverId = droppedIds.first else { return false }
-            guard drivers.contains(where: { $0.id == driverId }) else { return false }
+            guard eligibleDrivers.contains(where: { $0.id == driverId }) else { return false }
             Task { await assign(driverId: driverId) }
             return true
         } isTargeted: { hovering in
@@ -180,11 +191,17 @@ private struct AssignDriverBody: View {
         } else if drivers.isEmpty {
             EusoEmptyState(
                 systemImage: "person.crop.circle",
-                title: "No available drivers",
-                subtitle: "Drivers in OFF_DUTY or ON_DUTY (not driving) state surface here."
+                title: "No fleet drivers",
+                subtitle: "No active driver records were returned for this company."
+            )
+        } else if eligibleDrivers.isEmpty {
+            EusoEmptyState(
+                systemImage: "clock.badge.exclamationmark",
+                title: "No HOS-cleared drivers",
+                subtitle: "Assignment requires a current sourced duty status, complete counters, break evidence, and permission for this carrier account."
             )
         } else {
-            ForEach(drivers) { d in
+            ForEach(eligibleDrivers) { d in
                 // NOT a Button: on iOS the Button's tap recognizer wins the
                 // gesture race and `.draggable` never starts a drag.
                 driverCard(d)
@@ -202,14 +219,18 @@ private struct AssignDriverBody: View {
     }
 
     private func driverCard(_ d: AvailableDriver) -> some View {
-        LifecycleCard(accentGradient: selected == d.id) {
+        let hos = evidence(for: d.id)
+        return LifecycleCard(accentGradient: selected == d.id) {
             HStack {
                 Image(systemName: selected == d.id ? "checkmark.circle.fill" : "circle")
                     .foregroundStyle(selected == d.id ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.textTertiary))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(d.name).font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-                    Text("\(dashIfEmpty(d.cdlClass)) · HOS \(d.hosRemainingHours.map { String(format: "%.1fh", $0) } ?? "-") remaining")
+                    Text("\(dashIfEmpty(d.cdlClass)) · HOS \(HOSStatus.formatHours(hos?.hoursAvailable?.drivingRemaining)) remaining")
                         .font(EType.caption).foregroundStyle(palette.textSecondary)
+                    Text("\(hos?.source?.uppercased() ?? "HOS SOURCE UNAVAILABLE") · \(humanISO(hos?.freshness))")
+                        .font(EType.mono(.micro))
+                        .foregroundStyle(palette.textTertiary)
                     if let truck = d.truckNumber, !truck.isEmpty {
                         Text("Truck \(truck) · \(dashIfEmpty(d.lastKnownCity))")
                             .font(EType.mono(.micro)).tracking(0.4)
@@ -243,10 +264,15 @@ private struct AssignDriverBody: View {
     }
 
     private func load() async {
-        loading = true; loadError = nil
+        loading = true; loadError = nil; hosWarning = nil
         do {
-            let r: [AvailableDriver] = try await EusoTripAPI.shared.queryNoInput("catalysts.getAvailableDrivers")
-            drivers = r
+            drivers = try await EusoTripAPI.shared.queryNoInput("catalysts.getAvailableDrivers")
+            do {
+                hosEvidence = try await EusoTripAPI.shared.queryNoInput("hos.getFleetHOS")
+            } catch {
+                hosEvidence = []
+                hosWarning = "Current company HOS evidence could not refresh. Driver assignment is held."
+            }
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
@@ -260,14 +286,40 @@ private struct AssignDriverBody: View {
 
     private func assign(driverId: String) async {
         await MainActor.run { assigning = true; actionError = nil }
+        do {
+            let refreshed: [HOSFleetDriver] = try await EusoTripAPI.shared.queryNoInput("hos.getFleetHOS")
+            await MainActor.run { hosEvidence = refreshed }
+        } catch {
+            await MainActor.run {
+                actionError = "Current company HOS evidence could not refresh. Nothing was assigned."
+                assigning = false
+            }
+            return
+        }
+        guard evidence(for: driverId)?.assignmentEligibility() == .eligible else {
+            await MainActor.run {
+                actionError = "Current assignment evidence does not permit this assignment. Nothing was assigned."
+                assigning = false
+            }
+            return
+        }
         let driverLabel = drivers.first(where: { $0.id == driverId })?.name ?? "driver \(driverId)"
         struct In: Encodable { let loadId: String; let driverId: String }
         struct Out: Decodable { let success: Bool? }
         do {
-            let _: Out = try await EusoTripAPI.shared.mutation(
+            let output: Out = try await EusoTripAPI.shared.mutation(
                 "catalysts.assignDriver",
                 input: In(loadId: loadId, driverId: driverId)
             )
+            guard output.success == true else {
+                await MainActor.run {
+                    actionError = "The assignment was not confirmed. Refresh before retrying."
+                    draggingDriverId = nil
+                    dropHover = false
+                }
+                await MainActor.run { assigning = false }
+                return
+            }
             await MainActor.run {
                 assigned = true
                 lastAssigned = "\(driverLabel) → LD-\(loadId)"
@@ -283,6 +335,12 @@ private struct AssignDriverBody: View {
             }
         }
         await MainActor.run { assigning = false }
+    }
+
+    private func evidence(for driverId: String) -> HOSFleetDriver? {
+        hosEvidence.first { row in
+            row.driverId == driverId || row.userId.map { String($0) } == driverId
+        }
     }
 }
 

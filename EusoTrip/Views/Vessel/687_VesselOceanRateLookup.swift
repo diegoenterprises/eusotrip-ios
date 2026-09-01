@@ -13,13 +13,12 @@
 //        (vesselFreightRates by originPortId / destinationPortId / containerSize)
 //    · market context    <- competitiveIntel.getRateComparison       EXISTS
 //    · trend arrow       <- marketPricing.getRateTrends              EXISTS
-//    · save to booking   -> vesselShipments.createVesselBooking      EXISTS
+//    · executable quote  <- pricedRoute.getCurrent / pricedRoute.price
 //
-//  PORT-GAP: saveRateQuote — searchRates returns live rate rows but there is
-//  no persisted shipper-facing quote object { quoteId, vesselShipmentId,
-//  serviceCode, carrierScac, allInPerFeu, transitDays, freeDays, bafPct,
-//  validUntil }. The "Save quote to booking" CTA falls back to the booking
-//  write; the quote-snapshot object itself is unbuilt on the server.
+//  The service ladder is market context only. It cannot write a client-
+//  calculated rate into a booking. Executable money comes from the immutable
+//  priced-route ledger bound to a canonical voyage route, committed vessel
+//  availability, confirmed/authorized policies, fee, and payouts.
 //
 //  RBAC: vesselProcedure (VESSEL_OPERATOR) · transportMode VESSEL ·
 //  US import (USLGB Long Beach / CBP) · TPEB · pure-ocean (no driver disc).
@@ -29,8 +28,17 @@ import SwiftUI
 
 struct VesselOceanRateLookupScreen: View {
     let theme: Theme.Palette
+    let vesselShipmentId: Int
+
+    init(theme: Theme.Palette, vesselShipmentId: Int = 0) {
+        self.theme = theme
+        self.vesselShipmentId = vesselShipmentId
+    }
+
     var body: some View {
-        Shell(theme: theme) { VesselOceanRateLookupBody() } nav: {
+        Shell(theme: theme) {
+            VesselOceanRateLookupBody(vesselShipmentId: vesselShipmentId)
+        } nav: {
             BottomNav(
                 leading: [NavSlot(label: "Home",      systemImage: "house",            isCurrent: false),
                           NavSlot(label: "Shipments", systemImage: "shippingbox.fill", isCurrent: true)],
@@ -127,17 +135,13 @@ private struct RateTrends687: Decodable {
 
 private struct VesselOceanRateLookupBody: View {
     @Environment(\.palette) private var palette
+    let vesselShipmentId: Int
 
     @State private var rates: [VesselFreightRate687] = []
     @State private var comparison: [RateComparisonRow687] = []
     @State private var trends: RateTrends687? = nil
     @State private var loading = true
     @State private var loadError: String? = nil
-
-    // Save-to-booking action state.
-    @State private var saving = false
-    @State private var saveAck: String? = nil
-    @State private var saveError: String? = nil
 
     // Lane context for this lookup (US import · TPEB · Shanghai → Long Beach).
     // originPortId / destinationPortId are the searchRates query keys; when the
@@ -169,6 +173,15 @@ private struct VesselOceanRateLookupBody: View {
                     .padding(.horizontal, Space.s5)
 
                 VStack(alignment: .leading, spacing: Space.s4) {
+                    // Vessel freight, charter, bunker, port, and canal terms
+                    // enter through one immutable proposal/confirmation
+                    // authority. The market ladder below cannot silently
+                    // author an executable voyage price.
+                    PricedRouteRateSheetAuthorityPanel(mode: .vessel)
+                    PricedRouteQuoteAuthorityPanel(
+                        subjectType: .vesselShipment,
+                        subjectId: vesselShipmentId
+                    )
                     if loading {
                         LifecycleCard {
                             Text("Loading ocean rates…")
@@ -189,7 +202,6 @@ private struct VesselOceanRateLookupBody: View {
                         serviceLadder
                         bafFreeTimeStrip
                         esangInsight
-                        ctaPair
                     }
                     Color.clear.frame(height: 24)
                 }
@@ -509,51 +521,6 @@ private struct VesselOceanRateLookupBody: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
-    // MARK: - CTA pair
-
-    private var ctaPair: some View {
-        VStack(alignment: .leading, spacing: Space.s2) {
-            HStack(spacing: Space.s2) {
-                Button {
-                    Task { await saveQuoteToBooking() }
-                } label: {
-                    HStack(spacing: 6) {
-                        if saving { ProgressView().tint(.white) }
-                        Text(saving ? "Saving…" : "Save quote to booking")
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundStyle(.white)
-                    }
-                    .frame(maxWidth: .infinity).frame(height: 48)
-                    .background(LinearGradient.primary)
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .disabled(saving || cheapest == nil)
-
-                Button {
-                    // All-services view is the full searchRates sheet already
-                    // rendered in the ladder above; no separate route on the
-                    // VESSEL nav graph yet.
-                } label: {
-                    Text("All services")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(palette.textPrimary)
-                        .frame(width: 136, height: 48)
-                        .background(palette.bgCardSoft)
-                        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
-                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-                }
-                .buttonStyle(.plain)
-            }
-            if let ack = saveAck {
-                Text(ack).font(EType.caption).foregroundStyle(Brand.success)
-            }
-            if let err = saveError {
-                Text(err).font(EType.caption).foregroundStyle(Brand.danger)
-            }
-        }
-    }
-
     // MARK: - Derived figures
 
     /// Saving of the cheapest vs. the second-cheapest service ($/FEU).
@@ -634,55 +601,6 @@ private struct VesselOceanRateLookupBody: View {
         loading = false
     }
 
-    // MARK: - Save quote → booking
-
-    private func saveQuoteToBooking() async {
-        guard let best = cheapest else { return }
-        saving = true; saveAck = nil; saveError = nil
-        // PORT-GAP: saveRateQuote — there is no persisted shipper-facing quote
-        // object on the server. We write the chosen service to the active
-        // booking via the real createVesselBooking mutation instead.
-        // createVesselBooking requires concrete origin/destination port IDs;
-        // when the searchRates row carries them we book, otherwise we surface
-        // the gap rather than POSTing an invalid (port-less) booking.
-        guard let origin = best.originPortId, let dest = best.destinationPortId else {
-            saveError = "This rate row has no resolved lane ports. Open the lane to book."
-            saving = false
-            return
-        }
-        // createVesselBooking input is a strict z.object — only its declared
-        // keys (originPortId, destinationPortId, containerSize, rate, …) are
-        // honored. transitDays / serviceRoute live on the quote object that
-        // is not yet built, so they are not sent.
-        struct BookingIn: Encodable {
-            let originPortId: Int
-            let destinationPortId: Int
-            let cargoType: String
-            let containerSize: String?
-            let rate: Double
-        }
-        struct BookingOut: Decodable { let id: Int?; let bookingNumber: String?; let status: String? }
-        do {
-            let out: BookingOut = try await EusoTripAPI.shared.mutation(
-                "vesselShipments.createVesselBooking",
-                input: BookingIn(
-                    originPortId: origin,
-                    destinationPortId: dest,
-                    cargoType: "container",
-                    containerSize: best.containerSize,
-                    rate: best.allIn
-                )
-            )
-            if let booking = out.bookingNumber {
-                saveAck = "Quote saved · booking \(booking) · \(best.serviceRoute ?? "service") @ \(usd(best.allIn))/FEU"
-            } else {
-                saveError = "Booking write returned no confirmation."
-            }
-        } catch {
-            saveError = error.eusoUserCopy
-        }
-        saving = false
-    }
 }
 
 #Preview("687 · Vessel Ocean Rate Lookup · Night") { VesselOceanRateLookupScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }

@@ -768,7 +768,7 @@ private struct VesselDropYardOperationsBody781: View {
                         Text("Request pickup")
                             .font(EType.title)
                             .foregroundStyle(palette.textPrimary)
-                        Text("NO WRITE PATH · STUB")
+                        Text("READ ONLY · NO AUTHORIZED ACTION")
                             .font(.system(size: 9, weight: .heavy)).tracking(0.4)
                             .foregroundStyle(palette.textTertiary)
                     }

@@ -41,7 +41,7 @@
 //                 times off ONE real placedAt: US / CA / MX (the regime band and
 //                 the live figure) + a now+24h horizon + a placement+72h horizon.
 //               → the free-time and rate constants live at railDemurrageAuto.ts:16-17
-//                 (FREE_TIME_HOURS {US:48, CA:48, MX:24} · RATE_PER_HOUR
+//                 (FREE_TIME_HOURS {USrailDemurrageAuto.ts:17, CA:48, MX:24} · RATE_PER_HOUR
 //                 {US:35, CA:35, MX:40}). This file hardcodes NEITHER — it reads
 //                 them back off the procedure that owns them.
 //    EXISTS · railShipments.ts:1816       (query)    railShipments.getLiveDemurrage
@@ -86,7 +86,7 @@
 //               THIS DEVICE off the real placedAt via TimelineView and says so in
 //               plain words on the card; money never moves without a re-poll.
 //
-//  RBAC. Reads: railProcedure = requireUser + requireRailMode (_core/trpc.ts:267)
+//  RBAC. Reads: railReadProcedure (railShipments.ts:94) = requireUser + requireRailMode (_core/trpc.ts:267)
 //  plus the row-level ownsRailShipmentRow tenant gate on getRailDemurrage /
 //  getRailShipmentDetail — a non-owner gets [] / null, never another tenant's
 //  money. calculateAccrual + createDispute are protectedProcedure; createDispute
@@ -222,7 +222,7 @@ private struct AccrualQuote004: Decodable {
     let status: String?
 }
 
-/// `railShipments.getLiveDemurrage` output (railShipments.ts:1865-1870).
+/// `railShipments.getLiveDemurrage` output (railShipments.ts:2162-1870).
 private struct LiveDemurrageTip004: Decodable {
     let railRef: String?
     let headline: String?
@@ -230,7 +230,7 @@ private struct LiveDemurrageTip004: Decodable {
     let savings: Double?
 }
 
-/// `railDemurrageAuto.createDispute` receipt (railDemurrageAuto.ts:323-329).
+/// `railDemurrageAuto.createDispute` receipt (railDemurrageAuto.ts:314-329).
 private struct DisputeReceipt004: Decodable {
     let disputeId: String?
     let status: String?
@@ -1230,7 +1230,7 @@ private struct RailDemurrageDetailBody004: View {
         if let n = quoteNext24?.totalCharge { lines.append("Another 24h on the ground: \(money(n))") }
         if let h = quoteHold72?.totalCharge { lines.append("Held \(Int(hold72Hours / 24)) days: \(money(h))") }
         if tipMatchesThisShipment, let a = nonEmpty(tip?.action) { lines.append(a) }
-        lines.append("Early release cannot be requested from EusoTrip yet — this is recorded as a named gap, not a silent failure.")
+        lines.append("This terminal has not enabled electronic early-release requests.")
         return lines
     }
 
@@ -1563,7 +1563,7 @@ private struct RailDemurrageDetailBody004: View {
         let waiverRaw = Double(waiverText.trimmingCharacters(in: .whitespacesAndNewlines))
         let waiver = waiverRaw.map { max(0, min(9_999_999, $0)) }
 
-        // createDispute is a MUTATION (railDemurrageAuto.ts:264 `.mutation`).
+        // createDispute is a MUTATION (railDemurrageAuto.ts:314 `.mutation`).
         // mutation() issues POST; the server has no method override, so sending
         // this through query() would be a dead CTA (fault class S4).
         // `confirm: true` is a zod LITERAL — omitting it 400s the call.

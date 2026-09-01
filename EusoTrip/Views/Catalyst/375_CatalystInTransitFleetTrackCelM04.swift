@@ -136,6 +136,8 @@ private struct CatalystInTransitFleetTrackCelM04Body: View {
     @State private var loadDetail: LoadsAPI.LoadDetail? = nil
     /// The fleet driver whose currentLoad == transitLoad.loadNumber.
     @State private var rollingDriver: FleetDriverRow_375? = nil
+    @State private var hosEvidence: HOSFleetDriver? = nil
+    @State private var hosWarning: String? = nil
     @State private var loading: Bool = true
     @State private var loadError: String? = nil
     @State private var actionBusy: Bool = false
@@ -285,11 +287,11 @@ private struct CatalystInTransitFleetTrackCelM04Body: View {
     // MARK: KPI quartet
 
     private func kpiQuartet(_ l: ActiveLoadRow_375) -> some View {
-        let hos = rollingDriver?.hoursRemaining.map { formatHOS_375($0) } ?? "-"
+        let hos = currentHOS?.hoursAvailable?.drivingRemaining.map { formatHOS_375($0) } ?? "—"
         return HStack(spacing: 8) {
             kpiTile("ETA", l.eta.isEmpty ? "TBD" : l.eta, "appt")
             kpiTile("LANE", laneShort(l), "route")
-            kpiTile("HOS", hos, rollingDriver?.status.lowercased() == "driving" ? "driving" : "remaining")
+            kpiTile("HOS", hos, currentHOS?.source?.uppercased() ?? "unavailable")
             kpiTile("RATE", rateDisplay(l.rate), "gross")
         }
     }
@@ -387,7 +389,7 @@ private struct CatalystInTransitFleetTrackCelM04Body: View {
                         .font(.system(size: 12, weight: .heavy))
                         .foregroundStyle(palette.textPrimary)
                         .lineLimit(1)
-                    Text("HOS \(d.status.lowercased()) · \(d.hoursRemaining.map { formatHOS_375($0) } ?? "-") · \(d.id)")
+                    Text("HOS \(currentHOS?.status?.lowercased() ?? "unavailable") · \(currentHOS?.hoursAvailable?.drivingRemaining.map { formatHOS_375($0) } ?? "—") · \(currentHOS?.source?.uppercased() ?? "SOURCE UNAVAILABLE")")
                         .font(.system(size: 9, design: .monospaced))
                         .foregroundStyle(palette.textSecondary)
                         .lineLimit(1)
@@ -450,13 +452,9 @@ private struct CatalystInTransitFleetTrackCelM04Body: View {
     /// the string isn't a coordinate pair, or it resolves to null island —
     /// so the puck only ever draws on a real fix (no fabricated coords).
     private var liveDriverFix: HereLatLng? {
-        guard let raw = rollingDriver?.location else { return nil }
-        let parts = raw.split(separator: ",")
-        guard parts.count == 2,
-              let lat = Double(parts[0].trimmingCharacters(in: .whitespaces)),
-              let lng = Double(parts[1].trimmingCharacters(in: .whitespaces)),
-              !(lat == 0 && lng == 0) else { return nil }
-        return HereLatLng(lat, lng)
+        guard let raw = rollingDriver?.location,
+              let coordinate = LatLongParser.parse(raw) else { return nil }
+        return HereLatLng(coordinate.latitude, coordinate.longitude)
     }
 
     /// Truck-puck marker for the rolling driver's live fix. The marker id is
@@ -489,6 +487,13 @@ private struct CatalystInTransitFleetTrackCelM04Body: View {
                     zoom: 8,
                     baseLayers: liveMapLayers(l),
                     addOns: .shipperTracking,
+                    mapModeContext: .primary(.truck),
+                    liveOperationsStatus: .init(
+                        availability: .degraded,
+                        sourceLabel: "Fleet telemetry",
+                        detail: "In-transit position available; freshness not supplied",
+                        observationCount: 1
+                    ),
                     onSelectMarker: { _ in
                         Task { await openLoadConversation() }
                     }
@@ -577,7 +582,8 @@ private struct CatalystInTransitFleetTrackCelM04Body: View {
     }
 
     private func telemetryRows(_ l: ActiveLoadRow_375) -> [TelemetryRow_375] {
-        let hosBacked = rollingDriver?.hoursRemaining != nil
+        let hos = currentHOS
+        let hosBacked = hos?.hoursAvailable?.drivingRemaining != nil
         let locBacked = (rollingDriver?.location.isEmpty == false) && rollingDriver?.location != "Unknown"
         return [
             TelemetryRow_375(
@@ -586,9 +592,10 @@ private struct CatalystInTransitFleetTrackCelM04Body: View {
                 trailing: locBacked ? "live" : "-",
                 realBacked: locBacked),
             TelemetryRow_375(
-                title: "HOS · \(rollingDriver?.status.lowercased() ?? "driving") · \(rollingDriver?.hoursRemaining.map { formatHOS_375($0) } ?? "-") remaining",
-                detail: "660-min cap math · live hours remaining per driver",
-                trailing: rollingDriver?.hoursRemaining.map { formatHOS_375($0) } ?? "-",
+                title: "HOS · \(hos?.status?.lowercased() ?? "unavailable") · \(hos?.hoursAvailable?.drivingRemaining.map { formatHOS_375($0) } ?? "—") remaining",
+                detail: hos.map { "\($0.source?.uppercased() ?? "SOURCE UNAVAILABLE") · \(humanISO($0.freshness))" }
+                    ?? (hosWarning ?? "Current sourced HOS evidence unavailable"),
+                trailing: hos?.hoursAvailable?.drivingRemaining.map { formatHOS_375($0) } ?? "—",
                 realBacked: hosBacked),
             TelemetryRow_375(
                 title: "Exception watch · \(transitLoad == nil ? "-" : "clear")",
@@ -891,6 +898,8 @@ private struct CatalystInTransitFleetTrackCelM04Body: View {
         loading = true
         loadError = nil
         actionError = nil
+        hosEvidence = nil
+        hosWarning = nil
         defer { loading = false }
 
         // Preview seed path — no live session bound, paint the canonical
@@ -926,15 +935,34 @@ private struct CatalystInTransitFleetTrackCelM04Body: View {
                         input: LimitInput_375(limit: 50)
                     )
                     self.rollingDriver = roster.first { $0.currentLoad == l.loadNumber }
-                        ?? roster.first { $0.status.lowercased() == "driving" }
                 } catch {
                     self.rollingDriver = nil
                     self.actionError = "Fleet roster sync failed: \(surfaceMessage(error))"
+                }
+
+                if let driver = self.rollingDriver {
+                    do {
+                        let evidence: [HOSFleetDriver] = try await EusoTripAPI.shared.queryNoInput("hos.getFleetHOS")
+                        self.hosEvidence = evidence.first {
+                            $0.driverId == driver.id || $0.userId.map { String($0) } == driver.id
+                        }
+                        if self.currentHOS == nil {
+                            self.hosWarning = self.hosEvidence?.assignmentEligibility().reason
+                                ?? "Current sourced HOS evidence unavailable"
+                        }
+                    } catch {
+                        self.hosWarning = "Current company HOS evidence could not refresh."
+                    }
                 }
             }
         } catch {
             self.loadError = surfaceMessage(error)
         }
+    }
+
+    private var currentHOS: HOSFleetDriver? {
+        guard let hosEvidence, hosEvidence.hasCurrentObservation() else { return nil }
+        return hosEvidence
     }
 }
 

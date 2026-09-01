@@ -449,23 +449,12 @@ private struct VesselReeferPreCoolBody820: View {
                                 : "No load threaded — open a reefer booking to attest its pre-cool.")
                     .font(EType.caption).foregroundStyle(palette.textTertiary)
             }
-            HStack(spacing: Space.s2) {
-                CTAButton(title: verifying ? "Verifying…" : "Verify pre-cool",
-                          action: { Task { await verify() } },
-                          isLoading: verifying)
-                    .frame(maxWidth: .infinity)
-                    .disabled(!canVerify)
-                    .opacity(canVerify ? 1 : 0.45)
-                Button(action: { Task { await load() } }) {  // recordFSMATemp — STUB · named-gap (no temp-entry sheet here), re-runs load()
-                    Text("FSMA log")
-                        .font(EType.title).foregroundStyle(palette.textPrimary)
-                        .frame(maxWidth: .infinity, minHeight: 52)
-                        .background(palette.bgCardSoft)
-                        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
-                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-                }
-                .buttonStyle(.plain).frame(maxWidth: 148)
-            }
+            CTAButton(title: verifying ? "Verifying…" : "Verify pre-cool",
+                      action: { Task { await verify() } },
+                      isLoading: verifying)
+                .frame(maxWidth: .infinity)
+                .disabled(!canVerify)
+                .opacity(canVerify ? 1 : 0.45)
         }
     }
 

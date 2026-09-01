@@ -57,12 +57,19 @@ private struct ComplianceHomeBody: View {
 
     // ── Home-widget customization — uses shared HomeWidgetGrid. ──
     private let widgetLayoutKey = "compliance.home.widgetOrder"
-    private let complianceCanonicalOrder: [String] = ["expiringDocs", "violations_overview", "driver_compliance", "news"]
+    private let complianceCanonicalOrder: [String] = [
+        "compliance_overview", "esang", "expiringDocs",
+        "violations_overview", "driver_compliance", "news"
+    ]
 
     private func complianceHomeRender(_ id: String) -> AnyView {
         switch id {
+        case "compliance_overview":
+            AnyView(complianceOverviewWidget)
+        case "esang":
+            AnyView(eSangMorningBriefCard())
         case "expiringDocs":
-            if let e = topExpiring { AnyView(expiringWidget(e)) } else { AnyView(EmptyView()) }
+            AnyView(expiringDocsWidget)
         case "violations_overview":
             AnyView(violationsOverviewWidget)
         case "driver_compliance":
@@ -74,6 +81,47 @@ private struct ComplianceHomeBody: View {
         }
     }
 
+    @ViewBuilder
+    private var complianceOverviewWidget: some View {
+        if loading {
+            LifecycleCard {
+                Text("Loading compliance score…")
+                    .font(EType.caption).foregroundStyle(palette.textSecondary)
+            }
+        } else if let loadError {
+            LifecycleCard(accentDanger: true) {
+                Text(loadError).font(EType.caption).foregroundStyle(Brand.danger)
+            }
+        } else if let dash {
+            VStack(alignment: .leading, spacing: Space.s3) {
+                hero(dash)
+                statsGrid(dash)
+            }
+        } else {
+            EusoEmptyState(systemImage: "checkmark.shield", title: "No compliance overview",
+                           subtitle: "Compliance metrics have not been reported yet.")
+        }
+    }
+
+    @ViewBuilder
+    private var expiringDocsWidget: some View {
+        if loading {
+            LifecycleCard {
+                Text("Loading expiration register…")
+                    .font(EType.caption).foregroundStyle(palette.textSecondary)
+            }
+        } else if let loadError {
+            LifecycleCard(accentDanger: true) {
+                Text(loadError).font(EType.caption).foregroundStyle(Brand.danger)
+            }
+        } else if let item = topExpiring {
+            expiringWidget(item)
+        } else {
+            EusoEmptyState(systemImage: "doc.badge.clock", title: "No upcoming expirations",
+                           subtitle: "The compliance expiration query returned no items.")
+        }
+    }
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             // First-load unlock cascade: top-level sections spring in
@@ -81,21 +129,12 @@ private struct ComplianceHomeBody: View {
             // per cold launch; settled on re-visit. Reduce-Motion → fade.
             StaggeredEntranceStack(alignment: .leading, spacing: Space.s5) {
                 header
-                // Canonical lead: morning brief → weather. Driver 010 is the
-                // baseline; every role home opens with these two cards.
-                RoleHomeIntro()
-                if loading { LifecycleCard { Text("Loading compliance score…").font(EType.caption).foregroundStyle(palette.textSecondary) } }
-                else if let err = loadError { LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) } }
-                else if let d = dash {
-                    hero(d)
-                    statsGrid(d)
-                    HomeWidgetGrid(
-                        canonicalOrder: complianceCanonicalOrder,
-                        role: "COMPLIANCE_OFFICER",
-                        storageKey: widgetLayoutKey,
-                        render: { id in complianceHomeRender(id) }
-                    )
-                }
+                HomeWidgetGrid(
+                    canonicalOrder: complianceCanonicalOrder,
+                    role: "COMPLIANCE_OFFICER",
+                    storageKey: widgetLayoutKey,
+                    render: { id in complianceHomeRender(id) }
+                )
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14).padding(.top, Space.s4)
@@ -145,11 +184,11 @@ private struct ComplianceHomeBody: View {
     private func hero(_ d: ComplianceDash) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("OVERALL SCORE").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(.white.opacity(0.85))
-            Text("\(d.overallScore ?? d.complianceScore ?? 0)").font(.system(size: 44, weight: .heavy)).foregroundStyle(.white).monospacedDigit()
+            Text(reported(d.overallScore ?? d.complianceScore)).font(.system(size: 44, weight: .heavy)).foregroundStyle(.white).monospacedDigit()
             HStack(spacing: 8) {
-                Text("COMPLIANT \(d.compliant ?? 0)").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(.white).padding(.horizontal, 8).padding(.vertical, 3).background(.white.opacity(0.18)).clipShape(Capsule())
-                Text("EXPIRING \(d.expiring ?? d.expiringDocs ?? 0)").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(.white).padding(.horizontal, 8).padding(.vertical, 3).background(.white.opacity(0.18)).clipShape(Capsule())
-                Text("TREND \((d.trend ?? "-").uppercased())").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(.white).padding(.horizontal, 8).padding(.vertical, 3).background(.white.opacity(0.18)).clipShape(Capsule())
+                Text("COMPLIANT \(reported(d.compliant))").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(.white).padding(.horizontal, 8).padding(.vertical, 3).background(.white.opacity(0.18)).clipShape(Capsule())
+                Text("EXPIRING \(reported(d.expiring ?? d.expiringDocs))").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(.white).padding(.horizontal, 8).padding(.vertical, 3).background(.white.opacity(0.18)).clipShape(Capsule())
+                Text("TREND \(reported(d.trend).uppercased())").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(.white).padding(.horizontal, 8).padding(.vertical, 3).background(.white.opacity(0.18)).clipShape(Capsule())
             }
         }
         .padding(Space.s5).frame(maxWidth: .infinity, alignment: .leading)
@@ -161,9 +200,9 @@ private struct ComplianceHomeBody: View {
 
     private func statsGrid(_ d: ComplianceDash) -> some View {
         HStack(spacing: Space.s2) {
-            LifecycleStatTile(label: "OVERDUE", value: "\(d.overdueItems ?? 0)", icon: "calendar.badge.exclamationmark", danger: (d.overdueItems ?? 0) > 0)
-            LifecycleStatTile(label: "VIOLATIONS", value: "\(d.violations ?? 0)", icon: "exclamationmark.triangle", danger: (d.violations ?? 0) > 0)
-            LifecycleStatTile(label: "AUDITS", value: "\(d.pendingAudits ?? 0)", icon: "doc.text.magnifyingglass")
+            LifecycleStatTile(label: "OVERDUE", value: reported(d.overdueItems), icon: "calendar.badge.exclamationmark", danger: d.overdueItems.map { $0 > 0 } ?? false)
+            LifecycleStatTile(label: "VIOLATIONS", value: reported(d.violations), icon: "exclamationmark.triangle", danger: d.violations.map { $0 > 0 } ?? false)
+            LifecycleStatTile(label: "AUDITS", value: reported(d.pendingAudits), icon: "doc.text.magnifyingglass")
         }
     }
 
@@ -176,11 +215,11 @@ private struct ComplianceHomeBody: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("CLOSEST EXPIRY").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle((e.daysRemaining ?? 99) < 7 ? Brand.danger : palette.textSecondary)
                         Text(e.type ?? "Document").font(.system(size: 18, weight: .heavy)).foregroundStyle(palette.textPrimary).lineLimit(1)
-                        Text("\(e.driver ?? "-") · expires \(e.expiresAt ?? "-")").font(EType.caption).foregroundStyle(palette.textSecondary)
+                        Text("\(reported(e.driver)) · expires \(reported(e.expiresAt))").font(EType.caption).foregroundStyle(palette.textSecondary)
                     }
                     Spacer(minLength: 0)
                     VStack(spacing: 0) {
-                        Text(e.daysRemaining.map { "\($0)" } ?? "-").font(.system(size: 28, weight: .heavy)).foregroundStyle(palette.textPrimary).monospacedDigit()
+                        Text(reported(e.daysRemaining)).font(.system(size: 28, weight: .heavy)).foregroundStyle(palette.textPrimary).monospacedDigit()
                         Text("DAYS").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
                     }
                 }
@@ -204,13 +243,17 @@ private struct ComplianceHomeBody: View {
             }
             if loading {
                 LifecycleCard { Text("Loading…").font(EType.caption).foregroundStyle(palette.textSecondary) }
+            } else if let loadError {
+                LifecycleCard(accentDanger: true) {
+                    Text(loadError).font(EType.caption).foregroundStyle(Brand.danger)
+                }
             } else if let d = dash {
                 HStack(spacing: Space.s2) {
-                    LifecycleStatTile(label: "VIOLATIONS", value: "\(d.violations ?? 0)",
-                                      icon: "exclamationmark.triangle", danger: (d.violations ?? 0) > 0)
-                    LifecycleStatTile(label: "OVERDUE",    value: "\(d.overdueItems ?? 0)",
-                                      icon: "calendar.badge.exclamationmark", danger: (d.overdueItems ?? 0) > 0)
-                    LifecycleStatTile(label: "TREND",      value: (d.trend ?? "-").uppercased(),
+                    LifecycleStatTile(label: "VIOLATIONS", value: reported(d.violations),
+                                      icon: "exclamationmark.triangle", danger: d.violations.map { $0 > 0 } ?? false)
+                    LifecycleStatTile(label: "OVERDUE",    value: reported(d.overdueItems),
+                                      icon: "calendar.badge.exclamationmark", danger: d.overdueItems.map { $0 > 0 } ?? false)
+                    LifecycleStatTile(label: "TREND",      value: reported(d.trend).uppercased(),
                                       icon: "arrow.up.right")
                 }
             } else {
@@ -247,6 +290,10 @@ private struct ComplianceHomeBody: View {
                             .eusoRow(radius: Radius.md)
                     }
                 }
+            } else if let loadError {
+                LifecycleCard(accentDanger: true) {
+                    Text(loadError).font(EType.caption).foregroundStyle(Brand.danger)
+                }
             } else if driverCompliance.isEmpty {
                 EusoEmptyState(systemImage: "person.crop.circle.badge.checkmark",
                                title: "No driver records",
@@ -273,7 +320,7 @@ private struct ComplianceHomeBody: View {
         return HStack(spacing: Space.s3) {
             Circle().fill(statusColor).frame(width: 8, height: 8)
             VStack(alignment: .leading, spacing: 1) {
-                Text(row.name ?? "-")
+                Text(reported(row.name))
                     .font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
                 HStack(spacing: 6) {
                     if let exp = row.expiringCount, exp > 0 {
@@ -285,7 +332,7 @@ private struct ComplianceHomeBody: View {
                 }
             }
             Spacer()
-            Text((row.status ?? "-").uppercased())
+            Text(reported(row.status).uppercased())
                 .font(.system(size: 8, weight: .heavy)).tracking(0.6)
                 .foregroundStyle(statusColor)
                 .padding(.horizontal, 8).padding(.vertical, 3)
@@ -297,6 +344,17 @@ private struct ComplianceHomeBody: View {
         // borderFaint box, so each driver row reads as a first-class
         // card on the home, matching the SVG card language.
         .eusoRow(radius: Radius.md)
+    }
+
+    private func reported(_ value: Int?) -> String {
+        value.map(String.init) ?? "—"
+    }
+
+    private func reported(_ value: String?) -> String {
+        guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
+            return "Not reported"
+        }
+        return value
     }
 
     private func load() async {

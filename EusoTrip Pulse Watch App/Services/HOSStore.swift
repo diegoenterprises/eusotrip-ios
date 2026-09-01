@@ -28,6 +28,11 @@ final class HOSStore: ObservableObject {
     /// just-installed watch.
     @Published private(set) var current: WatchHOS = WatchHOS.empty
     @Published private(set) var lastRefresh: Date?
+    @Published private(set) var lastMutationError: String?
+
+    var currentObservation: WatchHOS? {
+        current.hasCurrentObservation() ? current : nil
+    }
 
     private let fileURL: URL = {
         let dir = FileManager.default
@@ -44,7 +49,7 @@ final class HOSStore: ObservableObject {
         if let data = try? Data(contentsOf: fileURL),
            let snap = try? JSONDecoder().decode(Snapshot.self, from: data) {
             current = snap.hos
-            lastRefresh = snap.ts
+            lastRefresh = snap.hos.observedAt
         }
     }
 
@@ -73,10 +78,7 @@ final class HOSStore: ObservableObject {
                 // Only apply a remote read that carries REAL values —
                 // an unexpected shape can never overwrite a phone-pushed
                 // snapshot with fabricated off-duty/zeros.
-                current = snapshot
-                lastRefresh = Date()
-                persist()
-                ComplicationRefresher.shared.reloadTimelines()
+                applyObservation(snapshot, source: "server")
             }
         } catch EsangError.unauthorized {
             // Expired 7-day wrist JWT looks like a dead connection —
@@ -89,80 +91,72 @@ final class HOSStore: ObservableObject {
     }
 
     /// Apply a push from the iOS app via WCSession.
-    func applyRemote(status: String, driveRemainingMinutes: Int, windowRemainingMinutes: Int, cycleRemainingMinutes: Int = 0) {
-        let previousStatus = current.status.rawValue
-        var snapshot = current
-        snapshot.status = HOSStatus(rawValue: status) ?? .off
-        snapshot.driveRemainingMinutes = driveRemainingMinutes
-        snapshot.windowRemainingMinutes = windowRemainingMinutes
-        if cycleRemainingMinutes > 0 {
-            snapshot.cycleRemainingMinutes = cycleRemainingMinutes
-        }
-        snapshot.statusSince = Date()
-        current = snapshot
-        lastRefresh = Date()
-        persist()
-        // Chain the status transition into the tamper-evident audit log
-        // + CRDT, so a wrist-originated or phone-originated change both
-        // produce the same FMCSA-defensible artifact. Gated by their own
-        // config flags so production can enable them independently.
-        chainHOSStatusChange(
-            from: previousStatus,
-            to: snapshot.status.rawValue,
-            source: "remote"
+    func applyRemote(
+        status: String,
+        driveRemainingMinutes: Int,
+        windowRemainingMinutes: Int,
+        cycleRemainingMinutes: Int,
+        tracked: Bool,
+        source: String,
+        freshness: String
+    ) {
+        let normalizedSource = source.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard tracked,
+              let duty = HOSStatus(rawValue: status),
+              driveRemainingMinutes >= 0,
+              windowRemainingMinutes >= 0,
+              cycleRemainingMinutes >= 0,
+              !normalizedSource.isEmpty,
+              let observedAt = Self.currentObservationDate(freshness) else { return }
+        let snapshot = WatchHOS(
+            status: duty,
+            driveRemainingMinutes: driveRemainingMinutes,
+            windowRemainingMinutes: windowRemainingMinutes,
+            cycleRemainingMinutes: cycleRemainingMinutes,
+            statusSince: observedAt,
+            tracked: true,
+            source: normalizedSource,
+            observedAt: observedAt
         )
-        ComplicationRefresher.shared.reloadTimelines()
+        applyObservation(snapshot, source: "phone")
     }
 
     // MARK: Local status changes
 
-    /// Change duty status from the wrist. Logs the event server-side
-    /// and optimistically updates the wrist UI.
-    func changeStatus(to newStatus: HOSStatus, auth: AuthStore, connectivity: WatchConnectivityManager) async {
-        let previousStatus = current.status.rawValue
-        // Optimistic
-        var snapshot = current
-        snapshot.status = newStatus
-        snapshot.statusSince = Date()
-        current = snapshot
-        persist()
-        // F12 + Q4 — chain the transition into the CRDT + audit log so
-        // offline-initiated status changes are defensibly timestamped
-        // and deterministically mergeable when we come back online.
-        chainHOSStatusChange(
-            from: previousStatus,
-            to: newStatus.rawValue,
-            source: "watch"
-        )
-        ComplicationRefresher.shared.reloadTimelines()
+    /// Change duty status from the wrist. The legal state is never updated
+    /// optimistically: a real coordinate is required, the server mutation is
+    /// idempotent, and the display changes only after a sourced HOS refresh.
+    func changeStatus(to newStatus: HOSStatus, auth: AuthStore, connectivity _: WatchConnectivityManager) async {
+        lastMutationError = nil
+        guard auth.isSignedIn else {
+            lastMutationError = "Sign in before changing duty status."
+            return
+        }
+        guard let location = DrivingSessionManager.shared.currentHOSLocationEvidence else {
+            lastMutationError = "Current GPS evidence is required before changing duty status."
+            return
+        }
 
-        // Report via the phone (keeps FMCSA log on a single actor)
-        connectivity.reportHOSStatusChange(
-            status: newStatus.rawValue,
-            odometer: nil,
-            location: nil
-        )
-
-        // Best-effort direct call (in case phone is unreachable).
-        // Server contract (routers/hos.ts:200-205) REQUIRES
-        // { newStatus: dutyStatusSchema, location: string } — the old
-        // { status, source, ts } shape was a zod BAD_REQUEST on every
-        // call, so no wrist duty change ever landed.
-        if auth.isSignedIn {
-            do {
-                let client = EsangClient(auth: auth)
-                _ = try await client.mutateJSON(
-                    "hos.changeStatus",
-                    input: [
-                        "newStatus": Self.serverDutyStatus(newStatus.rawValue),
-                        "location": "watch",
-                        "idempotencyKey": UUID().uuidString
-                    ]
-                )
-            } catch {
-                // Queue for retry
-                OfflineQueue.shared.enqueueHOSEvent(status: newStatus.rawValue, at: Date())
-            }
+        let idempotencyKey = UUID().uuidString
+        do {
+            let client = EsangClient(auth: auth)
+            _ = try await client.mutateJSON(
+                "hos.changeStatus",
+                input: [
+                    "newStatus": Self.serverDutyStatus(newStatus.rawValue),
+                    "location": location,
+                    "idempotencyKey": idempotencyKey
+                ]
+            )
+            await refresh(auth: auth)
+        } catch {
+            OfflineQueue.shared.enqueueHOSEvent(
+                status: newStatus.rawValue,
+                location: location,
+                at: Date(),
+                idempotencyKey: idempotencyKey
+            )
+            lastMutationError = "Duty change queued with its GPS evidence; the displayed status remains unchanged until confirmed."
         }
     }
 
@@ -171,6 +165,40 @@ final class HOSStore: ObservableObject {
     static func serverDutyStatus(_ watchRaw: String) -> String {
         watchRaw == "off" ? "off_duty" : watchRaw
     }
+
+    private func applyObservation(_ snapshot: WatchHOS, source: String) {
+        let previousStatus = currentObservation?.status.rawValue
+        current = snapshot
+        lastRefresh = snapshot.observedAt
+        persist()
+        if let previousStatus {
+            chainHOSStatusChange(
+                from: previousStatus,
+                to: snapshot.status.rawValue,
+                source: source
+            )
+        }
+        ComplicationRefresher.shared.reloadTimelines()
+    }
+
+    private static func currentObservationDate(_ raw: String, now: Date = Date()) -> Date? {
+        guard let observedAt = fractional.date(from: raw) ?? internet.date(from: raw) else { return nil }
+        let age = now.timeIntervalSince(observedAt)
+        guard age >= -(5 * 60), age <= 15 * 60 else { return nil }
+        return observedAt
+    }
+
+    private static let fractional: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private static let internet: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
 
     // MARK: - Tamper-evident + CRDT fan-out
 
@@ -225,37 +253,47 @@ final class HOSStore: ObservableObject {
     /// Hours → minutes conversion happens here; the server enum
     /// "off_duty" maps onto the watch enum's "off".
     private struct Remote: Decodable {
+        let trackingState: String?
+        let tracked: Bool?
+        let source: String?
+        let freshness: String?
         let status: String?
         let drivingRemaining: Double?
         let onDutyRemaining: Double?
         let cycleRemaining: Double?
 
-        /// nil when the payload carried no real values — the caller
-        /// must keep the existing snapshot in that case.
+        /// Only a complete, current, sourced observation may replace the
+        /// watch snapshot. Partial decoder success is not legal HOS evidence.
         var asHOS: WatchHOS? {
-            guard status != nil
-                || drivingRemaining != nil
-                || onDutyRemaining != nil
-                || cycleRemaining != nil else { return nil }
-            let mapped: HOSStatus = {
-                switch (status ?? "").lowercased() {
-                case "off_duty", "off": return .off
-                case "sleeper":         return .sleeper
-                case "driving":         return .driving
-                case "on_duty":         return .onDuty
-                default:                return .off
-                }
-            }()
-            func minutes(_ hours: Double?) -> Int {
-                guard let hours else { return 0 }
-                return max(0, Int((hours * 60).rounded()))
+            let mapped: HOSStatus?
+            switch status?.lowercased() {
+            case "off_duty", "off": mapped = .off
+            case "sleeper": mapped = .sleeper
+            case "driving": mapped = .driving
+            case "on_duty": mapped = .onDuty
+            default: mapped = nil
+            }
+            let normalizedSource = source?.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard tracked == true,
+                  trackingState == "tracked",
+                  let mapped,
+                  let normalizedSource, !normalizedSource.isEmpty,
+                  let freshness,
+                  let observedAt = HOSStore.currentObservationDate(freshness),
+                  let drivingRemaining, drivingRemaining.isFinite, drivingRemaining >= 0,
+                  let onDutyRemaining, onDutyRemaining.isFinite, onDutyRemaining >= 0,
+                  let cycleRemaining, cycleRemaining.isFinite, cycleRemaining >= 0 else {
+                return nil
             }
             return WatchHOS(
                 status: mapped,
-                driveRemainingMinutes: minutes(drivingRemaining),
-                windowRemainingMinutes: minutes(onDutyRemaining),
-                cycleRemainingMinutes: minutes(cycleRemaining),
-                statusSince: Date()
+                driveRemainingMinutes: Int((drivingRemaining * 60).rounded()),
+                windowRemainingMinutes: Int((onDutyRemaining * 60).rounded()),
+                cycleRemainingMinutes: Int((cycleRemaining * 60).rounded()),
+                statusSince: observedAt,
+                tracked: true,
+                source: normalizedSource,
+                observedAt: observedAt
             )
         }
     }

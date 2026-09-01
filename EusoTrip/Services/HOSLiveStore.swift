@@ -19,9 +19,9 @@
 //  for the dashboard snapshot (so we don't double-poll) and owns its
 //  own fetch path for the richer log data.
 //
-//  Single source of truth: the backend. Optimistic updates are allowed
-//  for duty transitions (so the 4-button picker feels instant), but
-//  every write is round-tripped and reconciled against the response.
+//  Single source of truth: the backend. A requested duty transition is
+//  presented as pending until both the mutation acknowledgement and a fresh
+//  readback agree. The app never paints a requested state as observed truth.
 //
 
 import Foundation
@@ -52,6 +52,10 @@ final class HOSLiveStore: ObservableObject {
     /// True while a duty-status transition is in flight — disables the
     /// picker so the driver can't double-tap during the round-trip.
     @Published private(set) var isChangingStatus: Bool = false
+
+    /// User intent waiting for server confirmation. This is intentionally
+    /// separate from `status`, which remains observed backend truth.
+    @Published private(set) var pendingDutyRequest: HOSDutyCode?
 
     /// Non-fatal error from the most recent fetch. Cleared when a
     /// fresh fetch succeeds.
@@ -193,18 +197,16 @@ final class HOSLiveStore: ObservableObject {
 
     // MARK: Duty-status transitions
 
-    /// Flip duty status from the iOS UI. Optimistically updates the
-    /// local snapshot so the picker feels instant, then reconciles
-    /// against the server response.
+    /// Flip duty status from the iOS UI. Intent remains pending until the
+    /// server acknowledges it and a fresh HOS readback reports the same state.
     ///
     /// Round-trip: `hos.changeStatus` → dashboard snapshot → today's log.
     ///
     /// `location` is the human-readable place string the backend writes
     /// into `hos_logs.location_description` per §395.8(h). Callers should
     /// pass `DriverHomeViewModel.lastKnownLocation` (or a reverse-geocoded
-    /// city/state) when available. Empty string is accepted by the
-    /// server but logs a compliance soft-warning — TODO: wire a shared
-    /// LocationService so every change-status site has a real fix.
+    /// city/state). A missing location fails closed before any regulated
+    /// write; no blank or synthetic location is persisted.
     @discardableResult
     func changeStatus(
         to new: HOSDutyCode,
@@ -213,56 +215,47 @@ final class HOSLiveStore: ObservableObject {
         loadId: String? = nil
     ) async -> Bool {
         guard !isChangingStatus else { return false }
+        let normalizedLocation = location.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedLocation.isEmpty else {
+            flashToast("Current location is required before changing duty status.")
+            return false
+        }
         isChangingStatus = true
-        defer { isChangingStatus = false }
-
-        // Optimistic — rewrite the dashboard snapshot so the 4-button
-        // picker highlights the new selection immediately. We do NOT
-        // promote `canDrive` to true on a Drive request: the FMCSA
-        // gates (11h drive bank, 14h on-duty window, 30-min break
-        // due, 70/8 cycle) are server-evaluated. If the driver hits
-        // the picker out of compliance, the backend rejects the
-        // transition AND the rollback below re-polls the truth. Old
-        // behavior (`canDrive: new == .driving ? true : s.canDrive`)
-        // briefly painted the orb green even when the server was
-        // about to reject — a real compliance footgun. We carry the
-        // server-side `canDrive` forward unchanged; the picker
-        // highlight is enough optimistic UX without faking the gate.
-        if var s = status {
-            s = HOSStatus(
-                drivingRemaining: s.drivingRemaining,
-                onDutyRemaining:  s.onDutyRemaining,
-                cycleRemaining:   s.cycleRemaining,
-                breakRequired:    s.breakRequired,
-                nextBreakDue:     s.nextBreakDue,
-                status:           new.rawValue,
-                canDrive:         s.canDrive,
-                canAcceptLoad:    s.canAcceptLoad
-            )
-            self.status = s
+        pendingDutyRequest = new
+        defer {
+            isChangingStatus = false
+            pendingDutyRequest = nil
         }
 
         do {
             let result = try await api.hos.changeStatus(
                 status: new,
                 source: "ios",
-                location: location,
+                location: normalizedLocation,
                 remark: remark,
                 loadId: loadId
             )
-            if let snap = result.snapshot { self.status = snap }
+            guard result.ok, result.newStatus == new.rawValue else {
+                flashToast("Duty status was not confirmed. Refresh and try again.")
+                return false
+            }
+            let fresh = try await api.hos.getStatus()
+            guard fresh.status == new.rawValue,
+                  fresh.tracked == true,
+                  fresh.freshnessState().isCurrent else {
+                self.status = fresh
+                flashToast("Duty status was accepted but the current HOS source has not confirmed it yet.")
+                return false
+            }
+            self.status = fresh
             await refreshLogs()
-            flashToast(result.message ?? "Status set to \(new.shortLabel)")
-            return result.ok
-        } catch EusoTripAPIError.queuedForOfflineReplay {
-            // Offline — the duty-status change was persisted to the Unified
-            // Outbox and will replay on reconnect. Keep the optimistic
-            // picker highlight (we do NOT re-poll, which would clobber it
-            // with the stale server snapshot) and tell the driver honestly.
-            flashToast("Duty status queued — will sync when you reconnect")
+            flashToast("Duty status confirmed as \(new.shortLabel).")
             return true
+        } catch EusoTripAPIError.queuedForOfflineReplay {
+            flashToast("Duty status is queued, not yet confirmed. It will sync when you reconnect.")
+            return false
         } catch {
-            // Roll back by re-polling
+            // Re-read observed truth; never retain user intent as current HOS.
             do {
                 let fresh = try await api.hos.getStatus()
                 self.status = fresh
@@ -300,28 +293,26 @@ final class HOSLiveStore: ObservableObject {
         let target = date ?? today?.date ?? Self.isoDayFormatter.string(from: Date())
         do {
             let result = try await api.hos.certifyLog(date: target, signature: signature)
-            // The server acks `{success, date, certifiedAt}` without
-            // echoing the day (hos.ts:208-212) — stamp the local copy so
-            // the certify button reflects the acknowledged signature.
-            if result.ok {
-                let certDate = result.date ?? target
-                if let t = today, t.date == certDate {
-                    today = t.certifiedCopy(at: result.certifiedAt)
-                }
-                if let idx = history.firstIndex(where: { $0.date == certDate }) {
-                    history[idx] = history[idx].certifiedCopy(at: result.certifiedAt)
-                }
+            guard result.ok else {
+                flashToast("Log certification was not confirmed.")
+                return false
             }
-            flashToast(result.message ?? "Log certified")
-            return result.ok
+            await refreshLogs()
+            let certDate = result.date ?? target
+            let confirmed = (today?.date == certDate && today?.certified == true)
+                || history.contains(where: { $0.date == certDate && $0.certified == true })
+            flashToast(confirmed
+                ? "Log certification confirmed."
+                : "Certification was accepted; source verification is still pending.")
+            return confirmed
         } catch EusoTripAPIError.queuedForOfflineReplay {
             // Defensive: certification isn't an enqueue-eligible mutation
             // today (a §395.8(g) signature is a legal event we don't replay
             // silently), so this branch normally won't fire — but if the
             // eligibility table ever grows to include it, surface the same
             // honest queued message instead of a hard error.
-            flashToast("Duty status queued — will sync when you reconnect")
-            return true
+            flashToast("Certification is queued, not yet confirmed.")
+            return false
         } catch {
             flashToast(Self.mutationFailureCopy(error, action: "certify log"))
             return false
@@ -344,15 +335,19 @@ final class HOSLiveStore: ObservableObject {
                 date: moment.map(HOSAPI.dayString),
                 time: moment.map(HOSAPI.timeString)
             )
+            guard result.ok else {
+                flashToast("Remark was not confirmed.")
+                return false
+            }
             await refreshLogs()
-            flashToast(result.message ?? "Remark added")
-            return result.ok
+            flashToast("Remark saved.")
+            return true
         } catch EusoTripAPIError.queuedForOfflineReplay {
             // Defensive: §395.8(j) remarks aren't enqueue-eligible today,
             // so this normally won't fire — but if the outbox ever covers
             // them, show the honest queued message rather than a hard fail.
-            flashToast("Duty status queued — will sync when you reconnect")
-            return true
+            flashToast("Remark is queued, not yet confirmed.")
+            return false
         } catch {
             flashToast(Self.mutationFailureCopy(error, action: "save remark"))
             return false
@@ -361,17 +356,17 @@ final class HOSLiveStore: ObservableObject {
 
     // MARK: Derived convenience
 
-    /// The currently-selected duty code, driven by the server snapshot.
-    /// Defaults to off-duty until the first fetch lands.
-    var currentDuty: HOSDutyCode {
-        HOSDutyCode(rawValue: status?.status ?? "off_duty") ?? .offDuty
+    /// The currently observed duty code. Nil means unavailable or malformed.
+    var currentDuty: HOSDutyCode? {
+        guard status?.hasCurrentObservation() == true else { return nil }
+        return status?.status.flatMap(HOSDutyCode.init(rawValue:))
     }
 
     /// Minutes until the §395.3(a)(3)(ii) 30-min break is required.
     /// nil when no break is approaching.
     var minutesUntilBreak: Int? {
-        guard let status else { return nil }
-        if status.breakRequired { return 0 }
+        guard let status, status.hasCurrentObservation() else { return nil }
+        if status.breakRequired == true { return 0 }
         guard let iso = status.nextBreakDue,
               let date = ISO8601DateFormatter().date(from: iso) else { return nil }
         let delta = Int(date.timeIntervalSinceNow / 60)
@@ -381,7 +376,11 @@ final class HOSLiveStore: ObservableObject {
     /// Most-recent uncertified day (so the 019 "Certify yesterday"
     /// button knows which day to operate on).
     var yesterdayUncertified: HOSDailyLog? {
-        history.first { !$0.certified && $0.date != today?.date }
+        history.first {
+            $0.hasCurrentLogEvidence
+                && $0.certified == false
+                && $0.date != today?.date
+        }
     }
 
     // MARK: Toast helper

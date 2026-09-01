@@ -47,7 +47,8 @@ private struct DetentionCycle: Identifiable {
     let monthLabel: String      // "April cycle"
     let boxes: Int
     let openCount: Int
-    let charge: Double
+    let charge: Double?
+    let currencyCode: String?
     /// Most-recent event ordering anchor (newest cycle first).
     let sortKey: String
 
@@ -70,9 +71,21 @@ private struct RailDetentionHistoryBody: View {
     private var boxCount: Int { dashboard?.totalEvents ?? events.count }
 
     /// Collected % of billed — the "recovered" headline.
-    private var collectedPct: Int {
-        guard let d = dashboard, d.billedAmount > 0 else { return 0 }
-        return Int((d.collectedAmount / d.billedAmount * 100).rounded())
+    private var collectedPct: Int? {
+        guard let billed = dashboard?.billedAmount,
+              let collected = dashboard?.collectedAmount,
+              billed.isFinite,
+              collected.isFinite,
+              billed > 0 else { return nil }
+        return Int((collected / billed * 100).rounded())
+    }
+
+    private var collectionRateValue: String {
+        collectedPct.map { "\($0)%" } ?? "Pending"
+    }
+
+    private var collectionRateSummary: String {
+        collectedPct.map { "\($0)% collected" } ?? "collection rate pending"
     }
 
     /// Disputed event count derived from the live event stream
@@ -85,12 +98,17 @@ private struct RailDetentionHistoryBody: View {
         return fromEvents
     }
 
-    private var billedAmount: Double { dashboard?.billedAmount ?? 0 }
+    private var billedAmount: Double? { dashboard?.billedAmount }
+    private var dashboardCurrencyCode: String? { dashboard?.currency?.rawValue }
 
     /// Fraction of the progress bar filled = collected / billed.
-    private var recoveredFraction: Double {
-        guard let d = dashboard, d.billedAmount > 0 else { return 0 }
-        return min(max(d.collectedAmount / d.billedAmount, 0), 1)
+    private var recoveredFraction: Double? {
+        guard let billed = dashboard?.billedAmount,
+              let collected = dashboard?.collectedAmount,
+              billed.isFinite,
+              collected.isFinite,
+              billed > 0 else { return nil }
+        return min(max(collected / billed, 0), 1)
     }
 
     /// Fold the live event stream into monthly billing cycles, newest first.
@@ -109,7 +127,14 @@ private struct RailDetentionHistoryBody: View {
         }
 
         let cycles: [DetentionCycle] = buckets.map { key, evs in
-            let charge = evs.reduce(into: 0.0) { $0 += $1.totalCharge }
+            let currencyCodes = Set(evs.compactMap { $0.currency?.rawValue })
+            let commerciallyComplete = evs.allSatisfy {
+                $0.totalCharge?.isFinite == true && $0.currency != nil
+            } && currencyCodes.count == 1
+            let charge = commerciallyComplete
+                ? evs.compactMap(\.totalCharge).reduce(0, +)
+                : nil
+            let currencyCode = commerciallyComplete ? currencyCodes.first : nil
             let openCount = evs.filter {
                 let s = ($0.billingStatus ?? $0.status ?? "").lowercased()
                 return s != "paid" && s != "collected" && s != "closed"
@@ -119,7 +144,8 @@ private struct RailDetentionHistoryBody: View {
                 return "\(key) cycle"
             }()
             return DetentionCycle(id: key, monthLabel: label, boxes: evs.count,
-                                  openCount: openCount, charge: charge, sortKey: key)
+                                  openCount: openCount, charge: charge,
+                                  currencyCode: currencyCode, sortKey: key)
         }
         return cycles.sorted { $0.sortKey > $1.sortKey }
     }
@@ -210,24 +236,27 @@ private struct RailDetentionHistoryBody: View {
                         .foregroundStyle(palette.textPrimary)
                         .padding(.horizontal, 14).padding(.vertical, 5)
                         .background(Color.white.opacity(0.08)).clipShape(Capsule())
-                    Text("recovered \(collectedPct)%")
+                    Text(collectedPct.map { "recovered \($0)%" } ?? "recovery pending")
                         .font(.system(size: 11, weight: .bold)).tracking(0.5)
-                        .foregroundStyle(Brand.success)
+                        .foregroundStyle(collectedPct == nil ? palette.textSecondary : Brand.success)
                         .padding(.horizontal, 14).padding(.vertical, 5)
-                        .background(Brand.success.opacity(0.22)).clipShape(Capsule())
+                        .background(
+                            (collectedPct == nil ? palette.bgCardSoft : Brand.success.opacity(0.22))
+                        )
+                        .clipShape(Capsule())
                     Spacer(minLength: 0)
                 }
 
                 // Lead figure + caption + DISPUTES count
                 HStack(alignment: .top, spacing: Space.s4) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(currencyFull(billedAmount))
+                        Text(currencyFull(billedAmount, currencyCode: dashboardCurrencyCode))
                             .font(.system(size: 26, weight: .bold)).monospacedDigit()
                             .foregroundStyle(LinearGradient.diagonal)
                         Text("billed last 90 days")
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(palette.textSecondary)
-                        Text("\(boxCount) boxes · \(collectedPct)% collected")
+                        Text("\(boxCount) boxes · \(collectionRateSummary)")
                             .font(.system(size: 11))
                             .foregroundStyle(palette.textTertiary)
                     }
@@ -247,8 +276,10 @@ private struct RailDetentionHistoryBody: View {
                     let w = geo.size.width
                     ZStack(alignment: .leading) {
                         Capsule().fill(Color.white.opacity(0.08))
-                        Capsule().fill(LinearGradient.diagonal)
-                            .frame(width: max(0, w * recoveredFraction))
+                        if let recoveredFraction {
+                            Capsule().fill(LinearGradient.diagonal)
+                                .frame(width: max(0, w * recoveredFraction))
+                        }
                     }
                 }
                 .frame(height: 6)
@@ -265,7 +296,7 @@ private struct RailDetentionHistoryBody: View {
                 Text("BILLED")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(.white.opacity(0.85))
-                Text(currencyCompact(billedAmount))
+                Text(currencyCompact(billedAmount, currencyCode: dashboardCurrencyCode))
                     .font(.system(size: 22, weight: .semibold)).monospacedDigit()
                     .foregroundStyle(.white)
             }
@@ -274,7 +305,7 @@ private struct RailDetentionHistoryBody: View {
             .background(LinearGradient.diagonal)
             .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
 
-            kpiCell(label: "COLLECTED", value: "\(collectedPct)%", color: Brand.success)
+            kpiCell(label: "COLLECTED", value: collectionRateValue, color: Brand.success)
             kpiCell(label: "DISPUTED", value: "\(disputedCount)", color: Brand.warning)
         }
     }
@@ -370,7 +401,7 @@ private struct RailDetentionHistoryBody: View {
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 6) {
                 StatusPill(text: pillText, kind: pillKind)
-                Text(currencyFull(cycle.charge))
+                Text(currencyFull(cycle.charge, currencyCode: cycle.currencyCode))
                     .font(.system(size: 14, weight: .bold)).monospacedDigit()
                     .foregroundStyle(valueColor)
             }
@@ -396,7 +427,7 @@ private struct RailDetentionHistoryBody: View {
                     .font(EType.mono(.caption))
                     .foregroundStyle(palette.textSecondary)
             }
-            Text("90-day rollup · collection rate \(collectedPct)% across the window")
+            Text("90-day rollup · \(collectionRateSummary) across the window")
                 .font(.system(size: 11))
                 .foregroundStyle(palette.textSecondary)
             Text("Carrier BNSF Intermodal · Eusorone Technologies (DU)")
@@ -417,13 +448,13 @@ private struct RailDetentionHistoryBody: View {
         var lines = [
             "Window: 90 days",
             "Boxes: \(boxCount)",
-            "Billed: \(currencyFull(billedAmount))",
-            "Collected: \(dashboard.map { currencyFull($0.collectedAmount) } ?? "-")",
+            "Billed: \(currencyFull(billedAmount, currencyCode: dashboardCurrencyCode))",
+            "Collected: \(currencyFull(dashboard?.collectedAmount, currencyCode: dashboardCurrencyCode))",
             "Disputed events: \(disputedCount)",
-            "Collection rate: \(collectedPct)%"
+            "Collection rate: \(collectionRateValue)"
         ]
         for cycle in cycles.prefix(4) {
-            lines.append("\(cycle.monthLabel): \(cycle.boxes) boxes, \(currencyFull(cycle.charge)), \(cycle.openCount) open")
+            lines.append("\(cycle.monthLabel): \(cycle.boxes) boxes, \(currencyFull(cycle.charge, currencyCode: cycle.currencyCode)), \(cycle.openCount) open")
         }
         return lines
     }
@@ -478,19 +509,33 @@ private struct RailDetentionHistoryBody: View {
     // MARK: - Currency formatting
 
     /// "$148,640" — full dollars, grouped, no cents.
-    private func currencyFull(_ v: Double) -> String {
+    private func currencyFull(_ v: Double?, currencyCode: String?) -> String {
+        guard let v, v.isFinite else { return "Pending" }
+        guard let currencyCode, !currencyCode.isEmpty else {
+            return "\(decimalFull(v)) · currency pending"
+        }
         let f = NumberFormatter()
         f.numberStyle = .currency
-        f.currencyCode = "USD"
+        f.currencyCode = currencyCode
         f.maximumFractionDigits = 0
-        return f.string(from: NSNumber(value: v)) ?? "$0"
+        return f.string(from: NSNumber(value: v)) ?? "\(decimalFull(v)) \(currencyCode)"
     }
 
     /// "$148.6K" / "$1.2M" — compact dollars for the KPI cell.
-    private func currencyCompact(_ v: Double) -> String {
-        if v >= 1_000_000 { return String(format: "$%.1fM", v / 1_000_000) }
-        if v >= 1_000     { return String(format: "$%.1fK", v / 1_000) }
-        return String(format: "$%.0f", v)
+    private func currencyCompact(_ v: Double?, currencyCode: String?) -> String {
+        guard let v, v.isFinite else { return "Pending" }
+        let amount: String
+        if v >= 1_000_000 { amount = String(format: "%.1fM", v / 1_000_000) }
+        else if v >= 1_000 { amount = String(format: "%.1fK", v / 1_000) }
+        else { amount = String(format: "%.0f", v) }
+        return currencyCode.map { "\(amount) \($0)" } ?? "\(amount) · currency pending"
+    }
+
+    private func decimalFull(_ v: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = 2
+        return formatter.string(from: NSNumber(value: v)) ?? String(format: "%.2f", v)
     }
 
     // MARK: - Load

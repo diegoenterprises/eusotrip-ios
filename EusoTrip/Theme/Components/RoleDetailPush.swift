@@ -59,6 +59,7 @@ struct EusoEdgeSwipeBack: ViewModifier {
                 // the leading edge and is decisively horizontal. Horizontal
                 // boards, maps, sliders, and carousels elsewhere keep their
                 // normal gesture ownership.
+                .contentShape(Rectangle())
                 .offset(x: interactiveOffset)
                 .simultaneousGesture(
                     DragGesture(minimumDistance: 12, coordinateSpace: .global)
@@ -83,6 +84,52 @@ struct EusoEdgeSwipeBack: ViewModifier {
         } else {
             content
         }
+    }
+}
+
+// MARK: - Shared role navigation path semantics
+
+/// The state machine for every notification-driven role stack. Role surfaces
+/// still own their route payloads, but tab selection, push de-duplication, and
+/// guarded pop behavior live here so explicit back and edge-swipe back cannot
+/// drift into different navigation semantics.
+enum RoleNavigationPathContract {
+    static func activeTab(
+        in stack: [String],
+        tabRoots: Set<String>,
+        fallback: String
+    ) -> String {
+        guard let root = stack.first, tabRoots.contains(root) else { return fallback }
+        return root
+    }
+
+    static func open(
+        _ destination: String,
+        tabRoots: Set<String>,
+        fallback: String,
+        stack: inout [String]
+    ) {
+        guard !destination.isEmpty else { return }
+        if tabRoots.contains(destination) {
+            stack = [destination]
+            return
+        }
+        if stack.first.map({ !tabRoots.contains($0) }) ?? true {
+            stack = [fallback]
+        }
+        guard stack.last != destination else { return }
+        stack.append(destination)
+    }
+
+    @discardableResult
+    static func pop(_ stack: inout [String]) -> Bool {
+        guard stack.count > 1 else { return false }
+        stack.removeLast()
+        return true
+    }
+
+    static func canPop(_ stack: [String]) -> Bool {
+        stack.count > 1
     }
 }
 

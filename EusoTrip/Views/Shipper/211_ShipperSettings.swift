@@ -66,8 +66,8 @@ struct ShipperSettings: View {
     /// Replaces the prior openURL("https://app.eusotrip.com/about")
     /// stub.
     @State private var showAboutSheet: Bool = false
-    @SceneStorage("shipper.settings.expandedSection") private var expandedSection = "account"
-    @SceneStorage("shipper.settings.returnAnchor") private var returnAnchor = "section-account"
+    @SceneStorage("shipper.settings.expandedSection") private var expandedSection = ""
+    @SceneStorage("shipper.settings.returnAnchor") private var returnAnchor = ""
 
     /// Closure injected by ContentView so role-tab destinations can
     /// fall through to other registry rows without owning the routing

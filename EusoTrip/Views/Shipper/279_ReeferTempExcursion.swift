@@ -51,10 +51,52 @@ private struct ReeferBody: View {
         let notes: String?
         let recordedAt: String?
 
-        /// Non-optional display temperature in °F for the chart + ledger.
-        /// `tempF` is the canonical wire field; 0 is an honest fallback when
-        /// a row omits it (rendered as 0.0°F, never a fabricated reading).
-        var displayTempF: Double { tempF ?? 0 }
+        private enum CodingKeys: String, CodingKey {
+            case id, zone, tempF, tempC, status, source, notes, recordedAt
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            id = try c.decodeIfPresent(String.self, forKey: .id)
+            zone = try c.decodeIfPresent(String.self, forKey: .zone)
+            tempF = Self.finiteDouble(c, .tempF)
+            tempC = Self.finiteDouble(c, .tempC)
+            status = try c.decodeIfPresent(String.self, forKey: .status)
+            source = try c.decodeIfPresent(String.self, forKey: .source)
+            notes = try c.decodeIfPresent(String.self, forKey: .notes)
+            recordedAt = try c.decodeIfPresent(String.self, forKey: .recordedAt)
+        }
+
+        /// Lenient °F/°C resolver aligned to the `{ min, max, current }`
+        /// assignment-temperature contract (web PR #144). Over tRPC the
+        /// value arrives as a finite number, `null`, a missing key, or —
+        /// when the server emitted a non-finite reading (superjson encodes
+        /// NaN/Infinity as the strings `"NaN"`/`"Infinity"`, and the iOS
+        /// transport decodes the raw `json` block without rehydrating
+        /// superjson meta) — a non-numeric string. Every non-finite / absent
+        /// form collapses to nil so the caller renders "—", never a
+        /// fabricated 0.0 and never a decode throw that drops the whole row.
+        private static func finiteDouble<K: CodingKey>(
+            _ c: KeyedDecodingContainer<K>,
+            _ key: K
+        ) -> Double? {
+            if let d = try? c.decodeIfPresent(Double.self, forKey: key), d.isFinite { return d }
+            if let i = try? c.decodeIfPresent(Int.self, forKey: key) { return Double(i) }
+            // `Double("NaN")` / `Double("Infinity")` parse to non-finite
+            // values, so the `.isFinite` gate maps the superjson special-
+            // number strings to nil rather than a fabricated reading.
+            if let s = try? c.decodeIfPresent(String.self, forKey: key),
+               let d = Double(s), d.isFinite { return d }
+            return nil
+        }
+
+        /// Display temperature in °F, or nil when the row carries no finite
+        /// reading (missing / null / NaN / non-finite `current`). Renders as
+        /// "—" everywhere it surfaces — never a fabricated 0.0°F.
+        var displayTempF: Double? {
+            guard let t = tempF, t.isFinite else { return nil }
+            return t
+        }
     }
     private struct ReadingsInput: Encodable { let loadId: Int }
     private struct AmbientInput: Encodable { let loadId: Int }
@@ -131,7 +173,9 @@ private struct ReeferBody: View {
     /// is contrasted against, taken from the SAME live `reeferTemp.getReadings`
     /// rows the chart plots. nil until a zone reports.
     private var cargoZonePeakF: Double? {
-        readings.compactMap(\.tempF).max()
+        // `displayTempF` is finite-guarded, so a NaN / non-finite `current`
+        // can never inflate (or NaN-poison) the peak the ambient contrasts.
+        readings.compactMap(\.displayTempF).max()
     }
 
     /// Ambient − cargo spread in °F. Positive = ambient hotter than cargo (the
@@ -182,8 +226,11 @@ private struct ReeferBody: View {
         var grouped: [String: [TempZone.Reading]] = [:]
         for r in readings {
             guard let ts = r.recordedAt, let t = parse(ts) else { continue }
+            // Skip rows with no finite reading — plotting a fabricated 0.0
+            // point would drag the trace to the floor and read as a fault.
+            guard let tf = r.displayTempF else { continue }
             let key = (r.zone ?? "center").lowercased()
-            grouped[key, default: []].append(.init(t: t, tempF: r.displayTempF))
+            grouped[key, default: []].append(.init(t: t, tempF: tf))
         }
         func zone(_ key: String, _ name: String, _ pos: TempZone.Position, _ color: Color) -> TempZone? {
             guard let rs = grouped[key]?.sorted(by: { $0.t < $1.t }), rs.count >= 2 else { return nil }
@@ -229,10 +276,19 @@ private struct ReeferBody: View {
                         Text(humanISO(r.recordedAt, format: "HH:mm")).font(EType.mono(.micro)).tracking(0.4).foregroundStyle(palette.textTertiary)
                         Text(r.zone ?? "-").font(EType.caption).foregroundStyle(palette.textSecondary)
                         Spacer(minLength: 0)
-                        Text(String(format: "%.1f°F", r.displayTempF))
-                            .font(.system(size: 13, weight: .heavy))
-                            .foregroundStyle(r.displayTempF > 38 || r.displayTempF < 33 ? Brand.danger : palette.textPrimary)
-                            .monospacedDigit()
+                        if let t = r.displayTempF {
+                            Text(String(format: "%.1f°F", t))
+                                .font(.system(size: 13, weight: .heavy))
+                                .foregroundStyle(t > 38 || t < 33 ? Brand.danger : palette.textPrimary)
+                                .monospacedDigit()
+                        } else {
+                            // Honest "—": no finite reading logged for this row
+                            // (missing / NaN `current`), never a fabricated 0.0°F.
+                            Text("—")
+                                .font(.system(size: 13, weight: .heavy))
+                                .foregroundStyle(palette.textTertiary)
+                                .monospacedDigit()
+                        }
                     }
                 }
             }

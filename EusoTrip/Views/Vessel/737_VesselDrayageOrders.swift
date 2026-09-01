@@ -137,6 +137,7 @@ private struct VesselDrayageOrdersBody: View {
     @State private var draftRate = ""
     @State private var draftHazmat = false
     @State private var draftNotes = ""
+    @State private var draftIdempotencyKey = UUID().uuidString
 
     // Hero
     @State private var activeCount = 0
@@ -330,7 +331,7 @@ private struct VesselDrayageOrdersBody: View {
         HStack(spacing: 8) {
             CTAButton(title: busyAction == "create" ? "Creating..." : "New drayage order",
                       action: {
-                          if draftPortCode.isEmpty { draftPortCode = trimmed(filterPortCode) ?? "" }
+                          resetDraft()
                           showNewOrder = true
                       },
                       trailingIcon: "plus")
@@ -621,7 +622,8 @@ private struct VesselDrayageOrdersBody: View {
                     weight: Double(trimmed(draftWeight) ?? ""),
                     rate: Double(trimmed(draftRate) ?? ""),
                     hazmat: draftHazmat,
-                    notes: trimmed(draftNotes)
+                    notes: trimmed(draftNotes),
+                    idempotencyKey: draftIdempotencyKey
                 )
             )
             actionBanner = "Created \(out.orderNumber ?? out.id ?? "drayage order")."
@@ -661,6 +663,7 @@ private struct VesselDrayageOrdersBody: View {
         draftRate = ""
         draftHazmat = false
         draftNotes = ""
+        draftIdempotencyKey = UUID().uuidString
     }
 
     // MARK: - Field formatters
@@ -818,6 +821,7 @@ private struct DrayCreateInput737: Encodable {
     let rate: Double?
     let hazmat: Bool
     let notes: String?
+    let idempotencyKey: String
 }
 
 private struct DrayCreateOut737: Decodable {

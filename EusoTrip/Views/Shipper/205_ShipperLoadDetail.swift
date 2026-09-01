@@ -7,7 +7,7 @@
 //  applied: gradient TopBar (eyebrow with cargo type + load id mono +
 //  back chevron + lane title + kebab), IridescentHairline, hero map
 //  (gradient bg + grid + I-45 highway curve + origin/truck/destination
-//  pins + ETA + distance pills), gradient-rim money card with hazmat
+//  pins + planned-time + projection-truth pills), gradient-rim money card with hazmat
 //  pills + amount + rate-line + progress %, carrier card with gradient
 //  avatar + ON TIME pill, documents row (BOL · Rate-con · Insurance),
 //  bottom CTA pair (View on map · Message eSang).
@@ -128,8 +128,11 @@ struct ShipperLoadDetail: View {
     /// Real road geometry for a truck load's pickup-to-delivery corridor.
     /// Non-road loads remain marker-only until a mode-specific provider
     /// supplies real route geometry.
-    /// Loaded by `refreshRoutePolyline()` from `.task`/`refreshAll`.
-    @State private var routePolyline: [HereLatLng] = []
+    /// Exact server-owned mode-native route. The renderer keeps every
+    /// LineString/MultiLineString member independent.
+    @State private var canonicalRouteLines: [[HereLatLng]] = []
+    @State private var canonicalRouteStatus: String?
+    @State private var canonicalRouteVersion: Int?
 
     private var lifecycleVertical: TripVertical {
         TripVertical(
@@ -183,6 +186,12 @@ struct ShipperLoadDetail: View {
                     driverReadinessCard
                     nrcCardIfHazmat7
                     documentsRow
+                    // §27 — commodity / cross-border addenda. Each row is
+                    // a real drill-down into a per-load record surface and
+                    // is rendered only when THIS load's own attributes make
+                    // it applicable, so the group disappears entirely on a
+                    // plain domestic dry-van move.
+                    commodityAddendaRow
                     contentExtras
                     // RIOS §11/§12 — sanctions screening of every load party
                     // (shipper/carrier/driver) before transact.
@@ -1134,7 +1143,7 @@ struct ShipperLoadDetail: View {
     // bright against the dark-mode shipper shell, and never actually
     // connected to HERE — the route was a fake bezier curve. Now it
     // renders the actual road network around the pickup → delivery
-    // corridor with auto dark/light tile style. ETA + progress pills
+    // corridor with auto dark/light tile style. Planned-time + projection pills
     // overlay on top as a `.overlay` so the live status grammar still
     // reads at a glance.
 
@@ -1182,7 +1191,7 @@ struct ShipperLoadDetail: View {
         case .empty:            return "Load not found"
         case .loaded(let opt):
             if opt == nil { return "Load not found" }
-            return "Live route, \(originLabel) to \(destinationLabel), \(progressPct)% complete, \(etaLine)"
+            return "Verified route, \(originLabel) to \(destinationLabel), progress awaiting current trip evidence, \(etaLine)"
         case .error:            return "Couldn't load this route. Retry available."
         }
     }
@@ -1195,16 +1204,18 @@ struct ShipperLoadDetail: View {
                 // renderer the plan serves. Pickup/delivery pins + a route
                 // connector layered on the vector basemap; dark/light native.
                 //
-                // Only paint verified HERE road geometry for truck loads.
-                // Rail and marine loads keep their real endpoint markers but
-                // never imply a continental road path or road traffic feed.
-                let routeLine: [HereLatLng] = lifecycleVertical == .truck && routePolyline.count >= 2
-                    ? routePolyline
-                    : []
+                let mapTransportMode = EusoTripMapTransportMode(
+                    canonicalValue: liveDetail?.transportMode
+                )
                 let layers: [HereMapLayer] = {
-                    var result: [HereMapLayer] = []
-                    if routeLine.count >= 2 {
-                        result.append(.route(polyline: routeLine, colorHex: "#1473FF"))
+                    var result: [HereMapLayer] = canonicalRouteLines.enumerated().map { index, line in
+                        .eusoRoute(
+                            polyline: line,
+                            state: canonicalRoutePurpose == .activeJob ? .active : .planned,
+                            label: index == 0
+                                ? "Eusorone \(mapTransportMode.rawValue) route plan version \(canonicalRouteVersion ?? 0)"
+                                : nil
+                        )
                     }
                     result.append(.markers([
                         .init(at: .init(lane.pickup), kind: .pickup, label: lane.originTitle),
@@ -1213,14 +1224,14 @@ struct ShipperLoadDetail: View {
                     return result
                 }()
                 HereLiveMapView(
-                    center: .init(
-                        (lane.pickup.latitude + lane.delivery.latitude) / 2,
-                        (lane.pickup.longitude + lane.delivery.longitude) / 2
-                    ),
+                    center: canonicalRouteLines.lazy.compactMap(\.first).first
+                        ?? .init(lane.pickup),
                     zoom: 6,
-                    route: routeLine,
+                    route: [],
                     baseLayers: layers,
-                    addOns: lifecycleVertical == .truck ? .shipperTracking : .weather
+                    addOns: mapTransportMode == .truck ? .shipperTracking : .weather,
+                    activeJob: canonicalRoutePurpose == .activeJob,
+                    mapModeContext: .unconfirmed(mapTransportMode)
                 )
             } else {
                 // Detail is live but coords haven't been geocoded yet —
@@ -1246,6 +1257,18 @@ struct ShipperLoadDetail: View {
                         .padding(.leading, 10)
                     Spacer()
                 }
+            }
+            if let canonicalRouteStatus {
+                Text(canonicalRouteStatus)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(palette.textSecondary)
+                    .padding(.horizontal, 10).padding(.vertical, 6)
+                    .background(palette.bgCard.opacity(0.92))
+                    .overlay(Capsule().strokeBorder(Brand.warning.opacity(0.45)))
+                    .clipShape(Capsule())
+                    .padding(10)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                    .accessibilityLabel(canonicalRouteStatus)
             }
         }
     }
@@ -1309,53 +1332,83 @@ struct ShipperLoadDetail: View {
     private var laneForMap: HereMapView.Lane? {
         guard let p = liveDetail?.pickupLocation,
               let d = liveDetail?.deliveryLocation,
-              let pLat = p.lat, let pLng = p.lng,
-              let dLat = d.lat, let dLng = d.lng,
-              !(pLat == 0 && pLng == 0), !(dLat == 0 && dLng == 0) else { return nil }
+              let pickup = LatLongParser.validatedCoordinate(
+                  latitude: p.lat,
+                  longitude: p.lng
+              ),
+              let delivery = LatLongParser.validatedCoordinate(
+                  latitude: d.lat,
+                  longitude: d.lng
+              ) else { return nil }
         return HereMapView.Lane(
             id: "load_\(loadId)",
             originTitle: originLabel,
             destinationTitle: destinationLabel,
-            pickup: CLLocationCoordinate2D(latitude: pLat, longitude: pLng),
-            delivery: CLLocationCoordinate2D(latitude: dLat, longitude: dLng)
+            pickup: pickup,
+            delivery: delivery
         )
     }
 
-    /// Resolves the pickup→delivery corridor via HERE Routing v8 and decodes
-    /// its section polyline into `routePolyline` — the real curved road
-    /// geometry, not a straight 2-point segment. Truck-aware via the default
-    /// `.standardUSSemiLoaded` profile. On any failure (missing lane, HERE
-    /// error, or fewer than two decoded points) the polyline stays empty and
-    /// the hero map remains marker-only. Rail and marine modes are skipped.
+    private var canonicalRoutePurpose: CanonicalRoutePlanClient.Purpose {
+        let status = liveDetail?.status.lowercased() ?? ""
+        let activeStates = [
+            "assigned", "accepted", "dispatched", "en_route", "enroute",
+            "in_transit", "at_pickup", "loaded", "at_delivery", "delivered"
+        ]
+        return activeStates.contains(where: status.contains) ? .activeJob : .posting
+    }
+
+    /// Resolve through the server authority using subject + purpose only.
     @MainActor
-    private func refreshRoutePolyline() async {
-        guard lifecycleVertical == .truck, let lane = laneForMap else {
-            routePolyline = []
+    private func refreshCanonicalRoute() async {
+        canonicalRouteLines = []
+        canonicalRouteStatus = nil
+        canonicalRouteVersion = nil
+        guard let numericId = Int(loadId) ?? liveDetail?.numericId else {
+            canonicalRouteStatus = "Canonical route pending a persisted load identity"
             return
         }
-        let stops = HereStops(
-            origin: lane.pickup,
-            destination: lane.delivery
-        )
         do {
-            let resp = try await HereRoutingClient.shared.route(
-                stops: stops, profile: .standardUSSemiLoaded)
-            guard let section = resp.routes.first?.sections.first else {
-                routePolyline = []
-                return
+            let result = try await CanonicalRoutePlanClient.shared.planLoad(
+                id: numericId,
+                purpose: canonicalRoutePurpose
+            )
+            switch result {
+            case .persisted(let persisted):
+                applyCanonicalRoute(persisted.route)
+            case .pending(let pending):
+                canonicalRouteStatus = pending.blockers.first?.message
+                    ?? "Canonical mode-native route pending verified authority"
+                await readExistingCanonicalRoute(loadId: numericId)
             }
-            let decoded = HereRoutingClient.polyline(for: section)
-            routePolyline = decoded.count >= 2 ? decoded.map { HereLatLng($0) } : []
         } catch {
-            // Make route failure diagnosable. HERE Routing v8 uses
-            // the OAuth2 Bearer credential (HERE access key id/secret via
-            // the authenticated HERE server proxy) — separate from the JS apiKey that
-            // renders the map tiles. So the basemap can draw while the route
-            // 401/403s and collapses to a straight pickup→delivery line. This
-            // was previously swallowed silently; surface the real reason.
-            print("[LoadDetail] HERE route fetch failed; showing endpoints only: \((error as? HereMapsError)?.errorDescription ?? String(describing: error))")
-            routePolyline = []
+            canonicalRouteStatus = error.eusoUserCopy
+            await readExistingCanonicalRoute(loadId: numericId)
         }
+    }
+
+    @MainActor
+    private func readExistingCanonicalRoute(loadId: Int) async {
+        do {
+            applyCanonicalRoute(
+                try await CanonicalRoutePlanClient.shared.getBoundLoad(id: loadId)
+            )
+        } catch {
+            if canonicalRouteStatus == nil { canonicalRouteStatus = error.eusoUserCopy }
+        }
+    }
+
+    @MainActor
+    private func applyCanonicalRoute(_ route: CanonicalRoutePlanClient.BoundRoutePlan) {
+        guard let payload = route.rendererPayload else {
+            canonicalRouteLines = []
+            canonicalRouteVersion = nil
+            canonicalRouteStatus = "Canonical route exists but is not released for rendering"
+            return
+        }
+        canonicalRouteLines = payload.lines
+        canonicalRouteVersion = payload.identity.version
+        canonicalRouteStatus = nil
     }
 
     private var originLabel: String {
@@ -1366,36 +1419,13 @@ struct ShipperLoadDetail: View {
         let city = liveDetail?.deliveryLocation?.city ?? ""
         return city.isEmpty ? "DESTINATION" : city.uppercased()
     }
-    private var progressPct: Int {
-        // Without telemetry.getLiveLocation, derive from status.
-        guard let d = liveDetail else { return 0 }
-        switch d.status.lowercased() {
-        case "posted":              return 0
-        case "bidding":             return 10
-        case "awarded", "assigned": return 25
-        case "pickup":              return 35
-        case "in_transit", "in transit", "loading": return 68
-        case "delivery", "delivering": return 85
-        case "paperwork":           return 95
-        case "closed", "delivered", "complete", "completed", "paid": return 100
-        default:                    return 0
-        }
-    }
-    private var truckProgressFraction: CGFloat {
-        CGFloat(progressPct) / 100.0
-    }
     private var etaLine: String {
         if let d = liveDetail, let eta = d.estimatedDeliveryDate ?? d.deliveryDate, !eta.isEmpty {
-            return "ETA \(formatTime(eta))"
+            return "PLANNED \(formatTime(eta))"
         }
-        return "ETA -"
+        return "PLANNED -"
     }
-    private var progressMilesLine: String {
-        guard let d = liveDetail, let dist = d.distance, dist > 0 else { return "- mi" }
-        let total = Int(dist.rounded())
-        let driven = Int((Double(total) * Double(progressPct) / 100.0).rounded())
-        return "\(driven) / \(total) mi"
-    }
+    private var progressMilesLine: String { "PROJECTION PENDING" }
 
     private func pinDot(gradient: Bool = false, magenta: Bool = false) -> some View {
         ZStack {
@@ -1432,7 +1462,7 @@ struct ShipperLoadDetail: View {
         // tile), so the ink must always be a fixed dark color — NOT
         // palette.textPrimary, which is near-white in dark mode and
         // rendered the pill white-on-white / unreadable (the founder's
-        // "cannot read writing" feedback on the ETA + miles pills).
+        // "cannot read writing" feedback on the planned-time + projection pills).
         Text(text)
             .font(.system(size: 11, weight: .bold)).tracking(0.4).monospacedDigit()
             .foregroundStyle(Color(hex: 0x0D1117))
@@ -1525,8 +1555,8 @@ struct ShipperLoadDetail: View {
                             Text("PROGRESS")
                                 .font(EType.micro).tracking(0.6)
                                 .foregroundStyle(palette.textTertiary)
-                            Text("\(progressPct)%")
-                                .font(.system(size: 22, weight: .bold).monospacedDigit())
+                            Text("PENDING")
+                                .font(.system(size: 14, weight: .bold).monospacedDigit())
                                 .foregroundStyle(palette.textPrimary)
                             Text(progressMilesLine)
                                 .font(EType.caption)
@@ -1798,6 +1828,146 @@ struct ShipperLoadDetail: View {
         .overlay(RoundedRectangle(cornerRadius: Radius.lg)
                     .strokeBorder(palette.borderFaint))
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+    }
+
+    // MARK: - Commodity / cross-border addenda (§27 inbound edges)
+
+    /// One drill-down destination for this load.
+    private struct AddendaLink205: Identifiable {
+        let id: String          // registry screen id
+        let title: String
+        let subtitle: String
+        let systemImage: String
+    }
+
+    /// Only the addenda this load actually qualifies for. A load with no
+    /// hazmat class, no temperature control and no recorded cross-border
+    /// pair produces an empty list and the whole group is hidden — a row
+    /// that would only ever open an "operation does not apply" screen is
+    /// noise, not navigation.
+    private var applicableAddenda: [AddendaLink205] {
+        guard let detail = liveDetail else { return [] }
+        var links: [AddendaLink205] = []
+
+        let equipmentSignal = "\(detail.cargoType ?? "") \(detail.equipmentType ?? "")".lowercased()
+        let temperatureControlled = equipmentSignal.contains("reefer")
+            || equipmentSignal.contains("refrigerat")
+            || equipmentSignal.contains("temp")
+            || equipmentSignal.contains("food_grade")
+        if temperatureControlled {
+            links.append(AddendaLink205(
+                id: "204B",
+                title: "Cold-chain spec",
+                subtitle: "FSMA continuous record · USDA setpoint band",
+                systemImage: "thermometer.snowflake"
+            ))
+        }
+
+        if detail.hazmatClass?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+            links.append(AddendaLink205(
+                id: "204C",
+                title: "Hazmat manifest gate",
+                subtitle: "49 CFR / PHMSA validation for this load",
+                systemImage: "exclamationmark.triangle"
+            ))
+        }
+
+        let origin = detail.originCountry?.uppercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        let destination = detail.destCountry?.uppercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        if let origin, let destination, !origin.isEmpty, !destination.isEmpty, origin != destination {
+            links.append(AddendaLink205(
+                id: "216B",
+                title: "Customs gate",
+                subtitle: "Required filings · clearance verdict",
+                systemImage: "globe.americas"
+            ))
+            links.append(AddendaLink205(
+                id: "216D",
+                title: "USMCA origin",
+                subtitle: "Preferential-origin rules check",
+                systemImage: "checkmark.seal"
+            ))
+            links.append(AddendaLink205(
+                id: "216F",
+                title: "Border wait",
+                subtitle: "Ranked crossings · CBP feed state",
+                systemImage: "road.lanes"
+            ))
+        }
+
+        return links
+    }
+
+    @ViewBuilder
+    private var commodityAddendaRow: some View {
+        let links = applicableAddenda
+        if !links.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("COMMODITY & CROSS-BORDER")
+                    .font(EType.micro).tracking(0.8)
+                    .foregroundStyle(palette.textTertiary)
+                    .padding(.horizontal, Space.s4)
+                    .padding(.top, Space.s4)
+                    .padding(.bottom, Space.s2)
+                ForEach(Array(links.enumerated()), id: \.element.id) { index, link in
+                    addendaLinkRow(link)
+                    if index < links.count - 1 {
+                        Divider().overlay(palette.borderFaint).padding(.leading, 56)
+                    }
+                }
+            }
+            .background(palette.bgCard)
+            .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                        .strokeBorder(palette.borderFaint))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        }
+    }
+
+    private func addendaLinkRow(_ link: AddendaLink205) -> some View {
+        Button {
+            openAddendum(link.id)
+        } label: {
+            HStack(alignment: .center, spacing: Space.s3) {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Brand.info.opacity(0.18))
+                    .frame(width: 36, height: 36)
+                    .overlay(
+                        Image(systemName: link.systemImage)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(Brand.info)
+                    )
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(link.title)
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(palette.textPrimary)
+                    Text(link.subtitle)
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                }
+                Spacer(minLength: Space.s2)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(palette.textTertiary)
+            }
+            .padding(.horizontal, Space.s4)
+            .padding(.vertical, Space.s3)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(link.title). \(link.subtitle)")
+    }
+
+    /// Routes to a §27 addendum carrying THIS load's id. The Shipper
+    /// surface captures the payload for these ids (RoleSurfaceRouter
+    /// `commodityAddendaIds`) and mounts the screen with a real load.
+    private func openAddendum(_ screenId: String) {
+        NotificationCenter.default.post(
+            name: .eusoShipperNavSwap,
+            object: nil,
+            userInfo: ["screenId": screenId, "loadId": loadId]
+        )
     }
 
     // MARK: - Extras (EXTRA-OK kept beneath wireframe recipe)
@@ -2331,7 +2501,7 @@ struct ShipperLoadDetail: View {
         // Detail (and thus laneForMap coords) is now resolved — fetch the
         // real road geometry for the hero map. Skips vessel legs and folds
         // any failure to the marker-only state inside the loader.
-        await refreshRoutePolyline()
+        await refreshCanonicalRoute()
     }
 
     /// Pull the listing-trust verdict for this load. Verdict comes

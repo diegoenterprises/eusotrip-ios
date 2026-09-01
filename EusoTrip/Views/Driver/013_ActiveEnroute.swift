@@ -22,16 +22,12 @@
 //    • `Call shipper` deeplinks to `tel:` using the shipper's
 //      phone from the Load record; disables honestly ("No phone
 //      on file") while the wire shape carries no contact phone.
-//    • The HUD figures (ETA clock, remaining mi, remaining drive
-//      time, approach progress) are computed LIVE from a HERE
-//      Routing v8 leg between the driver's CoreLocation fix and
-//      the pickup coordinate. No seeded constants — any field
-//      without a live source renders an honest em-dash "-"
-//      (e.g. instantaneous FUEL BURN: no truck-telemetry feed
-//      exists, so it is always "-").
-//    • `HereLiveMapView` renders the OMV vector map + a polyline
-//      from pickup to delivery. Truck-aware routing is computed
-//      via HERE Routing v8 per the doctrine.
+//    • `route.plan` resolves and persists the exact mode-native route;
+//      this client supplies only load identity + active-job purpose.
+//    • ETA, remaining distance/time, current instruction, and progress
+//      stay neutral until the server returns an exact route projection.
+//    • `HereLiveMapView` renders independent canonical lines plus a
+//      separately sourced, licensed Live Operations observation.
 //
 //  Role + vertical awareness:
 //    • DRIVER / CATALYST / ESCORT → "En route · Pickup"
@@ -55,8 +51,6 @@
 //
 
 import SwiftUI
-import MapKit
-import CoreLocation
 import UIKit
 
 // MARK: - Screen
@@ -79,41 +73,19 @@ struct ActiveEnroute: View {
     @StateObject private var lifecycle = TripLifecycleStore()
     @State private var activeLoad: Load?
 
-    // MARK: - Live nav state (HERE Routing v8 · current fix → pickup)
+    // MARK: - Canonical route + licensed live evidence
     //
-    // FOUNDER BAR: every HUD figure below is computed from a real
-    // source — the HERE-routed leg from the driver's live GPS fix
-    // to the pickup coordinate, or the load's own pickup window.
-    // There are NO seeded constants. When a source isn't available
-    // (no active load, no GPS fix, no truck-telemetry fuel feed),
-    // the field renders an honest em-dash "-".
-
-    /// Remaining distance to the pickup, in meters, from the last
-    /// HERE route between the live GPS fix and the pickup coordinate.
-    @State private var remainingMeters: Double?
-    /// Remaining drive time to pickup, in seconds (HERE summary).
-    @State private var remainingSeconds: Double?
-    /// ISO-8601 arrival time HERE computed for the pickup.
-    @State private var etaISO: String?
-    /// Live traffic delay in seconds (HERE traffic-aware duration −
-    /// baseDuration, set only when a departureTime is supplied). Nil when
-    /// HERE ships no base or there's no measurable delay.
-    @State private var trafficDelaySeconds: Double?
+    // The client identifies only the load and purpose. Mode, endpoints,
+    // equipment profile, graph, source evidence, geometry, and instructions
+    // are resolved and committed by route.plan on the server.
+    @State private var canonicalRouteLines: [[HereLatLng]] = []
+    @State private var canonicalRouteStatus: String?
+    @State private var canonicalRouteVersion: Int?
+    @State private var liveTruckObservation: LiveOperationsClient.Observation?
+    @State private var liveTruckStatus: HereLiveOperationsStatus?
     /// HOS-reachability isoline ring (how far the driver can legally drive on
     /// the remaining clock). Empty when unknown — no layer drawn.
     @State private var isolinePolygon: [HereLatLng] = []
-    /// First-measured fix→pickup distance (meters). Captured once so
-    /// the approach-progress bar has an honest live denominator: the
-    /// fraction is (baseline − remaining) / baseline, both numbers
-    /// being real HERE measurements.
-    @State private var baselineMeters: Double?
-
-    /// Decoded HERE Routing v8 section polyline for the pickup→delivery
-    /// corridor — the real road geometry painted on the basemap. Empty
-    /// until the route resolves; the map then falls back to the straight
-    /// pickup→delivery base line (never a fabricated path). Mirrors 035.
-    @State private var routePolyline: [HereLatLng] = []
-
     /// §3c receiver fence for the corridor terminus (map-layer adoption
     /// 2026-06-10). Resolved from a REAL `tracking.getGeofences` row
     /// matched against the load's delivery coordinate — the ring draws
@@ -121,17 +93,6 @@ struct ActiveEnroute: View {
     /// covers the receiver → NO ring is painted (honest absence; the
     /// radius is never invented).
     @State private var receiverFence: TrackingGeofencesAPI.ResolvedFence?
-
-    // L13-3 turn-by-turn: `HereRouteSection` now decodes the `actions`
-    // array (HERE-authored maneuvers), and `TurnByTurnNavigator` projects
-    // each live GPS fix onto the route to drive the live turn banner + voice
-    // prompts + deviation reroute. Gated behind the `tbtEnabled` remote flag
-    // (default false for the first TestFlight); when the flag is OFF the
-    // facade `topManeuverCard` renders the honest remaining-distance heading
-    // + pickup road/city from the load, never a fabricated exit string.
-    @StateObject private var navigator = TurnByTurnNavigator()
-    @AppStorage("tbtEnabled") private var tbtEnabled = false
-    @State private var showManeuverSteps = false
 
     // L08-9 · Astra hazmat placard scan. Presented as a SHEET (never a nav
     // push) from a hazmat-gated CTA in the bottom sheet. `lastPlacardUN`
@@ -147,15 +108,9 @@ struct ActiveEnroute: View {
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {
-                if tbtEnabled, navigator.currentManeuver != nil {
-                    liveTurnBanner
-                        .padding(.horizontal, Space.s3)
-                        .padding(.top, Space.s2)
-                } else {
-                    topManeuverCard
-                        .padding(.horizontal, Space.s3)
-                        .padding(.top, Space.s2)
-                }
+                topManeuverCard
+                    .padding(.horizontal, Space.s3)
+                    .padding(.top, Space.s2)
                 weatherRerouteBanner
                     .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s2)
@@ -168,20 +123,6 @@ struct ActiveEnroute: View {
         .screenTileRoot()
         .eusoRefreshTask { await hydrateLiveTrip() }
         .eusoRefreshTask { await refreshHosReachability() }
-        // L13-3 live fix feed — drives maneuver advance + voice + deviation.
-        .onReceive(DriverLocationResolver.shared.$lastLocation.compactMap { $0 }) { fix in
-            guard tbtEnabled else { return }
-            navigator.ingest(fix: fix)
-        }
-        // Deviation → re-request a truck route from the current fix, then
-        // restart the navigator on the new geometry (which clears isRerouting).
-        .onChange(of: navigator.isRerouting) { _, rerouting in
-            guard tbtEnabled, rerouting,
-                  let load = activeLoad,
-                  let fix = DriverLocationResolver.shared.lastLocation else { return }
-            Task { await rerouteFrom(fix, load: load) }
-        }
-        .sheet(isPresented: $showManeuverSteps) { maneuverStepsSheet }
     }
 
     // MARK: - Product + vertical awareness
@@ -209,10 +150,13 @@ struct ActiveEnroute: View {
         if ctx.vertical == .truck,
            let load = activeLoad,
            let p = load.pickupLocation, let d = load.deliveryLocation,
-           !(p.lat == 0 && p.lng == 0), !(d.lat == 0 && d.lng == 0) {
+           let pickupCoordinate = p.coordinatePair,
+           let deliveryCoordinate = d.coordinatePair {
             WeatherRerouteBanner(
-                origin: HereMapsAPI.LatLng(lat: p.lat, lng: p.lng),
-                destination: HereMapsAPI.LatLng(lat: d.lat, lng: d.lng)
+                origin: HereMapsAPI.LatLng(lat: pickupCoordinate.lat,
+                                           lng: pickupCoordinate.lng),
+                destination: HereMapsAPI.LatLng(lat: deliveryCoordinate.lat,
+                                                lng: deliveryCoordinate.lng)
             )
         }
     }
@@ -230,8 +174,8 @@ struct ActiveEnroute: View {
         let load = try? await EusoTripAPI.shared.loads.getById(n)
         activeLoad = load
         if let load {
-            await refreshLiveNav(for: load)
-            await refreshRoutePolyline(for: load)
+            await refreshCanonicalRoute(for: load)
+            await refreshLicensedTruckObservation(for: load)
             await resolveReceiverFence(for: load)
         }
     }
@@ -245,157 +189,129 @@ struct ActiveEnroute: View {
     @MainActor
     private func resolveReceiverFence(for load: Load) async {
         guard let delivery = load.deliveryLocation,
-              !(delivery.lat == 0 && delivery.lng == 0) else {
+              let coordinate = LatLongParser.validatedCoordinate(
+                  latitude: delivery.lat,
+                  longitude: delivery.lng
+              ) else {
             receiverFence = nil
             return
         }
         receiverFence = await EusoTripAPI.shared.trackingGeofences
-            .fence(near: delivery.lat, delivery.lng)
+            .fence(near: coordinate.latitude, coordinate.longitude)
     }
 
-    /// Resolves the pickup→delivery corridor via HERE Routing v8 and decodes
-    /// its section polyline into the live route line painted on the basemap —
-    /// the real road geometry, not a 2-point great-circle straight segment.
-    /// On any failure (missing coords, HERE error) the polyline stays empty
-    /// and the map draws the straight pickup→delivery base line instead.
+    /// Resolves the exact server-owned active-job route. This screen never
+    /// submits endpoints, mode, profile facts, graph facts, or geometry.
     @MainActor
-    private func refreshRoutePolyline(for load: Load) async {
-        guard let pickup = load.pickupLocation,
-              let delivery = load.deliveryLocation,
-              !(pickup.lat == 0 && pickup.lng == 0),
-              !(delivery.lat == 0 && delivery.lng == 0) else {
-            routePolyline = []
-            return
-        }
-        let stops = HereStops(
-            origin: CLLocationCoordinate2D(latitude: pickup.lat, longitude: pickup.lng),
-            destination: CLLocationCoordinate2D(latitude: delivery.lat, longitude: delivery.lng)
-        )
-        let profile = TruckProfile.from(load: load)
+    private func refreshCanonicalRoute(for load: Load) async {
+        canonicalRouteLines = []
+        canonicalRouteStatus = nil
+        canonicalRouteVersion = nil
         do {
-            let resp = try await HereRoutingClient.shared.route(stops: stops, profile: profile)
-            guard let section = resp.routes.first?.sections.first else {
-                routePolyline = []
-                return
-            }
-            let coords = HereRoutingClient.polyline(for: section)
-            routePolyline = coords.count >= 2 ? coords.map { HereLatLng($0) } : []
-            // L13-3 adversarial-verify: the navigator is deliberately NOT
-            // seeded here. This screen is the drive-to-PICKUP phase — seeding
-            // from the pickup→delivery corridor put every pre-pickup driver
-            // 30 mi "off route", tripping deviation → a reroute straight to
-            // delivery. Turn-by-turn seeds from the fix→pickup section in
-            // `refreshLiveNav`; this geometry is the static base-map corridor.
-        } catch {
-            routePolyline = []
-        }
-    }
-
-    /// L13-3 deviation reroute — the driver left the guided leg (nav raised
-    /// `isRerouting`). 013 is exclusively the drive-to-PICKUP phase, so the
-    /// reroute destination is ALWAYS the pickup (the old
-    /// `deliveryLocation ?? pickupLocation` coalesce sent every off-route
-    /// pre-pickup driver straight to delivery, skipping the pickup). The new
-    /// fix→pickup geometry restarts the navigator (clearing the rerouting
-    /// state) and deliberately does NOT touch `routePolyline` — that stays
-    /// the static pickup→delivery corridor on the base map. On any failure we
-    /// clear the state so the banner doesn't stick on "Rerouting…".
-    @MainActor
-    private func rerouteFrom(_ fix: CLLocation, load: Load) async {
-        let dest = load.pickupLocation
-        guard let d = dest, !(d.lat == 0 && d.lng == 0) else {
-            navigator.clearRerouting(); return
-        }
-        let stops = HereStops(
-            origin: fix.coordinate,
-            destination: CLLocationCoordinate2D(latitude: d.lat, longitude: d.lng)
-        )
-        let profile = TruckProfile.from(load: load)
-        do {
-            let resp = try await HereRoutingClient.shared.route(stops: stops, profile: profile)
-            guard let section = resp.routes.first?.sections.first else {
-                navigator.clearRerouting(); return
-            }
-            navigator.start(section: section)   // clears isRerouting
-        } catch {
-            navigator.clearRerouting()
-        }
-    }
-
-    /// Computes the live remaining leg from the driver's current GPS
-    /// fix to the pickup coordinate via HERE Routing v8 (truck-aware),
-    /// and caches the summary numbers that drive the HUD. Every value
-    /// is a real measurement; on any failure (no fix, no pickup, HERE
-    /// error) the cached values stay nil and the HUD shows "-".
-    @MainActor
-    private func refreshLiveNav(for load: Load) async {
-        guard let pickup = load.pickupLocation,
-              pickup.lat != 0 || pickup.lng != 0 else { return }
-
-        // Live GPS fix. nil when denied / timed out → HUD reads "-".
-        guard let fix = await DriverLocationResolver.shared.currentCoordinate() else {
-            remainingMeters = nil
-            remainingSeconds = nil
-            etaISO = nil
-            return
-        }
-
-        let stops = HereStops(
-            origin: fix,
-            destination: CLLocationCoordinate2D(latitude: pickup.lat, longitude: pickup.lng)
-        )
-        let profile = TruckProfile.from(load: load)
-        do {
-            // departureTime switches HERE Routing into TRAFFIC-AWARE mode, so
-            // `duration`/`arrival` reflect live traffic (not free-flow) and
-            // `baseDuration` arrives for the traffic-delay chip.
-            let resp = try await HereRoutingClient.shared.route(
-                stops: stops, profile: profile,
-                options: HereRoutingOptions(departureTime: Self.hereDepartureNow())
+            let result = try await CanonicalRoutePlanClient.shared.planLoad(
+                id: load.id,
+                purpose: .activeJob
             )
-            guard let section = resp.routes.first?.sections.first,
-                  let summary = section.summary else {
-                remainingMeters = nil
-                remainingSeconds = nil
-                etaISO = nil
-                trafficDelaySeconds = nil
-                return
+            switch result {
+            case .persisted(let persisted):
+                applyCanonicalRoute(persisted.route)
+            case .pending(let pending):
+                canonicalRouteStatus = pending.blockers.first?.message
+                    ?? "Canonical mode-native route pending verified authority"
+                await readExistingCanonicalRoute(loadId: load.id)
             }
-            remainingMeters = Double(summary.length)
-            remainingSeconds = Double(summary.duration)
-            etaISO = section.arrival.time
-            // L13-3 adversarial-verify: seed turn-by-turn from THIS fix→pickup
-            // section — the leg the driver is actually on — not the
-            // pickup→delivery corridor `refreshRoutePolyline` paints. Seeding
-            // from the corridor put every pre-pickup driver miles "off route"
-            // and the deviation reroute then guided them straight to delivery.
-            if tbtEnabled { navigator.start(section: section) }
-            // Honest live traffic delay = traffic-aware duration − free-flow
-            // base. Nil when HERE ships no base or there's no delay.
-            if let base = summary.baseDuration, summary.duration > base {
-                trafficDelaySeconds = Double(summary.duration - base)
-            } else {
-                trafficDelaySeconds = nil
-            }
-            // Capture the approach baseline exactly once so the
-            // progress bar has an honest live denominator.
-            if baselineMeters == nil { baselineMeters = Double(summary.length) }
         } catch {
-            // Honest failure: leave the numbers nil so the HUD shows
-            // "-" rather than a stale or fabricated figure.
-            remainingMeters = nil
-            remainingSeconds = nil
-            etaISO = nil
-            trafficDelaySeconds = nil
+            canonicalRouteStatus = error.eusoUserCopy
+            await readExistingCanonicalRoute(loadId: load.id)
         }
     }
 
-    /// Current time as a HERE-compatible ISO-8601 departure timestamp —
-    /// switches HERE Routing into traffic-aware mode.
-    private static func hereDepartureNow() -> String {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime]
-        return f.string(from: Date())
+    @MainActor
+    private func readExistingCanonicalRoute(loadId: Int) async {
+        do {
+            applyCanonicalRoute(
+                try await CanonicalRoutePlanClient.shared.getBoundLoad(id: loadId)
+            )
+        } catch {
+            if canonicalRouteStatus == nil { canonicalRouteStatus = error.eusoUserCopy }
+        }
+    }
+
+    @MainActor
+    private func applyCanonicalRoute(_ route: CanonicalRoutePlanClient.BoundRoutePlan) {
+        guard let payload = route.rendererPayload else {
+            canonicalRouteLines = []
+            canonicalRouteVersion = nil
+            canonicalRouteStatus = "Canonical route exists but is not released for rendering"
+            return
+        }
+        canonicalRouteLines = payload.lines
+        canonicalRouteVersion = payload.identity.version
+        canonicalRouteStatus = nil
+    }
+
+    /// Reads the driver's tenant-bound truck observation through the Live
+    /// Operations authority. The marker is evidence only; it never becomes
+    /// route geometry or progress without a server route projection.
+    @MainActor
+    private func refreshLicensedTruckObservation(for load: Load) async {
+        liveTruckObservation = nil
+        liveTruckStatus = nil
+        guard EusoTripMapTransportMode(canonicalValue: load.transportMode) == .truck else {
+            return
+        }
+        do {
+            let assigned = try await EusoTripAPI.shared.vehicle.getAssigned()
+            guard let vehicleId = Int(assigned.id) else {
+                liveTruckStatus = .init(
+                    availability: .empty,
+                    sourceLabel: nil,
+                    freshnessLabel: nil,
+                    detail: "No assigned truck is available for authorized live evidence",
+                    observationCount: 0
+                )
+                return
+            }
+            let result = try await LiveOperationsClient.shared.latestTruck(vehicleId: vehicleId)
+            liveTruckObservation = result.observation
+            liveTruckStatus = Self.liveOperationsStatus(from: result)
+        } catch {
+            liveTruckStatus = .init(
+                availability: .degraded,
+                sourceLabel: nil,
+                freshnessLabel: nil,
+                detail: "Authorized truck observation is unavailable",
+                observationCount: 0
+            )
+        }
+    }
+
+    private static func liveOperationsStatus(
+        from result: LiveOperationsClient.AssetResult
+    ) -> HereLiveOperationsStatus {
+        guard let observation = result.observation else {
+            return .init(
+                availability: .empty,
+                sourceLabel: nil,
+                freshnessLabel: nil,
+                detail: result.coverage.statement,
+                observationCount: 0
+            )
+        }
+        let availability: HereLiveOperationsStatus.Availability
+        switch observation.markerState {
+        case .current: availability = observation.operationalUseAllowed ? .live : .degraded
+        case .stale: availability = .stale
+        case .degraded: availability = .degraded
+        case .offline: availability = .unavailable
+        }
+        return .init(
+            availability: availability,
+            sourceLabel: observation.provider.id,
+            freshnessLabel: observation.freshnessState.rawValue,
+            detail: observation.accessibleEvidenceLabel,
+            observationCount: 1
+        )
     }
 
     /// HOS-reachability isoline: how far the driver can legally drive on the
@@ -403,22 +319,32 @@ struct ActiveEnroute: View {
     /// remaining HOS or a fix is unknown, or HERE returns no polygon.
     private func refreshHosReachability() async {
         guard let status = HOSClockService.shared.status,
-              status.canDrive,
-              status.drivingRemaining > 0,
+              status.hasCurrentObservation(),
+              status.canDrive == true,
+              let drivingRemaining = status.drivingRemaining,
+              drivingRemaining > 0,
               let fix = await DriverLocationResolver.shared.currentCoordinate() else {
             isolinePolygon = []
             return
         }
-        let rangeSec = Int((status.drivingRemaining * 3600).rounded())
+        let rangeSec = Int((drivingRemaining * 3600).rounded())
         let result = try? await EusoTripAPI.shared.hereMaps.isoline(
             origin: .init(lat: fix.latitude, lng: fix.longitude),
             rangeSec: rangeSec
         )
-        if result?.ok == true, let poly = result?.polygon, poly.count >= 3 {
-            isolinePolygon = poly.map { HereLatLng($0.lat, $0.lng) }
-        } else {
+        guard result?.ok == true, let poly = result?.polygon else {
             isolinePolygon = []
+            return
         }
+        let rawPolygon: [HereMapsAPI.IsolinePoint] = poly
+        let coordinates: [HereLatLng] = rawPolygon.compactMap { point -> HereLatLng? in
+            guard let coordinate = LatLongParser.validatedCoordinate(
+                latitude: point.lat,
+                longitude: point.lng
+            ) else { return nil }
+            return HereLatLng(coordinate)
+        }
+        isolinePolygon = coordinates.count >= 3 ? coordinates : []
     }
 
     /// Fires the next forward state transition on the server
@@ -439,61 +365,18 @@ struct ActiveEnroute: View {
         advance?()
     }
 
-    // MARK: - Data bindings (live HERE leg → honest em-dash)
+    // MARK: - Data bindings (server projection only)
 
-    private static let metersPerMile = 1609.344
-
-    /// "42.7 mi" from the live HERE remaining length, else "-".
-    private var remainingMilesText: String {
-        guard let m = remainingMeters else { return "-" }
-        return String(format: "%.1f mi", m / Self.metersPerMile)
-    }
-
-    /// "0h 51m" from the live HERE remaining duration, else "-".
-    private var remainingDriveText: String {
-        guard let s = remainingSeconds, s.isFinite, s >= 0 else { return "-" }
-        let total = Int(s.rounded())
-        let h = total / 3600
-        let mins = (total % 3600) / 60
-        return "\(h)h \(String(format: "%02dm", mins))"
-    }
-
-    /// "08:14" local clock from the live HERE arrival ISO, else "-".
-    private var etaClockText: String {
-        guard let iso = etaISO,
-              let date = Self.parseISO(iso) else { return "-" }
-        let f = DateFormatter()
-        f.dateFormat = "HH:mm"
-        return f.string(from: date)
-    }
-
-    /// "ETA · CDT" with the device timezone abbreviation, else "ETA".
-    private var etaLabelText: String {
-        guard etaISO != nil else { return "ETA" }
-        let tz = TimeZone.current.abbreviation() ?? ""
-        return tz.isEmpty ? "ETA" : "ETA · \(tz)"
-    }
-
-    /// "412 mi" — live remaining distance for the miles row, else "-".
-    private var milesLabelText: String { remainingMilesText }
-
-    /// "2h 08m remaining" from the live duration, else "-".
-    private var timeRemainingText: String {
-        guard let s = remainingSeconds, s.isFinite, s >= 0 else { return "-" }
-        let total = Int(s.rounded())
-        let h = total / 3600
-        let mins = (total % 3600) / 60
-        return "\(h)h \(String(format: "%02dm", mins)) remaining"
-    }
-
-    /// Honest approach fraction: (baseline − remaining) / baseline,
-    /// both real HERE measurements. 0 when no live leg is on file.
-    private var liveProgress: Double {
-        guard let base = baselineMeters, base > 0,
-              let rem = remainingMeters else { return 0 }
-        let consumed = base - rem
-        return min(max(consumed / base, 0), 1)
-    }
+    /// Remaining distance, duration, ETA, and percent require a committed
+    /// server projection against this exact route version. A licensed position
+    /// by itself is not route progress, so these stay neutral until that
+    /// projection contract is present.
+    private var remainingMilesText: String { "-" }
+    private var remainingDriveText: String { "-" }
+    private var etaClockText: String { "-" }
+    private var etaLabelText: String { "ETA · PROJECTION PENDING" }
+    private var milesLabelText: String { "POSITION EVIDENCE ONLY" }
+    private var timeRemainingText: String { "ROUTE PROJECTION PENDING" }
 
     /// Pickup-window clock from the load's `pickupDate` (the APPT
     /// shown beside the pickup facility), else "-".
@@ -511,19 +394,19 @@ struct ActiveEnroute: View {
     /// an honest em-dash, never a fabricated gallons figure.
     private var fuelBurnText: String { "-" }
 
-    /// Maneuver heading: live remaining distance to the pickup. HERE
-    /// turn-by-turn `actions` are not decoded by the route models, so
-    /// we never fabricate an exit-narration string.
     private var titleHeading: String {
-        guard remainingMeters != nil else { return "-" }
-        return "In \(remainingMilesText)"
+        canonicalRouteLines.isEmpty ? "Awaiting route authority" : "Canonical route ready"
     }
 
-    /// Maneuver detail: the live pickup destination (city/state) from
-    /// the load, else an honest em-dash.
     private var titleDetail: String {
+        if let canonicalRouteStatus, !canonicalRouteStatus.isEmpty {
+            return canonicalRouteStatus
+        }
+        if let canonicalRouteVersion {
+            return "Plan v\(canonicalRouteVersion) · current instruction requires verified projection"
+        }
         if let load = activeLoad, let loc = load.pickupLocation, !loc.cityState.isEmpty {
-            return "Next stop · \(loc.cityState)"
+            return "Destination evidence · \(loc.cityState)"
         }
         return "-"
     }
@@ -641,26 +524,28 @@ struct ActiveEnroute: View {
         if let load = activeLoad,
            let pickup = load.pickupLocation,
            let delivery = load.deliveryLocation,
-           // Coord gate (D-maps-basemap 2026-06-01): the server's geocode
-           // self-heal can return a load whose pickup/delivery JSON is present
-           // but whose lat/lng are still 0 (HERE geocode not yet run). Drawing
-           // those frames the map on null island (0,0). Require a real fix on
-           // BOTH endpoints; otherwise fall to the honest placeholder until the
-           // next read lands coords.
-           !(pickup.lat == 0 && pickup.lng == 0),
-           !(delivery.lat == 0 && delivery.lng == 0) {
-            // Canonical OMV vector map + live HERE add-ons surfaced as pins:
-            // fuel / EV / weather / traffic / sponsored ad-zones. The route +
-            // pickup/delivery are the base layers; HereLiveMapView fetches the
-            // add-ons around the lane and overlays them with a corner legend.
-            let line: [HereLatLng] = routePolyline.count >= 2 ? routePolyline : []
-            let markerLayer = HereMapLayer.markers([
-                .init(at: .init(pickup.lat, pickup.lng), kind: .pickup, label: destinationFacility),
-                .init(at: .init(delivery.lat, delivery.lng), kind: .delivery, label: nil)
-            ])
-            let routeLayers: [HereMapLayer] = line.count >= 2
-                ? [.route(polyline: line, colorHex: "#1473FF"), markerLayer]
-                : [markerLayer]
+           let pickupCoordinate = pickup.coordinatePair,
+           let deliveryCoordinate = delivery.coordinatePair {
+            // Canonical OMV vector map + exact committed route lines + licensed
+            // Live Operations evidence. Route geometry and position evidence
+            // stay separate; discontinuities are never bridged.
+            let mapTransportMode = EusoTripMapTransportMode(
+                canonicalValue: load.transportMode
+            )
+            let markers = operationalMarkers(
+                pickup: .init(pickupCoordinate.lat, pickupCoordinate.lng),
+                delivery: .init(deliveryCoordinate.lat, deliveryCoordinate.lng)
+            )
+            let markerLayer = HereMapLayer.markers(markers)
+            let routeLayers: [HereMapLayer] = canonicalRouteLines.enumerated().map { index, line in
+                .eusoRoute(
+                    polyline: line,
+                    state: .active,
+                    label: index == 0
+                        ? "Eusorone \(mapTransportMode.rawValue) route plan version \(canonicalRouteVersion ?? 0)"
+                        : nil
+                )
+            } + [markerLayer]
             // §3c receiver fence at the corridor terminus — ONLY when a
             // real `tracking.getGeofences` row covers the receiver
             // (resolveReceiverFence). Absent row ⇒ absent layer.
@@ -677,16 +562,58 @@ struct ActiveEnroute: View {
                 ? [.adZones([HerePolygon(ring: isolinePolygon, fillHex: "#00C48C", opacity: 0.12, label: "HOS reach")])]
                 : []
             HereLiveMapView(
-                center: .init(pickup.lat, pickup.lng),
+                center: .init(pickupCoordinate.lat, pickupCoordinate.lng),
                 zoom: 7,
                 firstPerson: true,
-                route: line,
+                route: [],
                 baseLayers: routeLayers + fenceLayers + isolineLayers,
-                addOns: .driverEnRoute
+                addOns: mapTransportMode == .truck ? .driverEnRoute : [],
+                activeJob: true,
+                mapModeContext: .unconfirmed(mapTransportMode),
+                liveOperationsStatus: liveTruckStatus
             )
+            .overlay(alignment: .bottomLeading) {
+                if let canonicalRouteStatus {
+                    Text(canonicalRouteStatus)
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(palette.textSecondary)
+                        .padding(.horizontal, 10).padding(.vertical, 6)
+                        .background(palette.bgCard.opacity(0.92))
+                        .overlay(Capsule().strokeBorder(Brand.warning.opacity(0.45)))
+                        .clipShape(Capsule())
+                        .padding(10)
+                        .accessibilityLabel(canonicalRouteStatus)
+                }
+            }
         } else {
             mapPlaceholder
         }
+    }
+
+    /// Builds the marker array outside the ViewBuilder so optional licensed
+    /// position evidence can be appended without becoming an expression in
+    /// the SwiftUI result builder. The observation remains independent from
+    /// canonical route geometry.
+    private func operationalMarkers(
+        pickup: HereLatLng,
+        delivery: HereLatLng
+    ) -> [HereMarker] {
+        var markers: [HereMarker] = [
+            .init(at: pickup, kind: .pickup, label: destinationFacility),
+            .init(at: delivery, kind: .delivery, label: nil)
+        ]
+        if let observation = liveTruckObservation,
+           let coordinate = observation.position.coordinate {
+            markers.append(.init(
+                at: coordinate,
+                kind: .truck,
+                label: "Assigned truck",
+                observationState: observation.markerState,
+                sourceLabel: observation.provider.id,
+                accessibilityLabel: observation.accessibleEvidenceLabel
+            ))
+        }
+        return markers
     }
 
     /// Operational empty state shown until the active load has verified route
@@ -703,116 +630,6 @@ struct ActiveEnroute: View {
 
     // MARK: - Top maneuver card
 
-    // MARK: - L13-3 live turn-by-turn banner
-    //
-    // Replaces the facade `topManeuverCard` while `tbtEnabled` is on and the
-    // navigator has a current maneuver. Bespoke chrome matching the card
-    // family: gradient glyph tile + counting-down distance + HERE-authored
-    // instruction + voice toggle + a steps pill that opens the full list sheet.
-    // Falls back to the facade whenever the flag is off or no maneuver is live.
-    @ViewBuilder private var liveTurnBanner: some View {
-        let m = navigator.currentManeuver
-        HStack(alignment: .center, spacing: Space.s3) {
-            ZStack {
-                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                    .fill(LinearGradient.diagonal)
-                Image(systemName: navigator.isRerouting
-                      ? "arrow.triangle.2.circlepath"
-                      : (m?.directionGlyph ?? "arrow.up"))
-                    .font(.system(size: 24, weight: .heavy))
-                    .foregroundStyle(.white)
-            }
-            .frame(width: 60, height: 60)
-
-            VStack(alignment: .leading, spacing: 2) {
-                if navigator.isRerouting {
-                    Text("Rerouting…")
-                        .font(.system(size: 22, weight: .heavy, design: .rounded))
-                        .foregroundStyle(palette.textPrimary)
-                    Text("Finding a new truck-legal route")
-                        .font(EType.micro)
-                        .foregroundStyle(palette.textTertiary)
-                } else {
-                    Text(tbtDistanceLabel(navigator.distanceToManeuverM))
-                        .font(.system(size: 26, weight: .heavy, design: .rounded))
-                        .foregroundStyle(palette.textPrimary)
-                    Text(m?.instruction ?? "")
-                        .font(EType.bodyStrong)
-                        .foregroundStyle(palette.textPrimary)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-
-            Spacer(minLength: Space.s2)
-
-            VStack(spacing: Space.s2) {
-                Button { navigator.voiceEnabled.toggle() } label: {
-                    Image(systemName: navigator.voiceEnabled ? "speaker.wave.2.fill" : "speaker.slash.fill")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(navigator.voiceEnabled ? Brand.blue : palette.textTertiary)
-                        .frame(width: 38, height: 38)
-                        .background(Circle().fill(palette.bgPage.opacity(0.6)))
-                }
-                .accessibilityLabel(navigator.voiceEnabled ? "Mute voice guidance" : "Unmute voice guidance")
-                if navigator.maneuvers.count > 1 {
-                    Button { showManeuverSteps = true } label: {
-                        Text("\(navigator.maneuvers.count) steps")
-                            .font(.system(size: 11, weight: .heavy))
-                            .foregroundStyle(palette.textTertiary)
-                    }
-                }
-            }
-        }
-        .padding(Space.s3)
-        .background(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .fill(palette.bgCard.opacity(0.92))
-                .overlay(
-                    RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                        .strokeBorder(palette.borderSoft, lineWidth: 1)
-                )
-                .shadow(color: .black.opacity(0.25), radius: 18, y: 8)
-        )
-    }
-
-    /// Full maneuver list (the spec's `[Maneuver]` sheet) — instruction +
-    /// direction glyph + cumulative distance-from-start, all HERE-authored.
-    @ViewBuilder private var maneuverStepsSheet: some View {
-        NavigationStack {
-            List(navigator.maneuvers) { m in
-                HStack(spacing: Space.s3) {
-                    Image(systemName: m.directionGlyph)
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(palette.textPrimary)
-                        .frame(width: 28)
-                    Text(m.instruction)
-                        .font(EType.body)
-                        .foregroundStyle(palette.textPrimary)
-                    Spacer()
-                    Text(tbtDistanceLabel(m.metersFromRouteStart))
-                        .font(EType.micro)
-                        .foregroundStyle(palette.textTertiary)
-                }
-                .listRowBackground(palette.bgCard)
-            }
-            .scrollContentBackground(.hidden)
-            .background(palette.bgPage)
-            .navigationTitle("Turn-by-turn")
-            .navigationBarTitleDisplayMode(.inline)
-        }
-        .presentationDetents([.medium, .large])
-    }
-
-    /// Imperial distance label for the banner countdown / steps list. Rounds
-    /// sub-1000 ft to the nearest 50 ft; miles to one decimal above that.
-    private func tbtDistanceLabel(_ meters: Double) -> String {
-        guard meters.isFinite else { return "—" }
-        let feet = meters * 3.28084
-        if feet < 1000 { return "\(max(0, Int((feet / 50).rounded())) * 50) ft" }
-        return String(format: "%.1f mi", meters / 1609.344)
-    }
-
     private var topManeuverCard: some View {
         HStack(alignment: .top, spacing: Space.s3) {
             maneuverIcon
@@ -825,7 +642,7 @@ struct ActiveEnroute: View {
                 // HERE Dynamic Map Content — live road intel chips.
                 // Pulls Real-Time Traffic flow, Road Alerts
                 // (incidents), and Safety Cameras in parallel, using
-                // the driver's current CoreLocation fix or a fallback
+                // an authorized current observation or a fallback
                 // waypoint from the active load. Chips silently hide
                 // when HERE returns nothing, so the card stays clean
                 // between events.
@@ -855,7 +672,7 @@ struct ActiveEnroute: View {
         ZStack {
             RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                 .fill(LinearGradient.diagonal)
-            Image(systemName: "arrow.up")
+            Image(systemName: "point.3.connected.trianglepath.dotted")
                 .font(.system(size: 22, weight: .heavy))
                 .foregroundStyle(.white)
         }
@@ -876,23 +693,8 @@ struct ActiveEnroute: View {
                     .font(EType.micro)
                     .tracking(1.1)
                     .foregroundStyle(palette.textTertiary)
-                if let chip = trafficDelayChipText {
-                    Text(chip)
-                        .font(.system(size: 10, weight: .heavy))
-                        .foregroundStyle(Brand.warning)
-                        .padding(.top, 1)
-                }
             }
         }
-    }
-
-    /// "+N min traffic" chip when HERE reports a live traffic delay above
-    /// ~1 min; nil otherwise (a clear road shows no chip — honest, the ETA
-    /// itself is already traffic-aware via departureTime).
-    private var trafficDelayChipText: String? {
-        guard let s = trafficDelaySeconds, s >= 60 else { return nil }
-        let mins = Int((s / 60).rounded())
-        return "+\(mins) min traffic"
     }
 
     private var maneuverSubhead: some View {
@@ -903,14 +705,9 @@ struct ActiveEnroute: View {
     }
 
     private var progressRail: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                Capsule().fill(palette.tintNeutral.opacity(0.4))
-                Capsule().fill(LinearGradient.diagonal)
-                    .frame(width: max(4, geo.size.width * liveProgress))
-            }
-        }
+        Capsule().fill(palette.tintNeutral.opacity(0.4))
         .frame(height: 4)
+        .accessibilityLabel("Route progress pending verified server projection")
     }
 
     private var milesRow: some View {

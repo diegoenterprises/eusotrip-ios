@@ -17,18 +17,18 @@
 //                             binding our keyId to this app + device.
 //    • assertHighTrust(...)  on the gated procs (wallet payout / KYC
 //                             submit / SOS) reads an OPTIONAL `_attest`
-//                             field and FAILS OPEN when it's absent.
+//                             field. Production enforcement is strict and
+//                             rejects missing or unverifiable proof; local
+//                             development uses the documented soft rollout.
 //
-//  THE BINDING — HONEST, FAIL-SOFT, NEVER BLOCKS THE USER
-//  ------------------------------------------------------
-//  Everything here is best-effort. `isSupported` (simulator, older device,
-//  or a device where App Attest is unavailable) short-circuits to `nil`.
-//  Any error at any step — key gen, Keychain, the challenge round-trip,
-//  attestation, assertion — is swallowed and returns `nil`. A `nil`
-//  assertion means the caller sends the high-trust mutation WITHOUT the
-//  `_attest` field; the server fail-opens and the user's action proceeds
-//  exactly as before. The feature can only HARDEN a capable device; it can
-//  never degrade or block a user on any device.
+//  THE BINDING — HONEST CLIENT RESULT, STRICT PRODUCTION GATE
+//  ----------------------------------------------------------
+//  `isSupported` (simulator, older device, or unavailable App Attest service)
+//  short-circuits to `nil`. Key generation, registration, challenge, or
+//  assertion failures also return `nil` so callers can encode the request
+//  deterministically. Production high-trust routes then reject that missing
+//  proof; development may admit it only under the server's explicit soft
+//  rollout mode. The client never fabricates a successful attestation.
 //
 //  No entitlement is required: DeviceCheck / App Attest is automatic.
 //
@@ -92,8 +92,8 @@ enum AppAttestClient {
     ///   • the challenge round-trip, key registration, or assertion fails,
     ///   • or the whole thing exceeds `timeoutSeconds`.
     ///
-    /// On `nil` the caller sends the high-trust mutation WITHOUT `_attest`;
-    /// the server fail-opens. The user is never blocked.
+    /// On `nil` the caller sends the high-trust mutation without `_attest`.
+    /// Production strict mode rejects it; development soft mode may allow it.
     ///
     /// - Parameter context: stable, low-cardinality bytes that pin the
     ///   assertion to *this* request (e.g. "wallet.requestPayout|<amount>").
@@ -103,8 +103,8 @@ enum AppAttestClient {
         guard isSupported else { return nil }
 
         // Bound the whole best-effort flow. If anything stalls past the
-        // budget we abandon attestation and return nil — the high-trust
-        // call proceeds un-attested rather than waiting on the network.
+        // budget we abandon attestation and return nil rather than waiting on
+        // the network. The server's configured enforcement mode decides it.
         return await withTaskGroupTimeout(seconds: timeoutSeconds) {
             await buildAttestation(for: context)
         }
@@ -119,7 +119,7 @@ enum AppAttestClient {
 
     /// The optional `_attest` field attached to a gated high-trust mutation.
     /// Encodes to the canonical App Attest assertion shape the server's
-    /// `assertHighTrust` reads (and tolerates as absent → fail-open):
+    /// `assertHighTrust` reads (production rejects an absent envelope):
     ///   { keyId, challenge, clientDataHash, assertion }
     /// All four are base64. `challenge` is the exact nonce the server issued
     /// via appAttest.challenge (round-trips so the server can match + burn
@@ -184,7 +184,8 @@ enum AppAttestClient {
                 assertion: assertion.base64EncodedString()
             )
         } catch {
-            // ANY failure → no _attest. Server fail-opens. User never blocked.
+            // Any failure is reported honestly as no attestation. Production
+            // high-trust routes reject it; no fake proof is ever synthesized.
             return nil
         }
         #else
@@ -309,8 +310,8 @@ enum AppAttestClient {
     private enum AttestError: Error { case badChallenge }
 
     /// Runs `work` with a hard timeout. Returns `nil` if the budget elapses
-    /// first — the attestation is abandoned and the high-trust call proceeds
-    /// un-attested. Never throws to the caller.
+    /// first — the attestation is abandoned and nil is returned. Never throws
+    /// to the caller; server policy remains authoritative.
     private static func withTaskGroupTimeout(
         seconds: UInt64,
         _ work: @escaping @Sendable () async -> AttestEnvelope?

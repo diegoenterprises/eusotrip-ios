@@ -10,7 +10,8 @@
 //
 //    • CONNECTED APPS  → `userIntegrations.listCatalog` (role + primaryMode
 //      scoped provider catalog) + `userIntegrations.listConnections` (the
-//      user's own connection state). Connect / disconnect / sync run in-app
+//      signed-in user's connection state inside the active company). Connect /
+//      disconnect / sync run in-app with server-authoritative ownership
 //      via `userIntegrations.connect` / `.disconnect` / `.sync`. Provider rows
 //      always come from the live server catalog. The local registry is an
 //      offline parity artifact only and never supplies fallback provider rows.
@@ -30,16 +31,174 @@
 //  Powered by ESANG AI™.
 //
 
+import AuthenticationServices
+import CoreFoundation
+import Foundation
 import SwiftUI
+import UIKit
 
-struct ConnectedAppsScreen: View {
-    let theme: Theme.Palette
-    var body: some View {
-        Shell(theme: theme) { ConnectedAppsBody() } nav: { shipperLifecycleNav() }
+private enum IntegrationOAuthSessionError: LocalizedError {
+    case authorizationCanceled
+    case sessionCouldNotStart
+    case invalidCallback
+    case providerMismatch
+    case providerRejected(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .authorizationCanceled:
+            return "Provider authorization was canceled. No connection was changed."
+        case .sessionCouldNotStart:
+            return "The secure provider authorization session could not start."
+        case .invalidCallback:
+            return "The provider returned an invalid authorization confirmation."
+        case .providerMismatch:
+            return "The authorization confirmation did not match the selected provider."
+        case .providerRejected(let reason):
+            let label = reason.replacingOccurrences(of: "_", with: " ")
+            return "Provider authorization was not completed: \(label)."
+        }
     }
 }
 
-// MARK: - Wire DTOs (byte-identical to the server contract)
+private enum IntegrationActivationInputError: LocalizedError {
+    case invalid(field: String, requirement: String)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalid(let field, let requirement):
+            return "\(field) \(requirement)."
+        }
+    }
+}
+
+/// JSON values sent to `userIntegrations.connect`. The server publishes each
+/// field type, so iOS must not flatten numbers, lists, or JSON into strings.
+private enum IntegrationActivationValue: Encodable {
+    case string(String)
+    case number(Double)
+    case bool(Bool)
+    case array([IntegrationActivationValue])
+    case object([String: IntegrationActivationValue])
+    case null
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .string(let value): try container.encode(value)
+        case .number(let value): try container.encode(value)
+        case .bool(let value): try container.encode(value)
+        case .array(let value): try container.encode(value)
+        case .object(let value): try container.encode(value)
+        case .null: try container.encodeNil()
+        }
+    }
+}
+
+private final class IntegrationOAuthSessionCoordinator: NSObject, ObservableObject, ASWebAuthenticationPresentationContextProviding {
+    private var webSession: ASWebAuthenticationSession?
+
+    func start(
+        authorizationURL: URL,
+        providerId: String,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        let session = ASWebAuthenticationSession(
+            url: authorizationURL,
+            callbackURLScheme: "eusotrip"
+        ) { [weak self] callbackURL, error in
+            DispatchQueue.main.async {
+                self?.webSession = nil
+                if let webError = error as? ASWebAuthenticationSessionError,
+                   webError.code == .canceledLogin {
+                    completion(.failure(IntegrationOAuthSessionError.authorizationCanceled))
+                    return
+                }
+                if let error {
+                    completion(.failure(error))
+                    return
+                }
+                completion(Self.validateCallback(callbackURL, providerId: providerId))
+            }
+        }
+        session.presentationContextProvider = self
+        session.prefersEphemeralWebBrowserSession = false
+        webSession = session
+        if !session.start() {
+            webSession = nil
+            completion(.failure(IntegrationOAuthSessionError.sessionCouldNotStart))
+        }
+    }
+
+    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        for scene in scenes {
+            if let keyWindow = scene.windows.first(where: { $0.isKeyWindow }) {
+                return keyWindow
+            }
+        }
+        if let window = scenes.first?.windows.first {
+            return window
+        }
+        return ASPresentationAnchor()
+    }
+
+    private static func validateCallback(_ url: URL?, providerId: String) -> Result<Void, Error> {
+        guard let url,
+              url.scheme?.lowercased() == "eusotrip",
+              url.host?.lowercased() == "integrations",
+              url.path == "/oauth",
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let status = exactlyOneQueryValue("status", in: components),
+              let callbackProvider = exactlyOneQueryValue("provider", in: components) else {
+            return .failure(IntegrationOAuthSessionError.invalidCallback)
+        }
+        guard callbackProvider == providerId else {
+            return .failure(IntegrationOAuthSessionError.providerMismatch)
+        }
+        if status == "connected" {
+            return .success(())
+        }
+        let reason = exactlyOneQueryValue("reason", in: components) ?? "provider_denied"
+        return .failure(IntegrationOAuthSessionError.providerRejected(reason))
+    }
+
+    private static func exactlyOneQueryValue(_ name: String, in components: URLComponents) -> String? {
+        let values = (components.queryItems ?? [])
+            .filter { $0.name == name }
+            .compactMap(\.value)
+        guard values.count == 1, !values[0].isEmpty else { return nil }
+        return values[0]
+    }
+}
+
+struct ConnectedAppsScreen: View {
+    let theme: Theme.Palette
+    let initialProviderId: String?
+    let showsLifecycleNav: Bool
+
+    init(
+        theme: Theme.Palette,
+        initialProviderId: String? = nil,
+        showsLifecycleNav: Bool = true
+    ) {
+        self.theme = theme
+        self.initialProviderId = initialProviderId
+        self.showsLifecycleNav = showsLifecycleNav
+    }
+
+    var body: some View {
+        Shell(theme: theme) {
+            ConnectedAppsBody(initialProviderId: initialProviderId)
+        } nav: {
+            if showsLifecycleNav {
+                shipperLifecycleNav()
+            }
+        }
+    }
+}
+
+// MARK: - Wire DTOs (canonical RIOS server response shapes)
 
 private struct IntegrationInputField: Decodable, Hashable {
     let key: String
@@ -47,6 +206,49 @@ private struct IntegrationInputField: Decodable, Hashable {
     let inputType: String
     let required: Bool
     let secret: Bool
+}
+
+private struct IntegrationInputAlternative: Decodable, Hashable {
+    let credentials: [String]
+    let configuration: [String]?
+}
+
+private struct IntegrationInputRequirement: Decodable, Hashable {
+    let mode: String
+    let alternatives: [IntegrationInputAlternative]
+}
+
+private struct IntegrationProvisioningRequirement: Decodable, Hashable {
+    let key: String
+    let label: String
+    let owner: String
+    let verification: String
+    let docsUrl: String?
+}
+
+private struct IntegrationProvisioning: Decodable, Hashable {
+    let mode: String
+    let activation: String
+    let requirements: [IntegrationProvisioningRequirement]
+}
+
+private struct IntegrationActivationStep: Decodable, Hashable {
+    let key: String
+    let label: String
+    let owner: String
+    let verification: String
+    let state: String
+    let docsUrl: String?
+    let detail: String?
+    let verifiedAt: String?
+    let expiresAt: String?
+}
+
+private struct IntegrationActivationSummary: Decodable, Hashable {
+    let attemptId: String
+    let state: String
+    let ready: Bool
+    let steps: [IntegrationActivationStep]
 }
 
 /// `userIntegrations.listCatalog` row — role/mode-scoped provider.
@@ -59,20 +261,34 @@ private struct IntegrationProvider: Decodable, Identifiable, Hashable {
     let docsUrl: String?
     let authType: String?
     let status: String?
-    let capabilities: [String]?
+    let capabilities: ProviderCapabilityFlags
+    let applicableModes: [String]
     let requiresCredentials: Bool?
     let credentialFields: [IntegrationInputField]
     let configurationFields: [IntegrationInputField]
+    let inputRequirement: IntegrationInputRequirement?
+    let connectionVerification: String?
+    let activationVerification: String?
+    let provisioning: IntegrationProvisioning?
+    let ownershipScope: String?
+    let canEstablishConnection: Bool
+    let establishmentBlockedReason: String?
     let connectable: Bool
     let blockedReason: String?
+    let catalogAliases: [String]
+    let researchStatus: String?
+    let researchVerifiedAt: String?
     let supportsSync: Bool?
     let syncIntervalMinutes: Int?
     let journey: IntegrationProviderJourney?
 
     enum CodingKeys: String, CodingKey {
         case id, displayName, vendor, category, description, docsUrl, authType, status
-        case capabilities, requiresCredentials, credentialFields, configurationFields
-        case connectable, blockedReason, supportsSync, syncIntervalMinutes, journey
+        case capabilities, applicableModes, requiresCredentials, credentialFields, configurationFields
+        case inputRequirement, connectionVerification, activationVerification, provisioning
+        case ownershipScope, canEstablishConnection, establishmentBlockedReason
+        case connectable, blockedReason, catalogAliases
+        case researchStatus, researchVerifiedAt, supportsSync, syncIntervalMinutes, journey
     }
 
     init(from decoder: Decoder) throws {
@@ -85,43 +301,36 @@ private struct IntegrationProvider: Decodable, Identifiable, Hashable {
         docsUrl = try c.decodeIfPresent(String.self, forKey: .docsUrl)
         authType = try c.decodeIfPresent(String.self, forKey: .authType)
         status = try c.decodeIfPresent(String.self, forKey: .status)
+        capabilities = try c.decode(ProviderCapabilityFlags.self, forKey: .capabilities)
+        applicableModes = try c.decodeIfPresent([String].self, forKey: .applicableModes) ?? []
         requiresCredentials = try c.decodeIfPresent(Bool.self, forKey: .requiresCredentials)
         credentialFields = try c.decodeIfPresent([IntegrationInputField].self, forKey: .credentialFields) ?? []
         configurationFields = try c.decodeIfPresent([IntegrationInputField].self, forKey: .configurationFields) ?? []
+        inputRequirement = try c.decodeIfPresent(IntegrationInputRequirement.self, forKey: .inputRequirement)
+        connectionVerification = try c.decodeIfPresent(String.self, forKey: .connectionVerification)
+        activationVerification = try c.decodeIfPresent(String.self, forKey: .activationVerification)
+        provisioning = try c.decodeIfPresent(IntegrationProvisioning.self, forKey: .provisioning)
+        ownershipScope = try c.decodeIfPresent(String.self, forKey: .ownershipScope)
+        canEstablishConnection = try c.decodeIfPresent(Bool.self, forKey: .canEstablishConnection) ?? false
+        establishmentBlockedReason = try c.decodeIfPresent(String.self, forKey: .establishmentBlockedReason)
         connectable = try c.decodeIfPresent(Bool.self, forKey: .connectable) ?? false
         blockedReason = try c.decodeIfPresent(String.self, forKey: .blockedReason)
+        catalogAliases = try c.decodeIfPresent([String].self, forKey: .catalogAliases) ?? []
+        researchStatus = try c.decodeIfPresent(String.self, forKey: .researchStatus)
+        researchVerifiedAt = try c.decodeIfPresent(String.self, forKey: .researchVerifiedAt)
         supportsSync = try c.decodeIfPresent(Bool.self, forKey: .supportsSync)
         syncIntervalMinutes = try c.decodeIfPresent(Int.self, forKey: .syncIntervalMinutes)
         journey = try c.decodeIfPresent(IntegrationProviderJourney.self, forKey: .journey)
-
-        if let arr = try? c.decodeIfPresent([String].self, forKey: .capabilities) {
-            capabilities = arr
-        } else if let flags = try? c.decodeIfPresent(ProviderCapabilityFlags.self, forKey: .capabilities) {
-            capabilities = flags.enabledLabels
-        } else {
-            capabilities = nil
-        }
     }
 }
 
 private struct ProviderCapabilityFlags: Decodable, Hashable {
-    let inbound: Bool?
-    let outbound: Bool?
-    let webhooks: Bool?
-    let realtime: Bool?
-    let scheduledSync: Bool?
-    let perUserOAuth: Bool?
-
-    var enabledLabels: [String] {
-        var labels: [String] = []
-        if inbound == true { labels.append("Inbound") }
-        if outbound == true { labels.append("Outbound") }
-        if webhooks == true { labels.append("Webhooks") }
-        if realtime == true { labels.append("Realtime") }
-        if scheduledSync == true { labels.append("Scheduled sync") }
-        if perUserOAuth == true { labels.append("User OAuth") }
-        return labels
-    }
+    let inbound: Bool
+    let outbound: Bool
+    let webhooks: Bool
+    let realtime: Bool
+    let scheduledSync: Bool
+    let perUserOAuth: Bool
 }
 
 /// RIOS journey profile returned by `userIntegrations.listCatalog`.
@@ -141,7 +350,9 @@ private struct IntegrationProviderJourney: Decodable, Hashable {
     let capabilityTags: [String]?
 }
 
-/// `userIntegrations.listConnections` row — one per (user, provider).
+/// `userIntegrations.listConnections` row. The server query is constrained by
+/// both the signed-in user id and active company id; no credential material is
+/// returned to this client.
 private struct IntegrationConnection: Decodable, Identifiable, Hashable {
     let id: Int
     let providerId: String
@@ -163,19 +374,27 @@ private struct IntegrationConnection: Decodable, Identifiable, Hashable {
     let syncAgeSeconds: Int?
     let credentialState: String?
     let isUsable: Bool?
+    let accessible: Bool?
+    let ownershipScope: String?
+    let sharedWithCompany: Bool?
+    let connectedByMe: Bool?
+    let canManage: Bool?
+    let activation: IntegrationActivationSummary?
 
-    var effectiveFeedState: String {
-        if let feedState, !feedState.isEmpty { return feedState.lowercased() }
-        switch (status ?? "").lowercased() {
-        case "connected": return "live"
-        case "pending_credentials": return "credentials_required"
-        default: return (status ?? "disabled").lowercased()
-        }
+    var effectiveFeedState: String? {
+        guard let feedState = feedState?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !feedState.isEmpty else { return nil }
+        return feedState.lowercased()
     }
 
-    var isOperational: Bool {
-        if let isUsable { return isUsable }
-        return ["live", "on_demand"].contains(effectiveFeedState)
+    var isOperational: Bool? {
+        isUsable
+    }
+
+    var isPresent: Bool {
+        if effectiveFeedState == "disabled" { return false }
+        if status?.lowercased() == "disabled" { return false }
+        return true
     }
 }
 
@@ -199,37 +418,69 @@ private struct ApiScope: Decodable, Identifiable, Hashable {
     let description: String
 }
 
-private struct IntegrationJourneyImpact: Identifiable, Hashable {
+private struct IntegrationJourneyBenefit: Identifiable, Hashable {
     let id: String
-    let title: String
-    let outcome: String
-    let icon: String
+    let adoptionStage: String?
+    let setup: String
+    let operationalUnlock: String
+    let crossRoleBenefit: String
     let providerCount: Int
-    let connectedCount: Int
+    let connectedCount: Int?
     let providerNames: [String]
 }
 
-private struct IntegrationAdoptionSignal: Identifiable, Hashable {
-    let id: String
-    let title: String
-    let outcome: String
-    let icon: String
-    let providerCount: Int
-    let connectedCount: Int
-    let providerNames: [String]
+private struct IntegrationJourneyGroupKey: Hashable {
+    let adoptionStage: String?
+    let setup: String
+    let operationalUnlock: String
+    let crossRoleBenefit: String
 }
 
-private struct IntegrationNetworkBenefit: Identifiable, Hashable {
-    let id: String
-    let recipient: String
-    let benefit: String
-    let icon: String
-    let providerCount: Int
-    let connectedCount: Int
-    let providerNames: [String]
+private enum IntegrationLoadFailureKind: Hashable {
+    case unauthenticated
+    case permissionDenied
+    case unavailable
 }
 
-private struct ConnectedAppsBody: View {
+private struct IntegrationLoadFailure: Hashable {
+    let kind: IntegrationLoadFailureKind
+    let detail: String
+}
+
+private struct IntegrationDisconnectIntent: Identifiable {
+    let connection: IntegrationConnection
+    let providerName: String
+
+    var id: Int { connection.id }
+}
+
+struct ConnectedAppsBody: View {
+    let initialProviderId: String?
+    let includedCategories: Set<String>?
+    let surfaceTitle: String?
+    let surfaceSummary: String?
+    let showsJourney: Bool
+    let showsAdaptation: Bool
+    let showsTokens: Bool
+
+    init(
+        initialProviderId: String? = nil,
+        includedCategories: Set<String>? = nil,
+        surfaceTitle: String? = nil,
+        surfaceSummary: String? = nil,
+        showsJourney: Bool = true,
+        showsAdaptation: Bool = true,
+        showsTokens: Bool = true
+    ) {
+        self.initialProviderId = initialProviderId
+        self.includedCategories = includedCategories
+        self.surfaceTitle = surfaceTitle
+        self.surfaceSummary = surfaceSummary
+        self.showsJourney = showsJourney
+        self.showsAdaptation = showsAdaptation
+        self.showsTokens = showsTokens
+    }
+
     @Environment(\.palette) private var palette
     @EnvironmentObject private var session: EusoTripSession
 
@@ -237,8 +488,8 @@ private struct ConnectedAppsBody: View {
     @State private var providers: [IntegrationProvider] = []
     @State private var connections: [IntegrationConnection] = []
     @State private var liveAdaptation: ProfileAdaptation? = nil
-    @State private var catalogUnavailableReason: String? = nil
-    @State private var connectionsUnavailableReason: String? = nil
+    @State private var catalogFailure: IntegrationLoadFailure? = nil
+    @State private var connectionsFailure: IntegrationLoadFailure? = nil
     @State private var adaptationUnavailableReason: String? = nil
 
     // API tokens (the developer portal).
@@ -254,7 +505,10 @@ private struct ConnectedAppsBody: View {
     // Per-provider connect form state.
     @State private var expandedProvider: String? = nil
     @State private var credInputs: [String: String] = [:]   // "providerId.field" → value
+    @State private var confirmedProvisioningRequirements: Set<String> = []
     @State private var busyProvider: String? = nil
+    @State private var pendingDisconnect: IntegrationDisconnectIntent? = nil
+    @StateObject private var oauthSession = IntegrationOAuthSessionCoordinator()
 
     // API-token issuance state.
     @State private var showIssueForm = false
@@ -264,17 +518,35 @@ private struct ConnectedAppsBody: View {
     @State private var freshlyIssuedKey: String? = nil      // shown once, then cleared
     @State private var revokingKey: String? = nil
 
-    private var role: String { session.user?.role ?? "" }
     private var roleLabel: String { session.user?.roleEnum.displayName ?? "Account" }
-    private var roleOwnsIntegrations: Bool {
-        let r = role.uppercased()
-        if r.isEmpty { return false }
-        if r == "ADMIN" || r == "SUPER_ADMIN" { return true }
-        if !providers.isEmpty || !connections.isEmpty { return true }
-        if catalogUnavailableReason != nil || connectionsUnavailableReason != nil { return true }
-        return false
+    private var scopedProviders: [IntegrationProvider] {
+        guard let includedCategories, !includedCategories.isEmpty else { return providers }
+        let normalized = Set(includedCategories.map { $0.lowercased() })
+        return providers.filter { provider in
+            guard let category = provider.category?.lowercased() else { return false }
+            return normalized.contains(category)
+        }
     }
-
+    private var scopedConnections: [IntegrationConnection] {
+        guard let includedCategories, !includedCategories.isEmpty else { return connections }
+        let providerIds = Set(scopedProviders.map(\.id))
+        return connections.filter { providerIds.contains($0.providerId) }
+    }
+    private var unmatchedConnections: [IntegrationConnection] {
+        guard catalogFailure == nil,
+              includedCategories == nil || includedCategories?.isEmpty == true else {
+            return []
+        }
+        let providerIds = Set(providers.map(\.id))
+        return connections.filter { $0.isPresent && !providerIds.contains($0.providerId) }
+    }
+    private var displayedProviders: [IntegrationProvider] {
+        guard let initialProviderId,
+              let provider = scopedProviders.first(where: { $0.id == initialProviderId }) else {
+            return scopedProviders
+        }
+        return [provider]
+    }
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
@@ -295,13 +567,11 @@ private struct ConnectedAppsBody: View {
 
                 if loading {
                     LifecycleCard { Text("Loading your integrations…").font(EType.caption).foregroundStyle(palette.textSecondary) }
-                } else if !roleOwnsIntegrations {
-                    nonIntegrationRoleCard
                 } else {
-                    integrationJourneySection
+                    if showsJourney { integrationJourneySection }
                     connectedSection
-                    adaptationSection
-                    tokensSection
+                    if showsAdaptation { adaptationSection }
+                    if showsTokens { tokensSection }
                 }
 
                 Color.clear.frame(height: 156)
@@ -309,6 +579,28 @@ private struct ConnectedAppsBody: View {
             .padding(.horizontal, 14).padding(.top, 72)
         }
         .eusoRefreshTask { await load() }
+        .confirmationDialog(
+            pendingDisconnect.map { "Disconnect \(cleanLabel($0.providerName))?" } ?? "Disconnect provider?",
+            isPresented: Binding(
+                get: { pendingDisconnect != nil },
+                set: { if !$0 { pendingDisconnect = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let intent = pendingDisconnect {
+                Button("Disconnect \(cleanLabel(intent.providerName))", role: .destructive) {
+                    pendingDisconnect = nil
+                    Task { await disconnect(intent.connection, providerName: intent.providerName) }
+                }
+            }
+            Button("Keep connected", role: .cancel) {
+                pendingDisconnect = nil
+            }
+        } message: {
+            Text(pendingDisconnect?.connection.sharedWithCompany == true
+                 ? "This company connection will stop providing data to eligible coworkers. EusoTrip will request provider and credential revocation, but it remains active until the current connection record confirms the feed is disabled and authorization evidence is revoked."
+                 : "This personal connection will stop providing data to you. EusoTrip will request provider and credential revocation, but it remains active until the current connection record confirms the feed is disabled and authorization evidence is revoked.")
+        }
     }
 
     private var header: some View {
@@ -317,19 +609,8 @@ private struct ConnectedAppsBody: View {
                 Image(systemName: "rectangle.connected.to.line.below").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("\(roleLabel.uppercased()) · CONNECTED APPS").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
-            Text("Connected apps + API tokens").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
-            Text("Connect the integrations that apply to your role, and issue API tokens — all in-app.")
-                .font(EType.caption).foregroundStyle(palette.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    // MARK: - Non-integration role (honest, not a dead-end)
-
-    private var nonIntegrationRoleCard: some View {
-        LifecycleCard {
-            LifecycleSection(label: "CONNECTED APPS", icon: "rectangle.connected.to.line.below")
-            Text("This role does not own account-level integrations. Ask an account admin to connect providers or issue API tokens.")
+            Text(surfaceTitle ?? "Connected apps + API tokens").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
+            Text(surfaceSummary ?? "Connect the integrations that apply to your role, and issue API tokens — all in-app.")
                 .font(EType.caption).foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -339,138 +620,85 @@ private struct ConnectedAppsBody: View {
 
     @ViewBuilder
     private var integrationJourneySection: some View {
-        if let reason = connectionsUnavailableReason {
+        if let failure = catalogFailure {
             LifecycleCard(accentDanger: true) {
                 LifecycleSection(label: "RIOS ADOPTION MAP", icon: "point.3.connected.trianglepath.dotted")
-                Text("Connection state could not be loaded, so RIOS will not infer adoption progress.")
+                Text(integrationFailureSummary(failure, resource: "Journey benefits"))
                     .font(EType.caption).foregroundStyle(Brand.danger)
                     .fixedSize(horizontal: false, vertical: true)
-                Text(reason)
+                Text(failure.detail)
                     .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
                     .lineLimit(2)
             }
         } else {
-            let impacts = IntegrationJourneyPlanner.impacts(for: providers, connections: connections)
-            let adoptionSignals = IntegrationJourneyPlanner.adoptionSignals(for: providers, connections: connections)
-            let networkBenefits = IntegrationJourneyPlanner.networkBenefits(for: providers, connections: connections)
-            if !impacts.isEmpty || !adoptionSignals.isEmpty || !networkBenefits.isEmpty {
+            let benefits = liveJourneyBenefits(
+                providers: scopedProviders,
+                connections: connectionsFailure == nil ? scopedConnections : nil
+            )
             LifecycleCard {
                 LifecycleSection(label: "RIOS ADOPTION MAP", icon: "point.3.connected.trianglepath.dotted")
 
-                Text("\(providers.count) role-mapped providers can shorten onboarding, enrich this account, and improve the counterparties who depend on this role.")
-                    .font(EType.caption).foregroundStyle(palette.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                Label("Live role catalog · \(scopedProviders.count) providers", systemImage: "checkmark.seal")
+                    .font(EType.mono(.micro))
+                    .foregroundStyle(palette.textTertiary)
 
-                if !adoptionSignals.isEmpty {
-                    journeySubhead("ONBOARDING ACCELERATORS")
-                    ForEach(adoptionSignals) { signal in
-                        adoptionSignalRow(signal)
-                    }
+                if let failure = connectionsFailure {
+                    Text("Connection progress is unavailable, so benefit counts are not inferred.")
+                        .font(EType.caption).foregroundStyle(Brand.danger)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(failure.detail)
+                        .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
+                        .lineLimit(2)
                 }
 
-                if !networkBenefits.isEmpty {
-                    journeyDivider
-                    journeySubhead("CROSS-ROLE BENEFIT")
-                    ForEach(networkBenefits) { benefit in
-                        networkBenefitRow(benefit)
+                if benefits.isEmpty {
+                    Text(scopedProviders.isEmpty
+                         ? "No providers are mapped to this role in the live catalog."
+                         : "The live catalog does not currently publish journey benefits for these providers.")
+                        .font(EType.caption).foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    ForEach(benefits) { benefit in
+                        journeyBenefitRow(benefit)
                     }
                 }
-
-                if !impacts.isEmpty {
-                    journeyDivider
-                    journeySubhead("WORKFLOW UNLOCKS")
-                    ForEach(impacts) { impact in
-                        journeyImpactRow(impact)
-                    }
-                }
-            }
             }
         }
     }
 
-    private func journeySubhead(_ text: String) -> some View {
-        Text(text)
-            .font(.system(size: 8, weight: .heavy))
-            .tracking(0.7)
-            .foregroundStyle(palette.textTertiary)
-            .padding(.top, 4)
-    }
-
-    private var journeyDivider: some View {
-        Rectangle()
-            .fill(palette.borderFaint)
-            .frame(height: 1)
-            .padding(.vertical, 2)
-    }
-
-    private func adoptionSignalRow(_ signal: IntegrationAdoptionSignal) -> some View {
-        journeyMetricRow(
-            icon: signal.icon,
-            title: signal.title,
-            body: signal.outcome,
-            count: "\(signal.connectedCount)/\(signal.providerCount) connected",
-            providerNames: signal.providerNames,
-            providerCount: signal.providerCount,
-            active: signal.connectedCount > 0)
-    }
-
-    private func networkBenefitRow(_ benefit: IntegrationNetworkBenefit) -> some View {
-        journeyMetricRow(
-            icon: benefit.icon,
-            title: benefit.recipient,
-            body: benefit.benefit,
-            count: "\(benefit.connectedCount)/\(benefit.providerCount) connected",
-            providerNames: benefit.providerNames,
-            providerCount: benefit.providerCount,
-            active: benefit.connectedCount > 0)
-    }
-
-    private func journeyImpactRow(_ impact: IntegrationJourneyImpact) -> some View {
-        journeyMetricRow(
-            icon: impact.icon,
-            title: impact.title,
-            body: impact.outcome,
-            count: "\(impact.connectedCount)/\(impact.providerCount) connected",
-            providerNames: impact.providerNames,
-            providerCount: impact.providerCount,
-            active: impact.connectedCount > 0)
-    }
-
-    private func journeyMetricRow(
-        icon: String,
-        title: String,
-        body: String,
-        count: String,
-        providerNames: [String],
-        providerCount: Int,
-        active: Bool
-    ) -> some View {
+    private func journeyBenefitRow(_ benefit: IntegrationJourneyBenefit) -> some View {
         VStack(alignment: .leading, spacing: 5) {
-            HStack(alignment: .top, spacing: 8) {
-                Image(systemName: icon)
-                    .font(.system(size: 13, weight: .heavy))
-                    .foregroundStyle(LinearGradient.diagonal)
-                    .frame(width: 18)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text(title)
-                            .font(EType.bodyStrong)
-                            .foregroundStyle(palette.textPrimary)
-                        Spacer(minLength: 8)
-                        Text(count)
-                            .font(EType.mono(.micro))
-                            .foregroundStyle(active ? Brand.success : palette.textTertiary)
-                    }
-                    Text(body)
-                        .font(EType.caption)
-                        .foregroundStyle(palette.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    providerNameLine(providerNames, total: providerCount)
-                }
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(benefit.adoptionStage.map { prettyToken($0) } ?? "Connected workflow")
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                Spacer(minLength: 8)
+                Text(benefit.connectedCount.map { "\($0)/\(benefit.providerCount) connected" } ?? "State unavailable")
+                    .font(EType.mono(.micro))
+                    .foregroundStyle(benefit.connectedCount.map { $0 > 0 } == true ? Brand.success : palette.textTertiary)
             }
+            journeyStatement(label: "SETUP", value: benefit.setup)
+            journeyStatement(label: "UNLOCK", value: benefit.operationalUnlock)
+            journeyStatement(label: "SHARED", value: benefit.crossRoleBenefit)
+            providerNameLine(benefit.providerNames, total: benefit.providerCount)
         }
         .padding(.vertical, 6)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(palette.borderFaint).frame(height: 1)
+        }
+    }
+
+    private func journeyStatement(label: String, value: String) -> some View {
+        HStack(alignment: .top, spacing: 7) {
+            Text(label)
+                .font(.system(size: 7, weight: .heavy))
+                .foregroundStyle(LinearGradient.diagonal)
+                .frame(width: 44, alignment: .leading)
+            Text(cleanLabel(value))
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private func providerNameLine(_ names: [String], total: Int) -> some View {
@@ -487,53 +715,114 @@ private struct ConnectedAppsBody: View {
         LifecycleCard {
             LifecycleSection(label: "CONNECTED APPS", icon: "rectangle.connected.to.line.below")
 
-            if let reason = connectionsUnavailableReason {
-                Text("Connection state is unavailable. Connect, sync, and disconnect actions are locked until it is recovered.")
+            if let failure = connectionsFailure {
+                Text(integrationFailureSummary(failure, resource: "Connection state"))
                     .font(EType.caption).foregroundStyle(Brand.danger)
                     .fixedSize(horizontal: false, vertical: true)
-                Text(reason)
+                Text(failure.detail)
                     .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
                     .lineLimit(2)
                 pillButton(title: "Retry connection state", filled: false, busy: false) {
-                    Task { await refreshConnections() }
+                    Task { _ = await refreshConnections() }
                 }
+            } else if catalogFailure != nil,
+                      let includedCategories,
+                      !includedCategories.isEmpty {
+                Text("Connection state loaded, but category-scoped rows cannot be attributed while the live catalog is unavailable.")
+                    .font(EType.caption).foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             } else {
-                let connectedCount = connections.filter(\.isOperational).count
+                let connectedCount = scopedConnections.filter { $0.isOperational == true }.count
+                let unknownCount = scopedConnections.filter { $0.isOperational == nil }.count
+                let presentCount = scopedConnections.filter(\.isPresent).count
                 Text(connectedCount == 0
-                     ? "No integrations connected yet. Pick a provider below to connect."
-                     : "\(connectedCount) connected · \(providers.count) available for your role")
+                     ? (presentCount == 0
+                        ? "No connections were returned for this signed-in account and active company."
+                        : unknownCount > 0
+                            ? "\(unknownCount) connection\(unknownCount == 1 ? "" : "s") have no authoritative feed truth; usable state is unknown."
+                            : "\(presentCount) connection\(presentCount == 1 ? "" : "s") need attention; none currently provide usable data.")
+                     : "\(connectedCount) usable · \(unknownCount) unknown · \(presentCount) present · \(scopedProviders.count) available for your role")
                     .font(EType.caption).foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            if let reason = catalogUnavailableReason {
-                Text("Live provider catalog is temporarily unavailable.")
+            if let failure = catalogFailure {
+                Text(integrationFailureSummary(failure, resource: "Live provider catalog"))
                     .font(EType.caption).foregroundStyle(Brand.danger)
                     .fixedSize(horizontal: false, vertical: true)
-                Text(reason)
+                Text(failure.detail)
                     .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
                     .lineLimit(2)
             }
 
-            if providers.isEmpty {
-                if catalogUnavailableReason != nil {
+            if scopedProviders.isEmpty {
+                if catalogFailure != nil {
                     pillButton(title: "Retry catalog", filled: false, busy: loading) {
                         Task { await load() }
                     }
                 } else {
-                    Text("No providers are mapped to your role yet.")
+                    Text("The current provider catalog lists no providers for this role and transport mode.")
                         .font(EType.caption).foregroundStyle(palette.textSecondary)
                 }
             } else {
-                ForEach(providers) { providerRow($0) }
+                ForEach(displayedProviders) { providerRow($0) }
+            }
+
+            if !unmatchedConnections.isEmpty {
+                Text("CONNECTIONS OUTSIDE CURRENT CATALOG")
+                    .font(.system(size: 8, weight: .heavy))
+                    .foregroundStyle(palette.textTertiary)
+                    .padding(.top, 4)
+                Text("These accessible connections are not listed in the current role catalog. Provider details, synchronization support, and documentation are unavailable. Disconnect is offered only when the current connection record confirms management access.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                ForEach(unmatchedConnections) { unavailableConnectionRow($0) }
             }
         }
     }
 
+    private func unavailableConnectionRow(_ connection: IntegrationConnection) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(connection.providerId)
+                    .font(EType.mono(.caption))
+                    .foregroundStyle(palette.textPrimary)
+                Label(connectionDisplayStateLabel(connection), systemImage: "exclamationmark.triangle")
+                    .font(EType.mono(.micro))
+                    .foregroundStyle(Brand.warning)
+                Text(credentialCustodyLabel(connection.credentialState))
+                    .font(EType.mono(.micro))
+                    .foregroundStyle(palette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            if connection.canManage == true {
+                pillButton(
+                    title: busyProvider == connection.providerId ? "…" : "Disconnect",
+                    filled: false,
+                    danger: true,
+                    busy: false
+                ) {
+                    pendingDisconnect = IntegrationDisconnectIntent(
+                        connection: connection,
+                        providerName: connection.providerId
+                    )
+                }
+                .disabled(busyProvider != nil)
+            } else {
+                Label("Management access unavailable", systemImage: "lock.shield")
+                    .font(EType.mono(.micro))
+                    .foregroundStyle(palette.textTertiary)
+            }
+        }
+        .padding(.vertical, 6)
+    }
+
     @ViewBuilder
     private func providerRow(_ p: IntegrationProvider) -> some View {
-        let conn = connections.first { $0.providerId == p.id && ($0.status ?? "").lowercased() != "disabled" }
-        let isConnected = conn.map { ["live", "stale", "on_demand", "connecting"].contains($0.effectiveFeedState) } ?? false
+        let conn = connections.first { $0.providerId == p.id }
+        let hasConnection = conn?.isPresent == true
         let isExpanded = expandedProvider == p.id
         let busy = busyProvider == p.id
 
@@ -562,29 +851,38 @@ private struct ConnectedAppsBody: View {
                             .font(EType.mono(.micro))
                             .foregroundStyle(palette.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
-                        if let url = providerDocsURL(from: p.docsUrl) {
-                            Link(destination: url) {
-                                Label("Provider details", systemImage: "safari")
-                                    .font(.system(size: 9, weight: .semibold))
-                                    .foregroundStyle(Brand.blue)
-                            }
+                    }
+                    if p.connectable,
+                       !p.canEstablishConnection,
+                       let reason = p.establishmentBlockedReason,
+                       !reason.isEmpty {
+                        Text(cleanLabel(reason))
+                            .font(EType.mono(.micro))
+                            .foregroundStyle(Brand.warning)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if let url = providerDocsURL(from: p.docsUrl) {
+                        Link(destination: url) {
+                            Label("Provider documentation", systemImage: "safari")
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(Brand.blue)
                         }
                     }
                     if conn != nil {
-                        connectedStatusLine(conn)
+                        connectedStatusLine(conn, provider: p)
                     }
                 }
                 Spacer(minLength: 8)
-                providerActions(p, isConnected: isConnected, conn: conn, isExpanded: isExpanded, busy: busy)
+                providerActions(p, hasConnection: hasConnection, conn: conn, isExpanded: isExpanded, busy: busy)
             }
 
-            if isExpanded && !isConnected {
+            if isExpanded && !hasConnection {
                 connectForm(p, busy: busy)
             }
         }
         .padding(.vertical, 6)
         .overlay(alignment: .bottom) {
-            if p.id != providers.last?.id {
+            if p.id != displayedProviders.last?.id {
                 Rectangle().fill(palette.borderFaint).frame(height: 1)
             }
         }
@@ -620,14 +918,20 @@ private struct ConnectedAppsBody: View {
     }
 
     @ViewBuilder
-    private func connectedStatusLine(_ conn: IntegrationConnection?) -> some View {
-        let state = conn?.effectiveFeedState ?? "disabled"
+    private func connectedStatusLine(_ conn: IntegrationConnection?, provider: IntegrationProvider) -> some View {
+        let state = conn?.effectiveFeedState
         let isError = state == "error"
         let isWarning = state == "stale" || state == "credentials_required"
-        let color = isError ? Brand.danger : isWarning ? Brand.warning : state == "connecting" ? Brand.blue : Brand.success
+        let color = state == nil ? Brand.warning
+            : isError ? Brand.danger
+            : isWarning ? Brand.warning
+            : state == "connecting" ? Brand.blue
+            : state == "disabled" ? palette.textTertiary
+            : ["live", "on_demand"].contains(state ?? "") ? Brand.success
+            : Brand.warning
         HStack(spacing: 5) {
             Circle().fill(color).frame(width: 6, height: 6)
-            Text(feedStateLabel(state))
+            Text(state.map { feedStateLabel($0) } ?? "Feed state unavailable")
                 .font(.system(size: 10, weight: .heavy)).tracking(0.4)
                 .foregroundStyle(color)
             if let cadence = conn?.syncIntervalMinutes, conn?.syncMode == "scheduled" {
@@ -640,38 +944,135 @@ private struct ConnectedAppsBody: View {
         if isError, let e = conn?.lastError, !e.isEmpty {
             Text(e).font(EType.mono(.micro)).foregroundStyle(Brand.danger).lineLimit(2)
         }
+        if let conn {
+            if state == nil, let status = conn.status, !status.isEmpty {
+                Text("\(connectionStatusLabel(status)); operational status remains unknown.")
+                    .font(EType.mono(.micro))
+                    .foregroundStyle(palette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let reason = conn.feedStateReason, !reason.isEmpty {
+                Text(feedStateReasonLabel(reason))
+                    .font(EType.mono(.micro))
+                    .foregroundStyle(palette.textTertiary)
+            }
+            Label(connectionOwnershipLabel(conn), systemImage: conn.sharedWithCompany == true ? "building.2" : "person.crop.circle")
+                .font(EType.mono(.micro))
+                .foregroundStyle(palette.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+            Label(credentialCustodyLabel(conn.credentialState), systemImage: "lock.shield")
+                .font(EType.mono(.micro))
+                .foregroundStyle(conn.credentialState == "missing" ? Brand.warning : palette.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+            Label("Catalog verification: \(connectionVerificationLabel(provider.activationVerification ?? provider.connectionVerification))", systemImage: "checkmark.seal")
+                .font(EType.mono(.micro))
+                .foregroundStyle(palette.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+            if let activation = conn.activation {
+                connectionActivationEvidence(activation)
+            } else {
+                Label("Current activation evidence is unavailable", systemImage: "questionmark.diamond")
+                    .font(EType.mono(.micro))
+                    .foregroundStyle(Brand.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let updated = conn.updatedAt, !updated.isEmpty {
+                Text("Connection record updated \(humanISO(updated))")
+                    .font(EType.mono(.micro))
+                    .foregroundStyle(palette.textTertiary)
+            }
+        }
     }
 
     @ViewBuilder
-    private func providerActions(_ p: IntegrationProvider, isConnected: Bool, conn: IntegrationConnection?, isExpanded: Bool, busy: Bool) -> some View {
+    private func connectionActivationEvidence(_ activation: IntegrationActivationSummary) -> some View {
+        Label(activationStateLabel(activation.state), systemImage: activation.ready ? "checkmark.seal.fill" : "clock.badge.exclamationmark")
+            .font(EType.mono(.micro))
+            .foregroundStyle(activation.ready ? Brand.success : Brand.warning)
+            .fixedSize(horizontal: false, vertical: true)
+        ForEach(activation.steps, id: \.key) { step in
+            let owner = step.owner == "provider" ? "Provider action" : "Company action"
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(owner) · \(cleanLabel(step.label)) · \(activationStepStateLabel(step.state))")
+                    .font(EType.mono(.micro))
+                    .foregroundStyle(step.state == "verified" ? Brand.success : palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let detail = step.detail, !detail.isEmpty {
+                    Text(cleanLabel(detail))
+                        .font(EType.mono(.micro))
+                        .foregroundStyle(palette.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let verifiedAt = step.verifiedAt, !verifiedAt.isEmpty {
+                    Text("Verified \(humanISO(verifiedAt))")
+                        .font(EType.mono(.micro))
+                        .foregroundStyle(palette.textTertiary)
+                }
+                if let url = providerDocsURL(from: step.docsUrl) {
+                    Link(destination: url) {
+                        Label("Requirement instructions", systemImage: "safari")
+                            .font(EType.mono(.micro))
+                            .foregroundStyle(Brand.blue)
+                    }
+                }
+            }
+            .padding(.leading, 11)
+        }
+    }
+
+    @ViewBuilder
+    private func providerActions(_ p: IntegrationProvider, hasConnection: Bool, conn: IntegrationConnection?, isExpanded: Bool, busy: Bool) -> some View {
         VStack(alignment: .trailing, spacing: 6) {
-            if connectionsUnavailableReason != nil {
+            if connectionsFailure != nil && p.connectable {
                 pillButton(title: "State unavailable", filled: false, busy: false) {}
                     .disabled(true)
-            } else if isConnected {
-                if p.supportsSync == true && conn?.effectiveFeedState != "connecting" {
+            } else if hasConnection {
+                if p.supportsSync == true,
+                   conn?.accessible == true,
+                   let state = conn?.effectiveFeedState,
+                   !["connecting", "credentials_required", "disabled"].contains(state) {
                     pillButton(title: busy ? "Syncing…" : "Sync", filled: false, busy: busy) {
                         Task { await sync(conn) }
                     }
+                    .disabled(busy)
                 }
-                pillButton(title: busy ? "…" : "Disconnect", filled: false, danger: true, busy: false) {
-                    Task { await disconnect(conn) }
+                if conn?.canManage == true {
+                    pillButton(title: busy ? "…" : "Disconnect", filled: false, danger: true, busy: false) {
+                        guard let conn else { return }
+                        pendingDisconnect = IntegrationDisconnectIntent(
+                            connection: conn,
+                            providerName: p.displayName
+                        )
+                    }
+                    .disabled(busy)
+                } else {
+                    pillButton(title: "Company admin required", filled: false, busy: false) {}
+                        .disabled(true)
                 }
             } else {
                 if !p.connectable {
-                    pillButton(title: "Setup required", filled: false, busy: false) {}
+                    pillButton(title: isExpanded ? "Close" : "Setup details", filled: false, busy: false) {
+                        expandedProvider = isExpanded ? nil : p.id
+                    }
+                } else if !p.canEstablishConnection {
+                    pillButton(title: "Credential owner required", filled: false, busy: false) {}
+                        .disabled(true)
+                } else if conn != nil && conn?.canManage != true {
+                    pillButton(title: "Company admin required", filled: false, busy: false) {}
                         .disabled(true)
                 } else {
-                    pillButton(title: isExpanded ? "Cancel" : "Connect", filled: !isExpanded, busy: false) {
+                    pillButton(
+                        title: busy ? "Connecting…" : isExpanded ? "Cancel" : "Connect",
+                        filled: !isExpanded,
+                        busy: busy
+                    ) {
                         if isExpanded {
                             expandedProvider = nil
-                        } else if !p.credentialFields.isEmpty || !p.configurationFields.isEmpty {
-                            expandedProvider = p.id
                         } else {
-                            // Public provider — connect with no credentials.
-                            Task { await connect(p, credentials: nil, configuration: [:]) }
+                            expandedProvider = p.id
                         }
                     }
+                    .disabled(busy)
                 }
             }
         }
@@ -680,29 +1081,55 @@ private struct ConnectedAppsBody: View {
     /// Inline credential entry (push-nav style in-flow disclosure — not a slide-up sheet).
     @ViewBuilder
     private func connectForm(_ p: IntegrationProvider, busy: Bool) -> some View {
+        let canCollectCredentials = p.canEstablishConnection && providerProvisioningReady(p)
         VStack(alignment: .leading, spacing: 8) {
-            Text("Enter the credentials \(cleanLabel(p.displayName)) issued to you. They're stored encrypted and never shown again.")
+            Text(providerCredentialGuidance(p))
                 .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
 
+            providerActivationDisclosure(p)
+            providerCompanyConfirmations(p)
             providerJourneyDisclosure(p)
 
-            if !p.credentialFields.isEmpty {
-                Text("CREDENTIALS")
-                    .font(.system(size: 8, weight: .heavy)).tracking(0.6)
-                    .foregroundStyle(palette.textTertiary)
-            }
-            ForEach(p.credentialFields, id: \.self) { field in
-                providerInputField(provider: p.id, kind: "credential", field: field)
-            }
+            if p.connectable && !p.canEstablishConnection {
+                Label(
+                    p.establishmentBlockedReason
+                        ?? "An authorized company credential custodian must establish this shared connection. Once verified, eligible users can consume its live workflow benefits without receiving or replacing credentials.",
+                    systemImage: "building.2.crop.circle"
+                )
+                .font(EType.mono(.micro))
+                .foregroundStyle(Brand.warning)
+                .fixedSize(horizontal: false, vertical: true)
+            } else if p.connectable && !canCollectCredentials {
+                Label(
+                    p.provisioning == nil || p.provisioning?.requirements.isEmpty == true
+                        ? "The provider provisioning contract is unavailable. Credential entry and authorization remain locked."
+                        : "Confirm the company prerequisites above before entering credentials or opening provider authorization.",
+                    systemImage: "lock.shield"
+                )
+                .font(EType.mono(.micro))
+                .foregroundStyle(Brand.warning)
+                .fixedSize(horizontal: false, vertical: true)
+            } else if p.connectable && !usesNativeOAuth(p) {
+                providerAuthenticationAlternatives(p)
 
-            if !p.configurationFields.isEmpty {
-                Text("CONNECTION SETTINGS")
-                    .font(.system(size: 8, weight: .heavy)).tracking(0.6)
-                    .foregroundStyle(palette.textTertiary)
-            }
-            ForEach(p.configurationFields, id: \.self) { field in
-                providerInputField(provider: p.id, kind: "configuration", field: field)
+                if !p.credentialFields.isEmpty {
+                    Text("CREDENTIALS")
+                        .font(.system(size: 8, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(palette.textTertiary)
+                    ForEach(p.credentialFields, id: \.self) { field in
+                        providerInputField(provider: p.id, kind: "credential", field: field)
+                    }
+                }
+
+                if !p.configurationFields.isEmpty {
+                    Text("CONNECTION SETTINGS")
+                        .font(.system(size: 8, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(palette.textTertiary)
+                    ForEach(p.configurationFields, id: \.self) { field in
+                        providerInputField(provider: p.id, kind: "configuration", field: field)
+                    }
+                }
             }
 
             // Provider reference. The role catalog stores verified provider
@@ -715,37 +1142,214 @@ private struct ConnectedAppsBody: View {
                         Text("Open \(providerDocsLabel(from: url))").font(.system(size: 10, weight: .semibold))
                     }.foregroundStyle(Brand.blue)
                 }
-                Text("Credentials are issued from your \(cleanLabel(p.displayName)) account — generate an API key there, then paste it above.")
-                    .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
             } else {
-                Text("Get your API credentials from your \(cleanLabel(p.displayName)) account or admin, then paste them above.")
-                    .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
+                Label("Verified provider documentation link unavailable", systemImage: "exclamationmark.triangle")
+                    .font(EType.mono(.micro))
+                    .foregroundStyle(palette.textTertiary)
             }
 
-            HStack {
-                Spacer()
-                pillButton(title: busy ? "Connecting…" : "Connect provider", filled: true, busy: busy) {
-                    Task {
-                        var creds: [String: String] = [:]
-                        for field in p.credentialFields {
-                            let v = credInputs[inputKey(provider: p.id, kind: "credential", field: field.key)] ?? ""
-                            if !v.isEmpty { creds[field.key] = v }
+            if p.connectable {
+                HStack {
+                    Spacer()
+                    pillButton(
+                        title: busy ? "Connecting…" : usesNativeOAuth(p) ? "Authorize provider" : "Connect provider",
+                        filled: true,
+                        busy: busy
+                    ) {
+                        Task {
+                            if usesNativeOAuth(p) {
+                                await authorizeOAuth(p)
+                                return
+                            }
+                            do {
+                                let payload = try activationPayload(for: p)
+                                await connect(
+                                    p,
+                                    credentials: payload.credentials.isEmpty ? nil : payload.credentials,
+                                    configuration: payload.configuration
+                                )
+                            } catch {
+                                actionError = errorMessage(error)
+                            }
                         }
-                        var configuration: [String: String] = [:]
-                        for field in p.configurationFields {
-                            let v = credInputs[inputKey(provider: p.id, kind: "configuration", field: field.key)] ?? ""
-                            if !v.isEmpty { configuration[field.key] = v }
-                        }
-                        await connect(p, credentials: creds.isEmpty ? nil : creds, configuration: configuration)
                     }
+                    .disabled(!connectFormReady(p) || busy)
+                    .opacity(connectFormReady(p) ? 1 : 0.5)
                 }
-                .disabled(!connectFormReady(p) || busy)
-                .opacity(connectFormReady(p) ? 1 : 0.5)
             }
         }
         .padding(.top, 4)
+    }
+
+    @ViewBuilder
+    private func providerActivationDisclosure(_ p: IntegrationProvider) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("ACTIVATION OWNERSHIP")
+                    .font(.system(size: 8, weight: .heavy))
+                    .foregroundStyle(palette.textTertiary)
+                Spacer(minLength: 8)
+                Text(p.provisioning == nil ? "CONTRACT UNAVAILABLE" : provisioningModeLabel(p.provisioning?.mode).uppercased())
+                    .font(.system(size: 7, weight: .heavy))
+                    .foregroundStyle(p.provisioning == nil ? Brand.warning : palette.textTertiary)
+            }
+            if let provisioning = p.provisioning, !provisioning.requirements.isEmpty {
+                ForEach(provisioning.requirements, id: \.key) { requirement in
+                    provisioningRequirementRow(requirement, provider: p)
+                }
+                Text(provisioning.activation == "automatic_after_verification"
+                     ? "EusoTrip activates automatically only after every required proof is verified."
+                     : "Activation remains subject to the provider's published approval policy.")
+                    .font(EType.mono(.micro))
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Label("The live catalog did not publish provisioning requirements. Activation submission is locked.", systemImage: "exclamationmark.triangle")
+                    .font(EType.mono(.micro))
+                    .foregroundStyle(Brand.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            activationDisclosureRow(
+                icon: "checkmark.shield",
+                title: "EusoTrip verification",
+                detail: providerServerActivationRequirement(p)
+            )
+            activationDisclosureRow(
+                icon: "lock.shield",
+                title: "Credential custody",
+                detail: "Submitted secrets are protected by EusoTrip, cleared from this form after the attempt, and never returned in connection details."
+            )
+            let proof = researchStatusLabel(p.researchStatus)
+            let checked = p.researchVerifiedAt.map { " · checked \(humanISO($0))" } ?? ""
+            Text("Catalog research: \(proof)\(checked)")
+                .font(EType.mono(.micro))
+                .foregroundStyle(p.researchStatus == "verified" ? Brand.success : palette.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(9)
+        .background(palette.bgCardSoft)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+    }
+
+    @ViewBuilder
+    private func provisioningRequirementRow(
+        _ requirement: IntegrationProvisioningRequirement,
+        provider: IntegrationProvider
+    ) -> some View {
+        let owner = requirement.owner == "provider"
+            ? "\(cleanLabel(provider.vendor ?? provider.displayName)) verifies this"
+            : "Your company supplies this"
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: requirement.owner == "provider" ? "building.2.crop.circle" : "person.crop.circle")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(LinearGradient.diagonal)
+                .frame(width: 16)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(cleanLabel(requirement.label))
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textPrimary)
+                Text("\(owner) · \(provisioningVerificationLabel(requirement.verification))")
+                    .font(EType.mono(.micro))
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let url = providerDocsURL(from: requirement.docsUrl) {
+                    Link(destination: url) {
+                        Label("Requirement instructions", systemImage: "safari")
+                            .font(EType.mono(.micro))
+                            .foregroundStyle(Brand.blue)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func providerCompanyConfirmations(_ p: IntegrationProvider) -> some View {
+        let requirements = customerConfirmationRequirements(p)
+        if !requirements.isEmpty {
+            VStack(alignment: .leading, spacing: 7) {
+                Text("COMPANY CONFIRMATIONS")
+                    .font(.system(size: 8, weight: .heavy))
+                    .foregroundStyle(palette.textTertiary)
+                ForEach(requirements, id: \.key) { requirement in
+                    let key = confirmationKey(provider: p.id, requirement: requirement.key)
+                    let confirmed = confirmedProvisioningRequirements.contains(key)
+                    Button {
+                        if confirmed {
+                            confirmedProvisioningRequirements.remove(key)
+                        } else {
+                            confirmedProvisioningRequirements.insert(key)
+                        }
+                    } label: {
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: confirmed ? "checkmark.square.fill" : "square")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(confirmed ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.textTertiary))
+                                .frame(width: 18)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(cleanLabel(requirement.label))
+                                    .font(EType.caption)
+                                    .foregroundStyle(palette.textPrimary)
+                                Text("I confirm I am authorized to attest this prerequisite for my company.")
+                                    .font(EType.mono(.micro))
+                                    .foregroundStyle(palette.textSecondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Confirm \(requirement.label)")
+                }
+            }
+            .padding(9)
+            .background(palette.bgCardSoft)
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                    .strokeBorder(palette.borderFaint, lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+        }
+    }
+
+    @ViewBuilder
+    private func providerAuthenticationAlternatives(_ p: IntegrationProvider) -> some View {
+        if let requirement = p.inputRequirement, !requirement.alternatives.isEmpty {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(requirement.mode == "any_of" ? "CHOOSE ONE AUTHENTICATION METHOD" : "AUTHENTICATION REQUIREMENTS")
+                    .font(.system(size: 8, weight: .heavy))
+                    .foregroundStyle(palette.textTertiary)
+                ForEach(Array(requirement.alternatives.enumerated()), id: \.offset) { index, alternative in
+                    let keys = alternative.credentials + (alternative.configuration ?? [])
+                    Text("\(index + 1). \(keys.map { inputFieldLabel($0, provider: p) }.joined(separator: " + "))")
+                        .font(EType.mono(.micro))
+                        .foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    private func activationDisclosureRow(icon: String, title: String, detail: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(LinearGradient.diagonal)
+                .frame(width: 16)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textPrimary)
+                Text(cleanLabel(detail))
+                    .font(EType.mono(.micro))
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 
     @ViewBuilder
@@ -791,11 +1395,16 @@ private struct ConnectedAppsBody: View {
                 .font(.system(size: 8, weight: .heavy)).tracking(0.6)
                 .foregroundStyle(palette.textTertiary)
             Group {
-                if field.secret || field.inputType == "secret" || field.inputType == "private_key" {
+                if field.inputType == "certificate" || field.inputType == "private_key" {
+                    SensitiveMultilineTextEditor(text: Binding(
+                        get: { credInputs[bindingKey] ?? "" },
+                        set: { credInputs[bindingKey] = $0 }))
+                    .frame(minHeight: 132)
+                } else if field.secret || field.inputType == "secret" {
                     SecureField(field.label, text: Binding(
                         get: { credInputs[bindingKey] ?? "" },
                         set: { credInputs[bindingKey] = $0 }))
-                } else if field.inputType == "json" || field.inputType == "certificate" {
+                } else if field.inputType == "json" {
                     TextEditor(text: Binding(
                         get: { credInputs[bindingKey] ?? "" },
                         set: { credInputs[bindingKey] = $0 }))
@@ -810,11 +1419,16 @@ private struct ConnectedAppsBody: View {
                     .autocorrectionDisabled()
                 }
             }
+            .keyboardType(field.inputType == "number" ? .decimalPad
+                          : field.inputType == "email" ? .emailAddress
+                          : field.inputType == "url" ? .URL
+                          : .default)
             .font(EType.mono(.caption))
             .foregroundStyle(palette.textPrimary)
             .padding(.horizontal, 10).padding(.vertical, 8)
             .background(palette.bgCardSoft)
             .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+            .accessibilityLabel(field.required ? field.label : "\(field.label), optional")
         }
     }
 
@@ -1053,8 +1667,8 @@ private struct ConnectedAppsBody: View {
 
     private func load() async {
         loading = true
-        catalogUnavailableReason = nil
-        connectionsUnavailableReason = nil
+        catalogFailure = nil
+        connectionsFailure = nil
         tokensUnavailableReason = nil
         scopesUnavailableReason = nil
         adaptationUnavailableReason = nil
@@ -1066,29 +1680,27 @@ private struct ConnectedAppsBody: View {
         async let cons: Result<[IntegrationConnection], Error> = capture {
             try await api.queryNoInput("userIntegrations.listConnections")
         }
-        async let keys: Result<[ApiKeyRow], Error> = capture {
-            try await api.queryNoInput("devPortal.apiKeys.list")
-        }
-        async let scopeRows: Result<[ApiScope], Error> = capture {
-            try await api.queryNoInput("devPortal.mcpTools.getScopes")
-        }
-        async let adaptationEnvelope: Result<ProfileAdaptation, Error> = capture {
-            try await api.queryNoInput("userIntegrations.profileAdaptation")
-        }
+        async let keys: Result<[ApiKeyRow], Error> = loadApiKeysIfNeeded()
+        async let scopeRows: Result<[ApiScope], Error> = loadApiScopesIfNeeded()
+        async let adaptationEnvelope: Result<ProfileAdaptation, Error> = loadAdaptationIfNeeded()
 
         switch await cat {
         case .success(let rows):
             providers = rows
+            if let initialProviderId,
+               rows.contains(where: { $0.id == initialProviderId }) {
+                expandedProvider = initialProviderId
+            }
         case .failure(let error):
             providers = []
-            catalogUnavailableReason = errorMessage(error)
+            catalogFailure = integrationLoadFailure(error)
         }
         switch await cons {
         case .success(let rows):
             connections = rows
         case .failure(let error):
             connections = []
-            connectionsUnavailableReason = errorMessage(error)
+            connectionsFailure = integrationLoadFailure(error)
         }
         switch await keys {
         case .success(let rows):
@@ -1114,6 +1726,27 @@ private struct ConnectedAppsBody: View {
         loading = false
     }
 
+    private func loadApiKeysIfNeeded() async -> Result<[ApiKeyRow], Error> {
+        guard showsTokens else { return .success([]) }
+        return await capture {
+            try await EusoTripAPI.shared.queryNoInput("devPortal.apiKeys.list")
+        }
+    }
+
+    private func loadApiScopesIfNeeded() async -> Result<[ApiScope], Error> {
+        guard showsTokens else { return .success([]) }
+        return await capture {
+            try await EusoTripAPI.shared.queryNoInput("devPortal.mcpTools.getScopes")
+        }
+    }
+
+    private func loadAdaptationIfNeeded() async -> Result<ProfileAdaptation, Error> {
+        guard showsAdaptation else { return .success(ProfileAdaptation()) }
+        return await capture {
+            try await EusoTripAPI.shared.queryNoInput("userIntegrations.profileAdaptation")
+        }
+    }
+
     private func capture<T>(_ operation: @escaping () async throws -> T) async -> Result<T, Error> {
         do {
             return .success(try await operation())
@@ -1124,68 +1757,261 @@ private struct ConnectedAppsBody: View {
 
     private func connect(
         _ p: IntegrationProvider,
-        credentials: [String: String]?,
-        configuration: [String: String]
+        credentials: [String: IntegrationActivationValue]?,
+        configuration: [String: IntegrationActivationValue]
     ) async {
+        guard p.connectable else {
+            actionError = p.blockedReason ?? "This provider is unavailable for production connection."
+            return
+        }
+        guard connectionsFailure == nil else {
+            actionError = "Connection state must be readable before credentials can be submitted."
+            return
+        }
+        guard p.canEstablishConnection else {
+            actionError = p.establishmentBlockedReason
+                ?? "An authorized company credential custodian must establish this connection."
+            return
+        }
+        guard providerProvisioningReady(p) else {
+            actionError = "Confirm the required company prerequisites before connecting."
+            return
+        }
+        if let existing = connections.first(where: { $0.providerId == p.id }),
+           existing.canManage != true {
+            actionError = "Only the credential custodian or a company administrator can replace this connection."
+            return
+        }
         busyProvider = p.id
         actionError = nil
         actionNotice = nil
-        struct In: Encodable { let providerId: String; let config: [String: String]; let credentials: [String: String]? }
+        defer {
+            clearSubmittedValues(for: p)
+            busyProvider = nil
+        }
+        struct In: Encodable {
+            let providerId: String
+            let config: [String: IntegrationActivationValue]
+            let credentials: [String: IntegrationActivationValue]?
+            let confirmedRequirementKeys: [String]
+        }
         struct Out: Decodable {
             let status: String
             let scopes: [String]?
             let error: String?
+            let detail: String?
             let verification: String?
             let connectionPreserved: Bool?
         }
         do {
             let out: Out = try await EusoTripAPI.shared.mutation(
                 "userIntegrations.connect",
-                input: In(providerId: p.id, config: configuration, credentials: credentials))
-            clearSubmittedValues(for: p)
-            await refreshConnections()
-            if out.status.lowercased() == "connected" {
-                expandedProvider = nil
-                actionNotice = "\(cleanLabel(p.displayName)) connected and verified."
-                await refreshProfileAdaptation()
+                input: In(
+                    providerId: p.id,
+                    config: configuration,
+                    credentials: credentials,
+                    confirmedRequirementKeys: confirmedRequirementKeys(for: p)))
+            if ["connected", "connecting"].contains(out.status.lowercased()) {
+                switch await refreshConnections() {
+                case .success(let rows):
+                    guard let confirmed = rows.first(where: { $0.providerId == p.id }) else {
+                        actionError = "\(cleanLabel(p.displayName)) accepted the request, but no accessible connection record is available. No connection is being claimed."
+                        return
+                    }
+                    if out.connectionPreserved == true {
+                        expandedProvider = nil
+                        actionNotice = (out.detail ?? "The replacement is still awaiting provider proof.")
+                            + " The existing verified connection remains active."
+                        return
+                    }
+                    guard confirmed.accessible == true else {
+                        actionError = "A \(cleanLabel(p.displayName)) connection record is present, but access ownership is not confirmed. No connection is being claimed."
+                        return
+                    }
+                    expandedProvider = nil
+                    if verifiedOperationalReadback(confirmed) {
+                        let proof = out.verification.map { " Verification: \(connectionVerificationLabel($0))." } ?? ""
+                        actionNotice = "\(cleanLabel(p.displayName)) is usable. Activation evidence and ownership are confirmed in the current connection record.\(proof)"
+                    } else if let activation = confirmed.activation, !activation.ready {
+                        actionNotice = "The \(cleanLabel(p.displayName)) connection request is recorded. \(activationReadbackSummary(activation)) No usable feed is being claimed yet."
+                    } else {
+                        actionError = "A \(cleanLabel(p.displayName)) connection record is present, but usable feed and activation evidence are not both confirmed. Operational state remains unknown."
+                        return
+                    }
+                    await refreshProfileAdaptation()
+                case .failure:
+                    actionError = "\(cleanLabel(p.displayName)) accepted the request, but current connection details are unavailable. Treat it as not connected until they can be confirmed."
+                }
             } else {
                 let preserved = out.connectionPreserved == true ? " Your existing verified connection remains active." : ""
-                actionError = (out.error ?? "\(cleanLabel(p.displayName)) requires additional authorization.") + preserved
+                let readback = await refreshConnections()
+                let readbackSuffix: String
+                if case .failure = readback {
+                    readbackSuffix = " Current connection details are unavailable."
+                } else {
+                    readbackSuffix = " Current connection details were refreshed."
+                }
+                actionError = (out.error ?? "\(cleanLabel(p.displayName)) requires additional authorization.")
+                    + preserved
+                    + readbackSuffix
             }
         } catch let e as EusoTripAPIError {
             actionError = e.errorDescription ?? "Couldn't connect \(cleanLabel(p.displayName))."
+            _ = await refreshConnections()
         } catch {
             actionError = error.localizedDescription
+            _ = await refreshConnections()
         }
-        busyProvider = nil
     }
 
-    private func disconnect(_ conn: IntegrationConnection?) async {
-        guard let conn else { return }
+    private func authorizeOAuth(_ provider: IntegrationProvider) async {
+        guard provider.connectable, usesNativeOAuth(provider) else {
+            actionError = provider.blockedReason ?? "Native OAuth is not enabled for this provider."
+            return
+        }
+        guard connectionsFailure == nil else {
+            actionError = "Connection state must be readable before provider authorization can start."
+            return
+        }
+        guard provider.canEstablishConnection else {
+            actionError = provider.establishmentBlockedReason
+                ?? "An authorized company credential custodian must establish this connection."
+            return
+        }
+        guard providerProvisioningReady(provider) else {
+            actionError = "Confirm the required company prerequisites before authorizing this provider."
+            return
+        }
+        if let existing = connections.first(where: { $0.providerId == provider.id }),
+           existing.canManage != true {
+            actionError = "Only the credential custodian or a company administrator can replace this connection."
+            return
+        }
+        busyProvider = provider.id
+        actionError = nil
+        actionNotice = nil
+        defer {
+            clearSubmittedValues(for: provider)
+            busyProvider = nil
+        }
+        do {
+            let authorizationURL = try await EusoTripAPI.shared.startIntegrationOAuth(
+                providerId: provider.id,
+                confirmedRequirementKeys: confirmedRequirementKeys(for: provider)
+            )
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                oauthSession.start(
+                    authorizationURL: authorizationURL,
+                    providerId: provider.id
+                ) { result in
+                    continuation.resume(with: result)
+                }
+            }
+            switch await refreshConnections() {
+            case .success(let rows):
+                guard let confirmed = rows.first(where: { $0.providerId == provider.id }) else {
+                    actionError = "Provider authorization returned, but no accessible connection record is available. No connection is being claimed."
+                    return
+                }
+                guard confirmed.accessible == true else {
+                    actionError = "Provider authorization returned, but connection access ownership was not confirmed. No connection is being claimed."
+                    return
+                }
+                expandedProvider = nil
+                if verifiedOperationalReadback(confirmed) {
+                    actionNotice = "\(cleanLabel(provider.displayName)) authorization, usable feed, activation evidence, and ownership are confirmed in the current connection record."
+                } else if let activation = confirmed.activation, !activation.ready {
+                    actionNotice = "\(cleanLabel(provider.displayName)) authorization returned. \(activationReadbackSummary(activation)) No usable feed is being claimed yet."
+                } else {
+                    actionError = "Provider authorization returned, but usable feed and activation evidence were not both confirmed. Operational state remains unknown."
+                    return
+                }
+                await refreshProfileAdaptation()
+            case .failure:
+                actionError = "Provider authorization returned, but current connection details are unavailable. Treat it as not connected until they can be confirmed."
+            }
+        } catch let error as IntegrationOAuthSessionError {
+            if case .authorizationCanceled = error {
+                actionNotice = error.errorDescription
+            } else {
+                actionError = error.errorDescription
+                _ = await refreshConnections()
+            }
+        } catch let error as EusoTripAPIError {
+            actionError = error.errorDescription ?? "Couldn't authorize \(cleanLabel(provider.displayName))."
+            _ = await refreshConnections()
+        } catch {
+            actionError = error.localizedDescription
+            _ = await refreshConnections()
+        }
+    }
+
+    private func disconnect(_ conn: IntegrationConnection, providerName: String) async {
+        guard conn.canManage == true else {
+            actionError = "Only the credential custodian or a company administrator can disconnect this connection."
+            return
+        }
         busyProvider = conn.providerId
         actionError = nil
         actionNotice = nil
+        defer { busyProvider = nil }
         struct In: Encodable { let connectionId: Int }
-        struct Out: Decodable { let ok: Bool }
+        struct Out: Decodable {
+            let ok: Bool
+            let status: String?
+            let credentialState: String?
+            let providerRevocation: String?
+        }
         do {
             let out: Out = try await EusoTripAPI.shared.mutation("userIntegrations.disconnect", input: In(connectionId: conn.id))
-            if out.ok {
-                actionNotice = "Integration disconnected and its stored credential retired."
-                await refreshConnections()
-                await refreshProfileAdaptation()
+            if out.ok,
+               out.status == "disabled",
+               out.credentialState == "persisted_reference_revoked",
+               out.providerRevocation == "adapter_completed" {
+                switch await refreshConnections() {
+                case .success(let rows):
+                    if let readback = rows.first(where: { $0.id == conn.id }) {
+                        let credentialRevoked = ["missing", "not_required"].contains(readback.credentialState ?? "")
+                        let activationRevoked = readback.activation?.state == "revoked"
+                        guard !readback.isPresent,
+                              readback.status?.lowercased() == "disabled",
+                              readback.effectiveFeedState == "disabled",
+                              credentialRevoked,
+                              activationRevoked else {
+                            actionError = "The disconnect request was accepted, but the current \(cleanLabel(providerName)) connection record does not yet confirm a disabled feed, revoked credential custody, and revoked activation evidence. Treat it as still active."
+                            return
+                        }
+                        actionNotice = "\(cleanLabel(providerName)) is disconnected. Current connection evidence confirms the feed is disabled and credential custody and activation evidence are revoked."
+                        await refreshProfileAdaptation()
+                    } else {
+                        actionNotice = "\(cleanLabel(providerName)) is disconnected. Provider authorization and stored credential access were revoked, and no accessible connection remains."
+                        await refreshProfileAdaptation()
+                    }
+                case .failure:
+                    actionError = "The disconnect request was accepted, but current connection details are unavailable. Treat \(cleanLabel(providerName)) and its credential as still active until the result can be confirmed."
+                }
             } else {
-                actionError = "The disconnect was not confirmed. Treat this integration as still connected and its credential still live — retry before assuming it is off."
+                actionError = "The disconnect result did not confirm provider authorization revocation, credential removal, and a disabled feed. Treat this connection and its credential as still active."
             }
         } catch let e as EusoTripAPIError {
             actionError = e.errorDescription ?? "Couldn't disconnect."
+            _ = await refreshConnections()
         } catch {
             actionError = error.localizedDescription
+            _ = await refreshConnections()
         }
-        busyProvider = nil
     }
 
     private func sync(_ conn: IntegrationConnection?) async {
         guard let conn else { return }
+        guard conn.accessible == true else {
+            actionError = "Your current connection access does not permit synchronization."
+            return
+        }
+        guard conn.isPresent else {
+            actionError = "This connection is disabled and cannot be synced."
+            return
+        }
         busyProvider = conn.providerId
         actionError = nil
         actionNotice = nil
@@ -1199,22 +2025,57 @@ private struct ConnectedAppsBody: View {
         }
         do {
             let out: Out = try await EusoTripAPI.shared.mutation("userIntegrations.sync", input: In(connectionId: conn.id))
-            if out.status == "synced" {
-                let records = out.recordsIngested ?? 0
-                let observations = out.observationsInserted ?? 0
-                actionNotice = "Provider sync completed: \(records) records received, \(observations) new observations stored."
-            } else if out.status == "skipped_cadence" {
-                let next = out.nextEligibleAt.map { humanISO($0) } ?? "the provider's next eligible window"
-                actionNotice = "No sync was run. The provider is next eligible \(next)."
-            } else {
-                actionError = "The provider returned an unsupported sync state: \(out.status)."
+            guard ["synced", "skipped_cadence"].contains(out.status) else {
+                actionError = "The provider returned an unrecognized synchronization result. No synchronization is being claimed."
+                busyProvider = nil
+                return
             }
-            await refreshConnections()
-            await refreshProfileAdaptation()
+            switch await refreshConnections() {
+            case .success(let rows):
+                guard let readback = rows.first(where: { $0.id == conn.id }) else {
+                    actionError = "The synchronization response was received, but the connection is no longer available in current connection details. No durable synchronization result is being claimed."
+                    break
+                }
+                if out.status == "synced" {
+                    guard readback.accessible == true,
+                          let feedState = readback.effectiveFeedState,
+                          let isOperational = readback.isOperational,
+                          let activation = readback.activation else {
+                        actionError = "The synchronization response was received, but current connection details do not establish feed status, access, usability, or activation. Operational status remains unknown."
+                        break
+                    }
+                    let evidence = syncCountEvidence(
+                        records: out.recordsIngested,
+                        observations: out.observationsInserted,
+                        duplicates: out.observationDuplicates
+                    )
+                    if isOperational && activation.ready {
+                        actionNotice = "Provider synchronization is confirmed. \(evidence) \(feedStateLabel(feedState)) feed evidence is usable."
+                    } else if !activation.ready {
+                        actionNotice = "Provider sync returned. \(evidence) \(activationReadbackSummary(activation)) No usable feed is being claimed yet."
+                    } else {
+                        actionError = "The synchronization response was received, but current connection details mark the feed unusable. No successful operational state is being claimed."
+                    }
+                } else {
+                    guard readback.accessible == true,
+                          let feedState = readback.effectiveFeedState,
+                          readback.isOperational != nil else {
+                        actionError = "The scheduling response was received, but current connection details do not establish feed status. Operational status remains unknown."
+                        break
+                    }
+                    let next = out.nextEligibleAt.map { humanISO($0) } ?? "the provider's next eligible window"
+                    actionNotice = "Synchronization was not due. The connection remains \(feedStateLabel(feedState).lowercased()); next eligible \(next)."
+                }
+                await refreshProfileAdaptation()
+            case .failure:
+                actionError = "The provider responded, but current connection details are unavailable. No durable synchronization result is being claimed."
+            }
         } catch let e as EusoTripAPIError {
             actionError = e.errorDescription ?? "Sync failed."
+            _ = await refreshConnections()
         } catch {
             actionError = error.localizedDescription
+            _ = await refreshConnections()
         }
         busyProvider = nil
     }
@@ -1269,13 +2130,16 @@ private struct ConnectedAppsBody: View {
         revokingKey = nil
     }
 
-    private func refreshConnections() async {
+    @discardableResult
+    private func refreshConnections() async -> Result<[IntegrationConnection], Error> {
         do {
             let rows: [IntegrationConnection] = try await EusoTripAPI.shared.queryNoInput("userIntegrations.listConnections")
             connections = rows
-            connectionsUnavailableReason = nil
+            connectionsFailure = nil
+            return .success(rows)
         } catch {
-            connectionsUnavailableReason = errorMessage(error)
+            connectionsFailure = integrationLoadFailure(error)
+            return .failure(error)
         }
     }
 
@@ -1316,10 +2180,98 @@ private struct ConnectedAppsBody: View {
         for field in provider.configurationFields {
             credInputs[inputKey(provider: provider.id, kind: "configuration", field: field.key)] = nil
         }
+        let prefix = "\(provider.id)|"
+        confirmedProvisioningRequirements = Set(
+            confirmedProvisioningRequirements.filter { !$0.hasPrefix(prefix) }
+        )
     }
 
     private func errorMessage(_ error: Error) -> String {
         (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+    }
+
+    private func integrationLoadFailure(_ error: Error) -> IntegrationLoadFailure {
+        let detail = errorMessage(error)
+        guard let apiError = error as? EusoTripAPIError else {
+            return IntegrationLoadFailure(kind: .unavailable, detail: detail)
+        }
+        switch apiError {
+        case .unauthenticated:
+            return IntegrationLoadFailure(kind: .unauthenticated, detail: detail)
+        case .forbidden:
+            return IntegrationLoadFailure(kind: .permissionDenied, detail: detail)
+        case .httpStatus(let status, _):
+            if status == 401 {
+                return IntegrationLoadFailure(kind: .unauthenticated, detail: detail)
+            }
+            if status == 403 {
+                return IntegrationLoadFailure(kind: .permissionDenied, detail: detail)
+            }
+            return IntegrationLoadFailure(kind: .unavailable, detail: detail)
+        default:
+            return IntegrationLoadFailure(kind: .unavailable, detail: detail)
+        }
+    }
+
+    private func integrationFailureSummary(_ failure: IntegrationLoadFailure, resource: String) -> String {
+        switch failure.kind {
+        case .unauthenticated:
+            return "\(resource) requires a current sign-in. No connection availability is being inferred."
+        case .permissionDenied:
+            return "\(resource) is not permitted for this account. No connection availability is being inferred."
+        case .unavailable:
+            return "\(resource) is unavailable. Actions remain locked until current records can be confirmed."
+        }
+    }
+
+    private func liveJourneyBenefits(
+        providers: [IntegrationProvider],
+        connections: [IntegrationConnection]?
+    ) -> [IntegrationJourneyBenefit] {
+        var groups: [IntegrationJourneyGroupKey: [IntegrationProvider]] = [:]
+        for provider in providers {
+            guard let journey = provider.journey,
+                  let setup = journey.setup, !setup.isEmpty,
+                  let unlock = journey.operationalUnlock, !unlock.isEmpty,
+                  let shared = journey.crossRoleBenefit, !shared.isEmpty else {
+                continue
+            }
+            let key = IntegrationJourneyGroupKey(
+                adoptionStage: journey.adoptionStage,
+                setup: setup,
+                operationalUnlock: unlock,
+                crossRoleBenefit: shared
+            )
+            groups[key, default: []].append(provider)
+        }
+
+        let operationalIds = connections.map { rows in
+            Set(rows.filter { $0.isOperational == true }.map(\.providerId))
+        }
+        return groups.map { key, matching in
+            let names = matching.map(\.displayName).sorted()
+            let connectedCount = operationalIds.map { ids in
+                matching.filter { ids.contains($0.id) }.count
+            }
+            return IntegrationJourneyBenefit(
+                id: [key.adoptionStage ?? "", key.setup, key.operationalUnlock, key.crossRoleBenefit]
+                    .joined(separator: "|"),
+                adoptionStage: key.adoptionStage,
+                setup: key.setup,
+                operationalUnlock: key.operationalUnlock,
+                crossRoleBenefit: key.crossRoleBenefit,
+                providerCount: matching.count,
+                connectedCount: connectedCount,
+                providerNames: names
+            )
+        }
+        .sorted { left, right in
+            let leftConnected = left.connectedCount ?? -1
+            let rightConnected = right.connectedCount ?? -1
+            if leftConnected != rightConnected { return leftConnected > rightConnected }
+            if left.providerCount != right.providerCount { return left.providerCount > right.providerCount }
+            return left.setup < right.setup
+        }
     }
 
     // MARK: - Helpers
@@ -1341,10 +2293,13 @@ private struct ConnectedAppsBody: View {
     /// only; never invents a destination when the catalog value is malformed.
     private func providerDocsURL(from raw: String?) -> URL? {
         guard let raw, !raw.isEmpty else { return nil }
-        guard let url = URL(string: raw),
-              let scheme = url.scheme?.lowercased(),
+        guard let components = URLComponents(string: raw),
+              components.user == nil,
+              components.password == nil,
+              let url = components.url,
+              let scheme = components.scheme?.lowercased(),
               scheme == "https",
-              url.host != nil else { return nil }
+              components.host != nil else { return nil }
         return url
     }
 
@@ -1359,7 +2314,7 @@ private struct ConnectedAppsBody: View {
     }
 
     private func feedStateLabel(_ state: String) -> String {
-        switch state {
+        switch state.lowercased() {
         case "live": return "Live"
         case "stale": return "Stale"
         case "on_demand": return "Ready on demand"
@@ -1367,7 +2322,193 @@ private struct ConnectedAppsBody: View {
         case "connecting": return "Connecting"
         case "credentials_required": return "Credentials needed"
         case "disabled": return "Disabled"
-        default: return prettyToken(state)
+        default: return "Feed status unavailable"
+        }
+    }
+
+    private func feedStateReasonLabel(_ reason: String) -> String {
+        switch reason.lowercased() {
+        case "connection_disabled":
+            return "This connection is disabled."
+        case "provider_not_registered":
+            return "Provider registration is unavailable."
+        case "provider_not_enabled_for_tenant_connections":
+            return "This provider is not enabled for company connections."
+        case "provider_credentials_missing":
+            return "Provider credentials are required."
+        case "verification_in_progress":
+            return "Provider access verification is in progress."
+        case "latest_provider_attempt_failed":
+            return "The latest provider attempt did not complete."
+        case "connection_state_invalid":
+            return "The current connection status cannot be verified."
+        case "scheduled_feed_never_synced":
+            return "No successful provider synchronization has been recorded."
+        case "scheduled_feed_missed_provider_cadence":
+            return "Provider data is older than its allowed freshness window."
+        case "scheduled_feed_within_provider_cadence":
+            return "Provider data is within its expected freshness window."
+        case "provider_push_connection_verified":
+            return "Provider delivery access is verified."
+        case "provider_syncs_on_demand":
+            return "Provider data is available when synchronization is requested."
+        case "provider_connection_verified":
+            return "Provider connection access is verified."
+        default:
+            return "The current connection record does not explain the feed status."
+        }
+    }
+
+    private func connectionStatusLabel(_ status: String) -> String {
+        switch status.lowercased() {
+        case "connected": return "Connection is established"
+        case "connecting": return "Connection verification is in progress"
+        case "error": return "The latest connection attempt did not complete"
+        case "disabled": return "Connection is disabled"
+        case "pending_credentials": return "Provider credentials are required"
+        default: return "Connection status is unavailable"
+        }
+    }
+
+    private func connectionDisplayStateLabel(_ connection: IntegrationConnection) -> String {
+        if let feedState = connection.effectiveFeedState {
+            return feedStateLabel(feedState)
+        }
+        if let status = connection.status, !status.isEmpty {
+            return "\(connectionStatusLabel(status)) · feed status unavailable"
+        }
+        return "Connection and feed state unavailable"
+    }
+
+    private func syncCountEvidence(records: Int?, observations: Int?, duplicates: Int?) -> String {
+        var evidence: [String] = []
+        if let records {
+            evidence.append("\(records) records received")
+        }
+        if let observations {
+            evidence.append("\(observations) new observations stored")
+        }
+        if let duplicates {
+            evidence.append("\(duplicates) duplicate observations ignored")
+        }
+        guard !evidence.isEmpty else {
+            return "The provider did not return ingestion counts."
+        }
+        return evidence.joined(separator: ", ") + "."
+    }
+
+    private func connectionOwnershipLabel(_ connection: IntegrationConnection) -> String {
+        if connection.accessible != true {
+            return "Connection access and credential custody are unavailable"
+        }
+        if connection.ownershipScope == "user" {
+            return connection.canManage == true
+                ? "Personal connection · available only to you · managed by you"
+                : "Personal connection · management access unavailable"
+        }
+        if connection.ownershipScope == "company", connection.sharedWithCompany == true {
+            if connection.connectedByMe == true {
+                return "Company connection · shared with eligible coworkers · managed by you"
+            }
+            if connection.canManage == true {
+                return "Company connection · shared with eligible coworkers · administrator access"
+            }
+            return "Company connection · shared with eligible coworkers · credentials managed by the custodian or an administrator"
+        }
+        return "Connection ownership is unavailable"
+    }
+
+    private func credentialCustodyLabel(_ state: String?) -> String {
+        switch state {
+        case "present": return "Credential is stored and not shown"
+        case "missing": return "Credential reference missing; connection is not usable"
+        case "not_required": return "No provider credential required"
+        default: return "Credential custody is unavailable"
+        }
+    }
+
+    private func connectionVerificationLabel(_ verification: String?) -> String {
+        switch verification?.lowercased() {
+        case "live_probe", "health_probe": return "Live provider probe"
+        case "first_sync": return "First provider sync"
+        case "signed_webhook": return "Signed provider webhook"
+        case "oauth_callback": return "Provider OAuth callback"
+        case "public_source": return "Verified public source"
+        case "contract_managed": return "Managed provider agreement"
+        case .some: return "Verification path unavailable"
+        case .none: return "Verification path unavailable"
+        }
+    }
+
+    private func activationStateLabel(_ state: String) -> String {
+        switch state.lowercased() {
+        case "action_required": return "Your company must complete a prerequisite"
+        case "pending_provider": return "Awaiting provider approval"
+        case "verifying": return "EusoTrip is verifying live access"
+        case "live": return "Activation evidence verified"
+        case "failed": return "Activation verification failed"
+        case "revoked": return "Activation evidence revoked"
+        default: return "Activation status is unavailable"
+        }
+    }
+
+    private func activationStepStateLabel(_ state: String) -> String {
+        switch state.lowercased() {
+        case "not_started": return "Not started"
+        case "action_required": return "Action required"
+        case "awaiting_provider": return "Awaiting provider"
+        case "verifying": return "Verifying"
+        case "verified": return "Verified"
+        case "failed": return "Failed"
+        case "expired": return "Expired"
+        case "revoked": return "Revoked"
+        default: return "Status unavailable"
+        }
+    }
+
+    private func activationReadbackSummary(_ activation: IntegrationActivationSummary) -> String {
+        guard let step = activation.steps.first(where: { $0.state != "verified" }) else {
+            return activationStateLabel(activation.state)
+        }
+        let owner = step.owner == "provider" ? "Provider action" : "Company action"
+        return "\(activationStateLabel(activation.state)): \(owner.lowercased()) for \(cleanLabel(step.label))."
+    }
+
+    private func verifiedOperationalReadback(_ connection: IntegrationConnection) -> Bool {
+        connection.accessible == true
+            && connection.isOperational == true
+            && connection.effectiveFeedState != nil
+            && connection.activation?.ready == true
+    }
+
+    private func provisioningModeLabel(_ mode: String?) -> String {
+        switch mode?.lowercased() {
+        case "self_service_credentials": return "Self-service access"
+        case "customer_account_approval": return "Provider-approved company access"
+        case "commercial_contract": return "Commercial provider agreement"
+        case .some: return "Provisioning details unavailable"
+        case .none: return "Provisioning unavailable"
+        }
+    }
+
+    private func provisioningVerificationLabel(_ verification: String) -> String {
+        switch verification.lowercased() {
+        case "user_confirmation": return "Confirmed by your company administrator"
+        case "credential_probe": return "Verified by a live credential check"
+        case "health_check": return "Verified by a live provider health check"
+        case "provider_entitlement": return "Verified against the provider entitlement"
+        case "first_sync": return "Verified only after the first real data sync"
+        default: return "Verification details unavailable"
+        }
+    }
+
+    private func researchStatusLabel(_ status: String?) -> String {
+        switch status?.lowercased() {
+        case "verified": return "Verified"
+        case "reviewed": return "Reviewed"
+        case "pending": return "Review pending"
+        case "unavailable", .none: return "Unavailable"
+        case .some: return "Status unavailable"
         }
     }
 
@@ -1426,316 +2567,321 @@ private struct ConnectedAppsBody: View {
     }
 
     private func connectFormReady(_ p: IntegrationProvider) -> Bool {
+        guard p.canEstablishConnection, providerProvisioningReady(p) else { return false }
+        if usesNativeOAuth(p) { return true }
         for field in p.credentialFields where field.required {
-            if (credInputs[inputKey(provider: p.id, kind: "credential", field: field.key)] ?? "").isEmpty {
+            if inputValue(provider: p.id, kind: "credential", field: field.key).isEmpty {
                 return false
             }
         }
         for field in p.configurationFields where field.required {
-            if (credInputs[inputKey(provider: p.id, kind: "configuration", field: field.key)] ?? "").isEmpty {
+            if inputValue(provider: p.id, kind: "configuration", field: field.key).isEmpty {
                 return false
             }
         }
-        return true
-    }
-}
-
-private enum IntegrationJourneyPlanner {
-    private struct Group {
-        let id: String
-        let title: String
-        let outcome: String
-        let icon: String
-        let categories: Set<String>
+        return inputRequirementSatisfied(p)
     }
 
-    private struct AdoptionGroup {
-        let id: String
-        let title: String
-        let outcome: String
-        let icon: String
-        let categories: Set<String>
+    private func confirmationKey(provider: String, requirement: String) -> String {
+        "\(provider)|\(requirement)"
     }
 
-    private struct NetworkGroup {
-        let id: String
-        let recipient: String
-        let benefit: String
-        let icon: String
-        let categories: Set<String>
-    }
-
-    private static let groups: [Group] = [
-        .init(
-            id: "market",
-            title: "Rates, tenders, and counterparties",
-            outcome: "Price lanes, find capacity, and validate partners before a load is committed.",
-            icon: "chart.line.uptrend.xyaxis",
-            categories: keys(["rateData", "loadBoard", "marketIntel", "carrierVetting"])),
-        .init(
-            id: "live-ops",
-            title: "Live operations",
-            outcome: "Keep ETA, assignment, HOS, dispatch, and exception signals aligned with the trip.",
-            icon: "dot.radiowaves.left.and.right",
-            categories: keys(["visibility", "eld", "dispatch", "dashcam"])),
-        .init(
-            id: "route-risk",
-            title: "Route risk and road spend",
-            outcome: "Plan around roads, weather, tolls, fuel, parking, and maintenance conditions.",
-            icon: "map",
-            categories: keys(["nav", "weather", "toll", "fuelCard", "maintenance"])),
-        .init(
-            id: "money",
-            title: "Money movement",
-            outcome: "Tie receivables, payouts, fuel spend, factoring, banking, and coverage to the wallet.",
-            icon: "creditcard",
-            categories: keys(["payments", "banking", "factoring", "insurance"])),
-        .init(
-            id: "documents",
-            title: "Documents and compliance",
-            outcome: "Move BOL, POD, signatures, filings, eligibility, and safety records into the load file.",
-            icon: "doc.text.magnifyingglass",
-            categories: keys(["docs", "compliance", "customs", "identity", "bgScreening", "training"])),
-        .init(
-            id: "backoffice",
-            title: "Back office systems",
-            outcome: "Sync customers, orders, inventory, labor, warehouse, accounting, and TMS records.",
-            icon: "building.2",
-            categories: keys(["tms", "erp", "crm", "warehouse", "workforce"])),
-        .init(
-            id: "rail",
-            title: "Rail execution",
-            outcome: "Coordinate Class I, rail equipment, rail ops, release, crew, and interchange workflows.",
-            icon: "tram",
-            categories: keys(["railClassI", "railIndustry", "railEquip", "railOps"])),
-        .init(
-            id: "port-vessel",
-            title: "Port and vessel execution",
-            outcome: "Coordinate ocean booking, terminal, yard, berth, crane, bunker, vessel, and satellite signals.",
-            icon: "ferry",
-            categories: keys(["oceanBooking", "oceanCarrier", "oceanIntel", "marine", "bunker", "classSociety", "satcom", "satellite", "terminalAuto", "crane", "yard", "dockSched"]))
-    ]
-
-    private static let adoptionGroups: [AdoptionGroup] = [
-        .init(
-            id: "profile-import",
-            title: "Profile and trust packet",
-            outcome: "Pull authority, identity, insurance, safety, compliance, and eligibility records into onboarding instead of re-keying them.",
-            icon: "person.crop.rectangle.stack",
-            categories: keys(["carrierVetting", "compliance", "identity", "insurance", "bgScreening", "training"])),
-        .init(
-            id: "freight-import",
-            title: "Freight setup import",
-            outcome: "Bring customers, orders, SKUs, tenders, appointments, warehouse records, and TMS context into the first working session.",
-            icon: "tray.and.arrow.down",
-            categories: keys(["tms", "erp", "crm", "warehouse", "loadBoard", "oceanBooking", "railClassI", "railIndustry"])),
-        .init(
-            id: "ops-import",
-            title: "Operations data capture",
-            outcome: "Seed live location, HOS, equipment, routing, weather, terminal, and dispatch context before the user has to manually build it.",
-            icon: "waveform.path.ecg",
-            categories: keys(["visibility", "eld", "dispatch", "nav", "weather", "maintenance", "terminalAuto", "yard", "dockSched"])),
-        .init(
-            id: "money-import",
-            title: "Wallet and settlement readiness",
-            outcome: "Attach payment, banking, fuel, factoring, toll, and coverage rails so payout and spend workflows are usable quickly.",
-            icon: "banknote",
-            categories: keys(["payments", "banking", "fuelCard", "factoring", "toll", "insurance"])),
-        .init(
-            id: "docs-import",
-            title: "Document packet readiness",
-            outcome: "Connect BOL, POD, signatures, customs, certificates, permits, and audit evidence before a shipment is under pressure.",
-            icon: "doc.badge.gearshape",
-            categories: keys(["docs", "customs", "compliance", "classSociety"]))
-    ]
-
-    private static let networkGroups: [NetworkGroup] = [
-        .init(
-            id: "shipper-benefit",
-            recipient: "Shippers get cleaner execution",
-            benefit: "Connected ops, ELD, route, weather, docs, and payment providers reduce blind spots after tender.",
-            icon: "shippingbox",
-            categories: keys(["visibility", "eld", "dispatch", "nav", "weather", "docs", "payments", "carrierVetting"])),
-        .init(
-            id: "driver-benefit",
-            recipient: "Drivers get less duplicate entry",
-            benefit: "TMS, documents, wallet, fuel, route, weather, and compliance integrations pre-fill the work a driver would otherwise chase.",
-            icon: "steeringwheel",
-            categories: keys(["tms", "erp", "docs", "payments", "banking", "fuelCard", "nav", "weather", "compliance"])),
-        .init(
-            id: "dispatch-benefit",
-            recipient: "Dispatch gets a real command surface",
-            benefit: "Visibility, ELD, routing, toll, weather, maintenance, and load-board signals improve assignment quality and exception response.",
-            icon: "person.2.wave.2",
-            categories: keys(["visibility", "eld", "dispatch", "nav", "toll", "weather", "maintenance", "loadBoard", "carrierVetting"])),
-        .init(
-            id: "settlement-benefit",
-            recipient: "Settlement moves faster",
-            benefit: "Payments, banking, factoring, fuel, toll, document, POD, and signature providers shorten proof-to-pay cycles.",
-            icon: "checkmark.seal",
-            categories: keys(["payments", "banking", "factoring", "fuelCard", "toll", "docs"])),
-        .init(
-            id: "compliance-benefit",
-            recipient: "Compliance sees fewer gaps",
-            benefit: "Authority, customs, identity, safety, ELD, training, certification, and document connections keep regulated evidence attached to the trip.",
-            icon: "shield.lefthalf.filled",
-            categories: keys(["compliance", "customs", "identity", "bgScreening", "training", "eld", "docs", "classSociety"])),
-        .init(
-            id: "terminal-benefit",
-            recipient: "Terminals and ports get smoother handoffs",
-            benefit: "Terminal, yard, dock, warehouse, ocean, rail, customs, and workforce providers reduce appointment and release friction.",
-            icon: "building.columns",
-            categories: keys(["terminalAuto", "yard", "dockSched", "warehouse", "oceanBooking", "oceanCarrier", "railClassI", "railOps", "customs", "workforce"]))
-    ]
-
-    static func fallbackJourney(
-        providerName: String,
-        category: String,
-        roleLabel: String,
-        requiresCredentials: Bool
-    ) -> IntegrationProviderJourney {
-        let categoryKeys = resolvedCategoryKeys(category)
-        let workflow = groups.first { !$0.categories.isDisjoint(with: categoryKeys) }
-        let network = networkGroups.first { !$0.categories.isDisjoint(with: categoryKeys) }
-        let adoption = adoptionGroups.first { !$0.categories.isDisjoint(with: categoryKeys) }
-        let categoryName = pretty(category)
-        return IntegrationProviderJourney(
-            persona: roleLabel.lowercased(),
-            adoptionStage: adoption != nil ? "onboard" : "operate",
-            headline: "\(providerName) makes \(categoryName) part of the \(roleLabel) workspace.",
-            setup: adoption?.outcome ?? "Connect the provider account that already owns this \(categoryName.lowercased()) data.",
-            operationalUnlock: workflow?.outcome ?? "Adds verified provider data to the user's role-specific dashboard and workflows.",
-            crossRoleBenefit: network?.benefit ?? "Connected provider data improves continuity for the counterparties who depend on this role.",
-            credentialHint: requiresCredentials
-                ? "Use provider-issued credentials dedicated to this RIOS connection; retry the live catalog before connecting if fields differ."
-                : "No secret is required when the live provider catalog marks this as a public feed.",
-            dataFlow: "Registry fallback until the live integration catalog responds.",
-            capabilityTags: [categoryName, "Role mapped", "Retry catalog"])
-    }
-
-    static func impacts(for providers: [IntegrationProvider], connections: [IntegrationConnection]) -> [IntegrationJourneyImpact] {
-        let liveConnections = liveConnectionIds(connections)
-
-        return groups.compactMap { group in
-            let matching = Self.providers(in: providers, matching: group.categories)
-            guard !matching.isEmpty else { return nil }
-            let connectedCount = matching.filter { liveConnections.contains($0.id.lowercased()) }.count
-            return IntegrationJourneyImpact(
-                id: group.id,
-                title: group.title,
-                outcome: group.outcome,
-                icon: group.icon,
-                providerCount: matching.count,
-                connectedCount: connectedCount,
-                providerNames: matching.map(\.displayName))
+    private func customerConfirmationRequirements(
+        _ provider: IntegrationProvider
+    ) -> [IntegrationProvisioningRequirement] {
+        (provider.provisioning?.requirements ?? []).filter {
+            $0.owner == "customer" && $0.verification == "user_confirmation"
         }
     }
 
-    static func adoptionSignals(for providers: [IntegrationProvider], connections: [IntegrationConnection]) -> [IntegrationAdoptionSignal] {
-        let liveConnections = liveConnectionIds(connections)
-        return adoptionGroups.compactMap { group in
-            let matching = Self.providers(in: providers, matching: group.categories)
-            guard !matching.isEmpty else { return nil }
-            let connectedCount = matching.filter { liveConnections.contains($0.id.lowercased()) }.count
-            return IntegrationAdoptionSignal(
-                id: group.id,
-                title: group.title,
-                outcome: group.outcome,
-                icon: group.icon,
-                providerCount: matching.count,
-                connectedCount: connectedCount,
-                providerNames: matching.map(\.displayName))
+    private func confirmedRequirementKeys(for provider: IntegrationProvider) -> [String] {
+        customerConfirmationRequirements(provider).compactMap { requirement in
+            let key = confirmationKey(provider: provider.id, requirement: requirement.key)
+            return confirmedProvisioningRequirements.contains(key) ? requirement.key : nil
         }
     }
 
-    static func networkBenefits(for providers: [IntegrationProvider], connections: [IntegrationConnection]) -> [IntegrationNetworkBenefit] {
-        let liveConnections = liveConnectionIds(connections)
-        return networkGroups.compactMap { group in
-            let matching = Self.providers(in: providers, matching: group.categories)
-            guard !matching.isEmpty else { return nil }
-            let connectedCount = matching.filter { liveConnections.contains($0.id.lowercased()) }.count
-            return IntegrationNetworkBenefit(
-                id: group.id,
-                recipient: group.recipient,
-                benefit: group.benefit,
-                icon: group.icon,
-                providerCount: matching.count,
-                connectedCount: connectedCount,
-                providerNames: matching.map(\.displayName))
+    private func providerProvisioningReady(_ provider: IntegrationProvider) -> Bool {
+        guard provider.connectable,
+              provider.canEstablishConnection,
+              let requirements = provider.provisioning?.requirements,
+              !requirements.isEmpty else { return false }
+        let requiredConfirmations = customerConfirmationRequirements(provider)
+        return requiredConfirmations.allSatisfy { requirement in
+            confirmedProvisioningRequirements.contains(
+                confirmationKey(provider: provider.id, requirement: requirement.key)
+            )
         }
     }
 
-    private static func providers(in providers: [IntegrationProvider], matching categoryKeys: Set<String>) -> [IntegrationProvider] {
-        providers.filter { provider in
-            guard let category = provider.category, !category.isEmpty else { return false }
-            return !resolvedCategoryKeys(category).isDisjoint(with: categoryKeys)
+    private func inputValue(provider: String, kind: String, field: String) -> String {
+        (credInputs[inputKey(provider: provider, kind: kind, field: field)] ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func activationPayload(
+        for provider: IntegrationProvider
+    ) throws -> (
+        credentials: [String: IntegrationActivationValue],
+        configuration: [String: IntegrationActivationValue]
+    ) {
+        var credentials: [String: IntegrationActivationValue] = [:]
+        for field in provider.credentialFields {
+            let key = inputKey(provider: provider.id, kind: "credential", field: field.key)
+            guard let raw = credInputs[key], !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                continue
+            }
+            credentials[field.key] = try activationValue(raw, field: field)
+        }
+
+        var configuration: [String: IntegrationActivationValue] = [:]
+        for field in provider.configurationFields {
+            let key = inputKey(provider: provider.id, kind: "configuration", field: field.key)
+            guard let raw = credInputs[key], !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                continue
+            }
+            configuration[field.key] = try activationValue(raw, field: field)
+        }
+        return (credentials, configuration)
+    }
+
+    private func activationValue(
+        _ raw: String,
+        field: IntegrationInputField
+    ) throws -> IntegrationActivationValue {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch field.inputType.lowercased() {
+        case "number":
+            guard let value = Double(trimmed), value.isFinite else {
+                throw IntegrationActivationInputError.invalid(
+                    field: field.label,
+                    requirement: "must be a finite number"
+                )
+            }
+            return .number(value)
+        case "csv":
+            let values = trimmed
+                .components(separatedBy: CharacterSet(charactersIn: ",\n"))
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            guard !values.isEmpty else {
+                throw IntegrationActivationInputError.invalid(
+                    field: field.label,
+                    requirement: "must contain at least one text value"
+                )
+            }
+            return .array(values.map(IntegrationActivationValue.string))
+        case "json":
+            do {
+                let decoded = try JSONSerialization.jsonObject(with: Data(trimmed.utf8))
+                guard decoded is [String: Any] || decoded is [Any] else {
+                    throw IntegrationActivationInputError.invalid(
+                        field: field.label,
+                        requirement: "must be a JSON object or array"
+                    )
+                }
+                return try jsonActivationValue(decoded, fieldLabel: field.label)
+            } catch let error as IntegrationActivationInputError {
+                throw error
+            } catch {
+                throw IntegrationActivationInputError.invalid(
+                    field: field.label,
+                    requirement: "must be valid JSON data"
+                )
+            }
+        case "url":
+            guard let components = URLComponents(string: trimmed),
+                  components.scheme?.lowercased() == "https",
+                  components.host != nil,
+                  components.user == nil,
+                  components.password == nil,
+                  let url = components.url else {
+                throw IntegrationActivationInputError.invalid(
+                    field: field.label,
+                    requirement: "must be an HTTPS URL without embedded credentials"
+                )
+            }
+            return .string(url.absoluteString)
+        case "email":
+            guard trimmed.range(
+                of: #"^[^\s@]+@[^\s@]+\.[^\s@]+$"#,
+                options: .regularExpression
+            ) != nil else {
+                throw IntegrationActivationInputError.invalid(
+                    field: field.label,
+                    requirement: "must be a valid email address"
+                )
+            }
+            return .string(trimmed)
+        case "certificate", "private_key":
+            try validateActivationStringSize(raw, field: field)
+            return .string(raw)
+        case "text", "secret":
+            try validateActivationStringSize(trimmed, field: field)
+            return .string(trimmed)
+        default:
+            throw IntegrationActivationInputError.invalid(
+                field: field.label,
+                requirement: "uses an unsupported field type"
+            )
         }
     }
 
-    private static func liveConnectionIds(_ connections: [IntegrationConnection]) -> Set<String> {
-        Set(
-            connections
-                .filter(\.isOperational)
-                .map { $0.providerId.lowercased() }
+    private func validateActivationStringSize(
+        _ value: String,
+        field: IntegrationInputField
+    ) throws {
+        guard value.lengthOfBytes(using: .utf8) <= 32 * 1024 else {
+            throw IntegrationActivationInputError.invalid(
+                field: field.label,
+                requirement: "exceeds the allowed size"
+            )
+        }
+    }
+
+    private func jsonActivationValue(
+        _ value: Any,
+        fieldLabel: String
+    ) throws -> IntegrationActivationValue {
+        if value is NSNull { return .null }
+        if let dictionary = value as? [String: Any] {
+            return .object(try dictionary.mapValues {
+                try jsonActivationValue($0, fieldLabel: fieldLabel)
+            })
+        }
+        if let array = value as? [Any] {
+            return .array(try array.map {
+                try jsonActivationValue($0, fieldLabel: fieldLabel)
+            })
+        }
+        if let string = value as? String { return .string(string) }
+        if let number = value as? NSNumber {
+            if CFGetTypeID(number) == CFBooleanGetTypeID() {
+                return .bool(number.boolValue)
+            }
+            let double = number.doubleValue
+            guard double.isFinite else {
+                throw IntegrationActivationInputError.invalid(
+                    field: fieldLabel,
+                    requirement: "contains a non-finite number"
+                )
+            }
+            return .number(double)
+        }
+        throw IntegrationActivationInputError.invalid(
+            field: fieldLabel,
+            requirement: "contains an unsupported JSON value"
         )
     }
 
-    private static func keys(_ values: [String]) -> Set<String> {
-        Set(values.map(key))
-    }
-
-    private static func key(_ value: String) -> String {
-        value.lowercased().filter { $0.isLetter || $0.isNumber }
-    }
-
-    private static func pretty(_ value: String) -> String {
-        value
-            .replacingOccurrences(of: "_", with: " ")
-            .replacingOccurrences(of: "-", with: " ")
-            .split(separator: " ")
-            .map { $0.prefix(1).uppercased() + $0.dropFirst().lowercased() }
-            .joined(separator: " ")
-    }
-
-    private static func resolvedCategoryKeys(_ value: String) -> Set<String> {
-        let rawKey = key(value)
-        var keys = Set([rawKey])
-        for alias in categoryAliases[rawKey] ?? [] {
-            keys.insert(key(alias))
+    private func inputRequirementSatisfied(_ provider: IntegrationProvider) -> Bool {
+        guard let requirement = provider.inputRequirement else { return true }
+        guard requirement.mode == "any_of", !requirement.alternatives.isEmpty else { return false }
+        return requirement.alternatives.contains { alternative in
+            alternative.credentials.allSatisfy {
+                !inputValue(provider: provider.id, kind: "credential", field: $0).isEmpty
+            } && (alternative.configuration ?? []).allSatisfy {
+                !inputValue(provider: provider.id, kind: "configuration", field: $0).isEmpty
+            }
         }
-        return keys
     }
 
-    private static let categoryAliases: [String: [String]] = [
-        key("rate_market"): ["rateData", "marketIntel"],
-        key("macro_economic"): ["marketIntel", "rateData"],
-        key("fuel_energy"): ["fuelCard", "marketIntel"],
-        key("agricultural"): ["marketIntel"],
-        key("safety_compliance"): ["compliance", "carrierVetting", "training", "bgScreening"],
-        key("payments_factoring"): ["payments", "banking", "factoring"],
-        key("operational_eld"): ["eld"],
-        key("operational_fuel_card"): ["fuelCard"],
-        key("operational_maintenance"): ["maintenance"],
-        key("operational_tolls"): ["toll"],
-        key("operational_payroll"): ["payments", "banking"],
-        key("terminals_ports_drayage"): ["terminalAuto", "yard", "dockSched", "warehouse"],
-        key("tms_load_boards"): ["tms", "loadBoard"],
-        key("documents_imaging"): ["docs"],
-        key("identity_sso"): ["identity"],
-        key("geo_maps"): ["nav"],
-        key("observability"): ["visibility"],
-        key("rail_class_i"): ["railClassI"],
-        key("rail_industry_data"): ["railIndustry"],
-        key("rail_locomotive"): ["railOps"],
-        key("rail_crew"): ["railOps", "workforce"],
-        key("ocean_carrier"): ["oceanCarrier", "oceanBooking"],
-        key("ocean_visibility"): ["oceanIntel", "visibility"],
-        key("ocean_charter"): ["oceanBooking", "oceanIntel"],
-        key("vessel_telematics"): ["marine"],
-        key("vessel_bunker"): ["bunker"],
-        key("vessel_satcom"): ["satcom", "satellite"],
-        key("customs_trade"): ["customs"],
-    ]
+    private func inputFieldLabel(_ key: String, provider: IntegrationProvider) -> String {
+        (provider.credentialFields + provider.configurationFields)
+            .first(where: { $0.key == key })?.label ?? prettyToken(key)
+    }
+
+    private func usesNativeOAuth(_ provider: IntegrationProvider) -> Bool {
+        guard provider.authType?.lowercased() == "oauth2" else { return false }
+        return provider.capabilities.perUserOAuth
+    }
+
+    private func providerServerActivationRequirement(_ provider: IntegrationProvider) -> String {
+        let verification = provider.activationVerification ?? provider.connectionVerification
+        guard provider.connectable,
+              provider.provisioning != nil,
+              verification != nil else {
+            return "Provider requirements or the verification path are incomplete, so activation remains unavailable."
+        }
+        return "Connection is activated only after \(connectionVerificationLabel(verification).lowercased()) succeeds and current connection evidence confirms activation, usability, access, and ownership."
+    }
+
+    private func providerCredentialGuidance(_ p: IntegrationProvider) -> String {
+        let provider = cleanLabel(p.vendor ?? p.displayName)
+        if !p.connectable {
+            return p.blockedReason.map { cleanLabel($0) }
+                ?? "\(provider) is unavailable because the live catalog does not publish a production activation path."
+        }
+        if !p.canEstablishConnection {
+            return p.establishmentBlockedReason.map { cleanLabel($0) }
+                ?? "An authorized company credential custodian must establish this shared connection."
+        }
+        guard let provisioning = p.provisioning, !provisioning.requirements.isEmpty else {
+            return "The live catalog does not publish a complete provisioning contract. Credential entry and provider authorization remain locked."
+        }
+        if usesNativeOAuth(p) {
+            return "Confirm the company prerequisites, then authorize \(provider) in its secure provider session. Activation is not claimed until the signed callback and current activation evidence both confirm it."
+        }
+        if provisioning.mode == "customer_account_approval" {
+            return "Use only credentials issued after \(provider) approves your company account. EusoTrip activates only after live verification and the required activation evidence succeed."
+        }
+        if provisioning.mode == "commercial_contract" {
+            return "Use only credentials issued after your company completes its \(provider) agreement. EusoTrip activates only after live verification succeeds."
+        }
+        if p.requiresCredentials == false {
+            return "The live catalog requests no credential. EusoTrip still activates only after \(connectionVerificationLabel(p.activationVerification ?? p.connectionVerification).lowercased()) and current activation evidence confirm readiness."
+        }
+        return "Enter provider-issued credentials after completing the company prerequisites. They are cleared from iOS after this attempt; activation is claimed only after \(connectionVerificationLabel(p.activationVerification ?? p.connectionVerification).lowercased()) and current activation evidence confirm readiness."
+    }
+}
+
+/// A multiline secure editor for PEM certificates and private keys. Values
+/// remain masked on screen, preserve line breaks, and are cleared after each
+/// connection attempt by the owning screen.
+private struct SensitiveMultilineTextEditor: UIViewRepresentable {
+    @Binding var text: String
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    func makeUIView(context: Context) -> UITextView {
+        let view = UITextView()
+        view.delegate = context.coordinator
+        view.backgroundColor = .clear
+        view.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        view.textColor = .label
+        view.tintColor = .systemBlue
+        view.isSecureTextEntry = true
+        view.autocorrectionType = .no
+        view.autocapitalizationType = .none
+        view.spellCheckingType = .no
+        view.smartDashesType = .no
+        view.smartQuotesType = .no
+        view.textContentType = .password
+        view.textContainerInset = .zero
+        view.textContainer.lineFragmentPadding = 0
+        return view
+    }
+
+    func updateUIView(_ view: UITextView, context: Context) {
+        context.coordinator.parent = self
+        if view.text != text {
+            view.text = text
+        }
+    }
+
+    final class Coordinator: NSObject, UITextViewDelegate {
+        var parent: SensitiveMultilineTextEditor
+
+        init(parent: SensitiveMultilineTextEditor) {
+            self.parent = parent
+        }
+
+        func textViewDidChange(_ textView: UITextView) {
+            parent.text = textView.text
+        }
+    }
 }
 
 // MARK: - Scope chips (bespoke wrap layout)

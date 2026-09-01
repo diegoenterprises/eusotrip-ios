@@ -282,6 +282,8 @@ private final class CL350Store: ObservableObject {
     @Published var loadFailed = false
     @Published var loading = true
     @Published var drivers: [CL350Driver] = []
+    @Published var hosEvidence: [HOSFleetDriver] = []
+    @Published var hosWarning: String?
     @Published var fee: CL350Fee.Detention?
     @Published var pod: CL350Pod?
     @Published var closeout: CL350Closeout?
@@ -334,6 +336,15 @@ private final class CL350Store: ObservableObject {
                 group.addTask { @MainActor in
                     if let d: [CL350Driver] = try? await api.query("catalysts.getMyDrivers", input: LimitIn(limit: 25)) {
                         self.drivers = d
+                    }
+                }
+                group.addTask { @MainActor in
+                    do {
+                        self.hosEvidence = try await api.queryNoInput("hos.getFleetHOS")
+                        self.hosWarning = nil
+                    } catch {
+                        self.hosEvidence = []
+                        self.hosWarning = "Current company HOS evidence could not refresh."
                     }
                 }
             }
@@ -432,8 +443,22 @@ private final class CL350Store: ObservableObject {
     var driverInitials: String { load?.driver?.initials?.cl350NilIfEmpty ?? "—" }
 
     var hosDisplay: String {
-        guard let h = matchedDriver?.hoursRemaining else { return "—" }
+        guard let h = matchedHOS?.hoursAvailable?.drivingRemaining else { return "—" }
         return String(format: "%.1fh", h)
+    }
+
+    var hosEvidenceDisplay: String {
+        guard let matchedHOS else { return hosWarning ?? "current HOS evidence unavailable" }
+        return "\(matchedHOS.source?.uppercased() ?? "SOURCE UNAVAILABLE") · \(humanISO(matchedHOS.freshness))"
+    }
+
+    var matchedHOS: HOSFleetDriver? {
+        guard let driver = matchedDriver,
+              let evidence = hosEvidence.first(where: {
+                  $0.driverId == driver.id || $0.userId.map { String($0) } == driver.id
+              }),
+              evidence.hasCurrentObservation() else { return nil }
+        return evidence
     }
 
     /// Live dwell — real only when the newest fence event is an ENTER.
@@ -605,7 +630,7 @@ private struct CL350DriverRow: View {
                         Text("\(store.loadNumberDisplay) · \(store.equipmentDisplay)")
                             .font(.system(size: 10.5, design: .monospaced))
                             .foregroundStyle(palette.textSecondary).lineLimit(1)
-                        Text("drive time left \(store.hosDisplay) · \(store.matchedDriver?.location?.cl350NilIfEmpty ?? "position —")")
+                        Text("drive time left \(store.hosDisplay) · \(store.hosEvidenceDisplay) · \(store.matchedDriver?.location?.cl350NilIfEmpty ?? "position —")")
                             .font(.system(size: 9.5))
                             .foregroundStyle(palette.textTertiary).lineLimit(1)
                     }

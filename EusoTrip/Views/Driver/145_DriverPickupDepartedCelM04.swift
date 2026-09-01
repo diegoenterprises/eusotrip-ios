@@ -10,7 +10,7 @@
 //    WRITE  drivers.updateLoadStatus   — status "in_transit" (the departure
 //           verb; the same mutation flips HOS duty to driving organically)
 //    READ   loads.getById              — bound load (lane, payout, appt)
-//    READ   drivers.getMyHOSStatus     — duty status + drive clock
+//    READ   hos.getStatus              — sourced duty status + drive clock
 //    READ   drivers.getAssignedVehicle — tractor / trailer identity
 //    READ   drivers.lifecycle          — stops (pickup departedAt when stamped)
 //  NAMED GAPS (honest): no GPS-heartbeat verb exists, so no live-position
@@ -43,13 +43,6 @@ private struct PDLoadCtx: Decodable, Hashable {
     struct PDParty: Decodable, Hashable {
         let name: String?; let initials: String?; let companyName: String?; let mcNumber: String?
     }
-}
-
-private struct PDHos: Decodable, Hashable {
-    let status: String?
-    let drivingRemaining: String?    // display-ready "10h 14m"
-    let onDutyRemaining: String?
-    let canDrive: Bool?
 }
 
 private struct PDVehicle: Decodable, Hashable {
@@ -105,7 +98,8 @@ private struct PDBody: View {
     @EnvironmentObject private var session: EusoTripSession
 
     @State private var load: PDLoadCtx?
-    @State private var hos: PDHos?
+    @State private var hos: HOSStatus?
+    @State private var hosError: String?
     @State private var vehicle: PDVehicle?
     @State private var lifecycle: PDLifecycle?
 
@@ -126,6 +120,10 @@ private struct PDBody: View {
         ["assigned", "en_route_pickup", "at_pickup", "loading", "accepted"].contains(status)
     }
     private var loadNumberDisplay: String { load?.loadNumber ?? "-" }
+    private var currentHOS: HOSStatus? {
+        guard let hos, hos.hasCurrentObservation() else { return nil }
+        return hos
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -133,7 +131,7 @@ private struct PDBody: View {
                 header
                 PDTripLaunchHero(
                     launched: departed,
-                    driveClock: hos?.drivingRemaining ?? "-",
+                    driveClock: currentHOS?.drivingRemainingDisplay ?? "—",
                     dutyNote: hosDutyNote,
                     eta: etaDisplay,
                     apptNote: apptNote,
@@ -212,8 +210,9 @@ private struct PDBody: View {
                          done: departed,
                          detail: departed ? "confirmed" : "awaiting your confirm")
                 checkRow(label: "Duty status",
-                         done: (hos?.status ?? "") == "driving",
-                         detail: hos?.status?.replacingOccurrences(of: "_", with: " ") ?? "-")
+                         done: currentHOS?.status == HOSDutyCode.driving.rawValue,
+                         detail: currentHOS?.status?.replacingOccurrences(of: "_", with: " ")
+                            ?? hosEvidenceLabel)
             }
         }
     }
@@ -350,7 +349,13 @@ private struct PDBody: View {
         do { load = try await EusoTripAPI.shared.query("loads.getById", input: In(id: loadId)) } catch { /* "-" */ }
     }
     private func readHos() async {
-        do { hos = try await EusoTripAPI.shared.queryNoInput("drivers.getMyHOSStatus") } catch { /* "-" */ }
+        do {
+            hos = try await EusoTripAPI.shared.hos.getStatus()
+            hosError = nil
+        } catch {
+            hos = nil
+            hosError = "HOS source unavailable"
+        }
     }
     private func readVehicle() async {
         do { vehicle = try await EusoTripAPI.shared.queryNoInput("drivers.getAssignedVehicle") } catch { /* "-" */ }
@@ -363,8 +368,13 @@ private struct PDBody: View {
     // MARK: display derivations (honest — "-" when the read hasn't resolved)
 
     private var hosDutyNote: String {
-        guard let s = hos?.status, !s.isEmpty else { return "duty status pending" }
+        guard let s = currentHOS?.status, !s.isEmpty else { return hosEvidenceLabel }
         return "duty · \(s.replacingOccurrences(of: "_", with: " "))"
+    }
+    private var hosEvidenceLabel: String {
+        if let hosError { return hosError }
+        guard let hos else { return "HOS evidence pending" }
+        return hos.assignmentEligibility().reason ?? "HOS evidence is not current"
     }
     private var etaDisplay: String {
         guard let d = PDBody.parseISO(load?.deliveryDate) else { return "-" }

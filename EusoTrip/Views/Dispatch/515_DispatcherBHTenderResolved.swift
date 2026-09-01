@@ -191,8 +191,8 @@ private struct BH515Body: View {
                 Divider().overlay(palette.borderFaint)
                 BH515GateRow(title: "Fitness gate",
                              sub: fitnessGateSub,
-                             pill: driverRow?.hoursRemaining != nil ? "CHECKED" : "—",
-                             pillTint: driverRow?.hoursRemaining != nil ? Brand.success : Brand.neutral)
+                             pill: driverRow?.hoursRemaining != nil ? "REPORTED" : "—",
+                             pillTint: driverRow?.hoursRemaining != nil ? Brand.warning : Brand.neutral)
                 Divider().overlay(palette.borderFaint)
                 BH515GateRow(title: "Lane distance",
                              sub: (load?.distance ?? 0) > 0 ? "\(load?.distanceDisplay ?? "—") on the awarded lane" : "distance not on this record",
@@ -329,9 +329,9 @@ private struct BH515Body: View {
 
     private var fitnessGateSub: String {
         if let h = driverRow?.hoursRemaining {
-            return String(format: "HOS %.0fh drive available · from the live driver board", h)
+            return String(format: "HOS %.0fh reported · freshness unavailable", h)
         }
-        return "driver hours not on the live board for this load"
+        return "driver hours not reported for this load"
     }
 
     private func sectionLabel(_ t: String) -> some View {

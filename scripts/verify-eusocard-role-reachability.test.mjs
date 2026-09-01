@@ -104,20 +104,22 @@ test("all nine native rail and vessel role Me destinations mount one shared serv
   }
 });
 
-test("Safety and Factoring continuations expose EusoCard while both admin roles remain excluded", () => {
-  for (const [role, assignment, mePath] of [
-    ["SAFETY_MANAGER", "WebContinuationSurface.SAFETY_MANAGER", "/settings"],
-    ["FACTORING", "WebContinuationSurface.FACTORING", "/factoring/settings"],
+test("Safety and Factoring native specialist Me routes expose EusoCard while excluded roles remain server-authoritative", () => {
+  for (const [role, assignment, definition, meDestination] of [
+    ["SAFETY_MANAGER", "NativeSpecialistRoleSurface.SAFETY_MANAGER", "safety", "SafetyMe"],
+    ["FACTORING", "NativeSpecialistRoleSurface.FACTORING", "factoring", "FactoringMe"],
   ]) {
     assert.ok(eligibleRoles.some(({ rawValue }) => rawValue === role), `${role} is not eligible`);
-    assert.ok(router.includes(assignment), `${role} continuation assignment is missing`);
-    assert.ok(router.includes(`item("${mePath}", "Me", "person")`), `${role} Me route is missing`);
+    assert.ok(router.includes(assignment), `${role} native assignment is missing`);
+    assert.ok(router.includes(`static let ${definition} = Self(`), `${role} specialist definition is missing`);
+    assert.ok(router.includes(`me: .init(destinationId: "${meDestination}", label: "Me"`), `${role} Me route is missing`);
   }
 
-  const continuationStart = router.indexOf("struct WebContinuationSurface: View");
-  const continuationEnd = router.indexOf("private struct SafariContinuationView", continuationStart);
-  assert.ok(continuationStart >= 0 && continuationEnd > continuationStart, "WebContinuationSurface body is missing");
-  assert.ok(router.slice(continuationStart, continuationEnd).includes("EusoCardIssuePanel("));
+  const meStart = router.indexOf("private var specialistMe: some View");
+  const meEnd = router.indexOf("private func selectDestination", meStart);
+  assert.ok(meStart >= 0 && meEnd > meStart, "native specialist Me body is missing");
+  assert.equal((router.slice(meStart, meEnd).match(/EusoCardIssuePanel\(/g) ?? []).length, 1);
+  assert.ok(!router.includes("struct WebContinuationSurface: View"));
 
   assert.ok(!sources.get("adminMe").includes("EusoCardIssuePanel("));
   assert.ok(!eligibleRoles.some(({ rawValue }) => excludedRoles.has(rawValue)));

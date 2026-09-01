@@ -55,6 +55,8 @@ import SwiftUI
 
 struct ShipperProfile: View {
     @Environment(\.palette) private var palette
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @EnvironmentObject private var session: EusoTripSession
 
     @StateObject private var profileStore = ShipperProfileStore()
@@ -652,52 +654,101 @@ struct ShipperProfile: View {
         }
     }
 
+    @ViewBuilder
     private func statTiles(_ s: ShipperAPI.Stats) -> some View {
-        HStack(spacing: Space.s2) {
-            statTile(
-                label: "Total loads",
-                value: s.totalLoads <= 0 ? "-" : "\(s.totalLoads)",
-                trail: "lifetime",
-                trailColor: Brand.success
-            )
-            statTile(
-                label: "Total spend",
-                value: s.totalSpend <= 0 ? "-" : dollars(Double(s.totalSpend)),
-                trail: "YTD",
-                trailColor: palette.textSecondary,
-                gradientNumeral: true,
-                valueSize: 22
-            )
-            statTile(
-                label: "On-time",
-                value: s.onTimeRate <= 0 ? "-" : "\(s.onTimeRate)%",
-                trail: "delivered",
-                trailColor: Brand.success,
-                gradientNumeral: true
-            )
+        if horizontalSizeClass == .regular && !dynamicTypeSize.isAccessibilitySize {
+            HStack(spacing: Space.s2) {
+                totalLoadsTile(s)
+                totalSpendTile(s)
+                onTimeTile(s)
+            }
+        } else if dynamicTypeSize.isAccessibilitySize {
+            VStack(spacing: Space.s2) {
+                totalSpendTile(s)
+                totalLoadsTile(s)
+                onTimeTile(s)
+            }
+        } else {
+            VStack(spacing: Space.s2) {
+                totalSpendTile(s)
+                HStack(spacing: Space.s2) {
+                    totalLoadsTile(s)
+                    onTimeTile(s)
+                }
+            }
         }
     }
 
+    private func totalLoadsTile(_ s: ShipperAPI.Stats) -> some View {
+        statTile(
+            label: "Total loads",
+            value: s.totalLoads <= 0 ? "—" : "\(s.totalLoads)",
+            trail: "lifetime",
+            trailColor: Brand.success
+        )
+    }
+
+    private func totalSpendTile(_ s: ShipperAPI.Stats) -> some View {
+        statTile(
+            label: "Total spend · USD",
+            value: s.totalSpend <= 0 ? "—" : dollars(Double(s.totalSpend)),
+            trail: "lifetime",
+            trailColor: palette.textSecondary,
+            gradientNumeral: true,
+            valueTextStyle: .title3
+        )
+    }
+
+    private func onTimeTile(_ s: ShipperAPI.Stats) -> some View {
+        statTile(
+            label: "On-time",
+            value: s.onTimeRate <= 0 ? "—" : "\(s.onTimeRate)%",
+            trail: "delivered",
+            trailColor: Brand.success,
+            gradientNumeral: true
+        )
+    }
+
     private var statSkeleton: some View {
-        HStack(spacing: Space.s2) {
-            ForEach(0..<3, id: \.self) { _ in
-                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                    .fill(palette.bgCardSoft)
-                    .frame(height: 86)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                                .strokeBorder(palette.borderFaint))
+        Group {
+            if horizontalSizeClass == .regular && !dynamicTypeSize.isAccessibilitySize {
+                HStack(spacing: Space.s2) {
+                    ForEach(0..<3, id: \.self) { _ in statSkeletonTile }
+                }
+            } else if dynamicTypeSize.isAccessibilitySize {
+                VStack(spacing: Space.s2) {
+                    ForEach(0..<3, id: \.self) { _ in statSkeletonTile }
+                }
+            } else {
+                VStack(spacing: Space.s2) {
+                    statSkeletonTile
+                    HStack(spacing: Space.s2) {
+                        statSkeletonTile
+                        statSkeletonTile
+                    }
+                }
             }
         }
+    }
+
+    private var statSkeletonTile: some View {
+        RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+            .fill(palette.bgCardSoft)
+            .frame(height: dynamicTypeSize.isAccessibilitySize ? 132 : 112)
+            .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                        .strokeBorder(palette.borderFaint))
     }
 
     private func statTile(label: String, value: String,
                           trail: String, trailColor: Color,
                           gradientNumeral: Bool = false,
-                          valueSize: CGFloat = 28) -> some View {
+                          valueTextStyle: Font.TextStyle = .title2) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(label.uppercased())
-                .font(EType.micro).tracking(0.6)
+                .font(.caption2.weight(.semibold)).tracking(0.4)
                 .foregroundStyle(palette.textTertiary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
             Group {
                 if gradientNumeral {
                     Text(value).foregroundStyle(LinearGradient.diagonal)
@@ -705,15 +756,21 @@ struct ShipperProfile: View {
                     Text(value).foregroundStyle(palette.textPrimary)
                 }
             }
-            .font(.system(size: valueSize, weight: .semibold).monospacedDigit())
-            // Long numerals ($236,744) shrink to fit rather than wrap —
-            // the three tiles keep a single stable baseline.
+            .font(.system(valueTextStyle, design: .default, weight: .semibold).monospacedDigit())
             .lineLimit(1)
-            .minimumScaleFactor(0.6)
-            Text(trail).font(EType.caption).foregroundStyle(trailColor).lineLimit(1)
+            .allowsTightening(true)
+            Text(trail)
+                .font(.caption)
+                .foregroundStyle(trailColor)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(Space.s3)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(
+            maxWidth: .infinity,
+            minHeight: dynamicTypeSize.isAccessibilitySize ? 132 : 112,
+            alignment: .leading
+        )
         .background(palette.bgCard)
         .overlay(RoundedRectangle(cornerRadius: Radius.lg)
                     .strokeBorder(palette.borderFaint))
@@ -1209,11 +1266,7 @@ struct ShipperProfile: View {
     }
 
     private func dollars(_ v: Double) -> String {
-        let f = NumberFormatter()
-        f.numberStyle = .currency
-        f.maximumFractionDigits = 0
-        f.currencyCode = "USD"
-        return f.string(from: NSNumber(value: v)) ?? "$\(Int(v))"
+        ShipperMetricFormatting.wholeCurrency(v)
     }
 }
 

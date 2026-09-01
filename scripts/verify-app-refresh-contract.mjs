@@ -29,6 +29,7 @@ const auth = read("EusoTrip/Models/AuthModels.swift");
 const app = read("EusoTrip/EusoTripApp.swift");
 const content = read("EusoTrip/ContentView.swift");
 const refresh = read("EusoTrip/ViewModels/DynamicStore.swift");
+const design = read("EusoTrip/Theme/DesignSystem.swift");
 const router = read("EusoTrip/Views/RoleSurfaceRouter.swift");
 const driverMe = read("EusoTrip/Views/Driver/067A_DriverMeHubs.swift");
 const weather = read("EusoTrip/Views/Components/HomeWeatherWidget.swift");
@@ -72,6 +73,7 @@ const directNativeHomes = [
   ["Rail Engineer", railHome],
   ["Vessel Shipper", vesselShipperHome],
   ["Vessel Operator", vesselOperatorHome],
+  ["Native specialists", router],
 ];
 const directNativeHomeRefreshGaps = directNativeHomes
   .filter(([, source]) => !source.includes("ScrollView") || !source.includes(".eusoRefreshable"))
@@ -135,9 +137,10 @@ const nativeBoundaryMarkers = [
   'eusoRefreshSurface("rail-engineer:',
   'eusoRefreshSurface("vessel-shipper:',
   'eusoRefreshSurface("vessel-operator:',
+  'eusoRefreshSurface("native-specialist:',
 ];
 
-const webRoles = [
+const specialistRoles = [
   "safety", "factoring", "serviceProvider",
 ];
 
@@ -154,6 +157,12 @@ const handlerModifier = refresh.match(
 )?.[0] ?? "";
 const refreshableModifier = refresh.match(
   /private struct EusoRefreshableModifier[\s\S]*?extension View/
+)?.[0] ?? "";
+const refreshControlModifier = refresh.match(
+  /private struct EusoRefreshControlModifier[\s\S]*?private struct EusoRefreshTaskModifier/
+)?.[0] ?? "";
+const shellBlock = design.match(
+  /struct Shell<Content: View, Nav: View>:[\s\S]*?\/\/ MARK: - Palette semantic-color convenience/
 )?.[0] ?? "";
 const baseStoreBlock = refresh.match(
   /class BaseDynamicStore<[\s\S]*?\/\/ MARK: - Concrete/
@@ -181,7 +190,7 @@ const migratedPaths = migrationManifest
   .filter((line) => line && !line.startsWith("#"));
 const malformedMigratedPaths = migratedPaths.filter((sourcePath) => {
   const match = allSwiftSources.find((entry) => entry.path === sourcePath);
-  return !match || !match.source.includes(".eusoRefreshable");
+  return !match || !/\.eusoRefresh(?:able|Handler|Task)\s*\{/.test(match.source);
 });
 
 const checks = [
@@ -197,14 +206,15 @@ const checks = [
   ],
   [
     nativeBoundaryMarkers.every((marker) => router.includes(marker)),
-    "all 11 non-driver native role shells wrap their current route in a refresh boundary",
+    "all direct native role shells, including the specialist host, wrap their current route in a refresh boundary",
   ],
   [
-    webRoles.every((role) =>
-      new RegExp(`case \\.${role}:[\\s\\S]{0,120}WebContinuationSurface\\(role: role`).test(router)
-    ) && router.includes('private var refreshSurfaceID: String') &&
-      router.includes('.eusoRefreshSurface(refreshSurfaceID)'),
-    "Safety and Factoring retain route-specific web-continuation refresh boundaries",
+    specialistRoles.every((role) =>
+      new RegExp(`case \\.${role}:[\\s\\S]{0,140}NativeSpecialistRoleSurface\\(definition: \\.${role}`).test(router)
+    ) && router.includes('.eusoRefreshSurface("native-specialist:\\(definition.role.rawValue):\\(activeDestination)")') &&
+      router.includes('.eusoRefreshable { await store.refresh() }') &&
+      !router.includes("struct WebContinuationSurface: View"),
+    "Safety, Factoring, and Service Provider use real native refresh owners without signed-in web fallbacks",
   ],
   [
     nativeModeRoles.every((role) =>
@@ -251,6 +261,14 @@ const checks = [
       !refresh.includes("EusoTopEdgeRefreshModifier") &&
       !app.includes("eusoRefreshFallback"),
     "surface boundary selects visibility only and never invents refresh work for static screens",
+  ],
+  [
+    shellBlock.includes(".eusoRefreshControl(isEnabled: roleDockContract != nil)") &&
+      refreshControlModifier.includes("await refresh(surfaceID, reason: .userPull)") &&
+      !refreshControlModifier.includes("registerHandler") &&
+      !refreshControlModifier.includes("session.revalidate") &&
+      !refreshControlModifier.includes("NotificationCenter"),
+    "every routed Shell exposes native pull while mounted real owners retain refresh authority",
   ],
   [
     !refreshIdentityRisk && !surfaceModifier.includes(".id("),
@@ -399,9 +417,13 @@ const checks = [
     "weather has per-waiter first-load ceilings and cancellation-aware provider/location ownership",
   ],
   [
-    weatherModel.includes("func displaySolarState(at displayDate: Date = Date())") &&
+      weatherModel.includes("func displaySolarState(at displayDate: Date = Date())") &&
       weatherModel.includes("return solarState(at: displayDate)") &&
-      weatherModel.includes("if let latitude, let longitude") &&
+      weatherModel.includes("if let coordinate = LatLongParser.validatedCoordinate(") &&
+      weatherModel.includes("latitude: latitude") &&
+      weatherModel.includes("longitude: longitude") &&
+      weatherModel.includes("latitude: coordinate.latitude") &&
+      weatherModel.includes("longitude: coordinate.longitude") &&
       weatherModel.includes("guard let timezoneId, let zone = TimeZone(identifier: timezoneId)") &&
       !weatherCard.includes("Calendar.current.component(.hour, from: Date())") &&
       weatherCard.includes("isDaylight: solarState.isDaylight") &&
@@ -436,15 +458,14 @@ const checks = [
     "server, NWS, Open-Meteo, WeatherKit, and HERE preserve coordinate and per-hour daylight evidence",
   ],
   [
-    driverESang.includes('.eusoRefreshSurface("modal:esang:driver")') &&
+      driverESang.includes('.eusoRefreshSurface("modal:esang:driver")') &&
       shipperESang.includes('.eusoRefreshSurface("modal:esang:shipper")') &&
       router.includes('.eusoRefreshSurface("modal:web-continuation:shipper")') &&
-      router.includes('.eusoRefreshSurface("modal:web-continuation:\\(role.rawValue)")') &&
       newsReader.includes('.eusoRefreshSurface("modal:news:\\(article.id)")') &&
       newsReader.includes("webView?.reload()") &&
       newsReader.includes("reloadHandler: $webViewReload") &&
       newsReader.includes('.eusoRefreshSurface("modal:news-safari:\\(article.id)")'),
-    "ESANG, web continuation, Safari, and WKWebView readers establish modal refresh boundaries without remounting",
+    "ESANG, record-level Safari continuation, and WKWebView readers establish modal refresh boundaries without remounting",
   ],
   [
     driverActiveEnroute.match(/\.eusoRefreshTask\s*\{/g)?.length >= 2 &&
@@ -472,5 +493,5 @@ if (failures.length) {
 
 console.log(
   `App refresh contract verification passed (${checks.length}/${checks.length}); ` +
-  `${declaredRoles.length} roles covered (Driver + 11 direct native shells + ${nativeModeRoles.length} shared native-mode roles + ${webRoles.length} web roles).`
+  `${declaredRoles.length} roles covered (Driver + direct native shells + ${nativeModeRoles.length} shared native-mode roles + ${specialistRoles.length} native specialist roles; zero signed-in web roles).`
 );

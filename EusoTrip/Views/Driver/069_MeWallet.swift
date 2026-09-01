@@ -1194,6 +1194,7 @@ private struct DriverCashOutSheet: View {
     @State private var submitting: Bool = false
     @State private var errorText: String?
     @State private var ack: WalletExtrasAPI.RequestPayoutAck?
+    @State private var payoutRequestId = UUID()
 
     private var isDark: Bool { palette.bgPage == Theme.dark.bgPage }
 
@@ -1334,6 +1335,9 @@ private struct DriverCashOutSheet: View {
                     ?? methods.first?.id
             }
         }
+        .onChange(of: amountText) { _, _ in rotatePayoutRequestId() }
+        .onChange(of: selectedMethodId) { _, _ in rotatePayoutRequestId() }
+        .onChange(of: instant) { _, _ in rotatePayoutRequestId() }
     }
 
     private var header: some View {
@@ -1707,7 +1711,8 @@ private struct DriverCashOutSheet: View {
             let result = try await EusoTripAPI.shared.walletExtras.requestPayout(
                 amount: amt,
                 payoutMethodId: methodId,
-                instant: instant
+                instant: instant,
+                idempotencyKey: payoutRequestId
             )
             ack = result
         } catch {
@@ -1718,6 +1723,11 @@ private struct DriverCashOutSheet: View {
             errorText = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
         submitting = false
+    }
+
+    private func rotatePayoutRequestId() {
+        guard !submitting, ack == nil else { return }
+        payoutRequestId = UUID()
     }
 
     private func currency(_ v: Double) -> String {

@@ -51,6 +51,22 @@
 import Foundation
 import SwiftUI
 
+private func boundedSkyElementCount(
+    total: Int,
+    requested: Double,
+    minimum: Int = 0,
+    rounding: FloatingPointRoundingRule = .towardZero
+) -> Int {
+    guard total > 0 else { return 0 }
+    let lowerBound = max(0, min(minimum, total))
+    guard requested.isFinite else { return lowerBound }
+    let bounded = max(Double(lowerBound), min(Double(total), requested))
+    return WeatherNumeric.roundedInt(
+        bounded.rounded(rounding),
+        allowed: 0...total
+    ) ?? lowerBound
+}
+
 // MARK: - SkyConditionV2 — the full 21-code taxonomy
 
 /// The complete weather taxonomy the engine animates. Each case maps to a
@@ -68,6 +84,7 @@ import SwiftUI
 /// Heavy-Rain all render identically") is fixed by making each its OWN case
 /// with its OWN particle profile, rather than the old 6-bucket parser.
 enum SkyConditionV2: Hashable, CaseIterable {
+    case unknown
     // Clear / cloud gradient
     case clear            // 1000
     case mostlyClear      // 1100
@@ -106,8 +123,9 @@ enum SkyConditionV2: Hashable, CaseIterable {
     case windy            // out-of-band; streak lines + fast clouds
 
     /// Map the canonical numeric `weatherCode` → a granular `SkyConditionV2`.
-    /// Unknown / 0 falls back to `.partlyCloudy` (a benign, honest neutral
-    /// rather than a fake clear sky).
+    /// Unknown / unmapped codes remain unknown. Presentation may render a
+    /// neutral atmosphere, but it must not assert cloud cover the provider
+    /// never reported.
     init(weatherCode: Int) {
         switch weatherCode {
         case 1000:                 self = .clear
@@ -133,13 +151,14 @@ enum SkyConditionV2: Hashable, CaseIterable {
         case 5000:                 self = .snow
         case 5101:                 self = .heavySnow
         case 8000:                 self = .thunderstorm
-        default:                   self = .partlyCloudy
+        default:                   self = .unknown
         }
     }
 
     /// Cloud-cover density 0…1 for the drifting-cloud layer.
     var cloudDensity: Double {
         switch self {
+        case .unknown:                                return 0
         case .clear:                                  return 0.18
         case .mostlyClear:                            return 0.30
         case .partlyCloudy:                           return 0.45
@@ -257,7 +276,10 @@ private struct WeatherSkyScene: View {
     /// (a "heavy rain" code is dense regardless), the live precip % nudges
     /// within the band so a 90%-chance rain looks heavier than a 30% one.
     private var precipIntensity: Double {
-        let live = Double(snapshot.precipChancePct ?? 0) / 100.0
+        let live = Double(WeatherNumeric.validatedInt(
+            snapshot.precipChancePct,
+            allowed: WeatherNumeric.percent
+        ) ?? 0) / 100.0
         let base: Double
         switch condition {
         case .drizzle, .freezingDrizzle:                       base = 0.28
@@ -277,7 +299,13 @@ private struct WeatherSkyScene: View {
 
     /// Wind shear 0…1 from the LIVE `windMph` — drives the rain/snow lean
     /// angle and the wind-streak layer. 0 mph = vertical, ~35+ mph = sharp.
-    private var windShear: Double { min(1.0, Double(snapshot.windMph) / 35.0) }
+    private var windShear: Double {
+        let wind = WeatherNumeric.validatedInt(
+            snapshot.windMph,
+            allowed: WeatherNumeric.windMph
+        ) ?? 0
+        return min(1.0, Double(wind) / 35.0)
+    }
 
     /// Lightning warmth: cold-blue in winter, warm-yellow in summer — a
     /// real seasonal cue layered on the storm.
@@ -293,7 +321,10 @@ private struct WeatherSkyScene: View {
     /// the scene as real visibility drops below ~6 mi. An unreported
     /// visibility (nil) means NO choke — never a fabricated haze.
     private var visibilityChoke: Double {
-        guard let raw = snapshot.visibilityMi else { return 0 }
+        guard let raw = WeatherNumeric.validatedInt(
+            snapshot.visibilityMi,
+            allowed: WeatherNumeric.visibilityMi
+        ) else { return 0 }
         let v = Double(raw)
         guard v < 6 else { return 0 }
         return min(0.5, (6 - v) / 12.0)
@@ -307,6 +338,7 @@ private struct WeatherSkyScene: View {
         case .spring: return 0.32
         case .fall:   return 0.36
         case .winter: return 0.44
+        case .unknown: return 0.35
         }
     }
 
@@ -317,6 +349,7 @@ private struct WeatherSkyScene: View {
         case .fall:   return 1.05
         case .spring: return 1.00
         case .summer: return 0.90
+        case .unknown: return 1.00
         }
     }
 
@@ -448,7 +481,7 @@ private struct WeatherSkyScene: View {
                       flakeScale: season == .winter ? 1.2 : 0.85,
                       animated: animated)
 
-        case .clear, .mostlyClear, .partlyCloudy, .mostlyCloudy, .cloudy,
+        case .unknown, .clear, .mostlyClear, .partlyCloudy, .mostlyCloudy, .cloudy,
              .fog, .lightFog, .dust, .windy:
             EmptyView()
         }
@@ -541,6 +574,11 @@ private enum SkyPalette {
         let golden = twilight && !isNight
 
         switch condition {
+        case .unknown:
+            return night
+                ? [rgb(0.06, 0.07, 0.12), rgb(0.11, 0.12, 0.17), rgb(0.17, 0.18, 0.23)]
+                : [rgb(0.42, 0.48, 0.56), rgb(0.58, 0.64, 0.70), rgb(0.74, 0.79, 0.84)]
+
         // ── Clear / mostly-clear ───────────────────────────────────────
         case .clear, .mostlyClear:
             if night {
@@ -857,7 +895,10 @@ private struct StarField: View {
     }
 
     private func frame(t: TimeInterval) -> some View {
-        let keep = Int(Double(stars.count) * max(0.05, min(1, density)))
+        let keep = boundedSkyElementCount(
+            total: stars.count,
+            requested: Double(stars.count) * max(0.05, min(1, density))
+        )
         return Canvas { gc, size in
             for star in stars.prefix(keep) {
                 let tw = (sin(t * star.speed + star.phase) + 1) / 2
@@ -918,7 +959,11 @@ private struct DriftingClouds: View {
     }
 
     private func frame(t: TimeInterval) -> some View {
-        let visible = min(clouds.count, Int((Double(clouds.count) * density).rounded(.up)))
+        let visible = boundedSkyElementCount(
+            total: clouds.count,
+            requested: Double(clouds.count) * density,
+            rounding: .up
+        )
         return Canvas { gc, size in
             for puff in clouds.prefix(visible) {
                 let travel = (t * puff.speed * speedScale + puff.phase)
@@ -998,7 +1043,11 @@ private struct RainLayer: View {
 
     private func frame(t: TimeInterval) -> some View {
         // Intensity scales count (18 → 60), length band, speed band, opacity.
-        let count = max(6, Int(Double(drops.count) * (0.30 + intensity * 0.70)))
+        let count = boundedSkyElementCount(
+            total: drops.count,
+            requested: Double(drops.count) * (0.30 + intensity * 0.70),
+            minimum: 6
+        )
         let lenMin = 4 + intensity * 10                 // drizzle short, heavy long
         let lenSpan = 6 + intensity * 12
         let speedMin = 70 + intensity * 130             // drizzle slow, heavy fast
@@ -1062,7 +1111,11 @@ private struct FreezingRainLayer: View {
     }
 
     private func frame(t: TimeInterval) -> some View {
-        let count = max(8, Int(Double(drops.count) * (0.30 + intensity * 0.70)))
+        let count = boundedSkyElementCount(
+            total: drops.count,
+            requested: Double(drops.count) * (0.30 + intensity * 0.70),
+            minimum: 8
+        )
         let lenMin = 6 + intensity * 8
         let lenSpan = 6 + intensity * 8
         let speed = 90 + intensity * 90
@@ -1125,7 +1178,11 @@ private struct SleetLayer: View {
     }
 
     private func frame(t: TimeInterval) -> some View {
-        let count = max(8, Int(Double(pellets.count) * (0.30 + intensity * 0.70)))
+        let count = boundedSkyElementCount(
+            total: pellets.count,
+            requested: Double(pellets.count) * (0.30 + intensity * 0.70),
+            minimum: 8
+        )
         let sizeMin: CGFloat = hail ? 3.0 : 1.4
         let sizeSpan: CGFloat = hail ? 6.0 : 2.4
         let speed = (hail ? 200.0 : 150.0) + intensity * (hail ? 140 : 90)
@@ -1213,7 +1270,11 @@ private struct SnowLayer: View {
     }
 
     private func frame(t: TimeInterval) -> some View {
-        let count = max(8, Int(Double(flakes.count) * (0.30 + intensity * 0.70)))
+        let count = boundedSkyElementCount(
+            total: flakes.count,
+            requested: Double(flakes.count) * (0.30 + intensity * 0.70),
+            minimum: 8
+        )
         let sizeMin = (1.0 + intensity * 1.2) * flakeScale
         let sizeSpan = (1.4 + intensity * 1.6) * flakeScale
         let speed = 18 + intensity * 42                     // gentle → blizzard descent
@@ -1389,7 +1450,11 @@ private struct WindStreaks: View {
     }
 
     private func frame(t: TimeInterval) -> some View {
-        let count = max(4, Int(Double(lines.count) * (0.4 + strength * 0.6)))
+        let count = boundedSkyElementCount(
+            total: lines.count,
+            requested: Double(lines.count) * (0.4 + strength * 0.6),
+            minimum: 4
+        )
         return Canvas { gc, size in
             for line in lines.prefix(count) {
                 let run = (t * line.speed * (0.6 + strength) + line.phase)

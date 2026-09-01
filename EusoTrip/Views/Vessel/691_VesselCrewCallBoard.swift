@@ -451,7 +451,7 @@ private struct VesselCrewCallBoardBody691: View {
                 Text("CALLED · ACKED\n· ONBOARD")
                     .font(.system(size: 8, weight: .heavy)).tracking(0.3)
                     .foregroundStyle(palette.textPrimary)
-                Text("STUB — no call\nwrite, manifest\nunread")
+                Text("NO VERIFIED\nCREW CALL\nRECORD")
                     .font(.system(size: 8, weight: .bold)).tracking(0.3)
                     .foregroundStyle(Brand.warning)
                 Text("MUSTER COUNT")
@@ -482,7 +482,7 @@ private struct VesselCrewCallBoardBody691: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("MIN MANNING · STUB")
+                Text("MINIMUM MANNING · NOT VERIFIED")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(Brand.warning)
             }
@@ -533,7 +533,7 @@ private struct VesselCrewCallBoardBody691: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("ACK CLOCK · STUB")
+                Text("ACKNOWLEDGMENT CLOCK · UNAVAILABLE")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(Brand.warning)
             }

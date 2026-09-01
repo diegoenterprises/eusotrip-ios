@@ -479,7 +479,15 @@ extension Shipment {
         fromLoad detail: LoadsAPI.LoadDetail,
         escorts: [LoadsAPI.EscortAssignment]
     ) -> Shipment? {
-        guard !escorts.isEmpty else { return nil }
+        guard !escorts.isEmpty,
+              let pickupCoordinate = LatLongParser.validatedCoordinate(
+                  latitude: detail.pickupLocation?.lat,
+                  longitude: detail.pickupLocation?.lng
+              ),
+              let deliveryCoordinate = LatLongParser.validatedCoordinate(
+                  latitude: detail.deliveryLocation?.lat,
+                  longitude: detail.deliveryLocation?.lng
+              ) else { return nil }
 
         let loadRef = detail.loadNumber
         let weight = detail.weight.flatMap(Double.init) ?? 0
@@ -492,13 +500,13 @@ extension Shipment {
             }
         }()
         let originPoint = GeoPoint(
-            lat: detail.pickupLocation?.lat ?? 0,
-            lng: detail.pickupLocation?.lng ?? 0,
+            lat: pickupCoordinate.latitude,
+            lng: pickupCoordinate.longitude,
             label: detail.pickupLocation?.cityState
         )
         let destPoint = GeoPoint(
-            lat: detail.deliveryLocation?.lat ?? 0,
-            lng: detail.deliveryLocation?.lng ?? 0,
+            lat: deliveryCoordinate.latitude,
+            lng: deliveryCoordinate.longitude,
             label: detail.deliveryLocation?.cityState
         )
 

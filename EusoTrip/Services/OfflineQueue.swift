@@ -87,7 +87,7 @@ enum QueuedAction: Codable, Equatable {
                        at: Date, key: String)
     /// Global, moderated Haul-lobby post. The server deduplicates this key
     /// inside the authenticated user's scope before rate limiting.
-    case postHaulMessage(message: String, at: Date, key: String)
+    case postHaulMessage(message: String, ownerUserId: String?, at: Date, key: String)
 
     /// Stable idempotency key — generated at enqueue, persisted, and
     /// echoed to the server so a re-send collapses instead of duplicating.
@@ -99,7 +99,7 @@ enum QueuedAction: Codable, Equatable {
         case .executeTransition(_, _, _, let k):     return k
         case .acceptLoad(_, _, let k):               return k
         case .geofenceEvent(_, _, _, _, _, _, _, _, let k): return k
-        case .postHaulMessage(_, _, let k):                  return k
+        case .postHaulMessage(_, _, _, let k):               return k
         }
     }
 
@@ -112,7 +112,7 @@ enum QueuedAction: Codable, Equatable {
         case .executeTransition(_, _, let at, _):     return at
         case .acceptLoad(_, let at, _):               return at
         case .geofenceEvent(_, _, _, _, _, _, _, let at, _): return at
-        case .postHaulMessage(_, let at, _):                  return at
+        case .postHaulMessage(_, _, let at, _):               return at
         }
     }
 
@@ -130,6 +130,32 @@ enum QueuedAction: Codable, Equatable {
     }
 }
 
+enum OfflineQueueStorageError: LocalizedError {
+    case writeFailed
+    case readFailed
+    case deliveryIdentityConflict
+    case emptyHaulDraft
+    case sessionIdentityUnavailable
+    case deliveryOwnerMismatch
+
+    var errorDescription: String? {
+        switch self {
+        case .writeFailed:
+            return "This message is still in the composer because EusoTrip could not secure it for offline delivery. Free device storage, then try again."
+        case .readFailed:
+            return "EusoTrip could not read the saved Haul drafts on this device. The original outbox has not been discarded."
+        case .deliveryIdentityConflict:
+            return "This delivery identity already belongs to different Haul text. Keep the draft and send it as a new message."
+        case .emptyHaulDraft:
+            return "Enter a message before queuing it for the Haul."
+        case .sessionIdentityUnavailable:
+            return "Your signed-in identity could not be verified, so this Haul message was not queued. Keep the draft and sign in again."
+        case .deliveryOwnerMismatch:
+            return "This saved Haul message belongs to a different signed-in account and was not posted."
+        }
+    }
+}
+
 // MARK: - OfflineQueue
 
 @MainActor
@@ -139,6 +165,11 @@ final class OfflineQueue: ObservableObject {
     /// Pending actions awaiting replay, oldest-first. Persisted across
     /// app launches. Consumers (e.g. an outbox badge) bind to this.
     @Published private(set) var pending: [QueuedAction] = []
+
+    /// Non-nil when the persisted envelope exists but cannot be read. The
+    /// original file remains untouched and all subsequent persistence fails
+    /// closed so unknown queued work cannot be replaced by an empty envelope.
+    @Published private(set) var storageError: String?
 
     /// True while a `flush()` pass is in flight — keeps the path monitor
     /// edge and a manual flush from stomping on each other.
@@ -168,19 +199,43 @@ final class OfflineQueue: ObservableObject {
         var actions: [QueuedAction]
     }
 
-    /// Load the persisted queue on first access. Tolerant: a missing /
-    /// corrupt file just yields an empty queue rather than throwing.
+    /// Load the persisted queue on first access. A missing file is a truthful
+    /// empty queue. An unreadable or corrupt file is not: preserve it and
+    /// expose the fault so the Haul composer can retain the user's draft.
     private func restore() {
-        guard let data = try? Data(contentsOf: fileURL) else { return }
-        if let env = try? JSONDecoder().decode(Envelope.self, from: data) {
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
+        do {
+            let data = try Data(contentsOf: fileURL)
+            let env = try JSONDecoder().decode(Envelope.self, from: data)
             pending = env.actions.sorted { $0.enqueuedAt < $1.enqueuedAt }
+            storageError = nil
+        } catch {
+            storageError = OfflineQueueStorageError.readFailed.localizedDescription
+        }
+    }
+
+    private func persist(actions: [QueuedAction]) throws {
+        guard storageError == nil else {
+            throw OfflineQueueStorageError.readFailed
+        }
+        do {
+            let env = Envelope(version: 1, actions: actions)
+            let data = try JSONEncoder().encode(env)
+            try data.write(to: fileURL, options: [.atomic, .completeFileProtectionUnlessOpen])
+        } catch {
+            throw OfflineQueueStorageError.writeFailed
         }
     }
 
     private func persist() {
-        let env = Envelope(version: 1, actions: pending)
-        if let data = try? JSONEncoder().encode(env) {
-            try? data.write(to: fileURL, options: .atomic)
+        do {
+            try persist(actions: pending)
+        } catch {
+            NotificationCenter.default.post(
+                name: .eusoOutboxStorageFailed,
+                object: nil,
+                userInfo: ["reason": error.localizedDescription]
+            )
         }
     }
 
@@ -238,10 +293,32 @@ final class OfflineQueue: ObservableObject {
     }
 
     @discardableResult
-    func enqueueHaulMessage(message: String, idempotencyKey: String? = nil) -> String {
+    func enqueueHaulMessage(message: String, idempotencyKey: String? = nil) throws -> String {
+        guard storageError == nil else { throw OfflineQueueStorageError.readFailed }
+        guard let ownerUserId = currentHaulOwnerUserId() else {
+            throw OfflineQueueStorageError.sessionIdentityUnavailable
+        }
         let k = idempotencyKey ?? key()
-        guard !pending.contains(where: { $0.key == k }) else { return k }
-        append(.postHaulMessage(message: message, at: Date(), key: k))
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw OfflineQueueStorageError.emptyHaulDraft }
+        if let existing = pending.first(where: { $0.key == k }) {
+            if case let .postHaulMessage(existingMessage, existingOwnerUserId, _, _) = existing,
+               existingMessage == trimmed,
+               existingOwnerUserId == ownerUserId {
+                return k
+            }
+            throw OfflineQueueStorageError.deliveryIdentityConflict
+        }
+        var next = pending
+        next.append(.postHaulMessage(
+            message: trimmed,
+            ownerUserId: ownerUserId,
+            at: Date(),
+            key: k
+        ))
+        next.sort { $0.enqueuedAt < $1.enqueuedAt }
+        try persist(actions: next)
+        pending = next
         return k
     }
 
@@ -276,8 +353,11 @@ final class OfflineQueue: ObservableObject {
     }
 
     func keyForPendingHaulMessage(content: String) -> String? {
+        guard let ownerUserId = currentHaulOwnerUserId() else { return nil }
         for action in pending.reversed() {
-            if case let .postHaulMessage(body, _, key) = action, body == content {
+            if case let .postHaulMessage(body, actionOwnerUserId, _, key) = action,
+               body == content,
+               actionOwnerUserId == ownerUserId {
                 return key
             }
         }
@@ -330,9 +410,22 @@ final class OfflineQueue: ObservableObject {
         for action in snapshot {
             // Skip anything already drained by a racing pass.
             guard pending.contains(where: { $0.key == action.key }) else { continue }
+            if case let .postHaulMessage(_, ownerUserId, _, _) = action {
+                // A device can change accounts while an outbox survives. Never
+                // replay Account A's community post under Account B's bearer.
+                // Legacy entries without ownership stay quarantined in place.
+                guard let currentOwnerUserId = currentHaulOwnerUserId(),
+                      ownerUserId == currentOwnerUserId
+                else { continue }
+            }
             do {
                 try await replay(action)
-                remove(key: action.key)
+                if case .postHaulMessage = action {
+                    try discardFailedHaulDraft(key: action.key)
+                    try removeDurably(key: action.key)
+                } else {
+                    remove(key: action.key)
+                }
                 // Let interested surfaces re-pull (the conversation view
                 // reconciles its queued bubble, the load board refreshes).
                 NotificationCenter.default.post(
@@ -341,7 +434,18 @@ final class OfflineQueue: ObservableObject {
                     userInfo: ["key": action.key]
                 )
             } catch {
-                if Self.isNetworkUnreachable(error) {
+                if error is OfflineQueueStorageError {
+                    NotificationCenter.default.post(
+                        name: .eusoOutboxStorageFailed,
+                        object: nil,
+                        userInfo: [
+                            "key": action.key,
+                            "reason": error.localizedDescription,
+                        ]
+                    )
+                    scheduleReplay()
+                    continue
+                } else if Self.isNetworkUnreachable(error) {
                     // Still offline — stop the pass, keep the entry, retry
                     // on the next satisfied edge.
                     break
@@ -360,16 +464,35 @@ final class OfflineQueue: ObservableObject {
                     #if DEBUG
                     print("[OfflineQueue] dropping \(action.label) after non-network failure: \(error)")
                     #endif
-                    remove(key: action.key)
-                    if case let .postHaulMessage(message, _, key) = action {
-                        preserveFailedHaulDraft(message: message, key: key)
+                    if case let .postHaulMessage(message, ownerUserId, _, key) = action {
+                        do {
+                            try stageHaulDraftForRecovery(
+                                message: message,
+                                key: key,
+                                ownerUserId: ownerUserId
+                            )
+                            try removeDurably(key: action.key)
+                        } catch {
+                            NotificationCenter.default.post(
+                                name: .eusoOutboxStorageFailed,
+                                object: nil,
+                                userInfo: [
+                                    "key": action.key,
+                                    "reason": error.localizedDescription,
+                                ]
+                            )
+                            scheduleReplay()
+                            continue
+                        }
+                    } else {
+                        remove(key: action.key)
                     }
                     NotificationCenter.default.post(
                         name: .eusoOutboxReplayFailed,
                         object: nil,
                         userInfo: [
                             "key": action.key,
-                            "message": Self.recoverableMessage(in: action) as Any,
+                            "message": recoverableMessage(in: action) as Any,
                             "reason": error.localizedDescription,
                         ]
                     )
@@ -383,9 +506,16 @@ final class OfflineQueue: ObservableObject {
         pending.removeAll { $0.key == key }
     }
 
+    private func removeDurably(key: String) throws {
+        let next = pending.filter { $0.key != key }
+        try persist(actions: next)
+        pending = next
+    }
+
     struct FailedHaulDraft: Codable, Equatable {
         let key: String
         let message: String
+        let ownerUserId: String?
         let failedAt: Date
     }
 
@@ -402,39 +532,94 @@ final class OfflineQueue: ObservableObject {
         return dir.appendingPathComponent("eusotrip_failed_haul_drafts.json")
     }()
 
-    private func failedHaulDrafts() -> [FailedHaulDraft] {
-        guard let data = try? Data(contentsOf: failedHaulURL),
-              let drafts = try? JSONDecoder().decode([FailedHaulDraft].self, from: data)
-        else { return [] }
-        return drafts.sorted { $0.failedAt < $1.failedAt }
+    private func failedHaulDrafts() throws -> [FailedHaulDraft] {
+        guard FileManager.default.fileExists(atPath: failedHaulURL.path) else { return [] }
+        do {
+            let data = try Data(contentsOf: failedHaulURL)
+            let drafts = try JSONDecoder().decode([FailedHaulDraft].self, from: data)
+            return drafts.sorted { $0.failedAt < $1.failedAt }
+        } catch {
+            throw OfflineQueueStorageError.readFailed
+        }
     }
 
-    private func persistFailedHaulDrafts(_ drafts: [FailedHaulDraft]) {
-        guard let data = try? JSONEncoder().encode(drafts) else { return }
-        try? data.write(to: failedHaulURL, options: .atomic)
+    private func persistFailedHaulDrafts(_ drafts: [FailedHaulDraft]) throws {
+        do {
+            let data = try JSONEncoder().encode(drafts)
+            try data.write(to: failedHaulURL, options: [.atomic, .completeFileProtectionUnlessOpen])
+        } catch {
+            throw OfflineQueueStorageError.writeFailed
+        }
     }
 
-    private func preserveFailedHaulDraft(message: String, key: String) {
-        var drafts = failedHaulDrafts()
-        guard !drafts.contains(where: { $0.key == key }) else { return }
-        drafts.append(FailedHaulDraft(key: key, message: message, failedAt: Date()))
-        persistFailedHaulDrafts(drafts)
+    /// Persist the exact text and delivery UUID before an online write starts.
+    /// If the app is killed after the server commits but before the response
+    /// arrives, the next launch restores this same pair and the server resolves
+    /// it to the original row instead of inserting a duplicate.
+    func stageHaulDraftForRecovery(
+        message: String,
+        key: String,
+        ownerUserId requestedOwnerUserId: String? = nil
+    ) throws {
+        guard let currentOwnerUserId = currentHaulOwnerUserId() else {
+            throw OfflineQueueStorageError.sessionIdentityUnavailable
+        }
+        let ownerUserId = requestedOwnerUserId ?? currentOwnerUserId
+        guard ownerUserId == currentOwnerUserId else {
+            throw OfflineQueueStorageError.deliveryOwnerMismatch
+        }
+        let canonical = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !canonical.isEmpty else { throw OfflineQueueStorageError.emptyHaulDraft }
+        var drafts = try failedHaulDrafts()
+        if let existing = drafts.first(where: { $0.key == key }) {
+            guard existing.message == canonical,
+                  existing.ownerUserId == ownerUserId
+            else {
+                throw OfflineQueueStorageError.deliveryIdentityConflict
+            }
+            return
+        }
+        drafts.append(FailedHaulDraft(
+            key: key,
+            message: canonical,
+            ownerUserId: ownerUserId,
+            failedAt: Date()
+        ))
+        try persistFailedHaulDrafts(drafts)
     }
 
-    func firstFailedHaulDraft() -> FailedHaulDraft? {
-        failedHaulDrafts().first
+    func firstFailedHaulDraft() throws -> FailedHaulDraft? {
+        guard let ownerUserId = currentHaulOwnerUserId() else {
+            throw OfflineQueueStorageError.sessionIdentityUnavailable
+        }
+        return try failedHaulDrafts().first { $0.ownerUserId == ownerUserId }
     }
 
-    func failedHaulDraft(key: String) -> FailedHaulDraft? {
-        failedHaulDrafts().first { $0.key == key }
+    func failedHaulDraft(key: String) throws -> FailedHaulDraft? {
+        guard let ownerUserId = currentHaulOwnerUserId() else {
+            throw OfflineQueueStorageError.sessionIdentityUnavailable
+        }
+        return try failedHaulDrafts().first {
+            $0.key == key && $0.ownerUserId == ownerUserId
+        }
     }
 
-    func discardFailedHaulDraft(key: String) {
-        persistFailedHaulDrafts(failedHaulDrafts().filter { $0.key != key })
+    func discardFailedHaulDraft(key: String) throws {
+        guard let ownerUserId = currentHaulOwnerUserId() else {
+            throw OfflineQueueStorageError.sessionIdentityUnavailable
+        }
+        let drafts = try failedHaulDrafts()
+        guard drafts.contains(where: { $0.key == key && $0.ownerUserId == ownerUserId }) else { return }
+        try persistFailedHaulDrafts(drafts.filter {
+            !($0.key == key && $0.ownerUserId == ownerUserId)
+        })
     }
 
-    private static func recoverableMessage(in action: QueuedAction) -> String? {
-        if case let .postHaulMessage(message, _, _) = action { return message }
+    private func recoverableMessage(in action: QueuedAction) -> String? {
+        if case let .postHaulMessage(message, ownerUserId, _, _) = action,
+           ownerUserId == currentHaulOwnerUserId() {
+            return message
+        }
         return nil
     }
 
@@ -457,7 +642,11 @@ final class OfflineQueue: ObservableObject {
         let api = EusoTripAPI.shared
         switch action {
         case .changeHosStatus(let status, let location, let remark, let loadId, _, let key):
-            let code = HOSDutyCode(rawValue: status) ?? .offDuty
+            guard let code = HOSDutyCode(rawValue: status) else {
+                throw EusoTripAPIError.decodingFailed(
+                    "Queued HOS event contains an unsupported duty status"
+                )
+            }
             _ = try await api.hos.changeStatus(
                 status: code,
                 source: "ios-offline",
@@ -498,7 +687,12 @@ final class OfflineQueue: ObservableObject {
                 geofenceId: geofenceId, action: action, lat: lat, lng: lng,
                 timestamp: timestamp, loadId: loadId,
                 geofenceType: geofenceType, facilityName: nil)
-        case .postHaulMessage(let message, _, let key):
+        case .postHaulMessage(let message, let ownerUserId, _, let key):
+            guard let currentOwnerUserId = currentHaulOwnerUserId(),
+                  ownerUserId == currentOwnerUserId
+            else {
+                throw OfflineQueueStorageError.deliveryOwnerMismatch
+            }
             let result = try await api.gamification.postLobbyMessage(
                 message: message,
                 idempotencyKey: key
@@ -534,6 +728,42 @@ final class OfflineQueue: ObservableObject {
         }
     }
 
+    /// The JWT has already been signature-verified by the server before any
+    /// write can commit. Locally we decode only its stable numeric userId to
+    /// partition device recovery state; this value never grants authority.
+    private func currentHaulOwnerUserId() -> String? {
+        Self.haulOwnerUserId(from: EusoTripAPI.shared.authToken)
+    }
+
+    nonisolated private static func haulOwnerUserId(from token: String?) -> String? {
+        guard let token else { return nil }
+        let segments = token.split(separator: ".", omittingEmptySubsequences: false)
+        guard segments.count == 3 else { return nil }
+        var payload = String(segments[1])
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        let remainder = payload.count % 4
+        if remainder != 0 {
+            payload.append(String(repeating: "=", count: 4 - remainder))
+        }
+        guard let data = Data(base64Encoded: payload),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+        let rawUserId: String?
+        if let value = object["userId"] as? String {
+            rawUserId = value
+        } else if let value = object["userId"] as? NSNumber {
+            rawUserId = value.stringValue
+        } else {
+            rawUserId = nil
+        }
+        guard let rawUserId,
+              let numericUserId = Int(rawUserId),
+              numericUserId > 0
+        else { return nil }
+        return String(numericUserId)
+    }
+
     /// Infrastructure and throttling failures are continuation states, not
     /// terminal outcomes. These stay in the durable queue with the same key.
     nonisolated static func isRetryableFailure(_ error: Error) -> Bool {
@@ -554,8 +784,10 @@ final class OfflineQueue: ObservableObject {
     nonisolated static func isRetryableServerMessage(_ message: String) -> Bool {
         let value = message.lowercased()
         return value.contains("reconnecting")
+            || value.contains("delivery was not confirmed")
             || value.contains("temporarily unavailable")
             || value.contains("service unavailable")
+            || value.contains("retry in a moment")
             || value.contains("try again in a moment")
             || value.contains("please wait a moment before posting again")
             || value.contains("rate limit")
@@ -572,6 +804,9 @@ extension Notification.Name {
     static let eusoOutboxReplayed = Notification.Name("eusoOutboxReplayed")
     /// Posted when a queued action is dropped after a non-network failure.
     static let eusoOutboxReplayFailed = Notification.Name("eusoOutboxReplayFailed")
+    /// Posted when a local outbox transition could not be atomically persisted.
+    /// The queued action remains intact and must not be presented as sent.
+    static let eusoOutboxStorageFailed = Notification.Name("eusoOutboxStorageFailed")
 }
 
 // MARK: - Reachability drain

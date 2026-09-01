@@ -13,15 +13,16 @@
 //
 //  LIVE SUPER-INTELLIGENCE FUSION: the geofence approach-chart hero, the voyage-to-berth meter, the
 //  approach-sequence ledger and the ESang plan are FOUR faces of ONE tick. `load()` fans the parallel
-//  reads; `streamTrack()` re-reads `getVesselTrack` each AIS tick (marker progress · SOG · COG) and
-//  re-reasons every face together. On AIS downtime the marker dims to "AIS DEGRADED" and the ETA reads
-//  "rough est." — never a frozen number.
+//  reads; `streamTrack()` re-reads the tenant/source/licence-authorized Live
+//  Operations observation each AIS tick and re-reasons every face together.
+//  On AIS downtime the marker dims with its exact freshness state — never a
+//  frozen number or a direct client-to-provider credential path.
 //
 //  WEB PARITY: client/src/pages/vessel/VesselLivePosition.tsx + VesselOperatorNav.tsx
 //
 //  ───────── WIRING MANIFEST (every binding MCP-confirmed in server/routers/ this fire) ─────────
 //    EXISTS · vesselShipments.getVesselShipmentDetail   :259  { id }              ← booking facts (lane · berth)
-//    EXISTS · vesselShipments.getVesselTrack            :1443 { imoNumber }        ← AIS route · SOG/COG — the live tick
+//    EXISTS · liveOperations.latestForAsset {VESSEL, vessel_imo} ← authorized AIS position evidence
 //    EXISTS · vesselShipments.getVesselPortCalls        :1418 { imoNumber, days }  ← ETA berth window · tide window
 //    EXISTS · tracking.getGeofenceEvents                :439  { geofenceId?, vehicleId?, limit } ← APPROACH SEQUENCE rows
 //    STUB · named-gap (to the-oath, NOT invented): loads.geofenceEvent — exact-timestamp berth-box ENTER
@@ -33,7 +34,7 @@
 //  "BERTH J232", "14.2 kn" SOG, 94% to-berth, "14:30" ETA, "+1.4m" tide, the 3 seeded approach
 //  steps, the hardcoded ESang plan) is DELETED — every face nil-inits to em-dash and hydrates
 //  ONLY from live reads, with honest empty states. Decode shapes corrected to the REAL wire:
-//  getVesselTrack → RoutePosition[] (bare array), getVesselPortCalls → PortCall[] | null,
+//  latestForAsset → exact authorized observation, getVesselPortCalls → PortCall[] | null,
 //  tracking.getGeofenceEvents → {geofenceName,eventType,dwellSeconds,timestamp} rows, and
 //  getVesselShipmentDetail → the raw shipment spread (bookingNumber + port joins). Anchors
 //  (shipmentId/IMO) resolve from the operator's REAL newest booking + fleet vessel when not
@@ -82,23 +83,13 @@ private struct VesselDetail660: Decodable {
     let bookingNumber: String?
     let status: String?
     let voyageNumber: String?
-    // Port join (:289 returns originPort / destinationPort rows). UN/LOCODE + name
-    // resolve the great-circle endpoints through the bundled PortDirectory catalog —
-    // the SAME real-coordinate path Vessel 003 uses (003:314/326).
+    // Port join (:289 returns originPort / destinationPort rows). UN/LOCODE +
+    // name resolve truthful endpoint markers through PortDirectory; route
+    // geometry comes only from the canonical EusoMarine plan.
     let originPort: VesselPort660?
     let destinationPort: VesselPort660?
 }
 private struct VesselPort660: Decodable { let name: String?; let unlocode: String? }
-
-/// getVesselTrack → MarineTraffic RoutePosition[] (bare array; newest data last).
-private struct RoutePos660: Decodable {
-    let lat: Double?
-    let lng: Double?
-    let speed: Double?
-    let heading: Double?
-    let course: Double?
-    let timestamp: String?
-}
 
 /// getVesselPortCalls → MarineTraffic PortCall[] (bare array, or null on error).
 private struct PortCallRow660: Decodable {
@@ -134,16 +125,16 @@ private struct VesselLivePositionBody_660: View {
     @State private var berth = "—"
     @State private var reference = "—"
 
-    // Great-circle endpoints — UN/LOCODE + name from the getVesselShipmentDetail port
-    // join (:289), coordinates resolved through PortDirectory. nil until load lands a
-    // real booking, which gates the live ocean map (no map on null endpoints).
+    // Endpoint markers — UN/LOCODE + name from the shipment port join,
+    // resolved through PortDirectory. They never become route geometry.
     @State private var originPort: VesselPort660? = nil
     @State private var destinationPort: VesselPort660? = nil
 
-    // One live tick (getVesselTrack RoutePosition[]) — SOG feeds the voyage meter +
-    // the AIS status capsule. The live marker fraction lives INSIDE VesselOceanTrackMap.
+    // One exact Live Operations observation — SOG feeds the voyage meter +
+    // the AIS status capsule. The live marker lives INSIDE VesselOceanTrackMap.
     @State private var sog = "—"
     @State private var degraded = true   // honest: degraded until the first real fix lands
+    @State private var aisStatusLabel = "AIS OFFLINE"
 
     // Port-call meter (getVesselPortCalls) — em-dash until a real upcoming call exists.
     // toBerthPct/tide have NO server source today ⇒ 0 ring + permanent em-dash.
@@ -232,7 +223,7 @@ private struct VesselLivePositionBody_660: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("AIS feed degraded").font(EType.bodyStrong).foregroundStyle(Brand.danger)
             Text(err).font(EType.caption).foregroundStyle(palette.textSecondary)
-            Text("Showing last-known approach · ETA reads rough est. until AIS resumes.")
+            Text("No operational position or progress is inferred while source authority is unavailable.")
                 .font(EType.caption).foregroundStyle(palette.textTertiary)
         }
         .padding(Space.s4).frame(maxWidth: .infinity, alignment: .leading)
@@ -246,10 +237,9 @@ private struct VesselLivePositionBody_660: View {
     // CANON: the hand-drawn approach-chart (Circles/Text via .position() + a static
     // quad-curve approach + status-fraction marker) is REPLACED by the in-house native
     // ocean register `VesselOceanTrackMap` → `BespokeMapCanvas(style: .ocean)`. It is fed
-    // the booking's REAL endpoints (great circle CNSHA→USLGB drawn from the
-    // getVesselShipmentDetail port join) and the LIVE AIS feed keyed by this screen's
-    // `imoNumber` — the orb, solid/dashed route split, and the speed/heading/coords chip
-    // are the real position inside the canvas, NOT a status guess. Same hero chrome the
+    // the booking's real endpoint markers, the exact bound EusoMarine route for
+    // `resolvedShipmentId`, and the licensed AIS feed keyed by this screen's IMO.
+    // The route and observation remain independent. Same hero chrome the
     // 003 card uses (ocean fill, Radius.xl, borderFaint stroke). The AIS-LIVE/DEGRADED and
     // berth status capsules ride on as overlays so the live-position eyebrow is preserved.
     //
@@ -267,6 +257,7 @@ private struct VesselLivePositionBody_660: View {
             if let imo = resolvedImo, !imo.isEmpty, let o = originCoord, let d = destinationCoord {
                 VesselOceanTrackMap(
                     imoNumber: imo,
+                    vesselShipmentId: resolvedShipmentId,
                     origin: o,
                     destination: d,
                     originLabel: originLabel,
@@ -281,13 +272,13 @@ private struct VesselLivePositionBody_660: View {
         .overlay(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous).strokeBorder(palette.borderFaint))
         .overlay(alignment: .topLeading) {
             HStack(spacing: 6) {
-                Circle().fill(Color(red: 0.169, green: 0.878, blue: 0.690)).frame(width: 6, height: 6)
-                Text(degraded ? "AIS DEGRADED" : "AIS LIVE").font(.system(size: 8, weight: .heavy)).tracking(0.5)
+                Circle().fill(degraded ? Brand.warning : Brand.success).frame(width: 6, height: 6)
+                Text(aisStatusLabel).font(.system(size: 8, weight: .heavy)).tracking(0.5)
                     .foregroundColor(degraded ? Brand.warning : Color(red: 0.169, green: 0.878, blue: 0.690))
             }
             .padding(.horizontal, 9).padding(.vertical, 4)
             .background(Capsule().fill(Color(red: 0.043, green: 0.071, blue: 0.125)))
-            .overlay(Capsule().strokeBorder(Color(red: 0.169, green: 0.878, blue: 0.690).opacity(0.5), lineWidth: 1))
+            .overlay(Capsule().strokeBorder(LinearGradient.diagonal.opacity(0.55), lineWidth: 1))
             .padding(12)
         }
         .overlay(alignment: .topTrailing) {
@@ -315,17 +306,20 @@ private struct VesselLivePositionBody_660: View {
 
     // MARK: Origin / destination resolution (UN/LOCODE port join → PortDirectory coords)
 
-    /// Origin great-circle endpoint — the booking's origin port UN/LOCODE resolved through
-    /// the bundled PortDirectory catalog (the same real-coordinate path Vessel 003 uses at
-    /// 003:314). nil until a real booking lands ⇒ the coord gate keeps the placeholder.
+    /// Booking origin marker. nil until a real booking lands.
     private var originCoord: HereLatLng? { coord(for: originPort) }
 
-    /// Destination great-circle endpoint — destination port UN/LOCODE → PortDirectory (003:326).
+    /// Booking destination marker resolved through PortDirectory.
     private var destinationCoord: HereLatLng? { coord(for: destinationPort) }
 
     private func coord(for port: VesselPort660?) -> HereLatLng? {
-        guard let code = port?.unlocode, !code.isEmpty, let p = PortDirectory.find(unlocode: code) else { return nil }
-        return HereLatLng(p.lat, p.lng)
+        guard let code = port?.unlocode, !code.isEmpty,
+              let p = PortDirectory.find(unlocode: code),
+              let coordinate = LatLongParser.validatedCoordinate(
+                  latitude: p.lat,
+                  longitude: p.lng
+              ) else { return nil }
+        return HereLatLng(coordinate)
     }
 
     private var originLabel: String { originPort?.name ?? originPort?.unlocode ?? "Origin" }
@@ -480,7 +474,6 @@ private struct VesselLivePositionBody_660: View {
 
             // 2. Fan the live faces over the real anchors (each optional/empty-tolerant).
             struct DetailIn: Encodable { let id: Int }
-            struct ImoIn: Encodable { let imoNumber: String }
             struct CallIn: Encodable { let imoNumber: String; let days: Int }
             if let sid {
                 let d: VesselDetail660? = try await EusoTripAPI.shared.query(
@@ -488,12 +481,13 @@ private struct VesselLivePositionBody_660: View {
                 if let d { applyDetail(d) }
             }
             if let imo, !imo.isEmpty {
-                async let track: [RoutePos660] = EusoTripAPI.shared.query(
-                    "vesselShipments.getVesselTrack", input: ImoIn(imoNumber: imo))
+                async let live = LiveOperationsClient.shared.latestVessel(
+                    imoNumber: imo
+                )
                 async let calls: [PortCallRow660]? = EusoTripAPI.shared.query(
                     "vesselShipments.getVesselPortCalls", input: CallIn(imoNumber: imo, days: 7))
-                let (t, c) = try await (track, calls)
-                applyTrack(t); applyCalls(c ?? [])
+                let (observation, c) = try await (live, calls)
+                applyLiveObservation(observation); applyCalls(c ?? [])
             }
             struct FenceIn: Encodable { let limit: Int }
             let fences: [GeofenceEvent660] = try await EusoTripAPI.shared.query(
@@ -505,20 +499,26 @@ private struct VesselLivePositionBody_660: View {
         loading = false
     }
 
-    /// Live AIS poller — re-reads the REAL track for the resolved IMO. SwiftUI
+    /// Live AIS poller — re-reads the exact authorized observation for the
+    /// resolved IMO. SwiftUI
     /// cancels this `.task` on disappear. No fix yet ⇒ stays honestly DEGRADED.
     private func streamTrack() async {
-        struct ImoIn: Encodable { let imoNumber: String }
         while !Task.isCancelled {
             try? await Task.sleep(nanoseconds: 30_000_000_000)
             if Task.isCancelled { break }
             guard let imo = resolvedImo, !imo.isEmpty else { continue }
             do {
-                let t: [RoutePos660] = try await EusoTripAPI.shared.query(
-                    "vesselShipments.getVesselTrack", input: ImoIn(imoNumber: imo))
-                withAnimation(.easeInOut(duration: 1.2)) { applyTrack(t) }
+                let result = try await LiveOperationsClient.shared.latestVessel(
+                    imoNumber: imo
+                )
+                withAnimation(.easeInOut(duration: 1.2)) {
+                    applyLiveObservation(result)
+                }
             } catch {
-                withAnimation { degraded = true }
+                withAnimation {
+                    degraded = true
+                    aisStatusLabel = "AIS DEGRADED"
+                }
             }
         }
     }
@@ -532,13 +532,30 @@ private struct VesselLivePositionBody_660: View {
         originPort = d.originPort
         destinationPort = d.destinationPort
     }
-    private func applyTrack(_ positions: [RoutePos660]) {
-        // Newest fix = last reported position with a speed.
-        if let fix = positions.last(where: { $0.speed != nil }), let v = fix.speed {
-            sog = String(format: "%.1f kn", v)
-            degraded = false
-        } else {
+    private func applyLiveObservation(_ result: LiveOperationsClient.AssetResult) {
+        guard let observation = result.observation,
+              observation.position.coordinate != nil else {
+            sog = "—"
             degraded = true
+            aisStatusLabel = "AIS UNAVAILABLE"
+            return
+        }
+        sog = observation.position.speedMetersPerSecond
+            .map { String(format: "%.1f kn", $0 / 0.5144444444) } ?? "—"
+        switch observation.freshnessState {
+        case .live:
+            degraded = observation.markerState != .current
+                || !observation.operationalUseAllowed
+            aisStatusLabel = degraded ? "AIS REPORTED" : "AIS LIVE"
+        case .delayed:
+            degraded = true
+            aisStatusLabel = "AIS DELAYED"
+        case .stale:
+            degraded = true
+            aisStatusLabel = "AIS STALE"
+        case .offline:
+            degraded = true
+            aisStatusLabel = "AIS OFFLINE"
         }
     }
     private func applyCalls(_ calls: [PortCallRow660]) {

@@ -66,12 +66,11 @@ struct Unloading: View {
     /// honest em-dash sentinel, never the prior fabricated "12".
     @State private var dockDoor: String?
 
-    /// Live detention math from `detentionAccessorials.calculateDetention`,
-    /// fed the real `arrivalAnchor` ISO + the load's cargo type. Drives the
-    /// running charge ($) and the active $/hr tier rate. Nil until the proc
-    /// returns (no arrival anchor / empty result) → the charge + rate lines
-    /// render em-dash sentinels rather than invented "$60/hr" / "$..." copy.
-    @State private var detentionCalc: DetentionAPI.DetentionCalc?
+    /// Verified running-clock projection from `getActiveDetentions`. Open
+    /// dwell windows must not call the closed-window calculation endpoint or
+    /// substitute device `now` for an observed departure.
+    @State private var activeDetention: DetentionAPI.ActiveDetention?
+    @State private var detentionLoadError: String?
 
     /// The driver's assigned trailer unit, resolved from the REAL fleet
     /// roster (`fleet.listAssets`, kind == "trailer"). Replaces the prior
@@ -172,38 +171,31 @@ struct Unloading: View {
         return parts.isEmpty ? "—" : parts.joined(separator: " · ")
     }
 
-    /// "2:00" free-window label, derived from the live calc's
-    /// `freeTimeMinutes` (server default 120) — not a hardcoded string.
+    /// Signed free-window duration returned by the active server projection.
+    /// Missing commercial authority stays unknown.
     private var freeWindowLabel: String {
-        let mins = detentionCalc?.freeTimeMinutes ?? Int(freeTimeWindow / 60)
+        guard let mins = activeDetention?.freeTimeMinutes else { return "—" }
         return String(format: "%d:%02d", mins / 60, mins % 60)
     }
 
-    /// Live $/hr — the active escalation tier's rate from the calc proc
-    /// (`tierBreakdown.first?.rate`). Em-dash until the proc returns or
-    /// when no billable tier has opened yet.
+    /// The active endpoint does not expose a rate-per-hour field. Do not infer
+    /// one from a rounded charge and elapsed time.
     private var detentionRateLabel: String {
-        guard let rate = detentionCalc?.tierBreakdown.first?.rate, rate > 0 else {
-            return "—"
-        }
-        return "\(currency(rate))/hr"
+        "—"
     }
 
-    /// Live running detention charge — the calc proc's `totalCharge`.
-    /// Em-dash until the proc returns; "$0" honestly once it returns
-    /// inside the free window.
+    /// Live running detention charge from the verified active projection.
     private var detentionChargeLabel: String {
-        guard let calc = detentionCalc else { return "—" }
-        return currency(calc.totalCharge)
+        guard let charge = activeDetention?.currentCharge,
+              let currency = activeDetention?.currency else { return "—" }
+        return money(charge, currency: currency)
     }
 
-    /// USD currency formatter for the detention $ + $/hr labels.
-    private func currency(_ value: Double) -> String {
-        let f = NumberFormatter()
-        f.numberStyle = .currency
-        f.currencyCode = "USD"
-        f.maximumFractionDigits = value.truncatingRemainder(dividingBy: 1) == 0 ? 0 : 2
-        return f.string(from: NSNumber(value: value)) ?? "$\(Int(value))"
+    private func money(
+        _ value: Double,
+        currency: TruckDetentionNegotiatedTerms.Currency
+    ) -> String {
+        value.formatted(.currency(code: currency.rawValue))
     }
 
     // MARK: - Real-logic bindings
@@ -272,16 +264,11 @@ struct Unloading: View {
 
     // MARK: Detention accrual
 
-    /// Free-time window before detention starts billing. Standard
-    /// 2-hour free window (matches the "Free time ended at 2:00"
-    /// reference copy). A regulatory/contract constant, not fabricated
-    /// per-load data.
-    private let freeTimeWindow: TimeInterval = 2 * 3600
-
     /// The instant detention began accruing (= arrival + free window).
-    /// Nil until the live arrival timestamp resolves.
+    /// Nil until both the observed arrival and signed free time resolve.
     private var detentionStart: Date? {
-        arrivalAnchor.map { $0.addingTimeInterval(freeTimeWindow) }
+        guard let arrivalAnchor, let freeMinutes = activeDetention?.freeTimeMinutes else { return nil }
+        return arrivalAnchor.addingTimeInterval(TimeInterval(freeMinutes * 60))
     }
 
     /// Real detention elapsed at `now`. Zero before the free window
@@ -625,7 +612,7 @@ struct Unloading: View {
                     .contentTransition(.numericText())
                     .accessibilityLabel("Detention time accrued")
                     .accessibilityValue(display)
-                Text("Free time ended at \(freeWindowLabel). \(detentionRateLabel) since. Running charge: \(detentionChargeLabel)")
+                Text("Signed free time: \(freeWindowLabel). Rate: \(detentionRateLabel). Running charge: \(detentionChargeLabel)")
                     .font(EType.mono(.micro)).tracking(0.3)
                     .foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -697,12 +684,10 @@ struct Unloading: View {
     /// "$75" figures were Figma fixtures — there is no live lumper-crew /
     /// crew-rate feed and no per-load detention threshold on the wire, so
     /// neither number is invented. The detention guidance keys off the
-    /// REAL live calc: it cites the actual $/hr tier rate when the calc
-    /// has returned one, otherwise stays a generic prompt with no figure.
     private var advisoryText: String {
         let base = "Wake the house crew if it stalls; no lumper overnight."
-        if let rate = detentionCalc?.tierBreakdown.first?.rate, rate > 0 {
-            return "\(base) Detention is now billing at \(currency(rate))/hr past free time — ping dispatch from the Chat button and they'll rebill the shipper."
+        if let detentionLoadError {
+            return "\(base) The verified detention clock is unavailable: \(detentionLoadError)"
         }
         return "\(base) If detention starts billing, ping dispatch from the Chat button and they'll rebill the shipper."
     }
@@ -792,18 +777,16 @@ struct Unloading: View {
         // renders instead, never a fake live tick.
         resolveArrivalAnchor(from: lifecycle.history)
 
-        // Live detention math — `detentionAccessorials.calculateDetention`
-        // fed the REAL arrival anchor ISO + the load's cargo type. No
-        // departureTime → server computes against `now`, returning the
-        // running charge + the active $/hr tier. Stays nil (→ em-dash
-        // charge/rate) until a real arrival anchor resolves.
-        if let anchor = arrivalAnchor {
-            let arrivalISO = ISO8601DateFormatter().string(from: anchor)
-            detentionCalc = try? await EusoTripAPI.shared.detention
-                .calculateDetention(
-                    arrivalTime: arrivalISO,
-                    cargoType: activeLoad?.cargoType ?? "general"
-                )
+        // Running commercial state is computed server-side. The closed-window
+        // calculator requires an observed departure and must never receive a
+        // client clock substitution.
+        do {
+            let rows = try await EusoTripAPI.shared.detention.getActive(limit: 100).detentions
+            activeDetention = rows.first { $0.loadId == Int(lifecycle.loadId) }
+            detentionLoadError = nil
+        } catch {
+            activeDetention = nil
+            detentionLoadError = error.eusoUserCopy
         }
 
         // Unload-started stamp — the REAL `unloading` (else arrival)

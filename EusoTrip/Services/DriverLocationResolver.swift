@@ -86,8 +86,7 @@ final class DriverLocationResolver: NSObject, ObservableObject {
         let status = manager.authorizationStatus
         authorizationStatus = status
         if status == .denied || status == .restricted {
-            lastCoordinate = nil
-            lastFixAt = nil
+            discardLocationEvidence()
             drainPending(with: nil)
         }
     }
@@ -107,9 +106,13 @@ final class DriverLocationResolver: NSObject, ObservableObject {
         refreshAuthorizationStatus()
         // Serve cache while fresh.
         if let c = lastCoordinate,
+           LatLongParser.isValid(c),
            let at = lastFixAt,
            Date().timeIntervalSince(at) < cacheTTL {
             return c
+        }
+        if lastCoordinate != nil || lastLocation != nil {
+            discardLocationEvidence()
         }
 
         // Fast-path: denied / restricted → never fire a prompt,
@@ -138,6 +141,16 @@ final class DriverLocationResolver: NSObject, ObservableObject {
         }
     }
 
+    /// Returns the same source fix as `currentCoordinate()`, including its
+    /// capture time and horizontal accuracy. Consumers that persist location
+    /// evidence should use this method so coordinates never lose provenance.
+    func currentLocation() async -> CLLocation? {
+        guard await currentCoordinate() != nil,
+              let lastLocation,
+              LatLongParser.isValid(lastLocation.coordinate) else { return nil }
+        return lastLocation
+    }
+
     /// L13-2 adversarial-verify — continuous live-feed bridge. While a trip
     /// is active, `DriverGPSPushService` streams best-accuracy 50 m-filtered
     /// fixes; it mirrors each one here so `$lastLocation` consumers (013's
@@ -146,19 +159,35 @@ final class DriverLocationResolver: NSObject, ObservableObject {
     /// resolver produces on its own. Also refreshes the cache so glance
     /// widgets stop re-burning the radio while streaming.
     func ingest(externalFix loc: CLLocation) {
-        lastCoordinate = loc.coordinate
+        guard let coordinate = LatLongParser.validatedCoordinate(
+            latitude: loc.coordinate.latitude,
+            longitude: loc.coordinate.longitude
+        ) else { return }
+        lastCoordinate = coordinate
         lastLocation = loc
         lastFixAt = Date()
-        drainPending(with: loc.coordinate)
+        drainPending(with: coordinate)
     }
 
     private func drainPending(with coord: CLLocationCoordinate2D?) {
         guard !pending.isEmpty else { return }
+        let coordinate = coord.flatMap {
+            LatLongParser.validatedCoordinate(
+                latitude: $0.latitude,
+                longitude: $0.longitude
+            )
+        }
         let waiters = pending
         pending.removeAll()
         for w in waiters {
-            w.resume(returning: coord)
+            w.resume(returning: coordinate)
         }
+    }
+
+    private func discardLocationEvidence() {
+        lastCoordinate = nil
+        lastLocation = nil
+        lastFixAt = nil
     }
 }
 
@@ -174,6 +203,7 @@ extension DriverLocationResolver: CLLocationManagerDelegate {
             // If authorization just flipped to denied, drain any
             // in-flight waiters with nil so the UI can move on.
             if status == .denied || status == .restricted {
+                self.discardLocationEvidence()
                 self.drainPending(with: nil)
             }
         }
@@ -184,7 +214,10 @@ extension DriverLocationResolver: CLLocationManagerDelegate {
         didUpdateLocations locations: [CLLocation]
     ) {
         guard let loc = locations.last else { return }
-        let coord = loc.coordinate
+        guard let coord = LatLongParser.validatedCoordinate(
+            latitude: loc.coordinate.latitude,
+            longitude: loc.coordinate.longitude
+        ) else { return }
         Task { @MainActor in
             self.lastCoordinate = coord
             self.lastLocation = loc

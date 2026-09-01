@@ -603,7 +603,7 @@ private struct CatalystDriverCompliance: View {
             // Carrier-level CSA isn't yet wired iOS-side; compose from
             // safetyScore and overall comp status.
             guard let row = complianceRow else {
-                return (.unknown, "-", "Not yet wired · check 317 carrier compliance home")
+            return (.unknown, "-", "No verified carrier compliance result")
             }
             let s = row.safetyScore
             switch row.status {
@@ -614,7 +614,7 @@ private struct CatalystDriverCompliance: View {
             }
         case .hosPart395:
             guard let m = perfMetrics else {
-                return (.unknown, "-", "Not yet wired · run 320 scorecard to populate")
+            return (.unknown, "-", "No verified driver scorecard result")
             }
             let pct = Int(m.hosCompliance.rounded())
             if pct >= 95 { return (.clean, "\(pct)%", "no §395 violations in window") }

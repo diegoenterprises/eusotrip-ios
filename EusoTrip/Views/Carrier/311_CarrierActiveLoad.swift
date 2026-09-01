@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import CoreLocation
 
 struct CarrierActiveLoadScreen: View {
     let theme: Theme.Palette
@@ -59,10 +60,17 @@ private struct ActiveLoadBody: View {
                     LifecycleSection(label: "STATUS", icon: "flag")
                     LifecycleRow(label: "Status",  value: live.load.status.uppercased())
                     LifecycleRow(label: "Lane",    value: laneDisplay(live))
-                    LifecycleRow(label: "Rate",    value: usd(live.load.rate))
                     LifecycleRow(label: "Pickup",  value: humanISO(live.load.pickupDate))
                     LifecycleRow(label: "ETA",     value: humanISO(live.load.estimatedDeliveryDate))
                 }
+                // Money truth is the immutable priced-route ledger, never the
+                // mutable legacy loads.rate field. This readback includes the
+                // exact route version, committed truck availability, every
+                // policy line, the platform fee, and settlement payouts.
+                PricedRouteQuoteAuthorityPanel(
+                    subjectType: .load,
+                    subjectId: Int(loadId) ?? 0
+                )
                 LifecycleCard {
                     LifecycleSection(label: "DRIVER", icon: "person")
                     LifecycleRow(label: "Name",  value: dashIfEmpty(live.driver?.name))
@@ -77,7 +85,11 @@ private struct ActiveLoadBody: View {
                         liveLoadMap(live, g)
                         LifecycleRow(label: "Type",      value: g.type.uppercased())
                         LifecycleRow(label: "Recorded",  value: humanISO(g.eventTimestamp))
-                        LifecycleRow(label: "GPS",       value: String(format: "%.4f, %.4f", g.latitude, g.longitude))
+                        LifecycleRow(
+                            label: "GPS",
+                            value: liveLoadCoordinate(g)
+                                .map(LatLongParser.displayString) ?? "Not recorded"
+                        )
                     }
                 }
                 actionRow(live)
@@ -94,8 +106,26 @@ private struct ActiveLoadBody: View {
     /// island, so the truck puck only ever draws on a real fix (no
     /// fabricated coordinates).
     private func liveLoadFix(_ g: ShipperAPI.LifecycleSnapshot.Geofence) -> HereLatLng? {
-        guard !(g.latitude == 0 && g.longitude == 0) else { return nil }
-        return HereLatLng(g.latitude, g.longitude)
+        guard let coordinate: CLLocationCoordinate2D = liveLoadCoordinate(g) else {
+            return nil
+        }
+        return HereLatLng(coordinate.latitude, coordinate.longitude)
+    }
+
+    private func liveLoadCoordinate(
+        _ geofence: ShipperAPI.LifecycleSnapshot.Geofence
+    ) -> CLLocationCoordinate2D? {
+        guard let coordinate = LatLongParser.validatedCoordinate(
+            latitude: geofence.latitude,
+            longitude: geofence.longitude
+        ) else { return nil }
+        // This lifecycle field historically uses exact 0,0 as its missing-fix
+        // sentinel. Preserve that source-contract boundary locally even though
+        // the canonical coordinate parser correctly permits real 0,0 input.
+        guard coordinate.latitude != 0 || coordinate.longitude != 0 else {
+            return nil
+        }
+        return coordinate
     }
 
     /// Truck-puck marker for the load's live geofence fix. The marker id is
@@ -124,6 +154,13 @@ private struct ActiveLoadBody: View {
                 zoom: 8,
                 baseLayers: liveLoadLayers(live, fix),
                 addOns: .shipperTracking,
+                mapModeContext: .primary(.truck),
+                liveOperationsStatus: .init(
+                    availability: .degraded,
+                    sourceLabel: "Load telemetry",
+                    detail: "Position available; freshness not supplied",
+                    observationCount: 1
+                ),
                 onSelectMarker: { _ in
                     NotificationCenter.default.post(
                         name: .esangOpenMeDetail,

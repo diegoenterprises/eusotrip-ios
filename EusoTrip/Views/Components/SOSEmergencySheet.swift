@@ -60,8 +60,8 @@
 //  life-safety broadcast unblocked.
 //
 //  Live network wiring is in: `submit()` resolves the loadId from the
-//  active trip, the lat/lng from `DriverLocationResolver`, and calls
-//  the real `EusoTripAPI.shared.interState.createSOS(...)` mutation. On
+//  active trip, validates manual coordinates before falling back to a
+//  device fix, and calls the real `interstate.createSOS` mutation. On
 //  success it dismisses (and routes mechanical types to the Zeun
 //  breakdown screen via `onOpenZeun`); on failure it surfaces a
 //  user-facing retry alert rather than silently swallowing the throw.
@@ -70,6 +70,7 @@
 //
 
 import SwiftUI
+import CoreLocation
 
 struct SOSEmergencySheet: View {
 
@@ -162,7 +163,10 @@ struct SOSEmergencySheet: View {
     @State private var selected: Emergency? = nil
     @State private var severity: Severity = .high
     @State private var notes: String = ""
+    @State private var locationContext: String = ""
+    @State private var locationInputError: String? = nil
     @State private var submitting: Bool = false
+    @State private var idempotencyKey: String = UUID().uuidString
 
     /// User-facing failure surface. SOS is life-safety — if the
     /// `interstate.createSOS` broadcast fails to land we MUST tell the
@@ -189,6 +193,7 @@ struct SOSEmergencySheet: View {
                     emergencyGrid
                     if selected != nil {
                         severityPicker
+                        locationField
                         notesField
                         submitButton
                         if selected == .mechanical {
@@ -406,6 +411,40 @@ struct SOSEmergencySheet: View {
 
     // MARK: Notes field
 
+    private var locationField: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            Text("Location · optional")
+                .font(EType.micro).tracking(0.8)
+                .foregroundStyle(palette.textTertiary)
+            TextField("Address, landmark, or coordinates", text: $locationContext)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .font(EType.body)
+                .foregroundStyle(palette.textPrimary)
+                .padding(Space.s3)
+                .background(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .fill(palette.bgCard)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(locationInputError == nil ? palette.borderFaint : Brand.danger)
+                )
+                .accessibilityLabel("Emergency location context")
+                .accessibilityHint("Enter an address, landmark, or a latitude and longitude pair.")
+                .onChange(of: locationContext) { _, _ in
+                    locationInputError = nil
+                }
+            if let locationInputError {
+                Label(locationInputError, systemImage: "exclamationmark.triangle.fill")
+                    .font(EType.caption)
+                    .foregroundStyle(Brand.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel("Location error. \(locationInputError)")
+            }
+        }
+    }
+
     private var notesField: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             Text("ADDITIONAL DETAILS · OPTIONAL")
@@ -488,8 +527,8 @@ struct SOSEmergencySheet: View {
     /// already been notified by the broadcast.
     ///
     /// LIVE WIRING (no longer a mock): resolves the loadId from the
-    /// active trip, the lat/lng from `DriverLocationResolver`, maps the
-    /// selected tile + severity to the server enums, and calls
+    /// active trip, validates any manual coordinate before using the
+    /// device fix, maps the selected tile + severity to the server enums, and calls
     /// `EusoTripAPI.shared.interState.createSOS(...)`. The throw is
     /// surfaced — never swallowed — because a failed SOS is a
     /// life-safety event the driver must know about.
@@ -505,6 +544,15 @@ struct SOSEmergencySheet: View {
 
         let wasMechanical = sel == .mechanical
         let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedLocation = locationContext.trimmingCharacters(in: .whitespacesAndNewlines)
+        let manualLocation = LatLongParser.parseDetailed(trimmedLocation)
+        if !trimmedLocation.isEmpty,
+           manualLocation == nil,
+           LatLongParser.hasCoordinateIntent(trimmedLocation) {
+            locationInputError = "That coordinate is invalid or out of range. Correct it or clear the optional location field; your entry has not been changed."
+            return
+        }
+        locationInputError = nil
         // `originState` is the closest honest state hint on the load.
         // The server treats `stateCode` as optional, so nil is fine when
         // the load row doesn't carry one.
@@ -514,25 +562,47 @@ struct SOSEmergencySheet: View {
         submitError = nil
 
         Task { @MainActor in
-            // Best-effort one-shot device fix. Coordinates are required
-            // by the server, so if we can't get a fix we fail loudly
-            // rather than posting (0,0) / a fabricated position.
-            let coord = await DriverLocationResolver.shared.currentCoordinate()
-            guard let coord else {
-                submitting = false
-                submitError = "We couldn't read your location, which dispatch needs to find you. Enable Location for EusoTrip in Settings (or call 911 if this is life-threatening), then try again."
-                return
+            // A valid manual pair is authoritative and avoids waiting for GPS.
+            // HERE receives the verbatim hint only for post-commit enrichment;
+            // it never replaces or gates these exact coordinates.
+            let deviceLocation: CLLocation?
+            if manualLocation == nil {
+                deviceLocation = await DriverLocationResolver.shared.currentLocation()
+            } else {
+                deviceLocation = nil
             }
+            let deviceCoordinate = LatLongParser.validatedCoordinate(
+                latitude: deviceLocation?.coordinate.latitude,
+                longitude: deviceLocation?.coordinate.longitude
+            )
+            let manualCoordinate = manualLocation?.coordinate
+            let submittedCoordinate = manualCoordinate ?? deviceCoordinate
+            let locationSource = manualCoordinate == nil
+                ? (deviceCoordinate == nil ? "not_recorded" : "device")
+                : "manual_coordinates"
+            let accuracy = manualCoordinate == nil && deviceCoordinate != nil
+                && (0...100_000).contains(deviceLocation?.horizontalAccuracy ?? -1)
+                ? deviceLocation?.horizontalAccuracy
+                : nil
+            let capturedAt = manualCoordinate == nil
+                ? (deviceCoordinate == nil ? nil : deviceLocation?.timestamp)
+                : Date()
 
             do {
                 _ = try await EusoTripAPI.shared.interState.createSOS(
                     loadId: loadId,
                     alertType: sel.rawValue,          // matches server alertType enum
                     severity: severity.rawValue,      // low | medium | high | critical
-                    latitude: coord.latitude,
-                    longitude: coord.longitude,
+                    latitude: submittedCoordinate?.latitude,
+                    longitude: submittedCoordinate?.longitude,
+                    locationSource: locationSource,
+                    locationAccuracyMeters: accuracy,
+                    locationCapturedAt: capturedAt,
+                    addressHint: manualLocation?.originalText
+                        ?? (trimmedLocation.isEmpty ? nil : trimmedLocation),
                     description: trimmedNotes.isEmpty ? nil : trimmedNotes,
-                    stateCode: stateCode
+                    stateCode: stateCode,
+                    idempotencyKey: idempotencyKey
                 )
                 submitting = false
                 dismiss()

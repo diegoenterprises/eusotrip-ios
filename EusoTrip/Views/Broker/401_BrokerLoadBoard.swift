@@ -73,6 +73,15 @@ private struct LoadBoardBody: View {
             columnPager
         }
         .eusoRefreshTask { await loadAll() }
+        // RealtimeService → `bid:received` (server socketService.ts
+        // emit to room `role:broker`) is re-posted as
+        // `.esangRefreshSurface` (Services/RealtimeService.swift:375),
+        // so the Tendered column re-polls the moment a carrier bids
+        // instead of going stale until the next pull.
+        // eusotrip-killers-elite :01 §20 · 2026-08-25
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task { await loadAll() }
+        }
     }
 
     // MARK: - Header

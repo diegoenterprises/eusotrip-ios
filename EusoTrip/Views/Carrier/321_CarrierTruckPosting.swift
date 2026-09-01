@@ -114,7 +114,11 @@ private struct CarrierTruckPostingBody: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                postingHero
+                // Canonical 0518 capacity is the visible source of truth.
+                // The legacy truckPosting offer inbox remains below only so
+                // existing broker conversations are not orphaned during the
+                // server-side allocation migration.
+                ModeAssetAvailabilityLaunchCard(mode: .truck)
                 inboundOffersSection
                 myFleetSection
                 Color.clear.frame(height: 96)
@@ -138,10 +142,10 @@ private struct CarrierTruckPostingBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.diagonal)
             }
-            Text("Post your truck")
+            Text("Make my truck available")
                 .font(.system(size: 22, weight: .heavy))
                 .foregroundStyle(palette.textPrimary)
-            Text("Post an available truck and brokers’ open loads come to you. Accept the right offer in one tap — identity and carrier-vetting are verified before the load books.")
+            Text("Publish owned capacity from a licensed live position, with payload, service range, maximum deadhead, and deadhead responsibility recorded as one auditable version. Existing broker offers remain visible below during migration.")
                 .font(EType.caption).foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }

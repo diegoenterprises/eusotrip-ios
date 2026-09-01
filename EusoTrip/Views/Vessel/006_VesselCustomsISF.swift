@@ -136,6 +136,11 @@ private struct VesselCustomsISFBody006: View {
     @State private var loadError: String? = nil
     @State private var vm: ISFStatusVM006? = nil
 
+    // L03-5 real filer: the "File ISF now" verb opens the filing sheet
+    // (pending-booking picker + the 10+2 elements) → vesselShipments.fileISF.
+    @State private var showFilingSheet = false
+    @State private var filedAck: ISFFileResult006? = nil
+
     private var amberText: Color { scheme == .dark ? Color(hex: 0xFFB74D) : Color(hex: 0xE08A00) }
     private var dangerText: Color { scheme == .dark ? Color(hex: 0xFF8A7D) : Color(hex: 0xC0362B) }
 
@@ -144,6 +149,10 @@ private struct VesselCustomsISFBody006: View {
             VStack(alignment: .leading, spacing: 14) {
                 header
                 IridescentHairline()
+
+                if let filedAck {
+                    filedAckStrip(filedAck)
+                }
 
                 if loading {
                     LifecycleCard { Text("Loading ISF 10+2 gate…").font(EType.caption).foregroundStyle(palette.textSecondary) }
@@ -165,6 +174,68 @@ private struct VesselCustomsISFBody006: View {
         }
         .task { await load() }
         .eusoRefreshable { await load() }
+        .sheet(isPresented: $showFilingSheet) {
+            ISFFilingSheet006 { acknowledgement in
+                filedAck = acknowledgement
+                Task { await load() }
+            }
+        }
+    }
+
+    private func filedAckStrip(_ acknowledgement: ISFFileResult006) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(Brand.success)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("ISF \(acknowledgement.filingStatus.uppercased())")
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                    Text(acknowledgement.replayed
+                         ? "Confirmed from the existing filing receipt"
+                         : "Confirmed by the Descartes filing gateway")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+                Spacer(minLength: 0)
+            }
+
+            if let isfNumber = acknowledgement.isfNumber?.nilIfBlank {
+                proofRow006(label: "ISF number", value: isfNumber)
+            }
+            if let transactionId = acknowledgement.transactionId?.nilIfBlank {
+                proofRow006(label: "Transaction", value: transactionId)
+            }
+            if let filedAt = acknowledgement.filedAt?.nilIfBlank {
+                proofRow006(label: "Filed", value: filedAt)
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Brand.success.opacity(scheme == .dark ? 0.11 : 0.07))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Brand.success.opacity(0.35))
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(acknowledgement.accessibilityReceipt)
+    }
+
+    private func proofRow006(label: String, value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(label.uppercased())
+                .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                .foregroundStyle(palette.textTertiary)
+            Spacer(minLength: 8)
+            Text(value)
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .foregroundStyle(palette.textPrimary)
+                .multilineTextAlignment(.trailing)
+                .textSelection(.enabled)
+        }
     }
 
     // MARK: Header
@@ -322,7 +393,7 @@ private struct VesselCustomsISFBody006: View {
     // MARK: Actions
     private var actionRow: some View {
         HStack(spacing: 8) {
-            Button(action: { Task { await fileISF() } }) {
+            Button(action: { showFilingSheet = true }) {
                 Text("File ISF now").font(.system(size: 15, weight: .bold)).foregroundColor(.white)
                     .frame(maxWidth: .infinity).frame(height: 48).background(Capsule().fill(LinearGradient.primary))
             }
@@ -419,16 +490,335 @@ private struct VesselCustomsISFBody006: View {
         return "doc.text"
     }
 
-    /// vesselShipments.fileISF — STUB at this hub surface: no shipmentId is in scope, so we re-read
-    /// the gate rather than faking a Descartes ABI filing. Wires fully from the per-booking entry point.
-    private func fileISF() async { await load() }
 }
 
 private struct EmptyInput006: Encodable {}
+
+// MARK: - ISF filing sheet (L03-5 real filer)
+//
+// listIsfPendingBookings (vesselProcedure · no input) → the tenant-scoped
+// US-bound bookings that still need an ISF; the shipper picks one, supplies the
+// ISF 10+2 elements, and vesselShipments.fileISF submits to the CBP/Descartes
+// gateway. A failed federal filing surfaces the server's honest BAD_GATEWAY
+// message (never a fake "filed"). Honest empty-state when nothing is pending.
+
+/// listIsfPendingBookings row.
+private struct ISFPendingBooking006: Decodable, Identifiable {
+    let shipmentId: Int
+    let bookingNumber: String?
+    let etd: String?
+    let isfDeadline: String?
+    let overdue: Bool?
+    let destinationPort: String?
+    var id: Int { shipmentId }
+}
+
+/// Confirmed vesselShipments.fileISF receipt. Identifiers remain optional
+/// because an upstream replay can legitimately carry one before the other;
+/// the submit boundary still requires at least one provider receipt identifier.
+private struct ISFFileResult006: Decodable {
+    let isfNumber: String?
+    let transactionId: String?
+    let filingStatus: String
+    let filedAt: String?
+    let replayed: Bool
+    let errors: [String]?
+
+    var accessibilityReceipt: String {
+        var parts = ["ISF \(filingStatus)"]
+        if let isfNumber = isfNumber?.nilIfBlank { parts.append("ISF number \(isfNumber)") }
+        if let transactionId = transactionId?.nilIfBlank { parts.append("transaction \(transactionId)") }
+        if let filedAt = filedAt?.nilIfBlank { parts.append("filed \(filedAt)") }
+        if replayed { parts.append("confirmed from an existing filing receipt") }
+        return parts.joined(separator: ", ")
+    }
+}
+
+private struct ISFFilingSheet006: View {
+    let onFiled: (ISFFileResult006) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.palette) private var palette
+    @Environment(\.colorScheme) private var scheme
+
+    @State private var pending: [ISFPendingBooking006] = []
+    @State private var loading = true
+    @State private var loadError: String? = nil
+    @State private var selected: ISFPendingBooking006? = nil
+
+    // The ISF 10+2 elements the CBP/Descartes filing requires.
+    @State private var importer = ""
+    @State private var seller = ""
+    @State private var buyer = ""
+    @State private var shipTo = ""
+    @State private var manufacturer = ""
+    @State private var countryOfOrigin = ""
+    @State private var htsNumber = ""
+    @State private var consolidator = ""
+    @State private var containerStuffing = ""
+
+    @State private var submitting = false
+    @State private var submitError: String? = nil
+
+    private var htsNumbers: [String] {
+        htsNumber
+            .split { $0 == "," || $0 == ";" || $0.isWhitespace }
+            .map(String.init)
+    }
+
+    private var countryCode: String { countryOfOrigin.trimmed.uppercased() }
+
+    private var validationMessage: String? {
+        guard selected != nil else { return "Select a US-bound booking." }
+        let required = [importer, seller, buyer, shipTo, manufacturer, consolidator, containerStuffing]
+        guard required.allSatisfy({ $0.trimmed.count >= 2 }) else {
+            return "Complete every required ISF party and location field."
+        }
+        guard countryCode.range(of: #"^[A-Z]{2,3}$"#, options: .regularExpression) != nil else {
+            return "Country of origin must be a 2 or 3 letter country code."
+        }
+        guard !htsNumbers.isEmpty,
+              htsNumbers.count <= 20,
+              htsNumbers.allSatisfy({
+                  $0.range(of: #"^\d{6,10}$"#, options: .regularExpression) != nil
+              }) else {
+            return "Enter 1 to 20 HTS numbers containing 6 to 10 digits each."
+        }
+        return nil
+    }
+
+    private var canSubmit: Bool {
+        !submitting && validationMessage == nil
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 16) {
+                    if loading {
+                        Text("Loading bookings awaiting ISF…").font(EType.caption).foregroundStyle(palette.textSecondary)
+                    } else if let loadError {
+                        Text(loadError).font(EType.caption).foregroundStyle(Brand.danger)
+                    } else if pending.isEmpty {
+                        EusoEmptyState(systemImage: "checkmark.seal",
+                                       title: "No bookings awaiting ISF",
+                                       subtitle: "US-bound bookings that still need an ISF 10+2 filing will appear here.")
+                            .padding(.top, 24)
+                    } else {
+                        bookingPicker
+                        if selected != nil {
+                            elementFields
+                            if let validationMessage, submitError == nil {
+                                Text(validationMessage)
+                                    .font(EType.caption)
+                                    .foregroundStyle(Brand.warning)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            if let submitError {
+                                Text(submitError).font(EType.caption).foregroundStyle(Brand.danger)
+                            }
+                            submitButton
+                        }
+                    }
+                    Color.clear.frame(height: 24)
+                }
+                .padding(20)
+            }
+            .navigationTitle("File ISF 10+2")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
+            }
+            .task { await loadPending() }
+        }
+    }
+
+    // Pending-booking picker.
+    private var bookingPicker: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("BOOKING").font(.system(size: 9, weight: .heavy)).kerning(1.0).foregroundStyle(palette.textTertiary)
+            Menu {
+                ForEach(pending) { b in
+                    Button {
+                        selected = b
+                        submitError = nil
+                    } label: {
+                        Text(pickerLabel(b))
+                    }
+                }
+            } label: {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(selected.map { $0.bookingNumber ?? "Booking #\($0.shipmentId)" } ?? "Select a booking")
+                            .font(.system(size: 15, weight: .bold)).foregroundStyle(palette.textPrimary)
+                        if let s = selected {
+                            Text(subLabel(s)).font(.system(size: 11, design: .monospaced)).foregroundStyle(palette.textSecondary)
+                        }
+                    }
+                    Spacer()
+                    if selected?.overdue == true {
+                        Text("Overdue").font(.system(size: 10, weight: .heavy))
+                            .foregroundColor(scheme == .dark ? Color(hex: 0x1A0808) : .white)
+                            .padding(.horizontal, 10).padding(.vertical, 4)
+                            .background(Capsule().fill(Brand.danger))
+                    }
+                    Image(systemName: "chevron.up.chevron.down").font(.system(size: 12, weight: .bold)).foregroundStyle(palette.textTertiary)
+                }
+                .padding(14)
+                .background(RoundedRectangle(cornerRadius: 14).fill(palette.bgCardSoft)
+                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(palette.borderFaint)))
+            }
+        }
+    }
+
+    private func pickerLabel(_ b: ISFPendingBooking006) -> String {
+        var s = b.bookingNumber ?? "Booking #\(b.shipmentId)"
+        if let dp = b.destinationPort { s += " → \(dp)" }
+        if b.overdue == true { s += " · overdue" }
+        return s
+    }
+    private func subLabel(_ b: ISFPendingBooking006) -> String {
+        var parts: [String] = []
+        if let dp = b.destinationPort { parts.append(dp) }
+        if let dl = b.isfDeadline { parts.append("cut-off \(shortDate(dl))") }
+        return parts.isEmpty ? "US-bound import" : parts.joined(separator: " · ")
+    }
+
+    private var elementFields: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("ISF 10+2 ELEMENTS").font(.system(size: 9, weight: .heavy)).kerning(1.0).foregroundStyle(palette.textTertiary)
+            field("Importer of record", $importer)
+            field("Seller", $seller)
+            field("Buyer", $buyer)
+            field("Ship-to party", $shipTo)
+            field("Manufacturer or supplier", $manufacturer)
+            field("Country of origin", $countryOfOrigin)
+            field("HTS number", $htsNumber)
+            field("Consolidator", $consolidator)
+            field("Container stuffing location", $containerStuffing)
+        }
+    }
+
+    private func field(_ label: String, _ binding: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(label).font(.system(size: 11, weight: .semibold)).foregroundStyle(palette.textSecondary)
+            TextField("", text: binding)
+                .font(.system(size: 14))
+                .foregroundStyle(palette.textPrimary)
+                .textInputAutocapitalization(.words)
+                .autocorrectionDisabled(true)
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 12).fill(palette.bgCard)
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(palette.borderFaint)))
+        }
+    }
+
+    private var submitButton: some View {
+        Button(action: { Task { await submit() } }) {
+            Text(submitting ? "Filing ISF…" : "File ISF")
+                .font(.system(size: 15, weight: .bold)).foregroundColor(.white)
+                .frame(maxWidth: .infinity).frame(height: 50)
+                .background(Capsule().fill(canSubmit ? AnyShapeStyle(LinearGradient.primary) : AnyShapeStyle(palette.bgCardSoft)))
+        }
+        .disabled(!canSubmit)
+    }
+
+    private func shortDate(_ iso: String) -> String {
+        let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let d = f.date(from: iso) ?? { let g = ISO8601DateFormatter(); g.formatOptions = [.withInternetDateTime]; return g.date(from: iso) }()
+        guard let d else { return iso }
+        let out = DateFormatter(); out.dateFormat = "MMM d HH:mm"
+        return out.string(from: d)
+    }
+
+    private func loadPending() async {
+        loading = true; loadError = nil
+        do {
+            let rows: [ISFPendingBooking006] = try await EusoTripAPI.shared.query(
+                "vesselShipments.listIsfPendingBookings", input: EmptyInput006())
+            self.pending = rows
+            if selected == nil { selected = rows.first }
+        } catch {
+            loadError = error.eusoUserCopy
+        }
+        loading = false
+    }
+
+    private func submit() async {
+        guard let b = selected else { return }
+        submitting = true; submitError = nil
+        struct FileISFIn: Encodable {
+            let shipmentId: Int
+            let requestKey: String
+            let importer: String; let seller: String; let buyer: String; let shipTo: String
+            let containerStuffing: String; let consolidator: String
+            let htsNumbers: [String]
+            let manufacturer: String; let countryOfOrigin: String
+        }
+        do {
+            let out: ISFFileResult006 = try await EusoTripAPI.shared.mutation(
+                "vesselShipments.fileISF",
+                input: FileISFIn(
+                    shipmentId: b.shipmentId,
+                    requestKey: requestKey(for: b.shipmentId).uuidString,
+                    importer: importer.trimmed, seller: seller.trimmed, buyer: buyer.trimmed, shipTo: shipTo.trimmed,
+                    containerStuffing: containerStuffing.trimmed, consolidator: consolidator.trimmed,
+                    htsNumbers: htsNumbers,
+                    manufacturer: manufacturer.trimmed, countryOfOrigin: countryCode))
+
+            let status = out.filingStatus.lowercased()
+            let confirmed = ["filed", "accepted", "amended"].contains(status)
+            let hasProviderReceipt = out.isfNumber?.nilIfBlank != nil || out.transactionId?.nilIfBlank != nil
+            guard confirmed, hasProviderReceipt else {
+                clearRequestKey(for: b.shipmentId)
+                let providerErrors = out.errors?.filter { !$0.trimmed.isEmpty }.joined(separator: " ")
+                submitError = providerErrors?.nilIfBlank
+                    ?? "The filing gateway returned \(out.filingStatus) without a confirmed filing receipt."
+                submitting = false
+                return
+            }
+
+            clearRequestKey(for: b.shipmentId)
+            onFiled(out)
+            dismiss()
+        } catch {
+            submitError = error.eusoUserCopy
+        }
+        submitting = false
+    }
+
+    private func requestKey(for shipmentId: Int) -> UUID {
+        let key = "vessel.isf.\(shipmentId).request-key"
+        if let existing = UserDefaults.standard.string(forKey: key),
+           let uuid = UUID(uuidString: existing) {
+            return uuid
+        }
+        let uuid = UUID()
+        UserDefaults.standard.set(uuid.uuidString, forKey: key)
+        return uuid
+    }
+
+    private func clearRequestKey(for shipmentId: Int) {
+        UserDefaults.standard.removeObject(forKey: "vessel.isf.\(shipmentId).request-key")
+    }
+}
+
+private extension String {
+    var trimmed: String { trimmingCharacters(in: .whitespacesAndNewlines) }
+    var nilIfBlank: String? { trimmed.isEmpty ? nil : self }
+}
 
 #Preview("006 · Customs ISF · Light") {
     VesselCustomsISFScreen(theme: Theme.light).environmentObject(EusoTripSession()).preferredColorScheme(.light)
 }
 #Preview("006 · Customs ISF · Dark") {
     VesselCustomsISFScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark)
+}
+#Preview("006 · ISF Filing Sheet · Light") {
+    ISFFilingSheet006(onFiled: { _ in }).environment(\.palette, Theme.light).preferredColorScheme(.light)
+}
+#Preview("006 · ISF Filing Sheet · Dark") {
+    ISFFilingSheet006(onFiled: { _ in }).environment(\.palette, Theme.dark).preferredColorScheme(.dark)
 }

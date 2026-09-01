@@ -4,9 +4,9 @@
 //
 //  Moment: Michael Eusorone runs three Eusotrans units on the same I-10 W lane and
 //          links them into a drafting platoon so the trailing trucks burn less fuel.
-//          This is the live coordinator — NOT the home/detail skeleton and NOT a
-//          stat dashboard: a MAP HERO dominates (route + three nose-to-tail truck
-//          markers + live gap callouts + fuel-save badge), a compact metric band
+//          This is the convoy coordinator — NOT the home/detail skeleton and NOT a
+//          stat dashboard: a MAP HERO dominates (canonical load route + three
+//          nose-to-tail observation markers + gap callouts + fuel-save badge), a compact metric band
 //          reads the platoon's fuel save / mean gap / draft time, and a roster lists
 //          each unit's role (lead/middle/rear), draft gap and link state. The
 //          dispatcher tightens spacing or pauses the convoy in one tap.
@@ -16,8 +16,8 @@
 //
 //  Web peer: /catalyst/dispatch/convoy.
 //
-//  LIVE MAP WIRING (this fire — real per-truck GPS, no fabricated coords):
-//    The map hero renders each convoy member as a REAL .truck puck on
+//  MAP AUTHORITY (real per-truck observations + exact load route):
+//    The map hero renders each convoy member as a .truck observation on
 //    HereLiveMapView, sourced one-hop from two procs that EXIST and return
 //    real coordinates off the `location_history` table (convoy router is
 //    mounted as `convoy:` at server/routers.ts:2122):
@@ -29,13 +29,14 @@
 //         positions:[{userId, role:"lead"|"load"|"rear", lat, lng, speed,
 //         heading, timestamp}] selected from location_history.latitude/
 //         longitude (convoy.ts:191-192), plus leadDistance/rearDistance the
-//         server computes via haversine. EACH lat/lng is a real GPS fix —
+//         server computes from reported fixes. EACH lat/lng is an observation —
 //         the same kind of feed §375/§376 read via catalysts.getMyDrivers
 //         "lat,lng", but here convoy-native (lead/load/rear formation).
-//    Every fix is coord-gated (!(lat==0 && lng==0)); no active convoy or no
-//    parseable position ⇒ honest "awaiting convoy position feed" placeholder,
-//    never a hand-drawn route. The puck id is the member userId → tap routes
-//    to that member.
+//    The route itself is never inferred from those observations. The convoy's
+//    exact loadId resolves the current server-owned active_job route.plan; only
+//    its released, rights-valid, current, checksum-bound independent geometry
+//    members render through `.eusoRoute`. Missing route authority remains an
+//    honest pending/degraded state. The puck id is the member userId.
 //
 //  Action wiring:
 //    • rear-gap alert            → convoy.getConvoyAlerts
@@ -216,10 +217,13 @@ private struct ConvoyBody_400: View {
     // the distance lines from real separation distances when present.
     @State private var vm: ConvoyVM_400 = convoySeed_400
 
-    // LIVE convoy + real per-truck GPS positions (the map hero source of truth).
+    // Convoy identity + reported per-truck positions.
     @State private var activeConvoy: ActiveConvoyRow_400? = nil
     @State private var positions: [ConvoyPosition_400] = []
     @State private var mapLoading: Bool = true
+    @State private var canonicalRouteLines: [[HereLatLng]] = []
+    @State private var canonicalRouteVersion: Int? = nil
+    @State private var canonicalRouteStatus: String? = nil
     @State private var alerts: [ConvoyAlert_400] = []
     @State private var showAlerts = false
     @State private var actionMessage: String? = nil
@@ -237,11 +241,15 @@ private struct ConvoyBody_400: View {
 
     /// A position's real fix, or nil at null island (never frame on 0,0).
     private func fix(_ p: ConvoyPosition_400) -> HereLatLng? {
-        guard !(p.lat == 0 && p.lng == 0) else { return nil }
-        return HereLatLng(p.lat, p.lng)
+        guard let coordinate = LatLongParser.validatedCoordinate(
+            latitude: p.lat,
+            longitude: p.lng
+        ) else { return nil }
+        return HereLatLng(coordinate.latitude, coordinate.longitude)
     }
 
-    /// Real fixes ordered nose-to-tail (lead → load → rear) for the polyline.
+    /// Reported fixes ordered nose-to-tail for marker framing only. These
+    /// observations are never joined into route geometry.
     private var orderedFixes: [(role: String, fix: HereLatLng)] {
         let rank: [String: Int] = ["lead": 0, "load": 1, "rear": 2]
         return positions
@@ -257,8 +265,11 @@ private struct ConvoyBody_400: View {
         }
     }
 
-    /// Map center = the load (middle) truck's real fix, else the first real fix.
+    /// Canonical route wins camera framing; otherwise use a reported convoy fix.
     private var mapCenter: HereLatLng? {
+        if let routeStart = canonicalRouteLines.lazy.compactMap(\.first).first {
+            return routeStart
+        }
         if let load = positions.first(where: { $0.role == "load" }), let f = fix(load) { return f }
         return orderedFixes.first?.fix
     }
@@ -271,8 +282,6 @@ private struct ConvoyBody_400: View {
         default:     return role.uppercased()
         }
     }
-
-    private var hasLiveFormation: Bool { mapCenter != nil && !truckMarkers.isEmpty }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -325,12 +334,13 @@ private struct ConvoyBody_400: View {
         .padding(.horizontal, Space.s5).padding(.top, Space.s5).padding(.bottom, Space.s3)
     }
 
-    // MARK: Map hero — LIVE platoon formation on the in-house HERE basemap
+    // MARK: Map hero — canonical load route + reported convoy formation
     //
     // Replaces the prior hand-drawn Path/.position() schematic entirely. Each
-    // .truck puck sits on a REAL location_history fix from
-    // convoy.getConvoyPositions; the nose-to-tail polyline links the ordered
-    // lead → load → rear fixes. tilt==0 register ⇒ flat catalyst board (the
+    // .truck puck sits on a location_history observation from
+    // convoy.getConvoyPositions. The line is exclusively the exact current
+    // route.plan bound to the convoy load; truck observations are never linked
+    // into geometry. tilt==0 register ⇒ flat catalyst board (the
     // dispatcher's overhead formation view, not the driver first-person lane).
 
     @ViewBuilder
@@ -342,10 +352,17 @@ private struct ConvoyBody_400: View {
                     center: center,
                     zoom: 9,
                     interactive: true,
-                    route: orderedFixes.map { $0.fix },
+                    route: [],
                     baseLayers: convoyMapLayers,
                     addOns: .shipperTracking,
                     showTicker: false,
+                    mapModeContext: .primary(.truck),
+                    liveOperationsStatus: .init(
+                        availability: .degraded,
+                        sourceLabel: "Convoy telemetry",
+                        detail: "Convoy positions available; freshness not supplied",
+                        observationCount: orderedFixes.count
+                    ),
                     onSelectMarker: { userId in selectMember(userId) }
                 )
                 .clipShape(RoundedRectangle(cornerRadius: Radius.xl - 1.5, style: .continuous))
@@ -367,13 +384,30 @@ private struct ConvoyBody_400: View {
                     Spacer()
                     HStack {
                         Spacer()
-                        Text("LIVE · \(truckMarkers.count)/3 GPS · convoy positions")
+                        Text("REPORTED · \(truckMarkers.count)/3 POSITION OBSERVATIONS")
                             .font(.system(size: 8, weight: .heavy)).tracking(0.5)
                             .foregroundStyle(.white)
                             .padding(.horizontal, 10).padding(.vertical, 5)
                             .background(Capsule().fill(Color.black.opacity(0.42)))
                     }
                 }.padding(14)
+                if let canonicalRouteStatus {
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Text(canonicalRouteStatus)
+                                .font(.system(size: 8, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .lineLimit(2)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(Capsule().fill(Color.black.opacity(0.58)))
+                            Spacer()
+                        }
+                    }
+                    .padding(14)
+                    .padding(.bottom, 24)
+                }
             }
             .frame(height: 216)
         } else {
@@ -381,13 +415,18 @@ private struct ConvoyBody_400: View {
         }
     }
 
-    /// Real-coordinate map layers: nose-to-tail polyline over the ordered fixes
-    /// + a .truck puck per member. Empty when no real fix resolves.
+    /// Exact current load-route members plus a .truck marker per reported fix.
+    /// Discontinuous route members remain independent; no observation-derived
+    /// or endpoint-derived line is ever introduced.
     private var convoyMapLayers: [HereMapLayer] {
-        var layers: [HereMapLayer] = []
-        let line = orderedFixes.map { $0.fix }
-        if line.count >= 2 {
-            layers.append(.route(polyline: line, colorHex: "#1473FF"))
+        var layers: [HereMapLayer] = canonicalRouteLines.enumerated().map { index, line in
+            .eusoRoute(
+                polyline: line,
+                state: .active,
+                label: index == 0
+                    ? "Eusorone truck convoy route plan version \(canonicalRouteVersion ?? 0)"
+                    : nil
+            )
         }
         if !truckMarkers.isEmpty {
             layers.append(.markers(truckMarkers))
@@ -405,12 +444,12 @@ private struct ConvoyBody_400: View {
                 Image(systemName: mapLoading ? "dot.radiowaves.left.and.right" : "map")
                     .font(.system(size: 26, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
-                Text(mapLoading ? "Locating convoy formation…" : "Awaiting convoy position feed")
+                Text(mapLoading ? "Resolving convoy authority…" : "Awaiting convoy map authority")
                     .font(.system(size: 13, weight: .heavy))
                     .foregroundStyle(palette.textPrimary)
                 Text(mapLoading
-                     ? "convoy.getConvoyPositions · location_history heartbeat"
-                     : "No active convoy with a live GPS fix · pucks draw on real coordinates only")
+                     ? "Canonical load route and convoy observations are being resolved"
+                     : "No canonical route or reported convoy position is currently available")
                     .font(.system(size: 10))
                     .foregroundStyle(palette.textSecondary)
                     .multilineTextAlignment(.center)
@@ -736,10 +775,14 @@ private struct ConvoyBody_400: View {
     // the server's real separation distances where present. The fuel-save /
     // draft-time labels have no coordinate source and stay representative.
     private func reload() async {
-        // Preview path — no live session; paint the seeded live formation.
+        // Preview path — no session; paint observation markers only. Preview
+        // coordinates never become route geometry.
         if let seed = previewSeedPositions {
             self.activeConvoy = previewSeedConvoy
             self.positions = seed
+            self.canonicalRouteLines = []
+            self.canonicalRouteVersion = nil
+            self.canonicalRouteStatus = "Canonical route unavailable in preview"
             self.mapLoading = false
             applyRealDistances()
             return
@@ -757,9 +800,14 @@ private struct ConvoyBody_400: View {
             guard let convoy = convoys.first else {
                 self.activeConvoy = nil
                 self.positions = []
+                self.canonicalRouteLines = []
+                self.canonicalRouteVersion = nil
+                self.canonicalRouteStatus = "No active convoy load is bound"
                 return
             }
             self.activeConvoy = convoy
+
+            await refreshCanonicalRoute(loadId: convoy.loadId)
 
             let env: ConvoyPositions_400? = try? await EusoTripAPI.shared.query(
                 "convoy.getConvoyPositions",
@@ -771,7 +819,67 @@ private struct ConvoyBody_400: View {
             // Soft-fail to the honest placeholder; never fabricate a formation.
             self.activeConvoy = nil
             self.positions = []
+            self.canonicalRouteLines = []
+            self.canonicalRouteVersion = nil
+            self.canonicalRouteStatus = error.eusoUserCopy
         }
+    }
+
+    /// Resolves only the exact load identity supplied by the authenticated
+    /// convoy response. No endpoint, mode, asset fact, or geometry crosses the
+    /// client boundary.
+    @MainActor
+    private func refreshCanonicalRoute(loadId: Int?) async {
+        canonicalRouteLines = []
+        canonicalRouteVersion = nil
+        canonicalRouteStatus = "Verified active route is still being prepared"
+        guard let loadId, loadId > 0 else {
+            canonicalRouteStatus = "Convoy is not bound to a persisted load"
+            return
+        }
+        do {
+            let result = try await CanonicalRoutePlanClient.shared.planLoad(
+                id: loadId,
+                purpose: .activeJob
+            )
+            switch result {
+            case .persisted(let persisted):
+                applyCanonicalRoute(persisted.route)
+            case .pending(let pending):
+                canonicalRouteStatus = pending.blockers.first?.message
+                    ?? "Canonical truck route pending verified authority"
+                await readExistingCanonicalRoute(loadId: loadId)
+            }
+        } catch {
+            canonicalRouteStatus = error.eusoUserCopy
+            await readExistingCanonicalRoute(loadId: loadId)
+        }
+    }
+
+    @MainActor
+    private func readExistingCanonicalRoute(loadId: Int) async {
+        do {
+            applyCanonicalRoute(
+                try await CanonicalRoutePlanClient.shared.getBoundLoad(id: loadId)
+            )
+        } catch {
+            if canonicalRouteStatus == nil { canonicalRouteStatus = error.eusoUserCopy }
+        }
+    }
+
+    @MainActor
+    private func applyCanonicalRoute(_ route: CanonicalRoutePlanClient.BoundRoutePlan) {
+        guard route.plan.purpose == .activeJob,
+              route.plan.identity.mode == .truck,
+              let payload = route.rendererPayload else {
+            canonicalRouteLines = []
+            canonicalRouteVersion = nil
+            canonicalRouteStatus = "Canonical truck route exists but is not released for rendering"
+            return
+        }
+        canonicalRouteLines = payload.lines
+        canonicalRouteVersion = payload.identity.version
+        canonicalRouteStatus = nil
     }
 
     /// Overwrite the mean-gap / draft distance lines with REAL separation
@@ -784,7 +892,7 @@ private struct ConvoyBody_400: View {
         guard !meters.isEmpty else { return }
         let meanFeet = (meters.reduce(0, +) / Double(meters.count)) * 3.28084
         vm.meanGap = numberFmt_400(meanFeet)
-        vm.meanGapSub = "feet · live separation · location_history"
+        vm.meanGapSub = "feet · reported separation · location_history"
     }
 
     private func numberFmt_400(_ v: Double) -> String {

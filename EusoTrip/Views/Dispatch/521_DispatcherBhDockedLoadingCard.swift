@@ -191,7 +191,7 @@ private struct BH521Body: View {
                      tint: nil)
             BH521Kpi(label: "HOS LEFT",
                      value: hosText,
-                     sub: hosText == "—" ? "not on the live driver board" : "drive window",
+                     sub: hosText == "—" ? "driver hours not reported" : "reported · freshness unavailable",
                      tint: nil)
         }
     }

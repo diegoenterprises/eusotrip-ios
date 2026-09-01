@@ -63,6 +63,7 @@ final class DriverGPSPushService: NSObject, ObservableObject,
 
     private let manager = CLLocationManager()
     private var activeLoadId: Int?
+    var currentLoadId: Int? { activeLoadId }
 
     // MARK: - Breadcrumb trail (L13-6)
     //
@@ -160,7 +161,7 @@ final class DriverGPSPushService: NSObject, ObservableObject,
         // cached fix on first start, which would push a stale point
         // that's seconds-to-minutes behind the truck.
         let age = -fix.timestamp.timeIntervalSinceNow
-        guard age < 60 else { return }
+        guard age < 60, LatLongParser.isValid(fix.coordinate) else { return }
         Task { @MainActor [weak self] in
             // L13-2: mirror EVERY accepted fix into DriverLocationResolver
             // BEFORE the 15 s push throttle — the turn-by-turn navigator
@@ -277,17 +278,17 @@ final class DriverGPSPushService: NSObject, ObservableObject,
         }
     }
 
-    /// Flush ≤200 buffered fixes to `location.telemetry.locationBatch` and feed
-    /// the same points to `HereHaulBridge.recordCoverage` (its first real
-    /// caller — lights up `hereMaps.locationAnalytics` territory events).
+    /// Flush ≤200 buffered fixes to `location.telemetry.locationBatch`.
+    /// Territory and mission progress are derived server-side from persisted,
+    /// assignment-bound breadcrumbs; the device never self-reports awards.
     ///
     /// Cap raised 25→200 (adversarial-verify 2026-07-09): the server schema
     /// allows `.max(200)` and the buffer is capped at 200, so any backlog
     /// drains in ONE request — structurally avoiding the server's 2 s
     /// per-driver rate limiter during catch-up. A rate-limited ack now
     /// THROWS from `locationBatch` (the server persisted nothing), so the
-    /// catch re-buffers the batch AND skips `recordCoverage` — Haul territory
-    /// / XP is only ever credited for confirmed-persisted points. On failure
+    /// catch re-buffers the batch. Haul progress is only ever considered from
+    /// confirmed-persisted points. On failure
     /// the batch is re-buffered for the next flush (buffer capped at 200 so a
     /// long offline stretch never grows unbounded).
     @MainActor
@@ -305,17 +306,10 @@ final class DriverGPSPushService: NSObject, ObservableObject,
                 heading: c.heading, accuracy: c.accuracy, altitude: c.altitude,
                 batteryLevel: c.batteryPct, isCharging: c.isCharging)
         }
-        let coverage = batch.map { c in
-            HereMapsAPI.Breadcrumb(
-                lat: c.lat, lng: c.lng, capturedAt: c.timestamp,
-                speedKph: c.speedMps.map { $0 * 3.6 })       // m/s → kph
-        }
-
         Task { @MainActor [weak self] in
             guard let self else { return }
             do {
                 _ = try await EusoTripAPI.shared.locationBatch(locations: points, loadId: loadId)
-                await HereHaulBridge.shared.recordCoverage(breadcrumbs: coverage)
             } catch {
                 // Re-buffer for retry; cap at 200. The trim drops the OLDEST
                 // crumbs (front of the array) so the persisted trail always

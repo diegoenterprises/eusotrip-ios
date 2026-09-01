@@ -28,16 +28,13 @@ struct AppRoot: View {
                     .transition(.opacity)
             case .signedOut:
                 // Production auth entry — real SignInView in every build.
-                // For offline / simulator walkthroughs, SignInView exposes a
-                // "Preview without backend" row that calls session.signInDemo
-                // and routes through the same signedIn → ContentView →
-                // DriverTripController pipeline, so the full production flow
-                // is exercised end-to-end. (Previously this was a compile-
-                // time #if DEBUG bypass that rendered ContentView directly.)
+                // A simulator walkthrough remains inside SignInView only for
+                // DEBUG builds; TestFlight/App Store builds cannot mint a
+                // fabricated bearer or mount authenticated role stores.
                 //
                 // PHASE 1 AUDIT (2026-04-23, eusotrip-killers §6 pass):
-                // DEV_BYPASS_STATUS: REMOVED. Verified — no `#if DEBUG`
-                // short-circuit remains. Auth flow is live on every build.
+                // DEV_BYPASS_STATUS: RELEASE-BLOCKED. Auth is live on every
+                // shipped build and the preview path is compile-time absent.
                 // Deep-link reset password handler is wired at EusoTripApp
                 // `.onOpenURL` → `NotificationCenter.eusoResetPasswordDeepLink`
                 // → presented as a sheet from `AppRoot` below.
@@ -68,6 +65,7 @@ struct AppRoot: View {
 // MARK: - Boot splash
 
 private struct BootSplash: View {
+    @EnvironmentObject private var session: EusoTripSession
     @Environment(\.palette) var palette
     @State private var pulse = false
 
@@ -86,6 +84,23 @@ private struct BootSplash: View {
                     Text("by Eusorone Technologies · ESANG AI™".uppercased())
                         .font(EType.micro).tracking(0.8)
                         .foregroundStyle(palette.textTertiary)
+                }
+                if session.recoveryUnavailable {
+                    VStack(spacing: Space.s3) {
+                        Text("Your session is saved. EusoTrip is waiting for a secure connection before opening your workspace.")
+                            .font(EType.caption)
+                            .multilineTextAlignment(.center)
+                            .foregroundStyle(palette.textSecondary)
+                            .frame(maxWidth: 310)
+                        Button {
+                            Task { await session.boot() }
+                        } label: {
+                            Label("Retry secure connection", systemImage: "arrow.clockwise")
+                                .font(EType.bodyStrong)
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                    .transition(.opacity)
                 }
             }
         }

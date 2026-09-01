@@ -14,7 +14,8 @@
 //    READ  location.tracking.getLoadTracking          — detention records + geofences + ETA.
 //    READ  dispatch.getDriverStatuses                 — driver HOS hours.
 //    WRITE dispatch.updateLoadStatus                  — Start unload (status → unloading).
-//    READ  detentionAccessorials.calculateDetention   — Flag detention (live exposure calc).
+//    READ  detentionAccessorials.getActiveDetentions — signed live commercial state.
+//    READ  detentionAccessorials.getDetentionHistory — verified closed calculation.
 //  Honest gaps (no server proc — rendered as data-absence states, never faked):
 //    · dock-assignment + gate-PIN + queue rollup on the dispatch board
 //    · facility rate card on the detention record (charge fields bind when posted)
@@ -60,6 +61,9 @@ private struct BH520Body: View {
     @State private var flagInFlight = false
     @State private var actionAck: String?
     @State private var actionError: String?
+    @State private var commercialDataError: String?
+    @State private var liveCommercialDetention: DetentionAPI.ActiveDetention?
+    @State private var closedCommercialDetention: DetentionAPI.HistoryEvent?
     @State private var exposure: BH520Exposure?
     @State private var showExposureSheet = false
     @State private var now = Date()
@@ -85,6 +89,9 @@ private struct BH520Body: View {
                 }
                 if let err = actionError {
                     LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) }
+                }
+                if let err = commercialDataError {
+                    LifecycleCard(accentWarning: true) { Text(err).font(EType.caption).foregroundStyle(Brand.warning) }
                 }
                 if loadFailed {
                     LifecycleCard(accentWarning: true) {
@@ -161,15 +168,15 @@ private struct BH520Body: View {
                     }
                     Spacer()
                     VStack(alignment: .trailing, spacing: 2) {
-                        Text(chargeText(rec))
+                        Text(commercialChargeText)
                             .font(.system(size: 20, weight: .heavy).monospacedDigit())
-                            .foregroundStyle(rec.isBillable == true ? Brand.danger : Brand.success)
-                        Text(rec.isBillable == true ? "accruing · billable" : "accruing · free")
+                            .foregroundStyle(commercialChargeTint)
+                        Text(commercialStateLabel)
                             .font(.caption2).foregroundStyle(palette.textTertiary)
                     }
                     .padding(10)
                     .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                        .fill(rec.isBillable == true ? palette.tintDanger : palette.tintSuccess))
+                        .fill(commercialChargeBackground))
                 }
                 freeTimeBar(rec)
                 HStack {
@@ -202,7 +209,9 @@ private struct BH520Body: View {
                 Capsule().fill(palette.borderSoft).frame(height: 6)
                 if let frac = dwellFraction(rec) {
                     Capsule()
-                        .fill(rec.isBillable == true ? AnyShapeStyle(Brand.danger) : AnyShapeStyle(LinearGradient.primary))
+                        .fill((currentCommercialExposure?.billableMinutes ?? 0) > 0
+                              ? AnyShapeStyle(Brand.danger)
+                              : AnyShapeStyle(LinearGradient.primary))
                         .frame(width: max(8, geo.size.width * frac), height: 6)
                     Circle().fill(palette.textPrimary).frame(width: 10, height: 10)
                         .offset(x: max(0, geo.size.width * frac - 5))
@@ -218,7 +227,7 @@ private struct BH520Body: View {
         HStack(spacing: Space.s2) {
             BH520Kpi(label: "HOS LEFT",
                      value: hosText,
-                     sub: hosText == "—" ? "not on the live driver board" : "drive window",
+                     sub: hosText == "—" ? "driver hours not reported" : "reported · freshness unavailable",
                      tint: nil)
             BH520Kpi(label: "DOCK QUEUE",
                      value: queuePosition.map { "\($0)" } ?? "—",
@@ -260,10 +269,10 @@ private struct BH520Body: View {
     private var exposureLedger: some View {
         LifecycleCard {
             HStack {
-                BH520LedgerCell(label: "Free time", value: activeDetention?.freeTimeMinutes.map { "\($0) min" } ?? "—")
-                BH520LedgerCell(label: "Billable", value: activeDetention?.detentionMinutes.map { "\($0) min" } ?? "0 min")
-                BH520LedgerCell(label: "Charge", value: activeDetention?.detentionCharge.map { String(format: "$%.0f", $0) } ?? "$0")
-                BH520LedgerCell(label: "Status", value: activeDetention?.isBillable == true ? "billable" : "free")
+                BH520LedgerCell(label: "Free time", value: currentCommercialExposure?.freeTimeMinutes.map { "\($0) min" } ?? "—")
+                BH520LedgerCell(label: "Billable", value: currentCommercialExposure?.billableMinutes.map { "\($0) min" } ?? "—")
+                BH520LedgerCell(label: "Charge", value: commercialChargeText)
+                BH520LedgerCell(label: "Status", value: commercialStateLabel)
             }
         }
     }
@@ -289,7 +298,7 @@ private struct BH520Body: View {
             Button { Task { await flagDetention() } } label: {
                 HStack(spacing: 6) {
                     if flagInFlight { ProgressView().scaleEffect(0.8) }
-                    Text(flagInFlight ? "Calculating…" : "Flag detention").font(EType.body.weight(.semibold))
+                    Text(flagInFlight ? "Opening…" : "Review detention").font(EType.body.weight(.semibold))
                 }
                 .frame(maxWidth: .infinity, minHeight: 48)
                 .foregroundStyle(Brand.danger)
@@ -306,6 +315,12 @@ private struct BH520Body: View {
 
     private var activeDetention: BH520Tracking.Detention? {
         (tracking?.detention ?? []).last(where: { $0.exitAt == nil }) ?? (tracking?.detention ?? []).last
+    }
+
+    private var currentCommercialExposure: BH520Exposure? {
+        if let liveCommercialDetention { return BH520Exposure(active: liveCommercialDetention) }
+        if let closedCommercialDetention { return BH520Exposure(history: closedCommercialDetention) }
+        return nil
     }
 
     private var insideGeofence: Bool {
@@ -335,28 +350,55 @@ private struct BH520Body: View {
     }
 
     private func freeCaption(_ rec: BH520Tracking.Detention) -> String {
-        guard let free = rec.freeTimeMinutes else { return "DWELL · free time not on this record" }
+        guard let free = currentCommercialExposure?.freeTimeMinutes else {
+            return "DWELL · signed free time unavailable"
+        }
         return "DWELL · of \(String(format: "%d:%02d", free / 60, free % 60)) free time"
     }
 
-    private func chargeText(_ rec: BH520Tracking.Detention) -> String {
-        String(format: "$%.0f", rec.detentionCharge ?? 0)
+    private var commercialChargeText: String {
+        guard let amount = currentCommercialExposure?.totalCharge,
+              let currency = currentCommercialExposure?.currency else { return "—" }
+        return "\(currency.rawValue) \(String(format: "%.2f", amount))"
+    }
+
+    private var commercialStateLabel: String {
+        guard let state = currentCommercialExposure?.commercialState else { return "unavailable" }
+        switch state {
+        case "verified_calculation": return "verified · closed"
+        case "verified_live_estimate": return "verified · live"
+        case "awaiting_suspension_adjudication": return "awaiting adjudication"
+        default: return state.replacingOccurrences(of: "_", with: " ")
+        }
+    }
+
+    private var commercialChargeTint: Color {
+        guard let billable = currentCommercialExposure?.billableMinutes else { return palette.textTertiary }
+        return billable > 0 ? Brand.danger : Brand.success
+    }
+
+    private var commercialChargeBackground: Color {
+        guard let billable = currentCommercialExposure?.billableMinutes else { return palette.bgCard }
+        return billable > 0 ? palette.tintDanger : palette.tintSuccess
     }
 
     private func dwellFraction(_ rec: BH520Tracking.Detention) -> CGFloat? {
-        guard let m = dwellMinutes(rec), let free = rec.freeTimeMinutes, free > 0 else { return nil }
+        guard let m = dwellMinutes(rec), let free = currentCommercialExposure?.freeTimeMinutes, free > 0 else { return nil }
         return CGFloat(min(1.0, Double(m) / Double(free)))
     }
 
     private func freeLeftLine(_ rec: BH520Tracking.Detention) -> String {
-        guard let m = dwellMinutes(rec), let free = rec.freeTimeMinutes else { return "free time not on this record" }
+        guard let m = dwellMinutes(rec), let free = currentCommercialExposure?.freeTimeMinutes else {
+            return "signed free time unavailable"
+        }
         let left = free - m
         if left >= 0 { return "FREE · \(left) min left" }
         return "BILLABLE · \(-left) min over"
     }
 
     private func billableAtLine(_ rec: BH520Tracking.Detention) -> String {
-        guard let enter = bh520ISODate(rec.enterAt), let free = rec.freeTimeMinutes else { return "" }
+        guard let enter = bh520ISODate(rec.enterAt),
+              let free = currentCommercialExposure?.freeTimeMinutes else { return "" }
         let at = enter.addingTimeInterval(Double(free) * 60)
         return "billable at \(clockText(at))"
     }
@@ -415,6 +457,7 @@ private struct BH520Body: View {
         } catch { loadFailed = load == nil }
         await fetchTracking()
         await fetchDriverRow()
+        await fetchCommercialDetention()
         now = Date()
     }
 
@@ -438,6 +481,40 @@ private struct BH520Body: View {
             driverRow = rows.first(where: { $0.load != nil && $0.load == ln })
                 ?? rows.first(where: { dn != nil && $0.name == dn })
         } catch { driverRow = nil }
+    }
+
+    private func fetchCommercialDetention() async {
+        guard let numericLoadId else {
+            liveCommercialDetention = nil
+            closedCommercialDetention = nil
+            commercialDataError = "The load identity is unavailable, so signed detention terms cannot be verified."
+            return
+        }
+
+        var readFailures = 0
+        do {
+            let response = try await EusoTripAPI.shared.detention.getActive(limit: 100)
+            liveCommercialDetention = response.detentions.first(where: { $0.loadId == numericLoadId })
+        } catch {
+            liveCommercialDetention = nil
+            readFailures += 1
+        }
+
+        do {
+            let response = try await EusoTripAPI.shared.detention.getHistory(limit: 100)
+            closedCommercialDetention = response.events.first(where: { $0.loadId == numericLoadId })
+        } catch {
+            closedCommercialDetention = nil
+            readFailures += 1
+        }
+
+        commercialDataError = readFailures == 2
+            ? "Signed detention records could not be verified. Pull to refresh before relying on commercial exposure."
+            : nil
+    }
+
+    private var numericLoadId: Int? {
+        Int((load?.id ?? loadId).replacingOccurrences(of: "load_", with: ""))
     }
 
     private func startUnload() async {
@@ -464,27 +541,12 @@ private struct BH520Body: View {
         guard !flagInFlight else { return }
         flagInFlight = true; actionAck = nil; actionError = nil
         defer { flagInFlight = false }
-        guard let rec = activeDetention, let enter = rec.enterAt else {
-            actionError = "No gate-in is recorded for this load, so there's no detention window to flag yet."
-            return
-        }
-        struct In: Encodable {
-            let arrivalTime: String
-            let departureTime: String?
-            let freeTimeMinutes: Int
-            let cargoType: String
-        }
-        do {
-            let out: BH520Exposure = try await EusoTripAPI.shared.query(
-                "detentionAccessorials.calculateDetention",
-                input: In(arrivalTime: enter,
-                          departureTime: rec.exitAt,
-                          freeTimeMinutes: rec.freeTimeMinutes ?? 120,
-                          cargoType: load?.cargoType ?? "general"))
-            exposure = out
+        await fetchCommercialDetention()
+        if let verified = currentCommercialExposure {
+            exposure = verified
             showExposureSheet = true
-        } catch {
-            actionError = "The exposure calculation didn't run. The dwell clock above stays live — try again."
+        } else if commercialDataError == nil {
+            actionError = "No signed commercial detention record is available for this load yet. The physical dwell clock remains visible without inventing a charge."
         }
     }
 }
@@ -511,23 +573,15 @@ private struct BH520ExposureSheet: View {
                     }
                     if let e = exposure {
                         LifecycleCard {
+                            row("Commercial state", e.commercialState.replacingOccurrences(of: "_", with: " "))
                             row("Total dwell", e.totalMinutes.map { "\($0) min" } ?? "—")
                             row("Free time", e.freeTimeMinutes.map { "\($0) min" } ?? "—")
                             row("Billable", e.billableMinutes.map { "\($0) min" } ?? "—")
-                            row("Total charge", e.totalCharge.map { String(format: "$%.2f", $0) } ?? "—")
+                            row("Total charge", money(e.totalCharge, currency: e.currency))
                         }
-                        if let tiers = e.tierBreakdown, !tiers.isEmpty {
-                            LifecycleCard {
-                                ForEach(Array(tiers.enumerated()), id: \.offset) { _, t in
-                                    row(t.tier ?? "Tier",
-                                        String(format: "%.1fh @ $%.0f/hr → $%.2f", t.hours ?? 0, t.rate ?? 0, t.subtotal ?? 0))
-                                }
-                            }
-                        } else {
-                            LifecycleCard {
-                                Text("Nothing is billable yet — the dwell is still inside the free window.")
-                                    .font(EType.caption).foregroundStyle(palette.textSecondary)
-                            }
+                        LifecycleCard {
+                            row("Source", e.sourceReference ?? "—")
+                            row("Source SHA-256", e.sourceHashSha256 ?? "—")
                         }
                     }
                     Spacer(minLength: 24)
@@ -546,6 +600,11 @@ private struct BH520ExposureSheet: View {
                 .multilineTextAlignment(.trailing)
         }
         .padding(.vertical, 3)
+    }
+
+    private func money(_ amount: Double?, currency: TruckDetentionNegotiatedTerms.Currency?) -> String {
+        guard let amount, let currency else { return "—" }
+        return "\(currency.rawValue) \(String(format: "%.2f", amount))"
     }
 }
 
@@ -645,16 +704,43 @@ private struct BH520Tracking: Decodable {
     let queuePosition: Int?
 }
 
-private struct BH520Exposure: Decodable {
-    struct Tier: Decodable { let tier: String?; let hours: Double?; let rate: Double?; let subtotal: Double? }
+private struct BH520Exposure {
     let arrivalTime: String?
     let departureTime: String?
     let totalMinutes: Int?
     let freeTimeMinutes: Int?
     let billableMinutes: Int?
-    let billableHours: Double?
     let totalCharge: Double?
-    let tierBreakdown: [Tier]?
+    let currency: TruckDetentionNegotiatedTerms.Currency?
+    let commercialState: String
+    let sourceReference: String?
+    let sourceHashSha256: String?
+
+    init(active: DetentionAPI.ActiveDetention) {
+        arrivalTime = active.arrivalTime
+        departureTime = nil
+        totalMinutes = active.elapsedMinutes
+        freeTimeMinutes = active.freeTimeMinutes
+        billableMinutes = active.billableMinutes
+        totalCharge = active.currentCharge
+        currency = active.currency
+        commercialState = active.commercialState
+        sourceReference = active.sourceReference
+        sourceHashSha256 = active.sourceHashSha256
+    }
+
+    init(history: DetentionAPI.HistoryEvent) {
+        arrivalTime = history.arrivalTime
+        departureTime = history.departureTime
+        totalMinutes = history.totalMinutes
+        freeTimeMinutes = history.freeTimeMinutes
+        billableMinutes = history.billableMinutes
+        totalCharge = history.totalCharge
+        currency = history.currency
+        commercialState = history.commercialState
+        sourceReference = history.sourceReference
+        sourceHashSha256 = history.sourceHashSha256
+    }
 }
 
 private struct BH520DriverRow: Decodable {

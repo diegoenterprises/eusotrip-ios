@@ -41,10 +41,21 @@ struct HereStops {
 
     /// Convenience: two-stop (pickup → delivery).
     static func pickupToDelivery(pickup: LoadLocation?, delivery: LoadLocation?) -> HereStops? {
-        guard let p = pickup, let d = delivery else { return nil }
+        guard
+            let p = pickup,
+            let d = delivery,
+            let pickupCoordinate = LatLongParser.validatedCoordinate(
+                latitude: p.lat,
+                longitude: p.lng
+            ),
+            let deliveryCoordinate = LatLongParser.validatedCoordinate(
+                latitude: d.lat,
+                longitude: d.lng
+            )
+        else { return nil }
         return HereStops(
-            origin:      CLLocationCoordinate2D(latitude: p.lat, longitude: p.lng),
-            destination: CLLocationCoordinate2D(latitude: d.lat, longitude: d.lng)
+            origin: pickupCoordinate,
+            destination: deliveryCoordinate
         )
     }
 }
@@ -106,13 +117,15 @@ enum HereAvoidArea {
         switch self {
         case let .bbox(w, s, e, n):
             guard e > w, n > s else { return nil }
-            return String(format: "bbox:%.6f,%.6f,%.6f,%.6f", w, s, e, n)
+            return "bbox:\(w),\(s),\(e),\(n)"
         case let .polygon(pts):
             let simplified = Self.cap(Self.simplify(pts), to: Self.maxVertices)
             guard simplified.count >= 3 else {
                 return Self.boundingBox(of: pts)?.spec()   // degenerate → fall back to bbox
             }
-            let body = simplified.map { String(format: "%.6f,%.6f", $0.latitude, $0.longitude) }.joined(separator: ";")
+            let body = simplified
+                .map { "\($0.latitude),\($0.longitude)" }
+                .joined(separator: ";")
             return "polygon:\(body)"
         case let .corridor(path, radius):
             guard path.count >= 2, radius > 0 else { return nil }
@@ -243,9 +256,10 @@ actor HereRoutingClient {
 
     // MARK: - Helpers
 
-    /// HERE expects "lat,lng" to 7 decimal places.
+    /// HERE accepts decimal coordinates. Keep Swift's round-trippable Double
+    /// representation so a precise user/provider fix is not truncated here.
     static func fmt(_ c: CLLocationCoordinate2D) -> String {
-        String(format: "%.7f,%.7f", c.latitude, c.longitude)
+        "\(c.latitude),\(c.longitude)"
     }
 
     /// Decodes the `polyline` field on each section into `[CLLocationCoordinate2D]`.

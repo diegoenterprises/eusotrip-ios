@@ -307,28 +307,32 @@ struct HotZonesHeatMapView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.palette) private var palette
 
+    private var locatedHotZones: [HotZoneEntry] {
+        zones.filter { $0.center != nil }
+    }
+
+    private var locatedColdZones: [ColdZoneEntry] {
+        coldZones.filter { $0.center != nil }
+    }
+
     /// The continuous geothermal heat field, fed to `BespokeMapCanvas` via the
     /// `.geothermal` style hint. Each point's `weight` = load-to-truck ratio
     /// (the engine's fixed domain: 0.5→cold/blue, 1.4→mid, 3.0+→hot/red).
     ///   • HOT zones  → weight = `zone.liveRatio` (real demand pressure).
-    ///   • COLD zones → low-weight blue end: a derived sub-balance ratio from
-    ///     `liveSurge` when present (clamped ≤ 1.0 so cold always reads cool),
-    ///     else the constant 0.6. ZERO fabrication: only real store zones with
-    ///     a real coordinate become points; a (0,0) center is dropped.
+    ///   • COLD zones → low-weight blue end derived from a reported live-surge
+    ///     value (clamped ≤ 1.0 so cold always reads cool). Rows without a
+    ///     reported weight remain markers and do not enter the heat field.
     private var heatPoints: [HereLatLng] {
         var pts: [HereLatLng] = []
-        for z in zones where !(z.center.lat == 0 && z.center.lng == 0) {
-            pts.append(HereLatLng(z.center.lat, z.center.lng, weight: z.liveRatio))
+        for z in locatedHotZones {
+            guard let center = z.center else { continue }
+            pts.append(HereLatLng(center.lat, center.lng, weight: z.liveRatio))
         }
-        for c in coldZones {
-            guard let ctr = c.center, !(ctr.lat == 0 && ctr.lng == 0) else { continue }
-            // Cold weight: when the feed ships a surge multiplier, fold it into
-            // a sub-balance ratio (≤ 1.0 so it stays on the cool half of the
-            // ramp); otherwise a low constant that lands at the blue end.
-            let coldWeight: Double = {
-                guard let s = c.liveSurge, s > 0 else { return 0.6 }
-                return min(1.0, max(0.3, s * 0.6))
-            }()
+        for c in locatedColdZones {
+            guard let ctr = c.center,
+                  let surge = c.liveSurge,
+                  surge > 0 else { continue }
+            let coldWeight = min(1.0, max(0.3, surge * 0.6))
             pts.append(HereLatLng(ctr.lat, ctr.lng, weight: coldWeight))
         }
         return pts
@@ -345,7 +349,7 @@ struct HotZonesHeatMapView: View {
         // the empty state when there are no zones to plot.
         // Founder report 2026-05-06: "on homescreen driver the
         // hotzones map doesnt show at all."
-        if zones.isEmpty && coldZones.isEmpty {
+        if locatedHotZones.isEmpty && locatedColdZones.isEmpty {
             zeroZonesEmptyState
         } else {
             // 2026-05-22: migrated off the legacy raster HereMapView (and the
@@ -368,9 +372,10 @@ struct HotZonesHeatMapView: View {
                 zoom: 5,
                 baseLayers: [
                     .heatmap(points: heatPoints),
-                    .markers(zones.map { z in
-                        HereMarker(
-                            at: .init(z.center.lat, z.center.lng),
+                    .markers(locatedHotZones.compactMap { z in
+                        guard let center = z.center else { return nil }
+                        return HereMarker(
+                            at: .init(center.lat, center.lng),
                             kind: .hotZone,
                             label: z.zoneName,
                             id: z.zoneId
@@ -381,6 +386,7 @@ struct HotZonesHeatMapView: View {
                 showLegend: false,
                 showTicker: false,
                 styleHint: .geothermal,
+                mapModeContext: .primary(.truck),
                 onSelectMarker: { id in
                     if let z = zones.first(where: { $0.zoneId == id }) {
                         onSelectZone?(z)
@@ -396,11 +402,12 @@ struct HotZonesHeatMapView: View {
     private var mapCenter: HereLatLng {
         var lats: [Double] = []
         var lngs: [Double] = []
-        for z in zones where !(z.center.lat == 0 && z.center.lng == 0) {
-            lats.append(z.center.lat); lngs.append(z.center.lng)
+        for z in locatedHotZones {
+            guard let center = z.center else { continue }
+            lats.append(center.lat); lngs.append(center.lng)
         }
-        for c in coldZones {
-            if let ctr = c.center, !(ctr.lat == 0 && ctr.lng == 0) {
+        for c in locatedColdZones {
+            if let ctr = c.center {
                 lats.append(ctr.lat); lngs.append(ctr.lng)
             }
         }

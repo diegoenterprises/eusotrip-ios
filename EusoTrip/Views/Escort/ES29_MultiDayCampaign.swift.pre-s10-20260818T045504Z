@@ -1,0 +1,1036 @@
+//
+//  ES29_MultiDayCampaign.swift
+//  EusoTrip — Escort · Multi-Day Campaign (ES-29).
+//
+//  NEW SURFACE. Nothing on disk owns the escort campaign view today, so this
+//  file shadows no brick and edits none. It needs a nav entry it does NOT
+//  write: `EscortNavController.swift` is single-writer owned and
+//  `ContentView.swift` is written centrally by the fire lead. The registry
+//  entry this screen wants is filed in the manifest, not added here. Until it
+//  lands, the screen is reachable only by direct push from ES-16.
+//
+//  Built from the ES-29 design-authority SVG pair
+//  ("07 Escort/{Light,Dark}-SVG/ES-29 Multi Day Campaign.svg").
+//
+//  ─────────────────────────────────────────────────────────────────────────
+//  ARCHETYPE — TIMELINE · A CONCERTINA OF ROUTE LEGS ON ONE CONTINUOUS
+//  DISTANCE AXIS. The campaign is drawn as a folded paper strip. Every panel
+//  is a real leg `escorts.getCorridor` derives from `loads.route`; the
+//  panel's WIDTH is proportional to that leg's distance, its FILL is its run
+//  state, the creases between panels are the leg seams, and a per-leg
+//  wind-gate bar is welded to the underside of the panel it stops — so a gust
+//  hold is physically attached to the leg it stops instead of floating as a
+//  banner. The dominant axis is MILES and never days, because miles are the
+//  only campaign-length quantity anything in this tree can produce.
+//
+//  What separates it from its two nearest neighbours:
+//    · ES-16 Active Trip Console is the trap. That screen is a VERTICAL
+//      five-node corridor spine of sequential legs for ONE live move, read
+//      top to bottom beside an advisory chip rail, and every one of its leg
+//      nodes is the same size no matter how long the leg is. ES-29 is a
+//      HORIZONTAL distance-proportional strip across a whole multi-leg
+//      campaign: on the reference scenario leg 3 (131.5 mi) is drawn 2.24×
+//      wider than leg 2 (58.7 mi) off one px-per-mile constant, and that
+//      proportionality IS the content — it is the only thing on the screen
+//      that says where the move actually is along its own length. No vertical
+//      spine, no advisory rail, no status-advance control, no ETA readout,
+//      no clearance-event ledger.
+//    · ES-15 Schedule & Availability is a 6×7 calendar lattice of dated cells
+//      with capsule bands crossing a week seam behind a continuation caret.
+//      ES-29 has no dates, no cells, no week seam and no month, because the
+//      tree holds no day model to put in one. Where ES-15 draws the days it
+//      HAS, ES-29 draws the day register it does NOT have and prints
+//      NOT MODELLED across it.
+//    · NOT ES-09's 16-hour day-ruler (clock time inside one day; this axis is
+//      miles across an unbounded span and carries no hour ticks), NOT ES-07's
+//      position-itemized leg timeline (a vertical MONEY spine where a dollar
+//      hangs off each leg node — zero dollars are payable here and the single
+//      money cell is drawn ABSENT, not as a figure).
+//
+//  ─────────────────────────────────────────────────────────────────────────
+//  WIRING — every anchor opened at the pin against the live working tree this
+//  fire (frontend/server/routers/escorts.ts, md5
+//  064a1b8459b8013613dac05184cf4277, 4,745 lines).
+//
+//    EXISTS escorts.getCorridor                escorts.ts:3906
+//           input {id: STRING} at escorts.ts:3907 — assignment ids are Int
+//           everywhere else on this surface, so the client stringifies
+//           deliberately rather than letting a silent BAD_REQUEST decode into
+//           an empty campaign. Ownership gate escorts.ts:3916-3919
+//           (resolveEscortUserId then eq(escortUserId,userId)); it RETURNS
+//           NULL rather than throwing, so a foreign assignment is
+//           honest-empty and this file renders that as its own state.
+//    EXISTS legs[]                             escorts.ts:3938-4015
+//           derived per request from loads.route waypoints; legCount at
+//           escorts.ts:3942. NEVER PERSISTED — there is no leg table and no
+//           leg row, so this strip is a projection of a computation and the
+//           card says DERIVED · NEVER PERSISTED on its own face.
+//    CEILING legs[].miles                      escorts.ts:3943
+//           perLegMiles = round((totalMiles / legCount) * 10) / 10, assigned
+//           identically to every leg at escorts.ts:4011. A strip drawn from
+//           that field is N identical panels asserting a geography that does
+//           not exist. It is decoded here so it can be NAMED and disqualified
+//           on glass; it never sizes a panel.
+//    EXISTS corridor.polyline   escorts.ts:4064-4071 / 4120-4126 / ret :4184
+//           the ordered REAL coordinates — origin, every loads.route
+//           waypoint, destination — each gated by validPt (escorts.ts:
+//           4061-4062) against non-finite values and against (0,0). THIS is
+//           what panel width is derived from: great-circle chained and
+//           normalised to routedMiles (escorts.ts:4173).
+//    EXISTS LegWindGate                        escorts.ts:318-329
+//           {gust, gustUnit, status go|caution|nogo|null, band, condition,
+//            weatherCode, cautionMph, nogoMph, source, available}; computed
+//           by computeLegWindGate escorts.ts:345 and fail-soft to an honest
+//           available:false at escorts.ts:350-353.
+//    EXISTS gating       windGated = isRegulated escorts.ts:3972
+//                        AND isWeatherKitConfigured() escorts.ts:3979
+//                        (services/weatherKit.ts:354)
+//    EXISTS thresholds   escortGustThresholds escorts.ts:287-292
+//                        ESCORT_GUST_CAUTION_MPH 25 · ESCORT_GUST_NOGO_MPH 35
+//    EXISTS windGate (envelope)                escorts.ts:4152-4166, ret :4185
+//           `enterprise` is isWeatherKitEnterprise() (weatherKit.ts:369) and
+//           is surfaced precisely so the client can label PROXY vs route_v4.
+//           The comment at escorts.ts:337-341 states the true per-leg series
+//           lives behind the Enterprise POST /v4/route and that until that key
+//           lands the code samples an hourly forecast-proxy at a single
+//           representative coordinate. THIS FILE THEREFORE PAINTS THE WIND
+//           LANE AMBER, TAGGED PROXY + THE AGE OF fetchedAt. It is never
+//           tagged LIVE and never tagged in success green. ES-16 shipped a
+//           cached wind band tagged LIVE in green on a live-move safety
+//           surface and it was the worst find of that fire; it is not
+//           repeated here.
+//    CEILING legCoords fallback                escorts.ts:3982
+//           `const pt = legCoords[i + 1] ?? legCoords[i]`, documented at
+//           escorts.ts:3980-3981 as judging a leg by its FAR endpoint — the
+//           conditions the convoy is driving INTO. When a leg's two points
+//           coincide, the sample is taken on ground already reached, so that
+//           row says SAMPLED AT NEAR END instead of presenting the verdict as
+//           forward-looking.
+//    CEILING coverageForStatus                 escorts.ts:232-247
+//           lifecycle enum → scalar (completed 1.0 · escorting 0.85 · on_site
+//           0.45 · en_route 0.25 · accepted 0.1 · else 0) with a +0.10 convoy
+//           bonus at escorts.ts:242-245; escorts.ts:3990-3993 slices it by LEG
+//           COUNT, not by distance. So the covered-distance figure and the NOW
+//           marker are LIFECYCLE-DERIVED and are labelled that way. NO GPS FIX
+//           IS CLAIMED ANYWHERE ON THIS SURFACE, even though
+//           escorts.ts:4076-4110 does project real location_history fixes into
+//           the corridor block — this screen draws no map and will not dress a
+//           lifecycle scalar as a fix.
+//    EXISTS startedAt / completedAt      drizzle/schema.ts:3842-3843
+//           exactly ONE pair per assignment. They are the only two real time
+//           anchors a campaign has and are drawn as the two ends of the empty
+//           day register — startedAt solid, completedAt an open dashed circle
+//           because it is NULL on a running move.
+//
+//    STUB   THE DAY MODEL. Falsifiable grep over frontend/server/** +
+//           frontend/drizzle/** re-run this fire: multiDay 0 · multi_day 0 ·
+//           dayNumber 0 · day_number 0 · legIndex 0 · escortCampaign 0 ·
+//           escortLeg 0 · escort_legs 0 · escortDaySegment 0. Nothing in the
+//           tree can say what a day inside a move is, so this file draws NO
+//           "Day 3 of 7" anywhere and renders the register that would hold one
+//           empty and labelled NOT MODELLED.
+//           Owed: escorts.getCampaign({assignmentId}) → {campaignId, dayCount,
+//           days:[{dayNumber, startedAt, endedAt, legIds, overnightId,
+//           milesRun}]}.
+//    STUB   OVERNIGHT / STAGING. grep stagingArea 0 · staging_area 0 ·
+//           overnightSecuring 0 · hotel 0. The creases on this strip are LEG
+//           seams and the card says so in words; none of them is an overnight,
+//           because no overnight record exists to attach to one. No booking
+//           CTA is drawn.
+//           Owed: escort_overnights (assignmentId, dayNumber, arrivedAt,
+//           departedAt, lat, lng, securingPhotoIds, stagingAreaId).
+//    STUB   WEATHER HOLD. grep windHold 0 · wind_hold 0 in escort scope.
+//           `weatherHold` has 15 hits and every one is in one rail router,
+//           railDemurrageAuto.ts:819-997, self-gated at railDemurrageAuto.ts:821
+//           with reason "weather_hold_requires_enterprise" — unreachable from
+//           escort scope. So a real NO-GO gate can sit on a leg of this screen
+//           and NO DECLARE-HOLD BUTTON IS DRAWN, because the button would be a
+//           link to nowhere.
+//           Owed: escorts.declareWindHold({assignmentId, legId, gustMph,
+//           thresholdMph, declaredAt}) → {holdId, status}, plus an
+//           ESCORT_WIND_HOLD member on frontend/shared/websocket-events.ts.
+//    STUB   DAILY REPORTS. grep dailyReport 0.
+//           Owed: escorts.submitDailyReport({assignmentId, dayNumber,
+//           milesRun, incidents, photos}) → {reportId}.
+//    STUB   PER-DIEM WRITE. overnight_nights INT NULL and
+//           overnight_rate_per_night DECIMAL(8,2) NULL exist —
+//           drizzle/0342_escort_settlement_columns.sql:19-20, mirrored
+//           drizzle/schema.ts:3826-3827 — and are READ at escorts.ts:4612 and
+//           again at escorts.ts:4669. ZERO write sites in frontend/server/**.
+//           The only settlement columns any procedure writes are the seven set
+//           by createEscortSettlement at escorts.ts:4679-4682
+//           (settlementStatus, settlementId, settledAt, platformFeePercent,
+//           platformFeeAmount, netPayout, ytdGross) and NEITHER per-diem column
+//           is among them. Both are permanently NULL, and getSettlementDetail
+//           coalesces every line item to zero at escorts.ts:4607 — so a
+//           per-diem cell rendered off that read is a guaranteed fabricated
+//           $0.00. This file draws the cell ABSENT: a dashed capsule holding an
+//           em dash, captioned 0 WRITE SITES · NOT $0.00. IT NEVER CALLS
+//           getSettlementDetail, because the only thing it could get back is a
+//           coalesced zero.
+//           Owed: escorts.recordOvernight({assignmentId, nights, ratePerNight}).
+//    STUB   TRUE PER-LEG DISTANCE ON THE WIRE.
+//           Owed: legs[].milesTrue + legs[].milesSource (routed|greatCircle|
+//           evenSplit) + legs[].fromPoint/toPoint, so the axis stops depending
+//           on a client and a duplicated or dropped waypoint becomes
+//           ATTRIBUTABLE to the leg it belongs to instead of merely detectable.
+//    STUB   INTERIOR WAYPOINT NAMES. escorts.ts:3947 pushes the LITERAL string
+//           "Waypoint i" for every interior node, so only the two ends of a
+//           campaign are nameable today. Panels read L1…Ln and endpoints read
+//           exactly what the wire emits.
+//           Owed: legs[].placeName off a reverse geocode cached on loads.route.
+//
+//  CORRECTION ON THE RECORD, verified line by line this fire: the ES-07
+//  settlement block is at escorts.ts:4592-4744, NOT the 4571-4663 the lane
+//  header carries. escorts.ts:4592 opens the banner comment, :4593 is the
+//  ES-07 SETTLEMENT SPINE line, :4598 getSettlementDetail, :4654
+//  createEscortSettlement, :4694 submitSettlementDispute, :4723
+//  listSettlements, :4744 closes that last procedure and :4745 closes the
+//  router. The stale range is not propagated.
+//
+//  ─────────────────────────────────────────────────────────────────────────
+//  OFFLINE (§W)
+//    CACHED · READ_CACHED(120s) through `EscortOfflineCache`
+//    (key escort.es29.campaign), repainted with
+//    `EscortOfflineCache.stalenessLine(age:)` in the meta row whenever a
+//    snapshot is on glass: the leg strip, the leg identities and the two
+//    assignment stamps.
+//    NEEDS SIGNAL · the per-leg wind gates are NOT cached and are rendered as
+//    their own absence on a cached paint — every bar drops to the dashed
+//    NO DATA register rather than holding its last colour. A gust verdict is
+//    position- and time-dependent, and a replayed gate on a moved convoy is
+//    the exact failure the gate exists to prevent.
+//    Mutations: there are none. Every candidate verb is a named evidenced gap
+//    above. The escort outbox is not ported (PLANNED per Encyclopedia v2) and
+//    a queue badge is NEVER drawn, because there is no queue.
+//
+//  CHAIN
+//    C1 CLOSED   · read chain — one getCorridor call answers the strip, the
+//                  gates and the stamps; the client needs nothing else.
+//    C2 N-A      · write chain — this surface exposes no verb. Both buttons
+//                  navigate, and the honesty line above them says so.
+//    C3 SILENT   · campaign chain — no producer exists for a day boundary, an
+//                  overnight or a hold, so nothing can be closed from either
+//                  end until the migration named in the manifest lands. A grep
+//                  of the event registry for CAMPAIGN / DAY / SEGMENT returns
+//                  zero and getCorridor broadcasts nothing.
+//
+//  AUDIT: no blockchainAuditTrail row is inserted — the token appears 0 times
+//  in escorts.ts and 0 times in hazmatEscort.ts (grep run this fire); the
+//  escort tree's audit surface is recordAuditEvent() from _core/auditService
+//  (imported escorts.ts:17, called escorts.ts:110 et al) and none of those
+//  call sites is on the corridor read. This surface writes nothing at all.
+//
+//  RBAC: escorts.getCorridor is escortProcedure — aliased to the local name
+//  protectedProcedure at escorts.ts:11 — which is roleProcedure(ROLES.ESCORT)
+//  at _core/trpc.ts:228 over ROLES.ESCORT at _core/trpc.ts:23; the
+//  roleProcedure factory is at _core/trpc.ts:216. NOT :212, the stale cite in
+//  ES-16's desc. Row scope via resolveEscortUserId (escorts.ts:138) plus the
+//  explicit ownership predicate at escorts.ts:3916-3919. No loads.rate, no
+//  shipper margin, no carrier identity, no other escort's position is read.
+//
+//  Sole author: Mike "Diego" Usoro / Eusorone Technologies, Inc.
+//
+
+import SwiftUI
+
+// MARK: - Wire projections (screen-local, private)
+
+/// escorts.ts:318-329. Every field is nullable on purpose; `available == false`
+/// is the honest no-data shape and must never render as a zero or a green.
+private struct ES29WindGate: Codable {
+    let gust: Double?
+    let gustUnit: String?
+    let status: String?           // go | caution | nogo | nil
+    let band: String?
+    let condition: String?
+    let weatherCode: Int?
+    let cautionMph: Double?
+    let nogoMph: Double?
+    let source: String?
+    let available: Bool?
+}
+
+/// escorts.ts:4006-4014.
+private struct ES29Leg: Codable, Identifiable {
+    let id: String
+    let label: String?
+    let origin: String?
+    let destination: String?
+    /// escorts.ts:3943 — the EVEN SPLIT. Decoded to be named and disqualified
+    /// on glass; it never sizes a panel.
+    let miles: Double?
+    let coverage: Double?
+    let status: String?           // completed | active | pending
+    let chips: [String]?
+    let wind: ES29WindGate?
+}
+
+private struct ES29Point: Codable { let lat: Double; let lng: Double }
+
+/// escorts.ts:4120-4126, returned as `corridor` at escorts.ts:4184.
+private struct ES29Geo: Codable { let polyline: [ES29Point]? }
+
+/// escorts.ts:4152-4166, returned as `windGate` at escorts.ts:4185.
+private struct ES29Envelope: Codable {
+    let gated: Bool?
+    let available: Bool?
+    let enterprise: Bool?         // weatherKit.ts:369 — false ⇒ forecast proxy
+    let source: String?
+    let overallStatus: String?
+    let peakGust: Double?
+    let cautionMph: Double?
+    let nogoMph: Double?
+    let nogoLegs: Int?
+    let cautionLegs: Int?
+    let fetchedAt: String?
+}
+
+/// escorts.ts:4168-4186. `routedMiles` is already `parseFloat`-ed server-side
+/// (escorts.ts:4173), so it arrives as a JSON NUMBER — unlike the raw
+/// `loads.distance` decimal column, which would serialize as a STRING. That
+/// distinction has killed three escort screens; it is typed here on purpose.
+private struct ES29CorridorDTO: Codable {
+    let id: String?
+    let loadNumber: String?
+    let origin: String?
+    let destination: String?
+    let routeName: String?
+    let routedMiles: Double?
+    let corridorCoverage: Double?
+    let status: String?
+    let legs: [ES29Leg]?
+    let legsCompleted: Int?
+    let legsTotal: Int?
+    let permitNumber: String?
+    let corridor: ES29Geo?
+    let windGate: ES29Envelope?
+}
+
+/// escorts.ts:3907 takes the id as a STRING. The stringify is deliberate — a
+/// silent 400 here would decode into a permanently empty campaign.
+private struct ES29IdInput: Encodable { let id: String }
+
+/// escorts.getActiveTrip · escorts.ts:2787 — only the assignment id is used.
+private struct ES29ActiveTripLite: Codable {
+    let assignmentId: Int?
+    let assignmentStatus: String?
+    let position: String?
+    let startedAt: String?
+}
+
+/// Everything allowed to survive a dead cell. The wind gates are DELIBERATELY
+/// absent from the cached envelope — see OFFLINE above.
+private struct ES29Snapshot: Codable {
+    var corridor: ES29CorridorDTO? = nil
+    var startedAt: String? = nil
+    var position: String? = nil
+}
+
+// MARK: - Panel model (the concertina's own arithmetic)
+
+private enum ES29WidthSource { case greatCircle, evenSplit }
+private enum ES29RunState { case run, running, ahead }
+
+private struct ES29Panel: Identifiable {
+    let id: String
+    let index: Int
+    let miles: Double
+    let widthSource: ES29WidthSource
+    let runState: ES29RunState
+    let coverage: Double
+    let gate: ES29WindGate?
+    let origin: String
+    let destination: String
+}
+
+/// Great-circle miles between two real coordinates. Arithmetic on DB columns —
+/// never a substitute for one, and labelled DERIVED wherever it reaches glass.
+private func es29GreatCircle(_ a: ES29Point, _ b: ES29Point) -> Double {
+    let r = 3958.7568
+    let dLat = (b.lat - a.lat) * .pi / 180
+    let dLng = (b.lng - a.lng) * .pi / 180
+    let la1 = a.lat * .pi / 180, la2 = b.lat * .pi / 180
+    let h = sin(dLat / 2) * sin(dLat / 2) + cos(la1) * cos(la2) * sin(dLng / 2) * sin(dLng / 2)
+    return 2 * r * asin(min(1, sqrt(h)))
+}
+
+/// THE AXIS, and the one piece of arithmetic this screen stands on.
+///
+/// Chains `corridor.polyline` into per-leg great-circle spans and normalises
+/// them to `routedMiles`. Three honest branches:
+///   1. polyline aligns to the leg chain and a leg's span is > 0 → measured.
+///   2. a leg's two points COINCIDE (a duplicated waypoint — how a staging or
+///      parking stop looks in loads.route today) → its great-circle span is
+///      0 mi, which cannot be its road distance. That leg falls back to the
+///      server's own even split and is flagged `.evenSplit` so the view draws
+///      it as the estimate it is.
+///   3. the polyline cannot be aligned at all (points were dropped by validPt,
+///      escorts.ts:4061) → EVERY panel falls back and the whole strip says so.
+private func es29Panels(_ c: ES29CorridorDTO) -> [ES29Panel] {
+    let legs = c.legs ?? []
+    guard !legs.isEmpty else { return [] }
+    let pts = c.corridor?.polyline ?? []
+    let total = c.routedMiles
+    let even = total.map { $0 / Double(legs.count) } ?? legs.first?.miles ?? 0
+
+    var raw: [Double?] = Array(repeating: nil, count: legs.count)
+    if pts.count == legs.count + 1 {
+        for i in 0..<legs.count {
+            let d = es29GreatCircle(pts[i], pts[i + 1])
+            raw[i] = d > 0.0001 ? d : nil
+        }
+    }
+    let measuredSum = raw.compactMap { $0 }.reduce(0, +)
+    let fallbackMi = even * Double(raw.filter { $0 == nil }.count)
+    let budget = max(0, (total ?? measuredSum + fallbackMi) - fallbackMi)
+    let k = measuredSum > 0 ? budget / measuredSum : 0
+
+    return legs.enumerated().map { (i, leg) in
+        ES29Panel(
+            id: leg.id,
+            index: i + 1,
+            miles: raw[i].map { $0 * k } ?? even,
+            widthSource: raw[i] == nil ? .evenSplit : .greatCircle,
+            runState: leg.status == "completed" ? .run
+                    : leg.status == "active" ? .running : .ahead,
+            coverage: leg.coverage ?? 0,
+            gate: leg.wind,
+            origin: leg.origin ?? "—",
+            destination: leg.destination ?? "—")
+    }
+}
+
+// MARK: - Screen body
+
+struct EscortMultiDayCampaignES29: View {
+
+    @Environment(\.palette) private var palette
+    @Environment(\.colorScheme) private var scheme
+    @EnvironmentObject private var session: EusoTripSession
+
+    private enum Phase { case loading, live, cached, empty, failed }
+
+    @State private var phase: Phase = .loading
+    @State private var snap = ES29Snapshot()
+    @State private var cacheAge: TimeInterval? = nil
+    /// True when the strip on glass came off disk. The gates are not cached,
+    /// so on a cached paint every bar drops to the dashed NO DATA register.
+    @State private var gatesSuppressed = false
+
+    private let cacheKey = "escort.es29.campaign"
+    private let cacheTTL: TimeInterval = 120          // READ_CACHED(120s)
+
+    private var isDark: Bool { scheme == .dark }
+    private var greenInk: Color  { isDark ? Color(hex: 0x34D399) : Color(hex: 0x0B7A4B) }
+    private var amberInk: Color  { isDark ? Color(hex: 0xFBBF24) : Color(hex: 0xB45309) }
+    private var dangerInk: Color { isDark ? Color(hex: 0xF87171) : Color(hex: 0xB91C1C) }
+    private var blueInk: Color   { isDark ? Color(hex: 0x60A5FA) : Color(hex: 0x1D4ED8) }
+
+    private var panels: [ES29Panel] { snap.corridor.map(es29Panels) ?? [] }
+    private var totalMiles: Double { panels.reduce(0) { $0 + $1.miles } }
+
+    /// Lifecycle-derived, because `coverageForStatus` (escorts.ts:232) is. The
+    /// subline and the strip's NOW label both say so; no fix is implied.
+    private var coveredMiles: Double {
+        panels.reduce(0) { acc, p in
+            switch p.runState {
+            case .run:     return acc + p.miles
+            case .running: return acc + p.miles * p.coverage
+            case .ahead:   return acc
+            }
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.s4) {
+            eyebrowRow
+            headlineRow
+            sublineRow
+            IridescentHairline()
+            metaRow
+            content
+            honestyLine
+        }
+        .padding(.horizontal, Space.s5)
+        .padding(.top, Space.s2)
+        .task { await refresh() }
+        .eusoRefreshable { await refresh() }
+    }
+
+    // MARK: Header
+
+    private var eyebrowRow: some View {
+        HStack {
+            EusoTripEyebrow(verbatim: "ESCORT · CAMPAIGN")
+                .font(EType.micro).tracking(1.0)
+                .foregroundStyle(LinearGradient.primary)
+            Spacer(minLength: Space.s2)
+            Text(snap.corridor?.id.map { "ESC-\($0)" } ?? "—")
+                .font(EType.mono(.micro)).tracking(0.6)
+                .foregroundStyle(palette.textTertiary)
+                .lineLimit(1)
+        }
+    }
+
+    private var headlineRow: some View {
+        Text(totalMiles > 0
+             ? "\(fmt1(coveredMiles)) of \(fmt1(totalMiles)) mi"
+             : "No corridor on this move")
+            .font(.system(size: 34, weight: .bold)).tracking(-0.6)
+            .monospacedDigit()
+            .foregroundStyle(palette.textPrimary)
+            .lineLimit(1).minimumScaleFactor(0.6)
+    }
+
+    private var sublineRow: some View {
+        Text(sublineText)
+            .font(EType.caption)
+            .foregroundStyle(palette.textSecondary)
+            .lineLimit(1).minimumScaleFactor(0.7)
+    }
+
+    private var sublineText: String {
+        guard let c = snap.corridor else { return "nothing decoded" }
+        let lane = [c.origin, c.destination].compactMap { $0 }.joined(separator: " → ")
+        let running = panels.firstIndex { $0.runState == .running }.map { $0 + 1 }
+        let leg = running.map { "leg \($0) of \(panels.count)" } ?? "\(panels.count) legs"
+        return [lane.isEmpty ? nil : lane, leg, "lifecycle-derived"]
+            .compactMap { $0 }.joined(separator: " · ")
+    }
+
+    /// The meta row lives BELOW the hairline on purpose. Pushing it between the
+    /// H1 and the hairline is what dragged the escort band's rules to y162/176/186.
+    private var metaRow: some View {
+        HStack(spacing: Space.s2) {
+            positionBadge(snap.position ?? "lead")
+            Text(snap.corridor?.loadNumber ?? "—")
+                .font(EType.mono(.caption))
+                .foregroundStyle(palette.textSecondary)
+                .lineLimit(1)
+            Spacer(minLength: Space.s1)
+            Text(cacheAge.map { EscortOfflineCache.stalenessLine(age: $0).uppercased() }
+                 ?? (session.user?.name ?? "escort"))
+                .font(EType.mono(.micro))
+                .foregroundStyle(cacheAge == nil ? palette.textTertiary : amberInk)
+                .lineLimit(1)
+        }
+    }
+
+    private func positionBadge(_ raw: String) -> some View {
+        Text(raw.uppercased())
+            .font(.system(size: 10, weight: .heavy)).tracking(0.5)
+            .foregroundStyle(blueInk)
+            .padding(.horizontal, 12).padding(.vertical, 4)
+            .background(Capsule().fill(Color(hex: 0x3B82F6).opacity(isDark ? 0.24 : 0.16)))
+    }
+
+    // MARK: Content switch
+
+    @ViewBuilder private var content: some View {
+        switch phase {
+        case .loading:
+            RoundedRectangle(cornerRadius: 20).fill(palette.bgCard).frame(height: 252)
+        case .empty:
+            honestVoid("No corridor for this assignment",
+                       "escorts.getCorridor returned null. That is the shape of an assignment this account does not own, or one whose load carries no route — a real answer, not a failure to draw.")
+        case .failed:
+            VStack(alignment: .leading, spacing: Space.s3) {
+                honestVoid("The corridor didn't load",
+                           "Nothing came back live and there is no saved copy inside 120 seconds, so no strip is drawn. A guessed strip on a distance axis would be worse than none.")
+                CTAButton(title: "Try again", action: { Task { await refresh() } })
+            }
+        case .live, .cached:
+            VStack(alignment: .leading, spacing: 20) {
+                concertinaBand
+                dayRegisterBand
+                flaggedLegsBand
+            }
+        }
+    }
+
+    private func honestVoid(_ t: String, _ b: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(t).font(EType.title).foregroundStyle(palette.textPrimary)
+            Text(b).font(EType.caption).foregroundStyle(palette.textSecondary)
+        }
+        .padding(Space.s4).frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 16).fill(palette.bgCard))
+    }
+
+    // MARK: 1 · the concertina — the ONE rimmed ActiveCard on this screen
+
+    private var concertinaBand: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            sectionRow("CONCERTINA · LEGS ON A DISTANCE AXIS",
+                       trailing: totalMiles > 0 ? "\(fmt1(totalMiles)) MI" : "—")
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .firstTextBaseline) {
+                    label9("PANEL WIDTH ∝ LEG DISTANCE")
+                    Spacer(minLength: 8)
+                    label9("DERIVED · NEVER PERSISTED")
+                }
+                mono7("GREAT-CIRCLE CHAIN OFF corridor.polyline escorts.ts:4120 · NOT THE EVEN SPLIT")
+                strip
+                windFooter
+            }
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: 20).fill(palette.bgCard)
+                    .overlay(RoundedRectangle(cornerRadius: 20)
+                        .strokeBorder(LinearGradient(colors: [Brand.blue.opacity(0.85),
+                                                              Brand.magenta.opacity(0.85)],
+                                                     startPoint: .topLeading,
+                                                     endPoint: .bottomTrailing),
+                                      lineWidth: 1.5)))
+        }
+    }
+
+    /// Width is allocated in exact proportion to each panel's miles off one
+    /// px-per-mile constant. That constant is the whole screen.
+    private var strip: some View {
+        GeometryReader { geo in
+            let scale = totalMiles > 0 ? geo.size.width / totalMiles : 0
+            HStack(spacing: 0) {
+                ForEach(panels) { p in
+                    panelView(p).frame(width: max(1, p.miles * scale))
+                }
+            }
+        }
+        .frame(height: 108)
+    }
+
+    @ViewBuilder private func panelView(_ p: ES29Panel) -> some View {
+        // Mountain / valley alternation is the concertina tell: odd panels
+        // stand 6 pt taller, so the top edge of the strip zig-zags.
+        let inset: CGFloat = p.index % 2 == 1 ? 0 : 6
+        VStack(spacing: 0) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 3).fill(panelFill(p))
+                if p.widthSource == .evenSplit {
+                    ES29HatchShape().stroke(palette.textTertiary.opacity(0.45), lineWidth: 1)
+                        .clipShape(RoundedRectangle(cornerRadius: 3))
+                }
+                if p.runState == .running {
+                    RoundedRectangle(cornerRadius: 3)
+                        .strokeBorder(Brand.blue.opacity(0.55), lineWidth: 1.2)
+                }
+                VStack(spacing: 2) {
+                    Text("L\(p.index)")
+                        .font(.system(size: 8, weight: .heavy)).tracking(0.4)
+                        .foregroundStyle(palette.textSecondary)
+                    Spacer(minLength: 0)
+                    Text(gustLabel(p))
+                        .font(.system(size: 12, weight: .semibold)).monospacedDigit()
+                        .foregroundStyle(gateInk(p))
+                    Text(runWord(p))
+                        .font(.system(size: 6, weight: .heavy)).tracking(0.5)
+                        .foregroundStyle(palette.textTertiary)
+                }
+                .padding(.vertical, 6)
+            }
+            .padding(.top, inset)
+            gateBar(p).frame(height: 6).padding(.top, 4)
+            Text(p.widthSource == .evenSplit ? "EVEN \(fmt1(p.miles))" : fmt1(p.miles))
+                .font(.system(size: p.widthSource == .evenSplit ? 6.5 : 7.5,
+                              weight: .semibold, design: .monospaced))
+                .monospacedDigit()
+                .foregroundStyle(p.widthSource == .evenSplit
+                                 ? palette.textTertiary : palette.textSecondary)
+                .lineLimit(1).minimumScaleFactor(0.6)
+                .padding(.top, 3)
+                .overlay(alignment: .bottom) {
+                    if p.widthSource == .evenSplit {
+                        Rectangle()
+                            .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
+                            .foregroundStyle(palette.textTertiary)
+                            .frame(height: 1).offset(y: 3)
+                    }
+                }
+        }
+        .padding(.horizontal, 0.5)
+    }
+
+    private func panelFill(_ p: ES29Panel) -> Color {
+        switch p.runState {
+        case .run:     return Brand.success.opacity(isDark ? 0.20 : 0.13)
+        case .running: return Brand.blue.opacity(isDark ? 0.22 : 0.16)
+        case .ahead:   return palette.textPrimary.opacity(isDark ? 0.07 : 0.04)
+        }
+    }
+
+    private func runWord(_ p: ES29Panel) -> String {
+        switch p.runState {
+        case .run:     return "RUN"
+        case .running: return "\(Int((p.coverage * 100).rounded()))%"
+        case .ahead:   return "AHEAD"
+        }
+    }
+
+    /// A suppressed (cached) or `available:false` gate is NEVER a zero and
+    /// NEVER a green — it is an em dash over a dashed outline.
+    private func liveGate(_ p: ES29Panel) -> ES29WindGate? {
+        guard !gatesSuppressed, let g = p.gate, g.available == true else { return nil }
+        return g
+    }
+    private func gustLabel(_ p: ES29Panel) -> String {
+        guard let g = liveGate(p), let mph = g.gust else { return "—" }
+        return String(Int(mph.rounded()))
+    }
+    private func gateInk(_ p: ES29Panel) -> Color {
+        switch liveGate(p)?.status {
+        case "go":      return greenInk
+        case "caution": return amberInk
+        case "nogo":    return dangerInk
+        default:        return palette.textTertiary
+        }
+    }
+    @ViewBuilder private func gateBar(_ p: ES29Panel) -> some View {
+        if let s = liveGate(p)?.status {
+            RoundedRectangle(cornerRadius: 3)
+                .fill(s == "nogo" ? Brand.danger : s == "caution" ? Brand.warning : Brand.success)
+        } else {
+            RoundedRectangle(cornerRadius: 3)
+                .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [2, 2]))
+                .foregroundStyle(palette.textTertiary)
+        }
+    }
+
+    private var windFooter: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .firstTextBaseline) {
+                label9("WIND GATE · \(fmt0(snap.corridor?.windGate?.cautionMph)) CAUTION / \(fmt0(snap.corridor?.windGate?.nogoMph)) NO-GO")
+                Spacer(minLength: 8)
+                // AMBER, always. Never LIVE, never success green.
+                Text(proxyTag)
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(amberInk)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+            }
+            mono7(gatesSuppressed
+                  ? "GATES NOT CACHED · SNAPSHOT ON GLASS · EVERY BAR IS NO DATA UNTIL A LIVE READ"
+                  : "LegWindGate escorts.ts:318 · FORECAST PROXY, NOT route_v4 · NEVER TAGGED LIVE")
+            if let u = panels.first(where: { $0.widthSource == .evenSplit }) {
+                mono7("L\(u.index) WAYPOINTS COINCIDE → 0 MI GREAT-CIRCLE · WIDTH = EVEN \(fmt1(u.miles))")
+            }
+            legend
+        }
+    }
+
+    private var proxyTag: String {
+        if gatesSuppressed { return "GATES SUPPRESSED · CACHED PAINT" }
+        let head = snap.corridor?.windGate?.enterprise == true ? "ROUTE_V4" : "PROXY"
+        guard let iso = snap.corridor?.windGate?.fetchedAt,
+              let d = ISO8601DateFormatter().date(from: iso) else { return "\(head) · AGE UNKNOWN" }
+        return "\(head) · \(Int(Date().timeIntervalSince(d) / 60)) MIN OLD"
+    }
+
+    private var legend: some View {
+        HStack(spacing: 14) {
+            key(Brand.success, "GO \(count("go"))")
+            key(Brand.warning, "CAUTION \(count("caution"))")
+            key(Brand.danger,  "NO-GO \(count("nogo"))")
+            key(nil,           "NO DATA \(noDataCount)")
+            Spacer(minLength: 0)
+        }
+    }
+    private func count(_ s: String) -> Int { panels.filter { liveGate($0)?.status == s }.count }
+    private var noDataCount: Int { panels.filter { liveGate($0)?.status == nil }.count }
+
+    @ViewBuilder private func key(_ c: Color?, _ t: String) -> some View {
+        HStack(spacing: 4) {
+            if let c {
+                RoundedRectangle(cornerRadius: 2).fill(c).frame(width: 12, height: 8)
+            } else {
+                RoundedRectangle(cornerRadius: 2)
+                    .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [2, 2]))
+                    .foregroundStyle(palette.textTertiary).frame(width: 12, height: 8)
+            }
+            Text(t).font(.system(size: 8, weight: .heavy)).tracking(0.4)
+                .foregroundStyle(palette.textSecondary)
+        }
+    }
+
+    // MARK: 2 · the day register that does not exist
+
+    private var dayRegisterBand: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            sectionRow("DAY REGISTER · PER-DIEM", trailing: "NOT MODELLED", trailingInk: dangerInk)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline) {
+                    label9("THE ONLY TWO REAL TIME ANCHORS")
+                    Spacer(minLength: 8)
+                    label9("escort_assignments")
+                }
+                Text("0 DAY BOUNDARIES · 0 OVERNIGHT RECORDS · \(max(0, panels.count - 1)) CREASES ARE LEG SEAMS")
+                    .font(.system(size: 7.5, weight: .heavy)).tracking(0.5)
+                    .foregroundStyle(palette.textTertiary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+                ZStack {
+                    Rectangle().fill(palette.textTertiary.opacity(0.35)).frame(height: 1)
+                    HStack {
+                        Circle().fill(palette.textPrimary).frame(width: 6, height: 6)
+                        Spacer()
+                        Circle().strokeBorder(style: StrokeStyle(lineWidth: 1.2, dash: [2, 2]))
+                            .foregroundStyle(palette.textTertiary).frame(width: 7, height: 7)
+                    }
+                }
+                .frame(height: 12)
+                HStack {
+                    Text("startedAt \(startedAtLabel)")
+                        .font(.system(size: 11, weight: .semibold)).monospacedDigit()
+                        .foregroundStyle(palette.textPrimary)
+                    Spacer(minLength: 8)
+                    Text("completedAt NULL")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(palette.textTertiary)
+                }
+                mono7("GREP server/+drizzle/ → multiDay 0 dayNumber 0 legIndex 0 escortCampaign 0 hotel 0")
+                mono7("stagingArea 0 · dailyReport 0 · windHold 0 · overnightSecuring 0 · escortLeg 0")
+                HStack(spacing: 10) {
+                    label9("PER-DIEM")
+                    Text("—")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(palette.textTertiary)
+                        .frame(width: 40, height: 16)
+                        .overlay(RoundedRectangle(cornerRadius: 4)
+                            .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
+                            .foregroundStyle(palette.textTertiary))
+                    Text("overnight_nights NULL · 0 WRITE SITES · NOT $0.00")
+                        .font(.system(size: 8, weight: .heavy)).tracking(0.4)
+                        .foregroundStyle(palette.textTertiary)
+                        .lineLimit(1).minimumScaleFactor(0.7)
+                }
+            }
+            .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 16)
+                .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+                .foregroundStyle(palette.borderSoft))
+        }
+    }
+
+    private var startedAtLabel: String {
+        guard let iso = snap.startedAt, let d = ISO8601DateFormatter().date(from: iso) else { return "NULL" }
+        let f = DateFormatter(); f.dateFormat = "HH:mm · dd MMM"
+        return f.string(from: d)
+    }
+
+    // MARK: 3 · flagged legs (the ListRow stack — 40×40 rx10 chips)
+
+    private var flagged: [ES29Panel] {
+        panels.filter { liveGate($0)?.status == "nogo" || liveGate($0) == nil }
+    }
+
+    private var flaggedLegsBand: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            sectionRow("FLAGGED LEGS · \(flagged.count) OF \(panels.count)",
+                       trailing: "NO HOLD VERB EXISTS")
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .firstTextBaseline) {
+                    label9("GATES THAT ARE NOT GO")
+                    Spacer(minLength: 8)
+                    label9("\(count("go")) GO · \(count("caution")) CAUTION NOT LISTED")
+                }
+                .padding(.bottom, 12)
+                // Max 7 rows before a section break is house law; the strip is
+                // the summary, this stack is only what is NOT GO.
+                ForEach(Array(flagged.prefix(7).enumerated()), id: \.element.id) { (i, p) in
+                    if i > 0 { Divider().overlay(palette.borderFaint).padding(.vertical, 8) }
+                    legRow(p)
+                }
+                if flagged.isEmpty {
+                    Text("Every gate returned GO. That is a real answer from a real sample, not an empty read.")
+                        .font(EType.caption).foregroundStyle(palette.textSecondary)
+                }
+            }
+            .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 16).fill(palette.bgCard)
+                .overlay(RoundedRectangle(cornerRadius: 16)
+                    .strokeBorder(palette.borderFaint, lineWidth: 1)))
+        }
+    }
+
+    private func legRow(_ p: ES29Panel) -> some View {
+        let noData = liveGate(p) == nil
+        return HStack(spacing: 12) {
+            RoundedRectangle(cornerRadius: 10)
+                .fill((noData ? palette.textTertiary : Brand.danger).opacity(isDark ? 0.22 : 0.14))
+                .frame(width: 40, height: 40)
+                .overlay(
+                    Group {
+                        if noData {
+                            RoundedRectangle(cornerRadius: 4)
+                                .strokeBorder(style: StrokeStyle(lineWidth: 1.6, dash: [3, 2]))
+                                .foregroundStyle(palette.textTertiary).frame(width: 20, height: 20)
+                        } else {
+                            Image(systemName: "wind").font(.system(size: 16, weight: .semibold))
+                                .foregroundStyle(dangerInk)
+                        }
+                    })
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Leg \(p.index) · \(p.origin) → \(p.destination)")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+                Text(noData
+                     ? (gatesSuppressed ? "cached paint · GATE NOT CACHED"
+                                        : "available:false · NO GUST RETURNED")
+                     : "\(gustLabel(p)) MPH GUST · \(p.widthSource == .evenSplit ? "SAMPLED AT NEAR END" : "SAMPLED AT FAR END")")
+                    .font(EType.mono(.caption)).tracking(0.4)
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+            }
+            Spacer(minLength: 8)
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(noData ? "NO DATA" : "WIND NO-GO")
+                    .font(.system(size: 11, weight: .bold)).tracking(0.6)
+                    .foregroundStyle(noData ? palette.textTertiary : dangerInk)
+                Text(noData ? "—" : "vs \(fmt0(p.gate?.nogoMph))")
+                    .font(.system(size: 14, weight: .bold)).monospacedDigit()
+                    .foregroundStyle(noData ? palette.textTertiary : palette.textPrimary)
+            }
+        }
+    }
+
+    // MARK: The honesty line — there is no CTA that writes anything
+
+    private var honestyLine: some View {
+        Text("READ-ONLY SURFACE · NO HOLD / DAY / PER-DIEM WRITE EXISTS · NOTHING IS QUEUED")
+            .font(.system(size: 7, weight: .semibold, design: .monospaced))
+            .foregroundStyle(palette.textTertiary)
+            .lineLimit(1).minimumScaleFactor(0.6)
+    }
+
+    // MARK: Shared bits
+
+    private func sectionRow(_ t: String, trailing: String, trailingInk: Color? = nil) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            label9(t)
+            Spacer(minLength: 8)
+            Text(trailing).font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                .foregroundStyle(trailingInk ?? palette.textTertiary)
+                .lineLimit(1).minimumScaleFactor(0.8)
+        }
+    }
+    private func label9(_ t: String) -> some View {
+        Text(t).font(.system(size: 9, weight: .heavy)).tracking(1.0)
+            .foregroundStyle(palette.textTertiary)
+            .lineLimit(1).minimumScaleFactor(0.8)
+    }
+    private func mono7(_ t: String) -> some View {
+        Text(t).font(.system(size: 7, weight: .semibold, design: .monospaced))
+            .foregroundStyle(palette.textTertiary)
+            .lineLimit(1).minimumScaleFactor(0.6)
+    }
+    private func fmt1(_ v: Double) -> String { String(format: "%.1f", v) }
+    private func fmt0(_ v: Double?) -> String { v.map { String(Int($0.rounded())) } ?? "—" }
+
+    // MARK: Load
+    //
+    // No `try?`-swallowed decode. A throw is caught explicitly, the cache is
+    // consulted once, and if neither answers the screen enters `.failed` and
+    // draws its own absence. A swallowed decode is how two escort screens
+    // shipped permanently empty.
+
+    private func refresh() async {
+        if snap.corridor == nil { await MainActor.run { phase = .loading } }
+        do {
+            let trip: ES29ActiveTripLite? = try await EusoTripAPI.shared
+                .queryNoInput("escorts.getActiveTrip")
+            guard let trip, let aid = trip.assignmentId else {
+                await MainActor.run { phase = .empty }
+                return
+            }
+            // escorts.ts:3907 wants a STRING id. Deliberate stringify.
+            let corridor: ES29CorridorDTO? = try await EusoTripAPI.shared
+                .query("escorts.getCorridor", input: ES29IdInput(id: String(aid)))
+            guard let corridor else {
+                // A null here is the ownership gate or a routeless load —
+                // an answer, not an error.
+                await MainActor.run { phase = .empty }
+                return
+            }
+            var next = ES29Snapshot()
+            next.corridor = corridor
+            next.startedAt = trip.startedAt
+            next.position = trip.position
+            EscortOfflineCache.store(next, key: cacheKey)
+            await MainActor.run {
+                snap = next
+                cacheAge = nil
+                gatesSuppressed = false
+                phase = (corridor.legs?.isEmpty ?? true) ? .empty : .live
+            }
+        } catch {
+            // One fall back to disk, then honest failure. The gates are
+            // suppressed on any cached paint — see OFFLINE.
+            if let hit = EscortOfflineCache.load(ES29Snapshot.self, key: cacheKey, ttl: cacheTTL) {
+                await MainActor.run {
+                    snap = hit.value
+                    cacheAge = hit.age
+                    gatesSuppressed = true
+                    phase = .cached
+                }
+            } else {
+                await MainActor.run { phase = .failed }
+            }
+        }
+    }
+}
+
+// MARK: - Hatch (the unmeasured-panel treatment)
+
+private struct ES29HatchShape: Shape {
+    var step: CGFloat = 6
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        var x = rect.minX - rect.height
+        while x < rect.maxX {
+            p.move(to: CGPoint(x: x, y: rect.maxY))
+            p.addLine(to: CGPoint(x: x + rect.height, y: rect.minY))
+            x += step
+        }
+        return p
+    }
+}
+
+// MARK: - Screen wrapper
+
+struct EscortMultiDayCampaignES29Screen: View {
+    let theme: Theme.Palette
+
+    var body: some View {
+        Shell(theme: theme) {
+            EscortMultiDayCampaignES29()
+        } nav: {
+            BottomNav(
+                leading: es29NavLeading(),
+                trailing: es29NavTrailing(),
+                orbState: .idle
+            )
+        }
+    }
+}
+
+private func es29NavLeading()  -> [NavSlot] { EscortNavRoute.leading(current: .assignments) }
+private func es29NavTrailing() -> [NavSlot] { EscortNavRoute.trailing(current: .assignments) }
+
+// MARK: - Previews
+//
+// `.task` does not run in the preview canvas, so both variants render in their
+// loading register without touching the network.
+
+#if DEBUG
+#Preview("ES-29 · Multi-Day Campaign · Light") {
+    EscortMultiDayCampaignES29Screen(theme: Theme.light)
+        .environmentObject(EusoTripSession())
+        .preferredColorScheme(.light)
+}
+
+#Preview("ES-29 · Multi-Day Campaign · Dark") {
+    EscortMultiDayCampaignES29Screen(theme: Theme.dark)
+        .environmentObject(EusoTripSession())
+        .preferredColorScheme(.dark)
+}
+#endif

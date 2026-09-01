@@ -17,6 +17,10 @@
 
 import Foundation
 import CryptoKit
+import CoreLocation
+#if canImport(JavaScriptCore)
+import JavaScriptCore
+#endif
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -59,9 +63,8 @@ enum EusoTripAPIError: Error, LocalizedError {
     /// The generic "Couldn't send counter. Try again." (and the cryptic
     /// `NSError.localizedDescription` "…EusoTripAPIError error 5…") masked
     /// the real reason behind every bid/counter failure — most notably the
-    /// build-753 case where a server `FORBIDDEN` (the DRIVER role lacking
-    /// `CREATE BID`, or a mode-eligibility gate) was promoted to
-    /// `.unauthenticated` and then swallowed by a `.trpcError`-only catch.
+    /// build-753 case where a permission failure was collapsed into a generic
+    /// retry. The transport now keeps 401 and 403 distinct.
     ///
     /// This collapses every error class into a specific, diagnosable line so
     /// the next failure tells the user WHY, never a dead-end retry. The
@@ -72,11 +75,7 @@ enum EusoTripAPIError: Error, LocalizedError {
     func bidActionMessage(noun: String = "counter") -> String {
         switch self {
         case .unauthenticated:
-            // A FORBIDDEN authorization failure also lands here (perform()
-            // promotes 401/403/UNAUTHORIZED/FORBIDDEN → .unauthenticated).
-            // Name BOTH possibilities honestly: an expired session OR an
-            // account that genuinely isn't permitted to bid this lane.
-            return "Your session expired, or this account isn't allowed to bid on this lane. Sign in again, or switch to a carrier / dispatcher account."
+            return "Your session expired. Sign in again to continue."
         case .trpcError(let m):
             return m
         case .forbidden(let m):
@@ -85,9 +84,8 @@ enum EusoTripAPIError: Error, LocalizedError {
             // lane restriction each carry their own reason).
             return m
         case .httpStatus(let code, _):
-            if code == 401 || code == 403 {
-                return "This account isn't allowed to bid on this lane (HTTP \(code))."
-            }
+            if code == 401 { return "Your session expired. Sign in again to continue." }
+            if code == 403 { return "This account is not permitted to complete this \(noun)." }
             return "EusoTrip returned error \(code). Your \(noun) was not confirmed — try again in a moment."
         case .decodingFailed:
             return "EusoTrip answered your \(noun), but the app could not read the reply, so it is not confirmed either way. Try again — if it persists, refresh from the load board."
@@ -290,6 +288,20 @@ private struct TRPCInputEnvelope<T: Encodable>: Encodable {
 /// so we declare this at file scope.)
 private struct TRPCEmptyInput: Encodable {}
 
+private struct PlainAPIErrorEnvelope: Decodable {
+    let error: String?
+}
+
+private struct IntegrationOAuthStartInput: Encodable {
+    let providerId: String
+    let confirmedRequirementKeys: [String]
+}
+
+private struct IntegrationOAuthStartWire: Decodable {
+    let authorizationUrl: String
+    let expiresAt: String
+}
+
 // MARK: - Client
 
 @MainActor
@@ -324,7 +336,7 @@ final class EusoTripAPI: ObservableObject {
     /// reached the backend — silent push-token drop.
     var pushDeviceToken: String?
 
-    // MARK: - Token / session refresh (auto re-auth on 401/403)
+    // MARK: - Token / session refresh (auto re-auth on 401)
     //
     // The high-leverage fix for the build-751 "Authentication required"
     // feedback (075 Safety Score, 082 Violations, and every sibling screen
@@ -334,25 +346,18 @@ final class EusoTripAPI: ObservableObject {
     // time. If the closure returns false (session is genuinely dead), the
     // original `.unauthenticated` error is surfaced honestly — no loop.
     //
-    // `EusoTripSession` installs the handler (it owns the keychain + the
-    // cookie-rehydrate path). EusoTrip's auth model has no dedicated
-    // refresh-token grant: the PRIMARY credential is the server-issued
-    // `app_session_id` cookie (see `authCookieSnapshotJSON`), persisted in
-    // the Keychain. The in-memory `HTTPCookieStorage.shared` jar can drop
-    // that cookie out from under a long-lived session (memory reclaim after
-    // a long background, App Service warm-up), which is exactly what makes a
-    // previously-authenticated screen start 401-ing. The refresh handler
-    // re-hydrates the persisted cookie back into the jar and re-validates
-    // with `auth.me` — if that succeeds the session was only "lost in the
-    // jar", and the retried request now carries the restored credential.
+    // `EusoTripSession` installs the handler because it owns Keychain and the
+    // cookie-rehydrate path. The handler calls the real `auth.refreshSession`
+    // contract without recursively entering this retry path, persists the
+    // rotated credential, and then validates it with `auth.me`.
     //
     // Returns true iff the session is confirmed live after the refresh.
-    var sessionRefreshHandler: (@MainActor () async -> Bool)?
+    var sessionRefreshHandler: (@MainActor () async throws -> Bool)?
 
     /// Coalesces concurrent refresh attempts: when 10 screens 401 at once we
     /// run ONE `auth.me` re-validation and every caller awaits the same
     /// result, rather than stampeding the backend with 10 re-auths.
-    private var inFlightRefresh: Task<Bool, Never>?
+    private var inFlightRefresh: Task<Bool, Error>?
 
     /// True while a refresh's own `auth.me` call is on the wire. The 401/403
     /// branches in `perform` check this and SKIP the refresh-retry while it's
@@ -364,20 +369,23 @@ final class EusoTripAPI: ObservableObject {
 
     /// Single-flight wrapper around `sessionRefreshHandler`. All 401-driven
     /// callers funnel through here so only one refresh runs at a time.
-    private func refreshSessionOnce() async -> Bool {
-        guard let handler = sessionRefreshHandler, !isRefreshing else { return false }
+    private func refreshSessionOnce() async throws -> Bool {
+        // Check the shared task before the recursion guard. Once the first
+        // caller enters its handler `isRefreshing` is true; checking that
+        // flag first made every sibling 401 skip the in-flight rotation and
+        // surface a false auth error instead of awaiting the same result.
         if let existing = inFlightRefresh {
-            return await existing.value
+            return try await existing.value
         }
-        let task = Task<Bool, Never> { @MainActor in
+        guard let handler = sessionRefreshHandler, !isRefreshing else { return false }
+        let task = Task<Bool, Error> { @MainActor in
             isRefreshing = true
             defer { isRefreshing = false }
-            return await handler()
+            return try await handler()
         }
         inFlightRefresh = task
-        let ok = await task.value
-        inFlightRefresh = nil
-        return ok
+        defer { inFlightRefresh = nil }
+        return try await task.value
     }
 
     /// Underlying URLSession (swap for tests). Wired to HTTPCookieStorage.shared
@@ -456,8 +464,9 @@ final class EusoTripAPI: ObservableObject {
     // `/auth.me` call.
     //
     // These helpers snapshot the auth cookies from the shared jar after
-    // sign-in, and rehydrate them into the jar on boot — with a far-
-    // future `expiresDate` so the jar won't drop them as session cookies.
+    // sign-in, and rehydrate them into the jar on boot. Cookie persistence
+    // does not extend the signed JWT's server-enforced expiry; renewal still
+    // goes through `auth.refreshSession` when the access credential is aging.
     // The bytes we persist are JSON-encoded HTTPCookie properties, which
     // HTTPCookie understands natively on restore.
 
@@ -488,6 +497,9 @@ final class EusoTripAPI: ObservableObject {
         // one-line name-swap on the backend, not an app-side change.
         let keep: Set<String> = [
             "app_session_id",
+            // Opaque rotating credential. It is restored into the cookie
+            // jar for `auth.refreshSession`, never copied into Bearer.
+            "app_refresh_token",
             "token", "auth_token", "session",
             "next-auth.session-token", "__Secure-next-auth.session-token",
             // CSRF companion if the backend ever adds one. Harmless
@@ -516,9 +528,8 @@ final class EusoTripAPI: ObservableObject {
     }
 
     /// Rehydrate auth cookies saved by `authCookieSnapshotJSON()` back
-    /// into the shared jar. Sets `expiresDate` to +1 year so the cookie
-    /// is treated as persistent (the original server-issued cookie was
-    /// Session-scoped, which is what caused the cross-launch 401). Safe
+    /// into the shared jar. Session cookies receive a local persistence date
+    /// so iOS retains the bytes, but that does not change JWT validity. Safe
     /// to call more than once; duplicates are overwritten by name+domain.
     func restoreAuthCookiesFromJSON(_ json: String) {
         guard let data = json.data(using: .utf8),
@@ -557,6 +568,32 @@ final class EusoTripAPI: ObservableObject {
             else { continue }
             store.setCookie(cookie)
         }
+    }
+
+    /// Capture a server-issued or rotated auth cookie as the current Bearer.
+    /// URLSession owns the cookie jar, but native callers also attach an
+    /// Authorization header; both copies must rotate together. This always
+    /// replaces a non-empty old token. The previous `if authToken == nil`
+    /// condition preserved an expired Bearer after `auth.refreshSession`.
+    private func captureSessionToken(from response: HTTPURLResponse, requestURL: URL?) {
+        guard let requestURL else { return }
+        let accepted = Set(["app_session_id", "token", "auth_token"])
+
+        var headerFields: [String: String] = [:]
+        for (key, value) in response.allHeaderFields {
+            headerFields[String(describing: key)] = String(describing: value)
+        }
+        var cookies = HTTPCookie.cookies(
+            withResponseHeaderFields: headerFields,
+            for: requestURL
+        )
+        cookies.append(contentsOf: HTTPCookieStorage.shared.cookies(for: requestURL) ?? [])
+
+        guard let token = cookies
+            .first(where: { accepted.contains($0.name) && !$0.value.isEmpty })?
+            .value
+        else { return }
+        self.authToken = token
     }
 
     // MARK: Routers
@@ -1115,6 +1152,13 @@ final class EusoTripAPI: ObservableObject {
     /// 211 Shipper Settings screen.
     lazy var loadTemplates: LoadTemplatesAPI = LoadTemplatesAPI(api: self)
 
+    /// `recurringLoadsRouter` — governed, server-scheduled load recurrence.
+    /// A recurring schedule is created from an eligible posted source load;
+    /// the backend freezes the source facts, owns every future occurrence,
+    /// reruns Industry + Port Intelligence evidence, and requires explicit
+    /// acknowledgement whenever fresh evidence demands review.
+    lazy var recurringLoads: RecurringLoadsAPI = RecurringLoadsAPI(api: self)
+
     /// `controlTowerRouter` — multi-modal supply-chain visibility
     /// (truck + rail + vessel). Backs the Shipper Control Tower
     /// brick (212), Catalyst dispatch overview, and any future
@@ -1444,8 +1488,9 @@ final class EusoTripAPI: ObservableObject {
     /// path itself calls. If `auth.me` were allowed to auto-refresh it would
     /// recurse into the refresh handler (and, during a refresh already in
     /// flight, self-await the coalescing task). A 401 here is the honest,
-    /// terminal "session is dead" signal that `boot()` / `revalidate()` /
-    /// `refreshSession()` each absorb with their own 2-strike logic.
+    /// terminal authority signal that `boot()` / `revalidate()` /
+    /// `refreshSession()` interpret only after the refresh grant has had its
+    /// chance. This prevents the probe from self-awaiting the coalesced task.
     func queryNoAutoRefresh<Output: Decodable, Input: Encodable>(
         _ path: String,
         input: Input
@@ -1514,17 +1559,36 @@ final class EusoTripAPI: ObservableObject {
         if let pushDeviceToken {
             req.setValue(pushDeviceToken, forHTTPHeaderField: "x-push-token")
         }
-        let (data, resp) = try await transportData(for: req)
-        guard let http = resp as? HTTPURLResponse else {
-            throw EusoTripAPIError.httpStatus(0, "No HTTP response")
+        let (data, _) = try await authenticatedRawRequest(req)
+        return data
+    }
+
+    /// Executes a hand-authored backend request through the same cookie jar,
+    /// bearer rotation, coalesced 401 recovery, and one-time replay contract
+    /// as typed procedures. Used for security-sensitive watch/SOS/convoy
+    /// bridges whose payloads are intentionally dynamic JSON.
+    func authenticatedRawRequest(
+        _ original: URLRequest
+    ) async throws -> (Data, HTTPURLResponse) {
+        guard let requestURL = original.url,
+              isFirstPartyURL(requestURL)
+        else { throw EusoTripAPIError.badURL }
+
+        var req = original
+        if let authToken {
+            req.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
         }
+        if let pushDeviceToken {
+            req.setValue(pushDeviceToken, forHTTPHeaderField: "x-push-token")
+        }
+        let (data, http) = try await dataWithSessionRecovery(req)
         guard (200..<300).contains(http.statusCode) else {
             throw EusoTripAPIError.httpStatus(
                 http.statusCode,
                 String(data: data, encoding: .utf8) ?? ""
             )
         }
-        return data
+        return (data, http)
     }
 
     /// Fetch raw bytes from an arbitrary HTTPS URL via the session
@@ -1539,7 +1603,8 @@ final class EusoTripAPI: ObservableObject {
         req.httpMethod = "GET"
         req.httpShouldHandleCookies = isFirstPartyURL(url)
         req.setValue("application/pdf,image/*,application/octet-stream,*/*", forHTTPHeaderField: "Accept")
-        if isFirstPartyURL(url) {
+        let isBackendURL = isFirstPartyURL(url)
+        if isBackendURL {
             if let token = authToken {
                 req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             }
@@ -1547,10 +1612,17 @@ final class EusoTripAPI: ObservableObject {
                 req.setValue(pushDeviceToken, forHTTPHeaderField: "x-push-token")
             }
         }
-        let (data, resp) = try await transportData(for: req)
-        guard let http = resp as? HTTPURLResponse else {
-            throw EusoTripAPIError.httpStatus(0, "No HTTP response")
+        let result: (Data, HTTPURLResponse)
+        if isBackendURL {
+            result = try await authenticatedRawRequest(req)
+        } else {
+            let (responseData, response) = try await transportData(for: req)
+            guard let responseHTTP = response as? HTTPURLResponse else {
+                throw EusoTripAPIError.httpStatus(0, "No HTTP response")
+            }
+            result = (responseData, responseHTTP)
         }
+        let (data, http) = result
         guard (200..<300).contains(http.statusCode) else {
             throw EusoTripAPIError.httpStatus(
                 http.statusCode,
@@ -1612,6 +1684,47 @@ final class EusoTripAPI: ObservableObject {
         return (data, http)
     }
 
+    /// Starts a native RIOS OAuth authorization transaction. The backend binds
+    /// tenant, user, provider, prerequisite confirmations, nonce, expiry, and
+    /// fixed native return target into signed state. iOS receives only the
+    /// short-lived provider authorization URL; provider tokens never transit
+    /// this client method or appear in the callback URL.
+    func startIntegrationOAuth(
+        providerId: String,
+        confirmedRequirementKeys: [String]
+    ) async throws -> URL {
+        guard let baseURL else { throw EusoTripAPIError.notConfigured }
+        let url = baseURL
+            .appendingPathComponent("api/integrations/oauth/native/start")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpShouldHandleCookies = true
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let authToken {
+            request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+        }
+        if let pushDeviceToken {
+            request.setValue(pushDeviceToken, forHTTPHeaderField: "x-push-token")
+        }
+        request.httpBody = try encoder.encode(IntegrationOAuthStartInput(
+            providerId: providerId,
+            confirmedRequirementKeys: confirmedRequirementKeys
+        ))
+
+        let wire: IntegrationOAuthStartWire = try await performPlainJSON(request)
+        guard wire.authorizationUrl.utf8.count <= 8_192,
+              let authorizationURL = URL(string: wire.authorizationUrl),
+              authorizationURL.scheme?.lowercased() == "https",
+              authorizationURL.user == nil,
+              authorizationURL.password == nil,
+              authorizationURL.fragment == nil,
+              authorizationURL.host != nil else {
+            throw EusoTripAPIError.badURL
+        }
+        return authorizationURL
+    }
+
     /// POST /api/trpc/<path>  body: {"json": <input>}
     func mutation<Output: Decodable, Input: Encodable>(
         _ path: String,
@@ -1649,7 +1762,7 @@ final class EusoTripAPI: ObservableObject {
             // already-encoded `{"json": …}` body carries the exact payload
             // we need to reconstruct the QueuedAction.
             if OfflineQueue.isNetworkUnreachable(error),
-               Self.enqueueIfOfflineEligible(path: path, body: body) {
+               try Self.enqueueIfOfflineEligible(path: path, body: body) {
                 throw EusoTripAPIError.queuedForOfflineReplay
             }
             throw error
@@ -1658,6 +1771,34 @@ final class EusoTripAPI: ObservableObject {
 
     func mutationNoInput<Output: Decodable>(_ path: String) async throws -> Output {
         return try await mutation(path, input: TRPCEmptyInput())
+    }
+
+    /// Auth-lifecycle mutation that deliberately bypasses the automatic
+    /// 401 recovery hook. `auth.refreshSession` is itself the recovery grant;
+    /// allowing it to invoke the hook would recurse into the coalesced task.
+    func mutationNoAutoRefresh<Output: Decodable, Input: Encodable>(
+        _ path: String,
+        input: Input
+    ) async throws -> Output {
+        guard let baseURL else { throw EusoTripAPIError.notConfigured }
+        let url = baseURL
+            .appendingPathComponent("api/trpc")
+            .appendingPathComponent(path)
+        let payload = TRPCInputEnvelope(json: input)
+        let body = try encoder.encode(payload)
+
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let authToken {
+            req.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+        }
+        if let pushDeviceToken {
+            req.setValue(pushDeviceToken, forHTTPHeaderField: "x-push-token")
+        }
+        req.httpBody = body
+        return try await perform(req, allowRefreshRetry: false)
     }
 
     // MARK: Breadcrumb trail (L13-6)
@@ -1676,6 +1817,136 @@ final class EusoTripAPI: ObservableObject {
         let altitude: Double?
         let batteryLevel: Double?
         let isCharging: Bool?
+        let odometer: Double?
+        let activity: String?
+        let isMock: Bool?
+
+        init(
+            lat: Double,
+            lng: Double,
+            timestamp: String,
+            speed: Double? = nil,
+            heading: Double? = nil,
+            accuracy: Double? = nil,
+            altitude: Double? = nil,
+            batteryLevel: Double? = nil,
+            isCharging: Bool? = nil,
+            odometer: Double? = nil,
+            activity: String? = nil,
+            isMock: Bool? = nil
+        ) {
+            self.lat = lat
+            self.lng = lng
+            self.timestamp = timestamp
+            self.speed = speed
+            self.heading = heading
+            self.accuracy = accuracy
+            self.altitude = altitude
+            self.batteryLevel = batteryLevel
+            self.isCharging = isCharging
+            self.odometer = odometer
+            self.activity = activity
+            self.isMock = isMock
+        }
+    }
+
+    struct LocationBatchProvenance: Decodable, Hashable, Sendable {
+        let state: String
+        let attested: Bool
+        let reason: String
+        let rewardQualityEligible: Bool
+    }
+
+    /// Server acknowledgement for one breadcrumb batch. Persistence, realtime
+    /// fan-out, vehicle projection, and reward-quality trust are separate facts.
+    /// Callers must never infer one from another.
+    struct LocationBatchReceipt: Decodable, Hashable, Sendable {
+        let ingested: Int?
+        let inserted: Int?
+        let skipped: Int?
+        let rateLimited: Bool?
+        let flagged: Int?
+        let livePingPersisted: Bool?
+        let livePingState: String?
+        let livePingReason: String?
+        let vehiclePositionState: String?
+        let provenance: LocationBatchProvenance?
+
+        var persistedCount: Int? { ingested ?? inserted }
+
+        /// True only for the complete, attested realtime-evidence chain.
+        /// Persisted claimant coordinates remain evidence, but are not promoted
+        /// to a trusted live position or reward proof.
+        var isRealtimeEvidence: Bool {
+            provenance?.attested == true
+                && provenance?.rewardQualityEligible == true
+                && livePingPersisted == true
+                && livePingState == "persisted"
+        }
+    }
+
+    /// Exact UTF-8 context reconstructed by the server's
+    /// `locationBatchAttestationPayload`. Arrays are intentional: their order
+    /// is the signature contract, and every absent optional occupies its slot
+    /// as JSON null instead of being omitted or replaced with a default.
+    static func locationBatchAttestationPayload(
+        locations: [LocationBatchPoint],
+        loadId: Int?,
+        vehicleId: Int?,
+        loadState: String?
+    ) throws -> Data {
+        func jsonNumber(_ value: Double?) -> Any {
+            value.map { NSNumber(value: $0) } ?? NSNull()
+        }
+        func jsonInteger(_ value: Int?) -> Any {
+            value.map { NSNumber(value: $0) } ?? NSNull()
+        }
+        func jsonBoolean(_ value: Bool?) -> Any {
+            value.map { NSNumber(value: $0) } ?? NSNull()
+        }
+        func jsonString(_ value: String?) -> Any {
+            value ?? NSNull()
+        }
+
+        let canonicalLocations: [[Any]] = locations.map { point in
+            [
+                NSNumber(value: point.lat),
+                NSNumber(value: point.lng),
+                point.timestamp,
+                jsonNumber(point.speed),
+                jsonNumber(point.heading),
+                jsonNumber(point.accuracy),
+                jsonNumber(point.altitude),
+                jsonNumber(point.batteryLevel),
+                jsonBoolean(point.isCharging),
+                jsonNumber(point.odometer),
+                jsonString(point.activity),
+                jsonBoolean(point.isMock),
+            ]
+        }
+        let canonicalPayload: [Any] = [
+            "location.telemetry.locationBatch.v1",
+            jsonInteger(loadId),
+            jsonInteger(vehicleId),
+            jsonString(loadState),
+            canonicalLocations,
+        ]
+        #if canImport(JavaScriptCore)
+        guard let context = JSContext(),
+              let stringify = context.evaluateScript("JSON.stringify"),
+              let payloadValue = JSValue(object: canonicalPayload, in: context),
+              let canonicalString = stringify.call(withArguments: [payloadValue as Any])?.toString(),
+              context.exception == nil else {
+            throw EusoTripAPIError.decodingFailed(
+                "Location telemetry could not be serialized with the server's JSON.stringify contract."
+            )
+        }
+        return Data(canonicalString.utf8)
+        #else
+        throw EusoTripAPIError.decodingFailed(
+            "JavaScriptCore is required for exact location attestation serialization."
+        )
+        #endif
     }
 
     /// Flush a batch (1-200) to `location.telemetry.locationBatch` →
@@ -1689,29 +1960,55 @@ final class EusoTripAPI: ObservableObject {
     /// true success path returns `{ingested, flagged}` (ingestBreadcrumbs).
     /// We decode BOTH shapes and throw a retryable error on the rate-limited
     /// ack so the caller re-buffers the batch instead of silently destroying
-    /// it (and never credits Haul coverage for unpersisted points). Returns
-    /// the persisted count.
+    /// it (and never credits Haul coverage for unpersisted points). The receipt
+    /// preserves persistence, realtime, and trust provenance independently.
     @discardableResult
-    func locationBatch(locations: [LocationBatchPoint], loadId: Int?) async throws -> Int {
+    func locationBatch(
+        locations: [LocationBatchPoint],
+        loadId: Int?,
+        vehicleId: Int? = nil,
+        loadState: String? = nil
+    ) async throws -> LocationBatchReceipt {
         struct Input: Encodable {
             let locations: [LocationBatchPoint]
             let loadId: Int?
+            let vehicleId: Int?
+            let loadState: String?
+            let _attest: AppAttestClient.AttestEnvelope?
         }
-        struct BatchAck: Decodable {
-            let ingested: Int?      // success-path field
-            let inserted: Int?      // rate-limited-path field (always 0 there)
-            let rateLimited: Bool?
+        guard (1...200).contains(locations.count) else {
+            throw EusoTripAPIError.trpcError(
+                "Location telemetry batches require between 1 and 200 observations."
+            )
         }
-        let ack: BatchAck = try await mutation(
+        let context = try Self.locationBatchAttestationPayload(
+            locations: locations,
+            loadId: loadId,
+            vehicleId: vehicleId,
+            loadState: loadState
+        )
+        let attest = await AppAttestClient.attestation(for: context)
+        let ack: LocationBatchReceipt = try await mutation(
             "location.telemetry.locationBatch",
-            input: Input(locations: locations, loadId: loadId)
+            input: Input(
+                locations: locations,
+                loadId: loadId,
+                vehicleId: vehicleId,
+                loadState: loadState,
+                _attest: attest
+            )
         )
         if ack.rateLimited == true {
             // Retryable: the server persisted NOTHING from this batch.
             throw EusoTripAPIError.trpcError(
                 "Location sync is catching up — your route trail will retry shortly.")
         }
-        return ack.ingested ?? ack.inserted ?? 0
+        guard ack.persistedCount != nil else {
+            throw EusoTripAPIError.decodingFailed(
+                "Location telemetry acknowledgement did not report persistence."
+            )
+        }
+        return ack
     }
 
     // MARK: Offline-outbox eligibility
@@ -1728,7 +2025,7 @@ final class EusoTripAPI: ObservableObject {
     // the enqueue runs synchronously on the main actor (no Task hop, no
     // ordering race against the throw that the caller awaits).
     @MainActor
-    static func enqueueIfOfflineEligible(path: String, body: Data) -> Bool {
+    static func enqueueIfOfflineEligible(path: String, body: Data) throws -> Bool {
         // Re-entrancy guard: when OfflineQueue.flush() replays a queued
         // action it goes right back through this same `mutation` path. If
         // the network dropped again mid-replay we must NOT enqueue a
@@ -1794,10 +2091,14 @@ final class EusoTripAPI: ObservableObject {
                 let geofenceId: Int; let action: String; let location: LatLng
                 let timestamp: String; let loadId: Int?; let geofenceType: String?
             }
-            guard let p = try? dec.decode(Env<In>.self, from: body).json else { return false }
+            guard let p = try? dec.decode(Env<In>.self, from: body).json,
+                  let coordinate = LatLongParser.validatedCoordinate(
+                      latitude: p.location.lat,
+                      longitude: p.location.lng
+                  ) else { return false }
             OfflineQueue.shared.enqueueGeofenceEvent(
                 geofenceId: p.geofenceId, action: p.action,
-                lat: p.location.lat, lng: p.location.lng,
+                lat: coordinate.latitude, lng: coordinate.longitude,
                 timestamp: p.timestamp, loadId: p.loadId, geofenceType: p.geofenceType
             )
             return true
@@ -1805,7 +2106,7 @@ final class EusoTripAPI: ObservableObject {
         case "gamification.postLobbyMessage":
             struct In: Decodable { let message: String; let idempotencyKey: String? }
             guard let p = try? dec.decode(Env<In>.self, from: body).json else { return false }
-            OfflineQueue.shared.enqueueHaulMessage(
+            try OfflineQueue.shared.enqueueHaulMessage(
                 message: p.message,
                 idempotencyKey: p.idempotencyKey
             )
@@ -1848,6 +2149,79 @@ final class EusoTripAPI: ObservableObject {
         return response
     }
 
+    /// Decodes first-party REST JSON while preserving the same one-shot session
+    /// refresh and 401/403 distinction as tRPC. This is intentionally separate
+    /// from `perform`: REST endpoints do not use the tRPC result envelope.
+    private func performPlainJSON<Output: Decodable>(
+        _ request: URLRequest,
+        allowRefreshRetry: Bool = true
+    ) async throws -> Output {
+        let (data, response) = try await transportData(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw EusoTripAPIError.httpStatus(0, "No HTTP response")
+        }
+        guard data.count <= 64 * 1_024 else {
+            throw EusoTripAPIError.httpStatus(http.statusCode, "Response exceeded the allowed size")
+        }
+        let serverError = (try? decoder.decode(PlainAPIErrorEnvelope.self, from: data))?.error
+
+        if http.statusCode == 401 {
+            if allowRefreshRetry, try await refreshSessionOnce() {
+                return try await performPlainJSON(reissue(request), allowRefreshRetry: false)
+            }
+            throw EusoTripAPIError.unauthenticated
+        }
+        if http.statusCode == 403 {
+            throw EusoTripAPIError.forbidden(
+                EusoTripAPIError.humanize(serverError ?? "You do not have access to this action.")
+            )
+        }
+        guard 200..<300 ~= http.statusCode else {
+            throw EusoTripAPIError.httpStatus(
+                http.statusCode,
+                EusoTripAPIError.humanize(serverError ?? "Request failed")
+            )
+        }
+        do {
+            return try decoder.decode(Output.self, from: data)
+        } catch {
+            throw EusoTripAPIError.decodingFailed(String(describing: error))
+        }
+    }
+
+    /// Raw backend bytes with the same silent 401 rotation/replay contract as
+    /// typed tRPC calls. Watch relays and authenticated document downloads used
+    /// to bypass `perform`, so they could still expose expiry failures after
+    /// every normal screen had recovered.
+    private func dataWithSessionRecovery(
+        _ req: URLRequest,
+        allowRefreshRetry: Bool = true
+    ) async throws -> (Data, HTTPURLResponse) {
+        let (data, response) = try await transportData(for: req)
+        guard let http = response as? HTTPURLResponse else {
+            throw EusoTripAPIError.httpStatus(0, "No HTTP response")
+        }
+        captureSessionToken(from: http, requestURL: req.url)
+
+        let envelopeUnauthorized: Bool = {
+            guard let error = try? decoder.decode(TRPCErrorEnvelope.self, from: data) else {
+                return false
+            }
+            let inner = error.error.json
+            return inner.data?.httpStatus == 401 || inner.data?.code == "UNAUTHORIZED"
+        }()
+        if http.statusCode == 401 || envelopeUnauthorized {
+            if allowRefreshRetry, try await refreshSessionOnce() {
+                return try await dataWithSessionRecovery(
+                    reissue(req),
+                    allowRefreshRetry: false
+                )
+            }
+            throw EusoTripAPIError.unauthenticated
+        }
+        return (data, http)
+    }
+
     /// `allowRefreshRetry` gates the ONE automatic re-auth + retry on a
     /// 401/403. Public entry points (`query`/`mutation`/…) call `perform`
     /// with it true; the single retry recurses with it false so a genuinely
@@ -1861,7 +2235,7 @@ final class EusoTripAPI: ObservableObject {
             throw EusoTripAPIError.httpStatus(0, "No HTTP response")
         }
 
-        // Extract Bearer token from Set-Cookie if the backend issued one.
+        // Extract or rotate the Bearer token whenever the backend issued one.
         // The web platform's canonical session cookie is `app_session_id`
         // (see `frontend/shared/const.ts:1` — `COOKIE_NAME` import in
         // routers.ts powers every res.cookie() call in the auth flow).
@@ -1871,15 +2245,7 @@ final class EusoTripAPI: ObservableObject {
         // the optional bind failed, and the next cold launch had no
         // bearer to restore — kicking the user back to SignIn on every
         // app start. Including `app_session_id` here closes that loop.
-        if let url = req.url,
-           let fields = http.allHeaderFields as? [String: String] {
-            let cookies = HTTPCookie.cookies(withResponseHeaderFields: fields, for: url)
-            for c in cookies where c.name == "app_session_id"
-                                || c.name == "token"
-                                || c.name == "auth_token" {
-                if self.authToken == nil { self.authToken = c.value }
-            }
-        }
+        captureSessionToken(from: http, requestURL: req.url)
 
         // tRPC can return 200 with an error envelope, or 4xx with an error envelope.
         // Decode the envelope FIRST (before the bare 401/403 check) so we can
@@ -1898,8 +2264,18 @@ final class EusoTripAPI: ObservableObject {
                 // gate off). 403/FORBIDDEN deliberately does NOT retry: a
                 // permission or compliance block is not a stale session, and
                 // re-auth would only hide the server's gate message.
-                if allowRefreshRetry, await refreshSessionOnce() {
-                    return try await perform(reissue(req), allowRefreshRetry: false)
+                if allowRefreshRetry {
+                    do {
+                        if try await refreshSessionOnce() {
+                            return try await perform(reissue(req), allowRefreshRetry: false)
+                        }
+                    } catch {
+                        // Renewal transport/server failures are not evidence
+                        // that the user signed out. Propagate the real failure
+                        // instead of painting every role surface with a false
+                        // red "Authentication required" banner.
+                        throw error
+                    }
                 }
                 throw EusoTripAPIError.unauthenticated
             }
@@ -1914,8 +2290,14 @@ final class EusoTripAPI: ObservableObject {
         }
 
         if http.statusCode == 401 {
-            if allowRefreshRetry, await refreshSessionOnce() {
-                return try await perform(reissue(req), allowRefreshRetry: false)
+            if allowRefreshRetry {
+                do {
+                    if try await refreshSessionOnce() {
+                        return try await perform(reissue(req), allowRefreshRetry: false)
+                    }
+                } catch {
+                    throw error
+                }
             }
             throw EusoTripAPIError.unauthenticated
         }
@@ -1954,6 +2336,115 @@ final class EusoTripAPI: ObservableObject {
     }
 }
 
+// MARK: - Truck detention commercial authority
+
+/// Commercial detention terms negotiated for a truck load. This value mirrors
+/// `truckDetentionNegotiatedTermsSchema` exactly. It intentionally carries no
+/// platform defaults: a missing term remains missing until a party supplies it.
+struct TruckDetentionNegotiatedTerms: Codable, Hashable, Sendable {
+    enum Currency: String, Codable, CaseIterable, Identifiable, Sendable {
+        case USD, CAD, MXN
+        var id: String { rawValue }
+    }
+
+    enum RoundingRule: String, Codable, CaseIterable, Identifiable, Sendable {
+        case ceiling, floor, nearest, exact
+        var id: String { rawValue }
+    }
+
+    enum SuspensionRule: String, Codable, CaseIterable, Identifiable, Sendable {
+        case included
+        case excluded
+        case sharedPercentage = "shared_percentage"
+        case eventAdjudicated = "event_adjudicated"
+        var id: String { rawValue }
+    }
+
+    let currency: Currency
+    let freeTimeMinutes: Int
+    /// Decimal currency amount per hour, preserved as a string so a negotiated
+    /// four-decimal rate never passes through binary floating-point.
+    let rateAmount: String
+    let billingIncrementMinutes: Int
+    let roundingRule: RoundingRule
+    let suspensionRule: SuspensionRule
+    let excludedShareBasisPoints: Int?
+
+    var validationMessage: String? {
+        guard (0...525_600).contains(freeTimeMinutes) else {
+            return "Free time must be between 0 and 525,600 minutes."
+        }
+        guard (1...10_080).contains(billingIncrementMinutes) else {
+            return "Billing increment must be between 1 and 10,080 minutes."
+        }
+        guard rateAmount.range(
+            of: #"^(0|[1-9]\d{0,9})(?:\.\d{1,4})?$"#,
+            options: .regularExpression
+        ) != nil,
+        let rate = Decimal(string: rateAmount, locale: Locale(identifier: "en_US_POSIX")),
+        rate > 0 else {
+            return "Detention rate must be greater than zero with no more than four decimal places."
+        }
+        if suspensionRule == .sharedPercentage {
+            guard let share = excludedShareBasisPoints, (1...9_999).contains(share) else {
+                return "Shared suspension terms require an excluded share between 0.01% and 99.99%."
+            }
+        } else if excludedShareBasisPoints != nil {
+            return "Only shared suspension terms may carry an excluded share."
+        }
+        return nil
+    }
+}
+
+/// Provenance attached to an adjudicated suspension allocation. The server
+/// verifies each evidence reference and its SHA-256 digest before calculation.
+struct TruckDetentionEvidence: Encodable, Hashable, Sendable {
+    enum SourceType: String, Encodable, Hashable, Sendable {
+        case geofenceEvent = "geofence_event"
+        case eldRecord = "eld_record"
+        case facilityRecord = "facility_record"
+        case carrierRecord = "carrier_record"
+        case shipperRecord = "shipper_record"
+        case weatherRecord = "weather_record"
+        case adjudication
+    }
+
+    let evidenceId: String
+    let sourceType: SourceType
+    let sourceReference: String
+    let observedAt: String
+    let sha256: String
+}
+
+/// Evidence-backed suspension allocation accepted by
+/// `detentionAccessorials.calculateDetention`.
+enum TruckDetentionSuspensionAllocation: Encodable, Hashable, Sendable {
+    case noneConfirmed
+    case applied(
+        confirmedSuspensionSeconds: Int,
+        adjudicatedExcludedSeconds: Int?,
+        evidence: [TruckDetentionEvidence]
+    )
+
+    private enum CodingKeys: String, CodingKey {
+        case state, confirmedSuspensionSeconds, adjudicatedExcludedSeconds, evidence
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .noneConfirmed:
+            try container.encode("none_confirmed", forKey: .state)
+            try container.encode([TruckDetentionEvidence](), forKey: .evidence)
+        case .applied(let confirmed, let excluded, let evidence):
+            try container.encode("applied", forKey: .state)
+            try container.encode(confirmed, forKey: .confirmedSuspensionSeconds)
+            try container.encode(excluded, forKey: .adjudicatedExcludedSeconds)
+            try container.encode(evidence, forKey: .evidence)
+        }
+    }
+}
+
 // MARK: - loadsRouter
 
 struct LoadsAPI {
@@ -1980,8 +2471,8 @@ struct LoadsAPI {
 
     /// `loadsRouter.getById` — full record.
     func getById(_ id: Int) async throws -> Load {
-        struct Input: Encodable { let id: Int }
-        return try await api.query("loads.getById", input: Input(id: id))
+        struct Input: Encodable { let id: String }
+        return try await api.query("loads.getById", input: Input(id: String(id)))
     }
 
     // MARK: - GatePass (Driver · 038 At Receiver Gate · PIN credential)
@@ -2200,6 +2691,10 @@ struct LoadsAPI {
         let currency: String?
         let suggestedRateMin: Double?
         let suggestedRateMax: Double?
+        /// Signed truck detention authority currently attached to the load.
+        /// Nil is meaningful: either this is not a truck load or no verified
+        /// authority exists. Callers must not manufacture replacement terms.
+        let truckDetentionTerms: TruckDetentionNegotiatedTerms?
 
         // ─── 2026-05-17 · Multi-modal payload (migration 0307) ───
         // Optional on the wire so older deploys (missing columns)
@@ -2216,6 +2711,14 @@ struct LoadsAPI {
         let worldscalePct: String?    // DECIMAL → String on the wire
         let worldscaleFlat: String?
         let rateUnit: String?
+
+        // ─── Cross-border country codes ───
+        // `loads.getById` spreads the whole load row (loads.ts:1418
+        // `...load`), so these ISO-2 columns are already on the wire.
+        // Optional because a domestic-only deploy may not populate them —
+        // nil stays nil so a caller can tell "not recorded" from "US".
+        let originCountry: String?
+        let destCountry: String?
 
         // Misc
         let notes: String?
@@ -2250,9 +2753,10 @@ struct LoadsAPI {
             case distance, distanceUnit
             case pickupDate, deliveryDate, estimatedDeliveryDate, actualDeliveryDate
             case createdAt, updatedAt, biddingEnds
-            case rate, currency, suggestedRateMin, suggestedRateMax
+            case rate, currency, suggestedRateMin, suggestedRateMax, truckDetentionTerms
             case transportMode, vesselClass, multiVehicleCount, permitType
             case originPort, destPort, worldscalePct, worldscaleFlat, rateUnit
+            case originCountry, destCountry
             case notes
             case palletCount
             case driver, catalyst, shipper
@@ -2320,6 +2824,10 @@ struct LoadsAPI {
             self.currency         = try c.decodeIfPresent(String.self, forKey: .currency)
             self.suggestedRateMin = try c.decodeIfPresent(Double.self, forKey: .suggestedRateMin)
             self.suggestedRateMax = try c.decodeIfPresent(Double.self, forKey: .suggestedRateMax)
+            self.truckDetentionTerms = try c.decodeIfPresent(
+                TruckDetentionNegotiatedTerms.self,
+                forKey: .truckDetentionTerms
+            )
 
             // Multi-modal
             self.transportMode     = try c.decodeIfPresent(String.self, forKey: .transportMode)
@@ -2331,6 +2839,8 @@ struct LoadsAPI {
             self.worldscalePct     = try c.decodeIfPresent(String.self, forKey: .worldscalePct)
             self.worldscaleFlat    = try c.decodeIfPresent(String.self, forKey: .worldscaleFlat)
             self.rateUnit          = try c.decodeIfPresent(String.self, forKey: .rateUnit)
+            self.originCountry     = try c.decodeIfPresent(String.self, forKey: .originCountry)
+            self.destCountry       = try c.decodeIfPresent(String.self, forKey: .destCountry)
 
             // Misc
             self.notes = try c.decodeIfPresent(String.self, forKey: .notes)
@@ -2358,14 +2868,20 @@ struct LoadsAPI {
         /// real coords; a 0,0 null-island pair is treated as absent —
         /// never rendered as a point.
         private static func mergeCityState(echo: LoadCityState?, coord: LoadCoord?) -> LoadCityState? {
-            guard let lat = coord?.lat, let lng = coord?.lng,
-                  !(lat == 0 && lng == 0) else { return echo }
+            guard let coordinate = LatLongParser.validatedCoordinate(
+                latitude: coord?.lat,
+                longitude: coord?.lng
+            ) else { return echo }
             guard let e = echo else {
-                return LoadCityState(city: nil, state: nil, lat: lat, lng: lng,
+                return LoadCityState(city: nil, state: nil,
+                                     lat: coordinate.latitude, lng: coordinate.longitude,
                                      address: nil, zipCode: nil)
             }
-            if let eLat = e.lat, let eLng = e.lng, !(eLat == 0 && eLng == 0) { return e }
-            return LoadCityState(city: e.city, state: e.state, lat: lat, lng: lng,
+            if LatLongParser.validatedCoordinate(latitude: e.lat, longitude: e.lng) != nil {
+                return e
+            }
+            return LoadCityState(city: e.city, state: e.state,
+                                 lat: coordinate.latitude, lng: coordinate.longitude,
                                  address: e.address, zipCode: e.zipCode)
         }
 
@@ -2919,6 +3435,7 @@ struct LoadsAPI {
             )
         )
     }
+
 }
 
 // MARK: - hosRouter
@@ -2945,8 +3462,8 @@ struct HOSAPI {
     /// - `lat` / `lon`: optional GPS fix at the moment of the transition
     /// - `location`: human-readable place string ("Meridian, MS") that
     ///   the backend writes into `hos_logs.location_description` per
-    ///   §395.8(h). Required by the tRPC schema — pass "" when the
-    ///   device has no recent fix rather than dropping the field.
+    ///   §395.8(h). The client fails closed when no current location is
+    ///   available rather than writing a false or blank location.
     /// - `odometer`: truck odometer in miles if the ELD has one
     /// - `remark`: optional §395.8(j) annotation
     /// - `loadId`: optional load currently on the driver's board
@@ -2997,9 +3514,15 @@ struct HOSAPI {
             let notes: String?
             let idempotencyKey: String?
         }
+        let normalizedLocation = location.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedLocation.isEmpty else {
+            throw EusoTripAPIError.trpcError(
+                "A current duty-status location is required before this HOS event can be recorded."
+            )
+        }
         let input = Input(
             newStatus: status.rawValue,
-            location: location,
+            location: normalizedLocation,
             notes: remark,
             idempotencyKey: idempotencyKey
         )
@@ -3044,12 +3567,18 @@ struct HOSAPI {
         )
         var dayRows: [HOSDailyLog] = []
         var flatSegments: [HOSLogEntry] = []
+        var undecodableRows = 0
         for row in rows {
             switch row {
             case .day(let d):    dayRows.append(d)
             case .entry(let e):  flatSegments.append(e)
-            case .undecodable:   continue
+            case .undecodable:   undecodableRows += 1
             }
+        }
+        guard undecodableRows == 0 else {
+            throw EusoTripAPIError.decodingFailed(
+                "HOS history contained \(undecodableRows) row(s) with an unsupported shape"
+            )
         }
         if !flatSegments.isEmpty {
             let grouped = Dictionary(grouping: flatSegments) { String($0.startAt.prefix(10)) }
@@ -3058,11 +3587,16 @@ struct HOSAPI {
                 let sums = HOSDailyLog.summedMinutes(segments)
                 dayRows.append(HOSDailyLog(
                     date: day,
+                    trackingState: nil,
+                    tracked: nil,
+                    source: nil,
+                    freshness: nil,
                     entries: segments.sorted { $0.startAt < $1.startAt },
-                    drivingMinutes: sums.driving,
-                    onDutyMinutes: sums.onDutyNotDriving,
+                    malformedEntryCount: 0,
+                    drivingMinutes: sums?.driving,
+                    onDutyMinutes: sums?.onDutyNotDriving,
                     milesDriven: nil,
-                    certified: false,
+                    certified: nil,
                     certifiedAt: nil,
                     signature: nil,
                     violations: []
@@ -3177,10 +3711,32 @@ struct AuthAPI {
     /// Runs WITHOUT the API's 401/403 auto-refresh+retry: `auth.me` is the
     /// session probe the refresh path itself calls, so it must surface a real
     /// UNAUTHORIZED honestly instead of recursing into another refresh. The
-    /// session's `boot()` / `revalidate()` / `refreshSession()` each apply
-    /// their own 2-strike absorption around this call.
+    /// session's `boot()` / `revalidate()` / `refreshSession()` decide whether
+    /// that 401 is authoritative or merely follows a transient renewal error.
     func me() async throws -> AuthUser {
         try await api.queryNoAutoRefresh("auth.me", input: TRPCEmptyInput())
+    }
+
+    /// `auth.refreshSession` — rotates the opaque httpOnly refresh cookie and
+    /// issues a fresh access cookie. This call intentionally bypasses the
+    /// normal 401 recovery hook because it is the recovery operation itself.
+    /// No user id or refresh secret is sent in JSON; URLSession attaches the
+    /// restored `app_refresh_token` cookie.
+    func renewSession() async throws -> SessionRefreshResponse {
+        try await api.mutationNoAutoRefresh(
+            "auth.refreshSession",
+            input: TRPCEmptyInput()
+        )
+    }
+
+    /// Rolling-deploy compatibility for servers that have the former
+    /// protected access-token renewal procedure but not `refreshSession` yet.
+    /// Never used after an authoritative UNAUTHORIZED from the new route.
+    func renewLegacyAccessSession() async throws -> GenericMessageResponse {
+        try await api.mutationNoAutoRefresh(
+            "auth.refreshToken",
+            input: TRPCEmptyInput()
+        )
     }
 
     /// `auth.logout` — POST mutation.  Clears server-side session and cookies.
@@ -5779,7 +6335,7 @@ struct DriversAPI {
         let status: String
         let currentLoad: String?
         let location: DriverProfileLocation
-        let hoursRemaining: Double
+        let hoursRemaining: Double?
         let safetyScore: Double
         let rating: Double
         let hireDate: String
@@ -5858,7 +6414,11 @@ struct DriversAPI {
             let hazmatEndorsement: Bool?
             let status: String?
         }
-        let intId = Int(driverId) ?? 0
+        guard let intId = Int(driverId), intId > 0 else {
+            throw EusoTripAPIError.decodingFailed(
+                "Driver ID must be a positive integer before compliance data can be updated."
+            )
+        }
         return try await api.mutation(
             "drivers.update",
             input: Input(
@@ -6818,10 +7378,12 @@ struct MessagingAPI {
     /// type == "request" just posts a `payment_request` card.
     func sendPayment(
         conversationId: String,
-        amount: Double,
+        amountCents: Int,
         currency: String = "USD",
         note: String? = nil,
-        type: String = "send"
+        type: String = "send",
+        recipientUserId: Int? = nil,
+        idempotencyKey: UUID
     ) async throws -> MessagingPaymentResult {
         struct Input: Encodable {
             let conversationId: String
@@ -6829,15 +7391,36 @@ struct MessagingAPI {
             let currency: String
             let note: String?
             let type: String
+            let recipientUserId: Int?
+            let idempotencyKey: String
+            let _attest: AppAttestClient.AttestEnvelope?
         }
+        let canonicalCurrency = currency.uppercased()
+        let canonicalType = type.lowercased()
+        let trimmedNote = note?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !conversationId.isEmpty,
+              amountCents > 0,
+              amountCents <= 5_000_000,
+              ["USD", "CAD", "MXN"].contains(canonicalCurrency),
+              ["send", "request"].contains(canonicalType),
+              (trimmedNote?.count ?? 0) <= 500 else {
+            throw EusoTripAPIError.trpcError("Enter a valid transfer of up to $50,000.00 with a memo under 500 characters.")
+        }
+        let requestKey = idempotencyKey.uuidString.lowercased()
+        let attest = await AppAttestClient.attestation(
+            forContext: "messages.sendPayment|\(conversationId)|\(amountCents)|\(canonicalCurrency)|\(canonicalType)|\(requestKey)"
+        )
         return try await api.mutation(
             "messages.sendPayment",
             input: Input(
                 conversationId: conversationId,
-                amount: amount,
-                currency: currency,
-                note: note,
-                type: type
+                amount: Double(amountCents) / 100,
+                currency: canonicalCurrency,
+                note: trimmedNote?.isEmpty == false ? trimmedNote : nil,
+                type: canonicalType,
+                recipientUserId: recipientUserId,
+                idempotencyKey: requestKey,
+                _attest: attest
             )
         )
     }
@@ -7105,23 +7688,28 @@ struct HotZoneCenter: Decodable, Hashable {
     let lat: Double
     let lng: Double
 
-    init(lat: Double, lng: Double) { self.lat = lat; self.lng = lng }
-
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        // Coordinates ship as JSON numbers but harden against a stale row that
-        // serialized them as numeric strings — a bad coord must not fail the feed.
-        self.lat = Self.coord(c, .lat)
-        self.lng = Self.coord(c, .lng)
+        guard let coordinate = LatLongParser.validatedCoordinate(
+            latitude: Self.coord(c, .lat),
+            longitude: Self.coord(c, .lng)
+        ) else {
+            throw DecodingError.dataCorrupted(
+                .init(codingPath: c.codingPath,
+                      debugDescription: "Hot-zone center must be a complete, valid coordinate pair")
+            )
+        }
+        self.lat = coordinate.latitude
+        self.lng = coordinate.longitude
     }
 
-    private static func coord(_ c: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys) -> Double {
+    private static func coord(_ c: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys) -> Double? {
         // `try?` flattens `decodeIfPresent`'s `Double?` to a single optional,
         // so one `if let` fully unwraps a present, well-typed value.
         if let d = try? c.decodeIfPresent(Double.self, forKey: key) { return d }
         if let i = try? c.decodeIfPresent(Int.self, forKey: key) { return Double(i) }
         if let s = try? c.decodeIfPresent(String.self, forKey: key), let d = Double(s) { return d }
-        return 0
+        return nil
     }
 
     enum CodingKeys: String, CodingKey { case lat, lng }
@@ -7132,7 +7720,7 @@ struct HotZoneEntry: Decodable, Identifiable, Equatable {
     let zoneId: String
     let zoneName: String
     let state: String
-    let center: HotZoneCenter
+    let center: HotZoneCenter?
     let radius: Double
     let demandLevel: String          // "CRITICAL" | "HIGH" | "ELEVATED"
     let demandTrend: String?         // "RISING" | "STABLE" | "FALLING"
@@ -7219,8 +7807,7 @@ struct HotZoneEntry: Decodable, Identifiable, Equatable {
         self.zoneId    = (try? c.decodeIfPresent(String.self, forKey: .zoneId)) ?? nil ?? ""
         self.zoneName  = (try? c.decodeIfPresent(String.self, forKey: .zoneName)) ?? nil ?? ""
         self.state     = (try? c.decodeIfPresent(String.self, forKey: .state)) ?? nil ?? ""
-        self.center    = ((try? c.decodeIfPresent(HotZoneCenter.self, forKey: .center)) ?? nil)
-                          ?? HotZoneCenter(lat: 0, lng: 0)
+        self.center    = (try? c.decodeIfPresent(HotZoneCenter.self, forKey: .center)) ?? nil
         self.radius    = Self.leniencyDoubleAny(c, .radius) ?? 0
         self.demandLevel = (try? c.decodeIfPresent(String.self, forKey: .demandLevel)) ?? nil ?? "ELEVATED"
 
@@ -7449,7 +8036,7 @@ struct ColdZoneEntry: Decodable, Identifiable, Equatable {
         let zoneId = try c.decodeIfPresent(String.self, forKey: .zoneId)
         let name   = try c.decodeIfPresent(String.self, forKey: .name)
         let state  = try c.decodeIfPresent(String.self, forKey: .state)
-        let center = try c.decodeIfPresent(HotZoneCenter.self, forKey: .center)
+        let center = (try? c.decodeIfPresent(HotZoneCenter.self, forKey: .center)) ?? nil
         let radius = try c.decodeIfPresent(Double.self, forKey: .radius)
         // LENIENT numeric decode (P1) — a single malformed scalar (server
         // shipped a number as a quoted string, or a stray null) must NOT fail
@@ -7673,9 +8260,9 @@ struct ELDConnectionStatus: Decodable, Equatable {
     let connected: Bool
     /// Slugs currently in `connected` status for this company.
     let providers: [String]
-    /// Primary provider — matches `providers.first` when connected, or
-    /// "none" when disconnected. Used by the MeEldView footer pill.
-    let provider: String
+    /// Primary provider — matches `providers.first` when one is verified.
+    /// Nil means no current provider is proven; it is never synthesized.
+    let provider: String?
 }
 
 /// `eld.getProviderConfig` output. Currently Samsara-centric (per router
@@ -7909,10 +8496,10 @@ struct WalletExtrasAPI {
         let amount: Double
         let payoutMethodId: String
         let instant: Bool
-        /// Optional App Attest assertion (PR #107 `assertHighTrust`). Omitted
-        /// (Swift's synthesized encoder drops nil) on simulator / older
-        /// devices / any attestation failure — the server fail-opens. Never
-        /// blocks the payout.
+        let idempotencyKey: String
+        /// Optional on the wire because unsupported devices cannot create an
+        /// assertion. Production policy is strict: the server rejects a
+        /// missing or unverifiable assertion instead of weakening a payout.
         let _attest: AppAttestClient.AttestEnvelope?
     }
 
@@ -7938,21 +8525,33 @@ struct WalletExtrasAPI {
     func requestPayout(
         amount: Double,
         payoutMethodId: String,
-        instant: Bool = false
+        instant: Bool = false,
+        idempotencyKey: UUID
     ) async throws -> RequestPayoutAck {
-        // Best-effort hardware attestation. `nil` on simulator / unsupported
-        // device / any failure → payout proceeds un-attested (server fail-
-        // opens). Pinned to the payout amount + method so the assertion is
-        // bound to THIS request.
+        let cents = amount * 100
+        let roundedCents = cents.rounded()
+        guard amount.isFinite,
+              roundedCents >= 100,
+              roundedCents <= 100_000_000,
+              abs(cents - roundedCents) < 0.000_001 else {
+            throw EusoTripAPIError.trpcError("Enter a payout amount from $1.00 to $1,000,000.00 with no more than two decimal places.")
+        }
+
+        let grossCents = Int(roundedCents)
+        let requestKey = idempotencyKey.uuidString.lowercased()
+        // This string must remain byte-for-byte identical to wallet.ts. It
+        // binds the Secure Enclave assertion to the amount, destination,
+        // payout speed, and durable retry identity for this request.
         let attest = await AppAttestClient.attestation(
-            forContext: "wallet.requestPayout|\(amount)|\(payoutMethodId)|\(instant)"
+            forContext: "wallet.requestPayout|\(grossCents)|\(payoutMethodId)|\(instant ? 1 : 0)|\(requestKey)"
         )
         return try await api.mutation(
             "wallet.requestPayout",
             input: RequestPayoutInput(
-                amount: amount,
+                amount: Double(grossCents) / 100,
                 payoutMethodId: payoutMethodId,
                 instant: instant,
+                idempotencyKey: requestKey,
                 _attest: attest
             )
         )
@@ -8261,6 +8860,37 @@ struct GamificationAPI {
         )
     }
 
+    // MARK: The Haul lobby
+
+    struct LobbyMessage: Decodable, Identifiable, Equatable {
+        let id: Int
+        let userId: Int
+        let userName: String?
+        let userRole: String?
+        let message: String
+        let messageType: String?
+        let isPinned: Bool?
+        let createdAt: String?
+        let isOwn: Bool
+    }
+
+    struct LobbyMessagesResponse: Decodable {
+        let messages: [LobbyMessage]
+        let total: Int
+    }
+
+    private struct LobbyMessagesInput: Encodable {
+        let limit: Int
+        let before: String?
+    }
+
+    func getLobbyMessages(limit: Int = 50, before: String? = nil) async throws -> LobbyMessagesResponse {
+        try await api.query(
+            "gamification.getLobbyMessages",
+            input: LobbyMessagesInput(limit: limit, before: before)
+        )
+    }
+
     // MARK: Mutations
 
     struct MissionActionResult: Decodable {
@@ -8274,6 +8904,8 @@ struct GamificationAPI {
         let messageId: Int?
         let createdAt: String?
         let replayed: Bool?
+        let realtimeAccepted: Bool?
+        let message: LobbyMessage?
     }
 
     private struct LobbyPostInput: Encodable {
@@ -8288,10 +8920,30 @@ struct GamificationAPI {
         message: String,
         idempotencyKey: String = UUID().uuidString
     ) async throws -> LobbyPostResult {
-        try await api.mutation(
+        let canonicalMessage = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        let result: LobbyPostResult = try await api.mutation(
             "gamification.postLobbyMessage",
-            input: LobbyPostInput(message: message, idempotencyKey: idempotencyKey)
+            input: LobbyPostInput(message: canonicalMessage, idempotencyKey: idempotencyKey)
         )
+        guard result.success else { return result }
+        guard let messageId = result.messageId,
+              messageId > 0,
+              let createdAt = result.createdAt,
+              !createdAt.isEmpty,
+              let committed = result.message,
+              committed.id == messageId,
+              committed.message == canonicalMessage,
+              committed.createdAt == createdAt,
+              committed.isOwn,
+              committed.userId > 0,
+              committed.userRole?.isEmpty == false,
+              committed.messageType == "chat"
+        else {
+            throw EusoTripAPIError.trpcError(
+                "The server did not confirm the committed Haul message. Your draft is still here; retry with the same delivery identity."
+            )
+        }
+        return result
     }
 
     struct MissionIdInput: Encodable { let missionId: Int }
@@ -8332,73 +8984,54 @@ struct GamificationAPI {
 
     // MARK: HERE outcome intake
 
-    struct HereOutcomeCorridor: Encodable, Hashable {
-        let corridor: String
-        let kilometres: Double
-    }
-
     struct HereEngagementOutcome: Encodable, Hashable {
         let sourceId: String
         let kind: String
-        let title: String?
-        let xp: Int?
-        let points: Int?
-        let reason: String?
     }
 
     struct HereOutcomeInput: Encodable {
-        let newStates: [String]?
-        let newMetros: [String]?
-        let corridors: [HereOutcomeCorridor]?
-        let poiVisitsByCategory: [String: Int]?
-        let evSessions: Int?
-        let evDelivery: Bool?
-        let adZoneKm: Double?
-        let isaClean: Bool?
-        let safetyScore: Double?
-        let routeDeviationPct: Double?
-        let geofenceArrivalOnTime: Bool?
-        let engagement: HereEngagementOutcome?
+        let clientEventId: String
+        let loadId: Int?
+        let engagement: HereEngagementOutcome
+    }
+
+    struct HereOutcomeSource: Decodable, Hashable {
+        let id: String
+        let kind: String
+        let provider: String
+        let title: String?
+    }
+
+    struct HereOutcomeReward: Decodable, Hashable {
+        let standingXp: Int
+        let haulMiles: Int
+        let cashState: String
+        let policyVersion: String
     }
 
     struct HereOutcomeResponse: Decodable {
         let success: Bool
         let acceptedAt: String?
-        let statsRecorded: Bool?
-        let badgesAwarded: [String]?
-        let engagementCredited: Bool?
-        let eventsFired: Int?
+        let accepted: Bool
+        let status: String
+        let reasonCode: String
+        let message: String
+        let source: HereOutcomeSource
+        let reward: HereOutcomeReward
+        let replayed: Bool
     }
 
     @discardableResult
     func recordHereDeliveryOutcome(
-        newStates: [String]? = nil,
-        newMetros: [String]? = nil,
-        corridors: [HereOutcomeCorridor]? = nil,
-        poiVisitsByCategory: [String: Int]? = nil,
-        evSessions: Int? = nil,
-        evDelivery: Bool? = nil,
-        adZoneKm: Double? = nil,
-        isaClean: Bool? = nil,
-        safetyScore: Double? = nil,
-        routeDeviationPct: Double? = nil,
-        geofenceArrivalOnTime: Bool? = nil,
-        engagement: HereEngagementOutcome? = nil
+        clientEventId: UUID = UUID(),
+        loadId: Int?,
+        engagement: HereEngagementOutcome
     ) async throws -> HereOutcomeResponse {
         try await api.mutation(
             "gamification.recordHereDeliveryOutcome",
             input: HereOutcomeInput(
-                newStates: newStates,
-                newMetros: newMetros,
-                corridors: corridors,
-                poiVisitsByCategory: poiVisitsByCategory,
-                evSessions: evSessions,
-                evDelivery: evDelivery,
-                adZoneKm: adZoneKm,
-                isaClean: isaClean,
-                safetyScore: safetyScore,
-                routeDeviationPct: routeDeviationPct,
-                geofenceArrivalOnTime: geofenceArrivalOnTime,
+                clientEventId: clientEventId.uuidString.lowercased(),
+                loadId: loadId,
                 engagement: engagement
             )
         )
@@ -8824,10 +9457,15 @@ struct InterStateAPI {
         let alertType: String
         /// "low" | "medium" | "high" | "critical"
         let severity: String
-        let latitude: Double
-        let longitude: Double
+        let latitude: Double?
+        let longitude: Double?
+        let locationSource: String
+        let locationAccuracyMeters: Double?
+        let locationCapturedAt: String?
+        let addressHint: String?
         let description: String?
         let stateCode: String?
+        let idempotencyKey: String
         /// Optional App Attest assertion (PR #107 `assertHighTrust`). Omitted
         /// (nil → dropped by the encoder) on simulator / older device / any
         /// attestation failure — server fail-opens. A life-safety SOS must
@@ -8836,7 +9474,7 @@ struct InterStateAPI {
     }
 
     /// `interstate.createSOS` — raises a life-safety SOS for the given
-    /// load at the supplied coordinates. `alertType` must be one of:
+    /// load with the best available location evidence. `alertType` must be one of:
     /// medical | mechanical | hazmat_spill | accident | threat | weather
     /// | other. `severity` must be one of: low | medium | high | critical
     /// (server default high). Returns the `sosId` + the count of users
@@ -8845,17 +9483,39 @@ struct InterStateAPI {
         loadId: Int,
         alertType: String,
         severity: String = "high",
-        latitude: Double,
-        longitude: Double,
+        latitude: Double? = nil,
+        longitude: Double? = nil,
+        locationSource: String = "not_recorded",
+        locationAccuracyMeters: Double? = nil,
+        locationCapturedAt: Date? = nil,
+        addressHint: String? = nil,
         description: String? = nil,
-        stateCode: String? = nil
+        stateCode: String? = nil,
+        idempotencyKey: String
     ) async throws -> CreateSOSAck {
+        let explicitCoordinate = LatLongParser.validatedCoordinate(
+            latitude: latitude,
+            longitude: longitude
+        )
+        let hintedCoordinate = addressHint.flatMap(LatLongParser.parse)
+        let coordinate = explicitCoordinate ?? hintedCoordinate
+        let effectiveSource: String = {
+            guard coordinate != nil else { return "not_recorded" }
+            return explicitCoordinate == nil ? "manual_coordinates" : locationSource
+        }()
+        let effectiveAccuracy = coordinate == nil
+            ? nil
+            : locationAccuracyMeters.flatMap {
+                $0.isFinite && (0...100_000).contains($0) ? $0 : nil
+            }
+        let effectiveCapturedAt = coordinate == nil ? nil : locationCapturedAt
+
         // Best-effort hardware attestation. A life-safety SOS must never be
         // delayed or blocked: `nil` on simulator / unsupported device / any
         // failure (incl. the 6s timeout) → SOS fires un-attested and the
         // server fail-opens. Bound to the load + coordinates.
         let attest = await AppAttestClient.attestation(
-            forContext: "interstate.createSOS|\(loadId)|\(alertType)|\(latitude)|\(longitude)"
+            forContext: "interstate.createSOS|\(loadId)|\(alertType)|\(coordinate.map { String($0.latitude) } ?? "unknown")|\(coordinate.map { String($0.longitude) } ?? "unknown")"
         )
         return try await api.mutation(
             "interstate.createSOS",
@@ -8863,10 +9523,15 @@ struct InterStateAPI {
                 loadId: loadId,
                 alertType: alertType,
                 severity: severity,
-                latitude: latitude,
-                longitude: longitude,
+                latitude: coordinate?.latitude,
+                longitude: coordinate?.longitude,
+                locationSource: effectiveSource,
+                locationAccuracyMeters: effectiveAccuracy,
+                locationCapturedAt: effectiveCapturedAt.map { ISO8601DateFormatter().string(from: $0) },
+                addressHint: addressHint,
                 description: description,
                 stateCode: stateCode,
+                idempotencyKey: idempotencyKey,
                 _attest: attest
             )
         )
@@ -8972,7 +9637,13 @@ struct ZeunMechanicsAPI {
     }
 
     func reportBreakdown(_ input: ReportBreakdownInput) async throws -> ReportBreakdownAck {
-        try await api.mutation("zeunMechanics.reportBreakdown", input: input)
+        guard LatLongParser.validatedCoordinate(
+            latitude: input.latitude,
+            longitude: input.longitude
+        ) != nil else {
+            throw EusoTripAPIError.trpcError("A valid current location is required to report a breakdown.")
+        }
+        return try await api.mutation("zeunMechanics.reportBreakdown", input: input)
     }
 
     // MARK: - diagnosePart (vision part-diagnosis)
@@ -9069,7 +9740,7 @@ struct ZeunMechanicsAPI {
     struct ReportIdInput: Encodable { let reportId: Int }
 
     func getBreakdownReport(reportId: Int) async throws -> BreakdownDetail? {
-        try await api.query(
+        return try await api.query(
             "zeunMechanics.getBreakdownReport",
             input: ReportIdInput(reportId: reportId)
         )
@@ -9138,10 +9809,16 @@ struct ZeunMechanicsAPI {
         providerType: String? = nil,
         maxResults: Int = 10
     ) async throws -> [ProviderRow] {
-        try await api.query(
+        guard let coordinate = LatLongParser.validatedCoordinate(
+            latitude: latitude,
+            longitude: longitude
+        ) else {
+            throw EusoTripAPIError.trpcError("A valid current location is required to find nearby providers.")
+        }
+        return try await api.query(
             "zeunMechanics.findProviders",
             input: FindProvidersInput(
-                latitude: latitude, longitude: longitude,
+                latitude: coordinate.latitude, longitude: coordinate.longitude,
                 radiusMiles: radiusMiles, providerType: providerType,
                 maxResults: maxResults
             )
@@ -9161,11 +9838,22 @@ struct ZeunMechanicsAPI {
         longitude: Double? = nil,
         radiusMiles: Double = 50
     ) async throws -> [ProviderRow] {
-        try await api.query(
+        let coordinate: CLLocationCoordinate2D?
+        if latitude == nil, longitude == nil {
+            coordinate = nil
+        } else if let validated = LatLongParser.validatedCoordinate(
+            latitude: latitude,
+            longitude: longitude
+        ) {
+            coordinate = validated
+        } else {
+            throw EusoTripAPIError.trpcError("Location must be a complete, valid coordinate pair.")
+        }
+        return try await api.query(
             "zeunMechanics.searchProviders",
             input: SearchProvidersInput(
-                query: query, latitude: latitude,
-                longitude: longitude, radiusMiles: radiusMiles
+                query: query, latitude: coordinate?.latitude,
+                longitude: coordinate?.longitude, radiusMiles: radiusMiles
             )
         )
     }
@@ -10237,9 +10925,10 @@ struct DocumentManagementAPI {
 //   • getAssigned             — the driver's currently assigned truck
 //                               (id/unitNumber/year/make/model/vin/
 //                               licensePlate/odometer/fuelLevel/status).
-//                               Server returns all-zero sentinel fields
-//                               (id="" etc.) when no assignment exists —
-//                               the store folds that into `.empty`.
+//                               Current servers return an explicit assignment
+//                               discriminator and optional vehicle. Legacy
+//                               empty-id envelopes remain decode-compatible,
+//                               but missing telemetry is always nil, never zero.
 //   • getMaintenanceHistory   — maintenance work-order records keyed to
 //                               the driver's company. Returns {records:
 //                               [{id, description, type, date, status}]}.
@@ -10269,10 +10958,24 @@ struct VehicleAPI {
     /// `vehicle` object; on legacy deploys the same keys live flat at the
     /// envelope top level, so `AssignedVehicle` can decode either layout.
     ///
-    /// Note on odometer / fuelLevel: the backend hardcodes these to 0 until
-    /// telematics ships (vehicle.ts:138). The view surfaces them only when
-    /// non-zero and renders a disclosure footer otherwise. No fake data.
+    /// Vehicle identity and optional telemetry. A zero odometer, fuel level,
+    /// speed, or heading can be a real observation; a missing observation is
+    /// nil and must never be decoded or displayed as zero. Per-metric source
+    /// and freshness travel with the values when the backend has evidence.
     struct VehicleRecord: Decodable, Equatable {
+        struct MetricProvenance: Decodable, Equatable {
+            let tracked: Bool?
+            let source: String?
+            let freshness: String?
+        }
+
+        struct TelemetryProvenance: Decodable, Equatable {
+            let odometer: MetricProvenance?
+            let fuelLevel: MetricProvenance?
+            let speed: MetricProvenance?
+            let heading: MetricProvenance?
+        }
+
         let id: String
         let unitNumber: String
         let year: Int
@@ -10280,12 +10983,16 @@ struct VehicleAPI {
         let model: String
         let vin: String
         let licensePlate: String
-        let odometer: Int
-        let fuelLevel: Double
+        let odometer: Double?
+        let fuelLevel: Double?
+        let speed: Double?
+        let heading: Double?
+        let provenance: TelemetryProvenance?
         let status: String
 
         private enum Keys: String, CodingKey {
-            case id, unitNumber, year, make, model, vin, licensePlate, odometer, fuelLevel, status
+            case id, unitNumber, year, make, model, vin, licensePlate
+            case odometer, fuelLevel, speed, heading, telemetry, provenance, status
         }
 
         /// Decode a String tolerantly (String | Int | Double → String), "" on absence.
@@ -10306,12 +11013,17 @@ struct VehicleAPI {
             if let s = try? c.decodeIfPresent(String.self, forKey: k), let i = Int(s) { return i }
             return 0
         }
-        /// Decode a Double tolerantly (Double | Int | String → Double), 0 on absence.
-        private static func dbl(_ c: KeyedDecodingContainer<Keys>, _ k: Keys) -> Double {
-            if let d = try? c.decodeIfPresent(Double.self, forKey: k) { return d }
+        /// Decode a telemetry number tolerantly (Double | Int | numeric
+        /// String), preserving null/absence/malformed/non-finite values as nil.
+        private static func optionalDouble(
+            _ c: KeyedDecodingContainer<Keys>,
+            _ k: Keys
+        ) -> Double? {
+            if let d = try? c.decodeIfPresent(Double.self, forKey: k), d.isFinite { return d }
             if let i = try? c.decodeIfPresent(Int.self, forKey: k) { return Double(i) }
-            if let s = try? c.decodeIfPresent(String.self, forKey: k), let d = Double(s) { return d }
-            return 0
+            if let s = try? c.decodeIfPresent(String.self, forKey: k),
+               let d = Double(s), d.isFinite { return d }
+            return nil
         }
 
         init(from decoder: Decoder) throws {
@@ -10323,8 +11035,12 @@ struct VehicleAPI {
             self.model        = Self.str(c, .model)
             self.vin          = Self.str(c, .vin)
             self.licensePlate = Self.str(c, .licensePlate)
-            self.odometer     = Self.int(c, .odometer)
-            self.fuelLevel    = Self.dbl(c, .fuelLevel)   // Int or Double on the wire
+            self.odometer     = Self.optionalDouble(c, .odometer)
+            self.fuelLevel    = Self.optionalDouble(c, .fuelLevel)
+            self.speed        = Self.optionalDouble(c, .speed)
+            self.heading      = Self.optionalDouble(c, .heading)
+            self.provenance   = try c.decodeIfPresent(TelemetryProvenance.self, forKey: .provenance)
+                ?? c.decodeIfPresent(TelemetryProvenance.self, forKey: .telemetry)
             self.status       = Self.str(c, .status)
         }
     }
@@ -10392,8 +11108,11 @@ struct VehicleAPI {
         var model: String       { vehicle?.model ?? "" }
         var vin: String         { vehicle?.vin ?? "" }
         var licensePlate: String { vehicle?.licensePlate ?? "" }
-        var odometer: Int       { vehicle?.odometer ?? 0 }
-        var fuelLevel: Double   { vehicle?.fuelLevel ?? 0 }
+        var odometer: Double?   { vehicle?.odometer }
+        var fuelLevel: Double?  { vehicle?.fuelLevel }
+        var speed: Double?      { vehicle?.speed }
+        var heading: Double?    { vehicle?.heading }
+        var telemetryProvenance: VehicleRecord.TelemetryProvenance? { vehicle?.provenance }
         /// The vehicle's own operating status ("active" / "maintenance" / …).
         /// Unchanged String type so the existing status chips keep working.
         var status: String      { vehicle?.status ?? "" }
@@ -12207,11 +12926,10 @@ struct CsaScoresAPI {
 //
 // Mirrors `frontend/server/routers/esangCoach.ts`. Today's iOS-
 // relevant surface is the `forDriver` query, which returns 3–10
-// coaching items personalized to the driver's role + vertical +
-// recent compliance signal. The server may ship either a Gemini-
-// authored payload or the deterministic fallback when Gemini is
-// down; the iOS client treats both identically — we render whatever
-// items the server returned.
+// advisory coaching items grounded in a server-collected 30-day
+// compliance signal. The response names its generation source and
+// carries the evidence counts separately, so an unavailable model is
+// never rendered as a personalized fallback pack.
 
 struct eSangCoachAPI {
     unowned let api: EusoTripAPI
@@ -12219,9 +12937,6 @@ struct eSangCoachAPI {
     // MARK: Server-shaped input / output
 
     struct ForDriverInput: Encodable {
-        let recentIncidents: Int?
-        let recentViolations: Int?
-        let recentNearMisses: Int?
         let focus: String?
         let limit: Int?
     }
@@ -12249,12 +12964,28 @@ struct eSangCoachAPI {
     }
 
     struct ForDriverResponse: Decodable, Equatable {
+        struct Evidence: Decodable, Equatable {
+            let windowDays: Int
+            let incidents: Int
+            let violations: Int
+            let nearMisses: Int
+            let hazmatEndorsed: Bool?
+            let driverProfileMatched: Bool
+            let collectedAt: Double
+        }
+
         let items: [CoachingItem]
         /// Echoed user role from ctx; used by the view to render the
         /// "For <role-label>" subheader.
         let role: String
         /// "truck" | "rail" | "vessel" | "cross"
         let vertical: String
+        /// `ai_grounded` when ESANG generated against the evidence
+        /// object; `unavailable` when the verified signal loaded but
+        /// generation did not. Optional during rolling deployment.
+        let source: String?
+        let advisory: Bool?
+        let evidence: Evidence?
         /// Server clock epoch millis. UI shows relative time
         /// ("Updated 2m ago") keyed off this.
         let generatedAt: Double
@@ -12268,18 +12999,12 @@ struct eSangCoachAPI {
     /// omit to let the server pull the signed-in driver's own
     /// counts from the database.
     func forDriver(
-        recentIncidents: Int? = nil,
-        recentViolations: Int? = nil,
-        recentNearMisses: Int? = nil,
         focus: String? = nil,
         limit: Int = 6
     ) async throws -> ForDriverResponse {
         try await api.query(
             "esangCoach.forDriver",
             input: ForDriverInput(
-                recentIncidents: recentIncidents,
-                recentViolations: recentViolations,
-                recentNearMisses: recentNearMisses,
                 focus: (focus?.isEmpty ?? true) ? nil : focus,
                 limit: limit
             )
@@ -12858,12 +13583,13 @@ struct DetentionAPI {
 
     struct Dashboard: Decodable, Equatable {
         let activeDetentions: Int
-        let avgWaitMinutes: Int
-        let totalCharges: Double
+        let avgWaitMinutes: Int?
+        let totalCharges: Double?
         let totalEvents: Int
-        let billedAmount: Double
-        let collectedAmount: Double
-        let disputedAmount: Double
+        let billedAmount: Double?
+        let collectedAmount: Double?
+        let disputedAmount: Double?
+        let currency: TruckDetentionNegotiatedTerms.Currency?
     }
 
     /// `detentionAccessorials.getDetentionDashboard` — counters for
@@ -12885,13 +13611,21 @@ struct DetentionAPI {
     struct ActiveDetention: Decodable, Equatable, Identifiable {
         let id: Int
         let loadId: Int?
-        let facilityName: String
-        let locationType: String
+        let facilityName: String?
+        let locationType: String?
         let arrivalTime: String?
-        let elapsedMinutes: Int
-        let freeTimeMinutes: Int
-        let billableMinutes: Int
-        let currentCharge: Double
+        let elapsedMinutes: Int?
+        let freeTimeMinutes: Int?
+        let billableMinutes: Int?
+        let currentCharge: Double?
+        let currency: TruckDetentionNegotiatedTerms.Currency?
+        let commercialState: String
+        let sourceReference: String?
+        let sourceHashSha256: String?
+        let status: String?
+        let carrierName: String?
+        let shipperName: String?
+        let cargoType: String?
     }
 
     struct ActiveDetentionsResponse: Decodable {
@@ -12918,14 +13652,20 @@ struct DetentionAPI {
     struct HistoryEvent: Decodable, Equatable, Identifiable {
         let id: Int
         let loadId: Int?
-        let facilityName: String
-        let locationType: String
+        let facilityName: String?
+        let locationType: String?
         let arrivalTime: String?
         let departureTime: String?
-        let totalMinutes: Int
-        let freeTimeMinutes: Int
-        let billableMinutes: Int
-        let totalCharge: Double
+        let totalMinutes: Int?
+        let freeTimeMinutes: Int?
+        let billableMinutes: Int?
+        let totalCharge: Double?
+        let currency: TruckDetentionNegotiatedTerms.Currency?
+        let commercialState: String
+        let calculationVersionId: Int?
+        let sourceReference: String?
+        let sourceHashSha256: String?
+        let calculationHashSha256: String?
         let status: String?
         let billingStatus: String?
         let carrierName: String?
@@ -12959,64 +13699,53 @@ struct DetentionAPI {
         )
     }
 
-    // MARK: - Calculate detention (live ticker)
+    // MARK: - Calculate detention
 
-    /// One escalation tier of the server's detention math.
-    /// Mirrors `detentionAccessorials.ts:380` field-for-field:
-    /// `{ tier, hours, rate, subtotal }`.
-    struct DetentionTier: Decodable, Equatable {
-        let tier: String
-        let hours: Double
-        let rate: Double
-        let subtotal: Double
-    }
-
-    /// Result of `detentionAccessorials.calculateDetention`. Mirrors the
-    /// router return shape verbatim (`detentionAccessorials.ts:393-403`):
-    /// echoed arrival/departure ISO + the computed dwell math + the
-    /// per-tier rate breakdown. The driver lifecycle 024 Unloading
-    /// screen reads `totalCharge` as the running $ and
-    /// `tierBreakdown.first?.rate` as the live $/hr.
+    /// Verified, load-bound calculation. Commercial terms and their signed
+    /// source are resolved on the server from `loadId`; the client supplies
+    /// only observed times and an evidence-backed suspension allocation.
     struct DetentionCalc: Decodable, Equatable {
-        let arrivalTime: String
-        let departureTime: String
+        let grossDwellMilliseconds: Int
+        let confirmedSuspensionMilliseconds: Int
+        let excludedSuspensionMilliseconds: Int
+        let netDwellMilliseconds: Int
+        let freeTimeMilliseconds: Int
+        let netChargeableMilliseconds: Int
+        let billedMilliseconds: Int
+        let calculatedAmount: String
         let totalMinutes: Int
-        let freeTimeMinutes: Int
         let billableMinutes: Int
-        let billableHours: Double
         let totalCharge: Double
-        let tierBreakdown: [DetentionTier]
-        let cargoType: String
+        let currency: TruckDetentionNegotiatedTerms.Currency
+        let rateConfirmationId: Int
+        let sourceReference: String
+        let sourceHashSha256: String
+        let termsHashSha256: String
+        let allocationEvidenceHashSha256: String
     }
 
-    /// `detentionAccessorials.calculateDetention` - pure server-side
-    /// detention math (free time -> billable hours -> escalation tiers).
-    /// No DB write; a stateless calculator the 024 Unloading ticker
-    /// calls with the real arrival anchor + the load's cargo type.
-    /// `departureTime` omitted -> server uses `now`, so passing only
-    /// `arrivalTime` yields the live running charge.
+    /// `detentionAccessorials.calculateDetention` requires a closed observed
+    /// dwell window. Running clocks use `getActive`, whose verified live state
+    /// is calculated server-side; this method never substitutes device `now`.
     func calculateDetention(
+        loadId: Int,
         arrivalTime: String,
-        departureTime: String? = nil,
-        freeTimeMinutes: Int = 120,
-        cargoType: String = "general",
-        customRatePerHour: Double? = nil
+        departureTime: String,
+        suspensionAllocation: TruckDetentionSuspensionAllocation
     ) async throws -> DetentionCalc {
         struct Input: Encodable {
+            let loadId: Int
             let arrivalTime: String
-            let departureTime: String?
-            let freeTimeMinutes: Int
-            let cargoType: String
-            let customRatePerHour: Double?
+            let departureTime: String
+            let suspensionAllocation: TruckDetentionSuspensionAllocation
         }
         return try await api.query(
             "detentionAccessorials.calculateDetention",
             input: Input(
+                loadId: loadId,
                 arrivalTime: arrivalTime,
                 departureTime: departureTime,
-                freeTimeMinutes: freeTimeMinutes,
-                cargoType: cargoType,
-                customRatePerHour: customRatePerHour
+                suspensionAllocation: suspensionAllocation
             )
         )
     }
@@ -13836,27 +14565,98 @@ struct RatesAPI {
 struct LoadBiddingAPI {
     unowned let api: EusoTripAPI
 
-    /// Result of a `submit` call. `status` is "pending" by default,
-    /// "auto_accepted" when a shipper auto-accept rule matched the
-    /// bid, or "countered" when the caller is a driver flagging a
-    /// non-posted rate as a starting offer.
+    @MainActor
+    private func durableMutationRequestKey(
+        action: String,
+        identity: String,
+        supplied: String?
+    ) throws -> (storageKey: String, requestKey: String) {
+        guard let sessionCredential = api.authToken
+            ?? HTTPCookieStorage.shared.cookies?.first(where: { $0.name == "app_session_id" })?.value else {
+            throw EusoTripAPIError.unauthenticated
+        }
+        let material = "\(action)|\(sessionCredential)|\(identity)"
+        let digest = SHA256.hash(data: Data(material.utf8))
+        let storageKey = "com.eusotrip.bid-mutation." + digest.map { String(format: "%02x", $0) }.joined()
+        let storedKey = UserDefaults.standard.string(forKey: storageKey)?.lowercased()
+        let suppliedKey = supplied?.lowercased()
+        let requestKey = [storedKey, suppliedKey]
+            .compactMap { $0 }
+            .first(where: { UUID(uuidString: $0) != nil })
+            ?? UUID().uuidString.lowercased()
+        UserDefaults.standard.set(requestKey, forKey: storageKey)
+        return (storageKey, requestKey)
+    }
+
+    private func confirmMutation(
+        _ acknowledgement: SubmitAck,
+        bidId: String? = nil,
+        loadId: String? = nil,
+        status: String,
+        storageKey: String
+    ) throws -> SubmitAck {
+        guard acknowledgement.confirmedStatus?.lowercased() == status,
+              acknowledgement.opaqueID != nil,
+              bidId == nil || acknowledgement.opaqueID == bidId,
+              loadId == nil || acknowledgement.opaqueLoadID == loadId else {
+            throw EusoTripAPIError.decodingFailed(
+                "Bid mutation reply did not match the persisted identity and status."
+            )
+        }
+        UserDefaults.standard.removeObject(forKey: storageKey)
+        return acknowledgement
+    }
+
+    /// Durable write acknowledgement shared by submit/counter actions. The
+    /// server owns the status; iOS never supplies a fallback when it is absent.
     struct SubmitAck: Decodable, Equatable {
+        let success: Bool?
         let id: Int?
-        let status: String
-        // Tolerate BOTH server success branches — auto-accept `{id,status}`
-        // and the normal pending `{id,status,aiFraudCheck}` — plus any future
-        // shape that omits `status`. `status` defaults to "pending" rather
-        // than throwing `.decodingFailed` on a valid 2xx, so a real success
-        // never surfaces as a counter failure. Extra keys (aiFraudCheck) are
-        // ignored. `id` was already optional (the auto-accept row id can be
-        // absent on a race).
-        enum CodingKeys: String, CodingKey { case id, status }
+        let loadId: Int?
+        let round: Int?
+        let status: String?
+        let idempotent: Bool?
+
+        /// Submission and award responses include `success`; counter, reject,
+        /// and withdraw responses instead prove persistence with the committed
+        /// row identity and status. Both forms require durable identity plus a
+        /// non-empty status before iOS presents the write as confirmed.
+        var confirmedStatus: String? {
+            guard success != false,
+                  id != nil,
+                  let status,
+                  !status.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return nil
+            }
+            return status
+        }
+
+        var isConfirmed: Bool { confirmedStatus != nil }
+        var opaqueID: String? { id.map(String.init) }
+        var opaqueLoadID: String? { loadId.map(String.init) }
+
+        enum CodingKeys: String, CodingKey {
+            case success, id, loadId, round, status, idempotent
+        }
+
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.success = try c.decodeIfPresent(Bool.self, forKey: .success)
             self.id = try c.decodeIfPresent(Int.self, forKey: .id)
-            self.status = (try c.decodeIfPresent(String.self, forKey: .status)) ?? "pending"
+            self.loadId = try c.decodeIfPresent(Int.self, forKey: .loadId)
+            self.round = try c.decodeIfPresent(Int.self, forKey: .round)
+            self.status = try c.decodeIfPresent(String.self, forKey: .status)
+            self.idempotent = try c.decodeIfPresent(Bool.self, forKey: .idempotent)
         }
-        init(id: Int?, status: String) { self.id = id; self.status = status }
+
+        init(id: Int?, loadId: Int? = nil, round: Int? = nil, status: String?) {
+            self.success = nil
+            self.id = id
+            self.loadId = loadId
+            self.round = round
+            self.status = status
+            self.idempotent = nil
+        }
     }
 
     /// `loadBidding.submit` — one-tap accept at posted rate (Book Now
@@ -13876,8 +14676,12 @@ struct LoadBiddingAPI {
         fuelSurchargeIncluded: Bool? = nil,
         accessorialsIncluded: [String]? = nil,
         conditions: String? = nil,
+        /// Nil deliberately inherits the signed terms on the truck load.
+        /// A non-nil value is an explicit commercial counterproposal.
+        truckDetentionTerms: TruckDetentionNegotiatedTerms? = nil,
         agreementId: Int? = nil,
-        expiresInHours: Int = 24
+        expiresInHours: Int = 24,
+        requestKey: String
     ) async throws -> SubmitAck {
         struct Input: Encodable {
             let loadId: Int
@@ -13890,8 +14694,10 @@ struct LoadBiddingAPI {
             let fuelSurchargeIncluded: Bool?
             let accessorialsIncluded: [String]?
             let conditions: String?
+            let truckDetentionTerms: TruckDetentionNegotiatedTerms?
             let agreementId: Int?
             let expiresInHours: Int
+            let requestKey: String
         }
         return try await api.mutation(
             "loadBidding.submit",
@@ -13906,8 +14712,10 @@ struct LoadBiddingAPI {
                 fuelSurchargeIncluded: fuelSurchargeIncluded,
                 accessorialsIncluded: accessorialsIncluded,
                 conditions: conditions,
+                truckDetentionTerms: truckDetentionTerms,
                 agreementId: agreementId,
-                expiresInHours: expiresInHours
+                expiresInHours: expiresInHours,
+                requestKey: requestKey
             )
         )
     }
@@ -13924,17 +14732,50 @@ struct LoadBiddingAPI {
         counterAmount: Double,
         rateType: String = "flat",
         conditions: String? = nil,
-        expiresInHours: Int = 24
+        /// Nil deliberately inherits the parent bid's negotiated terms.
+        /// Non-nil replaces them for this counter round.
+        truckDetentionTerms: TruckDetentionNegotiatedTerms? = nil,
+        expiresInHours: Int = 24,
+        requestKey: String? = nil
     ) async throws -> SubmitAck {
+        try await counter(
+            parentBidId: String(parentBidId), loadId: String(loadId),
+            counterAmount: counterAmount, rateType: rateType, conditions: conditions,
+            truckDetentionTerms: truckDetentionTerms, expiresInHours: expiresInHours,
+            requestKey: requestKey
+        )
+    }
+
+    @discardableResult
+    func counter(
+        parentBidId: String,
+        loadId: String,
+        counterAmount: Double,
+        rateType: String = "flat",
+        conditions: String? = nil,
+        truckDetentionTerms: TruckDetentionNegotiatedTerms? = nil,
+        expiresInHours: Int = 24,
+        requestKey: String? = nil
+    ) async throws -> SubmitAck {
+        let termsIdentity = truckDetentionTerms
+            .flatMap { try? JSONEncoder().encode($0).base64EncodedString() }
+            ?? "inherit"
+        let durable = try await durableMutationRequestKey(
+            action: "loadBidding.counter",
+            identity: [parentBidId, loadId, String(counterAmount), rateType, conditions ?? "", termsIdentity, String(expiresInHours)].joined(separator: "|"),
+            supplied: requestKey
+        )
         struct Input: Encodable {
-            let parentBidId: Int
-            let loadId: Int
+            let parentBidId: String
+            let loadId: String
             let counterAmount: Double
             let rateType: String
             let conditions: String?
+            let truckDetentionTerms: TruckDetentionNegotiatedTerms?
             let expiresInHours: Int
+            let requestKey: String
         }
-        return try await api.mutation(
+        let acknowledgement: SubmitAck = try await api.mutation(
             "loadBidding.counter",
             input: Input(
                 parentBidId: parentBidId,
@@ -13942,8 +14783,16 @@ struct LoadBiddingAPI {
                 counterAmount: counterAmount,
                 rateType: rateType,
                 conditions: conditions,
-                expiresInHours: expiresInHours
+                truckDetentionTerms: truckDetentionTerms,
+                expiresInHours: expiresInHours,
+                requestKey: durable.requestKey
             )
+        )
+        return try confirmMutation(
+            acknowledgement,
+            loadId: loadId,
+            status: "pending",
+            storageKey: durable.storageKey
         )
     }
 
@@ -13951,11 +14800,27 @@ struct LoadBiddingAPI {
     /// changed their mind on. Server flips status to `withdrawn`
     /// without notifying the counterparty.
     @discardableResult
-    func withdraw(bidId: Int) async throws -> SubmitAck {
-        struct Input: Encodable { let bidId: Int }
-        return try await api.mutation(
+    func withdraw(bidId: Int, requestKey: String? = nil) async throws -> SubmitAck {
+        try await withdraw(bidId: String(bidId), requestKey: requestKey)
+    }
+
+    @discardableResult
+    func withdraw(bidId: String, requestKey: String? = nil) async throws -> SubmitAck {
+        let durable = try await durableMutationRequestKey(
+            action: "loadBidding.withdraw",
+            identity: bidId,
+            supplied: requestKey
+        )
+        struct Input: Encodable { let bidId: String; let requestKey: String }
+        let acknowledgement: SubmitAck = try await api.mutation(
             "loadBidding.withdraw",
-            input: Input(bidId: bidId)
+            input: Input(bidId: bidId, requestKey: durable.requestKey)
+        )
+        return try confirmMutation(
+            acknowledgement,
+            bidId: bidId,
+            status: "withdrawn",
+            storageKey: durable.storageKey
         )
     }
 
@@ -13973,10 +14838,13 @@ struct LoadBiddingAPI {
         let bidRound: Int?
         let status: String
         let equipmentType: String?
+        let truckDetentionTerms: TruckDetentionNegotiatedTerms?
         let isAutoAccepted: Bool?
         let expiresAt: String?
         let createdAt: String?
         let respondedAt: String?
+        var opaqueID: String { String(id) }
+        var opaqueLoadID: String { String(loadId) }
     }
 
     /// `{ bids, total }` — the ONLY shape the server ever emits for
@@ -14032,6 +14900,7 @@ struct LoadBiddingAPI {
         let transitTimeDays: Int?
         let fuelSurchargeIncluded: Bool?
         let conditions: String?
+        let truckDetentionTerms: TruckDetentionNegotiatedTerms?
         let isAutoAccepted: Bool?
         let agreementId: Int?
         let status: String?
@@ -14041,15 +14910,21 @@ struct LoadBiddingAPI {
         let respondedBy: Int?
         let createdAt: String?
         let updatedAt: String?
+        var opaqueID: String { String(id) }
+        var opaqueLoadID: String { String(loadId) }
     }
 
     /// `loadBidding.getBidChain` — full thread of bids + counters for
     /// a load. Server orders by (bidRound asc, createdAt asc) so the
     /// caller can render top-down chronological.
     func getBidChain(loadId: Int, rootBidId: Int? = nil) async throws -> [ChainRow] {
+        try await getBidChain(loadId: String(loadId), rootBidId: rootBidId.map(String.init))
+    }
+
+    func getBidChain(loadId: String, rootBidId: String? = nil) async throws -> [ChainRow] {
         struct Input: Encodable {
-            let loadId: Int
-            let rootBidId: Int?
+            let loadId: String
+            let rootBidId: String?
         }
         return try await api.query(
             "loadBidding.getBidChain",
@@ -14062,11 +14937,33 @@ struct LoadBiddingAPI {
     /// + operating-authority compliance gate before flipping the bid
     /// to `accepted` and the load to `assigned`.
     @discardableResult
-    func accept(bidId: Int) async throws -> SubmitAck {
-        struct Input: Encodable { let bidId: Int }
-        return try await api.mutation(
+    func accept(
+        bidId: Int,
+        requestKey: String? = nil
+    ) async throws -> SubmitAck {
+        try await accept(bidId: String(bidId), requestKey: requestKey)
+    }
+
+    @discardableResult
+    func accept(bidId: String, requestKey: String? = nil) async throws -> SubmitAck {
+        let durable = try await durableMutationRequestKey(
+            action: "loadBidding.accept",
+            identity: bidId,
+            supplied: requestKey
+        )
+        struct Input: Encodable {
+            let bidId: String
+            let requestKey: String
+        }
+        let acknowledgement: SubmitAck = try await api.mutation(
             "loadBidding.accept",
-            input: Input(bidId: bidId)
+            input: Input(bidId: bidId, requestKey: durable.requestKey)
+        )
+        return try confirmMutation(
+            acknowledgement,
+            bidId: bidId,
+            status: "accepted",
+            storageKey: durable.storageKey
         )
     }
 
@@ -14075,14 +14972,31 @@ struct LoadBiddingAPI {
     /// Server flips the bid to `rejected`, stores the optional reason,
     /// and emits a `bid_rejected` notification to the bidder.
     @discardableResult
-    func reject(bidId: Int, reason: String? = nil) async throws -> SubmitAck {
+    func reject(bidId: Int, reason: String? = nil, requestKey: String? = nil) async throws -> SubmitAck {
+        try await reject(bidId: String(bidId), reason: reason, requestKey: requestKey)
+    }
+
+    @discardableResult
+    func reject(bidId: String, reason: String? = nil, requestKey: String? = nil) async throws -> SubmitAck {
+        let durable = try await durableMutationRequestKey(
+            action: "loadBidding.reject",
+            identity: [bidId, reason ?? ""].joined(separator: "|"),
+            supplied: requestKey
+        )
         struct Input: Encodable {
-            let bidId: Int
+            let bidId: String
             let reason: String?
+            let requestKey: String
         }
-        return try await api.mutation(
+        let acknowledgement: SubmitAck = try await api.mutation(
             "loadBidding.reject",
-            input: Input(bidId: bidId, reason: reason)
+            input: Input(bidId: bidId, reason: reason, requestKey: durable.requestKey)
+        )
+        return try confirmMutation(
+            acknowledgement,
+            bidId: bidId,
+            status: "rejected",
+            storageKey: durable.storageKey
         )
     }
 
@@ -14387,9 +15301,10 @@ struct ErgAPI {
 // type is not hazmat-flavored, the shipper still wants to pin the
 // exact product so the carrier quotes the right equipment + handling
 // (food-grade petroleum, reefer set-point, ISO container type, rail
-// STCC). The server is backed by seed commodity tables; iOS renders a
-// small typeahead exactly like the ERG search row, then auto-fills the
-// structured product / reefer-temp fields on selection.
+// STCC). The server reads the tenant-scoped product-intelligence registry;
+// iOS renders a small typeahead exactly like the ERG search row, then
+// auto-fills structured product / reefer-temperature fields only from a
+// current, decision-eligible evidence profile.
 //
 // Procs surfaced today:
 //   - `searchChemical`       — non-haz chemical / liquid / gas products
@@ -14403,37 +15318,346 @@ struct CommodityLookupAPI {
 
     // MARK: - Shared hit shape
 
-    /// One commodity typeahead hit. Optional fields are populated only
-    /// by the lookups that own them (reefer temps, container size-type,
-    /// STCC) so a single decodable serves all five procs.
+    /// One evidence-backed commodity result. Type-specific fields remain
+    /// optional, while selection requires explicit row-level tracking and
+    /// decision eligibility from the server.
     struct CommodityHit: Decodable, Equatable, Identifiable {
-        /// Stable identifier for the row — server `code` when present
-        /// (STCC / ISO size-type / grade code), else the name.
+        let profileId: Int?
         let code: String?
+        let hsCode: String?
+        let stccCode: String?
+        let unNumber: String?
+        let casNumber: String?
+        let packingGroup: String?
+        let hazmatLinked: Bool?
         let name: String
-        /// Human-readable category / grouping (e.g. "Refined product",
-        /// "Perishable — frozen", "Dry container").
         let category: String?
-        /// Recommended reefer set-point band, °F. Only the reefer
-        /// lookup fills these; the wizard auto-fills its temp fields.
         let tempLowF: Double?
         let tempHighF: Double?
-        /// Pre-cool recommended for this perishable (reefer lookup).
         let preCool: Bool?
-        /// Free-text note / handling hint shown under the row.
         let note: String?
+        let decisionEligible: Bool
+        let tracked: Bool
+        let trackingState: String?
+        let freshnessState: String?
+        let profileVersion: Int?
+        let evidenceId: Int?
+        let evidenceStatus: String?
+        let evidenceConfidence: Double?
+        let evidenceObservedAt: String?
+        let evidenceRetrievedAt: String?
+        let evidenceValidUntil: String?
+        let evidenceContentHash: String?
+        let sourceKey: String?
+        let sourceName: String?
+        let sourceClass: String?
+        let sourceRefreshIntervalHours: Int?
+        let sourceLastSuccessfulSyncAt: String?
+        let sourceUrl: String?
 
-        var id: String { code ?? name }
+        var id: String {
+            if let profileId { return "profile:\(profileId)" }
+            return code ?? [name, category].compactMap { $0 }.joined(separator: "|")
+        }
+
+        var hasEvidenceIdentity: Bool {
+            profileId != nil
+                && profileVersion != nil
+                && evidenceId != nil
+                && !(evidenceContentHash ?? "").isEmpty
+                && !(evidenceStatus ?? "").isEmpty
+                && !(sourceKey ?? "").isEmpty
+        }
+
+        var isSelectable: Bool {
+            tracked
+                && decisionEligible
+                && hasEvidenceIdentity
+                && freshnessState != "stale"
+                && freshnessState != "unknown"
+        }
+
+        var selectionBlockReason: String {
+            if !tracked {
+                return "This result is not backed by a tracked product registry."
+            }
+            if freshnessState == "stale" {
+                return "This product evidence is stale and cannot populate the load."
+            }
+            if freshnessState == "unknown" {
+                return "This product source has no current synchronization evidence."
+            }
+            return "This product evidence is not eligible to populate the load."
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case profileId
+            case code, name, category, tempLowF, tempHighF, preCool, note
+            case productName, product, description
+            case pollutionCategory, shipType, tankType, unNumber, hazards
+            case apiGravityBand, sulfurClass, defaultHose
+            case tempMinF, tempMaxF, fsmaRegulated, notes
+            case isoCode, `class`
+            case stcc, stccCode, hazmatLinked, hsCode, casNumber, packingGroup
+            case decisionEligible, tracked, trackingState, freshnessState
+            case profileVersion, evidenceId, evidenceStatus, evidenceConfidence
+            case evidenceObservedAt, evidenceRetrievedAt, evidenceValidUntil
+            case evidenceContentHash, sourceKey, sourceName, sourceClass
+            case sourceRefreshIntervalHours, sourceLastSuccessfulSyncAt, sourceUrl
+        }
+
+        init(from decoder: Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+
+            func string(_ keys: CodingKeys...) -> String? {
+                for key in keys {
+                    if let value = try? values.decode(String.self, forKey: key),
+                       !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        return value
+                    }
+                }
+                return nil
+            }
+
+            func number(_ keys: CodingKeys...) -> Double? {
+                for key in keys {
+                    if let value = try? values.decode(Double.self, forKey: key) {
+                        return value
+                    }
+                    if let value = try? values.decode(Int.self, forKey: key) {
+                        return Double(value)
+                    }
+                    if let value = string(key), let parsed = Double(value) {
+                        return parsed
+                    }
+                }
+                return nil
+            }
+
+            let explicitName = string(.name, .productName, .product, .description)
+            guard let explicitName else {
+                throw DecodingError.keyNotFound(
+                    CodingKeys.name,
+                    .init(
+                        codingPath: decoder.codingPath,
+                        debugDescription: "Commodity result has no supported identity field (name, productName, product, or description)."
+                    )
+                )
+            }
+
+            name = explicitName
+            profileId = number(.profileId).map(Int.init)
+            code = string(.code, .isoCode, .stcc, .hsCode, .unNumber)
+            hsCode = string(.hsCode)
+            stccCode = string(.stccCode, .stcc)
+            unNumber = string(.unNumber)
+            casNumber = string(.casNumber)
+            packingGroup = string(.packingGroup)
+            hazmatLinked = try values.decodeIfPresent(Bool.self, forKey: .hazmatLinked)
+            tempLowF = number(.tempLowF, .tempMinF)
+            tempHighF = number(.tempHighF, .tempMaxF)
+            preCool = try values.decodeIfPresent(Bool.self, forKey: .preCool)
+            decisionEligible = try values.decodeIfPresent(Bool.self, forKey: .decisionEligible) ?? false
+            tracked = try values.decodeIfPresent(Bool.self, forKey: .tracked) ?? false
+            trackingState = string(.trackingState)
+            freshnessState = string(.freshnessState)
+            profileVersion = number(.profileVersion).map(Int.init)
+            evidenceId = number(.evidenceId).map(Int.init)
+            evidenceStatus = string(.evidenceStatus)
+            evidenceConfidence = number(.evidenceConfidence)
+            evidenceObservedAt = string(.evidenceObservedAt)
+            evidenceRetrievedAt = string(.evidenceRetrievedAt)
+            evidenceValidUntil = string(.evidenceValidUntil)
+            evidenceContentHash = string(.evidenceContentHash)
+            sourceKey = string(.sourceKey)
+            sourceName = string(.sourceName)
+            sourceClass = string(.sourceClass)
+            sourceRefreshIntervalHours = number(.sourceRefreshIntervalHours).map(Int.init)
+            sourceLastSuccessfulSyncAt = string(.sourceLastSuccessfulSyncAt)
+            sourceUrl = string(.sourceUrl)
+
+            if let explicit = string(.category) {
+                category = explicit
+            } else if let pollution = string(.pollutionCategory) {
+                let shipType = number(.shipType).map { String(Int($0)) }
+                category = shipType.map { "Pollution \(pollution) · ship type \($0)" }
+                    ?? "Pollution \(pollution)"
+            } else if let sulfur = string(.sulfurClass) {
+                category = sulfur
+            } else if let containerClass = string(.class) {
+                category = containerClass
+            } else if let linked = hazmatLinked {
+                category = linked ? "STCC · hazmat-linked" : "STCC"
+            } else if string(.hsCode) != nil {
+                category = "HS / HTS"
+            } else if let fsma = try? values.decode(Bool.self, forKey: .fsmaRegulated) {
+                category = fsma ? "FSMA-regulated" : "Reefer"
+            } else {
+                category = nil
+            }
+
+            note = string(.note, .notes, .hazards, .defaultHose, .apiGravityBand, .tankType)
+        }
     }
 
     struct SearchResponse: Decodable, Equatable {
         let results: [CommodityHit]
         let count: Int
+        let source: String
+        let tracked: Bool
+        let decisionEligible: Bool
+        let availabilityState: String
+        let unavailableReason: String?
+        let contractVerified: Bool
+
+        var selectableResults: [CommodityHit] {
+            guard contractVerified, tracked, decisionEligible else { return [] }
+            return results.filter(\.isSelectable)
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case results, count, source, tracked, decisionEligible
+            case availabilityState, unavailableReason
+        }
+
+        init(from decoder: Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            results = try values.decode([CommodityHit].self, forKey: .results)
+            count = try values.decode(Int.self, forKey: .count)
+            source = try values.decode(String.self, forKey: .source)
+            let hasEvidenceContract = values.contains(.tracked)
+                && values.contains(.decisionEligible)
+                && values.contains(.availabilityState)
+            contractVerified = hasEvidenceContract
+            tracked = try values.decodeIfPresent(Bool.self, forKey: .tracked) ?? false
+            decisionEligible = try values.decodeIfPresent(Bool.self, forKey: .decisionEligible) ?? false
+            availabilityState = try values.decodeIfPresent(String.self, forKey: .availabilityState)
+                ?? "contract_unverified"
+            unavailableReason = try values.decodeIfPresent(String.self, forKey: .unavailableReason)
+                ?? (hasEvidenceContract
+                    ? nil
+                    : "The product evidence service contract is not available. Refresh after the server update is deployed.")
+        }
     }
 
     private struct QueryInput: Encodable {
         let query: String
         let limit: Int
+    }
+
+    private struct ReeferInput: Encodable {
+        let productName: String
+        let limit: Int
+    }
+
+    private struct ContainerInput: Encodable {
+        let code: String
+        let limit: Int
+    }
+
+    private struct NameInput: Encodable {
+        let name: String
+        let limit: Int
+    }
+
+    private struct StccValidationInput: Encodable {
+        let stcc: String
+    }
+
+    private struct StccBatchValidationInput: Encodable {
+        let stccs: [String]
+    }
+
+    struct StccValidationResponse: Decodable, Equatable {
+        let serverValid: Bool
+        let formatValid: Bool
+        let stcc: String
+        let matched: CommodityHit?
+        let source: String
+        let tracked: Bool
+        let decisionEligible: Bool
+        let unavailableReason: String?
+        let contractVerified: Bool
+
+        var isDecisionEligible: Bool {
+            contractVerified
+                && serverValid
+                && formatValid
+                && tracked
+                && decisionEligible
+                && matched?.isSelectable == true
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case valid, formatValid, stcc, matched, source, tracked
+            case decisionEligible, unavailableReason
+        }
+
+        init(from decoder: Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            let hasEvidenceContract = values.contains(.formatValid)
+                && values.contains(.source)
+                && values.contains(.tracked)
+                && values.contains(.decisionEligible)
+            contractVerified = hasEvidenceContract
+            serverValid = try values.decodeIfPresent(Bool.self, forKey: .valid) ?? false
+            formatValid = try values.decodeIfPresent(Bool.self, forKey: .formatValid) ?? false
+            stcc = try values.decodeIfPresent(String.self, forKey: .stcc) ?? ""
+            matched = try values.decodeIfPresent(CommodityHit.self, forKey: .matched)
+            source = try values.decodeIfPresent(String.self, forKey: .source)
+                ?? "contract_unverified"
+            tracked = try values.decodeIfPresent(Bool.self, forKey: .tracked) ?? false
+            decisionEligible = try values.decodeIfPresent(Bool.self, forKey: .decisionEligible) ?? false
+            unavailableReason = try values.decodeIfPresent(String.self, forKey: .unavailableReason)
+                ?? (hasEvidenceContract
+                    ? nil
+                    : "The STCC evidence service contract is not available. Refresh after the server update is deployed.")
+        }
+    }
+
+    struct StccBatchValidationResponse: Decodable, Equatable {
+        let results: [StccValidationResponse]
+        let count: Int
+        let source: String
+        let tracked: Bool
+        let decisionEligible: Bool
+        let availabilityState: String
+        let unavailableReason: String?
+        let contractVerified: Bool
+
+        var isDecisionEligible: Bool {
+            contractVerified
+                && tracked
+                && decisionEligible
+                && !results.isEmpty
+                && results.allSatisfy(\.isDecisionEligible)
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case results, count, source, tracked, decisionEligible
+            case availabilityState, unavailableReason
+        }
+
+        init(from decoder: Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            results = try values.decode([StccValidationResponse].self, forKey: .results)
+            count = try values.decode(Int.self, forKey: .count)
+            source = try values.decodeIfPresent(String.self, forKey: .source)
+                ?? "contract_unverified"
+            tracked = try values.decodeIfPresent(Bool.self, forKey: .tracked) ?? false
+            decisionEligible = try values.decodeIfPresent(Bool.self, forKey: .decisionEligible) ?? false
+            availabilityState = try values.decodeIfPresent(String.self, forKey: .availabilityState)
+                ?? "contract_unverified"
+            unavailableReason = try values.decodeIfPresent(String.self, forKey: .unavailableReason)
+
+            let hasEnvelopeContract = values.contains(.source)
+                && values.contains(.tracked)
+                && values.contains(.decisionEligible)
+                && values.contains(.availabilityState)
+            contractVerified = hasEnvelopeContract
+                && count == results.count
+                && results.allSatisfy(\.contractVerified)
+        }
     }
 
     // MARK: - Chemicals / liquids / gases
@@ -14468,7 +15692,7 @@ struct CommodityLookupAPI {
     func searchReefer(query: String, limit: Int = 10) async throws -> SearchResponse {
         try await api.query(
             "commodity.searchReefer",
-            input: QueryInput(query: query, limit: limit)
+            input: ReeferInput(productName: query, limit: limit)
         )
     }
 
@@ -14480,7 +15704,7 @@ struct CommodityLookupAPI {
     func searchContainerType(query: String, limit: Int = 10) async throws -> SearchResponse {
         try await api.query(
             "commodity.searchContainerType",
-            input: QueryInput(query: query, limit: limit)
+            input: ContainerInput(code: query, limit: limit)
         )
     }
 
@@ -14491,7 +15715,32 @@ struct CommodityLookupAPI {
     func searchStcc(query: String, limit: Int = 10) async throws -> SearchResponse {
         try await api.query(
             "commodity.searchStcc",
-            input: QueryInput(query: query, limit: limit)
+            input: NameInput(name: query, limit: limit)
+        )
+    }
+
+    /// `commodity.validateStcc` keeps seven-digit syntax separate from a
+    /// current, evidence-backed registry match. `isDecisionEligible` is the
+    /// only state a tender workflow may treat as validated.
+    func validateStcc(_ stcc: String) async throws -> StccValidationResponse {
+        try await api.query(
+            "commodity.validateStcc",
+            input: StccValidationInput(stcc: stcc)
+        )
+    }
+
+    /// Validates up to 100 STCC entries in one tenant-scoped registry read.
+    /// The server preserves order and duplicate inputs; callers must not
+    /// collapse rows because each pasted line needs its own disposition.
+    func validateStccs(_ stccs: [String]) async throws -> StccBatchValidationResponse {
+        guard (1...100).contains(stccs.count) else {
+            throw EusoTripAPIError.trpcError("Enter between 1 and 100 STCC codes.")
+        }
+        return try await api.query(
+            "commodity.validateStccBatch",
+            input: StccBatchValidationInput(
+                stccs: stccs.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            )
         )
     }
 }
@@ -14837,11 +16086,29 @@ struct EmergencyAPI {
 struct FreightClaimsAPI {
     unowned let api: EusoTripAPI
 
-    // MARK: - Claim type
+    // MARK: - Canonical wire vocabulary
 
-    enum ClaimType: String, CaseIterable, Identifiable, Codable {
-        case damage, loss, shortage, delay, contamination
+    enum TransportMode: String, CaseIterable, Identifiable, Codable, Hashable {
+        case truck = "TRUCK"
+        case rail = "RAIL"
+        case vessel = "VESSEL"
+
         var id: String { rawValue }
+    }
+
+    enum ClaimType: String, CaseIterable, Identifiable, Codable, Hashable {
+        case damage
+        case loss
+        case shortage
+        case delay
+        case contamination
+        case overcharge
+        case generalAverage = "general_average"
+        case salvage
+        case pollution
+
+        var id: String { rawValue }
+
         var label: String {
             switch self {
             case .damage:        return "Damage"
@@ -14849,8 +16116,13 @@ struct FreightClaimsAPI {
             case .shortage:      return "Shortage"
             case .delay:         return "Delay"
             case .contamination: return "Contamination"
+            case .overcharge:    return "Overcharge"
+            case .generalAverage:return "General average"
+            case .salvage:       return "Salvage"
+            case .pollution:     return "Pollution"
             }
         }
+
         var icon: String {
             switch self {
             case .damage:        return "shippingbox.and.arrow.backward"
@@ -14858,27 +16130,186 @@ struct FreightClaimsAPI {
             case .shortage:      return "minus.rectangle"
             case .delay:         return "clock.badge.exclamationmark"
             case .contamination: return "exclamationmark.triangle"
+            case .overcharge:    return "dollarsign.arrow.circlepath"
+            case .generalAverage:return "scale.3d"
+            case .salvage:       return "lifepreserver"
+            case .pollution:     return "drop.triangle"
             }
+        }
+    }
+
+    enum ClaimStatus: String, CaseIterable, Codable, Hashable {
+        case draft
+        case filed
+        case underReview = "under_review"
+        case investigating
+        case pendingEvidence = "pending_evidence"
+        case approved
+        case denied
+        case partialApproval = "partial_approval"
+        case counterOffer = "counter_offer"
+        case settled
+        case paid
+        case closed
+        case appealed
+        case arbitration
+    }
+
+    /// Three-letter currency carried by the freight transaction or supplied
+    /// explicitly by the claimant. Invalid or missing values never become USD.
+    struct CurrencyCode: RawRepresentable, Codable, Hashable, CustomStringConvertible {
+        private static let recognizedCodes = Set(
+            Locale.Currency.isoCurrencies.map { $0.identifier.uppercased() }
+        )
+
+        let rawValue: String
+
+        init?(rawValue: String) {
+            let canonical = rawValue.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+            guard canonical.utf8.count == 3,
+                  canonical.utf8.allSatisfy({ $0 >= 65 && $0 <= 90 }),
+                  Self.recognizedCodes.contains(canonical) else {
+                return nil
+            }
+            self.rawValue = canonical
+        }
+
+        init(from decoder: Decoder) throws {
+            let value = try decoder.singleValueContainer().decode(String.self)
+            guard let currency = CurrencyCode(rawValue: value) else {
+                throw DecodingError.dataCorruptedError(
+                    in: try decoder.singleValueContainer(),
+                    debugDescription: "Freight claim currency must be a three-letter ISO code"
+                )
+            }
+            self = currency
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.singleValueContainer()
+            try container.encode(rawValue)
+        }
+
+        var description: String { rawValue }
+    }
+
+    private struct WireIdentity {
+        let numericId: Int
+        let claimId: String
+
+        static func decode<Key: CodingKey>(
+            from container: KeyedDecodingContainer<Key>,
+            forKey key: Key
+        ) throws -> WireIdentity {
+            // COMPATIBILITY: older claim endpoints emitted a numeric id. The
+            // canonical list/detail contract emits claim_<number>.
+            if let numeric = try? container.decode(Int.self, forKey: key), numeric > 0 {
+                return WireIdentity(numericId: numeric, claimId: "claim_\(numeric)")
+            }
+
+            let raw = try container.decode(String.self, forKey: key)
+            let numericToken: Substring
+            if raw.hasPrefix("claim_") {
+                numericToken = raw.dropFirst("claim_".count)
+            } else {
+                numericToken = Substring(raw)
+            }
+            guard let numeric = Int(numericToken), numeric > 0 else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: key,
+                    in: container,
+                    debugDescription: "Freight claim id must be claim_<positive integer>"
+                )
+            }
+            return WireIdentity(numericId: numeric, claimId: "claim_\(numeric)")
         }
     }
 
     // MARK: - Dashboard
 
-    struct Aging: Decodable, Equatable {
+    struct Aging: Decodable, Hashable {
         let under30: Int
         let days30to60: Int
         let days60to90: Int
         let over90: Int
     }
 
-    struct Dashboard: Decodable, Equatable {
+    struct CurrencyTotal: Decodable, Hashable {
+        let currency: CurrencyCode
+        let amount: Double
+    }
+
+    enum MetricValueState: String, Decodable, Hashable {
+        case measured
+        case measuredByDimension = "measured_by_dimension"
+        case partial
+        case noObservations = "no_observations"
+        case notModeled = "not_modeled"
+    }
+
+    enum MetricTrackingState: String, Decodable, Hashable {
+        case tracked
+        case notTracked = "not_tracked"
+    }
+
+    enum MetricAccessState: String, Decodable, Hashable {
+        case granted
+        case restricted
+    }
+
+    struct MetricProvenance: Decodable, Hashable {
+        let source: String?
+        let observedAt: String?
+        let computedAt: String?
+        let basis: String?
+    }
+
+    struct MetricTruth: Decodable, Hashable {
+        let valueState: MetricValueState
+        /// Optional only for rolling deployment compatibility. Absence is
+        /// unknown and never grants permission to display the metric value.
+        let accessState: MetricAccessState?
+        let trackingState: MetricTrackingState
+        let provenance: MetricProvenance
+        let reason: String?
+    }
+
+    struct DashboardMetricStates: Decodable, Hashable {
+        let open: MetricTruth
+        let pending: MetricTruth
+        let resolved: MetricTruth
+        let denied: MetricTruth
+        let totalValue: MetricTruth
+        let avgResolutionDays: MetricTruth
+        let aging: MetricTruth
+    }
+
+    struct DashboardProvenance: Decodable, Hashable {
+        let source: String
+        let recordKind: String
+        let scope: String
+        let observedAt: String?
+        let computedAt: String?
+    }
+
+    struct Dashboard: Decodable, Hashable {
         let open: Int
         let pending: Int
         let resolved: Int
         let denied: Int
-        let totalValue: Double
-        let avgResolutionDays: Double
+        /// Nil when totals span more than one currency. See totalsByCurrency.
+        let totalValue: Double?
+        let totalValueCurrency: CurrencyCode?
+        let totalsByCurrency: [CurrencyTotal]
+        let unvaluedClaimCount: Int?
+        /// Nil when no resolved claim establishes an average.
+        let avgResolutionDays: Double?
         let aging: Aging
+        let recentClaims: [Claim]
+        /// Optional only for rolling deployment compatibility. A missing value
+        /// remains unavailable; consumers must not infer a measured zero.
+        let metricStates: DashboardMetricStates?
+        let provenance: DashboardProvenance?
     }
 
     /// `freightClaims.getClaimsDashboard` — counters + aging
@@ -14892,93 +16323,1250 @@ struct FreightClaimsAPI {
 
     // MARK: - Claim rows
 
-    struct Claim: Decodable, Equatable, Identifiable {
-        let id: Int
+    struct Claim: Decodable, Hashable, Identifiable {
+        /// Canonical wire identity returned by list/dashboard reads.
+        let id: String
+        let claimId: String
+        let numericId: Int
+        let claimNumber: String
         let type: String?
         let status: String?
         let description: String?
+        let amount: Double?
+        let currency: CurrencyCode?
+        let transportMode: TransportMode?
+        let filedDate: String
         let createdAt: String?
         let severity: String?
+        let claimantCompanyId: Int?
+        let claimantCompanyName: String?
+        let respondentCompanyId: Int?
+        let respondentCompanyName: String?
+        let referenceNumber: String?
+        let loadNumber: String?
+        let railShipmentNumber: String?
+        let vesselBookingNumber: String?
+
+        // COMPATIBILITY: pre-multimodal list payloads exposed these names.
+        // The canonical payload intentionally leaves them nil rather than
+        // guessing which contractual party is shipper or carrier.
+        let shipper: String?
+        let carrier: String?
+
+        private enum CodingKeys: String, CodingKey {
+            case id, claimNumber, type, status, description, amount, currency
+            case transportMode, filedDate, createdAt, severity
+            case claimantCompanyId, claimantCompanyName
+            case respondentCompanyId, respondentCompanyName
+            case referenceNumber, loadNumber, railShipmentNumber, vesselBookingNumber
+            case shipper, carrier
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            let identity = try WireIdentity.decode(from: container, forKey: .id)
+            id = identity.claimId
+            claimId = identity.claimId
+            numericId = identity.numericId
+            claimNumber = try container.decode(String.self, forKey: .claimNumber)
+            type = try container.decodeIfPresent(String.self, forKey: .type)
+            status = try container.decodeIfPresent(String.self, forKey: .status)
+            description = try container.decodeIfPresent(String.self, forKey: .description)
+            amount = try container.decodeIfPresent(Double.self, forKey: .amount)
+            currency = try container.decodeIfPresent(CurrencyCode.self, forKey: .currency)
+            transportMode = try container.decodeIfPresent(TransportMode.self, forKey: .transportMode)
+            filedDate = try container.decode(String.self, forKey: .filedDate)
+            createdAt = try container.decodeIfPresent(String.self, forKey: .createdAt)
+            severity = try container.decodeIfPresent(String.self, forKey: .severity)
+            claimantCompanyId = try container.decodeIfPresent(Int.self, forKey: .claimantCompanyId)
+            claimantCompanyName = try container.decodeIfPresent(String.self, forKey: .claimantCompanyName)
+            respondentCompanyId = try container.decodeIfPresent(Int.self, forKey: .respondentCompanyId)
+            respondentCompanyName = try container.decodeIfPresent(String.self, forKey: .respondentCompanyName)
+            referenceNumber = try container.decodeIfPresent(String.self, forKey: .referenceNumber)
+            loadNumber = try container.decodeIfPresent(String.self, forKey: .loadNumber)
+            railShipmentNumber = try container.decodeIfPresent(String.self, forKey: .railShipmentNumber)
+            vesselBookingNumber = try container.decodeIfPresent(String.self, forKey: .vesselBookingNumber)
+            shipper = try container.decodeIfPresent(String.self, forKey: .shipper)
+            carrier = try container.decodeIfPresent(String.self, forKey: .carrier)
+        }
 
         /// Stable String id for SwiftUI ForEach.
-        var stableId: String { String(id) }
+        var stableId: String { claimId }
     }
 
-    struct ClaimsResponse: Decodable {
+    struct ClaimsResponse: Decodable, Hashable {
         let claims: [Claim]
         let total: Int
     }
 
     func getClaims(
         status: String? = nil,
+        type: String? = nil,
+        transportMode: TransportMode? = nil,
+        minAmount: Double? = nil,
+        maxAmount: Double? = nil,
         search: String? = nil,
-        limit: Int = 20
+        startDate: String? = nil,
+        endDate: String? = nil,
+        limit: Int = 20,
+        offset: Int = 0
     ) async throws -> ClaimsResponse {
         struct Input: Encodable {
             let status: String?
+            let type: String?
+            let transportMode: String?
+            let minAmount: Double?
+            let maxAmount: Double?
             let search: String?
+            let startDate: String?
+            let endDate: String?
             let limit: Int
             let offset: Int
         }
         return try await api.query(
             "freightClaims.getClaims",
-            input: Input(status: status, search: search, limit: limit, offset: 0)
+            input: Input(
+                status: status,
+                type: type,
+                transportMode: transportMode?.rawValue,
+                minAmount: minAmount,
+                maxAmount: maxAmount,
+                search: search,
+                startDate: startDate,
+                endDate: endDate,
+                limit: limit,
+                offset: offset
+            )
+        )
+    }
+
+    // MARK: - Claim detail
+
+    struct WeatherPeril: Decodable, Hashable {
+        let classification: String
+        let matchedTerms: [String]
+        let isWeatherPeril: Bool
+    }
+
+    struct QuantityEvidence: Decodable, Hashable {
+        let expectedQuantity: Double?
+        let receivedQuantity: Double?
+        let quantityUnit: String?
+        let state: String
+        let accessState: String
+        let trackingState: String
+        let source: String?
+        let provenance: ClaimLedgerProvenance
+    }
+
+    struct ClaimLedgerProvenance: Decodable, Hashable {
+        let source: String?
+        let observedAt: String?
+        let computedAt: String
+        let basis: String
+    }
+
+    enum ClaimAssetAction: String, Codable, Hashable {
+        case verified
+        case rejected
+        case superseded
+    }
+
+    enum ClaimDeadlineAction: String, Codable, Hashable {
+        case verifyAuthority = "verify_authority"
+        case complete
+        case waive
+        case supersede
+    }
+
+    enum ClaimAssignmentAction: String, Codable, Hashable {
+        case accepted
+        case declined
+        case completed
+        case cancelled
+    }
+
+    enum ClaimAssetType: String, CaseIterable, Identifiable, Codable, Hashable {
+        case billOfLading = "bill_of_lading"
+        case railcar
+        case container
+        case parcel
+        case trailer
+        case seal
+        case deliveryReceipt = "delivery_receipt"
+        case surveyReport = "survey_report"
+        case other
+
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .billOfLading: return "Bill of lading"
+            case .railcar: return "Railcar"
+            case .container: return "Container"
+            case .parcel: return "Cargo parcel"
+            case .trailer: return "Trailer"
+            case .seal: return "Seal"
+            case .deliveryReceipt: return "Delivery receipt"
+            case .surveyReport: return "Survey report"
+            case .other: return "Other asset"
+            }
+        }
+    }
+
+    enum ClaimAssetProvenance: String, CaseIterable, Identifiable, Codable, Hashable {
+        case userEntered = "user_entered"
+        case documentExtraction = "document_extraction"
+        case integration
+        case carrierRecord = "carrier_record"
+        case terminalRecord = "terminal_record"
+        case surveyorRecord = "surveyor_record"
+
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .userEntered: return "User entered"
+            case .documentExtraction: return "Document extraction"
+            case .integration: return "Connected integration"
+            case .carrierRecord: return "Carrier record"
+            case .terminalRecord: return "Terminal record"
+            case .surveyorRecord: return "Surveyor record"
+            }
+        }
+
+        var requiresSourceReference: Bool { self != .userEntered }
+        var requiresSourceProvider: Bool { self == .integration }
+        var requiresObservedAt: Bool {
+            switch self {
+            case .integration, .carrierRecord, .terminalRecord, .surveyorRecord:
+                return true
+            case .userEntered, .documentExtraction:
+                return false
+            }
+        }
+    }
+
+    enum ClaimDeadlineType: String, CaseIterable, Identifiable, Codable, Hashable {
+        case contractClaimFiling = "contract_claim_filing"
+        case statutoryClaimFiling = "statutory_claim_filing"
+        case noticeOfLoss = "notice_of_loss"
+        case carrierAcknowledgement = "carrier_acknowledgement"
+        case carrierDisposition = "carrier_disposition"
+        case statusUpdate = "status_update"
+        case suitLimitation = "suit_limitation"
+        case survey
+        case evidenceSubmission = "evidence_submission"
+        case other
+
+        var id: String { rawValue }
+        var label: String {
+            rawValue
+                .replacingOccurrences(of: "_", with: " ")
+                .capitalized
+        }
+    }
+
+    enum ClaimDeadlineAuthority: String, CaseIterable, Identifiable, Codable, Hashable {
+        case contract
+        case statute
+        case regulation
+        case tariff
+        case carrierRule = "carrier_rule"
+        case courtOrder = "court_order"
+        case manual
+
+        var id: String { rawValue }
+        var label: String {
+            rawValue
+                .replacingOccurrences(of: "_", with: " ")
+                .capitalized
+        }
+        var requiresCitation: Bool { self != .manual }
+    }
+
+    enum ClaimReserveStatus: String, CaseIterable, Identifiable, Codable, Hashable {
+        case proposed
+        case approved
+        case released
+
+        var id: String { rawValue }
+        var label: String { rawValue.capitalized }
+    }
+
+    struct ClaimAssetRecord: Decodable, Hashable, Identifiable {
+        let id: String
+        let companyId: Int
+        let assetType: String
+        let identifier: String?
+        let quantity: Double?
+        let quantityUnit: String?
+        let provenanceSource: String
+        let sourceProvider: String?
+        let sourceReference: String?
+        let observedAt: String?
+        let verificationStatus: String
+        let allowedActions: [ClaimAssetAction]
+        let verifiedBy: Int?
+        let verifiedAt: String?
+        let createdBy: Int
+        let createdAt: String
+        let updatedAt: String
+    }
+
+    struct ClaimAssetLedger: Decodable, Hashable {
+        let records: [ClaimAssetRecord]
+        let state: String
+        let accessState: String
+        let trackingState: String
+        let provenance: ClaimLedgerProvenance
+    }
+
+    struct ClaimDeadlineRecord: Decodable, Hashable, Identifiable {
+        let id: String
+        let companyId: Int
+        let deadlineType: String
+        let dueAt: String
+        let jurisdictionCode: String?
+        let authorityType: String
+        let authorityCitation: String?
+        let sourceUri: String?
+        let sourceReference: String?
+        let ruleVersion: String?
+        let authorityStatus: String
+        let status: String
+        let allowedActions: [ClaimDeadlineAction]
+        let completedAt: String?
+        let verifiedBy: Int?
+        let verifiedAt: String?
+        let createdBy: Int
+        let createdAt: String
+        let updatedAt: String
+    }
+
+    struct ClaimDeadlineLedger: Decodable, Hashable {
+        let records: [ClaimDeadlineRecord]
+        let state: String
+        let accessState: String
+        let trackingState: String
+        let provenance: ClaimLedgerProvenance
+    }
+
+    struct ClaimAssignmentScope: Decodable, Hashable {
+        let priority: String?
+        let notes: String?
+        let jurisdictionScope: String?
+        let jurisdictionCode: String?
+        let conflictAttestation: String?
+        let conflictAttestedAt: String?
+    }
+
+    struct ClaimAssignmentJurisdiction: Codable, Hashable {
+        let scope: String
+        let code: String
+    }
+
+    struct ClaimAssignmentVerification: Decodable, Hashable {
+        let profileState: String
+        let snapshotState: String
+        let profileStatus: String?
+        let validUntil: String?
+        let reviewedAt: String?
+        let trackingState: String
+        let accessState: String
+        let provenance: ClaimLedgerProvenance
+    }
+
+    struct ClaimAssignmentRecord: Decodable, Hashable, Identifiable {
+        let id: String
+        let companyId: Int
+        let assignmentType: String
+        let assignedUserId: Int?
+        let assignedCompanyId: Int?
+        let specialistProfileId: String?
+        let assignedUserName: String?
+        let assignedUserEmail: String?
+        let assigneeState: String
+        let status: String
+        let allowedActions: [ClaimAssignmentAction]
+        let scope: ClaimAssignmentScope
+        let verification: ClaimAssignmentVerification
+        let assignedBy: Int
+        let acceptedAt: String?
+        let completedAt: String?
+        let createdAt: String
+        let updatedAt: String
+    }
+
+    struct ClaimAssignmentLedger: Decodable, Hashable {
+        let records: [ClaimAssignmentRecord]
+        let state: String
+        let accessState: String
+        let trackingState: String
+        let provenance: ClaimLedgerProvenance
+    }
+
+    struct ClaimReserveRecord: Decodable, Hashable, Identifiable {
+        let id: String
+        let companyId: Int
+        let version: Int
+        let amount: Double
+        let currency: String
+        let status: String
+        let basis: String
+        let setBy: Int
+        let createdAt: String
+    }
+
+    struct ClaimReserveLedger: Decodable, Hashable {
+        /// The service withholds the collection itself when access is restricted.
+        let records: [ClaimReserveRecord]?
+        let state: String
+        let accessState: String
+        let trackingState: String
+        let provenance: ClaimLedgerProvenance
+    }
+
+    struct Party: Decodable, Hashable {
+        let id: String
+        let name: String?
+    }
+
+    struct TransactionContext: Decodable, Hashable {
+        let loadNumber: String?
+        let referenceNumber: String?
+        let transportMode: TransportMode?
+        let origin: String?
+        let destination: String?
+        let pickupDate: String?
+        let deliveryDate: String?
+        let commodity: String?
+        let weight: Double?
+        let weightUnit: String?
+    }
+
+    struct EvidenceRecord: Decodable, Hashable {
+        let id: String
+        let claimId: String?
+        let type: String?
+        let name: String?
+        let url: String?
+        let uploadUrl: String?
+        let uploadedBy: Int?
+        let uploadedAt: String?
+        let auditLogId: Int?
+        let transportMode: TransportMode?
+        let referenceNumber: String?
+        let idempotent: Bool?
+    }
+
+    struct TimelineEvent: Decodable, Hashable, Identifiable {
+        let id: String
+        let action: String
+        let timestamp: String
+        let user: String?
+        let details: String?
+    }
+
+    struct Note: Decodable, Hashable, Identifiable {
+        let id: String
+        let content: String
+        let author: String
+        let createdAt: String
+        let `internal`: Bool
+    }
+
+    struct Investigator: Decodable, Hashable {
+        let id: String?
+        let specialistUserId: String?
+        let name: String?
+        let email: String?
+        let priority: String?
+        let status: String
+        let assignmentId: String?
+        let assignedAt: String?
+        let provenance: String
+    }
+
+    struct Decision: Decodable, Hashable {
+        let type: String
+        let amount: Double
+        let reason: String
+        let decidedBy: String
+        let decidedAt: String
+    }
+
+    struct WorkflowStep: Decodable, Hashable, Identifiable {
+        let step: Int
+        let name: String
+        let completed: Bool
+        var id: Int { step }
+    }
+
+    struct Workflow: Decodable, Hashable {
+        let currentStep: Int
+        let steps: [WorkflowStep]
+    }
+
+    struct ClaimLifecycleCompanyCapability: Decodable, Hashable {
+        let allowed: Bool
+        let requiresCompanySelection: Bool
+    }
+
+    struct ClaimLifecycleDecisionCapability: Decodable, Hashable {
+        let allowed: Bool
+    }
+
+    struct ClaimLifecycleCapabilities: Decodable, Hashable {
+        let recordAsset: ClaimLifecycleCompanyCapability
+        let recordDeadline: ClaimLifecycleCompanyCapability
+        let assignInvestigator: ClaimLifecycleDecisionCapability
+        let setReserve: ClaimLifecycleDecisionCapability
+    }
+
+    struct ClaimDetail: Decodable, Hashable, Identifiable {
+        let id: String
+        let claimId: String
+        let numericId: Int
+        let claimNumber: String
+        let type: String?
+        let status: String?
+        let description: String?
+        let severity: String?
+        let amount: Double?
+        let currency: CurrencyCode?
+        let transportMode: TransportMode?
+        let filedDate: String
+        let occurredAt: String
+        let updatedAt: String
+        let quantityEvidence: QuantityEvidence
+        let lifecycleCapabilities: ClaimLifecycleCapabilities
+        let assetLedger: ClaimAssetLedger
+        let deadlineLedger: ClaimDeadlineLedger
+        let assignmentLedger: ClaimAssignmentLedger
+        let reserveLedger: ClaimReserveLedger
+        let weatherPeril: WeatherPeril
+        let load: TransactionContext
+        let claimant: Party?
+        let respondent: Party?
+        let shipper: Party?
+        let carrier: Party?
+        let driver: Party?
+        let evidence: [EvidenceRecord]
+        let timeline: [TimelineEvent]
+        let notes: [Note]
+        let investigator: Investigator?
+        let decision: Decision?
+        let workflow: Workflow
+
+        private enum CodingKeys: String, CodingKey {
+            case id, claimNumber, type, status, description, severity, amount, currency
+            case transportMode, filedDate, occurredAt, updatedAt, quantityEvidence
+            case lifecycleCapabilities, assetLedger, deadlineLedger, assignmentLedger, reserveLedger, weatherPeril, load
+            case claimant, respondent, shipper, carrier, driver, evidence, timeline
+            case notes, investigator, decision, workflow
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            let identity = try WireIdentity.decode(from: container, forKey: .id)
+            id = identity.claimId
+            claimId = identity.claimId
+            numericId = identity.numericId
+            claimNumber = try container.decode(String.self, forKey: .claimNumber)
+            type = try container.decodeIfPresent(String.self, forKey: .type)
+            status = try container.decodeIfPresent(String.self, forKey: .status)
+            description = try container.decodeIfPresent(String.self, forKey: .description)
+            severity = try container.decodeIfPresent(String.self, forKey: .severity)
+            amount = try container.decodeIfPresent(Double.self, forKey: .amount)
+            currency = try container.decodeIfPresent(CurrencyCode.self, forKey: .currency)
+            transportMode = try container.decodeIfPresent(TransportMode.self, forKey: .transportMode)
+            filedDate = try container.decode(String.self, forKey: .filedDate)
+            occurredAt = try container.decode(String.self, forKey: .occurredAt)
+            updatedAt = try container.decode(String.self, forKey: .updatedAt)
+            quantityEvidence = try container.decode(QuantityEvidence.self, forKey: .quantityEvidence)
+            lifecycleCapabilities = try container.decode(ClaimLifecycleCapabilities.self, forKey: .lifecycleCapabilities)
+            assetLedger = try container.decode(ClaimAssetLedger.self, forKey: .assetLedger)
+            deadlineLedger = try container.decode(ClaimDeadlineLedger.self, forKey: .deadlineLedger)
+            assignmentLedger = try container.decode(ClaimAssignmentLedger.self, forKey: .assignmentLedger)
+            reserveLedger = try container.decode(ClaimReserveLedger.self, forKey: .reserveLedger)
+            weatherPeril = try container.decode(WeatherPeril.self, forKey: .weatherPeril)
+            load = try container.decode(TransactionContext.self, forKey: .load)
+            claimant = try container.decodeIfPresent(Party.self, forKey: .claimant)
+            respondent = try container.decodeIfPresent(Party.self, forKey: .respondent)
+            shipper = try container.decodeIfPresent(Party.self, forKey: .shipper)
+            carrier = try container.decodeIfPresent(Party.self, forKey: .carrier)
+            driver = try container.decodeIfPresent(Party.self, forKey: .driver)
+            evidence = try container.decode([EvidenceRecord].self, forKey: .evidence)
+            timeline = try container.decode([TimelineEvent].self, forKey: .timeline)
+            notes = try container.decode([Note].self, forKey: .notes)
+            investigator = try container.decodeIfPresent(Investigator.self, forKey: .investigator)
+            decision = try container.decodeIfPresent(Decision.self, forKey: .decision)
+            workflow = try container.decode(Workflow.self, forKey: .workflow)
+        }
+    }
+
+    func getClaimById(id: String) async throws -> ClaimDetail? {
+        struct Input: Encodable { let id: String }
+        let detail: ClaimDetail? = try await api.query(
+            "freightClaims.getClaimById",
+            input: Input(id: id)
+        )
+        return detail
+    }
+
+    struct ClaimAssetTransitionResult: Decodable, Hashable {
+        let success: Bool
+        let claimId: String
+        let assetId: String
+        let verificationStatus: ClaimAssetAction
+        let verifiedBy: Int
+        let verifiedAt: String
+        let transportMode: TransportMode
+        let referenceNumber: String
+        let idempotent: Bool
+    }
+
+    struct ClaimAssetRecordResult: Decodable, Hashable, Identifiable {
+        let id: String
+        let claimId: String
+        let companyId: Int
+        let assetType: ClaimAssetType
+        let identifier: String
+        let quantity: Double?
+        let quantityUnit: String?
+        let provenanceSource: ClaimAssetProvenance
+        let sourceProvider: String?
+        let sourceReference: String?
+        let observedAt: String?
+        let verificationStatus: String
+        let transportMode: TransportMode
+        let referenceNumber: String
+        let idempotent: Bool
+        let createdAt: String
+    }
+
+    struct ClaimDeadlineRecordResult: Decodable, Hashable, Identifiable {
+        let id: String
+        let claimId: String
+        let companyId: Int
+        let deadlineType: ClaimDeadlineType
+        let dueAt: String
+        let jurisdictionCode: String?
+        let authorityType: ClaimDeadlineAuthority
+        let authorityCitation: String?
+        let sourceUri: String?
+        let sourceReference: String?
+        let ruleVersion: String?
+        let authorityStatus: String
+        let status: String
+        let transportMode: TransportMode
+        let referenceNumber: String
+        let idempotent: Bool
+        let createdAt: String
+    }
+
+    struct ClaimReserveRecordResult: Decodable, Hashable, Identifiable {
+        let id: String
+        let claimId: String
+        let version: Int
+        let amount: Double
+        let currency: CurrencyCode
+        let status: ClaimReserveStatus
+        let basis: String
+        let transportMode: TransportMode
+        let referenceNumber: String
+        let idempotent: Bool
+        let setBy: Int
+        let createdAt: String
+    }
+
+    struct ClaimDeadlineTransitionResult: Decodable, Hashable {
+        let success: Bool
+        let claimId: String
+        let deadlineId: String
+        let action: ClaimDeadlineAction
+        let authorityStatus: String
+        let status: String
+        let completedAt: String?
+        let verifiedAt: String?
+        let transportMode: TransportMode
+        let referenceNumber: String
+        let idempotent: Bool
+    }
+
+    struct ClaimAssignmentTransitionResult: Decodable, Hashable {
+        let success: Bool
+        let claimId: String
+        let assignmentId: String
+        let status: ClaimAssignmentAction
+        let claimStatus: String?
+        let acceptedAt: String?
+        let completedAt: String?
+        let transportMode: TransportMode
+        let referenceNumber: String
+        let idempotent: Bool
+    }
+
+    enum ClaimAssignmentType: String, CaseIterable, Identifiable, Codable, Hashable {
+        case investigator
+        case surveyor
+        case adjuster
+        case counsel
+
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .investigator: return "Investigator"
+            case .surveyor: return "Surveyor"
+            case .adjuster: return "Adjuster"
+            case .counsel: return "Counsel"
+            }
+        }
+    }
+
+    struct ClaimSpecialistCandidateDirectory: Decodable, Hashable {
+        struct Candidate: Decodable, Hashable, Identifiable {
+            let id: String
+            let displayName: String?
+            let role: String
+            let specialty: String
+            let companyName: String
+            let jurisdiction: SpecialistJurisdiction
+            let credentialType: String
+            let issuingAuthority: String
+            let validUntil: String?
+            let credentialState: String
+        }
+
+        struct SpecialistJurisdiction: Decodable, Hashable {
+            let scope: String
+            let code: String?
+        }
+
+        struct Page: Decodable, Hashable {
+            let limit: Int
+            let returnedCount: Int
+            let truncated: Bool
+        }
+
+        struct Provenance: Decodable, Hashable {
+            let source: String?
+            let observedAt: String?
+            let computedAt: String
+            let basis: String?
+            let scope: String
+        }
+
+        struct State: Decodable, Hashable {
+            let dataState: String
+            let accessState: String
+            let trackingState: String
+            let provenance: Provenance
+            let reason: String?
+        }
+
+        let claimId: String
+        let transportMode: TransportMode
+        let specialty: ClaimAssignmentType
+        let jurisdiction: ClaimAssignmentJurisdiction
+        let candidates: [Candidate]
+        let page: Page
+        let state: State
+    }
+
+    typealias ClaimInvestigatorCandidateDirectory = ClaimSpecialistCandidateDirectory
+
+    struct ClaimSpecialistAssignmentResult: Decodable, Hashable {
+        let success: Bool
+        let claimId: String
+        let assignmentId: String
+        let assignmentType: ClaimAssignmentType
+        let assignmentStatus: String
+        let specialistProfileId: String
+        let specialistUserId: String
+        let specialistCompanyId: Int
+        let priority: String
+        let jurisdiction: ClaimAssignmentJurisdiction
+        let status: String
+        let transportMode: TransportMode
+        let referenceNumber: String
+        let idempotent: Bool
+        let assignedBy: Int
+        let assignedAt: String
+    }
+
+    struct ClaimInvestigatorAssignmentResult: Decodable, Hashable {
+        let success: Bool
+        let claimId: String
+        let assignmentId: String
+        let investigatorId: String
+        let specialistUserId: String
+        let priority: String
+        let assignmentStatus: String
+        let status: String
+        let transportMode: TransportMode
+        let referenceNumber: String
+        let idempotent: Bool
+        let assignedBy: Int
+        let assignedAt: String
+    }
+
+    func getClaimInvestigatorCandidates(claimId: String) async throws -> ClaimInvestigatorCandidateDirectory {
+        struct Input: Encodable { let claimId: String }
+        return try await api.query(
+            "freightClaims.getClaimInvestigatorCandidates",
+            input: Input(claimId: claimId)
+        )
+    }
+
+    func getClaimSpecialistCandidates(
+        claimId: String,
+        specialty: ClaimAssignmentType,
+        jurisdiction: ClaimAssignmentJurisdiction? = nil
+    ) async throws -> ClaimSpecialistCandidateDirectory {
+        struct Input: Encodable {
+            let claimId: String
+            let specialty: ClaimAssignmentType
+            let jurisdiction: ClaimAssignmentJurisdiction?
+        }
+        return try await api.query(
+            "freightClaims.getClaimSpecialistCandidates",
+            input: Input(
+                claimId: claimId,
+                specialty: specialty,
+                jurisdiction: jurisdiction
+            )
+        )
+    }
+
+    func assignClaimInvestigator(
+        claimId: String,
+        investigatorId: String,
+        jurisdiction: ClaimAssignmentJurisdiction?,
+        priority: String,
+        notes: String?,
+        requestKey: UUID
+    ) async throws -> ClaimInvestigatorAssignmentResult {
+        struct Input: Encodable {
+            let claimId: String
+            let investigatorId: String
+            let jurisdiction: ClaimAssignmentJurisdiction?
+            let priority: String
+            let notes: String?
+            let requestKey: String
+        }
+        return try await api.mutation(
+            "freightClaims.assignClaimInvestigator",
+            input: Input(
+                claimId: claimId,
+                investigatorId: investigatorId,
+                jurisdiction: jurisdiction,
+                priority: priority,
+                notes: notes,
+                requestKey: requestKey.uuidString.lowercased()
+            )
+        )
+    }
+
+    func assignClaimSpecialist(
+        claimId: String,
+        specialistProfileId: String,
+        assignmentType: ClaimAssignmentType,
+        jurisdiction: ClaimAssignmentJurisdiction,
+        priority: String,
+        notes: String?,
+        requestKey: UUID
+    ) async throws -> ClaimSpecialistAssignmentResult {
+        struct Input: Encodable {
+            let claimId: String
+            let specialistProfileId: String
+            let assignmentType: ClaimAssignmentType
+            let jurisdiction: ClaimAssignmentJurisdiction
+            let priority: String
+            let notes: String?
+            let requestKey: String
+        }
+        return try await api.mutation(
+            "freightClaims.assignClaimSpecialist",
+            input: Input(
+                claimId: claimId,
+                specialistProfileId: specialistProfileId,
+                assignmentType: assignmentType,
+                jurisdiction: jurisdiction,
+                priority: priority,
+                notes: notes,
+                requestKey: requestKey.uuidString.lowercased()
+            )
+        )
+    }
+
+    func recordClaimAsset(
+        claimId: String,
+        companyId: Int?,
+        assetType: ClaimAssetType,
+        identifier: String,
+        quantity: Double?,
+        quantityUnit: String?,
+        provenanceSource: ClaimAssetProvenance,
+        sourceProvider: String?,
+        sourceReference: String?,
+        observedAt: Date?,
+        requestKey: UUID
+    ) async throws -> ClaimAssetRecordResult {
+        struct Input: Encodable {
+            let claimId: String
+            let companyId: Int?
+            let assetType: ClaimAssetType
+            let identifier: String
+            let quantity: Double?
+            let quantityUnit: String?
+            let provenanceSource: ClaimAssetProvenance
+            let sourceProvider: String?
+            let sourceReference: String?
+            let observedAt: String?
+            let requestKey: String
+        }
+        return try await api.mutation(
+            "freightClaims.recordClaimAsset",
+            input: Input(
+                claimId: claimId,
+                companyId: companyId,
+                assetType: assetType,
+                identifier: identifier,
+                quantity: quantity,
+                quantityUnit: quantityUnit,
+                provenanceSource: provenanceSource,
+                sourceProvider: sourceProvider,
+                sourceReference: sourceReference,
+                observedAt: observedAt.map { ISO8601DateFormatter().string(from: $0) },
+                requestKey: requestKey.uuidString.lowercased()
+            )
+        )
+    }
+
+    func recordClaimDeadline(
+        claimId: String,
+        companyId: Int?,
+        deadlineType: ClaimDeadlineType,
+        dueAt: Date,
+        jurisdictionCode: String?,
+        authorityType: ClaimDeadlineAuthority,
+        authorityCitation: String?,
+        sourceUri: String?,
+        sourceReference: String?,
+        ruleVersion: String?,
+        requestKey: UUID
+    ) async throws -> ClaimDeadlineRecordResult {
+        struct Input: Encodable {
+            let claimId: String
+            let companyId: Int?
+            let deadlineType: ClaimDeadlineType
+            let dueAt: String
+            let jurisdictionCode: String?
+            let authorityType: ClaimDeadlineAuthority
+            let authorityCitation: String?
+            let sourceUri: String?
+            let sourceReference: String?
+            let ruleVersion: String?
+            let requestKey: String
+        }
+        return try await api.mutation(
+            "freightClaims.recordClaimDeadline",
+            input: Input(
+                claimId: claimId,
+                companyId: companyId,
+                deadlineType: deadlineType,
+                dueAt: ISO8601DateFormatter().string(from: dueAt),
+                jurisdictionCode: jurisdictionCode,
+                authorityType: authorityType,
+                authorityCitation: authorityCitation,
+                sourceUri: sourceUri,
+                sourceReference: sourceReference,
+                ruleVersion: ruleVersion,
+                requestKey: requestKey.uuidString.lowercased()
+            )
+        )
+    }
+
+    func setClaimReserve(
+        claimId: String,
+        amount: Double,
+        currency: CurrencyCode,
+        status: ClaimReserveStatus,
+        basis: String,
+        requestKey: UUID
+    ) async throws -> ClaimReserveRecordResult {
+        struct Input: Encodable {
+            let claimId: String
+            let amount: Double
+            let currency: CurrencyCode
+            let status: ClaimReserveStatus
+            let basis: String
+            let requestKey: String
+        }
+        return try await api.mutation(
+            "freightClaims.setClaimReserve",
+            input: Input(
+                claimId: claimId,
+                amount: amount,
+                currency: currency,
+                status: status,
+                basis: basis,
+                requestKey: requestKey.uuidString.lowercased()
+            )
+        )
+    }
+
+    func verifyClaimAsset(
+        claimId: String,
+        assetId: String,
+        verificationStatus: ClaimAssetAction,
+        requestKey: UUID
+    ) async throws -> ClaimAssetTransitionResult {
+        struct Input: Encodable {
+            let claimId: String
+            let assetId: String
+            let verificationStatus: ClaimAssetAction
+            let requestKey: String
+        }
+        return try await api.mutation(
+            "freightClaims.verifyClaimAsset",
+            input: Input(
+                claimId: claimId,
+                assetId: assetId,
+                verificationStatus: verificationStatus,
+                requestKey: requestKey.uuidString.lowercased()
+            )
+        )
+    }
+
+    func transitionClaimDeadline(
+        claimId: String,
+        deadlineId: String,
+        action: ClaimDeadlineAction,
+        requestKey: UUID
+    ) async throws -> ClaimDeadlineTransitionResult {
+        struct Input: Encodable {
+            let claimId: String
+            let deadlineId: String
+            let action: ClaimDeadlineAction
+            let requestKey: String
+        }
+        return try await api.mutation(
+            "freightClaims.transitionClaimDeadline",
+            input: Input(
+                claimId: claimId,
+                deadlineId: deadlineId,
+                action: action,
+                requestKey: requestKey.uuidString.lowercased()
+            )
+        )
+    }
+
+    func transitionClaimAssignment(
+        claimId: String,
+        assignmentId: String,
+        status: ClaimAssignmentAction,
+        conflictAttestation: String?,
+        requestKey: UUID
+    ) async throws -> ClaimAssignmentTransitionResult {
+        struct Input: Encodable {
+            let claimId: String
+            let assignmentId: String
+            let status: ClaimAssignmentAction
+            let conflictAttestation: String?
+            let requestKey: String
+        }
+        return try await api.mutation(
+            "freightClaims.transitionClaimAssignment",
+            input: Input(
+                claimId: claimId,
+                assignmentId: assignmentId,
+                status: status,
+                conflictAttestation: conflictAttestation,
+                requestKey: requestKey.uuidString.lowercased()
+            )
         )
     }
 
     // MARK: - File a claim
 
-    struct FileClaimResult: Decodable, Equatable {
-        let id: Int?
-        let status: String?
-        let claimNumber: String?
+    enum TransactionReference: Hashable {
+        case truck(String)
+        case rail(String)
+        case vessel(String)
+
+        var transportMode: TransportMode {
+            switch self {
+            case .truck: return .truck
+            case .rail: return .rail
+            case .vessel: return .vessel
+            }
+        }
+
+        fileprivate var token: String {
+            switch self {
+            case .truck(let value), .rail(let value), .vessel(let value): return value
+            }
+        }
     }
 
+    struct FileClaimRequest: Encodable {
+        let reference: TransactionReference
+        let type: ClaimType
+        let amount: Double
+        let currency: CurrencyCode?
+        let description: String
+        let commodity: String?
+        let weight: Double?
+        let weightUnit: String?
+        let expectedQuantity: Double?
+        let receivedQuantity: Double?
+        let quantityUnit: String?
+        let damageExtent: String?
+        let discoveredAt: String?
+        let evidenceIds: [String]?
+        /// Callers retain this UUID for every retry of the same intent.
+        let requestKey: UUID
+
+        private enum CodingKeys: String, CodingKey {
+            case transportMode, referenceId, type, amount, currency, description
+            case commodity, weight, weightUnit, damageExtent, discoveredAt
+            case expectedQuantity, receivedQuantity, quantityUnit, evidenceIds, requestKey
+        }
+
+        func encode(to encoder: Encoder) throws {
+            let referenceId = reference.token.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !referenceId.isEmpty else {
+                throw EncodingError.invalidValue(
+                    reference.token,
+                    EncodingError.Context(
+                        codingPath: encoder.codingPath,
+                        debugDescription: "Freight claim transaction reference cannot be empty"
+                    )
+                )
+            }
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(reference.transportMode.rawValue, forKey: .transportMode)
+            try container.encode(referenceId, forKey: .referenceId)
+            try container.encode(type.rawValue, forKey: .type)
+            try container.encode(amount, forKey: .amount)
+            try container.encodeIfPresent(currency, forKey: .currency)
+            try container.encode(description, forKey: .description)
+            try container.encodeIfPresent(commodity, forKey: .commodity)
+            try container.encodeIfPresent(weight, forKey: .weight)
+            try container.encodeIfPresent(weightUnit, forKey: .weightUnit)
+            try container.encodeIfPresent(expectedQuantity, forKey: .expectedQuantity)
+            try container.encodeIfPresent(receivedQuantity, forKey: .receivedQuantity)
+            try container.encodeIfPresent(quantityUnit, forKey: .quantityUnit)
+            try container.encodeIfPresent(damageExtent, forKey: .damageExtent)
+            try container.encodeIfPresent(discoveredAt, forKey: .discoveredAt)
+            try container.encodeIfPresent(evidenceIds, forKey: .evidenceIds)
+            try container.encode(requestKey.uuidString.lowercased(), forKey: .requestKey)
+        }
+    }
+
+    struct FileClaimResult: Decodable, Hashable {
+        /// Numeric database identity and canonical public claim identity are
+        /// both required; neither is synthesized from the other here.
+        let id: Int
+        let claimId: String
+        let claimNumber: String
+        let status: String
+        let transportMode: TransportMode
+        let referenceNumber: String
+        let currency: CurrencyCode
+        let expectedQuantity: Double?
+        let receivedQuantity: Double?
+        let quantityUnit: String?
+        let idempotent: Bool
+        let filedBy: Int
+        let filedAt: String
+    }
+
+    func fileClaim(_ request: FileClaimRequest) async throws -> FileClaimResult {
+        try await api.mutation("freightClaims.fileClaim", input: request)
+    }
+
+    /// COMPATIBILITY: truck-only callers use this wrapper until their form
+    /// owns a durable request UUID. New multimodal callers use FileClaimRequest
+    /// and retain one requestKey across retries.
     func fileClaim(
         loadId: String,
         type: ClaimType,
         amount: Double,
         description: String,
         commodity: String? = nil,
-        damageExtent: String? = nil
+        damageExtent: String? = nil,
+        currency: CurrencyCode? = nil,
+        requestKey: UUID
     ) async throws -> FileClaimResult {
-        struct Input: Encodable {
-            let loadId: String
-            let type: String
-            let amount: Double
-            let description: String
-            let commodity: String?
-            let damageExtent: String?
-        }
-        return try await api.mutation(
-            "freightClaims.fileClaim",
-            input: Input(
-                loadId: loadId,
-                type: type.rawValue,
+        try await fileClaim(
+            FileClaimRequest(
+                reference: .truck(loadId),
+                type: type,
                 amount: amount,
+                currency: currency,
                 description: description,
                 commodity: commodity,
-                damageExtent: damageExtent
+                weight: nil,
+                weightUnit: nil,
+                expectedQuantity: nil,
+                receivedQuantity: nil,
+                quantityUnit: nil,
+                damageExtent: damageExtent,
+                discoveredAt: nil,
+                evidenceIds: nil,
+                requestKey: requestKey
             )
         )
     }
 
-    /// Attach an evidence record to a filed claim. Mirrors
-    /// `freightClaims.addClaimEvidence` (frontend/server/routers/freightClaims.ts:772).
-    struct EvidenceRecord: Decodable {
-        let id: String
-        let claimId: String?
-        let type: String?
-        let name: String?
-        let uploadedAt: String?
+    struct StatusUpdateRequest: Encodable {
+        let claimId: String
+        let status: ClaimStatus
+        let notes: String?
+        let requestKey: UUID
+
+        private enum CodingKeys: String, CodingKey { case id, status, notes, requestKey }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(claimId, forKey: .id)
+            try container.encode(status.rawValue, forKey: .status)
+            try container.encodeIfPresent(notes, forKey: .notes)
+            try container.encode(requestKey.uuidString.lowercased(), forKey: .requestKey)
+        }
     }
 
+    struct StatusUpdateResult: Decodable, Hashable {
+        let success: Bool
+        let id: String
+        let previousStatus: String
+        let newStatus: String
+        let transportMode: TransportMode
+        let referenceNumber: String
+        let currency: CurrencyCode
+        let idempotent: Bool
+        let updatedBy: Int?
+        let updatedAt: String
+    }
+
+    func updateClaimStatus(_ request: StatusUpdateRequest) async throws -> StatusUpdateResult {
+        try await api.mutation("freightClaims.updateClaimStatus", input: request)
+    }
+
+    /// Attach an evidence record to a filed claim. Mirrors
+    /// `freightClaims.addClaimEvidence` and keeps one UUID per retry intent.
     func addClaimEvidence(
         claimId: String,
         type: String,
         name: String,
         description: String? = nil,
-        url: String? = nil
+        url: String? = nil,
+        requestKey: UUID
     ) async throws -> EvidenceRecord {
         struct Input: Encodable {
             let claimId: String
@@ -14986,6 +17574,7 @@ struct FreightClaimsAPI {
             let name: String
             let description: String?
             let url: String?
+            let requestKey: String
         }
         return try await api.mutation(
             "freightClaims.addClaimEvidence",
@@ -14994,7 +17583,8 @@ struct FreightClaimsAPI {
                 type: type,
                 name: name,
                 description: description,
-                url: url
+                url: url,
+                requestKey: requestKey.uuidString.lowercased()
             )
         )
     }
@@ -15074,21 +17664,30 @@ struct TrackingGeofencesAPI {
         let usable: [(center: HereLatLng, radius: Double, name: String?)] = rows.compactMap { row in
             guard row.active != false,
                   let c = row.center,
-                  let cLat = c.lat, let cLng = c.lng,
-                  cLat.isFinite, cLng.isFinite,
-                  !(cLat == 0 && cLng == 0),
+                  let coordinate = LatLongParser.validatedCoordinate(
+                      latitude: c.lat,
+                      longitude: c.lng
+                  ),
                   let r = row.radius, r.isFinite, r > 0
             else { return nil }
-            return (HereLatLng(cLat, cLng), r, row.name)
+            return (HereLatLng(coordinate.latitude, coordinate.longitude), r, row.name)
         }
         guard !usable.isEmpty else { return [] }
 
         var out: [ResolvedFence] = []
         for p in points {
-            guard p.lat.isFinite, p.lng.isFinite, !(p.lat == 0 && p.lng == 0) else { continue }
+            guard let coordinate = LatLongParser.validatedCoordinate(
+                latitude: p.lat,
+                longitude: p.lng
+            ) else { continue }
             var best: (fence: ResolvedFence, meters: Double)? = nil
             for f in usable {
-                let d = Self.haversineMeters(p.lat, p.lng, f.center.lat, f.center.lng)
+                let d = Self.haversineMeters(
+                    coordinate.latitude,
+                    coordinate.longitude,
+                    f.center.lat,
+                    f.center.lng
+                )
                 guard d <= Swift.max(f.radius, 1_500) else { continue }
                 if best == nil || d < best!.meters {
                     best = (ResolvedFence(center: f.center, radiusMeters: f.radius, name: f.name), d)
@@ -15226,12 +17825,15 @@ struct TrackingGeofencesAPI {
             guard let id = row.id,
                   row.shape != "polygon",
                   let c = row.center,
-                  let cLat = c.lat, let cLng = c.lng,
-                  cLat.isFinite, cLng.isFinite,
-                  !(cLat == 0 && cLng == 0),
+                  let coordinate = LatLongParser.validatedCoordinate(
+                      latitude: c.lat,
+                      longitude: c.lng
+                  ),
                   let r = row.radiusMeters, r.isFinite, r > 0
             else { return nil }
-            return IdentifiedFence(id: id, center: HereLatLng(cLat, cLng),
+            return IdentifiedFence(
+                id: id,
+                center: HereLatLng(coordinate.latitude, coordinate.longitude),
                                    radiusMeters: r, name: row.name, type: row.type)
         }
         // 1. Exact type match — smallest radius wins (the tight facility ring).
@@ -15240,11 +17842,19 @@ struct TrackingGeofencesAPI {
             return typed
         }
         // 2. Legacy fallback: nearest small-radius circle covering the coord.
-        guard let p = coord, p.lat.isFinite, p.lng.isFinite,
-              !(p.lat == 0 && p.lng == 0) else { return nil }
+        guard let p = coord,
+              let coordinate = LatLongParser.validatedCoordinate(
+                  latitude: p.lat,
+                  longitude: p.lng
+              ) else { return nil }
         return usable
             .filter { $0.radiusMeters < 5_000 }
-            .filter { haversineMeters(p.lat, p.lng, $0.center.lat, $0.center.lng)
+            .filter { haversineMeters(
+                        coordinate.latitude,
+                        coordinate.longitude,
+                        $0.center.lat,
+                        $0.center.lng
+                      )
                         <= Swift.max($0.radiusMeters, 1_500) }
             .min(by: { $0.radiusMeters < $1.radiusMeters })
     }
@@ -15260,22 +17870,33 @@ struct TrackingGeofencesAPI {
             guard row.active != false,
                   let id = row.id,
                   let c = row.center,
-                  let cLat = c.lat, let cLng = c.lng,
-                  cLat.isFinite, cLng.isFinite,
-                  !(cLat == 0 && cLng == 0),
+                  let coordinate = LatLongParser.validatedCoordinate(
+                      latitude: c.lat,
+                      longitude: c.lng
+                  ),
                   let r = row.radius, r.isFinite, r > 0
             else { return nil }
-            return IdentifiedFence(id: id, center: HereLatLng(cLat, cLng),
+            return IdentifiedFence(
+                id: id,
+                center: HereLatLng(coordinate.latitude, coordinate.longitude),
                                    radiusMeters: r, name: row.name, type: row.type)
         }
         guard !usable.isEmpty else { return [] }
 
         var out: [IdentifiedFence] = []
         for p in points {
-            guard p.lat.isFinite, p.lng.isFinite, !(p.lat == 0 && p.lng == 0) else { continue }
+            guard let coordinate = LatLongParser.validatedCoordinate(
+                latitude: p.lat,
+                longitude: p.lng
+            ) else { continue }
             var best: (fence: IdentifiedFence, meters: Double)? = nil
             for f in usable {
-                let d = Self.haversineMeters(p.lat, p.lng, f.center.lat, f.center.lng)
+                let d = Self.haversineMeters(
+                    coordinate.latitude,
+                    coordinate.longitude,
+                    f.center.lat,
+                    f.center.lng
+                )
                 guard d <= Swift.max(f.radiusMeters, 1_500) else { continue }
                 if best == nil || d < best!.meters { best = (f, d) }
             }
@@ -15292,6 +17913,12 @@ struct TrackingGeofencesAPI {
         geofenceId: Int, action: String, lat: Double, lng: Double,
         timestamp: String, loadId: Int?, geofenceType: String?, facilityName: String?
     ) async throws {
+        guard let coordinate = LatLongParser.validatedCoordinate(
+            latitude: lat,
+            longitude: lng
+        ) else {
+            throw EusoTripAPIError.trpcError("A geofence event requires a complete, valid coordinate pair.")
+        }
         struct LatLng: Encodable { let lat: Double; let lng: Double }
         struct Input: Encodable {
             let geofenceId: Int
@@ -15306,7 +17933,7 @@ struct TrackingGeofencesAPI {
         let _: GeofenceEventAck = try await api.mutation(
             "location.telemetry.geofenceEvent",
             input: Input(geofenceId: geofenceId, action: action,
-                         location: LatLng(lat: lat, lng: lng), timestamp: timestamp,
+                         location: LatLng(lat: coordinate.latitude, lng: coordinate.longitude), timestamp: timestamp,
                          loadId: loadId, geofenceType: geofenceType, facilityName: facilityName)
         )
     }
@@ -15321,6 +17948,15 @@ struct TrackingGeofencesAPI {
         loadId: Int, pickupLat: Double, pickupLng: Double, pickupFacilityName: String?,
         deliveryLat: Double, deliveryLng: Double, deliveryFacilityName: String?
     ) async throws -> Int {
+        guard let pickup = LatLongParser.validatedCoordinate(
+            latitude: pickupLat,
+            longitude: pickupLng
+        ), let delivery = LatLongParser.validatedCoordinate(
+            latitude: deliveryLat,
+            longitude: deliveryLng
+        ) else {
+            throw EusoTripAPIError.trpcError("Facility fences require valid pickup and delivery coordinate pairs.")
+        }
         struct Input: Encodable {
             let loadId: Int
             let pickupLat: Double
@@ -15333,9 +17969,9 @@ struct TrackingGeofencesAPI {
         struct CreateAck: Decodable { let count: Int? }
         let ack: CreateAck = try await api.mutation(
             "location.geofences.createForLoad",
-            input: Input(loadId: loadId, pickupLat: pickupLat, pickupLng: pickupLng,
-                         pickupFacilityName: pickupFacilityName, deliveryLat: deliveryLat,
-                         deliveryLng: deliveryLng, deliveryFacilityName: deliveryFacilityName)
+            input: Input(loadId: loadId, pickupLat: pickup.latitude, pickupLng: pickup.longitude,
+                         pickupFacilityName: pickupFacilityName, deliveryLat: delivery.latitude,
+                         deliveryLng: delivery.longitude, deliveryFacilityName: deliveryFacilityName)
         )
         return ack.count ?? 0
     }
@@ -16229,13 +18865,31 @@ struct LoadLifecycleTankerAPI {
             let subState: String?
             let payload: Payload?
         }
+        let coordinate: CLLocationCoordinate2D?
+        if latitude == nil, longitude == nil {
+            coordinate = nil
+        } else if let validated = LatLongParser.validatedCoordinate(
+            latitude: latitude,
+            longitude: longitude
+        ) {
+            coordinate = validated
+        } else {
+            throw EusoTripAPIError.trpcError(
+                "Transition location must be a complete, valid coordinate pair."
+            )
+        }
+
         // Build the payload only when at least one field is present, so
         // a bare-state hop encodes no `payload` key at all (the server's
         // `payload` is `.optional()`); the encoder omits nil members of
         // the payload itself the same way the sibling builders do.
-        let hasPayload = latitude != nil || longitude != nil || notes != nil
+        let hasPayload = coordinate != nil || notes != nil
         let payload = hasPayload
-            ? Payload(latitude: latitude, longitude: longitude, notes: notes)
+            ? Payload(
+                latitude: coordinate?.latitude,
+                longitude: coordinate?.longitude,
+                notes: notes
+            )
             : nil
         return try await api.mutation(
             "loadLifecycleTanker.executeTankerTransition",
@@ -16589,6 +19243,34 @@ struct SpectraMatchAPI {
 
 struct ShipperAPI {
     unowned let api: EusoTripAPI
+
+    @MainActor
+    private func awardRequestStorageKey(loadId: String, bidId: String) throws -> String {
+        guard let sessionCredential = api.authToken
+            ?? HTTPCookieStorage.shared.cookies?.first(where: { $0.name == "app_session_id" })?.value else {
+            throw EusoTripAPIError.unauthenticated
+        }
+        let material = "shippers.acceptBid|\(sessionCredential)|\(loadId)|\(bidId)"
+        let digest = SHA256.hash(data: Data(material.utf8))
+        return "com.eusotrip.commercial-award." + digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    @MainActor
+    private func durableAwardRequestKey(
+        loadId: String,
+        bidId: String,
+        supplied: String?
+    ) throws -> (storageKey: String, requestKey: String) {
+        let storageKey = try awardRequestStorageKey(loadId: loadId, bidId: bidId)
+        let suppliedKey = supplied?.lowercased()
+        let storedKey = UserDefaults.standard.string(forKey: storageKey)?.lowercased()
+        let requestKey = [suppliedKey, storedKey]
+            .compactMap { $0 }
+            .first(where: { UUID(uuidString: $0) != nil })
+            ?? UUID().uuidString.lowercased()
+        UserDefaults.standard.set(requestKey, forKey: storageKey)
+        return (storageKey, requestKey)
+    }
 
     private static func decodeDouble<K: CodingKey>(
         _ c: KeyedDecodingContainer<K>,
@@ -17067,6 +19749,7 @@ struct ShipperAPI {
     struct AcceptBidInput: Encodable {
         let loadId: String
         let bidId: String
+        let requestKey: String
     }
 
     /// Accept-bid mutation envelope. Mirrors verbatim the return of
@@ -17086,11 +19769,31 @@ struct ShipperAPI {
         let acceptedAt: String
     }
 
-    func acceptBid(loadId: String, bidId: String) async throws -> AcceptBidOutput {
-        try await api.mutation(
-            "shippers.acceptBid",
-            input: AcceptBidInput(loadId: loadId, bidId: bidId)
+    func acceptBid(
+        loadId: String,
+        bidId: String,
+        requestKey suppliedRequestKey: String? = nil
+    ) async throws -> AcceptBidOutput {
+        let durable = try await durableAwardRequestKey(
+            loadId: loadId,
+            bidId: bidId,
+            supplied: suppliedRequestKey
         )
+        let output: AcceptBidOutput = try await api.mutation(
+            "shippers.acceptBid",
+            input: AcceptBidInput(
+                loadId: loadId,
+                bidId: bidId,
+                requestKey: durable.requestKey
+            )
+        )
+        guard output.success else {
+            throw EusoTripAPIError.trpcError("The bid award was not confirmed.")
+        }
+        if UserDefaults.standard.string(forKey: durable.storageKey)?.lowercased() == durable.requestKey {
+            UserDefaults.standard.removeObject(forKey: durable.storageKey)
+        }
+        return output
     }
 
     struct RejectBidInput: Encodable {
@@ -17436,6 +20139,9 @@ struct ShipperAPI {
         let equipmentType: String?
         let portIntelligenceAssessmentId: String?
         let portIntelligenceAcknowledged: Bool
+        /// Required by the server when `transportMode == "truck"`; prohibited
+        /// for rail and vessel loads.
+        let truckDetentionTerms: TruckDetentionNegotiatedTerms?
     }
 
     /// Acknowledgement envelope returned by `shippers.create`.
@@ -17444,9 +20150,28 @@ struct ShipperAPI {
     /// .toUpperCase()}` — the screen surfaces the verbatim string in
     /// the success toast (no client-side reformatting).
     struct PostLoadAck: Decodable, Hashable {
+        struct RoutePlanning: Decodable, Hashable {
+            struct Blocker: Decodable, Hashable {
+                let code: String
+                let path: String
+                let message: String
+                let evidenceKind: String?
+            }
+
+            let attempted: Bool
+            let persisted: Bool
+            let state: String
+            let operational: Bool
+            let routePlanPublicId: String?
+            let reasonCode: String?
+            let blockers: [Blocker]
+        }
+
         let success: Bool
         let id: Int
         let loadNumber: String
+        /// Additive for older deployments. Absence is unknown, never ready.
+        let routePlanning: RoutePlanning?
     }
 
     /// Create a freshly-posted load. Server flow on success:
@@ -17510,7 +20235,8 @@ struct ShipperAPI {
         modeRoutePayload: [String: Any]? = nil,
         equipmentType: String? = nil,
         portIntelligenceAssessmentId: String? = nil,
-        portIntelligenceAcknowledged: Bool = false
+        portIntelligenceAcknowledged: Bool = false,
+        truckDetentionTerms: TruckDetentionNegotiatedTerms? = nil
     ) async throws -> PostLoadAck {
         // Wrap the heterogenous [String: Any] payload into an
         // AnyEncodable that round-trips through JSONSerialization —
@@ -17592,7 +20318,8 @@ struct ShipperAPI {
                 modeRoutePayload: encodablePayload,
                 equipmentType: equipmentType,
                 portIntelligenceAssessmentId: portIntelligenceAssessmentId,
-                portIntelligenceAcknowledged: portIntelligenceAcknowledged
+                portIntelligenceAcknowledged: portIntelligenceAcknowledged,
+                truckDetentionTerms: truckDetentionTerms
             )
         )
         guard acknowledgement.success,
@@ -18643,6 +21370,10 @@ struct EscortAPI {
     /// the wire and as em-dash sentinels in the UI per §13 doctrine.
     struct AssignmentDetail: Decodable, Identifiable, Hashable {
         let id: String
+        /// Exact load subject joined by the authorized escort assignment.
+        /// Optional while older servers roll forward; nil must fail closed
+        /// and must never be replaced with the assignment id.
+        let loadId: Int?
         let loadNumber: String
         let origin: String
         let destination: String
@@ -18822,6 +21553,10 @@ struct EscortAPI {
     struct EscortCorridor: Decodable, Hashable {
         /// The escort assignment id this corridor belongs to.
         let id: String
+        /// Exact load subject behind the authorized assignment. This is the
+        /// only identifier the native corridor map may send to route.plan.
+        /// Older envelopes omit it, so nil is an intentional pending state.
+        let loadId: Int?
         /// Load number for the piloted load.
         let loadNumber: String
         /// Origin / destination labels (mirrors `AssignmentDetail`).
@@ -18855,10 +21590,11 @@ struct EscortAPI {
         let bridgeClearanceFt: Double?
         /// Optional permit number authorising the corridor.
         let permitNumber: String?
-        /// Real corridor coordinate block for the in-house HERE map —
-        /// routed polyline + origin/dest pins + live escort/lead/chase/
-        /// piloted positions. Optional: `nil` on envelopes predating the
-        /// coordinate projection. Empty inner arrays until rows populate.
+        /// Legacy corridor reference block. Origin/destination pins may be
+        /// rendered as static markers. `polyline` is not canonical route.plan
+        /// geometry, and `livePositions` lacks the provenance/freshness/rights
+        /// proof required for LIVE operational use; consumers must fail those
+        /// fields closed or present positions as degraded/report-only.
         let corridor: CorridorGeo?
     }
 
@@ -18872,10 +21608,11 @@ struct EscortAPI {
         let lng: Double
     }
 
-    /// Live position of an escort / lead / chase / piloted vehicle along
-    /// the corridor. Sourced from the newest `location_history` fix per
-    /// user (escort = me, lead/chase = paired convoy escorts, piloted =
-    /// the load-carrying primary vehicle). `role` ∈ lead|chase|piloted.
+    /// Legacy reported position of an escort / lead / chase / piloted vehicle.
+    /// Sourced from the newest `location_history` row, but the envelope does
+    /// not carry source licence, freshness, or operational-use authority. The
+    /// wire name remains `livePositions` for compatibility; UI must not call
+    /// these LIVE. `role` ∈ lead|chase|piloted.
     struct CorridorLivePosition: Decodable, Hashable, Identifiable {
         let role: String
         let lat: Double
@@ -18901,15 +21638,16 @@ struct EscortAPI {
     /// map lights up honestly (no fabricated points). Optional on
     /// `EscortCorridor` so older envelopes still decode.
     struct CorridorGeo: Decodable, Hashable {
-        /// Ordered corridor polyline: origin → route waypoints → destination.
+        /// Legacy `loads.route` projection. Not renderer-authoritative; exact
+        /// operational geometry comes only from canonical route.plan.
         let polyline: [CorridorCoord]
         /// Origin pin (`loads.pickupLocation`). `nil` when not geocoded.
         let originPin: CorridorCoord?
         /// Destination pin (`loads.deliveryLocation`). `nil` when not geocoded.
         let destPin: CorridorCoord?
-        /// Live escort / lead / chase / piloted positions.
+        /// Reported escort / lead / chase / piloted positions; unclassified.
         let livePositions: [CorridorLivePosition]
-        /// Viewport bounds across all real points.
+        /// Legacy viewport bounds, including the non-canonical polyline.
         let bounds: CorridorBounds?
     }
 
@@ -21348,35 +24086,71 @@ struct AdaptiveFeeAPI {
     // MARK: - Fintech stack
 
     struct FintechOption: Decodable, Identifiable, Hashable {
-        var id: String { type }
-        let type: String        // instant_pay | cash_advance | quick_pay_net7 | quick_pay_net3 | same_day | factoring
-        let label: String
-        let feePercent: Double?
-        let flatFee: Double?
-        let description: String?
-        let active: Bool
+        var id: String { product }
+        let product: String
+        let available: Bool
+        let fee: Double
+        let payout: Double
+        let timing: String
+        let description: String
     }
 
-    func getAvailableFintech() async throws -> [FintechOption] {
-        try await api.queryNoInput("adaptiveFee.getAvailableFintech")
+    struct AvailableFintechInput: Encodable {
+        let settlementAmount: Double
+        let driverScore: Double?
+    }
+
+    func getAvailableFintech(
+        settlementAmount: Double,
+        driverScore: Double? = nil
+    ) async throws -> [FintechOption] {
+        try await api.query(
+            "adaptiveFee.getAvailableFintech",
+            input: AvailableFintechInput(
+                settlementAmount: settlementAmount,
+                driverScore: driverScore
+            )
+        )
     }
 
     struct FintechFeeInput: Encodable {
-        let type: String
-        let amount: Double
+        let product: String
+        let settlementAmount: Double
+        let driverScore: Double?
+        let nonRecourse: Bool?
+        let advancePercentage: Double?
     }
 
-    struct FintechFeeAck: Decodable {
-        let type: String
-        let amount: Double
-        let feeAmount: Double
-        let netToCarrier: Double
+    struct FintechFeeAck: Decodable, Hashable {
+        let product: String
+        let settlementAmount: Double
+        let fintechFeeRate: Double
+        let fintechFlatFee: Double
+        let totalFintechFee: Double
+        let carrierPayout: Double
+        let disbursementTiming: String
+        let platformRevenueFromFintech: Double
+        let factorShare: Double?
+        let gamificationDiscount: Double
+        let netCarrierReceives: Double
     }
 
-    func calculateFintechFee(type: String, amount: Double) async throws -> FintechFeeAck {
-        try await api.mutation(
+    func calculateFintechFee(
+        product: String,
+        settlementAmount: Double,
+        driverScore: Double? = nil,
+        nonRecourse: Bool? = nil,
+        advancePercentage: Double? = nil
+    ) async throws -> FintechFeeAck {
+        try await api.query(
             "adaptiveFee.calculateFintechFee",
-            input: FintechFeeInput(type: type, amount: amount)
+            input: FintechFeeInput(
+                product: product.uppercased(),
+                settlementAmount: settlementAmount,
+                driverScore: driverScore,
+                nonRecourse: nonRecourse,
+                advancePercentage: advancePercentage
+            )
         )
     }
 
@@ -22369,6 +25143,322 @@ struct LoadTemplatesAPI {
                 industryVerticalReviewAcknowledged: industryVerticalReviewAcknowledged
             )
         )
+    }
+}
+
+// MARK: - RecurringLoadsAPI
+//
+// Production recurring-load orchestration. Mirrors
+// `server/routers/recurringLoads.ts` and
+// `server/services/recurringLoadScheduler.ts` without client-side schedule
+// simulation. The server freezes a governed source-load version, computes
+// occurrences in the selected IANA time zone, materializes canonical loads,
+// and owns every retry/review transition.
+struct RecurringLoadsAPI {
+    unowned let api: EusoTripAPI
+
+    enum Frequency: String, Codable, CaseIterable, Identifiable, Hashable {
+        case weekly
+        case biweekly
+        case monthly
+
+        var id: String { rawValue }
+    }
+
+    enum DSTOverlapPolicy: String, Codable, CaseIterable, Identifiable, Hashable {
+        case earlier
+        case later
+
+        var id: String { rawValue }
+    }
+
+    enum ScheduleStatus: String, Codable, CaseIterable, Identifiable, Hashable {
+        case active
+        case paused
+        case completed
+        case cancelled
+
+        var id: String { rawValue }
+    }
+
+    enum OccurrenceStatus: String, Codable, CaseIterable, Identifiable, Hashable {
+        case pending
+        case processing
+        case reviewRequired = "review_required"
+        case completed
+        case failed
+        case cancelled
+
+        var id: String { rawValue }
+    }
+
+    enum StatusAction: String, Codable, Hashable {
+        case pause
+        case resume
+        case cancel
+    }
+
+    struct Rule: Codable, Hashable {
+        let frequency: Frequency
+        let timeZone: String
+        let localPickupTime: String
+        let weekdays: [Int]
+        let monthDays: [Int]
+        let loadsPerOccurrence: Int
+        let startDate: String
+        let endDate: String
+        let dstOverlapPolicy: DSTOverlapPolicy
+    }
+
+    struct SourceLoad: Decodable, Identifiable, Hashable {
+        let id: Int
+        let loadNumber: String
+        let commodityName: String?
+        let origin: String?
+        let destination: String?
+        let transportMode: String?
+        let pickupDate: String?
+        let deliveryDate: String?
+        let rate: String?
+        let currency: String?
+        let rateUnit: String?
+        let sourceUpdatedAt: String
+        let templateHash: String?
+        let eligible: Bool
+        let blockers: [String]
+    }
+
+    struct RecordedError: Decodable, Hashable {
+        let code: String?
+        let message: String?
+    }
+
+    struct Schedule: Decodable, Identifiable, Hashable {
+        let id: String
+        let name: String
+        let status: ScheduleStatus
+        let sourceLoadId: Int?
+        let currentVersion: Int?
+        let templateHash: String?
+        let recurrenceRule: Rule?
+        let timeZone: String?
+        let nextFireAt: String?
+        let lastFireAt: String?
+        let completedOccurrenceCount: Int
+        let consecutiveFailures: Int
+        let lastError: RecordedError?
+        let updatedAt: String
+    }
+
+    struct OccurrenceProvenance: Decodable, Hashable {
+        let scheduleVersion: Int?
+        let templateHash: String?
+        let industryAssessmentId: String?
+        let portIntelligenceAssessmentId: String?
+        let portIntelligenceEngineVersion: String?
+        let portIntelligenceEvidenceCutoffAt: String?
+        let generatedAt: String?
+    }
+
+    struct Occurrence: Decodable, Identifiable, Hashable {
+        let id: String
+        let scheduleVersion: Int
+        let scheduledFor: String
+        let pickupAt: String
+        let deliveryAt: String?
+        let slot: Int
+        let status: OccurrenceStatus
+        let loadId: Int?
+        let attemptCount: Int
+        let nextAttemptAt: String?
+        let industryAssessmentId: String?
+        let portIntelligenceAssessmentId: String?
+        let industryAssessmentAcknowledgedAt: String?
+        let portIntelligenceAcknowledgedAt: String?
+        let provenance: OccurrenceProvenance?
+        let reviewRequiredReasons: [String]?
+        let lastError: RecordedError?
+        let completedAt: String?
+    }
+
+    struct CreateInput: Encodable, Hashable {
+        let requestKey: String
+        let name: String
+        let sourceLoadId: Int
+        let rule: Rule
+    }
+
+    struct CreateAck: Decodable, Hashable {
+        let success: Bool
+        let scheduleId: String
+        let replayed: Bool
+    }
+
+    struct EvidenceAcknowledgementAck: Decodable, Hashable {
+        let success: Bool
+        let retryReady: Bool
+    }
+
+    struct StatusAck: Decodable, Hashable {
+        let success: Bool
+    }
+
+    private struct CreateTerms: Encodable {
+        let name: String
+        let sourceLoadId: Int
+        let rule: Rule
+    }
+
+    private func durableCreateRequest(
+        name: String,
+        sourceLoadId: Int,
+        rule: Rule,
+        supplied: UUID?
+    ) throws -> (storageKey: String, requestKey: String) {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let terms = try encoder.encode(
+            CreateTerms(name: name, sourceLoadId: sourceLoadId, rule: rule)
+        )
+        // Source load IDs are globally unique, while the backend enforces
+        // `(companyId, requestKey)` uniqueness. Keep the local retry key tied
+        // to exact terms rather than a rotating bearer/session credential so
+        // an ambiguous response can be retried safely after session refresh.
+        var material = Data("recurringLoads.create|".utf8)
+        material.append(terms)
+        let digest = SHA256.hash(data: material)
+            .map { String(format: "%02x", $0) }
+            .joined()
+        let storageKey = "com.eusotrip.recurring-load-create.\(digest)"
+        let stored = UserDefaults.standard.string(forKey: storageKey)?.lowercased()
+        let requestKey = supplied?.uuidString.lowercased()
+            ?? stored.flatMap { UUID(uuidString: $0) == nil ? nil : $0 }
+            ?? UUID().uuidString.lowercased()
+        UserDefaults.standard.set(requestKey, forKey: storageKey)
+        return (storageKey, requestKey)
+    }
+
+    func listSourceLoads(limit: Int = 100) async throws -> [SourceLoad] {
+        struct Input: Encodable { let limit: Int }
+        return try await api.query(
+            "recurringLoads.listSourceLoads",
+            input: Input(limit: limit)
+        )
+    }
+
+    func list(
+        statuses: [ScheduleStatus]? = nil,
+        limit: Int = 100
+    ) async throws -> [Schedule] {
+        struct Input: Encodable {
+            let statuses: [ScheduleStatus]?
+            let limit: Int
+        }
+        return try await api.query(
+            "recurringLoads.list",
+            input: Input(statuses: statuses, limit: limit)
+        )
+    }
+
+    func listOccurrences(
+        scheduleId: String,
+        limit: Int = 100
+    ) async throws -> [Occurrence] {
+        struct Input: Encodable {
+            let scheduleId: String
+            let limit: Int
+        }
+        return try await api.query(
+            "recurringLoads.listOccurrences",
+            input: Input(scheduleId: scheduleId, limit: limit)
+        )
+    }
+
+    @discardableResult
+    func create(
+        name: String,
+        sourceLoadId: Int,
+        rule: Rule,
+        requestKey: UUID? = nil
+    ) async throws -> CreateAck {
+        let durable = try durableCreateRequest(
+            name: name,
+            sourceLoadId: sourceLoadId,
+            rule: rule,
+            supplied: requestKey
+        )
+        let output: CreateAck = try await api.mutation(
+            "recurringLoads.create",
+            input: CreateInput(
+                requestKey: durable.requestKey,
+                name: name,
+                sourceLoadId: sourceLoadId,
+                rule: rule
+            )
+        )
+        guard output.success, UUID(uuidString: output.scheduleId) != nil else {
+            throw EusoTripAPIError.trpcError(
+                "The recurring schedule was not confirmed by the server."
+            )
+        }
+        if UserDefaults.standard.string(forKey: durable.storageKey)?.lowercased()
+            == durable.requestKey {
+            UserDefaults.standard.removeObject(forKey: durable.storageKey)
+        }
+        return output
+    }
+
+    @discardableResult
+    func acknowledgeOccurrence(
+        occurrenceId: String,
+        acknowledgeIndustryAssessment: Bool,
+        acknowledgePortIntelligence: Bool
+    ) async throws -> EvidenceAcknowledgementAck {
+        guard acknowledgeIndustryAssessment || acknowledgePortIntelligence else {
+            throw EusoTripAPIError.trpcError(
+                "Choose at least one current evidence assessment to acknowledge."
+            )
+        }
+        struct Input: Encodable {
+            let occurrenceId: String
+            let acknowledgeIndustryAssessment: Bool
+            let acknowledgePortIntelligence: Bool
+        }
+        let output: EvidenceAcknowledgementAck = try await api.mutation(
+            "recurringLoads.acknowledgeOccurrence",
+            input: Input(
+                occurrenceId: occurrenceId,
+                acknowledgeIndustryAssessment: acknowledgeIndustryAssessment,
+                acknowledgePortIntelligence: acknowledgePortIntelligence
+            )
+        )
+        guard output.success else {
+            throw EusoTripAPIError.trpcError(
+                "The evidence acknowledgement was not confirmed by the server."
+            )
+        }
+        return output
+    }
+
+    @discardableResult
+    func setStatus(
+        scheduleId: String,
+        action: StatusAction
+    ) async throws -> StatusAck {
+        struct Input: Encodable {
+            let scheduleId: String
+            let action: StatusAction
+        }
+        let output: StatusAck = try await api.mutation(
+            "recurringLoads.setStatus",
+            input: Input(scheduleId: scheduleId, action: action)
+        )
+        guard output.success else {
+            throw EusoTripAPIError.trpcError(
+                "The schedule change was not confirmed by the server."
+            )
+        }
+        return output
     }
 }
 
@@ -23433,48 +26523,17 @@ struct InvoicesAPI {
 struct ShipperFreightClaimsAPI {
     unowned let api: EusoTripAPI
 
-    /// Aging breakdown of open claims by days-since-filed bucket.
-    struct AgingBuckets: Decodable, Hashable {
-        let under30: Int
-        let days30to60: Int
-        let days60to90: Int
-        let over90: Int
-    }
-
-    /// Trim row used in `getClaimsDashboard.recentClaims` AND
-    /// `getClaims.claims`. Server returns the same shape on both
-    /// surfaces (id, claimNumber, type, status, description, amount,
-    /// filedDate). The list-only response also carries severity +
-    /// shipper / carrier / loadNumber stubs.
-    struct ClaimRow: Decodable, Hashable, Identifiable {
-        let id: String
-        let claimNumber: String
-        let type: String
-        let status: String
-        let description: String
-        let amount: Double
-        let filedDate: String
-        let severity: String?
-        let shipper: String?
-        let carrier: String?
-        let loadNumber: String?
-    }
-
-    struct Dashboard: Decodable, Hashable {
-        let open: Int
-        let pending: Int
-        let resolved: Int
-        let denied: Int
-        let totalValue: Double
-        let avgResolutionDays: Double
-        let aging: AgingBuckets
-        let recentClaims: [ClaimRow]
-    }
-
-    struct ClaimsListResponse: Decodable, Hashable {
-        let claims: [ClaimRow]
-        let total: Int
-    }
+    // One canonical decoder serves every claimant/respondent role. These
+    // aliases keep the shipped namespace stable without creating a second,
+    // drifting interpretation of the same server payload.
+    typealias AgingBuckets = FreightClaimsAPI.Aging
+    typealias ClaimRow = FreightClaimsAPI.Claim
+    typealias Dashboard = FreightClaimsAPI.Dashboard
+    typealias ClaimsListResponse = FreightClaimsAPI.ClaimsResponse
+    typealias ClaimDetail = FreightClaimsAPI.ClaimDetail
+    typealias EvidenceRecord = FreightClaimsAPI.EvidenceRecord
+    typealias FileClaimRequest = FreightClaimsAPI.FileClaimRequest
+    typealias FileClaimResult = FreightClaimsAPI.FileClaimResult
 
     // MARK: Reads
 
@@ -23490,6 +26549,9 @@ struct ShipperFreightClaimsAPI {
     func getClaims(
         status: String? = nil,
         type: String? = nil,
+        transportMode: FreightClaimsAPI.TransportMode? = nil,
+        minAmount: Double? = nil,
+        maxAmount: Double? = nil,
         search: String? = nil,
         startDate: String? = nil,
         endDate: String? = nil,
@@ -23499,6 +26561,9 @@ struct ShipperFreightClaimsAPI {
         struct Input: Encodable {
             let status: String?
             let type: String?
+            let transportMode: String?
+            let minAmount: Double?
+            let maxAmount: Double?
             let search: String?
             let startDate: String?
             let endDate: String?
@@ -23510,6 +26575,9 @@ struct ShipperFreightClaimsAPI {
             input: Input(
                 status: status,
                 type: type,
+                transportMode: transportMode?.rawValue,
+                minAmount: minAmount,
+                maxAmount: maxAmount,
                 search: search,
                 startDate: startDate,
                 endDate: endDate,
@@ -23519,19 +26587,14 @@ struct ShipperFreightClaimsAPI {
         )
     }
 
+    func getClaimById(id: String) async throws -> ClaimDetail? {
+        try await api.freightClaims.getClaimById(id: id)
+    }
+
     // MARK: Mutations
 
-    /// `freightClaims.addClaimEvidence` — attaches a metadata-only
-    /// evidence record to a filed claim. Server returns the evidence
-    /// id + a server-side upload URL the iOS layer can later POST
-    /// the binary blob to (see `addClaimEvidence` server signature).
-    struct EvidenceRecord: Decodable, Hashable {
-        let id: String
-        let claimId: String
-        let type: String
-        let name: String
-        let uploadUrl: String?
-        let uploadedAt: String?
+    func fileClaim(_ request: FileClaimRequest) async throws -> FileClaimResult {
+        try await api.freightClaims.fileClaim(request)
     }
 
     func addClaimEvidence(
@@ -23539,24 +26602,16 @@ struct ShipperFreightClaimsAPI {
         type: String,
         name: String,
         description: String? = nil,
-        url: String? = nil
+        url: String? = nil,
+        requestKey: UUID
     ) async throws -> EvidenceRecord {
-        struct Input: Encodable {
-            let claimId: String
-            let type: String
-            let name: String
-            let description: String?
-            let url: String?
-        }
-        return try await api.mutation(
-            "freightClaims.addClaimEvidence",
-            input: Input(
-                claimId: claimId,
-                type: type,
-                name: name,
-                description: description,
-                url: url
-            )
+        try await api.freightClaims.addClaimEvidence(
+            claimId: claimId,
+            type: type,
+            name: name,
+            description: description,
+            url: url,
+            requestKey: requestKey
         )
     }
 
@@ -23568,6 +26623,8 @@ struct ShipperFreightClaimsAPI {
         let id: String
         let disputeNumber: String
         let status: String
+        let amount: Double
+        let currency: FreightClaimsAPI.CurrencyCode
         let filedAt: String?
     }
 
@@ -23575,6 +26632,7 @@ struct ShipperFreightClaimsAPI {
         type: String,
         invoiceNumber: String,
         amount: Double,
+        currency: FreightClaimsAPI.CurrencyCode,
         description: String,
         loadId: String? = nil,
         carrierId: String? = nil
@@ -23583,6 +26641,7 @@ struct ShipperFreightClaimsAPI {
             let type: String
             let invoiceNumber: String
             let amount: Double
+            let currency: FreightClaimsAPI.CurrencyCode
             let description: String
             let loadId: String?
             let carrierId: String?
@@ -23593,6 +26652,7 @@ struct ShipperFreightClaimsAPI {
                 type: type,
                 invoiceNumber: invoiceNumber,
                 amount: amount,
+                currency: currency,
                 description: description,
                 loadId: loadId,
                 carrierId: carrierId
@@ -24443,6 +27503,66 @@ struct LoadBoardAPI {
             )
         )
     }
+
+    /// Authoritative acknowledgement for `loadBoard.bookLoad`. Direct booking
+    /// is a truck equipment/driver assignment; rail and vessel awards remain on
+    /// their dedicated tender contracts. A caller may present success only when
+    /// the persisted load reads back as assigned with the same opaque identity.
+    struct BookAck: Decodable, Hashable {
+        let bookingId: String
+        let loadId: String
+        let status: String
+        let idempotent: Bool
+        let bookedBy: Int?
+        let bookedAt: String?
+        let confirmationNumber: String?
+        let loadNumber: String?
+        let vehicleId: Int?
+        let driverId: Int?
+        let agreedRate: Double?
+        let version: Int?
+
+        func confirms(loadId expectedLoadId: String) -> Bool {
+            bookingId == expectedLoadId
+                && loadId == expectedLoadId
+                && status.lowercased() == "assigned"
+        }
+    }
+
+    @discardableResult
+    func bookLoad(
+        loadId: String,
+        vehicleId: String,
+        driverId: String,
+        agreedRate: Double? = nil,
+        requestKey: String
+    ) async throws -> BookAck {
+        struct Input: Encodable {
+            let loadId: String
+            let vehicleId: String
+            let driverId: String
+            let agreedRate: Double?
+            let skipHazmatCheck: Bool
+            let requestKey: String
+        }
+        let acknowledgement: BookAck = try await api.mutation(
+            "loadBoard.bookLoad",
+            input: Input(
+                loadId: loadId,
+                vehicleId: vehicleId,
+                driverId: driverId,
+                agreedRate: agreedRate,
+                skipHazmatCheck: false,
+                requestKey: requestKey
+            )
+        )
+        guard acknowledgement.confirms(loadId: loadId) else {
+            throw EusoTripAPIError.decodingFailed(
+                "Booking reply did not match the persisted assigned load."
+            )
+        }
+        return acknowledgement
+    }
 }
 
 // MARK: - bol.generateBOLFromLoad ON EusoTicketAPI
@@ -24685,55 +27805,6 @@ struct CapabilitiesAPI {
         try await api.mutation("capabilities.setTrailer", input: caps)
     }
 
-    // MARK: - Vendor OAuth flows
-
-    /// Per-vendor authorize URL + opaque CSRF state. iOS opens
-    /// `authorizeUrl` in `SFSafariViewController`; the vendor
-    /// redirects back to `eusotrip://oauth/callback/<vendor>?code=…&state=…`
-    /// which AppRoot's URL handler captures and forwards to
-    /// `exchangeOAuthCode`. Backend mints the state token + caches
-    /// it under the user id so the callback verifies as same-user.
-    struct OAuthAuthorize: Decodable, Hashable {
-        let authorizeUrl: String
-        let state: String
-        let vendor: String
-    }
-
-    /// `capabilities.startVendorOAuth` — request the authorize URL.
-    /// Vendors today: "samsara" | "motive" | "garmin" | "cipia"
-    /// (dash cam) | "sensata" | "orbcomm" | "spireon" (dome cam).
-    func startVendorOAuth(vendor: String) async throws -> OAuthAuthorize {
-        struct Input: Encodable { let vendor: String }
-        return try await api.mutation(
-            "capabilities.startVendorOAuth",
-            input: Input(vendor: vendor)
-        )
-    }
-
-    struct OAuthExchangeAck: Decodable, Hashable {
-        let success: Bool
-        let vendor: String
-        let configured: Bool
-    }
-
-    /// `capabilities.exchangeOAuthCode` — backend trades the
-    /// authorization code for the vendor's long-lived token, stores
-    /// the ciphertext on `carrierCapabilities` / `trailerCapabilities`,
-    /// flips the matching `configured` boolean, returns the iOS-side
-    /// truth value (no token leakage). On success the iOS UI reloads
-    /// the capability envelope and the matching dock-cam picker row
-    /// flips from "Pair" to enabled.
-    func exchangeOAuthCode(vendor: String, code: String, state: String) async throws -> OAuthExchangeAck {
-        struct Input: Encodable {
-            let vendor: String
-            let code: String
-            let state: String
-        }
-        return try await api.mutation(
-            "capabilities.exchangeOAuthCode",
-            input: Input(vendor: vendor, code: code, state: state)
-        )
-    }
 }
 
 // MARK: - EusoNISession (NearbyInteraction UWB session)
@@ -26487,7 +29558,13 @@ struct VesselTrackAPI {
         let status: String?
 
         /// Projected into the canonical map data contract.
-        var coordinate: HereLatLng { HereLatLng(lat, lng) }
+        var coordinate: HereLatLng? {
+            guard let coordinate = LatLongParser.validatedCoordinate(
+                latitude: lat,
+                longitude: lng
+            ) else { return nil }
+            return HereLatLng(coordinate.latitude, coordinate.longitude)
+        }
     }
 
     /// `MarineTrafficService.PortCall` — a scheduled / historical port call.
@@ -26551,8 +29628,11 @@ struct VesselTrackAPI {
 
         /// nil unless the row carries a real geofence fix.
         var coordinate: HereLatLng? {
-            guard let lat = currentLat, let lng = currentLng else { return nil }
-            return HereLatLng(lat, lng)
+            guard let coordinate = LatLongParser.validatedCoordinate(
+                latitude: currentLat,
+                longitude: currentLng
+            ) else { return nil }
+            return HereLatLng(coordinate.latitude, coordinate.longitude)
         }
     }
 

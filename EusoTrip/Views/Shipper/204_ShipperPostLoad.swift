@@ -124,6 +124,11 @@ struct ShipperPostLoad: View {
     // Persists onto loads.transport_mode via shippers.create.
     @State private var transportMode: TransportMode = .truck
 
+    // Truck posts require explicit commercial detention authority. Nothing is
+    // defaulted on the user's behalf; incomplete terms remain a recoverable
+    // draft and cannot cross the wire.
+    @State private var truckDetentionTermsDraft = TruckDetentionTermsDraft()
+
     // Equipment type picker — all verticals + product types per the
     // founder's "all verticals" doctrine. The selected type is sent
     // as `equipmentType` on `shippers.create`. Default = dry van.
@@ -206,6 +211,9 @@ struct ShipperPostLoad: View {
     @State private var commoditySearchHits: [CommodityLookupAPI.CommodityHit] = []
     @State private var isSearchingCommodity: Bool = false
     @State private var commodityLookupError: String? = nil
+    @State private var commodityLookupUnavailableReason: String? = nil
+    @State private var commoditySearchTask: Task<Void, Never>? = nil
+    @State private var commodityResponseContractVerified = false
     /// The selected non-hazmat commodity, pinned into the structured
     /// block (mirrors `ergMatch` for the hazmat branch).
     @State private var commodityMatch: CommodityLookupAPI.CommodityHit? = nil
@@ -253,7 +261,8 @@ struct ShipperPostLoad: View {
         var id: String { code }
     }
 
-    private static let postLoadCountries: [PostLoadCountry] = Locale.isoRegionCodes
+    private static let postLoadCountries: [PostLoadCountry] = Locale.Region.isoRegions
+        .map(\.identifier)
         .filter { $0.count == 2 }
         .compactMap { code in
             guard let name = Locale.current.localizedString(forRegionCode: code) else { return nil }
@@ -697,18 +706,16 @@ struct ShipperPostLoad: View {
         return f
     }()
 
-    // MARK: - HERE Routing — distance + ETA estimation
+    // MARK: - Endpoint verification + post-commit route authority
     //
-    // Founder bug 2026-05-07: "the eta calculating still doesnt work
-    // mate. still missing the enhancements you made to that post a
-    // load wizard." The earlier copy promised "ETA computed · Auto-set
-    // from pickup + lane" but never actually fired a router request.
-    //
-    // Fix: when origin + destination + pickupDate are all set, hit
-    // `HereRoutingClient.route(stops:profile:)` with a standard US
-    // semi truck profile. Store the resulting distance (meters) +
-    // duration (seconds), derive the deliveryETA from pickupDate +
-    // duration, and surface real values in the delivery tile.
+    // A draft has no persisted subject identity, requirement-profile
+    // registration, graph binding, or route-plan version. This screen may
+    // geocode and preview declared endpoints, but it must not author a route
+    // or invent a "standard" asset. After shippers.create commits, the server
+    // runs purpose=posting for the exact Truck/Rail/Vessel requirements and
+    // returns explicit ready/pending truth in PostLoadAck.routePlanning.
+    // Reserved for a future server-owned draft-plan response; these remain nil
+    // today rather than presenting a client estimate as an operational plan.
     @State private var routeDistanceMeters: Int? = nil
     @State private var routeDurationSeconds: Int? = nil
     @State private var routingError: String? = nil
@@ -744,8 +751,7 @@ struct ShipperPostLoad: View {
     /// the routing call on every keystroke.
     @State private var lastRoutedKey: String = ""
 
-    /// Computed delivery ETA = pickupDate + routeDurationSeconds.
-    /// Returns nil until both values are present.
+    /// Delivery ETA exists only when a server-owned duration exists.
     private var computedDeliveryETA: Date? {
         guard hasPickupDate, let secs = routeDurationSeconds else { return nil }
         return pickupDate.addingTimeInterval(TimeInterval(secs))
@@ -801,16 +807,15 @@ struct ShipperPostLoad: View {
             if showPostedCelebration, let ack = lastSuccess {
                 PostLoadPostedCelebration(
                     loadNumber: ack.loadNumber,
+                    subline: postingCelebrationSubline(ack),
                     onContinue: finishCelebrationAndReset
                 )
                 .transition(.opacity)
                 .zIndex(50)
             }
         }
-        // Re-fire HERE Routing whenever the lane endpoints' lat/lng
-        // change. Address-field selection populates these and bumps
-        // a rebuild; we reactively trigger the route computation so
-        // the delivery tile populates as soon as a valid lane exists.
+        // Re-verify declared endpoints whenever address selection changes.
+        // No pre-persistence client route is authored here.
         .onChange(of: originLat) { _, _ in recomputeETAIfReady() }
         .onChange(of: originLng) { _, _ in recomputeETAIfReady() }
         .onChange(of: destLat)   { _, _ in recomputeETAIfReady() }
@@ -1073,8 +1078,22 @@ struct ShipperPostLoad: View {
                             commoditySearchRow(hit)
                         }
                         .buttonStyle(.plain)
+                        .disabled(!isCommodityHitSelectable(hit))
+                        .accessibilityHint(isCommodityHitSelectable(hit)
+                            ? "Use this evidence-backed product profile."
+                            : commodityHitSelectionBlockReason(hit))
                     }
-                    if commoditySearchHits.isEmpty && !commoditySearchQuery.isEmpty && !isSearchingCommodity {
+                    if let err = commodityLookupError, !isSearchingCommodity {
+                        Text(err)
+                            .font(EType.caption)
+                            .foregroundStyle(Brand.danger)
+                            .padding(.top, Space.s3)
+                    } else if let reason = commodityLookupUnavailableReason, !isSearchingCommodity {
+                        Text(reason)
+                            .font(EType.caption)
+                            .foregroundStyle(Brand.warning)
+                            .padding(.top, Space.s3)
+                    } else if commoditySearchHits.isEmpty && !commoditySearchQuery.isEmpty && !isSearchingCommodity {
                         Text("No commodity match for '\(commoditySearchQuery)'")
                             .font(EType.caption)
                             .foregroundStyle(palette.textTertiary)
@@ -1086,6 +1105,12 @@ struct ShipperPostLoad: View {
         }
         .padding(Space.s5)
         .background(palette.bgPrimary)
+        .onDisappear {
+            commoditySearchTask?.cancel()
+            commoditySearchTask = nil
+            isSearchingCommodity = false
+            commodityResponseContractVerified = false
+        }
     }
 
     @ViewBuilder
@@ -1100,7 +1125,7 @@ struct ShipperPostLoad: View {
                     }
                     if let cat = hit.category, !cat.isEmpty {
                         Text(cat)
-                            .font(.system(size: 9, weight: .heavy)).tracking(0.4)
+                            .font(EType.micro)
                             .foregroundStyle(palette.textSecondary)
                     }
                 }
@@ -1112,6 +1137,10 @@ struct ShipperPostLoad: View {
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(1)
+                Text(commodityEvidenceSubtitle(hit))
+                    .font(EType.caption)
+                    .foregroundStyle(isCommodityHitSelectable(hit) ? palette.textTertiary : Brand.warning)
+                    .lineLimit(2)
             }
             Spacer(minLength: 0)
             Image(systemName: "chevron.right")
@@ -1123,6 +1152,7 @@ struct ShipperPostLoad: View {
         .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                     .strokeBorder(palette.borderFaint))
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .opacity(isCommodityHitSelectable(hit) ? 1 : 0.72)
     }
 
     // MARK: - Templates picker sheet (loadTemplates.list)
@@ -1784,11 +1814,11 @@ struct ShipperPostLoad: View {
     // MARK: - Draft autosave + iCloud KVS continuity
 
     /// JSON-encodable snapshot of every field the wizard captures.
-    /// Bumped to `v: 2` when adding ERG/equipment fields beyond the
-    /// original lane/cargo/rate set so older drafts in storage decode
-    /// gracefully (missing fields become defaults).
+    /// Version 4 includes transport mode and raw truck detention terms. The
+    /// custom decoder supplies every historical default explicitly so a v1-v3
+    /// draft can still resume instead of failing on a newly required key.
     private struct PostLoadDraftSnapshot: Codable, Sendable {
-        var v: Int = 2
+        var v: Int = 4
         var origin: String = ""
         var destination: String = ""
         var originLat: Double? = nil
@@ -1832,6 +1862,70 @@ struct ShipperPostLoad: View {
         // the default value and the post-hydrate equipment-compat
         // check below snaps equipment to a mode-coherent option.
         var transportModeRaw: String = "truck"
+        // v4 (2026-08-23) - raw commercial terms, including incomplete input,
+        // so a phone death never discards negotiation work. Nil means the
+        // draft predates explicit truck detention terms.
+        var truckDetentionTermsDraft: TruckDetentionTermsDraft? = nil
+
+        private enum CodingKeys: String, CodingKey {
+            case v, origin, destination, originLat, originLng, destLat, destLng
+            case originCountryCode, destinationCountryCode, cargoTypeRaw, equipmentTypeRaw
+            case hasPickupDate, pickupDateUnix, weightText, rateText, notes
+            case unNumber, hazmatClass, packingGroup, properShippingName
+            case tankerHoseSpec, tankerFitting, reeferTempLowText, reeferTempHighText
+            case preCoolRequired, continuousMode, flatbedStraps, flatbedTarps
+            case flatbedChains, flatbedEdgeProtectors, oversizeLengthText
+            case oversizeWidthText, oversizeHeightText, oversizePermits, permitTypeRaw
+            case weightUnitRaw, savedAt, transportModeRaw, truckDetentionTermsDraft
+        }
+
+        init() {}
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            v = try c.decodeIfPresent(Int.self, forKey: .v) ?? 1
+            origin = try c.decodeIfPresent(String.self, forKey: .origin) ?? ""
+            destination = try c.decodeIfPresent(String.self, forKey: .destination) ?? ""
+            originLat = try c.decodeIfPresent(Double.self, forKey: .originLat)
+            originLng = try c.decodeIfPresent(Double.self, forKey: .originLng)
+            destLat = try c.decodeIfPresent(Double.self, forKey: .destLat)
+            destLng = try c.decodeIfPresent(Double.self, forKey: .destLng)
+            originCountryCode = try c.decodeIfPresent(String.self, forKey: .originCountryCode)
+            destinationCountryCode = try c.decodeIfPresent(String.self, forKey: .destinationCountryCode)
+            cargoTypeRaw = try c.decodeIfPresent(String.self, forKey: .cargoTypeRaw) ?? "general"
+            equipmentTypeRaw = try c.decodeIfPresent(String.self, forKey: .equipmentTypeRaw) ?? "dry_van"
+            hasPickupDate = try c.decodeIfPresent(Bool.self, forKey: .hasPickupDate) ?? false
+            pickupDateUnix = try c.decodeIfPresent(Double.self, forKey: .pickupDateUnix) ?? 0
+            weightText = try c.decodeIfPresent(String.self, forKey: .weightText) ?? ""
+            rateText = try c.decodeIfPresent(String.self, forKey: .rateText) ?? ""
+            notes = try c.decodeIfPresent(String.self, forKey: .notes) ?? ""
+            unNumber = try c.decodeIfPresent(String.self, forKey: .unNumber) ?? ""
+            hazmatClass = try c.decodeIfPresent(String.self, forKey: .hazmatClass) ?? ""
+            packingGroup = try c.decodeIfPresent(String.self, forKey: .packingGroup) ?? ""
+            properShippingName = try c.decodeIfPresent(String.self, forKey: .properShippingName) ?? ""
+            tankerHoseSpec = try c.decodeIfPresent(String.self, forKey: .tankerHoseSpec) ?? ""
+            tankerFitting = try c.decodeIfPresent(String.self, forKey: .tankerFitting) ?? ""
+            reeferTempLowText = try c.decodeIfPresent(String.self, forKey: .reeferTempLowText) ?? ""
+            reeferTempHighText = try c.decodeIfPresent(String.self, forKey: .reeferTempHighText) ?? ""
+            preCoolRequired = try c.decodeIfPresent(Bool.self, forKey: .preCoolRequired) ?? false
+            continuousMode = try c.decodeIfPresent(Bool.self, forKey: .continuousMode) ?? true
+            flatbedStraps = try c.decodeIfPresent(Bool.self, forKey: .flatbedStraps) ?? false
+            flatbedTarps = try c.decodeIfPresent(Bool.self, forKey: .flatbedTarps) ?? false
+            flatbedChains = try c.decodeIfPresent(Bool.self, forKey: .flatbedChains) ?? false
+            flatbedEdgeProtectors = try c.decodeIfPresent(Bool.self, forKey: .flatbedEdgeProtectors) ?? false
+            oversizeLengthText = try c.decodeIfPresent(String.self, forKey: .oversizeLengthText) ?? ""
+            oversizeWidthText = try c.decodeIfPresent(String.self, forKey: .oversizeWidthText) ?? ""
+            oversizeHeightText = try c.decodeIfPresent(String.self, forKey: .oversizeHeightText) ?? ""
+            oversizePermits = try c.decodeIfPresent(Bool.self, forKey: .oversizePermits) ?? false
+            permitTypeRaw = try c.decodeIfPresent(String.self, forKey: .permitTypeRaw) ?? "none"
+            weightUnitRaw = try c.decodeIfPresent(String.self, forKey: .weightUnitRaw) ?? "lbs"
+            savedAt = try c.decodeIfPresent(Double.self, forKey: .savedAt) ?? 0
+            transportModeRaw = try c.decodeIfPresent(String.self, forKey: .transportModeRaw) ?? "truck"
+            truckDetentionTermsDraft = try c.decodeIfPresent(
+                TruckDetentionTermsDraft.self,
+                forKey: .truckDetentionTermsDraft
+            )
+        }
     }
 
     /// Single hash of every autosaved field. Drives one `.onChange`
@@ -1874,7 +1968,15 @@ struct ShipperPostLoad: View {
         s += oversizeHeightText; s += "|"
         s += String(oversizePermits); s += "|"
         s += permitType.rawValue; s += "|"
-        s += weightUnit.rawValue
+        s += weightUnit.rawValue; s += "|"
+        s += transportMode.rawValue; s += "|"
+        s += truckDetentionTermsDraft.currency?.rawValue ?? ""; s += "|"
+        s += truckDetentionTermsDraft.freeTimeMinutes; s += "|"
+        s += truckDetentionTermsDraft.rateAmount; s += "|"
+        s += truckDetentionTermsDraft.billingIncrementMinutes; s += "|"
+        s += truckDetentionTermsDraft.roundingRule?.rawValue ?? ""; s += "|"
+        s += truckDetentionTermsDraft.suspensionRule?.rawValue ?? ""; s += "|"
+        s += truckDetentionTermsDraft.excludedSharePercent
         return s
     }
 
@@ -1902,44 +2004,46 @@ struct ShipperPostLoad: View {
 
     private func persistDraft() {
         guard didHydrateDraft else { return }   // skip on first hydrate pass
-        let snap = PostLoadDraftSnapshot(
-            v: 2,
-            origin: origin,
-            destination: destination,
-            originLat: originLat, originLng: originLng,
-            destLat: destLat, destLng: destLng,
-            originCountryCode: originCountryCode,
-            destinationCountryCode: destinationCountryCode,
-            cargoTypeRaw: cargoType.rawValue,
-            equipmentTypeRaw: equipmentType.rawValue,
-            hasPickupDate: hasPickupDate,
-            pickupDateUnix: pickupDate.timeIntervalSince1970,
-            weightText: weightText,
-            rateText: rateText,
-            notes: notes,
-            unNumber: unNumber,
-            hazmatClass: hazmatClass,
-            packingGroup: packingGroup,
-            properShippingName: properShippingName,
-            tankerHoseSpec: tankerHoseSpec,
-            tankerFitting: tankerFitting,
-            reeferTempLowText: reeferTempLowText,
-            reeferTempHighText: reeferTempHighText,
-            preCoolRequired: preCoolRequired,
-            continuousMode: continuousMode,
-            flatbedStraps: flatbedStraps,
-            flatbedTarps: flatbedTarps,
-            flatbedChains: flatbedChains,
-            flatbedEdgeProtectors: flatbedEdgeProtectors,
-            oversizeLengthText: oversizeLengthText,
-            oversizeWidthText: oversizeWidthText,
-            oversizeHeightText: oversizeHeightText,
-            oversizePermits: oversizePermits,
-            permitTypeRaw: permitType.rawValue,
-            weightUnitRaw: weightUnit.rawValue,
-            savedAt: Date().timeIntervalSince1970,
-            transportModeRaw: transportMode.rawValue
-        )
+        var snap = PostLoadDraftSnapshot()
+        snap.v = 4
+        snap.origin = origin
+        snap.destination = destination
+        snap.originLat = originLat
+        snap.originLng = originLng
+        snap.destLat = destLat
+        snap.destLng = destLng
+        snap.originCountryCode = originCountryCode
+        snap.destinationCountryCode = destinationCountryCode
+        snap.cargoTypeRaw = cargoType.rawValue
+        snap.equipmentTypeRaw = equipmentType.rawValue
+        snap.hasPickupDate = hasPickupDate
+        snap.pickupDateUnix = pickupDate.timeIntervalSince1970
+        snap.weightText = weightText
+        snap.rateText = rateText
+        snap.notes = notes
+        snap.unNumber = unNumber
+        snap.hazmatClass = hazmatClass
+        snap.packingGroup = packingGroup
+        snap.properShippingName = properShippingName
+        snap.tankerHoseSpec = tankerHoseSpec
+        snap.tankerFitting = tankerFitting
+        snap.reeferTempLowText = reeferTempLowText
+        snap.reeferTempHighText = reeferTempHighText
+        snap.preCoolRequired = preCoolRequired
+        snap.continuousMode = continuousMode
+        snap.flatbedStraps = flatbedStraps
+        snap.flatbedTarps = flatbedTarps
+        snap.flatbedChains = flatbedChains
+        snap.flatbedEdgeProtectors = flatbedEdgeProtectors
+        snap.oversizeLengthText = oversizeLengthText
+        snap.oversizeWidthText = oversizeWidthText
+        snap.oversizeHeightText = oversizeHeightText
+        snap.oversizePermits = oversizePermits
+        snap.permitTypeRaw = permitType.rawValue
+        snap.weightUnitRaw = weightUnit.rawValue
+        snap.savedAt = Date().timeIntervalSince1970
+        snap.transportModeRaw = transportMode.rawValue
+        snap.truckDetentionTermsDraft = truckDetentionTermsDraft
         lastHydratedDraftSavedAt = max(lastHydratedDraftSavedAt, snap.savedAt)
         // The snapshot was built on the main actor above because it reads
         // SwiftUI @State. Everything below — JSON encode, UserDefaults, and
@@ -2078,6 +2182,7 @@ struct ShipperPostLoad: View {
         if let restoredMode = TransportMode(rawValue: snap.transportModeRaw) {
             transportMode = restoredMode
         }
+        truckDetentionTermsDraft = snap.truckDetentionTermsDraft ?? TruckDetentionTermsDraft()
         // Post-hydrate safety net — if the restored equipmentType is
         // not mode-compatible (e.g. v1/v2 draft with vesselBulk +
         // default truck mode), snap to the mode's canonical default.
@@ -2269,13 +2374,15 @@ struct ShipperPostLoad: View {
 
     // MARK: - Step body switch
 
-    @ViewBuilder
-    private var stepBody: some View {
+    /// Keep the active wizard step behind a stable runtime type. Without this
+    /// boundary, Swift must materialize one conditional type containing every
+    /// large step before it can render the selected branch.
+    private var stepBody: AnyView {
         switch step {
-        case .lane:      laneStepBody
-        case .equipment: equipmentStepBody
-        case .pricing:   pricingStepBody
-        case .review:    reviewStepBody
+        case .lane:      return AnyView(laneStepBody)
+        case .equipment: return equipmentStepBody
+        case .pricing:   return AnyView(pricingStepBody)
+        case .review:    return AnyView(reviewStepBody)
         }
     }
 
@@ -2291,6 +2398,7 @@ struct ShipperPostLoad: View {
                 templateAckBanner(toast)
             }
             laneSection
+            postingMapPreview
             routeMetaPill
             modePickerSection      // 2026-05-17 — Google-Maps-style picker
             scheduleSection
@@ -2560,6 +2668,121 @@ struct ShipperPostLoad: View {
         }
     }
 
+    /// Bespoke mode-aware endpoint preview. It deliberately contains no route
+    /// line: until the load is committed there is no canonical subject/profile/
+    /// graph binding from which an operational route can truthfully exist.
+    @ViewBuilder
+    private var postingMapPreview: some View {
+        let originPoint = LatLongParser.validatedCoordinate(
+            latitude: originLat,
+            longitude: originLng
+        ).map { HereLatLng($0) }
+        let destinationPoint = LatLongParser.validatedCoordinate(
+            latitude: destLat,
+            longitude: destLng
+        ).map { HereLatLng($0) }
+
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack(spacing: 6) {
+                Image(systemName: "map.fill")
+                    .font(.system(size: 9, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("EUSORONE \(transportMode.displayName.uppercased()) MAP")
+                    .font(EType.micro).tracking(0.7)
+                    .foregroundStyle(LinearGradient.diagonal)
+                Spacer(minLength: 0)
+                Text("ENDPOINT PREVIEW")
+                    .font(.system(size: 8, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+            }
+
+            if let center = postingPreviewCenter(
+                origin: originPoint,
+                destination: destinationPoint
+            ) {
+                HereLiveMapView(
+                    center: center,
+                    zoom: originPoint != nil && destinationPoint != nil ? 6 : 10,
+                    route: [],
+                    baseLayers: [
+                        .markers(postingPreviewMarkers(
+                            origin: originPoint,
+                            destination: destinationPoint
+                        ))
+                    ],
+                    addOns: [],
+                    showTicker: false,
+                    activeJob: false,
+                    mapModeContext: .unconfirmed(
+                        EusoTripMapTransportMode(canonicalValue: transportMode.rawValue)
+                    ),
+                    endpointLabelToggle: true
+                )
+                .frame(height: 220)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                .overlay(alignment: .bottomLeading) {
+                    Text("Declared endpoints only · exact route resolves after posting")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(palette.textSecondary)
+                        .padding(.horizontal, 10).padding(.vertical, 6)
+                        .background(palette.bgCard.opacity(0.92))
+                        .overlay(Capsule().strokeBorder(LinearGradient.diagonal.opacity(0.55)))
+                        .clipShape(Capsule())
+                        .padding(10)
+                }
+                .accessibilityLabel(
+                    "\(transportMode.displayName) endpoint preview. Exact canonical route resolves after the load is posted."
+                )
+            } else {
+                EusoEmptyState(
+                    systemImage: "mappin.and.ellipse",
+                    title: "Choose a verified endpoint",
+                    subtitle: "The map will preview declared locations without inventing route geometry."
+                )
+                .frame(maxWidth: .infinity, minHeight: 150)
+                .background(palette.bgCardSoft)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            }
+        }
+        .padding(Space.s3)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(palette.borderFaint)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+    }
+
+    private func postingPreviewMarkers(
+        origin: HereLatLng?,
+        destination: HereLatLng?
+    ) -> [HereMarker] {
+        var markers: [HereMarker] = []
+        if let origin {
+            markers.append(.init(at: origin, kind: .pickup, label: "Declared origin"))
+        }
+        if let destination {
+            markers.append(.init(at: destination, kind: .delivery, label: "Declared destination"))
+        }
+        return markers
+    }
+
+    private func postingPreviewCenter(
+        origin: HereLatLng?,
+        destination: HereLatLng?
+    ) -> HereLatLng? {
+        switch (origin, destination) {
+        case let (.some(origin), .some(destination)):
+            return HereLatLng(
+                (origin.lat + destination.lat) / 2,
+                (origin.lng + destination.lng) / 2
+            )
+        case let (.some(origin), .none): return origin
+        case let (.none, .some(destination)): return destination
+        case (.none, .none): return nil
+        }
+    }
+
     private var routeMetaPill: some View {
         // When routing is healthy / pending, the pill is a single-line
         // status. When HERE rejects with a parse error, we expand to
@@ -2611,53 +2834,27 @@ struct ShipperPostLoad: View {
         let oTrim = origin.trimmingCharacters(in: .whitespacesAndNewlines)
         let dTrim = destination.trimmingCharacters(in: .whitespacesAndNewlines)
         if oTrim.isEmpty || dTrim.isEmpty {
-            return "Add origin + destination - distance / ETA estimates auto-fill"
+            return "Add origin + destination · the exact mode-native route is created after posting"
         }
         if isRouting {
-            return "Computing distance + ETA via ESANG…"
-        }
-        // Mode-specific status comes FIRST. `routingError` only ever describes a
-        // HERE *truck* routing outcome, so showing it while Rail/Vessel/Barge is
-        // selected made the banner read "Route unavailable ... switch to
-        // rail/vessel" even after the user had switched — advice the screen
-        // could never satisfy, because this branch was unreachable behind it.
-        if transportMode != .truck, endpointsResolved {
-            switch transportMode {
-            case .rail:
-                return "Endpoints verified - rail geometry requires a connected rail routing provider"
-            case .vessel:
-                return "Ports verified - voyage geometry requires a connected marine routing provider"
-            case .barge:
-                return "Terminals verified - waterway geometry requires a connected barge routing provider"
-            case .truck:
-                break
-            }
+            return "Verifying declared endpoints via ESANG…"
         }
         if let err = routingError {
-            return "Route unavailable: \(err)"
+            return "Endpoint verification needed: \(err)"
         }
-        if let meters = routeDistanceMeters, let secs = routeDurationSeconds {
-            let miles = Double(meters) / 1609.34
-            let hours = Double(secs) / 3600.0
-            let etaStr: String = hours > 48
-                ? String(format: "%.1f days", hours / 24.0)
-                : String(format: "%.1f hr", hours)
-            return String(format: "%.0f mi · %@ · standard US semi · HERE-routed", miles, etaStr)
+        if endpointsResolved {
+            if transportMode == .barge {
+                return "Endpoints verified · Barge route authority is not yet supported; no Vessel substitution will be made"
+            }
+            return "Endpoints verified · exact \(transportMode.displayName) route will be prepared after posting"
         }
-        // Both addresses present and `recomputeETAIfReady` is in flight.
-        return "Estimating distance · ETA · best-route via ESANG"
+        return "Select verified endpoint suggestions to continue"
     }
 
-    /// Fire HERE Routing whenever the lane endpoints OR pickup
-    /// schedule change. Debounced via `lastRoutedKey`. When lat/lng
-    /// haven't been captured yet (user typed an address but never
-    /// tapped a HERE suggestion), forward-geocodes the typed text
-    /// first so the ETA computes regardless of whether the user
-    /// picked from the dropdown. Founder bug 2026-05-07: "ETA
-    /// calculating still doesnt work mate" — typing 'Houston, TX'
-    /// + 'Austin, TX' previously left the delivery tile stuck on
-    /// 'Awaiting addresses · Pick HERE suggestions' because the
-    /// HereAddressField only captures coordinates on tap.
+    /// Verify both declared endpoints without authoring route geometry. When
+    /// coordinates were not captured from a suggestion, the server-backed
+    /// geocoder resolves them; the committed load later becomes the only
+    /// subject accepted by purpose=posting route authority.
     private func recomputeETAIfReady() {
         let oTrim = origin.trimmingCharacters(in: .whitespacesAndNewlines)
         let dTrim = destination.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2669,8 +2866,7 @@ struct ShipperPostLoad: View {
             lastRoutedKey = ""
             return
         }
-        let requestedMode = transportMode
-        let key = "\(requestedMode.rawValue)|\(originLat ?? .nan),\(originLng ?? .nan)|\(destLat ?? .nan),\(destLng ?? .nan)|\(oTrim)|\(dTrim)"
+        let key = "\(transportMode.rawValue)|\(originLat ?? .nan),\(originLng ?? .nan)|\(destLat ?? .nan),\(destLng ?? .nan)|\(oTrim)|\(dTrim)"
         guard key != lastRoutedKey else { return }
         lastRoutedKey = key
         isRouting = true
@@ -2687,91 +2883,30 @@ struct ShipperPostLoad: View {
                     cachedLat: destLat,
                     cachedLng: destLng
                 )
-                // Backfill the @State bindings so the wizard's
-                // submit step has resolved coordinates + state
-                // codes without a second geocode round-trip. The
-                // state codes also feed the ESANG rate compare on
-                // step 3.
-                let stillCurrent = await MainActor.run { () -> Bool in
-                    guard self.lastRoutedKey == key else { return false }
+                await MainActor.run {
+                    guard self.lastRoutedKey == key else { return }
                     if originLat == nil { originLat = originResolved.coord.latitude }
                     if originLng == nil { originLng = originResolved.coord.longitude }
                     if destLat == nil   { destLat   = destResolved.coord.latitude   }
                     if destLng == nil   { destLng   = destResolved.coord.longitude  }
                     self.originStateCode = originResolved.stateCode
                     self.destStateCode   = destResolved.stateCode
-                    self.recomputeRateCompareIfReady()
-                    return true
-                }
-                guard stillCurrent else { return }
-
-                guard requestedMode == .truck else {
-                    await MainActor.run {
-                        guard self.lastRoutedKey == key else { return }
-                        self.routeDistanceMeters = nil
-                        self.routeDurationSeconds = nil
-                        self.routingError = nil
-                        self.isRouting = false
-                        self.recomputeRateCompareIfReady()
-                    }
-                    return
-                }
-                let resp = try await HereRoutingClient.shared.route(
-                    stops: HereStops(origin: originResolved.coord,
-                                     destination: destResolved.coord),
-                    profile: .standardUSSemiLoaded
-                )
-                let totalDuration = resp.routes.first?.sections.reduce(0) { $0 + ($1.summary?.duration ?? 0) } ?? 0
-                let totalLength   = resp.routes.first?.sections.reduce(0) { $0 + ($1.summary?.length ?? 0) }   ?? 0
-                await MainActor.run {
-                    guard self.lastRoutedKey == key else { return }
-                    // Founder report 2026-06-01: every mode rendered
-                    // "0 mi · 0.0 hr" for a Houston Port → LA Port
-                    // lane because HERE truck routing returns an empty
-                    // route (no sections / no summary) for two
-                    // seaport waypoints — the dock-side coords land
-                    // off any truck road. Old code stored 0/0 in
-                    // routeDistanceMeters and the UI happily formatted
-                    // it. Treat a zero result as a routing failure
-                    // and surface a real message so the user knows to
-                    // refine the address (e.g. "Houston, TX" instead
-                    // of "Port of Houston").
-                    if totalLength == 0 || totalDuration == 0 {
-                        self.routeDistanceMeters  = nil
-                        self.routeDurationSeconds = nil
-                        self.routingError = routeUnavailableMessage
-                    } else {
-                        self.routeDurationSeconds = totalDuration
-                        self.routeDistanceMeters  = totalLength
-                        self.routingError = nil
-                    }
+                    self.routeDistanceMeters = nil
+                    self.routeDurationSeconds = nil
+                    self.routingError = nil
                     self.isRouting = false
-                    // Now that we have lane states + distance, fire
-                    // the rate compare if the user has already typed
-                    // a posted rate.
                     self.recomputeRateCompareIfReady()
                 }
             } catch {
                 await MainActor.run {
                     guard self.lastRoutedKey == key else { return }
-                    // `ensureResolved` runs ABOVE the `requestedMode == .truck`
-                    // guard, so a geocode failure landed here for every mode and
-                    // humanRouteMessage(_:) falls through to the truck-routing
-                    // copy ("switch to rail/vessel…") for any unrecognised error.
-                    // That is why switching mode never cleared the banner. Only
-                    // truck mode owns a routing error; for the other modes the
-                    // coordinate-based `endpointsResolved` gate is what decides.
-                    self.routingError = requestedMode == .truck
-                        ? humanRouteMessage(for: error)
-                        : nil
+                    self.routeDistanceMeters = nil
+                    self.routeDurationSeconds = nil
+                    self.routingError = humanEndpointMessage(for: error)
                     self.isRouting = false
                 }
             }
         }
-    }
-
-    private var routeUnavailableMessage: String {
-        "Try a city-level address or switch to rail/vessel if the lane is not truck-routable."
     }
 
     private var endpointsResolved: Bool {
@@ -2785,18 +2920,11 @@ struct ShipperPostLoad: View {
         guard hasAddresses,
               countrySelectionIsValid,
               endpointsResolved,
-              !isRouting else {
+              !isRouting,
+              routingError == nil else {
             return false
         }
-        // `routingError` describes a HERE TRUCK routing outcome only. It used to
-        // sit in the guard above, which made the non-truck early return below
-        // unreachable: a truck-routing failure blocked posting in Rail, Vessel
-        // and Barge too, even though those modes never needed truck geometry.
-        // `endpointsResolved` above is the real gate for them — it is
-        // coordinate-based, so a genuine geocode failure still blocks posting.
-        guard transportMode == .truck else { return true }
-        guard routingError == nil else { return false }
-        return (routeDistanceMeters ?? 0) > 0 && (routeDurationSeconds ?? 0) > 0
+        return true
     }
 
     private var countrySelectionIsValid: Bool {
@@ -2955,25 +3083,19 @@ struct ShipperPostLoad: View {
     }
 
     private func validCoordinate(lat: Double?, lng: Double?) -> Bool {
-        guard let lat, let lng,
-              (-90.0...90.0).contains(lat),
-              (-180.0...180.0).contains(lng) else { return false }
-        return !(lat == 0 && lng == 0)
+        LatLongParser.validatedCoordinate(latitude: lat, longitude: lng) != nil
     }
 
-    private func humanRouteMessage(for error: Error) -> String {
+    private func humanEndpointMessage(for error: Error) -> String {
         let raw = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         let lower = raw.lowercased()
-        if lower.contains("no truck route") || lower.contains("route between") || lower.contains("routing") {
-            return routeUnavailableMessage
-        }
         if lower.contains("malformed") || lower.contains("parsing") || lower.contains("invalid") {
-            return "The route provider could not read one of these locations. Pick a city-level suggestion and retry."
+            return "The location service could not verify one of these endpoints. Pick a complete suggestion and retry."
         }
         if lower.contains("offline") || lower.contains("network") || lower.contains("timed") {
-            return "Route estimate is temporarily unavailable. Check the connection and retry."
+            return "Endpoint verification is temporarily unavailable. Check the connection and retry."
         }
-        return routeUnavailableMessage
+        return "One of these endpoints could not be verified. Pick a complete location suggestion and retry."
     }
 
     // MARK: - ESANG rate vs market meter (rates.compareLaneRate)
@@ -3280,15 +3402,24 @@ struct ShipperPostLoad: View {
     /// mode) tuple selects. Mirrors `searchERG()`.
     private func searchCommodity() {
         let q = commoditySearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        commoditySearchTask?.cancel()
         guard q.count >= 2 else {
             commoditySearchHits = []
+            commodityLookupError = nil
+            commodityLookupUnavailableReason = nil
+            isSearchingCommodity = false
+            commoditySearchTask = nil
+            commodityResponseContractVerified = false
             return
         }
         let proc = activeCommodityProc
         isSearchingCommodity = true
         commodityLookupError = nil
-        Task {
+        commodityLookupUnavailableReason = nil
+        commoditySearchTask = Task {
             do {
+                try await Task.sleep(nanoseconds: 250_000_000)
+                try Task.checkCancellation()
                 let api = EusoTripAPI.shared.commodity
                 let resp: CommodityLookupAPI.SearchResponse
                 switch proc {
@@ -3298,15 +3429,30 @@ struct ShipperPostLoad: View {
                 case .containerType: resp = try await api.searchContainerType(query: q, limit: 12)
                 case .stcc:          resp = try await api.searchStcc(query: q, limit: 12)
                 }
+                try Task.checkCancellation()
                 await MainActor.run {
+                    guard self.commoditySearchQuery.trimmingCharacters(in: .whitespacesAndNewlines) == q else {
+                        return
+                    }
                     self.commoditySearchHits = resp.results
+                    self.commodityLookupUnavailableReason = resp.unavailableReason
+                    self.commodityResponseContractVerified = resp.contractVerified
                     self.isSearchingCommodity = false
+                    self.commoditySearchTask = nil
                 }
+            } catch is CancellationError {
+                return
             } catch {
                 await MainActor.run {
+                    guard self.commoditySearchQuery.trimmingCharacters(in: .whitespacesAndNewlines) == q else {
+                        return
+                    }
                     self.commoditySearchHits = []
                     self.isSearchingCommodity = false
+                    self.commodityLookupUnavailableReason = nil
+                    self.commodityResponseContractVerified = false
                     self.commodityLookupError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                    self.commoditySearchTask = nil
                 }
             }
         }
@@ -3318,8 +3464,14 @@ struct ShipperPostLoad: View {
     /// user hasn't already typed one (never overwrite explicit entry),
     /// mirroring the ERG auto-fill rule.
     private func applyCommodityHit(_ hit: CommodityLookupAPI.CommodityHit) {
+        guard isCommodityHitSelectable(hit) else {
+            commodityLookupError = nil
+            commodityLookupUnavailableReason = commodityHitSelectionBlockReason(hit)
+            return
+        }
         commodityMatch = hit
         commodityLookupError = nil
+        commodityLookupUnavailableReason = nil
         properShippingName = hit.name
         if hit.preCool == true { preCoolRequired = true }
         if let lo = hit.tempLowF, reeferTempLowText.isEmpty {
@@ -3329,6 +3481,18 @@ struct ShipperPostLoad: View {
             reeferTempHighText = formatTemp(hi)
         }
         showCommoditySearchSheet = false
+    }
+
+    private func isCommodityHitSelectable(_ hit: CommodityLookupAPI.CommodityHit) -> Bool {
+        commodityResponseContractVerified && hit.isSelectable
+    }
+
+    private func commodityHitSelectionBlockReason(_ hit: CommodityLookupAPI.CommodityHit) -> String {
+        guard commodityResponseContractVerified else {
+            return commodityLookupUnavailableReason
+                ?? "The product evidence service contract is not verified."
+        }
+        return hit.selectionBlockReason
     }
 
     /// Format a °F temperature for the reefer text fields — drops a
@@ -3355,24 +3519,49 @@ struct ShipperPostLoad: View {
         cachedLat: Double?,
         cachedLng: Double?
     ) async throws -> ResolvedAddress {
-        if let lat = cachedLat, let lng = cachedLng {
+        if let coord = LatLongParser.validatedCoordinate(
+            latitude: cachedLat,
+            longitude: cachedLng
+        ) {
             // Reverse-geocode for the state code — the lat/lng might
             // have been pasted directly, so we still need a state
             // resolution for the rate compare. Best-effort; falls
             // back to nil stateCode which compareLaneRate accepts.
-            let coord = CLLocationCoordinate2D(latitude: lat, longitude: lng)
             let state = try? await HereGeocodingClient.shared
                 .reverseGeocode(at: coord, limit: 1)
                 .first?
                 .address.stateCode
             return ResolvedAddress(coord: coord, stateCode: state ?? nil)
         }
+        if cachedLat != nil || cachedLng != nil {
+            throw HereMapsError.providerError("The saved location is not a complete, valid coordinate pair.")
+        }
+        if let parsed = LatLongParser.parseDetailed(text) {
+            let state = try? await HereGeocodingClient.shared
+                .reverseGeocode(at: parsed.coordinate, limit: 1)
+                .first?
+                .address.stateCode
+            return ResolvedAddress(coord: parsed.coordinate, stateCode: state ?? nil)
+        }
+        if LatLongParser.hasCoordinateIntent(text) {
+            throw HereMapsError.providerError("The coordinate is incomplete or outside the valid latitude/longitude range.")
+        }
         let hits = try await HereGeocodingClient.shared.geocode(query: text, limit: 1)
-        guard let first = hits.first, let pos = first.position else {
+        guard let first = hits.first(where: { hit in
+            guard let pos = hit.position else { return false }
+            return LatLongParser.validatedCoordinate(
+                latitude: pos.lat,
+                longitude: pos.lng
+            ) != nil
+        }), let pos = first.position,
+              let coord = LatLongParser.validatedCoordinate(
+                  latitude: pos.lat,
+                  longitude: pos.lng
+              ) else {
             throw HereMapsError.providerError("No geocode result for '\(text)'")
         }
         return ResolvedAddress(
-            coord: CLLocationCoordinate2D(latitude: pos.lat, longitude: pos.lng),
+            coord: coord,
             stateCode: first.address.stateCode
         )
     }
@@ -3453,13 +3642,12 @@ struct ShipperPostLoad: View {
                 .font(EType.micro).tracking(0.6)
                 .foregroundStyle(palette.textTertiary)
                 .lineLimit(1).minimumScaleFactor(0.7)
-            // Real ETA when both pickup is set + HERE returned a
-            // duration. Falls back to honest copy otherwise.
+            // ETA appears only if a server-owned route duration exists.
             if let eta = computedDeliveryETA {
                 Text(deliveryETAFormatter.string(from: eta))
                     .font(.system(size: 18, weight: .bold))
                     .foregroundStyle(LinearGradient.diagonal)
-                Text("ESANG-routed · pickup + lane")
+                Text("Canonical route · pickup + lane")
                     .font(EType.caption).monospacedDigit()
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(1)
@@ -3467,15 +3655,17 @@ struct ShipperPostLoad: View {
                 Text("Computing…")
                     .font(.system(size: 18, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
-                Text("ESANG-routed")
+                Text("Verifying endpoints")
                     .font(EType.caption).monospacedDigit()
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(1)
             } else if hasPickupDate {
-                Text("Add addresses")
+                Text(endpointsResolved ? "Route pending" : "Add addresses")
                     .font(.system(size: 18, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
-                Text("Type or pick a suggestion")
+                Text(endpointsResolved
+                     ? "Exact ETA resolves after posting"
+                     : "Type or pick a suggestion")
                     .font(EType.caption).monospacedDigit()
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(1)
@@ -3499,13 +3689,15 @@ struct ShipperPostLoad: View {
 
     // MARK: - Step 2: EQUIPMENT
 
-    @ViewBuilder
-    private var equipmentStepBody: some View {
-        VStack(alignment: .leading, spacing: Space.s5) {
-            cargoTypePicker
-            equipmentTypePicker
-            weightField
-            equipmentPreviewSection
+    /// Keep the wizard boundary type-erased. Build 850 exhausted the main-thread
+    /// stack while Swift instantiated the deeply nested opaque type produced by
+    /// this step and `equipmentSubform` on a physical device.
+    private var equipmentStepBody: AnyView {
+        AnyView(VStack(alignment: .leading, spacing: Space.s5) {
+            AnyView(cargoTypePicker)
+            AnyView(equipmentTypePicker)
+            AnyView(weightField)
+            AnyView(equipmentPreviewSection)
             equipmentSubform
             // 2026-05-17 — Pre-submit hazmat compliance gates.
             // Mirrors the server-side checks in loads.create
@@ -3513,15 +3705,15 @@ struct ShipperPostLoad: View {
             // 49 CFR 173 / 177.848) so the user sees the violation
             // BEFORE the wizard fires the mutation. Hidden when
             // hazmatClass is empty.
-            hazmatComplianceCard
+            AnyView(hazmatComplianceCard)
             // 2026-05-17 — State-overweight pre-flight. Server-side
             // loads.create enforces STATE_WEIGHT_LIMITS (federal 80k
             // baseline, MI=164k, MT=131.06k, ND=105.5k, SD/NV=129k).
             // Catching it client-side gives the user the same
             // amber-pill remediation pattern as the hazmat card
             // (suggest permit type or splitting into multiple loads).
-            overweightComplianceCard
-        }
+            AnyView(overweightComplianceCard)
+        })
     }
 
     /// State-overweight pre-flight. Renders nothing when the typed
@@ -4217,45 +4409,48 @@ struct ShipperPostLoad: View {
     // and Step 3 of 4 had no hazmat fields to fill in (blocked
     // Continue). Equivalent fall-throughs existed for rail tank
     // cars and rail reefer / centerbeam / gondola / flatcar.
-    @ViewBuilder
-    private var equipmentSubform: some View {
+    private var equipmentSubform: AnyView {
         // Animation always renders — silhouette adapts to every
         // equipment + product choice. Subform-specific cards stack
         // beneath the animation.
-        equipmentAnimation
-        // Comprehensive, mode/vertical/country-correct requirement options
-        // for EVERY one of the 33 equipment types (data-driven catalog). This
-        // replaces the old `default: EmptyView()` (18+ types had no form) and
-        // gives tankers their REAL per-mode connections (vessel flanges, rail
-        // BOV, ISO T-codes) instead of blanket truck cam-locks.
-        catalogRequirementsSection
+        AnyView(VStack(alignment: .leading, spacing: Space.s5) {
+            AnyView(equipmentAnimation)
+            // Comprehensive, mode/vertical/country-correct requirement options
+            // for EVERY one of the 33 equipment types (data-driven catalog). This
+            // replaces the old `default: EmptyView()` (18+ types had no form) and
+            // gives tankers their REAL per-mode connections (vessel flanges, rail
+            // BOV, ISO T-codes) instead of blanket truck cam-locks.
+            AnyView(catalogRequirementsSection)
+            equipmentSpecificSubform
+            // SINGLE commodity / dangerous-goods identity block — shown for
+            // EVERY equipment type, sourced once from the structured fields.
+            // The per-equipment catalog no longer asks commodity or hazmat
+            // class (those groups were removed), so this is the only place
+            // the load's product + UN/Class/PG/PSN is captured.
+            equipmentCargoIdentityCard
+            // 2026-08-07 — the attestation itself, on EVERY cargo type. The
+            // cards above capture the cargo's IDENTITY; this captures the
+            // poster's legal DETERMINATION about it plus the evidence behind
+            // it. `shippers.create` requires it either way, and a hazmat chip
+            // is not a classification.
+            AnyView(cargoClassificationCard)
+        })
+    }
+
+    private var equipmentSpecificSubform: AnyView {
         switch equipmentType {
         case .reefer, .railReeferBoxcar, .vesselReeferContainer:
-            reeferSubform   // structured LOW/HIGH temperature window
+            return AnyView(reeferSubform)
         default:
-            EmptyView()
+            return AnyView(EmptyView())
         }
-        // SINGLE commodity / dangerous-goods identity block — shown for
-        // EVERY equipment type, sourced once from the structured fields.
-        // The per-equipment catalog no longer asks commodity or hazmat
-        // class (those groups were removed), so this is the only place
-        // the load's product + UN/Class/PG/PSN is captured:
-        //   • hazmat-flavored cargo → universal Dangerous-goods card
-        //     (UN / Class / PG / PSN + ERG lookup, the sole owner of
-        //     {UN, hazmatClass, packingGroup, PSN}).
-        //   • non-hazmat cargo      → ERG-parity commodity lookup
-        //     (chemical / petroleum / reefer / container / STCC).
+    }
+
+    private var equipmentCargoIdentityCard: AnyView {
         if cargoType.isHazmatFlavored {
-            dangerousGoodsCard
-        } else {
-            commodityLookupCard
+            return AnyView(dangerousGoodsCard)
         }
-        // 2026-08-07 — the attestation itself, on EVERY cargo type. The
-        // cards above capture the cargo's IDENTITY; this captures the
-        // poster's legal DETERMINATION about it plus the evidence behind
-        // it. `shippers.create` requires it either way, and a hazmat chip
-        // is not a classification.
-        cargoClassificationCard
+        return AnyView(commodityLookupCard)
     }
 
     // MARK: - Cargo-classification attestation (shared primitive)
@@ -4555,6 +4750,14 @@ struct ShipperPostLoad: View {
                 Text(err)
                     .font(EType.caption)
                     .foregroundStyle(Brand.warning)
+            } else if let reason = commodityLookupUnavailableReason {
+                Text(reason)
+                    .font(EType.caption)
+                    .foregroundStyle(Brand.warning)
+            } else if !properShippingName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text("Entered by shipper · no evidence-backed product profile selected")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textTertiary)
             }
         }
         .padding(Space.s3)
@@ -4562,6 +4765,14 @@ struct ShipperPostLoad: View {
         .overlay(RoundedRectangle(cornerRadius: Radius.lg)
                     .strokeBorder(LinearGradient.diagonal.opacity(0.45), lineWidth: 1))
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+        .onChange(of: properShippingName) { _, value in
+            guard let match = commodityMatch else { return }
+            if value.trimmingCharacters(in: .whitespacesAndNewlines)
+                != match.name.trimmingCharacters(in: .whitespacesAndNewlines) {
+                commodityMatch = nil
+                commodityLookupUnavailableReason = nil
+            }
+        }
     }
 
     /// Compact "commodity matched" chip — product name + category +
@@ -4581,6 +4792,10 @@ struct ShipperPostLoad: View {
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(1)
+                Text(commodityEvidenceSubtitle(m))
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textTertiary)
+                    .lineLimit(2)
             }
         }
         .padding(.horizontal, 10).padding(.vertical, 6)
@@ -4598,7 +4813,25 @@ struct ShipperPostLoad: View {
             bits.append("\(Int(lo))–\(Int(hi)) °F")
         }
         if let note = m.note, !note.isEmpty { bits.append(note) }
-        return bits.isEmpty ? "Selected" : bits.joined(separator: " · ")
+        return bits.isEmpty ? "Product identity" : bits.joined(separator: " · ")
+    }
+
+    private func commodityEvidenceSubtitle(_ m: CommodityLookupAPI.CommodityHit) -> String {
+        var bits: [String] = []
+        if let source = m.sourceName ?? m.sourceKey, !source.isEmpty {
+            bits.append(source)
+        }
+        if let status = m.evidenceStatus, !status.isEmpty {
+            bits.append(status.replacingOccurrences(of: "_", with: " "))
+        }
+        switch m.freshnessState {
+        case "current": bits.append("current")
+        case "no_declared_refresh_policy": bits.append("no refresh interval declared")
+        case "stale": bits.append("stale")
+        case "unknown": bits.append("freshness unknown")
+        default: break
+        }
+        return bits.isEmpty ? m.selectionBlockReason : bits.joined(separator: " · ")
     }
 
     @ViewBuilder
@@ -5364,13 +5597,27 @@ struct ShipperPostLoad: View {
             ergLookupError = nil
             lastErgQueryKey = ""
             commodityMatch = nil
+            commoditySearchQuery = ""
+            commoditySearchHits = []
             commodityLookupError = nil
+            commodityLookupUnavailableReason = nil
+            commoditySearchTask?.cancel()
+            commoditySearchTask = nil
+            commodityResponseContractVerified = false
+            isSearchingCommodity = false
         } else {
             // Switching TO a hazmat-flavored cargo: drop a stale non-hazmat
             // commodity match (the ERG branch re-pins PSN on UN lookup) so
             // the two lookups never cross-contaminate.
             commodityMatch = nil
+            commoditySearchQuery = ""
+            commoditySearchHits = []
             commodityLookupError = nil
+            commodityLookupUnavailableReason = nil
+            commoditySearchTask?.cancel()
+            commoditySearchTask = nil
+            commodityResponseContractVerified = false
+            isSearchingCommodity = false
         }
     }
 
@@ -5624,9 +5871,38 @@ struct ShipperPostLoad: View {
         VStack(alignment: .leading, spacing: Space.s5) {
             rateField
             targetRateCard
+            if transportMode == .truck {
+                truckDetentionTermsSection
+            }
             catalystRequirementsCard
             notesField
         }
+    }
+
+    private var truckDetentionTermsSection: some View {
+        VStack(alignment: .leading, spacing: Space.s4) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Truck detention terms")
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                Text("Signed load terms · no platform defaults")
+                    .font(EType.micro)
+                    .foregroundStyle(palette.textTertiary)
+            }
+
+            Divider().overlay(palette.borderFaint)
+            TruckDetentionTermsEditor(draft: $truckDetentionTermsDraft)
+        }
+        .padding(Space.s4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(palette.borderFaint)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Truck detention commercial terms")
     }
 
     /// Catalyst requirements — collapsible card. The shipper sets the
@@ -7007,8 +7283,8 @@ struct ShipperPostLoad: View {
 
     private var distanceReviewText: String {
         guard let m = routeDistanceMeters, m > 0 else {
-            if routingError != nil { return "Route unavailable" }
-            return "-"
+            if routingError != nil { return "Endpoint verification needed" }
+            return endpointsResolved ? "Resolves after posting" : "-"
         }
         return String(format: "%.0f mi", Double(m) / 1609.34)
     }
@@ -7017,8 +7293,8 @@ struct ShipperPostLoad: View {
         if let eta = computedDeliveryETA {
             return deliveryETAFormatter.string(from: eta)
         }
-        if routingError != nil { return "Pending route" }
-        if hasPickupDate { return "-" }
+        if routingError != nil { return "Endpoint verification needed" }
+        if hasPickupDate { return endpointsResolved ? "Resolves after posting" : "-" }
         return "Catalyst proposes"
     }
 
@@ -7125,6 +7401,12 @@ struct ShipperPostLoad: View {
                     .font(EType.caption)
                     .foregroundStyle(palette.textTertiary)
                     .lineLimit(2)
+                Text(routePlanningTruth(ack))
+                    .font(EType.caption)
+                    .foregroundStyle(ack.routePlanning?.operational == true
+                                     ? Brand.success
+                                     : Brand.warning)
+                    .lineLimit(3)
             }
             Spacer(minLength: 0)
             Button { withAnimation { lastSuccess = nil } } label: {
@@ -7147,6 +7429,27 @@ struct ShipperPostLoad: View {
         let trimmed = ack.loadNumber.trimmingCharacters(in: .whitespaces)
         if trimmed.isEmpty { return "Bids will land in your Bids inbox." }
         return "\(trimmed) · bids will land in your Bids inbox."
+    }
+
+    private func routePlanningTruth(_ ack: ShipperAPI.PostLoadAck) -> String {
+        guard let planning = ack.routePlanning else {
+            return "Canonical route status was not returned by this deployment."
+        }
+        if planning.persisted, planning.operational {
+            return "Canonical \(transportMode.displayName) route ready · \(planning.state.replacingOccurrences(of: "_", with: " "))."
+        }
+        return planning.blockers.first?.message
+            ?? "Load posted; canonical route remains \(planning.state.replacingOccurrences(of: "_", with: " "))."
+    }
+
+    private func postingCelebrationSubline(_ ack: ShipperAPI.PostLoadAck) -> String {
+        guard let planning = ack.routePlanning else {
+            return "Marketplace live · route status unavailable"
+        }
+        if planning.persisted, planning.operational {
+            return "Marketplace live · canonical \(transportMode.displayName) route ready"
+        }
+        return "Marketplace live · canonical route \(planning.state.replacingOccurrences(of: "_", with: " "))"
     }
 
     private func errorBanner(_ message: String) -> some View {
@@ -7311,6 +7614,9 @@ struct ShipperPostLoad: View {
 
     private var ctaText: String {
         if case .success = store.phase, step == .review { return "Post another" }
+        if (step == .pricing || step == .review), truckDetentionBlockReason != nil {
+            return "Complete detention terms"
+        }
         if step == .review {
             if isSubmitting { return "Posting…" }
             // Name the gate that is stopping the post instead of showing a
@@ -7325,6 +7631,11 @@ struct ShipperPostLoad: View {
         }
         guard let next = step.next else { return "Continue" }
         return "Continue · Step \(next.rawValue) of \(PostLoadStep.allCases.count) →"
+    }
+
+    private var truckDetentionBlockReason: String? {
+        guard transportMode == .truck else { return nil }
+        return truckDetentionTermsDraft.validationMessage
     }
 
     private var canAdvance: Bool {
@@ -7384,7 +7695,7 @@ struct ShipperPostLoad: View {
             // sub-form; never blocks Continue.
             return true
         case .pricing:
-            return laneReadyForPosting
+            return laneReadyForPosting && truckDetentionBlockReason == nil
         case .review:
             // 2026-08-07 — a load cannot post without the poster's cargo
             // classification. The button stays dark and `ctaText` says
@@ -7392,6 +7703,7 @@ struct ShipperPostLoad: View {
             return laneReadyForPosting
                 && portIntelligenceAllowsPosting
                 && cargoClassificationBlockReason == nil
+                && truckDetentionBlockReason == nil
         }
     }
 
@@ -7421,9 +7733,7 @@ struct ShipperPostLoad: View {
     private func submit() async {
         guard laneReadyForPosting else {
             if routingError == nil {
-                routingError = transportMode == .truck
-                    ? "A verified truck route is required before this load can be posted."
-                    : "Both endpoints must be verified before this load can be posted."
+                routingError = "Both declared endpoints must be verified before this load can be posted."
             }
             return
         }
@@ -7440,6 +7750,18 @@ struct ShipperPostLoad: View {
         if let reason = cargoClassificationBlockReason {
             store.reportSubmissionRefusal(reason)
             return
+        }
+        let truckDetentionTerms: TruckDetentionNegotiatedTerms?
+        if transportMode == .truck {
+            guard let terms = truckDetentionTermsDraft.negotiatedTerms else {
+                store.reportSubmissionRefusal(
+                    truckDetentionBlockReason ?? "Complete the truck detention terms before posting."
+                )
+                return
+            }
+            truckDetentionTerms = terms
+        } else {
+            truckDetentionTerms = nil
         }
         let pickupISO = hasPickupDate ? isoDate(pickupDate) : nil
         let quantity  = parseDouble(weightText)
@@ -7511,6 +7833,7 @@ struct ShipperPostLoad: View {
             originCountry: originCountryCode.uppercased(),
             destinationCountry: destinationCountryCode.uppercased(),
             transportMode: transportMode,
+            truckDetentionTerms: truckDetentionTerms,
             // F-ANIMATION root-cause fix (2026-06-14): the server schema is
             // `multiVehicleCount: z.number().int().min(1).max(999).optional()`
             // (shippers.ts:106). The vessel estimator returns vehicleCount == 0
@@ -7704,8 +8027,19 @@ struct ShipperPostLoad: View {
         oversizeHeightText = ""
         oversizePermits = false
         permitType = .none
+        truckDetentionTermsDraft = TruckDetentionTermsDraft()
         ergMatch = nil
         ergLookupError = nil
+        showCommoditySearchSheet = false
+        commoditySearchQuery = ""
+        commoditySearchHits = []
+        commodityMatch = nil
+        commodityLookupError = nil
+        commodityLookupUnavailableReason = nil
+        commoditySearchTask?.cancel()
+        commoditySearchTask = nil
+        commodityResponseContractVerified = false
+        isSearchingCommodity = false
         rateComparison = nil
         routeDistanceMeters = nil
         routeDurationSeconds = nil

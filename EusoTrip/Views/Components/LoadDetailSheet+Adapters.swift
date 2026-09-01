@@ -39,20 +39,11 @@ extension AvailableLoad {
         // to fall back to the CONUS geographic center (39.83, -98.58) on
         // any miss, which dropped a real-looking pickup/delivery pin in
         // Lebanon, Kansas while the label still read the true city. On a
-        // miss we emit the null-island sentinel (0, 0) so the map/route
-        // card suppresses the lane instead of fabricating a US-center
-        // location — mirroring the distance path's 0-mi-on-miss policy.
+        // miss the geometry remains nil so the map/route card suppresses
+        // the lane instead of fabricating a location.
         let oReal = Self.centroidStrict(for: my.origin)
         let dReal = Self.centroidStrict(for: my.destination)
-        let (oLat, oLng): (Double, Double)
-        let (dLat, dLng): (Double, Double)
-        if let oReal, let dReal {
-            (oLat, oLng) = oReal
-            (dLat, dLng) = dReal
-        } else {
-            (oLat, oLng) = (0, 0)
-            (dLat, dLng) = (0, 0)
-        }
+        let hasCoordinatePair = oReal != nil && dReal != nil
         let rpm = my.miles > 0 ? my.rate / Double(my.miles) : 0
         return AvailableLoad(
             id: my.id,
@@ -67,10 +58,10 @@ extension AvailableLoad {
             hazmat: false,
             weight: "-",
             hotScore: 0,
-            originLat: oLat,
-            originLng: oLng,
-            destLat: dLat,
-            destLng: dLng,
+            originLat: hasCoordinatePair ? oReal?.0 : nil,
+            originLng: hasCoordinatePair ? oReal?.1 : nil,
+            destLat: hasCoordinatePair ? dReal?.0 : nil,
+            destLng: hasCoordinatePair ? dReal?.1 : nil,
             // MyLoad.id IS the numeric loadId stringified server-side
             // (`String(load.id)` in loads.search projection); preserve it
             // so Book Now can call `loadBidding.submit({ loadId: Int })`.
@@ -150,9 +141,9 @@ extension AvailableLoad {
             backendLoadId: load.id,
             originState: load.originState ?? (pickup.state.isEmpty ? nil : pickup.state),
             destState: load.destState ?? (delivery.state.isEmpty ? nil : delivery.state),
-            // Multi-modal column off the backend `loads.getById` row;
-            // default truck so legacy/null rows render unchanged.
-            transportMode: load.transportMode ?? "truck",
+            // Preserve missing/unknown mode so the map can fail visibly
+            // instead of silently selecting Truck.
+            transportMode: load.transportMode,
             equipmentRaw: load.cargoType
         )
     }
@@ -187,91 +178,38 @@ extension AvailableLoad {
     /// card UI without touching the renderer.
     ///
     /// `LoadSummary` carries display-level strings (`origin`,
-    /// `destination`, `rate`) but no route geometry, weight, or hazmat
-    /// class — those get plausible centroid lookups + neutral defaults,
-    /// matching the shape the `MyLoad` adapter already uses so the map
-    /// draws a valid polyline instead of dropping the camera into the
-    /// Atlantic.
+    /// `destination`, `rate`) but no route geometry or authoritative distance.
+    /// This adapter therefore leaves route facts empty. The detail surface
+    /// hydrates the exact load and released route.plan before rendering a line,
+    /// mileage, duration, rate-per-mile, or distance-sensitive fee.
     static func from(_ s: LoadSummary) -> AvailableLoad {
-        // Distance AND marker coordinates must both be HONEST. Resolve
-        // each endpoint through the STRICT centroid table once; the loose
-        // `centroid(for:)` used to fall back to the CONUS geographic
-        // center (39.83, -98.58) on any miss, which made the Driver
-        // Eusoboards map (DriverTabPanes.mapCard) and the LoadDetailSheet
-        // route card plot a real-looking pickup pin / origin→destination
-        // polyline in Lebanon, Kansas while the label read the true city.
-        let oReal = Self.centroidStrict(for: s.origin)
-        let dReal = Self.centroidStrict(for: s.destination)
-        // Only compute haversine when BOTH endpoints have a real centroid
-        // hit. Unknown cities (Long Beach, Reno, Bakersfield, etc.)
-        // returned nil from the strict lookup → no fabricated miles →
-        // UI's `miles > 0` guard hides the "0 mi" badge cleanly.
-        let estMiles: Int
-        let (oLat, oLng): (Double, Double)
-        let (dLat, dLng): (Double, Double)
-        if let oReal, let dReal {
-            estMiles = Self.haversineRoadMiles(oLat: oReal.0, oLng: oReal.1,
-                                               dLat: dReal.0, dLng: dReal.1)
-            // Same strict source feeds the displayed pin/route coords —
-            // no US-center fabrication.
-            (oLat, oLng) = oReal
-            (dLat, dLng) = dReal
-        } else {
-            estMiles = 0
-            // Null-island sentinel on a centroid miss so the map/route
-            // card suppresses the lane instead of pinning US-center.
-            (oLat, oLng) = (0, 0)
-            (dLat, dLng) = (0, 0)
-        }
-        let rpm = estMiles > 0 ? s.rate / Double(estMiles) : 0
         return AvailableLoad(
             id: s.loadNumber,
             origin: s.origin,
             destination: s.destination,
-            miles: estMiles,
+            miles: 0,
             equipment: (s.cargoType ?? "Dry").capitalized,
             rate: s.rate,
-            rpm: rpm,
+            rpm: 0,
             pickupWindow: s.pickupDate,
             broker: "-",                   // summary doesn't carry broker name
             hazmat: false,
             weight: "-",
             hotScore: 0,
-            originLat: oLat,
-            originLng: oLng,
-            destLat: dLat,
-            destLng: dLng,
+            originLat: nil,
+            originLng: nil,
+            destLat: nil,
+            destLng: nil,
             backendLoadId: Int(s.id),
             originState: Self.stateFromCityState(s.origin),
             destState: Self.stateFromCityState(s.destination),
-            // Multi-modal column off the backend `loads.search` row;
-            // default truck so legacy/null rows render unchanged.
-            transportMode: s.transportMode ?? "truck",
+            // Preserve missing/unknown mode so the map can fail visibly
+            // instead of silently selecting Truck.
+            transportMode: s.transportMode,
             equipmentRaw: s.cargoType
         )
     }
 
-    /// Haversine great-circle miles × 1.2 road factor — same recipe
-    /// the server uses when no HERE-routed distance is on the load row.
-    /// Returns 0 (not a fabricated value) when either centroid lookup
-    /// failed so the UI's `miles > 0` guard hides the "0 mi" badge
-    /// and "$0.00/mi" rpm display gracefully.
-    static func haversineRoadMiles(oLat: Double, oLng: Double, dLat: Double, dLng: Double) -> Int {
-        // Reject only TRUE null-island endpoints (0, 0). A single-axis
-        // zero is a legitimate coordinate — a point on the equator
-        // (lat == 0) or the prime meridian (lng == 0, e.g. UK / West
-        // Africa freight) — and must NOT be gated out, or the lane's
-        // mileage and $/mi rpm silently collapse to 0.
-        guard !(oLat == 0 && oLng == 0), !(dLat == 0 && dLng == 0) else { return 0 }
-        let earthRadiusMiles = 3958.8
-        let dLatR = (dLat - oLat) * .pi / 180
-        let dLngR = (dLng - oLng) * .pi / 180
-        let a = sin(dLatR / 2) * sin(dLatR / 2)
-              + cos(oLat * .pi / 180) * cos(dLat * .pi / 180)
-              * sin(dLngR / 2) * sin(dLngR / 2)
-        let c = 2 * atan2(sqrt(a), sqrt(1 - a))
-        return Int((earthRadiusMiles * c * 1.2).rounded())
-    }
 }
 
 // MARK: - MyLoad projection from LoadSummary

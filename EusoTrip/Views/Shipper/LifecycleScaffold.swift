@@ -339,13 +339,12 @@ struct LifecycleScaffold<Body: View>: View {
     }
 }
 
-import MapKit
-
 /// LifecycleMapCard — drops a HERE basemap onto every lifecycle stage
 /// (260–279) so the founder-doctrine "make sure HERE Maps is visual in
 /// every place it is located" mandate is honored across the Shipper
 /// post-load → settled flow. Each stage feeds the snapshot in; the card
-/// renders pickup, truck-pin (lastGeofence), and delivery as appropriate.
+/// renders endpoints, an exact committed route, and licensed selected-asset
+/// evidence as appropriate.
 ///
 /// Pin selection rules (mirrors what a dispatcher actually wants to see
 /// at each stage):
@@ -363,10 +362,17 @@ struct LifecycleMapCard: View {
     @EnvironmentObject private var session: EusoTripSession
     @ObservedObject private var geocodeStore = LifecycleGeocodeStore.shared
 
-    /// Decoded HERE Routing v8 section polyline for a truck corridor. Rail
-    /// and marine loads intentionally remain marker-only until a connected
-    /// mode-specific provider supplies real geometry.
-    @State private var routePolyline: [HereLatLng] = []
+    /// Exact lines from the active server binding. MultiLineString members
+    /// remain independent so rail gaps and marine discontinuities are never
+    /// joined by a client-authored chord.
+    @State private var canonicalRouteLines: [[HereLatLng]] = []
+    @State private var canonicalRouteStatus: String?
+    @State private var canonicalRouteVersion: Int?
+    /// Licensed observation evidence is intentionally independent from the
+    /// planned route. A position never implies progress without a server
+    /// projection onto this exact route-plan version.
+    @State private var liveTruckObservation: LiveOperationsClient.Observation?
+    @State private var liveOperationsStatus: HereLiveOperationsStatus?
 
     let live: ShipperAPI.LifecycleSnapshot
     /// Stable load identifier — used as the geocode-cache key so the
@@ -375,7 +381,7 @@ struct LifecycleMapCard: View {
     /// Defaults to the snapshot's load id so existing call sites that
     /// pass `live: live` keep working without an explicit loadId.
     var loadId: String? = nil
-    var label: String = "LIVE MAP"
+    var label: String = "ROUTE MAP"
     var icon: String = "map.fill"
     /// Which pin set to render. See doc comment above.
     var mode: Mode = .full
@@ -403,20 +409,19 @@ struct LifecycleMapCard: View {
                 Image(systemName: icon)
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
-                Text(label)
+                Text(truthfulMapLabel)
                     .font(.system(size: 9, weight: .heavy)).tracking(0.9)
                     .foregroundStyle(LinearGradient.diagonal)
                 Spacer(minLength: 0)
-                if HereMapsConfig.jsApiKey != nil {
-                    Text("LIVE MAP")
-                        .font(.system(size: 8, weight: .heavy)).tracking(0.7)
-                        .foregroundStyle(palette.textTertiary)
-                        .padding(.horizontal, 5).padding(.vertical, 1.5)
-                        .overlay(Capsule().strokeBorder(palette.borderFaint))
-                }
+                Text(mapAuthorityBadge)
+                    .font(.system(size: 8, weight: .heavy)).tracking(0.7)
+                    .foregroundStyle(palette.textTertiary)
+                    .padding(.horizontal, 5).padding(.vertical, 1.5)
+                    .overlay(Capsule().strokeBorder(palette.borderFaint))
             }
 
-            if pins.pickup == nil && pins.delivery == nil && pins.truck == nil {
+            if pins.pickup == nil && pins.delivery == nil && pins.truck == nil
+                && canonicalRouteLines.isEmpty {
                 emptyMap
             } else {
                 lifecycleLiveMap(pins)
@@ -433,10 +438,10 @@ struct LifecycleMapCard: View {
         .background(palette.bgCard)
         .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-        // Fetch + decode a real HERE road route once both truck endpoints are
-        // geocoded. Rail and marine routes never borrow road geometry.
-        .task(id: routeTaskKey(pins)) {
-            await refreshRoutePolyline(pins)
+        // Resolve from subject identity + purpose only. The server owns mode,
+        // endpoints, selected profile, graph, sources, and exact geometry.
+        .task(id: mapAuthorityTaskKey) {
+            await refreshMapAuthority()
         }
     }
 
@@ -446,48 +451,150 @@ struct LifecycleMapCard: View {
         resolveVertical(live, role: session.user?.role)
     }
 
-    /// Stable identity for the route-fetch task: the rounded pickup +
-    /// delivery coords (7 dp matches HERE's precision). nil-coalesced to
-    /// "none" so the task is a no-op until both endpoints resolve. Non-truck
-    /// loads return a constant so HERE road routing never fires.
-    private func routeTaskKey(
-        _ pins: (pickup: HereLatLng?, delivery: HereLatLng?, truck: HereLatLng?)
-    ) -> String {
-        guard vertical == .truck,
-              let p = pins.pickup, let d = pins.delivery else { return "none" }
-        return String(format: "%.5f,%.5f→%.5f,%.5f", p.lat, p.lng, d.lat, d.lng)
+    /// Map selection and routing use only the load's explicit transport mode.
+    /// The broader UI may retain role-aware vocabulary, but role is never
+    /// evidence for a Truck/Rail/Vessel map outcome.
+    private var mapTransportMode: EusoTripMapTransportMode {
+        EusoTripMapTransportMode(canonicalValue: live.load.transportMode)
     }
 
-    /// Resolves the pickup→delivery corridor via HERE Routing v8 and decodes
-    /// its section polyline into the live route line — the real curved road
-    /// geometry, not a straight 2-point segment. Truck-aware via the default
-    /// `.standardUSSemiLoaded` profile. On any failure (missing coords, HERE
-    /// error) the polyline stays empty and the map remains marker-only.
+    private var canonicalRoutePurpose: CanonicalRoutePlanClient.Purpose {
+        let status = live.load.status.lowercased()
+        let activeStates = [
+            "assigned", "accepted", "dispatched", "en_route", "enroute",
+            "in_transit", "at_pickup", "loaded", "at_delivery", "delivered"
+        ]
+        return activeStates.contains(where: status.contains) ? .activeJob : .posting
+    }
+
+    private var mapAuthorityTaskKey: String {
+        let assignedVehicle = live.vehicle.map { String($0.id) } ?? "none"
+        return "\(live.load.id):\(canonicalRoutePurpose.rawValue):\(assignedVehicle)"
+    }
+
+    private var mapAuthorityBadge: String {
+        if let status = liveOperationsStatus {
+            switch status.availability {
+            case .live: return "LIVE EVIDENCE"
+            case .stale: return "STALE EVIDENCE"
+            case .degraded: return "DEGRADED EVIDENCE"
+            case .empty: break
+            case .unavailable: return "EVIDENCE OFFLINE"
+            }
+        }
+        if let canonicalRouteVersion { return "PLAN V\(canonicalRouteVersion)" }
+        return canonicalRouteStatus == nil ? "MAP" : "ROUTE PENDING"
+    }
+
+    private var truthfulMapLabel: String {
+        guard label.localizedCaseInsensitiveContains("live") else { return label }
+        return liveOperationsStatus?.availability == .live ? label : "TRACKING MAP"
+    }
+
     @MainActor
-    private func refreshRoutePolyline(
-        _ pins: (pickup: HereLatLng?, delivery: HereLatLng?, truck: HereLatLng?)
-    ) async {
-        guard vertical == .truck,
-              let p = pins.pickup, let d = pins.delivery else {
-            routePolyline = []
+    private func refreshMapAuthority() async {
+        await refreshCanonicalRoute()
+        await refreshLicensedTruckObservation()
+    }
+
+    /// The client supplies only the persisted load identity and rendering
+    /// purpose. Every operational fact is resolved and committed server-side.
+    @MainActor
+    private func refreshCanonicalRoute() async {
+        canonicalRouteLines = []
+        canonicalRouteStatus = nil
+        canonicalRouteVersion = nil
+        do {
+            let result = try await CanonicalRoutePlanClient.shared.planLoad(
+                id: live.load.id,
+                purpose: canonicalRoutePurpose
+            )
+            switch result {
+            case .persisted(let persisted):
+                applyCanonicalRoute(persisted.route)
+            case .pending(let pending):
+                canonicalRouteStatus = pending.blockers.first?.message
+                    ?? "Canonical mode-native route pending verified authority"
+                await readExistingCanonicalRoute()
+            }
+        } catch {
+            canonicalRouteStatus = error.eusoUserCopy
+            await readExistingCanonicalRoute()
+        }
+    }
+
+    @MainActor
+    private func readExistingCanonicalRoute() async {
+        do {
+            applyCanonicalRoute(
+                try await CanonicalRoutePlanClient.shared.getBoundLoad(id: live.load.id)
+            )
+        } catch {
+            if canonicalRouteStatus == nil {
+                canonicalRouteStatus = error.eusoUserCopy
+            }
+        }
+    }
+
+    @MainActor
+    private func applyCanonicalRoute(_ route: CanonicalRoutePlanClient.BoundRoutePlan) {
+        guard let payload = route.rendererPayload else {
+            canonicalRouteLines = []
+            canonicalRouteVersion = nil
+            canonicalRouteStatus = "Canonical route exists but is not released for rendering"
             return
         }
-        let stops = HereStops(
-            origin: CLLocationCoordinate2D(latitude: p.lat, longitude: p.lng),
-            destination: CLLocationCoordinate2D(latitude: d.lat, longitude: d.lng)
-        )
+        canonicalRouteLines = payload.lines
+        canonicalRouteVersion = payload.identity.version
+        canonicalRouteStatus = nil
+    }
+
+    /// Reads the exact assigned truck through the server-owned Live
+    /// Operations authority. Rail/Vessel require their own selected asset
+    /// identities and are never coerced through a truck reference.
+    @MainActor
+    private func refreshLicensedTruckObservation() async {
+        liveTruckObservation = nil
+        liveOperationsStatus = nil
+        guard mapTransportMode == .truck,
+              let vehicleId = live.vehicle?.id else { return }
         do {
-            let resp = try await HereRoutingClient.shared.route(
-                stops: stops, profile: .standardUSSemiLoaded)
-            guard let section = resp.routes.first?.sections.first else {
-                routePolyline = []
-                return
-            }
-            let decoded = HereRoutingClient.polyline(for: section)
-            routePolyline = decoded.count >= 2 ? decoded.map { HereLatLng($0) } : []
+            let result = try await LiveOperationsClient.shared.latestTruck(vehicleId: vehicleId)
+            liveTruckObservation = result.observation
+            liveOperationsStatus = Self.status(from: result)
         } catch {
-            routePolyline = []
+            liveOperationsStatus = .init(
+                availability: .degraded,
+                detail: "Authorized truck observation is unavailable",
+                observationCount: 0
+            )
         }
+    }
+
+    private static func status(
+        from result: LiveOperationsClient.AssetResult
+    ) -> HereLiveOperationsStatus {
+        guard let observation = result.observation else {
+            return .init(
+                availability: .empty,
+                detail: result.coverage.statement,
+                observationCount: 0
+            )
+        }
+        let availability: HereLiveOperationsStatus.Availability
+        switch observation.markerState {
+        case .current: availability = observation.operationalUseAllowed ? .live : .degraded
+        case .stale: availability = .stale
+        case .degraded: availability = .degraded
+        case .offline: availability = .unavailable
+        }
+        return .init(
+            availability: availability,
+            sourceLabel: observation.provider.id,
+            freshnessLabel: observation.freshnessState.rawValue,
+            detail: observation.accessibleEvidenceLabel,
+            observationCount: 1
+        )
     }
 
     private var emptyMap: some View {
@@ -495,10 +602,10 @@ struct LifecycleMapCard: View {
             Image(systemName: "mappin.slash")
                 .font(.system(size: 18, weight: .heavy))
                 .foregroundStyle(palette.textTertiary)
-            Text("No GPS coordinates yet")
+            Text("Map evidence pending")
                 .font(EType.caption.weight(.semibold))
                 .foregroundStyle(palette.textPrimary)
-            Text("Map fills in once the carrier accepts and the driver pings.")
+            Text("Map fills in after an authoritative route or licensed position observation is available.")
                 .font(.system(size: 10))
                 .foregroundStyle(palette.textTertiary)
                 .multilineTextAlignment(.center)
@@ -509,7 +616,8 @@ struct LifecycleMapCard: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
-    /// Resolves the pickup / delivery / truck coordinates for the live map,
+    /// Resolves pickup / delivery coordinates for map context and reads the
+    /// truck coordinate only from the licensed Live Operations observation,
     /// reusing the same geocode-store resolution the legacy `computeStops`
     /// used — but tagged by side so `HereLiveMapView` renders typed
     /// (pickup / delivery / truck) pins instead of position-inferred ones.
@@ -549,15 +657,8 @@ struct LifecycleMapCard: View {
             }
         }
 
-        var truck: HereLatLng?
-        if mode == .truckAtPickup || mode == .truckAtDelivery || mode == .full,
-           let g = live.lastGeofence,
-           !(g.latitude == 0 && g.longitude == 0) {
-            // Gate null-island (0,0): a freshly-emitted geofence whose GPS
-            // hasn't locked yet (or a malformed row) must NOT drop the truck
-            // puck in the Gulf of Guinea. Mirror Carrier/311_CarrierActiveLoad.
-            truck = HereLatLng(g.latitude, g.longitude)
-        }
+        let wantsTruck = mode == .truckAtPickup || mode == .truckAtDelivery || mode == .full
+        let truck = wantsTruck ? liveTruckObservation?.position.coordinate : nil
         return (pickup, delivery, truck)
     }
 
@@ -604,23 +705,21 @@ struct LifecycleMapCard: View {
         return place.isEmpty ? fallback : place
     }
 
-    /// The live HERE vector map for this lifecycle stage: typed pickup /
-    /// delivery / truck pins on the OMV basemap, a route connector when both
-    /// endpoints are known, and shipper situational add-ons (weather +
-    /// traffic + sponsored ad-zones). Migrated 2026-05-22 off the legacy
-    /// raster `HereMapView(stops:extraAnnotations:)`.
+    /// The HERE vector map for this lifecycle stage: exact bound route lines,
+    /// typed endpoint pins, and independently licensed observation evidence.
+    /// The renderer never builds a route from the endpoint pins.
     private func lifecycleLiveMap(
         _ pins: (pickup: HereLatLng?, delivery: HereLatLng?, truck: HereLatLng?)
     ) -> some View {
         let present = [pins.pickup, pins.delivery, pins.truck].compactMap { $0 }
-        let center = HereLatLng(
+        let fallbackCenter = HereLatLng(
             present.map { $0.lat }.reduce(0, +) / Double(max(present.count, 1)),
             present.map { $0.lng }.reduce(0, +) / Double(max(present.count, 1))
         )
+        let center = pins.truck
+            ?? canonicalRouteLines.lazy.compactMap(\.first).first
+            ?? fallbackCenter
         let endpointPts = [pins.pickup, pins.delivery].compactMap { $0 }
-        let routePts: [HereLatLng] = vertical == .truck && routePolyline.count >= 2
-            ? routePolyline
-            : []
 
         let pickupLabel = live.pickup.map {
             mapDisplayLabel(
@@ -644,21 +743,52 @@ struct LifecycleMapCard: View {
         var markers: [HereMarker] = []
         if let p = pins.pickup   { markers.append(HereMarker(at: p, kind: .pickup,   label: pickupLabel)) }
         if let d = pins.delivery { markers.append(HereMarker(at: d, kind: .delivery, label: deliveryLabel)) }
-        if let t = pins.truck    { markers.append(HereMarker(at: t, kind: .truck,    label: "Truck")) }
+        if let t = pins.truck,
+           let observation = liveTruckObservation {
+            markers.append(HereMarker(
+                at: t,
+                kind: .truck,
+                label: "Assigned truck",
+                observationState: observation.markerState,
+                sourceLabel: observation.provider.id,
+                accessibilityLabel: observation.accessibleEvidenceLabel
+            ))
+        }
 
-        var baseLayers: [HereMapLayer] = []
-        if routePts.count >= 2 {
-            baseLayers.append(.route(polyline: routePts, colorHex: "#1473FF"))
+        var baseLayers: [HereMapLayer] = canonicalRouteLines.enumerated().map { index, line in
+            .eusoRoute(
+                polyline: line,
+                state: canonicalRoutePurpose == .activeJob ? .active : .planned,
+                label: index == 0
+                    ? "Eusorone \(mapTransportMode.rawValue) route plan version \(canonicalRouteVersion ?? 0)"
+                    : nil
+            )
         }
         baseLayers.append(.markers(markers))
 
         return HereLiveMapView(
             center: center,
             zoom: endpointPts.count >= 2 ? 6 : 9,
-            route: routePts,
+            route: [],
             baseLayers: baseLayers,
-            addOns: vertical == .truck ? .shipperTracking : .weather
+            addOns: mapTransportMode == .truck ? .shipperTracking : .weather,
+            activeJob: canonicalRoutePurpose == .activeJob,
+            mapModeContext: .unconfirmed(mapTransportMode),
+            liveOperationsStatus: liveOperationsStatus
         )
+        .overlay(alignment: .bottomLeading) {
+            if let canonicalRouteStatus {
+                Text(canonicalRouteStatus)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(palette.textSecondary)
+                    .padding(.horizontal, 10).padding(.vertical, 6)
+                    .background(palette.bgCard.opacity(0.92))
+                    .overlay(Capsule().strokeBorder(Brand.warning.opacity(0.45)))
+                    .clipShape(Capsule())
+                    .padding(10)
+                    .accessibilityLabel(canonicalRouteStatus)
+            }
+        }
     }
 }
 

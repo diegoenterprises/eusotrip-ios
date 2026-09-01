@@ -48,12 +48,21 @@
 //           This is the legality line printed on the verdict bar — a
 //           real server constant, not a client guess.
 //    EXISTS escorts.analyzeOversize          escorts.ts:3237
-//           → escortCount (services/oversizeEnforcement.ts:271-272,
-//           emitted :301). HONEST CEILING, rendered on the face: the
-//           procedure takes widthFt / heightFt / lengthFt as CLIENT
-//           INPUT (escorts.ts:3239-3241) because `loads` has no
-//           dimension columns, so this call can only pass the weight it
-//           actually has. The verdict states which inputs it stood on.
+//           → escortCount (services/oversizeEnforcement.ts:268-284,
+//           emitted :301). The count is raised to 2 ONLY by
+//           `widthFt >= dualEscortWidth` (:271-272) or
+//           `weightLbs >= escortWeight` (:282-284; TX escortWeight is
+//           200,000 lb at :69). The procedure takes widthFt / heightFt
+//           / lengthFt as CLIENT INPUT (escorts.ts:3239-3241) because
+//           `loads` has no dimension columns — and NO read this screen
+//           makes carries a width. So the call goes out width-blind,
+//           and a returned 0 or 1 is the shape of a MISSING INPUT, not
+//           a finding. FAIL CLOSED: any count below 2 from a
+//           width-blind call is treated as UNCOMPUTED and the bar
+//           prints CANNOT VERIFY · WIDTH NOT ON THE WIRE rather than a
+//           permissive number. A returned 2 is kept, because weight
+//           alone can already force it and width can only raise the
+//           count, never lower it.
 //    EXISTS escorts.getRouteStates           escorts.ts:3495
 //    EXISTS escorts.findQualifiedEscorts     escorts.ts:3445
 //           → replacement candidates. Certification filter ONLY: the
@@ -116,10 +125,42 @@
 //           createEscortSettlement (escorts.ts:4654) settle ONE whole
 //           assignment and escort_assignments has no milesEscorted, so
 //           a mid-move handover cannot be prorated. Not drawn.
-//    STUB   INCIDENT WRITE — a sweep of escorts.ts finds exactly one
-//           db.insert(incidents), inside logClearanceEvent at
-//           escorts.ts:4459. There is no escort-callable reportIncident,
-//           so the blowout cannot be filed from here.
+//    STUB   INCIDENT WRITE — CORRECTED. The earlier sweep was scoped to
+//           escorts.ts and was wrong about what exists.
+//           `hazmat.reportIncident` EXISTS routers/hazmat.ts:349
+//           (mounted routers.ts:2227), is declared over
+//           `isolatedProcedure as protectedProcedure` at hazmat.ts:13
+//           with NO role gate — so an escort CAN reach it — and it
+//           really does `db.insert(incidents)` at hazmat.ts:400,
+//           taking {loadId, type spill|leak|fire|explosion|
+//           vapor_release|container_failure|rollover|other, severity
+//           minor|moderate|major|catastrophic, description,
+//           location{lat,lng,address?}, materialsInvolved[]?, injuries,
+//           fatalities, evacuationRequired, evacuationRadius?,
+//           agenciesNotified[]?}. (safety.reportIncident
+//           routers/safety.ts:466 is genuinely out of reach —
+//           safety.ts:10 aliases safetyProcedure =
+//           roleProcedure(ROLES.SAFETY_MANAGER), trpc.ts:216.)
+//           This screen still does NOT call it, for three checkable
+//           reasons: (a) hazmat.ts:373 hard-maps every type except
+//           `rollover` to incidents.type "hazmat_spill", so a right-rear
+//           TIRE BLOWOUT filed as "other" would be written to the ledger
+//           as a hazmat spill — a false regulatory record, with the DOT
+//           5800.1 / NRC escalation at hazmat.ts:377-378 hanging off it;
+//           (b) `severity` is a REQUIRED enum and nothing on this
+//           surface supplies one, so the screen would have to invent the
+//           field that drives that escalation; (c) the insert hard-nulls
+//           driverId at hazmat.ts:402 while escorts.getIncidents filters
+//           `eq(incidents.driverId, escortUserId)` at escorts.ts:2697,
+//           so the row would be invisible to ES-17 regardless. The write
+//           exists and is callable; it is the wrong SHAPE for this
+//           event, and this file will not launder a blowout into a
+//           hazmat spill to use it. Owed, and small: a
+//           mechanical|tire|blowout member on the hazmat type enum
+//           mapped to incidents.type "equipment_failure", or
+//           escorts.reportIncident({assignmentId, type, severity,
+//           occurredAt, location, description}) → {incidentId} stamping
+//           incidents.driverId with the escort's own userId.
 //    STUB   PROTECTION-LAYER EVIDENCE — nothing anywhere records that a
 //           warning device was placed, which is why the layer ticks in
 //           this file are DEVICE-LOCAL and labelled as such on glass.
@@ -154,9 +195,19 @@
 //
 //  CHAIN — ONE-SIDED, both halves named.
 //    C1 SILENT · stand-down → seat re-open → broadcast cannot originate
-//       from this device (requestEscort role list, escorts.ts:572) and
-//       no unit-down event exists in WS_EVENTS at all. Missing half:
-//       escorts.declareUnitDown + an ESCORT_UNIT_DOWN emit.
+//       from this device (requestEscort role list, escorts.ts:572). The
+//       event registry is NOT `_core/websocket.ts` — that file only
+//       re-exports it at :626 — it is
+//       `frontend/shared/websocket-events.ts:245-265`, and it carries at
+//       least ELEVEN escort events, not four: JOB_AVAILABLE / ASSIGNED /
+//       STARTED / COMPLETED / APPLIED (emitted by escorts.ts:915
+//       itself), CHECK_SUBMITTED, CERT_UPLOADED and the LEO handoff set
+//       (LEO_OFFICER_ON_SCENE, LEO_HANDOFF_COMPLETED, LEO_NO_SHOW,
+//       LEO_NO_SHOW_RESOLVED). The verdict survives the correction
+//       unchanged: that registry returns ZERO hits for UNIT_DOWN and
+//       ZERO for stood_down, so no escort unit-down event exists to
+//       emit. Missing half: escorts.declareUnitDown + an
+//       ESCORT_UNIT_DOWN member on that registry.
 //    C2 ONE-SIDED · applyForJob fans out to the LOAD room, the catalyst,
 //       the driver and the applicant (escorts.ts:915-918) — the OUTGOING
 //       escort is none of those four, so the one person the replacement
@@ -557,8 +608,14 @@ struct EscortEmergencyReplacementES26: View {
                 .foregroundStyle(Color.white)
                 .padding(.horizontal, 10).padding(.vertical, 4)
                 .background(Capsule().fill(danger))
+            // The dot is never GREEN on this surface, and the SVG pair
+            // draws it amber for the same reason: this screen is read on
+            // a shoulder with one bar, and the port has no link-quality
+            // reading of any kind. Green would assert a health signal
+            // that does not exist. AMBER = the reads answered, quality
+            // unknown. RED = nothing answered and this is a snapshot.
             Circle()
-                .fill(cacheAge == nil ? AnyShapeStyle(Brand.success) : AnyShapeStyle(amber))
+                .fill(cacheAge == nil ? AnyShapeStyle(amber) : AnyShapeStyle(danger))
                 .frame(width: 7, height: 7)
             Text(freshnessLine)
                 .font(EType.mono(.micro))
@@ -869,20 +926,21 @@ struct EscortEmergencyReplacementES26: View {
                 })
     }
 
-    /// The verdict, with its own basis printed underneath. When the
-    /// server could not supply an escort count, this says so instead of
-    /// asserting a legality it did not compute.
+    /// The verdict, with its own basis printed underneath. It FAILS
+    /// CLOSED: when the input the rule turns on never reached the call,
+    /// this refuses to state an escort count at all rather than printing
+    /// the zero the server hands back for a question it was not asked.
     private var legalityBar: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(legalityHeadline)
                     .font(.system(size: 9.5, weight: .heavy))
-                    .foregroundStyle(legalityIsBlocking ? dangerInk : palette.textPrimary)
+                    .foregroundStyle(legalityInk)
                     .lineLimit(2).minimumScaleFactor(0.75)
                 Spacer(minLength: Space.s2)
-                Text(legalityIsBlocking ? "NOT LEGAL" : "—")
+                Text(legalityVerdict)
                     .font(.system(size: 9.5, weight: .heavy)).tracking(0.4)
-                    .foregroundStyle(legalityIsBlocking ? dangerInk : palette.textTertiary)
+                    .foregroundStyle(legalityVerdictInk)
             }
             Text(legalityBasis)
                 .font(.system(size: 8.5))
@@ -891,8 +949,24 @@ struct EscortEmergencyReplacementES26: View {
         }
         .padding(.horizontal, 10).padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 8)
-            .fill(legalityIsBlocking ? danger.opacity(isDark ? 0.18 : 0.12) : palette.bgCardSoft))
+        .background(RoundedRectangle(cornerRadius: 8).fill(legalityFill))
+    }
+
+    private var legalityInk: Color {
+        if legalityUnverified { return amberInk }
+        return legalityIsBlocking ? dangerInk : palette.textPrimary
+    }
+    private var legalityVerdict: String {
+        if legalityUnverified { return "CANNOT VERIFY" }
+        return legalityIsBlocking ? "NOT LEGAL" : "—"
+    }
+    private var legalityVerdictInk: Color {
+        if legalityUnverified { return amberInk }
+        return legalityIsBlocking ? dangerInk : palette.textTertiary
+    }
+    private var legalityFill: Color {
+        if legalityUnverified { return amber.opacity(isDark ? 0.18 : 0.14) }
+        return legalityIsBlocking ? danger.opacity(isDark ? 0.18 : 0.12) : palette.bgCardSoft
     }
 
     private var slotsFilled: Int {
@@ -904,14 +978,33 @@ struct EscortEmergencyReplacementES26: View {
         if snap.slots?.lead?.userId == nil { return "LEAD" }
         return nil
     }
-    private var requiredEscorts: Int? { snap.analysis?.escortCount }
+    /// FALSE whenever the call that produced the count never carried the
+    /// input the rule turns on. `analyzeOversize` is invoked here without
+    /// `widthFt` — there is no width on any read this screen makes, and
+    /// `loads` has no dimension columns (escorts.ts:3239-3241) — while
+    /// `stateEscortCount` is raised to 2 only by width at or above
+    /// `dualEscortWidth` or weight at or above `escortWeight`
+    /// (services/oversizeEnforcement.ts:271-272, :282-284). So a returned
+    /// 0 or 1 is the ABSENCE of the width test, not its result, and is
+    /// treated as no value at all. A returned 2 is trusted: only the
+    /// weight line can have produced it on a width-blind call, and width
+    /// can only push the count up.
+    private var analysisSawWidth: Bool { false }
+    private var escortCountIsVerified: Bool {
+        guard let count = snap.analysis?.escortCount else { return false }
+        return analysisSawWidth || count >= 2
+    }
+    private var requiredEscorts: Int? {
+        escortCountIsVerified ? snap.analysis?.escortCount : nil
+    }
+    private var legalityUnverified: Bool { requiredEscorts == nil }
     private var legalityIsBlocking: Bool {
         guard let need = requiredEscorts else { return false }
         return slotsFilled < need
     }
     private var legalityHeadline: String {
         guard let need = requiredEscorts else {
-            return "Escort count not computed — no load dimensions were available to judge on"
+            return "WIDTH NOT ON THE WIRE — the escort count turns on load width, so this screen will not state one"
         }
         return "\(need) escort\(need == 1 ? "" : "s") required · \(slotsFilled) on scene"
     }
@@ -928,7 +1021,11 @@ struct EscortEmergencyReplacementES26: View {
         if let wt = snap.trip?.load?.weight, wt > 0 {
             parts.append("load \(Int(wt).formatted()) lb")
         }
-        parts.append("width/height/length are not columns on loads, so this verdict stands on weight and route states only")
+        if legalityUnverified {
+            parts.append("analyzeOversize was called without widthFt and answered under the weight line, so nothing here decided the width rule — a count is withheld rather than guessed")
+        } else {
+            parts.append("this count came off the weight line alone; width/height/length are not columns on loads, so it is a floor the real rule can only raise")
+        }
         return parts.joined(separator: " · ")
     }
 
@@ -1307,6 +1404,13 @@ struct EscortEmergencyReplacementES26: View {
                 next.stateRules = await softQuery("escorts.getStateEscortRules", ES26StateInput(state: here))
             }
             if !next.routeStates.isEmpty {
+                // WIDTH-BLIND ON PURPOSE, and the verdict bar knows it.
+                // analyzeOversize takes widthFt as client input
+                // (escorts.ts:3239) and `loads` has no width column, so
+                // there is nothing honest to put there. `legalityBar`
+                // therefore reads any returned count below 2 as the
+                // absence of the width test, not as a finding, and
+                // prints CANNOT VERIFY instead of a number.
                 next.analysis = await softQuery(
                     "escorts.analyzeOversize",
                     ES26AnalyzeInput(weightLbs: trip.load?.weight, routeStates: next.routeStates))

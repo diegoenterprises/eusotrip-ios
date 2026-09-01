@@ -48,11 +48,7 @@ struct DriverComplianceDashboard: View {
                     skeletonStack
                 } else {
                     hosCard
-                    // COUNTRY-DONE (wireframe 078): HOS cycle basis by jurisdiction.
-                    // US active until the per-country ruleset resolver lands
-                    // (named gap: eld.getActiveHosRuleset / hos.getCycleRule —
-                    // detectLoadCountry keys the active row server-side).
-                    DriverHosCycleJurisdictionBand(active: .us)
+                    hosRulesetCard
                     insuranceCard
                     hazmatCard
                     twicCard
@@ -90,7 +86,11 @@ struct DriverComplianceDashboard: View {
 
     private var syncSubline: String {
         let name = session.user?.name ?? "Driver"
-        return loading ? "\(name) · syncing FMCSA + HOS…" : "\(name) · last sync just now"
+        if loading { return "\(name) · refreshing compliance sources…" }
+        if let observedAt = HOSObservationClock.parse(hos?.freshness) {
+            return "\(name) · HOS observed \(observedAt.formatted(.relative(presentation: .named)))"
+        }
+        return "\(name) · HOS observation time unavailable"
     }
 
     @ViewBuilder
@@ -105,22 +105,53 @@ struct DriverComplianceDashboard: View {
     }
 
     private func hosHeadline(_ h: HOSStatus?) -> String {
-        guard let h = h else { return "Connect ELD to see live clock" }
+        guard let h else { return "HOS evidence unavailable" }
+        guard h.hasCurrentObservation() else {
+            switch h.freshnessState() {
+            case .stale: return "HOS observation stale"
+            case .current: return "HOS counters unavailable"
+            case .unavailable, .invalid: return "HOS evidence unavailable"
+            }
+        }
         return "\(formatHHMM(h.drivingRemaining)) drive · \(formatHHMM(h.onDutyRemaining)) on-duty"
     }
 
     private func hosSub(_ h: HOSStatus?) -> String {
-        guard let h = h else { return "-" }
-        return String(format: "%.1fh cycle remaining · %@", h.cycleRemaining, h.status.uppercased())
+        guard let h else { return "HOS source and freshness unavailable" }
+        let duty = h.status.flatMap(HOSDutyCode.init(rawValue:))?.shortLabel ?? "duty unavailable"
+        let rawSource = h.source?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let source = rawSource.flatMap { $0.isEmpty ? nil : $0 } ?? "source unavailable"
+        guard h.hasCurrentObservation() else {
+            if let observedAt = HOSObservationClock.parse(h.freshness) {
+                return "\(source) · last observed \(observedAt.formatted(.relative(presentation: .named))) · counters withheld"
+            }
+            return "\(source) · observation time unavailable · counters withheld"
+        }
+        return "\(HOSStatus.formatHours(h.cycleRemaining)) cycle · \(duty) · \(source)"
     }
 
     private func hosStatusBadge(_ h: HOSStatus?) -> StatusBadge {
-        guard let h = h else { return .init(label: "PENDING", color: palette.textSecondary) }
-        let drive = h.drivingRemaining
-        if drive <= 0  { return .init(label: "EXPIRED", color: Brand.danger) }
-        if drive < 1.0 { return .init(label: "WARN",    color: Brand.danger) }
-        if drive < 2.0 { return .init(label: "WATCH",   color: Brand.warning) }
-        return .init(label: "CLEAR", color: Brand.success)
+        guard let h else { return .init(label: "UNAVAILABLE", color: palette.textSecondary) }
+        guard h.tracked == true, h.trackingState == .tracked else {
+            return .init(label: "UNTRACKED", color: palette.textSecondary)
+        }
+        switch h.freshnessState() {
+        case .current:
+            return .init(label: "CURRENT", color: Brand.success)
+        case .stale:
+            return .init(label: "STALE", color: Brand.warning)
+        case .unavailable, .invalid:
+            return .init(label: "UNAVAILABLE", color: palette.textSecondary)
+        }
+    }
+
+    private var hosRulesetCard: some View {
+        statusCard(
+            eyebrow: "HOS · JURISDICTION",
+            title: "Ruleset unavailable",
+            subtitle: "The HOS source did not identify the active country or cycle ruleset.",
+            badge: .init(label: "UNTRACKED", color: palette.textSecondary)
+        )
     }
 
     private var insuranceCard: some View {
@@ -278,8 +309,9 @@ struct DriverComplianceDashboard: View {
 
     // MARK: - Helpers
 
-    private func formatHHMM(_ hours: Double) -> String {
-        let total = max(0, Int(hours * 60))
+    private func formatHHMM(_ hours: Double?) -> String {
+        guard let hours, hours.isFinite, hours >= 0 else { return "—" }
+        let total = Int((hours * 60).rounded())
         let h = total / 60
         let m = total % 60
         return String(format: "%dh %02dm", h, m)
@@ -290,14 +322,19 @@ struct DriverComplianceDashboard: View {
     private func load() async {
         loading = true
         defer { loading = false }
-        async let hosT: HOSStatus? = (try? await EusoTripAPI.shared.hos.getStatus())
-        async let carrierT: DriversAPI.MyCarrier? = (try? await EusoTripAPI.shared.drivers.getMyCarrier()) ?? nil
-        let h = await hosT
-        let c = await carrierT
-        await MainActor.run {
-            hos = h
-            carrier = c
+        error = nil
+        var failures: [String] = []
+        do {
+            hos = try await EusoTripAPI.shared.hos.getStatus()
+        } catch {
+            failures.append("HOS could not refresh: \(error.localizedDescription)")
         }
+        do {
+            carrier = try await EusoTripAPI.shared.drivers.getMyCarrier()
+        } catch {
+            failures.append("Carrier compliance could not refresh: \(error.localizedDescription)")
+        }
+        error = failures.isEmpty ? nil : failures.joined(separator: " ")
     }
 }
 

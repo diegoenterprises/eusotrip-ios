@@ -164,7 +164,8 @@ struct NextBeatLive: View {
     /// §395.3(b) 70-hr/8-day CYCLE remaining — the real reset clock the
     /// ring renders. Em-dash until the HOS snapshot lands.
     private var cycleRemainingDisplay: String {
-        hos.status?.cycleRemainingDisplay ?? dash
+        guard hos.status?.hasCurrentObservation() == true else { return dash }
+        return hos.status?.cycleRemainingDisplay ?? dash
     }
 
     /// Whether the driver is in a reset/off-duty state per the live
@@ -174,18 +175,20 @@ struct NextBeatLive: View {
         switch hos.currentDuty {
         case .offDuty, .sleeperBerth: return true
         case .driving, .onDuty:       return false
+        case nil:                     return false
         }
     }
 
     /// Live duty-state headline. "Resting. Clock running." only when the
     /// live duty code says off-duty/sleeper; otherwise the real label.
     private var dutyHeadline: String {
-        guard hos.status != nil else { return "Off-duty status loading…" }
+        guard hos.status?.hasCurrentObservation() == true else { return "Duty status unavailable." }
         switch hos.currentDuty {
         case .offDuty:      return "Resting. Clock running."
         case .sleeperBerth: return "Sleeper berth. Clock running."
         case .driving:      return "Driving."
         case .onDuty:       return "On duty."
+        case nil:           return "Duty status unavailable."
         }
     }
 
@@ -195,8 +198,8 @@ struct NextBeatLive: View {
     /// no live source → "—".
     private var milestoneLine: String {
         let bay = "—"   // no live bay-assignment source on the HOS/load envelope
-        guard let s = hos.status else { return "Next milestone — · Bay \(bay)" }
-        if s.breakRequired {
+        guard let s = hos.status, s.hasCurrentObservation() else { return "Next milestone — · Bay \(bay)" }
+        if s.breakRequired == true {
             return "Break required now · Bay \(bay)"
         }
         if let iso = s.nextBreakDue,
@@ -204,21 +207,25 @@ struct NextBeatLive: View {
             let f = DateFormatter(); f.dateFormat = "EEE HH:mm"
             return "Break due \(f.string(from: d)) · Bay \(bay)"
         }
-        return "No break due · Bay \(bay)"
+        return s.breakRequired == false
+            ? "No break due · Bay \(bay)"
+            : "Break evidence unavailable · Bay \(bay)"
     }
 
     /// ESANG pre-trip line — derived from the live break/cycle snapshot,
     /// never a baked "09:30". Em-dash when no snapshot.
     private var prePingLine: String {
-        guard let s = hos.status else { return "ESANG pre-trip prompt — awaiting HOS sync" }
+        guard let s = hos.status, s.hasCurrentObservation() else {
+            return "ESANG pre-trip prompt — HOS evidence unavailable"
+        }
         if let iso = s.nextBreakDue,
            let d = ISO8601DateFormatter().date(from: iso) {
             let f = DateFormatter(); f.dateFormat = "EEE HH:mm"
             return "ESANG pre-trip prompt at \(f.string(from: d))"
         }
-        return s.canDrive
-            ? "ESANG pre-trip prompt queued · drive bank open"
-            : "ESANG holds dispatch until reset clears"
+        if s.canDrive == true { return "ESANG pre-trip prompt queued · drive bank open" }
+        if s.canDrive == false { return "ESANG holds dispatch until reset clears" }
+        return "ESANG pre-trip prompt — eligibility unavailable"
     }
 
     var body: some View {
@@ -265,10 +272,12 @@ struct NextBeatLive: View {
                           multiVehicleCount: loadCtx?.multiVehicleCount,
                           compact: true)
             HStack(spacing: 4) {
-                Circle().fill(Brand.success).frame(width: 6, height: 6)
-                Text("LIVE RESET")
+                Circle()
+                    .fill(hos.status?.hasCurrentObservation() == true ? Brand.success : palette.textTertiary)
+                    .frame(width: 6, height: 6)
+                Text(hos.status?.hasCurrentObservation() == true ? "LIVE RESET" : "HOS UNAVAILABLE")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                    .foregroundStyle(Brand.success)
+                    .foregroundStyle(hos.status?.hasCurrentObservation() == true ? Brand.success : palette.textTertiary)
             }
             Text(clockDisplay)
                 .font(EType.mono(.caption)).fontWeight(.semibold)
@@ -283,23 +292,27 @@ struct NextBeatLive: View {
     /// old decorative 0.99 trim wrapped around the live center value
     /// (Wave-A1 fabrication kill, 2026-06-10): the arc and the number
     /// now read off the SAME snapshot and can never disagree.
-    private var cycleRingFraction: CGFloat {
-        guard let s = hos.status else { return 0 }
-        return CGFloat(min(max(s.cycleRemaining / 70.0, 0), 1))
+    private var cycleRingFraction: CGFloat? {
+        guard let s = hos.status,
+              s.hasCurrentObservation(),
+              let remaining = s.cycleRemaining else { return nil }
+        return CGFloat(min(max(remaining / 70.0, 0), 1))
     }
 
     private var restingCard: some View {
         HStack(alignment: .center, spacing: Space.s3) {
             ZStack {
                 Circle().stroke(palette.bgCardSoft, lineWidth: 6).frame(width: 84, height: 84)
-                Circle()
-                    .trim(from: 0, to: cycleRingFraction)
-                    .stroke(LinearGradient.diagonal, style: StrokeStyle(lineWidth: 6, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                    .frame(width: 84, height: 84)
-                    .animation(reduceMotion ? nil
-                               : .timingCurve(0.4, 0, 0.2, 1, duration: 0.6),
-                               value: cycleRingFraction)
+                if let cycleRingFraction {
+                    Circle()
+                        .trim(from: 0, to: cycleRingFraction)
+                        .stroke(LinearGradient.diagonal, style: StrokeStyle(lineWidth: 6, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                        .frame(width: 84, height: 84)
+                        .animation(reduceMotion ? nil
+                                   : .timingCurve(0.4, 0, 0.2, 1, duration: 0.6),
+                                   value: cycleRingFraction)
+                }
                 VStack(spacing: -2) {
                     Text(cycleRemainingDisplay)
                         .font(.system(size: 20, weight: .heavy, design: .rounded))
@@ -535,7 +548,7 @@ struct NextBeatLive: View {
                     .foregroundStyle(palette.textTertiary)
             }
             Spacer()
-            Text(isResting ? "RESTING" : hos.currentDuty.shortLabel)
+            Text(isResting ? "RESTING" : (hos.currentDuty?.shortLabel ?? "UNAVAILABLE"))
                 .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                 .foregroundStyle(isResting ? Brand.success : palette.textSecondary)
                 .padding(.horizontal, 6).padding(.vertical, 2)
@@ -653,13 +666,16 @@ struct NextBeatLive: View {
     /// ESANG footer copy — composed from the live duty snapshot, never a
     /// baked "09:30 SUNDAY". Em-dash-safe when no snapshot.
     private var esangFooterCopy: String {
-        guard let s = hos.status else {
-            return "ESANG · REST WELL · I'LL HOLD YOUR BOARD UNTIL HOS SYNCS"
+        guard let s = hos.status, s.hasCurrentObservation() else {
+            return "ESANG · HOS EVIDENCE UNAVAILABLE · REFRESH BEFORE DISPATCH"
         }
-        if s.canDrive {
+        if s.canDrive == true {
             return "ESANG · REST WELL · DRIVE BANK \(s.drivingRemainingDisplay.uppercased()) · CYCLE \(s.cycleRemainingDisplay.uppercased())"
         }
-        return "ESANG · REST WELL · RESET IN PROGRESS · CYCLE \(s.cycleRemainingDisplay.uppercased()) · I'LL WAKE YOU WHEN THE CLOCK CLEARS"
+        if s.canDrive == false {
+            return "ESANG · REST WELL · RESET IN PROGRESS · CYCLE \(s.cycleRemainingDisplay.uppercased()) · I'LL WAKE YOU WHEN THE CLOCK CLEARS"
+        }
+        return "ESANG · DRIVE ELIGIBILITY UNAVAILABLE · REFRESH BEFORE DISPATCH"
     }
 
     private var actions: some View {

@@ -87,17 +87,16 @@ struct BrokerHome: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
-                HomeWeatherWidget()
-                kpiStrip
-                attentionStrip
-                laneIntelCTA
-                catalystVettingCTA
                 HomeWidgetGrid(
                     canonicalOrder: brokerCanonicalOrder,
                     role: "BROKER",
                     storageKey: widgetLayoutKey,
                     render: { id in brokerHomeRender(id) }
                 )
+                kpiStrip
+                attentionStrip
+                laneIntelCTA
+                catalystVettingCTA
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14)
@@ -105,6 +104,15 @@ struct BrokerHome: View {
         }
         .task { await refreshAll() }
         .eusoRefreshable { await refreshAll() }
+        // RealtimeService → `bid:received` (server socketService.ts
+        // emit to room `role:broker`) is re-posted as
+        // `.esangRefreshSurface` (Services/RealtimeService.swift:375),
+        // so the tender / alert / recent widgets on this dashboard
+        // reflect a new bid without waiting on a pull-to-refresh.
+        // eusotrip-killers-elite :01 §20 · 2026-08-25
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task { await refreshAll() }
+        }
         .screenTileRoot()
         .sheet(isPresented: $showLaneIntel) {
             LaneIntelSheet(companyId: Int(session.user?.companyId ?? "") ?? 1)

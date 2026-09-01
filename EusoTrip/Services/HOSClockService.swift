@@ -24,9 +24,8 @@
 //  Lifecycle:
 //    • `start()` — called from EusoTripApp when session.phase becomes
 //      .signedIn. Kicks off one immediate poll + a repeating timer.
-//    • `stop()`  — called on sign-out or background suspension. Cancels
-//      the task; published `status` is left intact so UI transitions
-//      don't thrash.
+//    • `stop()`  — called on sign-out. Cancels the task and clears the
+//      prior account's observation so it cannot cross a session boundary.
 //
 //  This is intentionally lightweight: no separate thread, no socket,
 //  no CMMotionManager. The backend is authoritative for HOS; we just
@@ -45,6 +44,12 @@ final class HOSClockService: ObservableObject {
     /// poll. DriverHome already has its own copy on the view model,
     /// but exposing it here lets any other surface observe live.
     @Published private(set) var status: HOSStatus?
+
+    /// Transport/read failure is separate from an honest untracked response.
+    /// Existing status may remain visible only with its own source/freshness.
+    @Published private(set) var lastRefreshError: String?
+
+    @Published private(set) var lastSuccessfulPollAt: Date?
 
     /// How often to poll while signed-in. Five minutes is a compromise
     /// between liveness and battery — HOS clocks don't tick fast enough
@@ -88,19 +93,21 @@ final class HOSClockService: ObservableObject {
         }
     }
 
-    /// Cancel the polling loop. Published `status` survives so UI
-    /// transitions don't thrash between signed-out/signed-in.
+    /// Cancel the polling loop and remove any prior-session HOS observation.
     func stop() {
         pollTask?.cancel()
         pollTask = nil
+        status = nil
+        lastSuccessfulPollAt = nil
+        lastRefreshError = nil
+        warnedThisCycle = false
     }
 
     // MARK: Poll loop
 
     private func runPollLoop() async {
-        // Immediate fetch + spaced subsequent fetches. Failures are
-        // swallowed — a transient network drop shouldn't knock the
-        // driver out of the flow; the next tick will try again.
+        // Immediate fetch + spaced subsequent fetches. A transport failure is
+        // recorded separately; old evidence is never relabeled as current.
         while !Task.isCancelled {
             await pollOnce()
             let ns = UInt64(pollInterval * 1_000_000_000)
@@ -112,9 +119,12 @@ final class HOSClockService: ObservableObject {
         do {
             let fresh = try await EusoTripAPI.shared.hos.getStatus()
             self.status = fresh
+            self.lastSuccessfulPollAt = Date()
+            self.lastRefreshError = nil
             evaluate(status: fresh)
             pushToWatch(fresh)
         } catch {
+            lastRefreshError = "HOS evidence could not refresh. Existing values retain their recorded freshness."
             #if DEBUG
             print("[HOSClock] poll failed: \(error.localizedDescription)")
             #endif
@@ -128,36 +138,60 @@ final class HOSClockService: ObservableObject {
     /// drops it and the watch will pick up the next applicationContext
     /// on its own.
     private func pushToWatch(_ fresh: HOSStatus) {
-        let drv = Int((fresh.drivingRemaining * 60).rounded())
-        let win = Int((fresh.onDutyRemaining * 60).rounded())
-        let cyc = Int((fresh.cycleRemaining * 60).rounded())
+        guard fresh.tracked == true,
+              fresh.trackingState == .tracked,
+              fresh.freshnessState().isCurrent,
+              let status = fresh.status,
+              HOSDutyCode(rawValue: status) != nil,
+              let source = fresh.source?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !source.isEmpty,
+              let freshness = fresh.freshness,
+              let drivingRemaining = fresh.drivingRemaining,
+              let onDutyRemaining = fresh.onDutyRemaining,
+              let cycleRemaining = fresh.cycleRemaining else {
+            return
+        }
+        let drv = Int((drivingRemaining * 60).rounded())
+        let win = Int((onDutyRemaining * 60).rounded())
+        let cyc = Int((cycleRemaining * 60).rounded())
         WatchAuthBridge.shared.pushHOSUpdate(
-            status: fresh.status,
+            status: status,
             driveRemainingMinutes: drv,
             windowRemainingMinutes: win,
-            cycleRemainingMinutes: cyc
+            cycleRemainingMinutes: cyc,
+            source: source,
+            freshness: freshness
         )
     }
 
     /// Compare the fresh status against our warning threshold and
     /// fire `.hosBreakRequired` if it's time.
     private func evaluate(status: HOSStatus) {
-        let approaching = status.drivingRemaining <= warningThresholdHours
-                       || status.onDutyRemaining  <= warningThresholdHours
-                       || status.breakRequired
+        guard status.tracked == true,
+              status.trackingState == .tracked,
+              status.freshnessState().isCurrent,
+              let drivingRemaining = status.drivingRemaining,
+              let onDutyRemaining = status.onDutyRemaining,
+              let breakRequired = status.breakRequired else {
+            warnedThisCycle = false
+            return
+        }
+        let approaching = drivingRemaining <= warningThresholdHours
+                       || onDutyRemaining <= warningThresholdHours
+                       || breakRequired
 
         if approaching, !warnedThisCycle {
             warnedThisCycle = true
             controller?.handle(.hosBreakRequired)
             #if DEBUG
-            print("[HOSClock] warn · drv=\(status.drivingRemaining)h " +
-                  "ond=\(status.onDutyRemaining)h brkReq=\(status.breakRequired)")
+            print("[HOSClock] warn · drv=\(drivingRemaining)h " +
+                  "ond=\(onDutyRemaining)h brkReq=\(breakRequired)")
             #endif
         } else if !approaching, warnedThisCycle {
             // Driver took a qualifying break — arm the next warning.
             warnedThisCycle = false
             #if DEBUG
-            print("[HOSClock] cleared · drv=\(status.drivingRemaining)h")
+            print("[HOSClock] cleared · drv=\(drivingRemaining)h")
             #endif
         }
     }

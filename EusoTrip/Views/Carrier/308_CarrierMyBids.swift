@@ -17,7 +17,7 @@
 //    WITHDRAWN   — you walked away
 //
 //  Drag-to-withdraw: drag a PENDING card onto the WITHDRAWN column
-//  fires the real `catalysts.cancelBid(bidId)` mutation. The server
+//  fires the real `loadBidding.withdraw(bidId, requestKey)` mutation. The server
 //  enforces the same constraint (only `pending` bids can be
 //  cancelled), so dragging a COUNTERED card onto WITHDRAWN is a
 //  client-side no-op that mirrors the server policy.
@@ -38,15 +38,7 @@ struct CarrierMyBidsScreen: View {
     }
 }
 
-private struct MyBid: Decodable, Identifiable, Hashable {
-    let id: String
-    let loadId: String
-    let loadNumber: String?
-    let lane: String?
-    let amount: Double
-    let status: String       // pending / accepted / rejected / countered / withdrawn
-    let createdAt: String?
-}
+private typealias CarrierBid = LoadBiddingAPI.MyBid
 
 private struct BidKanbanColumn: Identifiable, Hashable {
     let id: String           // matches raw status value
@@ -67,7 +59,7 @@ private let bidKanbanColumns: [BidKanbanColumn] = [
 
 private struct MyBidsBody: View {
     @Environment(\.palette) private var palette
-    @State private var bids: [MyBid] = []
+    @State private var bids: [CarrierBid] = []
     @State private var loading = true
     @State private var loadError: String? = nil
     @State private var selected: String = "pending"
@@ -75,8 +67,9 @@ private struct MyBidsBody: View {
     @State private var cancelling: String? = nil
     @State private var actionError: String? = nil
     @State private var lastCancelled: String? = nil
+    @State private var withdrawalKeys: [String: String] = [:]
 
-    private var byColumn: [String: [MyBid]] {
+    private var byColumn: [String: [CarrierBid]] {
         Dictionary(grouping: bids) { $0.status.lowercased() }
     }
 
@@ -206,7 +199,7 @@ private struct MyBidsBody: View {
                 } else {
                     ForEach(cards) { b in
                         cardView(b, col: col)
-                            .draggable(b.id) {
+                            .draggable(b.opaqueID) {
                                 cardView(b, col: col)
                                     .frame(maxWidth: 320)
                                     .opacity(0.92)
@@ -229,9 +222,9 @@ private struct MyBidsBody: View {
         )
         .dropDestination(for: String.self) { droppedIds, _ in
             guard let droppedId = droppedIds.first else { return false }
-            guard let bid = bids.first(where: { $0.id == droppedId }) else { return false }
+            guard let bid = bids.first(where: { $0.opaqueID == droppedId }) else { return false }
             // Only one transition is user-driven: pending → withdrawn.
-            // Server enforces the same policy in catalysts.cancelBid, so
+            // Server enforces the same policy in loadBidding.withdraw, so
             // a stale client view that tries other transitions still
             // gets the right answer; the no-op here just spares the
             // wasted round-trip.
@@ -245,7 +238,7 @@ private struct MyBidsBody: View {
         }
     }
 
-    private func cardView(_ b: MyBid, col: BidKanbanColumn) -> some View {
+    private func cardView(_ b: CarrierBid, col: BidKanbanColumn) -> some View {
         LifecycleCard(
             accentDanger: col.id == "rejected",
             accentWarning: col.id == "countered",
@@ -259,23 +252,24 @@ private struct MyBidsBody: View {
                         .background(Capsule().fill(tintColor(col).opacity(0.18)))
                         .foregroundStyle(tintColor(col))
                     Spacer()
-                    if cancelling == b.id {
+                    if cancelling == b.opaqueID {
                         ProgressView().scaleEffect(0.6)
                         Text("WITHDRAWING…")
                             .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                             .foregroundStyle(palette.textSecondary)
                     }
                 }
-                LifecycleSection(label: dashIfEmpty(b.loadNumber).uppercased(), icon: "doc.text")
-                LifecycleRow(label: "Lane",      value: dashIfEmpty(b.lane))
-                LifecycleRow(label: "Amount",    value: usd(b.amount))
+                LifecycleSection(label: "LOAD #\(b.opaqueLoadID)", icon: "doc.text")
+                LifecycleRow(label: "Bid",       value: b.opaqueID)
+                LifecycleRow(label: "Amount",    value: amountLabel(b.bidAmount))
+                LifecycleRow(label: "Rate type", value: b.rateType?.replacingOccurrences(of: "_", with: " ").capitalized ?? "Not recorded")
                 LifecycleRow(label: "Submitted", value: humanISO(b.createdAt))
                 if col.id == "countered" {
                     Button {
                         NotificationCenter.default.post(
                             name: .eusoCarrierNavSwap,
                             object: nil,
-                            userInfo: ["screenId": "305", "bidId": b.id]
+                            userInfo: ["screenId": "305", "bidId": b.opaqueID, "loadId": b.opaqueLoadID]
                         )
                     } label: {
                         Text("View counter →")
@@ -324,25 +318,33 @@ private struct MyBidsBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let r: [MyBid] = try await EusoTripAPI.shared.queryNoInput("catalysts.getMyBids")
-            bids = r
+            let envelope = try await EusoTripAPI.shared.loadBidding.getMyBids(limit: 100)
+            bids = envelope.bids
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = EusoTripAPIError.bidActionMessage(for: error, noun: "bid list")
         }
         loading = false
     }
 
-    private func cancel(bid: MyBid) async {
-        await MainActor.run { cancelling = bid.id; actionError = nil }
-        struct In: Encodable { let bidId: String }
-        struct Out: Decodable { let success: Bool?; let bidId: String? }
+    private func cancel(bid: CarrierBid) async {
+        await MainActor.run { cancelling = bid.opaqueID; actionError = nil }
+        let requestKey = withdrawalKeys[bid.opaqueID] ?? UUID().uuidString.lowercased()
+        withdrawalKeys[bid.opaqueID] = requestKey
         do {
-            let _: Out = try await EusoTripAPI.shared.mutation(
-                "catalysts.cancelBid",
-                input: In(bidId: bid.id)
+            let ack = try await EusoTripAPI.shared.loadBidding.withdraw(
+                bidId: bid.opaqueID,
+                requestKey: requestKey
             )
+            guard ack.confirmedStatus?.lowercased() == "withdrawn",
+                  ack.opaqueID == bid.opaqueID,
+                  ack.opaqueLoadID == bid.opaqueLoadID else {
+                throw EusoTripAPIError.decodingFailed(
+                    "Withdrawal reply did not match the persisted bid."
+                )
+            }
             await MainActor.run {
-                lastCancelled = "\(bid.loadNumber ?? "LD-\(bid.id)") · bid withdrawn"
+                withdrawalKeys.removeValue(forKey: bid.opaqueID)
+                lastCancelled = "Load \(bid.opaqueLoadID) · bid withdrawn"
             }
             await load()
             await MainActor.run {
@@ -350,10 +352,15 @@ private struct MyBidsBody: View {
             }
         } catch {
             await MainActor.run {
-                actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+                actionError = EusoTripAPIError.bidActionMessage(for: error, noun: "withdrawal")
             }
         }
         await MainActor.run { cancelling = nil }
+    }
+
+    private func amountLabel(_ raw: String?) -> String {
+        guard let raw, let amount = Double(raw) else { return "Not recorded" }
+        return usd(amount)
     }
 }
 

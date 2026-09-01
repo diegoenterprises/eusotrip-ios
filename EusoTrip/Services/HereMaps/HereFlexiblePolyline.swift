@@ -61,10 +61,12 @@ enum HereFlexiblePolyline {
             }
             lastLat &+= dLat
             lastLng &+= dLng
-            out.append(CLLocationCoordinate2D(
-                latitude:  Double(lastLat) / factor,
+            if let coordinate = LatLongParser.validatedCoordinate(
+                latitude: Double(lastLat) / factor,
                 longitude: Double(lastLng) / factor
-            ))
+            ) {
+                out.append(coordinate)
+            }
         }
         return out
     }
@@ -75,14 +77,15 @@ enum HereFlexiblePolyline {
     /// Exact mirror of `decode`. Used to build `corridor:{flexiblePolyline}`
     /// avoid-area specs for weather-hazard reroutes.
     static func encode(_ coords: [CLLocationCoordinate2D], precision: Int = 5) -> String {
-        guard !coords.isEmpty else { return "" }
+        let validCoordinates = coords.filter(LatLongParser.isValid)
+        guard !validCoordinates.isEmpty else { return "" }
         var out: [UInt8] = []
         encodeUnsigned(1, into: &out)                       // version = 1
         encodeUnsigned(UInt64(precision & 0x0F), into: &out) // header: prec | thirdDim=0 | thirdDimPrec=0
         let factor = pow(10.0, Double(precision))
         var lastLat: Int64 = 0
         var lastLng: Int64 = 0
-        for c in coords {
+        for c in validCoordinates {
             let lat = Int64((c.latitude * factor).rounded())
             let lng = Int64((c.longitude * factor).rounded())
             encodeSigned(lat - lastLat, into: &out)

@@ -17,6 +17,114 @@ import Foundation
 import WatchConnectivity
 import Combine
 
+enum PhoneActivationDestination: String, Equatable {
+    case home
+    case esang
+    case wallet
+    case hos
+    case safetyCoach
+    case messages
+    case maps
+    case dispatch
+    case hazmat
+    case emergency
+}
+
+enum PhoneActivationDispatch: Equatable {
+    case sent
+    case queued
+    case unavailable
+
+    var accepted: Bool { self != .unavailable }
+}
+
+struct PhoneActivationRequest {
+    let destination: PhoneActivationDestination?
+    let transcript: String
+    let reply: String
+    let beginListening: Bool
+    let autoSubmit: Bool
+    let conversationId: String?
+
+    init(
+        destination: PhoneActivationDestination?,
+        transcript: String,
+        reply: String,
+        beginListening: Bool,
+        autoSubmit: Bool,
+        conversationId: String? = nil
+    ) {
+        self.destination = destination
+        self.transcript = transcript
+        self.reply = reply
+        self.beginListening = beginListening
+        self.autoSubmit = autoSubmit
+        self.conversationId = conversationId
+    }
+
+    func payload(at date: Date = Date()) -> [String: Any] {
+        var payload: [String: Any] = [
+            "op": "esang.activate",
+            "transcript": transcript,
+            "reply": reply,
+            "beginListening": beginListening,
+            "autoSubmit": autoSubmit,
+            "ts": date.timeIntervalSince1970,
+        ]
+        if let destination {
+            payload["destination"] = destination.rawValue
+        }
+        if let conversationId, !conversationId.isEmpty {
+            payload["conversationId"] = conversationId
+        }
+        return payload
+    }
+}
+
+struct EmergencyPhoneRelayRequest {
+    let eventId: String
+    let reason: String
+    let silent: Bool
+    let coordinate: (Double, Double)?
+
+    func payload(at date: Date = Date()) -> [String: Any] {
+        var payload: [String: Any] = [
+            "op": "esang.sos",
+            "eventId": eventId,
+            "reason": reason,
+            "silent": silent,
+            "ts": date.timeIntervalSince1970,
+        ]
+        if let coordinate,
+           coordinate.0.isFinite,
+           coordinate.1.isFinite,
+           (-90...90).contains(coordinate.0),
+           (-180...180).contains(coordinate.1) {
+            payload["lat"] = coordinate.0
+            payload["lon"] = coordinate.1
+        }
+        return payload
+    }
+}
+
+struct EmergencyPhoneRelayResult: Equatable {
+    let phoneReached: Bool
+    let serverAcknowledged: Bool
+    let emergencyId: String?
+    let callHandoffOpened: Bool?
+    let failureReason: String?
+
+    static func unavailable(_ reason: String) -> Self {
+        .init(
+            phoneReached: false,
+            serverAcknowledged: false,
+            emergencyId: nil,
+            callHandoffOpened: nil,
+            failureReason: reason
+        )
+    }
+}
+
 @MainActor
 final class WatchConnectivityManager: NSObject, ObservableObject {
     static let shared = WatchConnectivityManager()
@@ -183,26 +291,36 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
     /// third-party watch app CANNOT foreground-launch its companion —
     /// this wake + one-tap notification (plus the Handoff activity the
     /// calling surface publishes) is the honest platform-legal recipe.
-    /// Returns false when the session isn't even activated so callers
-    /// can tell the driver the truth instead of faking success.
+    /// Returns the transport state so callers can distinguish an immediate
+    /// send from a durable WCSession queue or an unavailable bridge.
     @discardableResult
-    func requestPhoneActivation(transcript: String?, reply: String?) -> Bool {
-        guard let session, session.activationState == .activated else { return false }
-        let payload: [String: Any] = [
-            "op": "esang.activate",
-            "transcript": transcript ?? "",
-            "reply": reply ?? "",
-            "ts": Date().timeIntervalSince1970,
-        ]
+    func requestPhoneActivation(
+        transcript: String?,
+        reply: String?,
+        destination: PhoneActivationDestination? = nil,
+        beginListening: Bool = false,
+        autoSubmit: Bool = false,
+        conversationId: String? = nil
+    ) -> PhoneActivationDispatch {
+        guard let session, session.activationState == .activated else { return .unavailable }
+        let payload = PhoneActivationRequest(
+            destination: destination,
+            transcript: transcript ?? "",
+            reply: reply ?? "",
+            beginListening: beginListening,
+            autoSubmit: autoSubmit,
+            conversationId: conversationId
+        ).payload()
 
         if session.isReachable {
             session.sendMessage(payload, replyHandler: nil) { _ in
                 session.transferUserInfo(payload)
             }
+            return .sent
         } else {
             session.transferUserInfo(payload)
+            return .queued
         }
-        return true
     }
 
     /// tRPC relay — ask the paired iPhone to run a tRPC query on our
@@ -280,25 +398,42 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
         }
     }
 
-    /// Fired by the emergency SOS surface — the phone responds with an
-    /// E911 dial + support-team ping.
-    func triggerEmergencySOS(reason: String, coordinate: (Double, Double)?) {
-        guard let session, session.activationState == .activated else { return }
-        var payload: [String: Any] = [
-            "op": "esang.sos",
-            "reason": reason,
-            "ts": Date().timeIntervalSince1970,
-        ]
-        if let c = coordinate {
-            payload["lat"] = c.0
-            payload["lon"] = c.1
+    /// Hands a live SOS to the paired iPhone and waits for its independent
+    /// server and Emergency Call outcomes. Emergency envelopes are never
+    /// queued through `transferUserInfo`: a delayed loud SOS must not open a
+    /// phone call minutes later, and silent duress must stay silent.
+    func triggerEmergencySOS(
+        eventId: String,
+        reason: String,
+        silent: Bool,
+        coordinate: (Double, Double)?
+    ) async -> EmergencyPhoneRelayResult {
+        guard let session, session.activationState == .activated else {
+            return .unavailable("The paired iPhone session is not activated.")
         }
-        if session.isReachable {
-            session.sendMessage(payload, replyHandler: nil, errorHandler: { _ in
-                session.transferUserInfo(payload)
+        guard session.isReachable else {
+            return .unavailable("The paired iPhone is not reachable.")
+        }
+
+        let payload = EmergencyPhoneRelayRequest(
+            eventId: eventId,
+            reason: reason,
+            silent: silent,
+            coordinate: coordinate
+        ).payload()
+
+        return await withCheckedContinuation { continuation in
+            session.sendMessage(payload, replyHandler: { reply in
+                continuation.resume(returning: EmergencyPhoneRelayResult(
+                    phoneReached: true,
+                    serverAcknowledged: reply["serverAcknowledged"] as? Bool ?? false,
+                    emergencyId: reply["emergencyId"] as? String,
+                    callHandoffOpened: reply["callHandoffOpened"] as? Bool,
+                    failureReason: reply["reason"] as? String
+                ))
+            }, errorHandler: { error in
+                continuation.resume(returning: .unavailable(error.localizedDescription))
             })
-        } else {
-            session.transferUserInfo(payload)
         }
     }
 
@@ -775,14 +910,21 @@ extension WatchConnectivityManager: WCSessionDelegate {
                     return s
                 }
                 if cleared {
+                    InboxStore.shared.resetForIdentity(nil)
                     AuthStore.shared?.update(token: nil, userId: nil, userName: nil, role: nil)
                 } else if let token = normalize(rawToken) {
                     // Additive update: only overwrite when we actually
                     // have a token. Missing user/name/role are allowed —
                     // keep the existing ones rather than clobbering.
+                    let nextUserId = normalize(rawUserId) ?? AuthStore.shared?.userId
+                    if let currentUserId = AuthStore.shared?.userId,
+                       let nextUserId,
+                       currentUserId != nextUserId {
+                        InboxStore.shared.resetForIdentity(nextUserId)
+                    }
                     AuthStore.shared?.update(
                         token: token,
-                        userId: normalize(rawUserId) ?? AuthStore.shared?.userId,
+                        userId: nextUserId,
                         userName: normalize(rawUserName) ?? AuthStore.shared?.userName,
                         role: normalize(rawRole) ?? AuthStore.shared?.role
                     )
@@ -814,11 +956,21 @@ extension WatchConnectivityManager: WCSessionDelegate {
             }
         case "hos.update":
             Task { @MainActor in
+                guard (ctx["tracked"] as? Bool) == true,
+                      let status = ctx["status"] as? String,
+                      let driveRemainingMinutes = ctx["driveRemainingMinutes"] as? Int,
+                      let windowRemainingMinutes = ctx["windowRemainingMinutes"] as? Int,
+                      let cycleRemainingMinutes = ctx["cycleRemainingMinutes"] as? Int,
+                      let source = ctx["source"] as? String,
+                      let freshness = ctx["freshness"] as? String else { return }
                 HOSStore.shared.applyRemote(
-                    status: ctx["status"] as? String ?? "off",
-                    driveRemainingMinutes: ctx["driveRemainingMinutes"] as? Int ?? 0,
-                    windowRemainingMinutes: ctx["windowRemainingMinutes"] as? Int ?? 0,
-                    cycleRemainingMinutes: ctx["cycleRemainingMinutes"] as? Int ?? 0
+                    status: status,
+                    driveRemainingMinutes: driveRemainingMinutes,
+                    windowRemainingMinutes: windowRemainingMinutes,
+                    cycleRemainingMinutes: cycleRemainingMinutes,
+                    tracked: true,
+                    source: source,
+                    freshness: freshness
                 )
             }
         case "messaging.unread":
@@ -828,9 +980,18 @@ extension WatchConnectivityManager: WCSessionDelegate {
             // the thread list to stamp a dot on the right rows even
             // without a fresh tRPC call.
             Task { @MainActor in
+                guard let userId = ctx["userId"] as? String,
+                      !userId.isEmpty,
+                      userId == AuthStore.shared?.userId else { return }
                 let total = ctx["total"] as? Int ?? 0
                 let map = ctx["byConversation"] as? [String: Int] ?? [:]
-                InboxStore.shared.applyRemoteUnread(total: total, map: map)
+                let observedAt = (ctx["ts"] as? TimeInterval).map(Date.init(timeIntervalSince1970:)) ?? Date()
+                InboxStore.shared.applyRemoteUnread(
+                    total: total,
+                    map: map,
+                    userId: userId,
+                    observedAt: observedAt
+                )
             }
         case "bol.result":
             // F15 — scan result from the iPhone companion. The phone

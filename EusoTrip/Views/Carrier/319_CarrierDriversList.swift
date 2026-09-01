@@ -41,13 +41,9 @@ private struct CarrierDriver: Decodable, Identifiable, Hashable {
     /// absent, isn't a coordinate pair, or resolves to null island — so a puck
     /// only ever drops on a real fix (no fabricated coords). Mirrors Catalyst 375.
     var liveFix: HereLatLng? {
-        guard let raw = location else { return nil }
-        let parts = raw.split(separator: ",")
-        guard parts.count == 2,
-              let lat = Double(parts[0].trimmingCharacters(in: .whitespaces)),
-              let lng = Double(parts[1].trimmingCharacters(in: .whitespaces)),
-              !(lat == 0 && lng == 0) else { return nil }
-        return HereLatLng(lat, lng)
+        guard let raw = location,
+              let coordinate = LatLongParser.parse(raw) else { return nil }
+        return HereLatLng(coordinate.latitude, coordinate.longitude)
     }
 }
 
@@ -142,6 +138,13 @@ private struct DriversListBody: View {
                     zoom: locatedDrivers.count == 1 ? 8 : 5,
                     baseLayers: [.markers(fleetMarkers)],
                     addOns: .shipperTracking,
+                    mapModeContext: .primary(.truck),
+                    liveOperationsStatus: .init(
+                        availability: .degraded,
+                        sourceLabel: "Fleet telemetry",
+                        detail: "Positions available; freshness not supplied",
+                        observationCount: fleetMarkers.count
+                    ),
                     onSelectMarker: { driverId in
                         // Tap a puck → route to that driver's Me detail.
                         NotificationCenter.default.post(

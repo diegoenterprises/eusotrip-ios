@@ -77,6 +77,7 @@ struct eSangDispatchChat: View {
     @StateObject private var lifecycle = TripLifecycleStore()
     @State private var activeLoad: ESDChatLoadCtx?
     @State private var hos: HOSStatus?
+    @State private var hosLoadError: String?
     @State private var lane: RatesAPI.LaneComparison?
     @State private var transcript: [MessagingMessage] = []
     @State private var transcriptLoading: Bool = true
@@ -129,7 +130,8 @@ struct eSangDispatchChat: View {
     /// HOS reset clock from `hos.getStatus` — the next break-due ISO
     /// drives the "RESET" chip; em-dash when no live HOS status.
     private var resetClockDisplay: String {
-        guard let due = hos?.nextBreakDue,
+        guard hos?.hasCurrentObservation() == true,
+              let due = hos?.nextBreakDue,
               let date = ISO8601DateFormatter().date(from: due) else { return "—" }
         let f = DateFormatter(); f.dateFormat = "M/d HH:mm"
         return "RESET \(f.string(from: date))"
@@ -137,8 +139,13 @@ struct eSangDispatchChat: View {
 
     /// "DRIVE 7h 22m" — live drive-remaining from hos.getStatus.
     private var driveRemainingDisplay: String {
-        guard let s = hos else { return "—" }
+        guard let s = hos, s.hasCurrentObservation() else { return "—" }
         return "DRIVE \(s.drivingRemainingDisplay)"
+    }
+
+    private var currentDriveRemaining: String {
+        guard let s = hos, s.hasCurrentObservation() else { return "unavailable" }
+        return s.drivingRemainingDisplay
     }
 
     /// Live RPM-vs-lane-avg sentence from rates.compareLaneRate, or "—".
@@ -191,6 +198,12 @@ struct eSangDispatchChat: View {
                     statusRow
                     dayDivider
                     loadFactsBubble
+                    if let hosLoadError {
+                        Text(hosLoadError)
+                            .font(EType.mono(.micro))
+                            .foregroundStyle(Brand.warning)
+                            .accessibilityLabel("Hours of service status: \(hosLoadError)")
+                    }
                     transcriptSection
                     Color.clear.frame(height: 8)
                 }
@@ -360,7 +373,7 @@ struct eSangDispatchChat: View {
     /// or weather is invented.
     private var loadFactsBubble: some View {
         esangBubble(
-            text: "\(greetingPart), \(greetingName). Here's the tender I'm watching in your lane: \(laneDisplay) · \(distanceDisplay) · \(rateDisplay). Drive remaining \(hos?.drivingRemainingDisplay ?? "—").",
+            text: "\(greetingPart), \(greetingName). Here's the tender I'm watching in your lane: \(laneDisplay) · \(distanceDisplay) · \(rateDisplay). Drive remaining \(currentDriveRemaining).",
             time: nil,
             attachment: AnyView(routePreviewPill)
         )
@@ -678,7 +691,14 @@ struct eSangDispatchChat: View {
 
         // HOS reset / drive-remaining are independent of any specific
         // load — pull regardless so the chips render even on an empty board.
-        hos = try? await EusoTripAPI.shared.hos.getStatus()
+        do {
+            let snapshot = try await EusoTripAPI.shared.hos.getStatus()
+            hos = snapshot
+            hosLoadError = snapshot.hasCurrentObservation() ? nil : "HOS evidence is unavailable or stale."
+        } catch {
+            hos = nil
+            hosLoadError = "HOS refresh failed; assignment guidance is withheld."
+        }
 
         guard !lifecycle.loadId.isEmpty else {
             transcriptLoading = false

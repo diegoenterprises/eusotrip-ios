@@ -188,6 +188,21 @@ final class DrivingSessionManager: NSObject, ObservableObject {
         locationManager.stopUpdatingLocation()
     }
 
+    /// Real coordinate evidence for a wrist-originated HOS mutation. A stale
+    /// or low-quality fix is not converted into a location string.
+    var currentHOSLocationEvidence: String? {
+        guard let location = locationManager.location,
+              Date().timeIntervalSince(location.timestamp) <= 2 * 60,
+              location.horizontalAccuracy >= 0,
+              location.horizontalAccuracy <= 100,
+              CLLocationCoordinate2DIsValid(location.coordinate) else { return nil }
+        return String(
+            format: "%.6f,%.6f",
+            location.coordinate.latitude,
+            location.coordinate.longitude
+        )
+    }
+
     // MARK: - Motion
 
     private func startMotion() {
@@ -232,23 +247,9 @@ final class DrivingSessionManager: NSObject, ObservableObject {
             }
         }
 
-        if CMMotionActivityManager.isActivityAvailable() {
-            activity.startActivityUpdates(to: .main) { act in
-                guard let act else { return }
-                // Auto-start HOS "driving" when motion-type transitions to automotive
-                if act.automotive, act.confidence != .low {
-                    Task { @MainActor in
-                        if HOSStore.shared.current.status != .driving {
-                            HOSStore.shared.applyRemote(
-                                status: HOSStatus.driving.rawValue,
-                                driveRemainingMinutes: HOSStore.shared.current.driveRemainingMinutes,
-                                windowRemainingMinutes: HOSStore.shared.current.windowRemainingMinutes
-                            )
-                        }
-                    }
-                }
-            }
-        }
+        // Core Motion can inform fatigue and navigation, but it is not an ELD
+        // and cannot author a legal DRIVING transition. Duty status remains
+        // provider/server-confirmed through HOSStore.
     }
 
     private func stopMotion() {

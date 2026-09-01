@@ -5,6 +5,304 @@
 
 import SwiftUI
 
+/// Editable commercial terms for the post/bid flow. Every field begins
+/// unknown; this type never supplies a market rate, grace period, currency,
+/// billing increment, rounding rule, or suspension policy on the user's behalf.
+struct TruckDetentionTermsDraft: Codable, Equatable, Sendable {
+    var currency: TruckDetentionNegotiatedTerms.Currency?
+    var freeTimeMinutes = ""
+    var rateAmount = ""
+    var billingIncrementMinutes = ""
+    var roundingRule: TruckDetentionNegotiatedTerms.RoundingRule?
+    var suspensionRule: TruckDetentionNegotiatedTerms.SuspensionRule?
+    var excludedSharePercent = ""
+
+    init() {}
+
+    init(terms: TruckDetentionNegotiatedTerms) {
+        currency = terms.currency
+        freeTimeMinutes = String(terms.freeTimeMinutes)
+        rateAmount = terms.rateAmount
+        billingIncrementMinutes = String(terms.billingIncrementMinutes)
+        roundingRule = terms.roundingRule
+        suspensionRule = terms.suspensionRule
+        if let basisPoints = terms.excludedShareBasisPoints {
+            excludedSharePercent = Self.percentString(from: basisPoints)
+        }
+    }
+
+    var negotiatedTerms: TruckDetentionNegotiatedTerms? {
+        guard let currency,
+              let freeTime = Int(freeTimeMinutes.trimmingCharacters(in: .whitespacesAndNewlines)),
+              let increment = Int(billingIncrementMinutes.trimmingCharacters(in: .whitespacesAndNewlines)),
+              let roundingRule,
+              let suspensionRule else { return nil }
+
+        let share: Int?
+        if suspensionRule == .sharedPercentage {
+            guard let parsed = Self.basisPoints(from: excludedSharePercent) else { return nil }
+            share = parsed
+        } else {
+            share = nil
+        }
+
+        let terms = TruckDetentionNegotiatedTerms(
+            currency: currency,
+            freeTimeMinutes: freeTime,
+            rateAmount: rateAmount.trimmingCharacters(in: .whitespacesAndNewlines),
+            billingIncrementMinutes: increment,
+            roundingRule: roundingRule,
+            suspensionRule: suspensionRule,
+            excludedShareBasisPoints: share
+        )
+        return terms.validationMessage == nil ? terms : nil
+    }
+
+    var validationMessage: String? {
+        guard currency != nil else { return "Choose the settlement currency." }
+        guard !freeTimeMinutes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return "Enter the negotiated free-time minutes."
+        }
+        guard !rateAmount.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return "Enter the negotiated detention rate per hour."
+        }
+        guard !billingIncrementMinutes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return "Enter the billing increment in minutes."
+        }
+        guard roundingRule != nil else { return "Choose the negotiated rounding rule." }
+        guard let suspensionRule else { return "Choose how confirmed suspensions are allocated." }
+        if suspensionRule == .sharedPercentage,
+           excludedSharePercent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return "Enter the excluded suspension share percentage."
+        }
+        if let terms = unvalidatedTerms, let message = terms.validationMessage { return message }
+        return negotiatedTerms == nil ? "Review the detention terms for invalid values." : nil
+    }
+
+    private var unvalidatedTerms: TruckDetentionNegotiatedTerms? {
+        guard let currency,
+              let freeTime = Int(freeTimeMinutes.trimmingCharacters(in: .whitespacesAndNewlines)),
+              let increment = Int(billingIncrementMinutes.trimmingCharacters(in: .whitespacesAndNewlines)),
+              let roundingRule,
+              let suspensionRule else { return nil }
+        let share = suspensionRule == .sharedPercentage
+            ? Self.basisPoints(from: excludedSharePercent)
+            : nil
+        return TruckDetentionNegotiatedTerms(
+            currency: currency,
+            freeTimeMinutes: freeTime,
+            rateAmount: rateAmount.trimmingCharacters(in: .whitespacesAndNewlines),
+            billingIncrementMinutes: increment,
+            roundingRule: roundingRule,
+            suspensionRule: suspensionRule,
+            excludedShareBasisPoints: share
+        )
+    }
+
+    private static func basisPoints(from percent: String) -> Int? {
+        let normalized = percent.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard normalized.range(of: #"^(?:0|[1-9]\d?)(?:\.\d{1,2})?$|^100(?:\.0{1,2})?$"#,
+                               options: .regularExpression) != nil,
+              let value = Decimal(string: normalized, locale: Locale(identifier: "en_US_POSIX")) else {
+            return nil
+        }
+        let basisPoints = NSDecimalNumber(decimal: value * 100).intValue
+        return (1...9_999).contains(basisPoints) ? basisPoints : nil
+    }
+
+    private static func percentString(from basisPoints: Int) -> String {
+        let whole = basisPoints / 100
+        let fraction = basisPoints % 100
+        return fraction == 0 ? String(whole) : String(format: "%d.%02d", whole, fraction)
+    }
+}
+
+extension TruckDetentionNegotiatedTerms {
+    var freeTimeDisplay: String { "\(freeTimeMinutes) min" }
+    var rateDisplay: String { "\(currency.rawValue) \(rateAmount) / hour" }
+    var billingDisplay: String {
+        roundingRule == .exact
+            ? "Exact elapsed time"
+            : "\(billingIncrementMinutes)-minute increments · \(roundingRule.displayName)"
+    }
+    var suspensionDisplay: String {
+        switch suspensionRule {
+        case .included: return "Confirmed suspension remains billable"
+        case .excluded: return "Confirmed suspension is excluded"
+        case .eventAdjudicated: return "Excluded time is adjudicated per event"
+        case .sharedPercentage:
+            guard let basisPoints = excludedShareBasisPoints else { return "Shared percentage unavailable" }
+            return "\(TruckDetentionTermsDraft.percentDisplay(basisPoints)) excluded"
+        }
+    }
+}
+
+extension TruckDetentionNegotiatedTerms.RoundingRule {
+    var displayName: String {
+        switch self {
+        case .ceiling: return "Round up"
+        case .floor: return "Round down"
+        case .nearest: return "Nearest increment"
+        case .exact: return "Exact"
+        }
+    }
+}
+
+extension TruckDetentionNegotiatedTerms.SuspensionRule {
+    var displayName: String {
+        switch self {
+        case .included: return "Included"
+        case .excluded: return "Excluded"
+        case .sharedPercentage: return "Shared percentage"
+        case .eventAdjudicated: return "Event adjudicated"
+        }
+    }
+}
+
+extension TruckDetentionTermsDraft {
+    fileprivate static func percentDisplay(_ basisPoints: Int) -> String {
+        let value = Double(basisPoints) / 100
+        return value.formatted(.number.precision(.fractionLength(value.rounded() == value ? 0 : 2))) + "%"
+    }
+}
+
+struct TruckDetentionTermsSummary: View {
+    @Environment(\.palette) private var palette
+    let terms: TruckDetentionNegotiatedTerms
+    var context: String = "SIGNED LOAD TERMS"
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(context)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(palette.textTertiary)
+            summaryRow("Free time", terms.freeTimeDisplay)
+            summaryRow("Rate", terms.rateDisplay)
+            summaryRow("Billing", terms.billingDisplay)
+            summaryRow("Suspension", terms.suspensionDisplay)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func summaryRow(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(label).foregroundStyle(palette.textSecondary)
+            Spacer(minLength: 8)
+            Text(value)
+                .multilineTextAlignment(.trailing)
+                .foregroundStyle(palette.textPrimary)
+        }
+        .font(.subheadline)
+    }
+}
+
+struct TruckDetentionTermsEditor: View {
+    @Environment(\.palette) private var palette
+    @Binding var draft: TruckDetentionTermsDraft
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            labeled("Settlement currency") {
+                HStack(spacing: 8) {
+                    ForEach(TruckDetentionNegotiatedTerms.Currency.allCases) { currency in
+                        selectionButton(currency.rawValue, selected: draft.currency == currency) {
+                            draft.currency = currency
+                        }
+                    }
+                }
+            }
+            labeled("Free time (minutes)") {
+                numericField("Negotiated minutes", text: $draft.freeTimeMinutes, decimal: false)
+            }
+            labeled("Rate per hour") {
+                numericField("Negotiated amount", text: $draft.rateAmount, decimal: true)
+            }
+            labeled("Billing increment (minutes)") {
+                numericField("Increment minutes", text: $draft.billingIncrementMinutes, decimal: false)
+            }
+            termsMenu(
+                label: "Rounding",
+                selection: draft.roundingRule?.displayName ?? "Choose rule"
+            ) {
+                ForEach(TruckDetentionNegotiatedTerms.RoundingRule.allCases) { rule in
+                    Button(rule.displayName) { draft.roundingRule = rule }
+                }
+            }
+            termsMenu(
+                label: "Confirmed suspension",
+                selection: draft.suspensionRule?.displayName ?? "Choose allocation"
+            ) {
+                ForEach(TruckDetentionNegotiatedTerms.SuspensionRule.allCases) { rule in
+                    Button(rule.displayName) { draft.suspensionRule = rule }
+                }
+            }
+            if draft.suspensionRule == .sharedPercentage {
+                labeled("Excluded share (%)") {
+                    numericField("0.01 to 99.99", text: $draft.excludedSharePercent, decimal: true)
+                }
+            }
+            if let message = draft.validationMessage {
+                Label(message, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(Brand.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel("Detention terms incomplete. \(message)")
+            }
+        }
+    }
+
+    private func labeled<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label).font(.caption.weight(.semibold)).foregroundStyle(palette.textSecondary)
+            content()
+        }
+    }
+
+    private func numericField(_ prompt: String, text: Binding<String>, decimal: Bool) -> some View {
+        TextField(prompt, text: text)
+            .keyboardType(decimal ? .decimalPad : .numberPad)
+            .textFieldStyle(.plain)
+            .frame(minHeight: 44)
+            .padding(.horizontal, 12)
+            .background(palette.bgCard.opacity(0.6))
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(palette.borderFaint))
+    }
+
+    private func selectionButton(_ label: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label)
+                .font(.subheadline.weight(.bold))
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .foregroundStyle(selected ? Color.white : palette.textPrimary)
+                .background(selected ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.tintNeutral))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private func termsMenu<Content: View>(
+        label: String,
+        selection: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        Menu(content: content) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(label).font(.caption).foregroundStyle(palette.textSecondary)
+                    Text(selection).font(.subheadline.weight(.semibold)).foregroundStyle(palette.textPrimary)
+                }
+                Spacer()
+                Image(systemName: "chevron.up.chevron.down").foregroundStyle(palette.textSecondary)
+            }
+            .frame(minHeight: 44)
+            .padding(.horizontal, 12)
+            .background(palette.bgCard.opacity(0.6))
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(palette.borderFaint))
+        }
+    }
+}
+
 struct PostLoadStep3PricingScreen: View {
     let theme: Theme.Palette
     @ObservedObject var draft: PostLoadDraft
@@ -25,6 +323,7 @@ private struct PostLoadStep3Body: View {
                 header
                 rateSheetCard      // T-008 · 2026-05-20
                 rateCard
+                if draft.mode == .truck { detentionTermsCard }
                 fuelCard
                 accessorialsCard
                 notesCard
@@ -163,7 +462,7 @@ private struct PostLoadStep3Body: View {
 
     private var rateCard: some View {
         LifecycleCard {
-            LifecycleSection(label: "TARGET RATE (USD)", icon: "tag")
+            LifecycleSection(label: targetRateLabel, icon: "tag")
             TextField("e.g. 1900", value: $draft.rate, format: .number)
                 .keyboardType(.decimalPad)
                 .textFieldStyle(.plain)
@@ -171,6 +470,22 @@ private struct PostLoadStep3Body: View {
                 .background(palette.bgCard.opacity(0.6))
                 .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+    }
+
+    private var targetRateLabel: String {
+        guard draft.mode == .truck else { return "TARGET RATE" }
+        return "TARGET RATE (\(draft.truckDetentionTermsDraft.currency?.rawValue ?? "CURRENCY NOT SET"))"
+    }
+
+    private var detentionTermsCard: some View {
+        LifecycleCard {
+            LifecycleSection(label: "TRUCK DETENTION TERMS", icon: "clock.badge.checkmark")
+            Text("These commercial terms are signed with the load and inherited by bids unless a counterparty explicitly proposes an override.")
+                .font(.caption)
+                .foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            TruckDetentionTermsEditor(draft: $draft.truckDetentionTermsDraft)
         }
     }
 
@@ -231,6 +546,8 @@ private struct PostLoadStep3Body: View {
                     .background(LinearGradient.diagonal)
                     .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }.buttonStyle(.plain)
+                .disabled(draft.mode == .truck && draft.truckDetentionTermsDraft.negotiatedTerms == nil)
+                .opacity(draft.mode == .truck && draft.truckDetentionTermsDraft.negotiatedTerms == nil ? 0.55 : 1)
         }
     }
 }

@@ -45,7 +45,13 @@ struct HomeView: View {
     @EnvironmentObject var loads: LoadStore
     @EnvironmentObject var ergo: ErgoMonitor
 
-    @State private var page: Int = 0
+    @State private var page: Int = {
+        #if targetEnvironment(simulator)
+        ProcessInfo.processInfo.environment["EUSOTRIP_PULSE_VISUAL_STATE"] == "instrument" ? 1 : 0
+        #else
+        0
+        #endif
+    }()
 
     var body: some View {
         TabView(selection: $page) {
@@ -65,17 +71,7 @@ struct HomeView: View {
     }
 
     private var brandBackground: some View {
-        ZStack {
-            Color.esangBg
-            RadialGradient(
-                colors: [.esangMagenta.opacity(0.22), .esangBlue.opacity(0.08), .clear],
-                center: .init(x: 0.5, y: 0.45),
-                startRadius: 2,
-                endRadius: 220
-            )
-            .blendMode(.plusLighter)
-            .allowsHitTesting(false)
-        }
+        Color.esangBg
     }
 }
 
@@ -139,7 +135,11 @@ private struct IdleOrbPage: View {
                 longPressAction: { Task { await handleOrbLongPress() } },
                 longPressReleaseAction: { Task { await handleOrbPttRelease() } }
             )
-            .offset(y: drift)
+            // The unpaired state has a second, truthful action beneath
+            // the hint. Lift the orb just enough to reserve a stable
+            // footer zone instead of letting the hint ride over its
+            // lower arc on 46 mm hardware.
+            .offset(y: drift + (auth.isSignedIn ? 0 : -20))
             // When idle + signed in, stack two shadows (cool blue
             // offset up-left, warm magenta offset down-right) so the
             // outer halo reads as the brand gradient rather than a
@@ -239,13 +239,18 @@ private struct IdleOrbPage: View {
         //
         // Handoff publisher — while the wrist is unpaired, advertise
         // the continuation activity so the EusoTrip icon appears on the
-        // iPhone lock screen / App Switcher for a one-tap open. The iOS
-        // side declares + handles com.eusotrip.esang.activate; an empty
-        // transcript lands the user on Home with no sheet.
+        // iPhone lock screen / App Switcher for a one-tap continuation.
+        // The destination is explicit so iOS opens the real ESANG surface
+        // and starts voice capture only after the user foregrounds it.
         .userActivity(EusoTripConfig.handoffActivityType,
                       isActive: !auth.isSignedIn) { activity in
-            activity.title = "Open EusoTrip"
-            activity.userInfo = ["transcript": ""]
+            activity.title = "Continue with ESANG"
+            activity.userInfo = [
+                "destination": "esang",
+                "transcript": "",
+                "beginListening": true,
+                "autoSubmit": false,
+            ]
             activity.isEligibleForHandoff = true
         }
         .onAppear {
@@ -330,7 +335,7 @@ private struct IdleOrbPage: View {
     /// VoiceOver label that reflects the current orb state so a visually
     /// impaired driver hears the same information a glance would convey.
     private var orbAccessibilityLabel: String {
-        if !auth.isSignedIn { return "Esang orb — waiting to pair with iPhone" }
+        if !auth.isSignedIn { return "Esang orb — unpaired; tap to ask on Apple Watch" }
         switch esang.state {
         case .idle:      return "Esang orb — idle"
         case .listening: return "Esang orb — listening"
@@ -340,9 +345,8 @@ private struct IdleOrbPage: View {
         }
     }
 
-    /// Bottom hint. Empty when signed out — the idle page is orb-only so
-    /// nothing competes with the brand; the orb itself is the pairing
-    /// affordance and tapping it requests the auth mirror silently.
+    /// Bottom hint. The orb stays usable while signed out, so the idle
+    /// instruction remains visible beside the separate iPhone continuation.
     /// Once signed in, renders per-state strings (listening / thinking /
     /// done / error) and a whisper mantra while idle.
     @ViewBuilder
@@ -458,14 +462,21 @@ private struct IdleOrbPage: View {
         } else {
             Button {
                 WKInterfaceDevice.current().play(.click)
-                let sent = connectivity.requestPhoneActivation(
-                    transcript: "open eusotrip home",
-                    reply: "Opening EusoTrip on your iPhone."
+                let dispatch = connectivity.requestPhoneActivation(
+                    transcript: nil,
+                    reply: "Continue with ESANG on your iPhone.",
+                    destination: .esang,
+                    beginListening: true
                 )
                 withAnimation(.easeInOut(duration: 0.15)) {
-                    openOnPhoneNote = sent
-                        ? "Sent — tap the EusoTrip notification on your iPhone (or its icon in the App Switcher)."
-                        : "Can't reach your iPhone — bring it nearby and try again."
+                    switch dispatch {
+                    case .sent:
+                        openOnPhoneNote = "Sent - tap Continue with ESANG on your iPhone."
+                    case .queued:
+                        openOnPhoneNote = "Queued for your iPhone."
+                    case .unavailable:
+                        openOnPhoneNote = "iPhone bridge unavailable - bring it nearby and try again."
+                    }
                 }
                 Task { @MainActor in
                     try? await Task.sleep(for: .seconds(6))
@@ -475,8 +486,10 @@ private struct IdleOrbPage: View {
                 HStack(spacing: 4) {
                     Image(systemName: "iphone.and.arrow.forward")
                         .font(.system(size: 9, weight: .bold))
-                    Text("Open on iPhone")
+                    Text("Continue on iPhone")
                         .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
                 }
                 .foregroundStyle(.white)
                 .padding(.horizontal, 10)
@@ -517,6 +530,12 @@ private struct IdleOrbPage: View {
         if !auth.isSignedIn {
             connectivity.requestAuthMirror()
             mirrorAttempts = min(mirrorAttempts + 1, 99)
+            _ = connectivity.requestPhoneActivation(
+                transcript: nil,
+                reply: "Continue with ESANG on your iPhone.",
+                destination: .esang,
+                beginListening: true
+            )
         }
         WKInterfaceDevice.current().play(.click)
         switch esang.state {
@@ -539,8 +558,18 @@ private struct IdleOrbPage: View {
             //   • Anything else → fresh mic cycle.
             if let kind = esang.lastErrorKind {
                 if kind.blocksAutoRetry {
-                    // Hint card already on screen; skip the haptic
-                    // so we don't signal the tap "did" something.
+                    let dispatch = connectivity.requestPhoneActivation(
+                        transcript: nil,
+                        reply: "Continue with ESANG on your iPhone.",
+                        destination: .esang,
+                        beginListening: true
+                    )
+                    if dispatch.accepted {
+                        esang.setError(
+                            "Watch voice input is unavailable. Continue from the ESANG notification on iPhone.",
+                            kind: kind
+                        )
+                    }
                     return
                 }
                 switch kind {
@@ -552,11 +581,14 @@ private struct IdleOrbPage: View {
                     } else if auth.isSignedIn {
                         await esang.startListening(auth: auth, connectivity: connectivity)
                     } else {
-                        // Still signed out after an auth-mirror
-                        // kick — leave the card up so the driver
-                        // knows the phone's still not reachable.
+                        _ = connectivity.requestPhoneActivation(
+                            transcript: nil,
+                            reply: "Continue with ESANG on your iPhone.",
+                            destination: .esang,
+                            beginListening: true
+                        )
                         esang.setError(
-                            "Still can't reach iPhone — open EusoTrip on your phone.",
+                            "Sign in or continue with ESANG from the iPhone notification.",
                             kind: .phonePairing
                         )
                     }
@@ -578,8 +610,14 @@ private struct IdleOrbPage: View {
                         esang.resetToIdle()
                         await esang.startListening(auth: auth, connectivity: connectivity)
                     } else {
+                        _ = connectivity.requestPhoneActivation(
+                            transcript: nil,
+                            reply: "Continue with ESANG on your iPhone.",
+                            destination: .esang,
+                            beginListening: true
+                        )
                         esang.setError(
-                            "Still can't reach iPhone — open EusoTrip on your phone.",
+                            "Continue with ESANG from the iPhone notification.",
                             kind: .phonePairing
                         )
                     }
@@ -911,13 +949,11 @@ private struct InstrumentPanel: View {
     @ObservedObject private var convoySig = ConvoySignatureObservable.shared
 
     @State private var pingPhoneTimestamp: Date?
-    @State private var now: Date = Date()
+    @State private var phoneActivationDispatch: PhoneActivationDispatch?
     @State private var showDebugHealth: Bool = false
     /// See IdleOrbPage: open only while THIS hold's chain-group PTT
     /// transmission is live, so release keys the radio down exactly once.
     @State private var pttTransmitting: Bool = false
-
-    private let clock = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
 
     var body: some View {
         ZStack {
@@ -927,30 +963,32 @@ private struct InstrumentPanel: View {
             // read as deliberate instrument-panel rails (rather than
             // hairlines that look like rendering glitches). The bezel
             // hardware does the corner mask.
-            HStack(spacing: 0) {
-                HOSVerticalGauge(
-                    title: "DRV",
-                    valueText: hos.current.driveHoursText,
-                    fill: hos.current.drivePct,
-                    gradient: driveGradient,
-                    side: .leading
-                )
-                .frame(width: 8)
-                .padding(.leading, 3)
-                .padding(.top, 6)
-                .padding(.bottom, 10)
-                Spacer(minLength: 0)
-                HOSVerticalGauge(
-                    title: "WIN",
-                    valueText: hos.current.windowHoursText,
-                    fill: hos.current.windowPct,
-                    gradient: windowGradient,
-                    side: .trailing
-                )
-                .frame(width: 8)
-                .padding(.trailing, 3)
-                .padding(.top, 6)
-                .padding(.bottom, 10)
+            if let currentHOS {
+                HStack(spacing: 0) {
+                    HOSVerticalGauge(
+                        title: "Drive",
+                        valueText: currentHOS.driveHoursText,
+                        fill: currentHOS.drivePct,
+                        gradient: driveGradient,
+                        side: .leading
+                    )
+                    .frame(width: 6)
+                    .padding(.leading, 8)
+                    .padding(.top, 24)
+                    .padding(.bottom, 18)
+                    Spacer(minLength: 0)
+                    HOSVerticalGauge(
+                        title: "Window",
+                        valueText: currentHOS.windowHoursText,
+                        fill: currentHOS.windowPct,
+                        gradient: windowGradient,
+                        side: .trailing
+                    )
+                    .frame(width: 6)
+                    .padding(.trailing, 14)
+                    .padding(.top, 24)
+                    .padding(.bottom, 18)
+                }
             }
 
             // Content column — uses the whole face. Horizontal padding
@@ -963,62 +1001,14 @@ private struct InstrumentPanel: View {
                 loadStrip
                 actionDialRow
             }
-            .padding(.horizontal, 14)
+            .padding(.horizontal, 18)
             .padding(.vertical, 0)
-
-            // Modular Ultra-style tick-mark bezel. Sits on top of the
-            // instrument panel, outside the content column, so it
-            // never competes with the live data. Purely decorative —
-            // brings the Apple Watch Ultra "Modular Ultra" aesthetic
-            // (tick rails + corner labels) that the user anchored as
-            // the design language for EusoTrip Pulse. Allocates only
-            // a Canvas draw, so it does not affect frame cost.
-            ModularTickBezel(
-                corners: .init(
-                    topLeading:     bezelLabelDRV,
-                    topTrailing:    bezelLabelFATIGUE,
-                    bottomLeading:  bezelLabelLINK,
-                    bottomTrailing: bezelLabelCONVOY
-                )
-            )
-            .allowsHitTesting(false)
         }
         // NOTE: previously clipped to ContainerRelativeShape() to keep
         // glows off the rounded corners, but the shape's inset made the
         // instrument panel sit inside a visible square instead of
         // filling the watch face. Trust the hardware bezel to do the
         // final mask.
-        .onReceive(clock) { now = $0 }
-    }
-
-    // MARK: Modular Ultra corner-label strings
-    //
-    // Four short letter-spaced labels that adopt the watch-face's
-    // TRAINING / VITALS / NO WORKOUTS / TYPICAL aesthetic but describe
-    // the instrument panel's live data rather than the watch's fitness
-    // stats. Each label stays four to seven characters so the tracking
-    // doesn't collide with the tick rail at the bezel's curve.
-
-    private var bezelLabelDRV: String {
-        // Top-left — current duty gauge summary.
-        "DRV \(hos.current.driveHoursText)"
-    }
-
-    private var bezelLabelFATIGUE: String {
-        // Top-right — ErgoMonitor fatigue label, uppercased for parity
-        // with Apple's treatment of "TYPICAL"/"NO WORKOUTS".
-        ergo.fatigueLabel.uppercased()
-    }
-
-    private var bezelLabelLINK: String {
-        // Bottom-left — iPhone pairing state.
-        connectivity.isReachable ? "LINK" : "OFFLINE"
-    }
-
-    private var bezelLabelCONVOY: String {
-        // Bottom-right — convoy size when we're in one, otherwise SOLO.
-        let n = convoy.members.count
-        return n > 0 ? "CONVOY \(n)" : "SOLO"
     }
 
     // MARK: Top row — small instrument-style complications.
@@ -1052,16 +1042,23 @@ private struct InstrumentPanel: View {
                     symbol: "iphone",
                     tint: .esangTextDim,
                     pulse: false,
-                    caption: "—"
+                    caption: "AWAY"
                 )
             }
             Spacer()
-            Text(timeLabel)
-                .font(.system(size: 11, weight: .bold, design: .rounded))
-                .monospacedDigit()
-                .tracking(0.5)
-                .foregroundStyle(.white.opacity(0.85))
-                // L5c — triple-tap the time label to open DebugHealth.
+            VStack(spacing: 1) {
+                Text("HOS")
+                    .font(.system(size: 7, weight: .heavy, design: .rounded))
+                    .tracking(0.8)
+                    .foregroundStyle(.tertiary)
+                Text(currentHOS?.driveHoursText ?? "UNVERIFIED")
+                    .font(.system(size: 9, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(currentHOS == nil ? Color.esangAmber : Color.white.opacity(0.85))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+            }
+                // L5c — triple-tap the HOS evidence label to open DebugHealth.
                 // DEBUG-only so production drivers can't stumble into
                 // the diagnostic surface.
                 #if DEBUG
@@ -1288,24 +1285,29 @@ private struct InstrumentPanel: View {
             // HOS dial — inner segmented ring visualises drive remaining.
             InstrumentDial(
                 size: 40,
-                ringFill: hos.current.drivePct,
+                ringFill: currentHOS?.drivePct,
                 ringGradient: driveGradient,
-                fillBody: hos.current.status == .driving,
+                fillBody: currentHOS?.status == .driving,
                 bodyColor: hosAccent,
                 accessibilityText: hosDialA11y,
                 content: {
                     VStack(spacing: 0) {
-                        Image(systemName: hos.current.status.symbol)
+                        Image(systemName: currentHOS?.status.symbol ?? "questionmark.circle")
                             .font(.system(size: 12, weight: .bold))
-                        Text(hos.current.status.short)
+                        Text(currentHOS?.status.short ?? "—")
                             .font(.system(size: 7, weight: .heavy))
                             .tracking(0.6)
                     }
-                    .foregroundStyle(hos.current.status == .driving ? Color.white : hosAccent)
+                    .foregroundStyle(currentHOS?.status == .driving ? Color.white : hosAccent)
                 },
                 action: {
                     Task {
-                        let next: HOSStatus = hos.current.status == .driving ? .onDuty : .driving
+                        guard let status = currentHOS?.status else {
+                            WKInterfaceDevice.current().play(.click)
+                            VoiceActionDispatcher.shared.currentRoute = .hos
+                            return
+                        }
+                        let next: HOSStatus = status == .driving ? .onDuty : .driving
                         await hos.changeStatus(to: next, auth: auth, connectivity: connectivity)
                         WKInterfaceDevice.current().play(.click)
                     }
@@ -1338,7 +1340,11 @@ private struct InstrumentPanel: View {
                 },
                 action: {
                     WKInterfaceDevice.current().play(.click)
-                    connectivity.requestPhoneActivation(transcript: nil, reply: nil)
+                    phoneActivationDispatch = connectivity.requestPhoneActivation(
+                        transcript: nil,
+                        reply: "Open EusoTrip on your iPhone.",
+                        destination: .home
+                    )
                     pingPhoneTimestamp = Date()
                 }
             )
@@ -1359,7 +1365,7 @@ private struct InstrumentPanel: View {
                 fillBody: false,
                 bodyColor: .esangDanger,
                 emphasize: true,
-                accessibilityText: "Emergency SOS. Tap to send an SOS to dispatch and emergency contacts.",
+                accessibilityText: "Emergency SOS. Tap to start the emergency relay.",
                 content: {
                     VStack(spacing: 0) {
                         Image(systemName: "exclamationmark.triangle.fill")
@@ -1388,15 +1394,18 @@ private struct InstrumentPanel: View {
     /// status + remaining drive clock so blind drivers get the same
     /// at-a-glance read as the sighted gauges.
     private var hosDialA11y: String {
+        guard let observation = currentHOS else {
+            return "HOS evidence unavailable. Tap to open Hours of Service and request current provider data."
+        }
         let status: String
-        switch hos.current.status {
+        switch observation.status {
         case .driving: status = "driving"
         case .onDuty:  status = "on duty"
         case .sleeper: status = "sleeper berth"
         case .off:     status = "off duty"
         }
-        let next: String = hos.current.status == .driving ? "on duty" : "driving"
-        return "HOS status: \(status). \(hos.current.driveHoursText) drive remaining. Tap to switch to \(next)."
+        let next: String = observation.status == .driving ? "on duty" : "driving"
+        return "HOS status: \(status). \(observation.driveHoursText) drive remaining. Tap to switch to \(next)."
     }
 
     /// VoiceOver description for the phone handoff dial — surfaces
@@ -1404,7 +1413,12 @@ private struct InstrumentPanel: View {
     /// has a spoken twin.
     private var phoneDialA11y: String {
         if let ts = pingPhoneTimestamp, Date().timeIntervalSince(ts) < 2.5 {
-            return "Phone ping sent. Tap to ping again."
+            switch phoneActivationDispatch {
+            case .sent: return "Phone activation sent. Tap to send again."
+            case .queued: return "Phone activation queued. Tap to queue again."
+            case .unavailable: return "Phone bridge unavailable. Tap to retry."
+            case nil: break
+            }
         }
         return connectivity.isReachable
             ? "iPhone reachable. Tap to ping the phone."
@@ -1412,6 +1426,8 @@ private struct InstrumentPanel: View {
     }
 
     // MARK: Derived
+
+    private var currentHOS: WatchHOS? { hos.currentObservation }
 
     private var orbIntent: EsangOrbWatch.Intent {
         switch esang.state {
@@ -1423,27 +1439,33 @@ private struct InstrumentPanel: View {
         }
     }
 
-    private var timeLabel: String {
-        _ = now
-        let f = DateFormatter()
-        f.dateFormat = "h:mm"
-        return f.string(from: now)
-    }
-
     private var phoneSymbol: String {
         if let ts = pingPhoneTimestamp, Date().timeIntervalSince(ts) < 2.5 {
-            return "checkmark"
+            switch phoneActivationDispatch {
+            case .sent: return "checkmark"
+            case .queued: return "clock.arrow.circlepath"
+            case .unavailable: return "exclamationmark"
+            case nil: break
+            }
         }
         return connectivity.isReachable ? "iphone.and.arrow.forward" : "iphone.slash"
     }
 
     private var phoneTileLabel: String {
-        if let ts = pingPhoneTimestamp, Date().timeIntervalSince(ts) < 2.5 { return "SENT" }
-        return connectivity.isReachable ? "PING" : "—"
+        if let ts = pingPhoneTimestamp, Date().timeIntervalSince(ts) < 2.5 {
+            switch phoneActivationDispatch {
+            case .sent: return "SENT"
+            case .queued: return "QUEUED"
+            case .unavailable: return "FAILED"
+            case nil: break
+            }
+        }
+        return connectivity.isReachable ? "PING" : "AWAY"
     }
 
     private var hosAccent: Color {
-        switch hos.current.status {
+        guard let status = currentHOS?.status else { return .esangTextDim }
+        switch status {
         case .driving: return .esangBlue
         case .onDuty:  return .esangAmber
         case .sleeper: return .esangMagenta
@@ -1484,6 +1506,12 @@ private struct InstrumentPanel: View {
         // routes to VoiceDispatch + OfflineQueue.
         if !auth.isSignedIn {
             connectivity.requestAuthMirror()
+            _ = connectivity.requestPhoneActivation(
+                transcript: nil,
+                reply: "Continue with ESANG on your iPhone.",
+                destination: .esang,
+                beginListening: true
+            )
         }
         WKInterfaceDevice.current().play(.click)
         switch esang.state {
@@ -1566,7 +1594,7 @@ private struct InstrumentPanel: View {
 private struct HOSVerticalGauge: View {
     let title: String
     let valueText: String
-    let fill: Double         // 0...1
+    let fill: Double?        // 0...1 when current evidence exists
     let gradient: LinearGradient
     /// Which side of the bezel this rail hugs. Drives the arc curl
     /// direction so the leading rail bows out left and the trailing
@@ -1576,21 +1604,10 @@ private struct HOSVerticalGauge: View {
 
     enum BezelSide { case leading, trailing }
 
-    @State private var animatedFill: Double = 0
+    @State private var animatedFill: Double?
 
     var body: some View {
-        // Title sits ABOVE the curved rail so it never wraps into
-        // vertical letters; the rail itself follows the watch's
-        // rounded-corner arc top→middle→bottom on the chosen side.
-        VStack(spacing: 2) {
-            Text(title)
-                .font(.system(size: 8, weight: .heavy, design: .rounded))
-                .foregroundStyle(.white.opacity(0.65))
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
-                .minimumScaleFactor(0.7)
-
-            GeometryReader { geo in
+        GeometryReader { geo in
                 let W = geo.size.width
                 let H = geo.size.height
                 // Corner radius mirrors the bezel curve. Apple Watch
@@ -1610,15 +1627,16 @@ private struct HOSVerticalGauge: View {
                     // Lit rail — same arc trimmed to the fill ratio so
                     // the gradient grows from the bottom toward the
                     // top, curling around the bezel corners.
-                    BezelRailShape(side: side, cornerRadius: cornerR)
-                        .trim(from: 1.0 - animatedFill, to: 1.0)
-                        .stroke(
-                            gradient,
-                            style: StrokeStyle(lineWidth: W, lineCap: .round)
-                        )
-                        .shadow(color: .white.opacity(0.18), radius: 1)
+                    if let animatedFill {
+                        BezelRailShape(side: side, cornerRadius: cornerR)
+                            .trim(from: 1.0 - animatedFill, to: 1.0)
+                            .stroke(
+                                gradient,
+                                style: StrokeStyle(lineWidth: W, lineCap: .round)
+                            )
+                            .shadow(color: .white.opacity(0.18), radius: 1)
+                    }
                 }
-            }
         }
         .onAppear { animatedFill = fill }
         .onChange(of: fill) { _, new in
@@ -1758,7 +1776,7 @@ private struct MiniDial: View {
 
 private struct InstrumentDial<Content: View>: View {
     let size: CGFloat
-    let ringFill: Double          // 0...1 — how much of the ring to paint
+    let ringFill: Double?         // 0...1 when the represented fact is tracked
     let ringGradient: LinearGradient
     var fillBody: Bool = false
     let bodyColor: Color
@@ -1797,15 +1815,17 @@ private struct InstrumentDial<Content: View>: View {
                     .stroke(Color.white.opacity(0.12), lineWidth: 3)
 
                 // Progress arc
-                Circle()
-                    .trim(from: 0, to: max(0.001, ringFill))
-                    .stroke(
-                        ringGradient,
-                        style: StrokeStyle(lineWidth: 3, lineCap: .round)
-                    )
-                    .rotationEffect(.degrees(-90))
-                    .shadow(color: bodyColor.opacity(0.4), radius: 3)
-                    .animation(.easeInOut(duration: 0.45), value: ringFill)
+                if let ringFill {
+                    Circle()
+                        .trim(from: 0, to: max(0, ringFill))
+                        .stroke(
+                            ringGradient,
+                            style: StrokeStyle(lineWidth: 3, lineCap: .round)
+                        )
+                        .rotationEffect(.degrees(-90))
+                        .shadow(color: bodyColor.opacity(0.4), radius: 3)
+                        .animation(.easeInOut(duration: 0.45), value: ringFill)
+                }
 
                 // Body
                 Circle()

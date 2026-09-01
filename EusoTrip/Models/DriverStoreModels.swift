@@ -367,10 +367,21 @@ struct ZeunBreakdownRow: Codable, Identifiable, Hashable {
 // directly from `HOSLiveStore`, but the DTO is declared here so any
 // future store can decode into it.
 struct HOSDriverCard: Codable, Hashable {
-    let currentStatus: String
-    let driveRemainingMinutes: Int
-    let shiftRemainingMinutes: Int
-    let cycleRemainingMinutes: Int
-    let violationCount: Int
+    let currentStatus: String?
+    let driveRemainingMinutes: Int?
+    let shiftRemainingMinutes: Int?
+    let cycleRemainingMinutes: Int?
+    let violationCount: Int?
     let lastCertifiedDate: String?
+    let tracked: Bool?
+    let trackingState: HOSTrackingState?
+    let source: String?
+    let freshness: String?
+
+    func hasCurrentObservation(now: Date = Date()) -> Bool {
+        tracked == true
+            && trackingState == .tracked
+            && source?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            && HOSObservationClock.freshness(freshness, now: now).isCurrent
+    }
 }

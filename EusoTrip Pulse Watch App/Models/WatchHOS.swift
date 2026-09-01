@@ -52,6 +52,31 @@ struct WatchHOS: Codable, Equatable {
     var cycleRemainingMinutes: Int
     /// When the current status started (used to age progress rings).
     var statusSince: Date
+    /// Provider identity and observation time travel with every snapshot so
+    /// the wrist can distinguish a current legal observation from cached UI.
+    var tracked: Bool?
+    var source: String?
+    var observedAt: Date?
+
+    init(
+        status: HOSStatus,
+        driveRemainingMinutes: Int,
+        windowRemainingMinutes: Int,
+        cycleRemainingMinutes: Int,
+        statusSince: Date,
+        tracked: Bool? = nil,
+        source: String? = nil,
+        observedAt: Date? = nil
+    ) {
+        self.status = status
+        self.driveRemainingMinutes = driveRemainingMinutes
+        self.windowRemainingMinutes = windowRemainingMinutes
+        self.cycleRemainingMinutes = cycleRemainingMinutes
+        self.statusSince = statusSince
+        self.tracked = tracked
+        self.source = source
+        self.observedAt = observedAt
+    }
 
     /// Empty-state fixture — off-duty, all counters zero. Used at cold
     /// launch before the phone has pushed the first real snapshot so
@@ -61,7 +86,8 @@ struct WatchHOS: Codable, Equatable {
         driveRemainingMinutes: 0,
         windowRemainingMinutes: 0,
         cycleRemainingMinutes: 0,
-        statusSince: Date()
+        statusSince: Date(),
+        tracked: false
     )
 
     /// Legacy demo/placeholder shape. Retained so the SwiftUI preview
@@ -71,11 +97,22 @@ struct WatchHOS: Codable, Equatable {
         driveRemainingMinutes: 4 * 60 + 12,
         windowRemainingMinutes: 7 * 60,
         cycleRemainingMinutes: 52 * 60,
-        statusSince: Date().addingTimeInterval(-2 * 3600)
+        statusSince: Date().addingTimeInterval(-2 * 3600),
+        tracked: true,
+        source: "preview",
+        observedAt: Date()
     )
 
+    func hasCurrentObservation(at now: Date = Date()) -> Bool {
+        guard tracked == true,
+              source?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false,
+              let observedAt else { return false }
+        let age = now.timeIntervalSince(observedAt)
+        return age >= -(5 * 60) && age <= 15 * 60
+    }
+
     var isEmpty: Bool {
-        driveRemainingMinutes == 0 && windowRemainingMinutes == 0 && cycleRemainingMinutes == 0
+        tracked != true
     }
 
     var driveHoursText: String {

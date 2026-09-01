@@ -31,19 +31,28 @@ import SwiftUI
 
 struct PostedAwaitingBidsScreen: View {
     let theme: Theme.Palette
-    let loadId: String
+    let loadId: String?
 
     var body: some View {
-        Shell(theme: theme) {
-            LifecycleScaffold(
-                loadId: loadId,
-                eyebrow: "SHIPPER · POSTED · STAGE 1 OF 8",
-                cycleStatus: "posted"
-            ) { live in
-                PostedBody(live: live, loadId: loadId)
+        if let routedLoadId = ShipperLoadIdResolver.normalize(loadId) {
+            Shell(theme: theme) {
+                LifecycleScaffold(
+                    loadId: routedLoadId,
+                    eyebrow: "SHIPPER · POSTED · STAGE 1 OF 8",
+                    cycleStatus: "posted"
+                ) { live in
+                    PostedBody(live: live, loadId: routedLoadId)
+                }
+            } nav: {
+                shipperLifecycleNav()
             }
-        } nav: {
-            shipperLifecycleNav()
+        } else {
+            ShipperRecordContextUnavailableScreen(
+                theme: theme,
+                systemImage: "shippingbox.and.arrow.backward",
+                title: "Posted load unavailable",
+                subtitle: "Open a posted load to review its reach, bidding window, and controls."
+            )
         }
     }
 }
@@ -197,13 +206,13 @@ private struct PostedBody: View {
 }
 
 #Preview("260 · Posted · Awaiting bids · Night") {
-    PostedAwaitingBidsScreen(theme: Theme.dark, loadId: "0")
+    PostedAwaitingBidsScreen(theme: Theme.dark, loadId: nil)
         .environmentObject(EusoTripSession())
         .preferredColorScheme(.dark)
 }
 
 #Preview("260 · Posted · Awaiting bids · Afternoon") {
-    PostedAwaitingBidsScreen(theme: Theme.light, loadId: "0")
+    PostedAwaitingBidsScreen(theme: Theme.light, loadId: nil)
         .environmentObject(EusoTripSession())
         .preferredColorScheme(.light)
 }

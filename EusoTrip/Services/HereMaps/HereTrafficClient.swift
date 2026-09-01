@@ -48,9 +48,14 @@ struct HereTrafficFlowResult: Decodable, Identifiable, Hashable {
     /// Synthetic identity — server doesn't ship one per result row,
     /// so we derive from the coordinate span + sampling time.
     var id: String {
-        let lat = location?.shape?.links?.first?.points?.first?.lat ?? 0
-        let lng = location?.shape?.links?.first?.points?.first?.lng ?? 0
-        return "\(lat)-\(lng)-\(sourceUpdated ?? "")"
+        if let point = location?.shape?.links?.first?.points?.first,
+           let coordinate = LatLongParser.validatedCoordinate(
+               latitude: point.lat,
+               longitude: point.lng
+           ) {
+            return "\(LatLongParser.displayString(coordinate))-\(sourceUpdated ?? "unknown-time")"
+        }
+        return "unlocated-\(location?.description ?? "unknown-segment")-\(sourceUpdated ?? "unknown-time")"
     }
     let location: HereTrafficLocation?
     let currentFlow: HereTrafficFlow?
@@ -76,8 +81,8 @@ struct HereTrafficLink: Decodable, Hashable {
 struct HerePoint: Decodable, Hashable {
     let lat: Double
     let lng: Double
-    var coordinate: CLLocationCoordinate2D {
-        CLLocationCoordinate2D(latitude: lat, longitude: lng)
+    var coordinate: CLLocationCoordinate2D? {
+        LatLongParser.validatedCoordinate(latitude: lat, longitude: lng)
     }
 }
 
@@ -152,6 +157,7 @@ final class HereTrafficClient {
         radiusMeters: Int = 15_000,
         includeShape: Bool = true
     ) async throws -> [HereTrafficFlowResult] {
+        guard LatLongParser.isValid(center) else { return [] }
         let rows: [BackendFlow] = try await EusoTripAPI.shared.query(
             "hereMaps.trafficFlow",
             input: BackendFlowRequest(
@@ -160,8 +166,13 @@ final class HereTrafficClient {
             )
         )
         return rows.map { row in
-            let points = (includeShape ? row.path : []).map {
-                HerePoint(lat: $0.lat, lng: $0.lng)
+            let rawPath: [BackendPoint] = includeShape ? row.path : []
+            let points: [HerePoint] = rawPath.compactMap { point in
+                guard let coordinate = LatLongParser.validatedCoordinate(
+                    latitude: point.lat,
+                    longitude: point.lng
+                ) else { return nil }
+                return HerePoint(lat: coordinate.latitude, lng: coordinate.longitude)
             }
             let location = HereTrafficLocation(
                 shape: HereTrafficShape(
@@ -196,6 +207,7 @@ final class HereTrafficClient {
         radiusMeters: Int = 30_000,
         criticality: [String] = ["major", "critical"]
     ) async throws -> [HereIncident] {
+        guard LatLongParser.isValid(center) else { return [] }
         let minimum: Int = criticality.isEmpty
             ? 0
             : (criticality.contains("major") ? 2 : (criticality.contains("critical") ? 3 : 1))
@@ -206,8 +218,12 @@ final class HereTrafficClient {
                 criticalityMin: minimum
             )
         )
-        return rows.map { row in
-            HereIncident(
+        return rows.compactMap { row in
+            guard let coordinate = LatLongParser.validatedCoordinate(
+                latitude: row.lat,
+                longitude: row.lng
+            ) else { return nil }
+            return HereIncident(
                 incidentDetails: HereIncidentDetails(
                     id: row.id,
                     type: row.type,
@@ -223,7 +239,10 @@ final class HereTrafficClient {
                     shape: HereTrafficShape(
                         links: [
                             HereTrafficLink(
-                                points: [HerePoint(lat: row.lat, lng: row.lng)],
+                                points: [HerePoint(
+                                    lat: coordinate.latitude,
+                                    lng: coordinate.longitude
+                                )],
                                 length: nil,
                                 functionalClass: nil
                             )

@@ -58,16 +58,22 @@ private struct VesselDisputeResolutionBody: View {
     @State private var loadError: String? = nil
 
     @State private var selectedDisputeId: String? = nil
-    @State private var claimAmount: Double = 0
+    @State private var selectedCurrency: FreightClaimsAPI.CurrencyCode? = nil
+    @State private var claimAmount: Double? = nil
+    @State private var latestLedgerOfferAmount: Double? = nil
+    @State private var latestLedgerOfferCurrency: FreightClaimsAPI.CurrencyCode? = nil
     @State private var latestOfferAmount: Double? = nil
+    @State private var latestOfferCurrency: FreightClaimsAPI.CurrencyCode? = nil
+    @State private var selectedResolvedAmount: Double? = nil
+    @State private var selectedResolvedCurrency: FreightClaimsAPI.CurrencyCode? = nil
     @State private var disputeNumber = "—"
     @State private var statusText = "NO LIVE DISPUTE"
     @State private var subline = "No dispute selected"
     @State private var gapLabel = "SETTLEMENT GAP"
-    @State private var gapAmount = "$0"
+    @State private var gapAmount = "—"
     @State private var gapSub = "No live offer ladder"
     @State private var gapMeta = "0 rounds"
-    @State private var gapPct = "0%"
+    @State private var gapPct = "—"
     @State private var midpointLine = "No midpoint available"
     @State private var esangTitle = "No live offer recommendation"
     @State private var esangLine = "No live dispute to evaluate"
@@ -110,9 +116,9 @@ private struct VesselDisputeResolutionBody: View {
                         CTAButton(title: actionBusy ? "Working…" : "Counter-offer",
                                   action: { Task { await counter() } },
                                   trailingIcon: "arrow.uturn.left")
-                            .disabled(actionBusy)
+                            .disabled(actionBusy || claimAmount == nil || selectedCurrency == nil)
                         secondaryButton809(title: "Accept") { Task { await accept() } }
-                            .disabled(actionBusy || latestOfferAmount == nil)
+                            .disabled(actionBusy || latestOfferAmount == nil || latestOfferCurrency == nil)
                     }
                 }
                 Color.clear.frame(height: 96)
@@ -210,42 +216,73 @@ private struct VesselDisputeResolutionBody: View {
     }
 
     // MARK: Data
-    private struct OfferDTO809: Decodable { let by: String?; let amount: Double?; let rationale: String?; let at: String? }
+    private struct AmountStates809: Decodable { let amount: FreightClaimsAPI.MetricTruth }
+    private struct OfferDTO809: Decodable {
+        let offerEventId: String?
+        let by: String?
+        let amount: Double?
+        let currency: FreightClaimsAPI.CurrencyCode?
+        let canAccept: Bool?
+        let rationale: String?
+        let at: String?
+        let metricStates: AmountStates809
+    }
     private struct Dispute809: Decodable {
+        struct States: Decodable {
+            let amount: FreightClaimsAPI.MetricTruth
+            let resolvedAmount: FreightClaimsAPI.MetricTruth
+        }
         let id: String?
         let disputeNumber: String?
         let type: String?
         let status: String?
         let amount: Double?
+        let currency: FreightClaimsAPI.CurrencyCode?
         let resolvedAmount: Double?
+        let resolvedCurrency: FreightClaimsAPI.CurrencyCode?
         let description: String?
         let invoiceNumber: String?
         let carrier: String?
         let offers: [OfferDTO809]?
+        let metricStates: States
     }
     private struct Summary809: Decodable { let totalDisputed: Double?; let totalRecovered: Double? }
-    private struct Resolution809: Decodable { let disputes: [Dispute809]?; let summary: Summary809? }
+    private struct Provenance809: Decodable { let source: String; let scope: String; let observedAt: String?; let computedAt: String? }
+    private struct Resolution809: Decodable { let disputes: [Dispute809]?; let summary: Summary809?; let provenance: Provenance809 }
     private struct DisputeInput809: Encodable { let limit: Int; let offset: Int }
-    private struct CounterInput809: Encodable { let disputeId: String; let amount: Double; let message: String? }
-    private struct CounterAck809: Decodable { let id: String?; let status: String?; let amount: Double?; let respondedAt: String? }
-    private struct AcceptInput809: Encodable { let disputeId: String; let acceptedAmount: Double?; let message: String? }
-    private struct AcceptAck809: Decodable { let id: String?; let status: String?; let acceptedAmount: Double?; let acceptedAt: String? }
+    private struct CounterInput809: Encodable { let disputeId: String; let amount: Double; let currency: FreightClaimsAPI.CurrencyCode; let message: String? }
+    private struct CounterAck809: Decodable { let id: String?; let status: String?; let amount: Double?; let currency: FreightClaimsAPI.CurrencyCode?; let metricStates: AmountStates809; let respondedAt: String? }
+    private struct AcceptInput809: Encodable { let disputeId: String; let acceptedAmount: Double; let currency: FreightClaimsAPI.CurrencyCode; let message: String? }
+    private struct AcceptedStates809: Decodable { let acceptedAmount: FreightClaimsAPI.MetricTruth }
+    private struct AcceptAck809: Decodable { let id: String?; let status: String?; let acceptedAmount: Double?; let acceptedCurrency: FreightClaimsAPI.CurrencyCode?; let metricStates: AcceptedStates809; let acceptedAt: String? }
 
     private func load() async {
         loading = true; loadError = nil
         do {
             let r: Resolution809 = try await EusoTripAPI.shared.query("freightClaims.getDisputeResolution",
                                                                       input: DisputeInput809(limit: 20, offset: 0))
+            guard r.provenance.source == "disputes+dispute_events",
+                  r.provenance.computedAt != nil else {
+                throw DisputeContractError809.invalidLedgerProvenance
+            }
             guard let d = r.disputes?.first else {
                 selectedDisputeId = nil
+                selectedCurrency = nil
+                claimAmount = nil
+                latestLedgerOfferAmount = nil
+                latestLedgerOfferCurrency = nil
+                latestOfferAmount = nil
+                latestOfferCurrency = nil
+                selectedResolvedAmount = nil
+                selectedResolvedCurrency = nil
                 offers = []
                 disputeNumber = "—"
                 statusText = "NO LIVE DISPUTE"
                 subline = "No dispute selected"
-                gapAmount = "$0"
+                gapAmount = "—"
                 gapSub = "No live offer ladder"
                 gapMeta = "0 rounds"
-                gapPct = "0%"
+                gapPct = "—"
                 midpointLine = "No midpoint available"
                 esangTitle = "No live offer recommendation"
                 esangLine = "No live dispute to evaluate"
@@ -255,44 +292,102 @@ private struct VesselDisputeResolutionBody: View {
 
             selectedDisputeId = d.id
             disputeNumber = d.disputeNumber ?? d.id ?? "—"
-            statusText = (d.status ?? "filed").uppercased()
-            claimAmount = d.amount ?? 0
-            let liveOffers = d.offers ?? []
-            offers = liveOffers.prefix(6).map { off in
+            statusText = (d.status ?? "unknown").uppercased()
+            let qualifiedClaim = measuredMoney(
+                amount: d.amount,
+                currency: d.currency,
+                truth: d.metricStates.amount,
+                expectedSource: "disputes.amountInDispute+baseCurrency"
+            )
+            claimAmount = qualifiedClaim?.amount
+            selectedCurrency = qualifiedClaim?.currency
+            let qualifiedResolution = measuredMoney(
+                amount: d.resolvedAmount,
+                currency: d.resolvedCurrency,
+                truth: d.metricStates.resolvedAmount,
+                expectedSource: "disputes.resolvedAmount+resolvedCurrency"
+            )
+            selectedResolvedAmount = qualifiedResolution?.amount
+            selectedResolvedCurrency = qualifiedResolution?.currency
+
+            let liveOffers = (d.offers ?? []).compactMap { off -> (OfferDTO809, Double, FreightClaimsAPI.CurrencyCode)? in
+                guard let measured = measuredMoney(
+                    amount: off.amount,
+                    currency: off.currency,
+                    truth: off.metricStates.amount,
+                    expectedSource: off.offerEventId == nil
+                        ? "disputes.amountInDispute+baseCurrency"
+                        : "dispute_events.offerAmount+offerCurrency"
+                ), measured.currency == selectedCurrency else { return nil }
+                return (off, measured.amount, measured.currency)
+            }
+            offers = liveOffers.prefix(6).map { off, amount, currency in
                 let lower = (off.by ?? "").lowercased()
                 let party: Party809 = lower.contains("counter") || lower.contains("carrier") ? .theirs : .ours
                 let tag = party == .theirs ? "THEIRS" : "OURS"
                 return Offer809(party: party, tag: tag, title: off.by ?? "party",
-                                sub: off.rationale ?? "", amount: money(off.amount))
+                                sub: off.rationale ?? "", amount: money(amount, currency: currency))
             }
-            latestOfferAmount = liveOffers.compactMap { $0.amount }.last
+            latestLedgerOfferAmount = liveOffers.last?.1
+            latestLedgerOfferCurrency = liveOffers.last?.2
+            let acceptableOffer = liveOffers.last(where: { $0.0.canAccept == true })
+            latestOfferAmount = acceptableOffer?.1
+            latestOfferCurrency = acceptableOffer?.2
             subline = "\(disputeNumber) · \(d.invoiceNumber ?? "invoice unresolved")"
             gapLabel = "SETTLEMENT GAP · \(d.type ?? "dispute")"
-            let latest = latestOfferAmount ?? d.resolvedAmount ?? 0
-            let gap = max(0, claimAmount - latest)
-            gapAmount = money(gap)
-            gapSub = latest > 0 ? "claim \(money(claimAmount)) - latest offer \(money(latest))" : "claim \(money(claimAmount)) - no counter amount yet"
-            gapMeta = "round \(max(offers.count, 1)) · \(d.status ?? "filed")"
-            gapPct = claimAmount > 0 ? "\(Int((gap / claimAmount * 100).rounded()))%" : "0%"
-            let midpoint = latest > 0 ? (claimAmount + latest) / 2 : claimAmount
-            midpointLine = latest > 0
-                ? "Midpoint \(money(midpoint)) · latest offer \(money(latest)) · claim \(money(claimAmount))"
-                : "No counter amount yet · claim \(money(claimAmount))"
-            esangTitle = latest > 0
-                ? "Counter to \(money(midpoint)) or accept \(money(latest))"
-                : "Counter from \(money(claimAmount))"
-            esangLine = latest > 0
-                ? "counter midpoint \(money(midpoint)) or accept \(money(latest))"
-                : "wait for counterparty offer or submit a counter from the claim amount"
+            if let claim = claimAmount, let currency = selectedCurrency {
+                if let latest = latestLedgerOfferAmount {
+                    let gap = max(0, claim - latest)
+                    let midpoint = (claim + latest) / 2
+                    gapAmount = money(gap, currency: currency)
+                    gapSub = "claim \(money(claim, currency: currency)) - latest offer \(money(latest, currency: currency))"
+                    gapPct = claim > 0 ? "\(Int((gap / claim * 100).rounded()))%" : "—"
+                    midpointLine = "Midpoint \(money(midpoint, currency: currency)) · latest offer \(money(latest, currency: currency)) · claim \(money(claim, currency: currency))"
+                    esangTitle = "Review \(money(midpoint, currency: currency)) midpoint"
+                    esangLine = latestOfferAmount == nil
+                        ? "the latest qualified offer is not available for this account to accept"
+                        : "counter at the midpoint or accept the latest counterparty offer"
+                } else {
+                    gapAmount = "—"
+                    gapSub = "No currency-qualified offer is recorded"
+                    gapPct = "—"
+                    midpointLine = "No qualified offer midpoint available"
+                    esangTitle = "Await a qualified offer"
+                    esangLine = "the dispute has a qualified claim amount but no qualified offer event"
+                }
+            } else {
+                gapAmount = "—"
+                gapSub = d.metricStates.amount.reason ?? "Dispute amount or currency is not qualified"
+                gapPct = "—"
+                midpointLine = "No qualified monetary midpoint available"
+                esangTitle = "Money evidence incomplete"
+                esangLine = d.metricStates.amount.reason ?? "amount and ISO currency must be recorded together"
+            }
+            gapMeta = "\(offers.count) qualified round\(offers.count == 1 ? "" : "s") · \(d.status ?? "status unknown")"
         } catch {
             loadError = error.eusoUserCopy
         }
         loading = false
     }
 
-    private func money(_ v: Double?) -> String {
-        guard let v else { return "-" }
-        return "$" + Int(v).formatted(.number.grouping(.automatic))
+    private func measuredMoney(
+        amount: Double?,
+        currency: FreightClaimsAPI.CurrencyCode?,
+        truth: FreightClaimsAPI.MetricTruth,
+        expectedSource: String
+    ) -> (amount: Double, currency: FreightClaimsAPI.CurrencyCode)? {
+        guard let amount, amount > 0, let currency,
+              truth.valueState == .measured,
+              truth.accessState == .granted,
+              truth.trackingState == .tracked,
+              truth.provenance.source == expectedSource,
+              truth.provenance.observedAt != nil,
+              truth.provenance.computedAt != nil else { return nil }
+        return (amount, currency)
+    }
+
+    private func money(_ value: Double, currency: FreightClaimsAPI.CurrencyCode) -> String {
+        value.formatted(.currency(code: currency.rawValue).precision(.fractionLength(0...2)))
     }
 
     private func counter() async {
@@ -302,13 +397,12 @@ private struct VesselDisputeResolutionBody: View {
             return
         }
         if actionBusy { return }
-        let latest = latestOfferAmount ?? 0
-        let amount = latest > 0 ? max(latest, (claimAmount + latest) / 2) : claimAmount
-        guard amount > 0 else {
+        guard let claim = claimAmount, let currency = selectedCurrency else {
             actionFailed = true
-            actionMessage = "A counter-offer requires a live claim amount."
+            actionMessage = "A counter-offer requires a tracked claim amount and ISO currency."
             return
         }
+        let amount = latestLedgerOfferAmount.map { max($0, (claim + $0) / 2) } ?? claim
         actionBusy = true
         actionFailed = false
         actionMessage = nil
@@ -318,11 +412,23 @@ private struct VesselDisputeResolutionBody: View {
                 input: CounterInput809(
                     disputeId: disputeId,
                     amount: amount,
+                    currency: currency,
                     message: "Counter-offer generated from the live dispute midpoint on \(disputeNumber)."
                 )
             )
-            actionMessage = "Counter-offer \(money(ack.amount ?? amount)) submitted."
+            guard ack.id == disputeId,
+                  ack.currency == currency,
+                  ack.amount.map({ abs($0 - amount) < 0.005 }) == true,
+                  measuredMoney(amount: ack.amount, currency: ack.currency, truth: ack.metricStates.amount, expectedSource: "dispute_events.offerAmount+offerCurrency") != nil else {
+                throw DisputeContractError809.invalidCounterAcknowledgement
+            }
             await load()
+            guard selectedDisputeId == disputeId,
+                  latestLedgerOfferCurrency == currency,
+                  latestLedgerOfferAmount.map({ abs($0 - amount) < 0.005 }) == true else {
+                throw DisputeContractError809.counterReadbackMismatch
+            }
+            actionMessage = "Counter-offer \(money(amount, currency: currency)) confirmed."
         } catch {
             actionFailed = true
             actionMessage = error.eusoUserCopy
@@ -336,9 +442,9 @@ private struct VesselDisputeResolutionBody: View {
             actionMessage = "No dispute is selected."
             return
         }
-        guard let amount = latestOfferAmount, amount > 0 else {
+        guard let amount = latestOfferAmount, let currency = latestOfferCurrency else {
             actionFailed = true
-            actionMessage = "There is no latest offer amount to accept."
+            actionMessage = "There is no tracked counterparty offer with a qualified currency to accept."
             return
         }
         if actionBusy { return }
@@ -351,16 +457,53 @@ private struct VesselDisputeResolutionBody: View {
                 input: AcceptInput809(
                     disputeId: disputeId,
                     acceptedAmount: amount,
+                    currency: currency,
                     message: "Accepted from vessel dispute resolution for \(disputeNumber)."
                 )
             )
-            actionMessage = "Accepted \(money(ack.acceptedAmount ?? amount)) and resolved the dispute."
+            guard ack.id == disputeId,
+                  ack.status?.lowercased() == "resolved",
+                  ack.acceptedCurrency == currency,
+                  ack.acceptedAmount.map({ abs($0 - amount) < 0.005 }) == true,
+                  measuredMoney(amount: ack.acceptedAmount, currency: ack.acceptedCurrency, truth: ack.metricStates.acceptedAmount, expectedSource: "disputes.resolvedAmount+resolvedCurrency") != nil else {
+                throw DisputeContractError809.invalidAcceptanceAcknowledgement
+            }
             await load()
+            guard selectedDisputeId == disputeId,
+                  statusText == "RESOLVED",
+                  selectedResolvedCurrency == currency,
+                  selectedResolvedAmount.map({ abs($0 - amount) < 0.005 }) == true else {
+                throw DisputeContractError809.acceptanceReadbackMismatch
+            }
+            actionMessage = "Accepted \(money(amount, currency: currency)) and confirmed the resolution."
         } catch {
             actionFailed = true
             actionMessage = error.eusoUserCopy
         }
         actionBusy = false
+    }
+}
+
+private enum DisputeContractError809: LocalizedError {
+    case invalidLedgerProvenance
+    case invalidCounterAcknowledgement
+    case counterReadbackMismatch
+    case invalidAcceptanceAcknowledgement
+    case acceptanceReadbackMismatch
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidLedgerProvenance:
+            return "The dispute ledger did not provide its expected live provenance."
+        case .invalidCounterAcknowledgement:
+            return "The counter-offer acknowledgement did not match the submitted amount and currency."
+        case .counterReadbackMismatch:
+            return "The counter-offer was not confirmed in the live dispute ledger."
+        case .invalidAcceptanceAcknowledgement:
+            return "The acceptance acknowledgement did not match the selected qualified offer."
+        case .acceptanceReadbackMismatch:
+            return "The resolved amount and currency were not confirmed in the live dispute ledger."
+        }
     }
 }
 

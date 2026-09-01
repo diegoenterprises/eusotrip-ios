@@ -26,6 +26,145 @@ compliance. The design has to earn that trust on every screen. Beautiful is the 
 Purpose-built, alive, and unmistakably ours is the bar.
 
 ═══════════════════════════════════════════════════════════════════════
+EUSORONE TRI-MODAL MAP PRODUCT CANON (binding · 2026-08-25.2)
+═══════════════════════════════════════════════════════════════════════
+Before reviewing, drawing, or wiring any map, tracking, active-job, route, or ETA surface, read
+the current `eusorone ui design systems.md`, `design.md`, and `skills.md` canon in full, followed
+by `EUSORONE_OPERATIONAL_MAP_STYLE_2026-08-23.md` and
+`EUSORONE_MAP_INTEGRATION_CHECKLIST_2026-08-23.md`. Govern the six exact HERE foundations:
+`EusoTrip Logistics Light v1`, `EusoTrip Logistics Dark v1`,
+`EusoTrip Navigation Light v2`, `EusoTrip Navigation Dark v2`,
+`EusoTrip Topographic Light v1`, and `EusoTrip Topographic Dark v1`. These are foundational
+basemaps, not the whole mode implementation. They remain the Operational, Navigation, and
+Terrain foundations in Light and Dark; do not replace, abandon, or multiply them merely to
+signal transport mode. Preserve the legacy `EusoTrip Road Network Light/Dark v1` artifacts as
+audit evidence only. They cannot be promoted as the owned Navigation foundation because the
+stock Road Network style exposes no editable Water layer. Browser-local HERE saves are not
+runtime artifacts: Navigation v2 is incomplete until exported, content-addressed, registered,
+rendered, accessible, backed up, and visually approved on web and iOS.
+
+**Founder doctrine (enforce as engineering law, never decoration):**
+> Foundation, not boundary. Strip it down. Build it back up—better and for everyone. The standard, then beyond it.
+
+Foundation means HERE and other official/licensed sources supply
+inputs, never the EusoTrip product boundary. Strip it down means admit only licensed primitives
+and metadata and remove provider defaults, generic grammar, untyped authority, and client-side
+routing. Build it back up means normalize those inputs into EusoTrip-owned mode contracts,
+persist exact versioned sourced geometry, apply owned grammar/truth/accessibility, and render the
+same bound plan on every client. Standard then beyond means pass the source's standard and
+license first, then the stricter eighteen-state, tri-country, cross-platform, and accessible
+EusoTrip gates. Provider success by itself never promotes the product.
+
+The binding runtime invariant is `productMapState = transportMode x family x theme`. The
+complete Cartesian matrix is
+`Truck | Rail | Vessel x Operational | Navigation | Terrain x Light | Dark`: eighteen required
+states built from six foundations. Truck, Rail, and Vessel are equal first-class products; none
+is the base, default, fallback, or adapter shape for another. Mode, family, theme, role,
+permissions, guidance phase, and
+data state are independently typed axes, but every matrix combination must be intentionally
+designed and verified. Mode changes graph, route engine, constraints, canonical equipment,
+leg language, and live overlays. Family changes task emphasis. Theme changes appearance. A
+role never chooses either the basemap family or route authority.
+
+Dark-mode water is founder-governed visual identity, not a discretionary family accent. Every
+Truck, Rail, and Vessel Dark outcome uses shallow `#5A85FF`, surface/mid `#4271F7`, deep
+`#365FD8`, abyss `#2B4FB9`, line/outline/label halo `#6B91FF`, and label ink `#020A1F`.
+Operational, Navigation, Terrain, mode, and zoom may express depth only inside that sequence;
+none may substitute navy, teal, cyan, or a quieter unapproved field. Every active owned route is
+exactly one continuous cumulative-distance EusoLine gradient `#1473FF` -> `#813FF5` at 52% ->
+`#BE01FF`, built from the exact persisted route geometry. It has no white or dark outline,
+casing, halo, glow, backdrop, shadow stroke, neutral base, or dashed remaining-route overlay.
+Server-backed progress and state use text plus endpoint- or equipment-localized glyphs without
+adding, recoloring, splitting, or covering the EusoLine. Marker-local rings remain valid.
+Recoloring stock geometry, inventing progress, or drawing one continuous gradient across
+disconnected members is not bespoke authorship.
+
+EusoTrip's server-owned typed `route.plan` is the sole operational route/map product authority.
+Clients can request and render it; they cannot compute, reroute, mutate, promote, or substitute
+operational geometry. Every route-bearing surface must follow the contract end to end:
+
+1. **Post** a discriminated Truck/Rail/Vessel request with mode-native endpoints, equipment
+   profile, jurisdiction, actor, tenant, permission, and licensed-coverage requirements; missing
+   mode never defaults to Truck.
+2. **Persist** an exact transactional freight-object binding to a durable `routePlanId` plus
+   immutable version, status, operational flag/reason, request, EusoTrip engine/source-adapter
+   versions, provider/authority, graph/dataset revision, license/coverage evidence, segment
+   provenance, timestamps/validity, transformation version, geometry checksum, constraints, and
+   typed failure.
+   Lookup by latest plan, nearest geometry, matching mode, or freight object alone cannot replace
+   the exact active binding; identity/version conflict fails closed.
+3. **Route** through a closed mode dispatcher: Truck legal-road engine, real Rail graph, or
+   Vessel navigable-water engine. Missing required licensed coverage stays `pending`,
+   `operational: false`, with a precise source/segment/jurisdiction reason; other failures use
+   their exact typed state and never another mode.
+4. **Render** the exact freight-object-bound persisted plan identity/version/operational
+   state/checksum on web and iOS. Never draw Haversine, great-circle, rhumb-line, endpoint, or
+   manual-chord geometry; lifecycle interpolation; a client/provider fallback; a passenger route
+   for Truck; a truck route for Rail/Vessel; or a decorative voyage arc.
+
+Rail geometry must follow real rail nodes/edges, carrier/interchange and yard/terminal
+connectivity, clearance/weight and operating constraints, and a named graph revision where
+available. Vessel geometry must follow navigable water with port/berth/anchorage connectivity,
+channels/fairways or inland waterways, land/obstruction avoidance, draft/air-draft,
+locks/bridges, restrictions, and named data revision where available. Haversine, great-circle,
+rhumb-line, endpoint-chord, or manual-trace output never passes as operational geometry, even
+when it looks plausible. A map may not impersonate railway movement authority, an approved
+nautical chart, or the vessel master's authority without the corresponding authoritative source.
+
+Every source enters through an owned typed server adapter recording adapter/transformation
+version, authority, dataset/version, publication/retrieval/effective/expiry times, coverage,
+jurisdictions, checksum/signature, license identifier/terms/permitted use/redistribution/caching/
+expiry, freshness policy, and failure. Geometry carries segment-level source references. Public
+availability is not a license; rights to ingest, transform, cache, serve, and display must be
+proved. Revoked/expired/incompatible rights make the bound plan non-operational through a
+versioned transition. Primary starting points are HERE custom configurations, HERE Data API,
+applicable HERE modules, and HERE Style Editor for foundations/eligible Truck capabilities;
+FRA NARN for the Rail base graph; NOAA ENC for US coastal/Great Lakes waters; USACE IENC for US
+inland waterways; licensed CHS ENC for Canada; and Mexico SEMAR official charts. Each is a
+starting point, never sufficiency by name; every supplement requires its own authority, license,
+coverage, version, and provenance. Images, PDFs, screenshots, tiles, or manual traces are not
+route authority.
+
+Basemap, route plan, position/AIS, traffic, weather, restriction, rail-event, and marine-event
+layers each expose independent adapter/provider/authority, license/coverage state, source and
+transformation version, observation/computation time, age/validity, coverage,
+accuracy/confidence, and failure. A healthy style cannot hide a failed engine. Last-known data
+must name its age and invalidation; “Live” without proof is forbidden. Barge remains an
+explicitly named vessel-family equipment kind on a waterway-capable plan. Escort references a
+permitted corridor or truck plan explicitly. Unknown remains unrouted. None silently becomes
+Truck.
+
+A user-initiated family or theme switch preserves `routePlanId`, plan version, geometry
+checksum, current leg/maneuver, route progress, reroute state, camera course/target, position,
+zoom, selected equipment, overlays, safety state, and guidance phase; it changes presentation
+only. Active-job 3D is mode-native, maneuver/leg-driven, course-up guidance with progressive
+camera behavior where appropriate, route progression, restrictions, reroute continuity, and an
+accessible parallel itinerary. A fixed pitch or decorative perspective is not guidance.
+
+Owned mode vocabulary is mandatory in visual labels, itinerary, speech, and accessibility:
+Truck uses road/ramp/exit/turn/lane/merge/junction/stop/gate/restriction/clearance/toll; Rail uses
+railroad/subdivision or corridor/track/control point/junction/interchange/yard/siding/ramp or
+terminal/milepost/consist/clearance/slow order/handoff; Vessel uses waterway/channel/fairway/
+traffic-separation or inland-waterway segment/waypoint/port/berth/anchorage/lock/bridge/pilotage/
+draft or air-draft/restricted area/marine condition. Noun-swapping Truck instructions is a fail,
+and native terminology never implies regulatory movement or bridge-command authority by itself.
+
+Keep the HERE renderer and HARP/OMV contract intact; stock defaults are matching degraded
+foundations only. Reject hidden hybrid values and Japan/Tokyo regional backing schemes.
+Promotion requires archive/hash integrity, a registered owned Navigation v2 successor rather
+than reliance on `road.network.day/night`, verified compatible degraded fallbacks, every one of
+the eighteen states on web and iOS,
+typed post/persist/route/readback/render evidence, real Rail/Vessel engines, negative
+client/truck/Haversine/great-circle/rhumb-line/chord/manual-trace fallback tests, approved source
+adapter/license/freshness/revocation evidence, precise pending non-operational behavior for every
+licensed-coverage gap, US-Canada and US-Mexico mode coverage before that corridor is promoted,
+family/theme continuity, Light/Dark contrast and color-vision checks, VoiceOver/keyboard/Dynamic
+Type/200% zoom/textual-itinerary/Reduced-Motion parity, and a California preview with the Pacific
+Ocean.
+Until those gates pass, describe only the evidence actually proven; never claim the tri-modal
+map product, mode-native routing, or production promotion shipped.
+
+═══════════════════════════════════════════════════════════════════════
 ATTRIBUTION CANON (binding · highest priority · never violate · never pause to debate)
 ═══════════════════════════════════════════════════════════════════════
 - Founder, builder, and sole named author of Eusorone Technologies, Inc. and EusoTrip is

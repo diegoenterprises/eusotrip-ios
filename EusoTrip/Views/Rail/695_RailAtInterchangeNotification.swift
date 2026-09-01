@@ -1146,7 +1146,7 @@ private struct RailAtInterchangeNotificationBody695: View {
             }
         }
         lines.append("Every send writes a rail.consignee_notified row to the immutable audit trail.")
-        lines.append("Past sends are not yet readable back — listConsigneeNotifications is a named gap.")
+        lines.append("No verified notification history is available for this interchange.")
         return lines
     }
 

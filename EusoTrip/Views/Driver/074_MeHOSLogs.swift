@@ -128,7 +128,7 @@ struct MeHOSLogs: View {
 
     @ViewBuilder
     private var clockHero: some View {
-        let status = store.status
+        let status = store.status?.hasCurrentObservation() == true ? store.status : nil
         VStack(alignment: .leading, spacing: Space.s3) {
             HStack(alignment: .firstTextBaseline) {
                 Text(dutyLabel())
@@ -172,14 +172,15 @@ struct MeHOSLogs: View {
     }
 
     private func clockTile(label: String, hoursRemaining: Double?, hoursLimit: Double) -> some View {
-        let remaining = hoursRemaining ?? 0
-        let fraction = min(1.0, max(0.0, hoursLimit > 0 ? remaining / hoursLimit : 0))
+        let fraction = hoursRemaining.map {
+            min(1.0, max(0.0, hoursLimit > 0 ? $0 / hoursLimit : 0))
+        }
         return VStack(alignment: .leading, spacing: Space.s1) {
             Text(label)
                 .font(EType.micro)
                 .tracking(1.3)
                 .foregroundStyle(palette.textTertiary)
-            Text(hoursRemaining == nil ? "-" : HOSStatus.formatHours(remaining))
+            Text(HOSStatus.formatHours(hoursRemaining))
                 .font(EType.numeric)
                 .foregroundStyle(LinearGradient.diagonal)
                 .monospacedDigit()
@@ -188,9 +189,11 @@ struct MeHOSLogs: View {
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 2)
                         .fill(palette.tintNeutral.opacity(0.4))
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(LinearGradient.diagonal)
-                        .frame(width: geo.size.width * fraction)
+                    if let fraction {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(LinearGradient.diagonal)
+                            .frame(width: geo.size.width * fraction)
+                    }
                 }
             }
             .frame(height: 4)
@@ -208,8 +211,10 @@ struct MeHOSLogs: View {
     }
 
     private func dutyLabel() -> String {
-        guard let raw = store.status?.status else { return "Loading…" }
-        switch HOSDutyCode(rawValue: raw) ?? .offDuty {
+        guard store.status?.hasCurrentObservation() == true,
+              let raw = store.status?.status,
+              let duty = HOSDutyCode(rawValue: raw) else { return "Duty status unavailable" }
+        switch duty {
         case .offDuty:      return "Off Duty"
         case .sleeperBerth: return "Sleeper Berth"
         case .driving:      return "Driving"
@@ -332,9 +337,9 @@ struct MeHOSLogs: View {
     }
 
     private func dayRow(_ log: HOSDailyLog) -> some View {
-        let driveHours = Double(log.drivingMinutes) / 60.0
+        let driveHours = log.drivingMinutes.map { Double($0) / 60.0 }
         // 11-hour drive ceiling per §395.3(a)(3)(i)
-        let fraction = min(1.0, driveHours / 11.0)
+        let fraction = driveHours.map { min(1.0, $0 / 11.0) }
         return HStack(spacing: Space.s3) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(shortDayLabel(log.date))
@@ -349,9 +354,11 @@ struct MeHOSLogs: View {
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 2)
                         .fill(palette.tintNeutral.opacity(0.4))
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(LinearGradient.diagonal)
-                        .frame(width: geo.size.width * fraction)
+                    if let fraction {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(LinearGradient.diagonal)
+                            .frame(width: geo.size.width * fraction)
+                    }
                 }
             }
             .frame(width: 72, height: 4)
@@ -370,17 +377,22 @@ struct MeHOSLogs: View {
     }
 
     @ViewBuilder
-    private func certChip(_ certified: Bool) -> some View {
-        if certified {
+    private func certChip(_ certified: Bool?) -> some View {
+        if certified == true {
             Image(systemName: "checkmark.seal.fill")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(LinearGradient.diagonal)
                 .accessibilityLabel("Certified")
-        } else {
+        } else if certified == false {
             Image(systemName: "seal")
                 .font(.system(size: 14, weight: .regular))
                 .foregroundStyle(palette.textTertiary)
                 .accessibilityLabel("Not certified")
+        } else {
+            Image(systemName: "questionmark.circle")
+                .font(.system(size: 14, weight: .regular))
+                .foregroundStyle(palette.textTertiary)
+                .accessibilityLabel("Certification unavailable")
         }
     }
 
@@ -474,8 +486,8 @@ struct MeHOSLogs: View {
     }
 
     @ViewBuilder
-    private func dutyBadge(_ duty: HOSDutyCode) -> some View {
-        Text(duty.shortLabel)
+    private func dutyBadge(_ duty: HOSDutyCode?) -> some View {
+        Text(duty?.shortLabel ?? "—")
             .font(EType.micro)
             .tracking(1.3)
             .foregroundStyle(duty == .driving ? AnyShapeStyle(Color.white) : AnyShapeStyle(palette.textSecondary))
@@ -532,7 +544,7 @@ struct MeHOSLogs: View {
     }
 
     private func timeRange(_ e: HOSLogEntry) -> String {
-        let start = clockTime(e.startDate)
+        let start = e.startDate.map(clockTime) ?? "—"
         if let end = e.endDate {
             return "\(start)–\(clockTime(end))"
         }

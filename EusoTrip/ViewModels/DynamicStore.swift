@@ -79,7 +79,7 @@ private final class EusoRefreshHandlerBox {
     }
 }
 
-/// Session-wide freshness coordinator shared by all 24 authenticated roles.
+/// Session-wide freshness coordinator shared by all 25 authenticated roles.
 /// It does not fetch domain data itself; visible surfaces and their real
 /// DynamicStore / `.task` loaders own that work. The coordinator supplies
 /// targeting, inactivity policy, and duplicate suppression.
@@ -403,6 +403,28 @@ private struct EusoRefreshableModifier: ViewModifier {
     }
 }
 
+/// Installs the native pull gesture at a routed shell without registering
+/// synthetic work. The coordinator invokes only real handlers mounted inside
+/// the current surface, so a shell can never turn session validation or an
+/// unrelated store into a fabricated refresh result.
+private struct EusoRefreshControlModifier: ViewModifier {
+    @Environment(\.eusoRefresh) private var refresh
+    @Environment(\.eusoRefreshSurfaceID) private var surfaceID
+    let isEnabled: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if isEnabled {
+            content.refreshable {
+                guard let surfaceID else { return }
+                await refresh(surfaceID, reason: .userPull)
+            }
+        } else {
+            content
+        }
+    }
+}
+
 /// Preserves `.task` initial-load semantics and registers the exact same
 /// one-shot loader for current-surface refreshes. Use only for read/hydration
 /// work; long-lived loops and side-effecting mutations remain ordinary tasks.
@@ -445,6 +467,13 @@ extension View {
         action: @escaping @MainActor () async -> Void
     ) -> some View {
         modifier(EusoRefreshableModifier(action: EusoRefreshOperation(action)))
+    }
+
+    /// Gives a routed shell a native pull gesture while leaving data ownership
+    /// with its mounted `eusoRefreshable`, `eusoRefreshHandler`, and
+    /// `eusoRefreshTask` descendants.
+    func eusoRefreshControl(isEnabled: Bool = true) -> some View {
+        modifier(EusoRefreshControlModifier(isEnabled: isEnabled))
     }
 
     /// Initial one-shot read plus scoped pull/foreground refresh without a

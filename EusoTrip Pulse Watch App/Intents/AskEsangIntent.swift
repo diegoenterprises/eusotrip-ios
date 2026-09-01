@@ -75,7 +75,7 @@ enum AskEsangIntentSupport {
 struct EsangSOSIntent: AppIntent {
     static var title: LocalizedStringResource = "Esang SOS"
     static var description: IntentDescription = IntentDescription(
-        "Immediately escalate an emergency to Esang dispatch and place an E911 call on the paired phone.",
+        "Immediately relay an emergency and request an Emergency Call handoff on the paired phone.",
         categoryName: "Esang"
     )
     static var openAppWhenRun: Bool = true
@@ -91,7 +91,16 @@ struct EsangSOSIntent: AppIntent {
             auth: auth,
             connectivity: WatchConnectivityManager.shared
         )
-        return .result(dialog: "Emergency services are being contacted.")
+        switch EmergencyController.shared.serverEvidence {
+        case .acknowledged:
+            return .result(dialog: "The EusoTrip emergency service acknowledged your SOS.")
+        case .queued:
+            return .result(dialog: "Your SOS is saved on this Watch and will retry until acknowledged.")
+        case .notAcknowledged:
+            return .result(dialog: "No server confirmation was received. Use the system Emergency SOS now.")
+        case .contacting:
+            return .result(dialog: "Your SOS is still being relayed. Check the Pulse screen for its status.")
+        }
     }
 }
 
@@ -106,7 +115,9 @@ struct HOSStatusIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        let hos = HOSStore.shared.current
+        guard let hos = HOSStore.shared.currentObservation else {
+            return .result(dialog: "Current sourced HOS evidence is unavailable.")
+        }
         return .result(
             dialog: IntentDialog(stringLiteral:
                 "You're \(hos.status.label). " +

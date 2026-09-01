@@ -139,9 +139,8 @@ final class DriverHomeViewModel: ObservableObject {
 
     @Published var phase: Phase = .idle
 
-    /// True when the backend fetch failed and we fell back to on-device demo
-    /// data so the dashboard remains legible. Surface-level banner only — the
-    /// view still renders the full dashboard chrome unchanged.
+    /// True when the backend fetch failed. Server-backed values are cleared;
+    /// no demo payload is substituted.
     @Published var isOffline: Bool = false
 
     /// Active assigned load (summary + full record once hydrated).
@@ -296,17 +295,20 @@ final class DriverHomeViewModel: ObservableObject {
 
     /// HOS tile — "7h 22m".
     var hosDriveLeftDisplay: String {
-        hos?.drivingRemainingDisplay ?? "—"
+        guard let hos, hos.hasCurrentObservation() else { return "—" }
+        return hos.drivingRemainingDisplay
     }
 
     /// 14-hour on-duty window remaining (§395.3(a)(2)) — "4h 48m".
     var hosOnDutyDisplay: String {
-        hos?.onDutyRemainingDisplay ?? "—"
+        guard let hos, hos.hasCurrentObservation() else { return "—" }
+        return hos.onDutyRemainingDisplay
     }
 
     /// 70-hour/8-day or 60-hour/7-day cycle remaining (§395.3(b)) — "38h 30m".
     var hosCycleDisplay: String {
-        hos?.cycleRemainingDisplay ?? "—"
+        guard let hos, hos.hasCurrentObservation() else { return "—" }
+        return hos.cycleRemainingDisplay
     }
 
     /// Wallet available — "$4,118". Fed from `wallet.getBalance.available`
@@ -413,12 +415,20 @@ final class DriverHomeViewModel: ObservableObject {
 
         // Both ends of the lane, when coordinates exist on the record.
         let pickup: (lat: Double, lng: Double, city: String)? = {
-            guard let pu = load.pickupLocation, pu.lat != 0, pu.lng != 0 else { return nil }
-            return (pu.lat, pu.lng, pu.cityState)
+            guard let pu = load.pickupLocation,
+                  let coordinate = LatLongParser.validatedCoordinate(
+                      latitude: pu.lat,
+                      longitude: pu.lng
+                  ) else { return nil }
+            return (coordinate.latitude, coordinate.longitude, pu.cityState)
         }()
         let delivery: (lat: Double, lng: Double, city: String)? = {
-            guard let drop = load.deliveryLocation, drop.lat != 0, drop.lng != 0 else { return nil }
-            return (drop.lat, drop.lng, drop.cityState)
+            guard let drop = load.deliveryLocation,
+                  let coordinate = LatLongParser.validatedCoordinate(
+                      latitude: drop.lat,
+                      longitude: drop.lng
+                  ) else { return nil }
+            return (coordinate.latitude, coordinate.longitude, drop.cityState)
         }()
         guard pickup != nil || delivery != nil else { return }
 
@@ -632,37 +642,20 @@ final class DriverHomeViewModel: ObservableObject {
 
     /// HOS duty-status row — one entry for the current duty state.
     private func hosActivityItems() -> [RecentActivityItem] {
-        guard let hos else { return [] }
-        // Pull whatever status/time fields the HOSStatus model exposes.
-        // `drivingRemainingDisplay` is already display-ready; we use it
-        // as the subtitle so the row is self-explanatory.
-        let mirror = Mirror(reflecting: hos)
-        var statusLabel: String = "Duty status updated"
-        var updatedAt: Date = Date().addingTimeInterval(-60 * 5)
-        for child in mirror.children {
-            switch child.label {
-            case "currentStatus", "dutyStatus", "status":
-                if let s = child.value as? String, !s.isEmpty {
-                    statusLabel = "Duty status · \(s.uppercased())"
-                }
-            case "lastStatusChangeAt", "statusChangedAt", "updatedAt":
-                if let d = child.value as? Date { updatedAt = d }
-                if let s = child.value as? String,
-                   let d = Self.parseISO(s) { updatedAt = d }
-            default:
-                break
-            }
-        }
+        guard let hos,
+              hos.hasCurrentObservation(),
+              let duty = hos.status.flatMap(HOSDutyCode.init(rawValue:)),
+              let observedAt = HOSObservationClock.parse(hos.freshness) else { return [] }
         return [
             RecentActivityItem(
                 kind: .hos,
-                title: statusLabel,
+                title: "Duty status · \(duty.shortLabel)",
                 subtitle: "Drive remaining · \(hos.drivingRemainingDisplay)",
-                timestamp: updatedAt,
+                timestamp: observedAt,
                 glyph: "clock.fill",
                 glyphTint: Brand.warning.opacity(0.14),
                 glyphColor: Brand.warning,
-                trail: Self.relativeLabel(updatedAt),
+                trail: Self.relativeLabel(observedAt),
                 trailColor: Brand.warning
             )
         ]

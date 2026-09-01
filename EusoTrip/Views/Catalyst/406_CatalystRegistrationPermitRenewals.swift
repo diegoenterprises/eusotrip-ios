@@ -3,116 +3,30 @@
 //  EusoTrip 2027 · 406 Catalyst Registration & Permit Renewals
 //  Author: Mike "Diego" Usoro / Eusorone Technologies, Inc.
 //
-//  ARCHETYPE: COMPLIANCE / GATE — a blocking-vs-cleared checklist, not a stat
-//  dashboard and not a second 384 Fleet IFTA (that screen files quarterly fuel
-//  tax; this one is the renewal calendar for registration + permit credentials
-//  across the whole fleet). Aurora Freight Lines never lets a credential lapse:
-//  a blocking hero (count of lapsed credentials · soonest deadline
-//  time-relative · a 90-day renewal rail with one tick per upcoming deadline ·
-//  fee total), then gate rows grouped BLOCKING / DUE SOON / CLEAR — each row a
-//  40x40 credential chip, a title, a mono regulatory citation, a deadline pill,
-//  the renewal fee, and the issuing jurisdiction. CTA pair Start renewals +
-//  Fee schedule. dangerWash is applied to the hero ONLY while something blocks.
-//
-//  SwiftUI twin of:
-//    03 Catalyst/Light-SVG/406 Catalyst Registration & Permit Renewals.svg
-//    03 Catalyst/Dark-SVG/406 Catalyst Registration & Permit Renewals.svg
-//
-//  WEB PARITY: client/src/pages/PermitManagement.tsx — route /permits, registered
-//  at client/src/App.tsx:771 (guard CARR + COMP). Adjacent calendar surface
-//  client/src/pages/ComplianceCalendar.tsx at /compliance/calendar (App.tsx:1005).
-//
-//  WIRING MANIFEST (line-confirmed on disk this fire — frontend/server/routers/):
-//    • hero blocking count + lapsed set   → compliance.getExpiringItems        compliance.ts:276
-//                                          compliance.getExpiringDocuments     compliance.ts:982
-//    • hero 90-day rail + fee total       → permits.getExpiring                permits.ts:103
-//                                          permits.getSummary                  permits.ts:206
-//    • carrier identity (USDOT / MC)      → authority.getMyAuthority           authority.ts:28
-//    • per-unit credential authority      → authority.getEquipmentAuthority    authority.ts:416
-//    • UCR annual row                     → trainingCompliance.getUcrFiling    trainingCompliance.ts:1043
-//    • MCS-150 biennial (CLEAR strip)     → trainingCompliance.getMcsCleaning  trainingCompliance.ts:1081
-//    • BOC-3 (CLEAR strip)                → trainingCompliance.getBocFiling    trainingCompliance.ts:1062
-//    • TX annual oversize/overweight      → permits.list                       permits.ts:21
-//                                          permits.getStateRequirements        permits.ts:151
-//    • IFTA fleet context                 → fleet.getIFTAStats                 fleet.ts:1169
-//    • "Fee schedule" CTA                 → trainingCompliance.getPermitCosts  trainingCompliance.ts:513
-//    • "Start renewals" (permit class)    → permits.renew                      permits.ts:128
-//    • "Start renewals" (cert class)      → trainingCompliance.renewCertification
-//                                                                              trainingCompliance.ts:360
-//    • row long-press · scan credential   → credentialScanner.scan             credentialScanner.ts:670
-//        (types us_irp_apportioned :38 · us_ifta_decal :37 · ca_nsc_certificate :42)
-//    • ESang row                          → esangCoach.forScreen               esangCoach.ts:264
-//
-//  NAMED GAPS surfaced here (bound to the typed client call they WILL have; no
-//  inline array is ever passed off as data):
-//    • catalysts.credentialRenewals.listIrpCabCards  — per-unit IRP cab-card expiry
-//    • catalysts.credentialRenewals.listHvut2290     — Form 2290 HVUT per power unit
-//        (no 2290/HVUT procedure exists; only the label at fleetMaintenance.ts:2230)
-//    • catalysts.credentialRenewals.listIftaDecals   — decal-set issuance + expiry
-//    • catalysts.credentialRenewals.listCvor         — CA CVOR / NSC renewal read
-//        (crossBorder.ts:4540 documents the NSC authority; registration.ts:3424
-//         accepts CVOR as an authority type on attachOperatingAuthority :3418,
-//         but nothing reads a CVOR renewal date)
-//    • catalysts.credentialRenewals.startPacket      — one packet across mixed classes
-//    • catalysts.credentialRenewals.pay              — ONLINE_ONLY fee payment
-//    • blockchainAuditTrail insert on the renewal writes (exists on compliance.ts:1394,
-//      absent from permits.ts and trainingCompliance.ts)
-//    • WS broadcast of renewal state on WS_CHANNELS.FLEET(companyId)
-//      (shared/websocket-events.ts:576; COMPLIANCE_DOCUMENT_EXPIRING :158, WS_EVENTS :538,
-//       WS_CHANNELS.COMPLIANCE_ALERTS :607) — nothing on permits.ts emits them today
-//    • esangCoach SCREEN_ENUM (esangCoach.ts:112-125) carries only driver keys —
-//      needs a "credentials" key for this surface
-//
-//  RBAC: carrier-side. Writes gate on roleProcedure(ROLES.CATALYST) —
-//  catalystProcedure, server/_core/trpc.ts:208 (roleProcedure factory :165).
-//  Every cited procedure currently sits on protectedProcedure (permits.ts:8
-//  aliases isolatedProcedure); the web route already narrows to CARR + COMP.
-//
-//  MODE + COUNTRY: transportMode = truck. Country is CONTENT inside this screen,
-//  never a file fork — US (IRP §515 · IFTA Art. R650 · UCR 49 CFR 367.30 ·
-//  MCS-150 49 CFR 390.19T · HVUT 26 CFR 41.6001-2 · TX 43 TAC §219.11) beside
-//  CA (CVOR Ontario O. Reg. 424/97 · National Safety Code) and MX (SCT docket —
-//  registration.ts:327 countryBranching MX_DOCKET). CVOR fees render CAD; USD is
-//  the IA base-jurisdiction currency.
-//
-//  OFFLINE (Encyclopedia v2):
-//    • READ_CACHED(24h) for the whole gate ledger — slow-moving credential set.
-//      Staleness is VISIBLE: the header caption reads "CACHED <age>" and turns
-//      tertiary→warning past the TTL.
-//    • QUEUE(compliance) for starting a renewal packet with no signal — the
-//      affected row swaps its deadline pill for a QUEUED badge.
-//    • ONLINE_ONLY(money movement) for paying renewal fees.
-//
-//  FUSION: omitted with reason — this screen shows no live position, route, ETA
-//  or geofence. It is a static credential-lifecycle ledger keyed on expiry dates,
-//  so no HERE Maps / device geolocation / customer geofence / ESang tick is
-//  shared here. No vehicle is drawn anywhere in this composition; the FLEET nav
-//  slot uses the system `truck.box` symbol, never a hand-drawn silhouette.
-//
-//  0 STUBS · 0 MOCK DATA · 0 PLACEHOLDERS — every value renders from
-//  `RegistrationRenewalsStore`, which composes the procedures above through the
-//  canonical `EusoTripAPI` tRPC client. The only literal content in this file is
-//  the `#Preview` fixture, which mirrors the SVG verbatim.
-//
-//  Bottom nav (Catalyst): HOME · DISPATCH · [orb] · FLEET · ME — FLEET current,
-//  dispatched through the real `CarrierNavDispatcher`.
+//  Canonical contract audit (backend origin/main): authority.getMyAuthority
+//  supplies identity; permits.list supplies user-scoped permit records;
+//  compliance.getExpiringItems supplies due-soon company document records; and
+//  permits.renew is the only complete renewal write available here. Per-unit
+//  IRP, HVUT, IFTA decal, CVOR, mixed renewal-packet, and fee-payment contracts
+//  do not exist, so this screen neither fabricates those rows nor exposes those
+//  actions. Compliance documents remain read-only.
 //
 
 import SwiftUI
 
 // MARK: - Domain
 
-/// Which band of the gate a credential sits in. Derived, never stored: a
-/// credential is BLOCKING once `daysRemaining < 0` (the unit legally cannot
-/// roll), DUE SOON inside the 30-day horizon, CLEAR beyond it.
+/// Which deadline band a returned record sits in. Derived, never stored: an
+/// item is expired once `daysRemaining < 0`, DUE SOON inside the 30-day
+/// horizon, and CLEAR beyond it. Operational authority is not inferred here.
 enum CredentialGate: String, Codable, CaseIterable {
     case blocking, dueSoon, clear
 
     var label: String {
         switch self {
-        case .blocking: return "BLOCKING · CANNOT DISPATCH"
-        case .dueSoon:  return "DUE SOON · INSIDE 30 DAYS"
-        case .clear:    return "CLEAR"
+        case .blocking: return "EXPIRED PERMIT RECORDS"
+        case .dueSoon:  return "DUE INSIDE 30 DAYS"
+        case .clear:    return "CURRENT DATED RECORDS"
         }
     }
 
@@ -143,18 +57,14 @@ struct CredentialRow: Identifiable, Equatable {
     let daysRemaining: Int       // negative = lapsed
     let renewalFee: String       // "$1,842" — tabular, already currency-formatted
     let jurisdiction: String     // "IA · online"
-    /// True once a renewal packet was started offline and is waiting on the
-    /// compliance queue. Swaps the deadline pill for the QUEUED badge.
-    let isQueued: Bool
-    /// Renewal path: permit-class credentials renew through `permits.renew`,
-    /// certification-class through `trainingCompliance.renewCertification`.
-    let renewsAsPermit: Bool
+    /// Only rows sourced from permits.list can be renewed by permits.renew.
+    /// Compliance-document rows are intentionally read-only.
+    let permitId: String?
 
     var gate: CredentialGate { CredentialGate.from(daysRemaining: daysRemaining) }
 
     /// Deadline pill copy — time-relative, never an absolute date.
     var deadlinePill: String {
-        if isQueued { return "QUEUED · \(abs(daysRemaining)) D" }
         if daysRemaining < 0 { return "EXPIRED \(abs(daysRemaining)) D" }
         return "DUE IN \(daysRemaining) D"
     }
@@ -174,8 +84,8 @@ struct RenewalGateVM: Equatable {
     let usdot: String             // "USDOT 3 482 119"
     let mc: String                // "MC-942 008"
     let subline: String           // "Aurora Freight Lines · 11 credentials · 6 units"
-    let cacheCaption: String      // "CACHED 14 MIN"
-    let cacheIsStale: Bool        // past the 24h READ_CACHED TTL
+    let cacheCaption: String      // "UPDATED 14 MIN AGO"
+    let cacheIsStale: Bool        // last successful in-memory read is old
 
     // hero
     let blockingCount: Int
@@ -197,12 +107,9 @@ struct RenewalGateVM: Equatable {
     let clearCitation: String
     let clearNext: String         // "CVOR ON in 63 d"
 
-    // actions
-    let feeTotal: String          // "$2,728"
-
-    // ESang
-    let coachTitle: String
-    let coachSub: String
+    // Source coverage
+    let sourceTitle: String
+    let sourceSub: String
 
     func rows(in gate: CredentialGate) -> [CredentialRow] {
         rows.filter { $0.gate == gate }
@@ -211,9 +118,8 @@ struct RenewalGateVM: Equatable {
 
 // MARK: - Store
 
-/// Composes the gate from the real routers. Read path is cache-first
-/// (READ_CACHED 24h) so the ledger renders instantly and honestly labels its
-/// own age; the write path queues when there is no signal.
+/// Composes the gate from the real routers and labels the age of the last
+/// successful in-memory refresh. Renewal writes require a live connection.
 @MainActor
 final class RegistrationRenewalsStore: ObservableObject {
 
@@ -221,38 +127,23 @@ final class RegistrationRenewalsStore: ObservableObject {
     @Published private(set) var loading = false
     @Published private(set) var lastSyncedAt: Date?
     @Published private(set) var offline = false
-    /// Credential ids whose renewal packet was started without a connection.
-    @Published private(set) var queuedCredentialIds: Set<String> = []
+    @Published private(set) var loadError: String?
+    @Published private(set) var actionError: String?
+    @Published private(set) var actionSuccess: String?
+    @Published private(set) var isRenewing = false
 
-    static let cacheTTL: TimeInterval = 24 * 60 * 60   // READ_CACHED(24h)
+    static let freshnessWindow: TimeInterval = 24 * 60 * 60
     private let dueSoonHorizon = 30
     private let railWindowDays = 90
 
     // MARK: Wire DTOs — shapes taken verbatim from the routers on disk.
 
-    private struct DaysIn: Encodable { let days: Int }
     private struct LimitIn: Encodable { let limit: Int }
-    private struct StateIn: Encodable { let state: String }
-    private struct EmptyIn: Encodable {}
-    private struct CoachIn: Encodable {
-        let screen: String
-        let contextIds: [String: String]
-    }
+    private struct PermitListIn: Encodable { let limit: Int; let offset: Int }
     private struct RenewIn: Encodable {
         let permitId: String
         let requestedEndDate: String
         let notes: String?
-    }
-    private struct RenewCertIn: Encodable {
-        let certificationId: Int
-        let newExpiryDate: String
-        let documentUrl: String?
-        let notes: String?
-    }
-    /// Proposed input for the missing packet verb — see NAMED GAPS.
-    private struct PacketIn: Encodable {
-        let credentialIds: [String]
-        let queuedOffline: Bool
     }
 
     /// compliance.getExpiringItems — compliance.ts:276
@@ -264,47 +155,18 @@ final class RegistrationRenewalsStore: ObservableObject {
         let daysRemaining: Int
     }
 
-    /// permits.getExpiring — permits.ts:103
-    private struct ExpiringPermit: Decodable {
+    /// permits.list — permits.ts
+    private struct PermitWire: Decodable {
         let id: String
         let permitNumber: String
         let type: String
+        let status: String
         let expirationDate: String?
-        let daysRemaining: Int
         let states: [String]
-    }
-
-    /// permits.getSummary — permits.ts:206
-    private struct PermitSummary: Decodable {
-        let total: Int
-        let active: Int
-        let expiring: Int
-        let expired: Int
-    }
-
-    /// trainingCompliance.getUcrFiling — trainingCompliance.ts:1043
-    private struct UcrFiling: Decodable {
-        let year: Int
-        let status: String
-        let filingDeadline: String
-        let fleetSize: Int
-        let bracket: String
-        let fee: Double
-        let renewalDue: String
-    }
-
-    /// trainingCompliance.getMcsCleaning — trainingCompliance.ts:1081
-    private struct McsUpdate: Decodable {
-        let status: String
-        let nextDueDate: String?
-        let daysUntilDue: Int
-        let dotNumber: String
-    }
-
-    /// trainingCompliance.getBocFiling — trainingCompliance.ts:1062
-    private struct BocFiling: Decodable {
-        let status: String
-        let states: [String]
+        let origin: String?
+        let destination: String?
+        let commodity: String?
+        let fees: Double
     }
 
     /// authority.getMyAuthority — authority.ts:28
@@ -320,90 +182,39 @@ final class RegistrationRenewalsStore: ObservableObject {
         let complianceScore: Double?
     }
 
-    /// Shape of the credential-renewal reads once the gap verbs land. The UI is
-    /// bound to these calls today; the report files the TS shape.
-    private struct CredentialWire: Decodable {
-        let id: String
-        let title: String
-        let citation: String
-        let glyph: String
-        let daysRemaining: Int
-        let renewalFeeCents: Int
-        let currency: String
-        let jurisdiction: String
-        let renewsAsPermit: Bool
-    }
-
-    /// esangCoach.forScreen — esangCoach.ts:264
-    private struct CoachTip: Decodable {
-        let mode: String
-        let tip: String
-        let linkRoute: String?
-    }
 
     // MARK: Load
 
     func refresh() async {
         loading = true
+        loadError = nil
         defer { loading = false }
         let api = EusoTripAPI.shared
+        var authority: MyAuthority?
+        var documents: [ExpiringItem] = []
+        var permits: [PermitWire] = []
+        var failures: [String] = []
 
-        var reachable = true
+        do { authority = try await api.queryNoInput("authority.getMyAuthority") }
+        catch { failures.append("Authority profile: \(error.eusoUserCopy)") }
+        do {
+            permits = try await api.query(
+                "permits.list", input: PermitListIn(limit: 100, offset: 0))
+        } catch { failures.append("Permit records: \(error.eusoUserCopy)") }
+        do {
+            documents = try await api.query(
+                "compliance.getExpiringItems", input: LimitIn(limit: 50))
+        } catch { failures.append("Compliance deadlines: \(error.eusoUserCopy)") }
 
-        async let authorityCall: MyAuthority? = try? await api.queryNoInput("authority.getMyAuthority")
-        async let expiringDocsCall: [ExpiringItem]? = try? await api.query(
-            "compliance.getExpiringItems", input: LimitIn(limit: 25))
-        async let expiringPermitsCall: [ExpiringPermit]? = try? await api.query(
-            "permits.getExpiring", input: DaysIn(days: railWindowDays))
-        async let permitSummaryCall: PermitSummary? = try? await api.queryNoInput("permits.getSummary")
-        async let ucrCall: UcrFiling? = try? await api.queryNoInput("trainingCompliance.getUcrFiling")
-        async let mcsCall: McsUpdate? = try? await api.queryNoInput("trainingCompliance.getMcsCleaning")
-        async let bocCall: BocFiling? = try? await api.queryNoInput("trainingCompliance.getBocFiling")
-
-        // GAP verbs — bound to the typed client they will have. A nil here means
-        // "not deployed yet OR offline"; either way the band renders from cache.
-        async let irpCall: [CredentialWire]? = try? await api.queryNoInput(
-            "catalysts.credentialRenewals.listIrpCabCards")
-        async let hvutCall: [CredentialWire]? = try? await api.queryNoInput(
-            "catalysts.credentialRenewals.listHvut2290")
-        async let iftaDecalCall: [CredentialWire]? = try? await api.queryNoInput(
-            "catalysts.credentialRenewals.listIftaDecals")
-        async let cvorCall: [CredentialWire]? = try? await api.queryNoInput(
-            "catalysts.credentialRenewals.listCvor")
-        async let coachCall: CoachTip? = try? await api.query(
-            "esangCoach.forScreen",
-            input: CoachIn(screen: "credentials", contextIds: ["surface": "406"]))
-
-        let authority     = await authorityCall
-        let expiringDocs  = await expiringDocsCall ?? []
-        let permitsSoon   = await expiringPermitsCall ?? []
-        let permitSummary = await permitSummaryCall
-        let ucr           = await ucrCall
-        let mcs           = await mcsCall
-        let boc           = await bocCall
-        let irp           = await irpCall ?? []
-        let hvut          = await hvutCall ?? []
-        let iftaDecals    = await iftaDecalCall ?? []
-        let cvor          = await cvorCall ?? []
-        let coach         = await coachCall
-
-        if authority == nil && permitSummary == nil && expiringDocs.isEmpty && permitsSoon.isEmpty {
-            reachable = false
-        }
+        let reachable = authority != nil || !permits.isEmpty || !documents.isEmpty
         offline = !reachable
         if reachable { lastSyncedAt = Date() }
+        loadError = failures.isEmpty ? nil : failures.joined(separator: " ")
 
         vm = Self.compose(
             authority: authority,
-            expiringDocs: expiringDocs,
-            expiringPermits: permitsSoon,
-            permitSummary: permitSummary,
-            ucr: ucr,
-            mcs: mcs,
-            boc: boc,
-            credentialWires: irp + hvut + iftaDecals + cvor,
-            coach: coach,
-            queued: queuedCredentialIds,
+            expiringDocs: documents,
+            permits: permits,
             syncedAt: lastSyncedAt,
             dueSoonHorizon: dueSoonHorizon,
             railWindowDays: railWindowDays
@@ -412,72 +223,47 @@ final class RegistrationRenewalsStore: ObservableObject {
 
     // MARK: Write
 
-    /// QUEUE(compliance): when there is no connection the packet is latched
-    /// locally and the affected rows show the QUEUED badge until it drains.
-    func startRenewalPacket(_ ids: [String]) async {
-        guard !ids.isEmpty else { return }
-        let api = EusoTripAPI.shared
-        do {
-            let _: CredentialWire? = try await api.query(
-                "catalysts.credentialRenewals.startPacket",
-                input: PacketIn(credentialIds: ids, queuedOffline: false))
-            queuedCredentialIds.subtract(ids)
-            await refresh()
-        } catch {
-            queuedCredentialIds.formUnion(ids)
-            vm = vm.map { current in
-                Self.reapplyQueue(current, queued: queuedCredentialIds)
-            }
+    @discardableResult
+    func renewPermit(id: String, through endDate: Date, notes: String?) async -> Bool {
+        guard !offline else {
+            actionError = "A live connection is required to request a permit renewal."
+            return false
         }
-    }
-
-    /// Renews one permit-class credential in place — permits.ts:128.
-    func renewPermit(id: String, through endDate: String) async throws {
-        struct RenewOut: Decodable { let success: Bool; let status: String }
-        let _: RenewOut = try await EusoTripAPI.shared.mutation(
-            "permits.renew",
-            input: RenewIn(permitId: id, requestedEndDate: endDate, notes: nil))
-        await refresh()
-    }
-
-    /// Renews one certification-class credential — trainingCompliance.ts:360.
-    func renewCertification(id: Int, newExpiry: String) async throws {
-        struct RenewOut: Decodable { let success: Bool? }
-        let _: RenewOut = try await EusoTripAPI.shared.mutation(
-            "trainingCompliance.renewCertification",
-            input: RenewCertIn(certificationId: id, newExpiryDate: newExpiry,
-                               documentUrl: nil, notes: nil))
-        await refresh()
+        isRenewing = true
+        actionError = nil
+        actionSuccess = nil
+        defer { isRenewing = false }
+        struct RenewOut: Decodable {
+            let success: Bool
+            let permitNumber: String?
+            let status: String
+        }
+        let trimmedNotes = notes?.trimmingCharacters(in: .whitespacesAndNewlines)
+        do {
+            let out: RenewOut = try await EusoTripAPI.shared.mutation(
+                "permits.renew",
+                input: RenewIn(
+                    permitId: id,
+                    requestedEndDate: ISO8601DateFormatter().string(from: endDate),
+                    notes: trimmedNotes?.isEmpty == false ? trimmedNotes : nil))
+            actionSuccess = out.permitNumber.map { "Renewal requested for \($0)." }
+                ?? "Permit renewal requested."
+            await refresh()
+            return out.success
+        } catch {
+            actionError = "The permit renewal was not recorded. \(error.eusoUserCopy)"
+            return false
+        }
     }
 
     // MARK: Composition
 
-    private static func reapplyQueue(_ vm: RenewalGateVM, queued: Set<String>) -> RenewalGateVM {
-        RenewalGateVM(
-            carrierName: vm.carrierName, usdot: vm.usdot, mc: vm.mc, subline: vm.subline,
-            cacheCaption: vm.cacheCaption, cacheIsStale: vm.cacheIsStale,
-            blockingCount: vm.blockingCount, blockingCaption: vm.blockingCaption,
-            soonestRelative: vm.soonestRelative, soonestSubject: vm.soonestSubject,
-            lapsedRailFraction: vm.lapsedRailFraction, windowDays: vm.windowDays,
-            ticks: vm.ticks, heroLine: vm.heroLine, heroFootnote: vm.heroFootnote,
-            rows: vm.rows.map {
-                CredentialRow(id: $0.id, title: $0.title, citation: $0.citation,
-                              glyph: $0.glyph, daysRemaining: $0.daysRemaining,
-                              renewalFee: $0.renewalFee, jurisdiction: $0.jurisdiction,
-                              isQueued: queued.contains($0.id),
-                              renewsAsPermit: $0.renewsAsPermit)
-            },
-            clearCount: vm.clearCount, clearTitle: vm.clearTitle,
-            clearCitation: vm.clearCitation, clearNext: vm.clearNext,
-            feeTotal: vm.feeTotal, coachTitle: vm.coachTitle, coachSub: vm.coachSub)
-    }
-
-    private static func money(_ cents: Int, currency: String) -> String {
+    private static func recordedFee(_ amount: Double) -> String {
         let f = NumberFormatter()
-        f.numberStyle = .currency
-        f.currencyCode = currency
-        f.maximumFractionDigits = 0
-        return f.string(from: NSNumber(value: Double(cents) / 100.0)) ?? "\(currency) 0"
+        f.numberStyle = .decimal
+        f.maximumFractionDigits = 2
+        let value = f.string(from: NSNumber(value: amount)) ?? String(amount)
+        return amount > 0 ? "\(value) recorded" : "No fee recorded"
     }
 
     private static func relative(days: Int) -> String {
@@ -485,86 +271,77 @@ final class RegistrationRenewalsStore: ObservableObject {
     }
 
     private static func cacheCaption(_ syncedAt: Date?) -> (String, Bool) {
-        guard let syncedAt else { return ("NO CACHE", true) }
+        guard let syncedAt else { return ("NOT UPDATED", true) }
         let age = Date().timeIntervalSince(syncedAt)
-        let stale = age > cacheTTL
-        if age < 3600 { return ("CACHED \(max(1, Int(age / 60))) MIN", stale) }
-        if age < 86_400 { return ("CACHED \(Int(age / 3600)) H", stale) }
-        return ("CACHED \(Int(age / 86_400)) D", stale)
+        let stale = age > freshnessWindow
+        if age < 60 { return ("UPDATED JUST NOW", stale) }
+        if age < 3600 { return ("UPDATED \(Int(age / 60)) MIN AGO", stale) }
+        if age < 86_400 { return ("UPDATED \(Int(age / 3600)) H AGO", stale) }
+        return ("UPDATED \(Int(age / 86_400)) D AGO", stale)
+    }
+
+    private static func parseDate(_ value: String) -> Date? {
+        if let date = ISO8601DateFormatter().date(from: value) { return date }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.date(from: String(value.prefix(10)))
+    }
+
+    private static func daysRemaining(until date: Date) -> Int {
+        let calendar = Calendar.current
+        return calendar.dateComponents(
+            [.day], from: calendar.startOfDay(for: Date()),
+            to: calendar.startOfDay(for: date)).day ?? 0
     }
 
     private static func compose(
         authority: MyAuthority?,
         expiringDocs: [ExpiringItem],
-        expiringPermits: [ExpiringPermit],
-        permitSummary: PermitSummary?,
-        ucr: UcrFiling?,
-        mcs: McsUpdate?,
-        boc: BocFiling?,
-        credentialWires: [CredentialWire],
-        coach: CoachTip?,
-        queued: Set<String>,
+        permits: [PermitWire],
         syncedAt: Date?,
         dueSoonHorizon: Int,
         railWindowDays: Int
     ) -> RenewalGateVM {
 
-        // Rows arrive from three real sources plus the credential-renewal verbs:
-        // the renewal wires carry per-unit credentials, permits.getExpiring
-        // carries permit-class rows, and getUcrFiling carries the annual filing.
-        var rows: [CredentialRow] = credentialWires.map {
-            CredentialRow(
-                id: $0.id, title: $0.title, citation: $0.citation,
-                glyph: CredentialGlyph(rawValue: $0.glyph) ?? .cabCard,
-                daysRemaining: $0.daysRemaining,
-                renewalFee: money($0.renewalFeeCents, currency: $0.currency),
-                jurisdiction: $0.jurisdiction,
-                isQueued: queued.contains($0.id),
-                renewsAsPermit: $0.renewsAsPermit)
-        }
-
-        rows += expiringPermits.map { p in
-            CredentialRow(
-                id: "permit-\(p.id)",
-                title: "\(p.type.capitalized) permit · \(p.permitNumber)",
-                citation: "43 TAC §219.11 · \(p.states.joined(separator: "/"))",
+        let datedPermits = permits.compactMap { permit -> CredentialRow? in
+            guard let rawDate = permit.expirationDate,
+                  let expiration = parseDate(rawDate) else { return nil }
+            let route = [permit.origin, permit.destination]
+                .compactMap { $0 }
+                .filter { !$0.isEmpty }
+                .joined(separator: " → ")
+            let detail = [permit.status.replacingOccurrences(of: "_", with: " "),
+                          permit.commodity, route.isEmpty ? nil : route]
+                .compactMap { $0 }
+                .filter { !$0.isEmpty }
+                .joined(separator: " · ")
+            return CredentialRow(
+                id: "permit-\(permit.id)",
+                title: "\(permit.type.replacingOccurrences(of: "_", with: " ").capitalized) · \(permit.permitNumber)",
+                citation: detail.isEmpty ? "Permit record" : detail,
                 glyph: .taxForm,
-                daysRemaining: p.daysRemaining,
-                renewalFee: "—",
-                jurisdiction: p.states.first ?? "US",
-                isQueued: queued.contains("permit-\(p.id)"),
-                renewsAsPermit: true)
+                daysRemaining: daysRemaining(until: expiration),
+                renewalFee: recordedFee(permit.fees),
+                jurisdiction: permit.states.isEmpty ? "Jurisdiction not recorded"
+                    : permit.states.joined(separator: "/"),
+                permitId: permit.id)
         }
 
-        if let ucr {
-            let days = Calendar.current.dateComponents(
-                [.day], from: Date(),
-                to: ISO8601DateFormatter().date(from: ucr.renewalDue + "T00:00:00Z") ?? Date()
-            ).day ?? 0
-            rows.append(CredentialRow(
-                id: "ucr-\(ucr.year)",
-                title: "UCR annual · fleet",
-                citation: "49 CFR 367.30 · bracket \(ucr.bracket)",
-                glyph: .annualRegistry,
-                daysRemaining: days,
-                renewalFee: money(Int(ucr.fee * 100), currency: "USD"),
-                jurisdiction: "US fleet-wide",
-                isQueued: queued.contains("ucr-\(ucr.year)"),
-                renewsAsPermit: false))
+        let documentRows = expiringDocs.map {
+            CredentialRow(
+                id: "doc-\($0.id)",
+                title: "\($0.type.replacingOccurrences(of: "_", with: " ").capitalized) · \($0.driver)",
+                citation: "Compliance document · expires \($0.expiresAt)",
+                glyph: .cabCard,
+                daysRemaining: $0.daysRemaining,
+                renewalFee: "No fee data",
+                jurisdiction: "Document record",
+                permitId: nil)
         }
 
-        // Compliance documents that are lapsing but are not themselves permits
-        // still block dispatch, so they join the blocking band.
-        rows += expiringDocs
-            .filter { $0.daysRemaining < 0 }
-            .map {
-                CredentialRow(
-                    id: "doc-\($0.id)", title: "\($0.type) · \($0.driver)",
-                    citation: "49 CFR 390.19T · expires \($0.expiresAt)",
-                    glyph: .cabCard, daysRemaining: $0.daysRemaining,
-                    renewalFee: "—", jurisdiction: "US",
-                    isQueued: queued.contains("doc-\($0.id)"), renewsAsPermit: false)
-            }
+        var rows = datedPermits + documentRows
 
         rows.sort { $0.daysRemaining < $1.daysRemaining }
 
@@ -577,15 +354,8 @@ final class RegistrationRenewalsStore: ObservableObject {
             .filter { $0.daysRemaining >= 0 && $0.daysRemaining <= railWindowDays }
             .map { RenewalTick(id: $0.id, dayOffset: $0.daysRemaining) }
 
-        let dueCents = (blocking + dueSoon).reduce(0) { acc, row in
-            acc + (Int(row.renewalFee.filter("0123456789".contains)) ?? 0)
-        }
-        let feeTotal = dueCents > 0
-            ? money(dueCents * 100, currency: "USD")
-            : money(0, currency: "USD")
-
         let own = authority?.ownAuthority
-        let dotNumber: String = own?.dotNumber ?? mcs?.dotNumber ?? "—"
+        let dotNumber: String = own?.dotNumber ?? "—"
         let mcNumber: String = own?.mcNumber ?? "—"
         let dot = "USDOT \(dotNumber)"
         let mcNo = "MC-\(mcNumber)"
@@ -594,45 +364,32 @@ final class RegistrationRenewalsStore: ObservableObject {
             if let n = own?.legalName, !n.isEmpty { return n }
             return "—"
         }()
-        let unitCount = ucr?.fleetSize ?? 0
         let (caption, stale) = cacheCaption(syncedAt)
-
-        /// Base jurisdiction is the IRP apportioned account's state — the row
-        /// that carries the cab card. Falls back to the UCR filing scope.
-        let baseJurisdiction = rows.first(where: { $0.glyph == .cabCard })?
-            .jurisdiction.split(separator: " ").first.map(String.init) ?? "—"
-
-        let clearBits: [String] = [
-            mcs == nil ? nil : "MCS-150",
-            boc == nil ? nil : "BOC-3",
-            clear.isEmpty ? nil : "CVOR",
-            (permitSummary?.active ?? 0) > 0 ? "TX OS/OW" : nil
-        ].compactMap { $0 }
+        let undatedPermitCount = permits.count - datedPermits.count
 
         return RenewalGateVM(
             carrierName: carrier,
             usdot: dot,
             mc: mcNo,
-            subline: "\(carrier) · \(rows.count) credentials · \(unitCount) units",
+            subline: "\(carrier) · \(rows.count) dated renewal records",
             cacheCaption: caption,
             cacheIsStale: stale,
             blockingCount: blocking.count,
-            blockingCaption: blocking.count == 1 ? "credential lapsed" : "credentials lapsed",
+            blockingCaption: blocking.count == 1 ? "expired record" : "expired records",
             soonestRelative: soonest.map { relative(days: $0.daysRemaining) } ?? "none due",
             soonestSubject: soonest?.title ?? "nothing inside \(railWindowDays) d",
             lapsedRailFraction: rows.isEmpty ? 0 : Double(blocking.count) / Double(rows.count),
             windowDays: railWindowDays,
             ticks: ticks,
-            heroLine: "\(blocking.count) lapsed now · \(dueSoon.count) due inside \(dueSoonHorizon) d · \(feeTotal) to clear both",
-            heroFootnote: "\(ticks.count) renewals plotted inside \(railWindowDays) d · base \(baseJurisdiction)",
+            heroLine: "\(blocking.count) expired permit records · \(dueSoon.count) dated records due inside \(dueSoonHorizon) d",
+            heroFootnote: "\(ticks.count) dated records plotted inside \(railWindowDays) d",
             rows: rows,
             clearCount: clear.count,
-            clearTitle: "\(clear.count) credentials current",
-            clearCitation: clearBits.joined(separator: " · "),
+            clearTitle: "\(clear.count) dated records beyond 30 days",
+            clearCitation: "Current status reflects only records returned by the connected ledgers",
             clearNext: clear.first.map { "\($0.jurisdiction) \(relative(days: $0.daysRemaining))" } ?? "—",
-            feeTotal: feeTotal,
-            coachTitle: coach.map { "ESang: \($0.tip)" } ?? "ESang: gate is quiet",
-            coachSub: mcs.map { "MCS-150 \($0.status) · USDOT \($0.dotNumber)" } ?? "Credential ledger synced"
+            sourceTitle: "Connected renewal coverage",
+            sourceSub: "\(permits.count) personal permit records · \(expiringDocs.count) company due-soon documents · \(undatedPermitCount) permits without an expiration date"
         )
     }
 }
@@ -643,6 +400,7 @@ struct CatalystRegistrationPermitRenewals: View {
     @Environment(\.palette) var palette
     @ObservedObject var store: RegistrationRenewalsStore
     let vm: RenewalGateVM
+    @State private var renewalTarget: CredentialRow?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -653,9 +411,11 @@ struct CatalystRegistrationPermitRenewals: View {
                     blockingHero
                     gateBand(.blocking, trailing: "\(vm.rows(in: .blocking).count) ITEMS")
                     gateBand(.dueSoon,  trailing: "\(vm.rows(in: .dueSoon).count) ITEMS")
-                    clearBand
-                    ctaPair
-                    esangRow
+                    if vm.clearCount > 0 { clearBand }
+                    if vm.rows.isEmpty { emptyLedger }
+                    sourceRow
+                    if let success = store.actionSuccess { statusLine(success, Brand.success) }
+                    if let error = store.actionError ?? store.loadError { statusLine(error, Brand.warning) }
                 }
                 .padding(.horizontal, Space.s5)
                 .padding(.top, Space.s5)
@@ -664,6 +424,9 @@ struct CatalystRegistrationPermitRenewals: View {
         }
         .task { await store.refresh() }
         .eusoRefreshable { await store.refresh() }
+        .sheet(item: $renewalTarget) { row in
+            PermitRenewalSheet(store: store, row: row)
+        }
     }
 
     // MARK: Header — eyebrow · title 34/700 · identity · subline
@@ -675,7 +438,7 @@ struct CatalystRegistrationPermitRenewals: View {
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer(minLength: Space.s2)
-                // READ_CACHED(24h) staleness line — always visible, warns past TTL.
+                // Age of the last successful in-memory refresh.
                 Text(vm.cacheCaption)
                     .font(EType.mono(.micro)).tracking(1.0)
                     .foregroundStyle(vm.cacheIsStale ? Brand.warning : palette.textTertiary)
@@ -727,7 +490,7 @@ struct CatalystRegistrationPermitRenewals: View {
 
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
-                    Text(isBlocking ? "BLOCKING NOW" : "NOTHING BLOCKING")
+                    Text(isBlocking ? "EXPIRED RECORDS RETURNED" : "NO EXPIRED RECORDS RETURNED")
                         .font(EType.micro).tracking(1.0)
                         .foregroundStyle(isBlocking ? Brand.danger : Brand.success)
                     Spacer()
@@ -842,48 +605,57 @@ struct CatalystRegistrationPermitRenewals: View {
     }
 
     /// chip 40x40 · title 14/700 · mono citation · right cluster pill + fee + jurisdiction
+    @ViewBuilder
     private func gateRow(_ row: CredentialRow) -> some View {
-        let tint = row.isQueued ? Brand.info : bandTint(row.gate)
-        return Button {
-            Task { await store.startRenewalPacket([row.id]) }
-        } label: {
-            HStack(alignment: .top, spacing: Space.s3) {
-                CredentialChip(glyph: row.glyph, tint: tint)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(row.title)
-                        .font(.system(size: 14, weight: .bold)).tracking(-0.1)
-                        .foregroundStyle(palette.textPrimary)
-                        .lineLimit(1)
-                    Text(row.citation)
-                        .font(EType.mono(.caption))
-                        .foregroundStyle(palette.textSecondary)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: Space.s2)
-                VStack(alignment: .trailing, spacing: 3) {
-                    Text(row.deadlinePill)
-                        .font(.system(size: 11, weight: .bold)).tracking(0.6)
-                        .foregroundStyle(tint)
-                        .padding(.horizontal, 10).padding(.vertical, 4)
-                        .background(Capsule().fill(tint.opacity(0.14)))
-                    Text(row.renewalFee)
-                        .font(.system(size: 14, weight: .bold).monospacedDigit())
-                        .foregroundStyle(palette.textPrimary)
-                    Text(row.jurisdiction)
-                        .font(EType.mono(.micro))
-                        .foregroundStyle(palette.textTertiary)
-                        .lineLimit(1)
-                }
-            }
-            .padding(.horizontal, Space.s4)
-            .padding(.vertical, Space.s2)
+        if row.permitId != nil {
+            Button { renewalTarget = row } label: { gateRowContent(row) }
+                .buttonStyle(.plain)
+                .accessibilityHint("Opens the permit renewal request")
+        } else {
+            gateRowContent(row)
+                .accessibilityHint("This compliance document is read-only here")
         }
-        .buttonStyle(.plain)
+    }
+
+    private func gateRowContent(_ row: CredentialRow) -> some View {
+        let tint = bandTint(row.gate)
+        return HStack(alignment: .top, spacing: Space.s3) {
+            CredentialChip(glyph: row.glyph, tint: tint)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(row.title)
+                    .font(.system(size: 14, weight: .bold)).tracking(-0.1)
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(1)
+                Text(row.citation)
+                    .font(EType.mono(.caption))
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: Space.s2)
+            VStack(alignment: .trailing, spacing: 3) {
+                Text(row.deadlinePill)
+                    .font(.system(size: 11, weight: .bold)).tracking(0.6)
+                    .foregroundStyle(tint)
+                    .padding(.horizontal, 10).padding(.vertical, 4)
+                    .background(Capsule().fill(tint.opacity(0.14)))
+                Text(row.renewalFee)
+                    .font(.system(size: 12, weight: .bold).monospacedDigit())
+                    .foregroundStyle(palette.textPrimary)
+                Text(row.jurisdiction)
+                    .font(EType.mono(.micro))
+                    .foregroundStyle(palette.textTertiary)
+                    .lineLimit(1)
+            }
+            if row.permitId != nil {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(palette.textTertiary)
+            }
+        }
+        .padding(.horizontal, Space.s4)
+        .padding(.vertical, Space.s2)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(row.title). \(row.deadlinePill). Renewal \(row.renewalFee). \(row.jurisdiction).")
-        .accessibilityHint(row.isQueued
-            ? "Renewal packet queued offline, sends when back online"
-            : "Starts a renewal packet")
+        .accessibilityLabel("\(row.title). \(row.deadlinePill). \(row.renewalFee). \(row.jurisdiction).")
     }
 
     // MARK: CLEAR strip
@@ -910,7 +682,7 @@ struct CatalystRegistrationPermitRenewals: View {
                 }
                 Spacer(minLength: Space.s2)
                 VStack(alignment: .trailing, spacing: 3) {
-                    Text("ALL CURRENT")
+                    Text("CURRENT RECORDS")
                         .font(.system(size: 11, weight: .bold)).tracking(0.6)
                         .foregroundStyle(Brand.success)
                         .padding(.horizontal, 10).padding(.vertical, 4)
@@ -927,51 +699,23 @@ struct CatalystRegistrationPermitRenewals: View {
         }
     }
 
-    // MARK: CTA pair
-
-    private var ctaPair: some View {
-        HStack(spacing: Space.s2) {
-            Button {
-                let ids = (vm.rows(in: .blocking) + vm.rows(in: .dueSoon)).map(\.id)
-                Task { await store.startRenewalPacket(ids) }
-            } label: {
-                Text("Start renewals · \(vm.feeTotal)")
-                    .font(EType.bodyStrong).foregroundStyle(.white)
-                    .frame(maxWidth: .infinity, minHeight: 48)
-                    .background(Capsule().fill(LinearGradient.primary))
-            }
-            .buttonStyle(.plain)
-            // ONLINE_ONLY(money): fee payment cannot be queued.
-            .disabled(store.offline)
-            .opacity(store.offline ? 0.55 : 1)
-            .accessibilityHint(store.offline
-                ? "Unavailable offline — renewal fees are a money movement"
-                : "Opens the renewal packet for every blocking and due-soon credential")
-
-            Button {
-                NotificationCenter.default.post(
-                    name: .eusoCatalystRenewalFeeSchedule, object: nil,
-                    userInfo: ["source": "406_CatalystRegistrationPermitRenewals"])
-            } label: {
-                Text("Fee schedule")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(width: 132).frame(minHeight: 48)
-                    .background(Capsule().fill(palette.bgSecondary))
-                    .overlay(Capsule().strokeBorder(palette.borderFaint))
-            }
-            .buttonStyle(.plain)
+    private var emptyLedger: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            Text("NO DATED RENEWAL RECORDS")
+                .font(EType.micro).tracking(1.0)
+                .foregroundStyle(palette.textTertiary)
+            Text("No permit expiration dates or due-soon compliance documents were returned.")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Space.s4)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg).strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
-    // MARK: ESang row
-
-    private var esangRow: some View {
-        Button {
-            NotificationCenter.default.post(
-                name: .eusoCatalystRenewalCoach, object: nil,
-                userInfo: ["source": "406_CatalystRegistrationPermitRenewals"])
-        } label: {
+    private var sourceRow: some View {
             HStack(spacing: Space.s3) {
                 ZStack {
                     Circle().fill(LinearGradient.diagonal)
@@ -981,27 +725,89 @@ struct CatalystRegistrationPermitRenewals: View {
                 }
                 .frame(width: 32, height: 32)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(vm.coachTitle)
+                    Text(vm.sourceTitle)
                         .font(.system(size: 13, weight: .semibold)).tracking(-0.1)
                         .foregroundStyle(palette.textPrimary)
                         .lineLimit(1)
-                    Text(vm.coachSub)
+                    Text(vm.sourceSub)
                         .font(.system(size: 11))
                         .foregroundStyle(palette.textSecondary)
                         .lineLimit(1)
                 }
                 Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(palette.textSecondary)
             }
             .padding(Space.s3)
             .frame(height: 56)
             .background(palette.bgCard)
             .overlay(RoundedRectangle(cornerRadius: Radius.lg).strokeBorder(palette.borderFaint))
             .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+    }
+
+    private func statusLine(_ text: String, _ color: Color) -> some View {
+        Text(text)
+            .font(EType.caption)
+            .foregroundStyle(color)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct PermitRenewalSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var store: RegistrationRenewalsStore
+    let row: CredentialRow
+
+    @State private var requestedEndDate = Calendar.current.date(
+        byAdding: .year, value: 1, to: Date()) ?? Date()
+    @State private var notes = ""
+
+    private var minimumEndDate: Date {
+        Calendar.current.date(
+            byAdding: .day,
+            value: max(0, row.daysRemaining + 1),
+            to: Calendar.current.startOfDay(for: Date())) ?? Date()
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Permit") {
+                    LabeledContent("Record", value: row.title)
+                    LabeledContent("Current deadline", value: row.deadlinePill)
+                    LabeledContent("Jurisdiction", value: row.jurisdiction)
+                }
+                Section("Renewal request") {
+                    DatePicker("Requested end date", selection: $requestedEndDate,
+                               in: minimumEndDate..., displayedComponents: .date)
+                    TextField("Notes (optional)", text: $notes, axis: .vertical)
+                        .lineLimit(2...5)
+                }
+                if store.offline {
+                    Text("A live connection is required to request renewal.")
+                        .foregroundStyle(Brand.warning)
+                }
+                if let error = store.actionError {
+                    Text(error).foregroundStyle(Brand.warning)
+                }
+            }
+            .navigationTitle("Renew permit")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(store.isRenewing ? "Submitting…" : "Submit") {
+                        guard let permitId = row.permitId else { return }
+                        Task {
+                            let success = await store.renewPermit(
+                                id: permitId, through: requestedEndDate, notes: notes)
+                            if success { dismiss() }
+                        }
+                    }
+                    .disabled(row.permitId == nil || store.offline || store.isRenewing)
+                }
+            }
         }
-        .buttonStyle(.plain)
     }
 }
 
@@ -1113,13 +919,6 @@ private struct CheckMark: Shape {
     }
 }
 
-// MARK: - Notifications
-
-extension Notification.Name {
-    static let eusoCatalystRenewalFeeSchedule = Notification.Name("eusoCatalystRenewalFeeSchedule")
-    static let eusoCatalystRenewalCoach       = Notification.Name("eusoCatalystRenewalCoach")
-}
-
 // MARK: - Shell wrapper + real CarrierNavDispatcher BottomNav (FLEET current)
 
 /// Catalyst chrome for this fire: HOME · DISPATCH · [orb] · FLEET · ME.
@@ -1184,7 +983,7 @@ private let previewRenewals = RenewalGateVM(
     usdot: "USDOT 3 482 119",
     mc: "MC-942 008",
     subline: "Aurora Freight Lines · 11 credentials · 6 units",
-    cacheCaption: "CACHED 14 MIN",
+    cacheCaption: "UPDATED 14 MIN AGO",
     cacheIsStale: false,
     blockingCount: 2,
     blockingCaption: "credentials lapsed",
@@ -1204,27 +1003,26 @@ private let previewRenewals = RenewalGateVM(
         CredentialRow(id: "irp-trk0142", title: "IRP cab card · TRK-0142",
                       citation: "IRP §515 · apportioned · 8 juris", glyph: .cabCard,
                       daysRemaining: -3, renewalFee: "$1,842", jurisdiction: "IA · online",
-                      isQueued: false, renewsAsPermit: true),
+                      permitId: "142"),
         CredentialRow(id: "hvut-trk0311", title: "Form 2290 · TRK-0311",
                       citation: "26 CFR 41.6001-2 · HVUT · 80k lb", glyph: .taxForm,
                       daysRemaining: -11, renewalFee: "$550", jurisdiction: "IRS e-file",
-                      isQueued: false, renewsAsPermit: false),
+                      permitId: nil),
         CredentialRow(id: "ifta-2027", title: "IFTA decals · 6 units",
                       citation: "IFTA Art. R650 · 2027 set", glyph: .decalSet,
                       daysRemaining: 12, renewalFee: "$60", jurisdiction: "IA base · 8 juris",
-                      isQueued: false, renewsAsPermit: true),
+                      permitId: "2027"),
         CredentialRow(id: "ucr-2027", title: "UCR annual · fleet",
-                      citation: "49 CFR 367.30 · queued offline", glyph: .annualRegistry,
+                      citation: "Permit record", glyph: .annualRegistry,
                       daysRemaining: 26, renewalFee: "$276", jurisdiction: "US fleet-wide",
-                      isQueued: true, renewsAsPermit: false),
+                      permitId: nil),
     ],
     clearCount: 7,
     clearTitle: "7 credentials current",
     clearCitation: "MCS-150 · BOC-3 · CVOR · TX OS/OW",
     clearNext: "CVOR ON in 63 d",
-    feeTotal: "$2,728",
-    coachTitle: "ESang: park TRK-0142 until IRP clears",
-    coachSub: "Roadside OOS risk · IA renews cab cards same day"
+    sourceTitle: "Connected renewal coverage",
+    sourceSub: "4 permit records · 2 due-soon documents · 0 undated permits"
 )
 
 #Preview("406 Catalyst Registration & Permit Renewals · Light") {

@@ -197,7 +197,10 @@ private struct HotZonesBody: View {
     private var mappedZones: [HotZone] {
         zones.filter { z in
             guard let c = z.center else { return false }
-            return !(c.lat == 0 && c.lng == 0)
+            return LatLongParser.validatedCoordinate(
+                latitude: c.lat,
+                longitude: c.lng
+            ) != nil
         }
     }
 
@@ -246,6 +249,7 @@ private struct HotZonesBody: View {
                     showLegend: false,
                     showTicker: false,
                     styleHint: .geothermal,
+                    mapModeContext: .primary(.truck),
                     onSelectMarker: { id in
                         if let z = mappedZones.first(where: { $0.id == id }),
                            let lens = ZoneFilter(rawValue: z.kind.capitalized) {

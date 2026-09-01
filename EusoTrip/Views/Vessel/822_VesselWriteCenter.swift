@@ -861,7 +861,7 @@ private struct VesselCargoManifestForm: View {
             }
             .navigationTitle("Create cargo manifest")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
-            .onChange(of: voyageId) { _ in
+            .onChange(of: voyageId) { _, _ in
                 if !compatibleShipments.contains(where: { $0.id == shipmentId }) {
                     shipmentId = compatibleShipments.first?.id
                 }
@@ -1006,7 +1006,7 @@ private struct VesselBunkerDeliveryForm: View {
             }
             .navigationTitle("Bunker delivery")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
-            .onChange(of: vesselId) { _ in
+            .onChange(of: vesselId) { _, _ in
                 if !compatibleVoyages.contains(where: { $0.id == voyageId }) {
                     voyageId = compatibleVoyages.first?.id
                 }

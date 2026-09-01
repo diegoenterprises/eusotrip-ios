@@ -203,9 +203,14 @@ private struct RailShipmentDetail: View {
     private var liveTrailPoints: [HereLatLng] {
         (detail?.events ?? [])
             .compactMap { e -> (String, HereLatLng)? in
-                guard let la = e.location?.lat, let lo = e.location?.lng,
-                      !(la == 0 && lo == 0) else { return nil }
-                return (e.timestamp ?? "", HereLatLng(la, lo))
+                guard let coordinate = LatLongParser.validatedCoordinate(
+                    latitude: e.location?.lat,
+                    longitude: e.location?.lng
+                ) else { return nil }
+                return (
+                    e.timestamp ?? "",
+                    HereLatLng(coordinate.latitude, coordinate.longitude)
+                )
             }
             .sorted { $0.0 < $1.0 }
             .map { $0.1 }
@@ -215,9 +220,14 @@ private struct RailShipmentDetail: View {
     private var liveTrainPoint: HereLatLng? {
         (detail?.events ?? [])
             .compactMap { e -> (String, HereLatLng)? in
-                guard let la = e.location?.lat, let lo = e.location?.lng,
-                      !(la == 0 && lo == 0) else { return nil }
-                return (e.timestamp ?? "", HereLatLng(la, lo))
+                guard let coordinate = LatLongParser.validatedCoordinate(
+                    latitude: e.location?.lat,
+                    longitude: e.location?.lng
+                ) else { return nil }
+                return (
+                    e.timestamp ?? "",
+                    HereLatLng(coordinate.latitude, coordinate.longitude)
+                )
             }
             .max { $0.0 < $1.0 }
             .map { $0.1 }
@@ -356,16 +366,36 @@ private struct RailShipmentDetail: View {
         let live = liveTrainPoint
         let center = live ?? trail.last ?? HereLatLng(39.5, -98.35)
         var markers: [HereMarker] = trail.map { HereMarker(at: $0, kind: .stop) }
-        if let live { markers.append(HereMarker(at: live, kind: .truck, label: "Live")) }
+        if let live {
+            markers.append(HereMarker(
+                at: live,
+                kind: .rail,
+                label: "Reported rail position",
+                observationState: .degraded,
+                sourceLabel: "Rail shipment events",
+                accessibilityLabel: "Rail consist position; freshness not classified"
+            ))
+        }
         var layers: [HereMapLayer] = []
-        if trail.count >= 2 { layers.append(.route(polyline: trail, colorHex: "#1473FF")) }
+        if trail.count >= 2 {
+            layers.append(.observationTrail(points: trail, label: "Rail event history"))
+        }
         layers.append(.markers(markers))
         return HereVectorMapView(
             center: center,
             zoom: trail.count >= 2 ? 6 : 9,
             interactive: true,
             tilt: 0,
-            layers: layers
+            layers: layers,
+            mapModeContext: .primary(.rail),
+            liveOperationsStatus: .init(
+                availability: live == nil ? .empty : .degraded,
+                sourceLabel: "Rail shipment events",
+                detail: live == nil
+                    ? "No authorized live feed"
+                    : "Observation available; freshness not classified",
+                observationCount: live == nil ? 0 : 1
+            )
         )
         .frame(height: 124)
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))

@@ -167,7 +167,14 @@ enum BespokeMapGeography {
                 for pairSub in ringSub.split(separator: " ") {
                     let xy = pairSub.split(separator: ",")
                     guard xy.count == 2,
-                          let lng = Double(xy[0]), let lat = Double(xy[1]) else { continue }
+                          let rawLng = Double(xy[0]),
+                          let rawLat = Double(xy[1]),
+                          let coordinate = LatLongParser.validatedCoordinate(
+                            latitude: rawLat,
+                            longitude: rawLng
+                          ) else { continue }
+                    let lng = coordinate.longitude
+                    let lat = coordinate.latitude
                     ring.append((lng, lat))
                     if lng < minLng { minLng = lng }; if lng > maxLng { maxLng = lng }
                     if lat < minLat { minLat = lat }; if lat > maxLat { maxLat = lat }
@@ -197,8 +204,14 @@ enum BespokeMapGeography {
             var path: [(lng: Double, lat: Double)] = []
             for pairSub in parts[2].split(separator: " ") {
                 let xy = pairSub.split(separator: ",")
-                guard xy.count == 2, let lng = Double(xy[0]), let lat = Double(xy[1]) else { continue }
-                path.append((lng, lat))
+                guard xy.count == 2,
+                      let rawLng = Double(xy[0]),
+                      let rawLat = Double(xy[1]),
+                      let coordinate = LatLongParser.validatedCoordinate(
+                        latitude: rawLat,
+                        longitude: rawLng
+                      ) else { continue }
+                path.append((coordinate.longitude, coordinate.latitude))
             }
             if path.count >= 2 { out.append(Corridor(name: String(parts[0]), path: path)) }
         }

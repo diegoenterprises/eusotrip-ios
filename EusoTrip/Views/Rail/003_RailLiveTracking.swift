@@ -38,9 +38,9 @@
 //        out ShipmentTrackingResult | null  (ClassIRailroadService.ts:45)
 //        → carrier-feed ETA + the live station/city/state + reportedAt.
 //
-//    EXISTS railShipments.ts:1716 (query)   railShipments.liveTrackRailcar
-//        in  { railcarNumber: string }
-//        out RailcarTrackingResult | null   (RailincService.ts:33)
+//    EXISTS liveOperations.latestForAsset (query)
+//        in  { mode: "RAIL", reference: { kind: "railcar_number", value } }
+//        out tenant/source/licence-authorized observation evidence | empty
 //        → the per-car positions sheet (one call per real waybill car).
 //
 //    EXISTS tracking.ts:440       (query)   tracking.getGeofences
@@ -58,7 +58,7 @@
 //        when absent. A rail_shipments row has no loads row, so wiring the
 //        rail "Share ETA" CTA to it ships a permanently dead button. It is not
 //        wired. Proposed rail-native verb:
-//            shareRailTrackingLink: railProcedure
+//            shareRailTrackingLink: railReadProcedure (railShipments.ts:94)
 //              .input(z.object({
 //                shipmentId: z.number(),
 //                expiresIn: z.number().default(24),
@@ -79,7 +79,7 @@
 //        wrong load. The ARRIVAL PLAN card below is therefore composed on-device
 //        from decoded server fields only (ETA · rail_yards.operatingHours ·
 //        rail_demurrage.freeTimeHours · status · interchange marks). Proposed:
-//            railArrivalPlan: railProcedure
+//            railArrivalPlan: railReadProcedure (railShipments.ts:94)
 //              .input(z.object({ shipmentId: z.number() }))
 //              .query(): { headline: string; detail: string;
 //                          etaIso: string | null; rampWindowMarginMin: number | null;
@@ -93,7 +93,7 @@
 //        `consistNumber` on the detail payload by joining consist_cars →
 //        train_consists on the shipment's cars.
 //
-//  RBAC: railProcedure — the RAIL-mode gate (ctx role in SHIPPER / ADMIN /
+//  RBAC: railReadProcedure (railShipments.ts:94) — the RAIL-mode gate (ctx role in SHIPPER / ADMIN /
 //  SUPER_ADMIN by route) plus the per-row tenant gate `ownsRailShipmentRow`
 //  inside both reads: a caller who is not a party to the shipment gets null /
 //  an empty feed, and this screen then draws its honest not-visible state.
@@ -295,33 +295,6 @@ private struct ClassITrack003: Decodable {
     let lastUpdate: String?
 }
 
-/// RailincService.RailcarPosition (RailincService.ts:15).
-private struct RailcarPosition003: Decodable, Hashable {
-    let railcarNumber: String?
-    let latitude: Double?
-    let longitude: Double?
-    let railroad: String?
-    let station: String?
-    let stateProvince: String?
-    let reportedAt: String?
-}
-
-/// RailincService.RailcarEvent (RailincService.ts:24).
-private struct RailcarEvent003: Decodable, Hashable {
-    let eventType: String?
-    let eventDate: String?
-    let station: String?
-    let railroad: String?
-    let description: String?
-}
-
-/// RailincService.RailcarTrackingResult (RailincService.ts:33).
-private struct RailcarTrack003: Decodable, Hashable {
-    let railcarNumber: String?
-    let position: RailcarPosition003?
-    let lastEvent: RailcarEvent003?
-}
-
 // MARK: - READ_CACHED(5m) snapshot store
 //
 // The whole decoded tick, kept in memory per shipment so the board paints
@@ -381,6 +354,10 @@ private struct RailLiveTrackingBody003: View {
     @State private var tracking: RailTrackingFeed003? = nil
     @State private var classI: ClassITrack003? = nil
     @State private var rampFence: TrackingGeofencesAPI.ResolvedFence? = nil
+    @State private var canonicalRouteLines: [[HereLatLng]] = []
+    @State private var canonicalRouteStatus: String? = nil
+    @State private var canonicalRouteVersion: Int? = nil
+    @StateObject private var nearbyRailStore = LiveOperationsNearbyStore(mode: .rail)
 
     @State private var loading = true
     @State private var loadError: String? = nil
@@ -466,54 +443,21 @@ private struct RailLiveTrackingBody003: View {
         return pts
     }
 
-    /// Remaining geometry: the live fix (or the last known point) → the ramp.
-    private var remainingPolyline: [HereLatLng] {
-        guard let d = destFix else { return [] }
-        guard let start = liveFix ?? traveledPolyline.last else { return [] }
-        return start == d ? [] : [start, d]
+    private var hasMapGeo: Bool {
+        liveFix != nil || traveledPolyline.count >= 2 || !canonicalRouteLines.isEmpty
     }
 
-    private var hasLiveGeo: Bool { liveFix != nil || traveledPolyline.count >= 2 }
-
-    // MARK: - Distance / progress (great-circle over REAL fixes)
-
-    /// Chained great-circle miles already covered. Direct-line, not tariff
-    /// route-miles — the card says so out loud rather than implying track miles.
-    private var traveledMiles: Double? {
-        let pts = traveledPolyline
-        guard pts.count >= 2 else { return nil }
-        var total = 0.0
-        for i in 1..<pts.count { total += haversineMiles003(pts[i - 1], pts[i]) }
-        return total
+    private var canonicalRouteCenter: HereLatLng? {
+        canonicalRouteLines.lazy.compactMap(\.first).first
     }
 
-    private var remainingMiles: Double? {
-        guard let d = destFix, let start = liveFix ?? traveledPolyline.last else { return nil }
-        return haversineMiles003(start, d)
+    private var nearbyCenter: HereLatLng? {
+        liveFix ?? destFix ?? originFix ?? canonicalRouteCenter
     }
 
-    /// 0…1 completion toward the ramp. Distance-based when both legs are real;
-    /// nil (and the gauge shows an honest dash) when they are not.
-    private var progressToRamp: Double? {
-        guard let t = traveledMiles, let r = remainingMiles, (t + r) > 0 else { return nil }
-        return max(0, min(1, t / (t + r)))
-    }
-
-    /// Average ground speed between the two most recent positioned scans.
-    /// Gated to a ≤6h gap — two AEI scans days apart are not a speed, and this
-    /// screen refuses to print one.
-    private var scanSpeedMph: Int? {
-        let scans = positionedScans
-        guard scans.count >= 2,
-              let a = parseStamp003(scans[scans.count - 2].stamp),
-              let b = parseStamp003(scans[scans.count - 1].stamp) else { return nil }
-        let hours = b.timeIntervalSince(a) / 3600
-        guard hours > 0.05, hours <= 6 else { return nil }
-        let miles = haversineMiles003(scans[scans.count - 2].point, scans[scans.count - 1].point)
-        let mph = miles / hours
-        guard mph.isFinite, mph > 0, mph < 90 else { return nil }
-        return Int(mph.rounded())
-    }
+    // AEI/carrier observations describe where and when a consist was reported.
+    // They do not become track distance, speed, remaining miles, or completion
+    // until the server projects them onto the exact bound EusoRail route plan.
 
     // MARK: - ETA
 
@@ -551,19 +495,6 @@ private struct RailLiveTrackingBody003: View {
         f.dateFormat = "MM-dd"
         f.timeZone = rampTimeZone ?? .current
         return f.string(from: d)
-    }
-
-    /// Days still to run — from the real arrival anchor, else the transit-day
-    /// columns. nil when neither exists.
-    private var daysRemaining: Double? {
-        if let eta = etaDate {
-            return max(0, eta.timeIntervalSinceNow / 86_400)
-        }
-        if let est = detail?.estimatedTransitDays {
-            let act = detail?.actualTransitDays ?? 0
-            return Double(max(0, est - act))
-        }
-        return nil
     }
 
     /// Does the ETA land inside the ramp's own operating window?
@@ -654,6 +585,32 @@ private struct RailLiveTrackingBody003: View {
     }
 
     private var isStale: Bool { (cacheAge ?? 0) > RailTrackCache003.ttl }
+
+    private var railObservationState: HereObservationState {
+        if !reach.isOnline { return .offline }
+        if trackingDegraded || classIDegraded { return .degraded }
+        if isStale { return .stale }
+        return .current
+    }
+
+    private var railLiveOperationsStatus: HereLiveOperationsStatus {
+        if nearbyRailStore.result != nil || nearbyRailStore.errorMessage != nil {
+            return nearbyRailStore.status
+        }
+        let availability: HereLiveOperationsStatus.Availability
+        switch railObservationState {
+        case .current: availability = liveFix == nil ? .empty : .live
+        case .stale: availability = .stale
+        case .degraded, .offline: availability = .degraded
+        }
+        return .init(
+            availability: availability,
+            sourceLabel: fixIsCarrierFeed ? "Class I carrier feed" : "Rail event scan",
+            freshnessLabel: freshnessText(now: Date()),
+            detail: liveFix == nil ? "No authorized rail observation" : "Authorized rail position",
+            observationCount: liveFix == nil ? 0 : 1
+        )
+    }
 
     private func freshnessText(now: Date) -> String {
         guard let fetchedAt else {
@@ -756,6 +713,14 @@ private struct RailLiveTrackingBody003: View {
             .padding(.top, Space.s5)
         }
         .task { await load() }
+        .task(id: nearbyCenter) {
+            guard let nearbyCenter else { return }
+            await nearbyRailStore.poll(
+                around: nearbyCenter,
+                radiusMeters: 160_000,
+                limit: 150
+            )
+        }
         .eusoRefreshable { await load() }
         .onAppear { startBreathing() }
         .onChange(of: reduceMotion) { _, _ in startBreathing() }
@@ -816,19 +781,15 @@ private struct RailLiveTrackingBody003: View {
 
     // MARK: - LIVE NETWORK MAP hero
     //
-    // The SVG's hero, translated to the real basemap: traveled leg solid brand
-    // blue, remaining leg in the muted tertiary token (the renderer's route
-    // layer has no dash cadence — the split is carried by weight and colour),
-    // origin + ramp pins, the live position node, and the dashed RAMP-FENCE
-    // ring drawn ONLY from a real company geofence row. Beneath it, still inside
-    // the hero, is the position rail: the same tick expressed as a traveled /
-    // remaining bar with the consist glyph riding it at the real progress, which
-    // is the SVG's "consist on the line" motif with no fabricated geography.
+    // The hero separates facts deliberately: a time-ordered observation trail,
+    // origin/ramp reference pins, the latest authorized position, and a ramp
+    // geofence only when a real company row exists. The evidence register below
+    // never presents the scan chain as track geometry or route progress.
 
     @ViewBuilder
     private var mapHero: some View {
         VStack(spacing: 0) {
-            if hasLiveGeo {
+            if hasMapGeo {
                 mapCanvas
             } else {
                 geoPending
@@ -846,11 +807,14 @@ private struct RailLiveTrackingBody003: View {
     private var mapCanvas: some View {
         ZStack(alignment: .topTrailing) {
             HereVectorMapView(
-                center: liveFix ?? destFix ?? originFix ?? HereLatLng(39.5, -98.35),
-                zoom: traveledPolyline.count >= 2 ? 6 : 9,
+                center: liveFix ?? destFix ?? originFix ?? canonicalRouteCenter ?? HereLatLng(39.5, -98.35),
+                zoom: traveledPolyline.count >= 2 || !canonicalRouteLines.isEmpty ? 6 : 9,
                 interactive: true,
                 tilt: 0,
-                layers: mapLayers
+                layers: mapLayers,
+                activeJob: true,
+                mapModeContext: .primary(.rail),
+                liveOperationsStatus: railLiveOperationsStatus
             )
             .frame(height: 190)
 
@@ -862,24 +826,43 @@ private struct RailLiveTrackingBody003: View {
             fixChip.padding(.bottom, 22)
         }
         .overlay(alignment: .bottomLeading) {
-            // HERE is the tile source; the attribution is not optional.
-            Text("HERE maps")
-                .font(.system(size: 7, weight: .bold)).tracking(0.6)
-                .foregroundStyle(palette.textTertiary)
-                .padding(.leading, 12).padding(.bottom, 6)
+            VStack(alignment: .leading, spacing: 4) {
+                if let canonicalRouteStatus {
+                    Text(canonicalRouteStatus)
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(palette.textSecondary)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(palette.bgCard.opacity(0.92))
+                        .overlay(Capsule().strokeBorder(Brand.warning.opacity(0.45)))
+                        .clipShape(Capsule())
+                        .accessibilityLabel(canonicalRouteStatus)
+                }
+                // HERE is the tile source; the attribution is not optional.
+                Text("HERE maps")
+                    .font(.system(size: 7, weight: .bold)).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            .padding(.leading, 12).padding(.bottom, 6)
         }
         .frame(height: 190)
     }
 
     private var mapLayers: [HereMapLayer] {
-        var layers: [HereMapLayer] = []
-        let traveled = traveledPolyline
-        if traveled.count >= 2 {
-            layers.append(.route(polyline: traveled, colorHex: "#1473FF"))
+        var layers: [HereMapLayer] = canonicalRouteLines.enumerated().map { index, line in
+            .eusoRoute(
+                polyline: line,
+                state: .active,
+                label: index == 0
+                    ? "Eusorone rail route plan version \(canonicalRouteVersion ?? 0)"
+                    : nil
+            )
         }
-        let remaining = remainingPolyline
-        if remaining.count >= 2 {
-            layers.append(.route(polyline: remaining, colorHex: "#8A96A3"))
+        let observations = positionedScans.map(\.point) + (liveFix.map { [$0] } ?? [])
+        if observations.count >= 2 {
+            layers.append(.observationTrail(
+                points: observations,
+                label: "Reported rail position history"
+            ))
         }
         // §3c RAMP FENCE — the canon rail-ramp ring grammar, drawn only from a
         // real tracking.getGeofences row covering the ramp. No row ⇒ no ring.
@@ -897,8 +880,16 @@ private struct RailLiveTrackingBody003: View {
             pins.append(HereMarker(at: d, kind: .delivery, label: rampName))
         }
         if let l = liveFix {
-            pins.append(HereMarker(at: l, kind: .truck, label: fixPlace))
+            pins.append(HereMarker(
+                at: l,
+                kind: .rail,
+                label: fixPlace,
+                observationState: railObservationState,
+                sourceLabel: fixIsCarrierFeed ? "Class I carrier feed" : "Rail event scan",
+                accessibilityLabel: "Rail consist \(fixPlace ?? "position"), \(railObservationState.displayName)"
+            ))
         }
+        pins.append(contentsOf: nearbyRailStore.markers)
         if !pins.isEmpty { layers.append(.markers(pins)) }
         return layers
     }
@@ -925,17 +916,10 @@ private struct RailLiveTrackingBody003: View {
         .overlay(Capsule().strokeBorder(palette.borderFaint))
     }
 
-    /// Speed + place chip. The speed is printed ONLY when it is derivable from
-    /// two real scans inside a sane window; otherwise the chip is the place
-    /// alone. No screen of this app prints a speed it did not measure.
+    /// Place chip for the exact latest reported position. We deliberately do
+    /// not infer speed from the straight-line gap between two AEI readers.
     private var fixChip: some View {
         HStack(spacing: 6) {
-            if let mph = scanSpeedMph {
-                Text("\(mph) mph")
-                    .font(.system(size: 11, weight: .bold)).monospacedDigit()
-                    .foregroundStyle(Brand.success)
-                Text("·").font(.system(size: 11, weight: .bold)).foregroundStyle(palette.textTertiary)
-            }
             Text((fixPlace ?? "position pending").uppercased())
                 .font(.system(size: 10, weight: .heavy)).tracking(0.4)
                 .foregroundStyle(palette.textPrimary)
@@ -966,44 +950,45 @@ private struct RailLiveTrackingBody003: View {
         .frame(height: 190)
     }
 
-    /// The position rail — the SVG's consist-on-the-line, driven by the real
-    /// progress fraction. The glyph is the system rail symbol (the house's rail
-    /// mark, used the same way on 694), never a hand-drawn silhouette.
+    /// Evidence rail. This preserves the flagship rail grammar without moving
+    /// a train glyph to a position the server has not projected onto track.
     private var positionRail: some View {
-        VStack(spacing: 6) {
-            GeometryReader { geo in
-                let w = geo.size.width
-                let p = CGFloat(progressToRamp ?? 0)
-                ZStack(alignment: .leading) {
-                    Capsule().fill(palette.textTertiary.opacity(0.22)).frame(height: 3)
-                    Capsule().fill(LinearGradient.primary)
-                        .frame(width: max(0, w * p), height: 3)
-                    if progressToRamp != nil {
-                        ZStack {
-                            Circle()
-                                .fill(Brand.blue.opacity(0.22))
-                                .frame(width: 26, height: 26)
-                                .scaleEffect(nodeBreathing ? 1.18 : 0.9)
-                                .opacity(nodeBreathing ? 0.35 : 0.9)
-                            Image(systemName: "train.side.front.car")
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundStyle(LinearGradient.primary)
-                        }
-                        .offset(x: max(0, min(w - 26, w * p - 13)))
-                    }
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: Space.s3) {
+                ZStack {
+                    Circle()
+                        .fill(Brand.blue.opacity(0.16))
+                        .frame(width: 34, height: 34)
+                        .scaleEffect(nodeBreathing ? 1.08 : 0.96)
+                    Circle()
+                        .strokeBorder(LinearGradient.diagonal, lineWidth: 1.5)
+                        .frame(width: 30, height: 30)
+                    Image(systemName: "train.side.front.car")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(LinearGradient.primary)
                 }
-                .frame(height: 26)
-                .frame(maxHeight: .infinity, alignment: .center)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("AUTHORIZED POSITION EVIDENCE")
+                        .font(.system(size: 8, weight: .heavy)).tracking(0.7)
+                        .foregroundStyle(palette.textTertiary)
+                    Text("\(positionedScans.count + (liveFix == nil ? 0 : 1)) reported fix\((positionedScans.count + (liveFix == nil ? 0 : 1)) == 1 ? "" : "es") · route progress pending projection")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(2)
+                }
+                Spacer(minLength: Space.s2)
+                Text(fixAgeCaption)
+                    .font(EType.mono(.caption))
+                    .foregroundStyle(isStale ? Brand.warning : palette.textTertiary)
             }
-            .frame(height: 26)
 
             HStack {
-                Text(originName.uppercased())
+                Text("REFERENCE · \(originName.uppercased())")
                     .font(.system(size: 8, weight: .heavy)).tracking(0.6)
                     .foregroundStyle(palette.textTertiary)
                     .lineLimit(1)
                 Spacer(minLength: Space.s2)
-                Text(rampFence == nil ? rampName.uppercased() : "\(rampName.uppercased()) · RAMP FENCE")
+                Text(rampFence == nil ? "\(rampName.uppercased()) · REFERENCE" : "\(rampName.uppercased()) · RAMP FENCE")
                     .font(.system(size: 8, weight: .heavy)).tracking(0.6)
                     .foregroundStyle(rampFence == nil ? palette.textTertiary : Brand.success)
                     .lineLimit(1)
@@ -1050,12 +1035,12 @@ private struct RailLiveTrackingBody003: View {
         return "fix \(compactAge003(max(0, Date().timeIntervalSince(d)))) old"
     }
 
-    // MARK: - IN-TRANSIT METER (the fused meter face — same tick as the hero)
+    // MARK: - Route evidence register
 
     private var meterCard: some View {
         VStack(alignment: .leading, spacing: Space.s3) {
             HStack {
-                Text("IN-TRANSIT METER")
+                Text("ROUTE EVIDENCE")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
@@ -1075,20 +1060,15 @@ private struct RailLiveTrackingBody003: View {
             }
 
             HStack(alignment: .center, spacing: Space.s4) {
-                arcGauge
+                evidenceGauge
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("REMAINING")
+                    Text("LATEST FIX")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                         .foregroundStyle(palette.textTertiary)
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text(remainingMiles.map { "\(Int($0.rounded())) mi" } ?? "-")
-                            .font(.system(size: 22, weight: .bold)).monospacedDigit()
-                            .foregroundStyle(palette.textPrimary)
-                            .lineLimit(1).minimumScaleFactor(0.6)
-                        Text(daysRemaining.map { "· \(trimDays003($0))d" } ?? "")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(palette.textSecondary)
-                    }
+                    Text(fixPlace ?? "Not reported")
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(2).minimumScaleFactor(0.7)
                 }
                 Spacer(minLength: Space.s2)
                 VStack(alignment: .trailing, spacing: 2) {
@@ -1122,34 +1102,35 @@ private struct RailLiveTrackingBody003: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous))
     }
 
-    private var arcGauge: some View {
+    private var evidenceGauge: some View {
         ZStack {
             Circle()
                 .stroke(palette.textTertiary.opacity(0.22), lineWidth: 6)
                 .frame(width: 60, height: 60)
             Circle()
-                .trim(from: 0, to: CGFloat(progressToRamp ?? 0))
-                .stroke(LinearGradient.primary, style: StrokeStyle(lineWidth: 6, lineCap: .round))
-                .rotationEffect(.degrees(-90))
+                .trim(from: 0.08, to: 0.92)
+                .stroke(LinearGradient.primary, style: StrokeStyle(lineWidth: 6, lineCap: .round, dash: [2, 5]))
+                .rotationEffect(.degrees(-75))
                 .frame(width: 60, height: 60)
             VStack(spacing: 0) {
-                Text(progressToRamp.map { "\(Int(($0 * 100).rounded()))%" } ?? "-")
+                Text("\(positionedScans.count + (liveFix == nil ? 0 : 1))")
                     .font(.system(size: 15, weight: .bold)).monospacedDigit()
                     .foregroundStyle(palette.textPrimary)
-                Text("TO RAMP")
+                Text("FIXES")
                     .font(.system(size: 7.5, weight: .heavy)).tracking(0.6)
                     .foregroundStyle(palette.textTertiary)
             }
         }
-        .accessibilityLabel("Transit progress to ramp")
-        .accessibilityValue(progressToRamp.map { "\(Int(($0 * 100).rounded())) percent" } ?? "not yet computable")
+        .accessibilityLabel("Authorized rail position evidence")
+        .accessibilityValue("\(positionedScans.count + (liveFix == nil ? 0 : 1)) reported fixes; route progress pending server projection")
     }
 
     /// The honest caption under the meter: what the numbers are, where the ETA
     /// came from, and the ramp's real free-time clock when one exists.
     private var meterFootnote: String {
         var parts: [String] = []
-        if remainingMiles != nil { parts.append("direct line to \(rampName)") }
+        parts.append("observation trail is not track geometry")
+        parts.append("progress requires exact route projection")
         parts.append("ETA \(etaSourceLabel)")
         if let free = demurrageFreeHours {
             parts.append("\(free)h free time before demurrage")
@@ -1348,8 +1329,8 @@ private struct RailLiveTrackingBody003: View {
 
     private var ctaPair: some View {
         HStack(spacing: Space.s2) {
-            // Primary: the shipment's REAL waybill cars, each resolved live via
-            // railShipments.liveTrackRailcar (query · railShipments.ts:1716).
+            // Primary: the shipment's REAL waybill cars, each resolved through
+            // the tenant/source/licence-authorized Live Operations authority.
             CTAButton(
                 title: carsOnShipment.isEmpty ? "Per-car positions" : "Per-car positions · \(carsOnShipment.count)",
                 action: { showPerCar = true },
@@ -1390,7 +1371,7 @@ private struct RailLiveTrackingBody003: View {
             lines.append("ETA \(rampName): not published yet")
         }
         if let place = fixPlace { lines.append("Last fix: \(place) · \(fixAgeCaption)") }
-        if let r = remainingMiles { lines.append("Remaining: \(Int(r.rounded())) mi direct line") }
+        lines.append("Route progress: pending exact server projection")
         lines.append(consistLine)
         return lines.joined(separator: "\n")
     }
@@ -1410,6 +1391,7 @@ private struct RailLiveTrackingBody003: View {
         loadError = nil
         trackingDegraded = false
         classIDegraded = false
+        await refreshCanonicalRoute()
 
         struct DetailIn: Encodable { let id: Int }
 
@@ -1429,9 +1411,11 @@ private struct RailLiveTrackingBody003: View {
             // each of these folds to nil on failure. The fold is now FLAGGED:
             // the UI states the absence AND says whether it is an empty section
             // or a section that failed to read.
+            let feedRailroad = nonEmpty(d?.originRailroad) ?? nonEmpty(d?.destinationRailroad)
+            let feedReference = nonEmpty(d?.shipmentNumber)
             async let feedFetch = fetchClassI(
-                railroad: nonEmpty(d?.originRailroad) ?? nonEmpty(d?.destinationRailroad),
-                reference: nonEmpty(d?.shipmentNumber))
+                railroad: feedRailroad,
+                reference: feedReference)
             async let fenceFetch = fetchRampFence(at: d?.destinationYard?.coordinates?.fix)
 
             let (feed, feedFailed) = await feedFetch
@@ -1460,7 +1444,58 @@ private struct RailLiveTrackingBody003: View {
         rampFence = snapshot.rampFence
     }
 
-    /// railShipments.getRailTracking — query · railShipments.ts:1275.
+    /// Rail geometry comes only from the exact server-owned EusoRail graph
+    /// solve. Carrier calls and AEI/CLM observations remain evidence layers;
+    /// they never become a route line on this client.
+    @MainActor
+    private func refreshCanonicalRoute() async {
+        canonicalRouteLines = []
+        canonicalRouteStatus = nil
+        canonicalRouteVersion = nil
+        do {
+            let result = try await CanonicalRoutePlanClient.shared.planRailShipment(
+                id: shipmentId,
+                purpose: .activeJob
+            )
+            switch result {
+            case .persisted(let persisted):
+                applyCanonicalRoute(persisted.route)
+            case .pending(let pending):
+                canonicalRouteStatus = pending.blockers.first?.message
+                    ?? "EusoRail route pending verified graph authority"
+                await readExistingCanonicalRoute()
+            }
+        } catch {
+            canonicalRouteStatus = error.eusoUserCopy
+            await readExistingCanonicalRoute()
+        }
+    }
+
+    @MainActor
+    private func readExistingCanonicalRoute() async {
+        do {
+            applyCanonicalRoute(
+                try await CanonicalRoutePlanClient.shared.getBoundRailShipment(id: shipmentId)
+            )
+        } catch {
+            if canonicalRouteStatus == nil { canonicalRouteStatus = error.eusoUserCopy }
+        }
+    }
+
+    @MainActor
+    private func applyCanonicalRoute(_ route: CanonicalRoutePlanClient.BoundRoutePlan) {
+        guard let payload = route.rendererPayload else {
+            canonicalRouteLines = []
+            canonicalRouteVersion = nil
+            canonicalRouteStatus = "EusoRail route exists but is not released for rendering"
+            return
+        }
+        canonicalRouteLines = payload.lines
+        canonicalRouteVersion = payload.identity.version
+        canonicalRouteStatus = nil
+    }
+
+    /// railShipments.getRailTracking — query · railShipments.ts:1536.
     /// Returns (value, failed). `failed` is true ONLY on a throw — a successful
     /// read that carries no events is empty, not degraded, and the two must not
     /// be collapsed into the same nil.
@@ -1475,7 +1510,7 @@ private struct RailLiveTrackingBody003: View {
         }
     }
 
-    /// railShipments.liveTrackShipment — query · railShipments.ts:1786.
+    /// railShipments.liveTrackShipment — query · railShipments.ts:2132.
     /// Requires BOTH a real reporting mark and the real shipment number. Missing
     /// inputs is NOT a degraded read — there was nothing to ask with — so that
     /// path returns failed:false. Only a throw is degraded.
@@ -1509,9 +1544,11 @@ private struct RailLiveTrackingBody003: View {
 // MARK: - Per-car positions sheet
 //
 // The shipment's REAL cars (rail_waybills.railcarNumber off
-// getRailShipmentDetail), each resolved against Railinc RailSight through
-// railShipments.liveTrackRailcar (query · railShipments.ts:1716). A car whose
-// feed is silent says so; it never borrows the block's position.
+// getRailShipmentDetail), each resolved through the server-owned Live
+// Operations authority. That authority applies tenant grants, source rights,
+// licence validity and immutable observation evidence before returning a fix.
+// A car whose authorized feed is silent says so; it never borrows the block's
+// position and this phone never calls a railroad/provider directly.
 
 private struct RailPerCarPositionsSheet003: View {
     @Environment(\.palette) private var palette
@@ -1520,7 +1557,8 @@ private struct RailPerCarPositionsSheet003: View {
     let cars: [RailWaybillNode003]
     let rampName: String
 
-    @State private var fixes: [String: RailcarTrack003] = [:]
+    @State private var results: [String: LiveOperationsClient.AssetResult] = [:]
+    @State private var failedCars: Set<String> = []
     @State private var loading = true
 
     var body: some View {
@@ -1530,7 +1568,7 @@ private struct RailPerCarPositionsSheet003: View {
                     Image(systemName: "train.side.front.car")
                         .font(.system(size: 9, weight: .heavy))
                         .foregroundStyle(LinearGradient.diagonal)
-                    Text("PER-CAR POSITIONS · RAILINC")
+                    Text("PER-CAR POSITIONS · LIVE OPERATIONS")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                         .foregroundStyle(LinearGradient.diagonal)
                     Spacer()
@@ -1546,7 +1584,7 @@ private struct RailPerCarPositionsSheet003: View {
                     .font(.system(size: 22, weight: .heavy)).kerning(-0.3)
                     .foregroundStyle(palette.textPrimary)
 
-                Text("Each car is resolved against its own carrier feed on the way to \(rampName). A car with no returned fix is shown as awaiting a scan — it is never given the block's position.")
+                Text("Each car is resolved against its own tenant-authorized carrier or AEI evidence on the way to \(rampName). A car with no authorized observation is shown as awaiting a scan — it is never given the block's position.")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1584,10 +1622,13 @@ private struct RailPerCarPositionsSheet003: View {
 
     private func carRow(_ car: RailWaybillNode003) -> some View {
         let number = car.railcarNumber ?? "-"
-        let track = fixes[number]
-        let pos = track?.position
-        let place = [pos?.station, pos?.stateProvince].compactMap { trimmed($0) }.joined(separator: " · ")
-        let lastEvent = track?.lastEvent
+        let result = results[number]
+        let observation = result?.observation
+        let evidence = observation?.quality.evidence
+        let place = evidence?.eventDescription
+            ?? evidence?.nextScheduledEventDescription
+            ?? observation?.position.coordinate.map { "\($0.lat), \($0.lng)" }
+        let failed = failedCars.contains(number)
 
         return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: Space.s3) {
@@ -1595,31 +1636,37 @@ private struct RailPerCarPositionsSheet003: View {
                     .font(.system(size: 13, weight: .bold)).monospaced()
                     .foregroundStyle(palette.textPrimary)
                 Spacer(minLength: Space.s2)
-                if let road = trimmed(pos?.railroad) {
-                    Text(road.uppercased())
+                if let observation {
+                    Text(observation.freshnessState.rawValue.uppercased())
                         .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                        .foregroundStyle(Brand.success)
+                        .foregroundStyle(observation.markerState == .current ? Brand.success : Brand.warning)
                         .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(Capsule().fill(Brand.success.opacity(0.14)))
+                        .background(Capsule().fill(
+                            (observation.markerState == .current ? Brand.success : Brand.warning).opacity(0.14)
+                        ))
                 } else {
-                    Text("AWAITING SCAN")
+                    Text(failed ? "FEED UNAVAILABLE" : "AWAITING SCAN")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                        .foregroundStyle(palette.textTertiary)
+                        .foregroundStyle(failed ? Brand.warning : palette.textTertiary)
                         .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(Capsule().fill(palette.textTertiary.opacity(0.12)))
+                        .background(Capsule().fill(
+                            (failed ? Brand.warning : palette.textTertiary).opacity(0.12)
+                        ))
                 }
             }
-            Text(place.isEmpty ? "No position returned by the carrier feed" : place)
+            Text(place ?? (failed
+                ? "The authorized live read could not be completed"
+                : "No authorized position observation is available"))
                 .font(EType.caption)
-                .foregroundStyle(place.isEmpty ? palette.textTertiary : palette.textSecondary)
-            if let desc = trimmed(lastEvent?.description) ?? trimmed(lastEvent?.eventType) {
-                Text(desc)
+                .foregroundStyle(place == nil ? palette.textTertiary : palette.textSecondary)
+            if let observation {
+                Text("\(observation.provider.id) · \(observation.quality.state.rawValue) · \(observation.asset.accessBasis)")
                     .font(.system(size: 11))
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(2)
             }
             HStack(spacing: Space.s2) {
-                if let reported = trimmed(pos?.reportedAt), let d = parseStamp003(reported) {
+                if let reported = observation?.observedAt, let d = parseStamp003(reported) {
                     Text("scanned \(compactAge003(max(0, Date().timeIntervalSince(d)))) ago")
                         .font(EType.mono(.micro))
                         .foregroundStyle(palette.textTertiary)
@@ -1647,20 +1694,38 @@ private struct RailPerCarPositionsSheet003: View {
                 .strokeBorder(palette.borderFaint)
         )
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel([
+            "Railcar \(number)",
+            observation?.accessibleEvidenceLabel,
+            place,
+            failed ? "authorized live feed unavailable" : nil,
+        ].compactMap { $0 }.joined(separator: ", "))
     }
 
     private func loadFixes() async {
         loading = true
-        await withTaskGroup(of: (String, RailcarTrack003?).self) { group in
+        results.removeAll(keepingCapacity: true)
+        failedCars.removeAll(keepingCapacity: true)
+        await withTaskGroup(of: (String, LiveOperationsClient.AssetResult?, Bool).self) { group in
             for car in cars {
                 guard let number = trimmed(car.railcarNumber) else { continue }
                 group.addTask {
-                    let track = await fetchCarFix003(number)
-                    return (number, track)
+                    do {
+                        let result = try await LiveOperationsClient.shared.latestRailcar(number: number)
+                        return (number, result, false)
+                    } catch {
+                        return (number, nil, true)
+                    }
                 }
             }
-            for await (number, track) in group {
-                if let track { self.fixes[number] = track }
+            for await (number, result, failed) in group {
+                if let result {
+                    results[number] = result
+                }
+                if failed {
+                    failedCars.insert(number)
+                }
             }
         }
         loading = false
@@ -1672,27 +1737,7 @@ private struct RailPerCarPositionsSheet003: View {
     }
 }
 
-/// railShipments.liveTrackRailcar — query · railShipments.ts:1716. The proc
-/// returns null when the Railinc call fails, which folds to nil here.
-private func fetchCarFix003(_ railcarNumber: String) async -> RailcarTrack003? {
-    struct In: Encodable { let railcarNumber: String }
-    let out: RailcarTrack003?? = try? await EusoTripAPI.shared.query(
-        "railShipments.liveTrackRailcar", input: In(railcarNumber: railcarNumber))
-    return out ?? nil
-}
-
 // MARK: - File-scoped pure helpers
-
-/// Great-circle miles between two real fixes.
-private func haversineMiles003(_ a: HereLatLng, _ b: HereLatLng) -> Double {
-    let r = 3958.7613                       // mean Earth radius, statute miles
-    let dLat = (b.lat - a.lat) * .pi / 180
-    let dLng = (b.lng - a.lng) * .pi / 180
-    let lat1 = a.lat * .pi / 180
-    let lat2 = b.lat * .pi / 180
-    let h = sin(dLat / 2) * sin(dLat / 2) + sin(dLng / 2) * sin(dLng / 2) * cos(lat1) * cos(lat2)
-    return 2 * r * asin(min(1, sqrt(h)))
-}
 
 /// Tolerant server-timestamp parse — ISO-8601 with or without fractional
 /// seconds, plus the plain MySQL datetime form.
@@ -1745,12 +1790,6 @@ private func humanizeStatus003(_ raw: String?) -> String {
         .replacingOccurrences(of: "status_", with: "")
         .replacingOccurrences(of: "_", with: " ")
     return cleaned.prefix(1).uppercased() + cleaned.dropFirst()
-}
-
-/// "1.6" → "1.6", "2.0" → "2".
-private func trimDays003(_ v: Double) -> String {
-    let rounded = (v * 10).rounded() / 10
-    return rounded == rounded.rounded() ? String(Int(rounded)) : String(format: "%.1f", rounded)
 }
 
 // MARK: - Previews

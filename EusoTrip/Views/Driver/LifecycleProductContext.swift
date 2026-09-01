@@ -573,7 +573,10 @@ struct LifecycleProductContext {
 
     init(load: Load?, role: String?) {
         self.load = load
-        self.vertical = TripVertical(role: role)
+        self.vertical = TripVertical(
+            transportMode: load?.transportMode,
+            role: role
+        )
         self.product = TripProduct.resolve(load: load, vertical: self.vertical)
     }
 

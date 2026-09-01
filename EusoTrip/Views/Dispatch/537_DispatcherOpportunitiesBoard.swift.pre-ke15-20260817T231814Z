@@ -1,0 +1,533 @@
+//
+//  537_DispatcherOpportunitiesBoard.swift
+//  EusoTrip — Dispatcher · Opportunities Board.
+//
+//  Verbatim SwiftUI port of:
+//    `04 Dispatcher/Dark-SVG/537 Dispatcher Opportunities Board.svg`
+//
+//  THE OPPORTUNITIES BOARD — every open (posted) load the dispatcher's fleet
+//  can bid on, ranked so a matched lane can be applied to in one tap. Reached
+//  from the Board (401) as the opportunities surface.
+//
+//  Honest wiring — 0 stubs, 0 mock data, fully dynamic:
+//    • READ  dispatchRole.getOpportunities     (dispatchRole.ts:1052, query,
+//            {status?,category?}) → [{ id, loadNumber, origin, destination,
+//            rate, equipment, pickupDate, status }] — real posted-load rows.
+//    • READ  dispatchRole.getOpportunityStats  (dispatchRole.ts:1074, query)
+//            → { open, applied, accepted, total, totalValue, … } — real
+//            count + summed rate of posted loads.
+//    • WRITE dispatchRole.applyToOpportunity   (dispatchRole.ts:1082,
+//            mutation, {opportunityId}) → { success, applicationId }. Fired by
+//            "Apply to top match" and by tapping a row.
+//    • The reads flow through a real do/catch with a surfaced error; the
+//      screen shows the error state, never a fake success. Empty board →
+//      honest empty state.
+//
+//  HONEST GAP: the platform has no application-tracking table yet, so
+//  getOpportunityStats returns applied/accepted = 0 and applyToOpportunity is
+//  an ack-only write (no persistence). Both are surfaced as-is — the counts
+//  read 0 rather than a fabricated win rate, and the apply result is shown
+//  honestly (handed to the-oath to back with a real applications table).
+//
+//  Persona: Aurora Freight Lines · Renée Marquette (RM) · shipper-of-record
+//  Eusorone Technologies (Diego Usoro).
+//  Powered by ESANG AI™.
+//
+
+import SwiftUI
+
+// MARK: ─────────────────────────────────────────────────────────
+// MARK: Decoders — field-for-field match to dispatchRole.getOpportunities / …Stats
+// MARK: ─────────────────────────────────────────────────────────
+
+private struct Opportunity: Decodable, Hashable, Identifiable {
+    let id: String
+    let loadNumber: String?
+    let origin: String?
+    let destination: String?
+    let rate: Double?
+    let equipment: String?
+    let pickupDate: String?
+    let status: String?
+}
+
+private struct OpportunityStats: Decodable, Hashable {
+    let open: Int
+    let applied: Int
+    let accepted: Int
+    let total: Int
+    let totalValue: Double
+}
+
+// MARK: ─────────────────────────────────────────────────────────
+// MARK: Screen
+// MARK: ─────────────────────────────────────────────────────────
+
+struct DispatcherOpportunitiesBoardScreen: View {
+    let theme: Theme.Palette
+    var body: some View {
+        Shell(theme: theme) { DispatcherOpportunitiesBoardBody() } nav: {
+            BottomNav(
+                leading: [NavSlot(label: "Home",  systemImage: "house",                   isCurrent: false),
+                          NavSlot(label: "Board", systemImage: "rectangle.split.3x1.fill", isCurrent: true)],
+                trailing: [NavSlot(label: "Comms", systemImage: "bubble.left.and.bubble.right.fill", isCurrent: false),
+                           NavSlot(label: "Me",    systemImage: "person",                  isCurrent: false)],
+                orbState: .idle
+            )
+        }
+    }
+}
+
+private struct DispatcherOpportunitiesBoardBody: View {
+    @Environment(\.palette) private var palette
+
+    @State private var opportunities: [Opportunity] = []
+    @State private var stats: OpportunityStats = OpportunityStats(open: 0, applied: 0, accepted: 0, total: 0, totalValue: 0)
+    @State private var loading: Bool = true
+    @State private var actionError: String?
+    @State private var applying: Bool = false
+    @State private var applyNote: String?
+    @State private var appliedIds: Set<String> = []
+
+    // Best (highest-rate) opportunity is the "top match" the primary CTA fires.
+    private var topMatch: Opportunity? {
+        opportunities.max { ($0.rate ?? 0) < ($1.rate ?? 0) }
+    }
+    private var topRows: [Opportunity] { Array(opportunities.prefix(3)) }
+    private var moreCount: Int { max(0, opportunities.count - topRows.count) }
+
+    private var potentialText: String { Opp.money(stats.totalValue, compact: true) }
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 0) {
+                topBar
+                IridescentHairline().padding(.top, Space.s3)
+
+                if loading {
+                    OppSkeleton().padding(.top, Space.s5)
+                } else if let err = actionError {
+                    errorState(err)
+                } else {
+                    heroCard
+                    kpiStrip
+                    oppList
+                    applyCard
+                    if let note = applyNote { resultNote(note) }
+                    ctaPair
+                }
+                Color.clear.frame(height: 96)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, Space.s5)
+        }
+        .task { await load() }
+    }
+
+    // MARK: Top bar
+
+    private var topBar: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack(alignment: .firstTextBaseline) {
+                EusoTripEyebrow(verbatim: "DISPATCHER · OPPORTUNITIES")
+                    .font(EType.micro).tracking(1.0)
+                    .foregroundStyle(LinearGradient.primary)
+                Spacer(minLength: Space.s2)
+                Text("\(stats.open) OPEN")
+                    .font(EType.mono(.micro)).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            HStack(alignment: .center, spacing: Space.s3) {
+                Button { back() } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(palette.textPrimary)
+                }
+                .buttonStyle(.plain)
+                Text("Opportunities")
+                    .font(EType.h1).tracking(-0.4)
+                    .foregroundStyle(palette.textPrimary)
+                Spacer(minLength: Space.s2)
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundStyle(palette.textPrimary)
+            }
+        }
+    }
+
+    // MARK: Hero
+
+    private var heroCard: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(spacing: Space.s2) {
+                chip("open")
+                chip("RFP + spot")
+                Spacer(minLength: 0)
+            }
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(stats.open)")
+                        .font(.system(size: 30, weight: .bold, design: .default).monospacedDigit())
+                        .foregroundStyle(LinearGradient.diagonal)
+                    Text("loads to bid")
+                        .font(EType.caption.weight(.semibold))
+                        .foregroundStyle(palette.textPrimary)
+                    Text("\(potentialText) potential")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+                Spacer(minLength: Space.s3)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("APPLIED")
+                        .font(EType.micro).tracking(0.6)
+                        .foregroundStyle(palette.textSecondary)
+                    Text("\(stats.applied + appliedIds.count)")
+                        .font(.system(size: 22, weight: .bold).monospacedDigit())
+                        .foregroundStyle(palette.textPrimary)
+                    Text("this session")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+            }
+        }
+        .padding(Space.s4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 20).fill(palette.bgCardSoft))
+        .overlay(RoundedRectangle(cornerRadius: 20)
+            .strokeBorder(LinearGradient.diagonal.opacity(0.85), lineWidth: 1.5))
+        .padding(.top, Space.s5)
+    }
+
+    private func chip(_ label: String) -> some View {
+        Text(label)
+            .font(EType.micro).tracking(0.5)
+            .foregroundStyle(palette.textPrimary)
+            .padding(.horizontal, Space.s3).frame(height: 24)
+            .background(Capsule().fill(Color.white.opacity(0.06)))
+    }
+
+    // MARK: KPI strip
+
+    private var kpiStrip: some View {
+        HStack(spacing: Space.s3) {
+            kpiCell("OPEN",    stats.open,                     tint: palette.textOnGradient, filled: true)
+            kpiCell("APPLIED", stats.applied + appliedIds.count, tint: palette.textPrimary,  filled: false)
+            kpiCell("WON",     stats.accepted,                 tint: Brand.success,          filled: false)
+        }
+        .padding(.top, Space.s4)
+    }
+
+    private func kpiCell(_ label: String, _ value: Int, tint: Color, filled: Bool) -> some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            Text(label)
+                .font(EType.micro).tracking(1.0)
+                .foregroundStyle(filled ? palette.textOnGradient.opacity(0.85) : palette.textSecondary)
+            Text("\(value)")
+                .font(.system(size: 22, weight: .semibold).monospacedDigit())
+                .foregroundStyle(tint)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Space.s3)
+        .frame(height: 72)
+        .background {
+            if filled {
+                RoundedRectangle(cornerRadius: 16).fill(LinearGradient.diagonal)
+            } else {
+                RoundedRectangle(cornerRadius: 16).fill(palette.bgCardSoft)
+                RoundedRectangle(cornerRadius: 16).strokeBorder(palette.borderFaint, lineWidth: 1)
+            }
+        }
+    }
+
+    // MARK: Opportunity list
+
+    private var oppList: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("OPEN OPPORTUNITIES")
+                    .font(EType.micro).tracking(1.0)
+                    .foregroundStyle(palette.textSecondary)
+                Spacer()
+                Text("dispatchRole")
+                    .font(EType.mono(.caption))
+                    .foregroundStyle(palette.textSecondary)
+            }
+            .padding(.bottom, Space.s2)
+
+            VStack(spacing: 0) {
+                if topRows.isEmpty {
+                    emptyOpps
+                } else {
+                    ForEach(Array(topRows.enumerated()), id: \.element.id) { idx, o in
+                        OpportunityRow(opp: o, applied: appliedIds.contains(o.id)) { Task { await apply(o) } }
+                        if idx < topRows.count - 1 {
+                            Divider().overlay(palette.borderFaint).padding(.horizontal, Space.s4)
+                        }
+                    }
+                    if moreCount > 0 {
+                        Text("+ \(moreCount) more · sorted newest first · DU / Eusorone")
+                            .font(EType.micro)
+                            .foregroundStyle(palette.textSecondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(Space.s4)
+                    }
+                }
+            }
+            .background(RoundedRectangle(cornerRadius: 16).fill(palette.bgCardSoft))
+            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(palette.borderFaint, lineWidth: 1))
+        }
+        .padding(.top, Space.s5)
+    }
+
+    private var emptyOpps: some View {
+        VStack(spacing: Space.s2) {
+            Text("No open loads to bid on")
+                .font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+            Text("Posted loads matching your lanes will appear here as shippers tender them.")
+                .font(EType.caption).foregroundStyle(palette.textSecondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, Space.s6).padding(.horizontal, Space.s4)
+    }
+
+    // MARK: Apply card
+
+    private var applyCard: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack {
+                Text("APPLY")
+                    .font(EType.micro).tracking(0.8)
+                    .foregroundStyle(palette.textSecondary)
+                Spacer()
+                Text("applyToOpportunity")
+                    .font(EType.mono(.caption))
+                    .foregroundStyle(palette.textSecondary)
+            }
+            Text("tap the best-paying lane, or apply to a row directly")
+                .font(EType.caption).foregroundStyle(palette.textSecondary)
+            if let top = topMatch {
+                Text("top match \(top.origin ?? "?") → \(top.destination ?? "?") · \(Opp.money(top.rate ?? 0, compact: false))")
+                    .font(EType.caption).foregroundStyle(palette.textSecondary)
+            }
+        }
+        .padding(Space.s4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 16).fill(palette.bgCardSoft))
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(palette.borderFaint, lineWidth: 1))
+        .padding(.top, Space.s4)
+    }
+
+    private func resultNote(_ note: String) -> some View {
+        Text(note)
+            .font(EType.caption)
+            .foregroundStyle(palette.textSecondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, Space.s3)
+    }
+
+    // MARK: CTA pair
+
+    private var ctaPair: some View {
+        HStack(spacing: Space.s3) {
+            Button { Task { if let t = topMatch { await apply(t) } } } label: {
+                HStack(spacing: Space.s2) {
+                    if applying { ProgressView().tint(palette.textOnGradient) }
+                    Text(applying ? "Applying…" : "Apply to top match")
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textOnGradient)
+                }
+                .frame(maxWidth: .infinity).frame(height: 48)
+                .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(LinearGradient.primary))
+            }
+            .buttonStyle(.plain)
+            .disabled(applying || topMatch == nil)
+            .opacity(topMatch == nil ? 0.5 : 1)
+
+            Button { Task { await load() } } label: {
+                Text("Refresh")
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                    .frame(width: 132).frame(height: 48)
+                    .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(Color(hex: 0x232932)))
+            }
+            .buttonStyle(.plain)
+            .disabled(applying)
+        }
+        .padding(.top, Space.s5)
+    }
+
+    // MARK: Error state
+
+    private func errorState(_ err: String) -> some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            Text("Couldn't load the opportunities board").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+            Text(err).font(EType.caption).foregroundStyle(Brand.danger)
+            Button { Task { await load() } } label: {
+                Text("Retry").font(EType.caption.weight(.heavy))
+                    .foregroundStyle(palette.textOnGradient)
+                    .padding(.horizontal, Space.s4).frame(height: 32)
+                    .background(Capsule().fill(LinearGradient.primary))
+            }
+            .buttonStyle(.plain).padding(.top, Space.s1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Space.s4)
+        .background(RoundedRectangle(cornerRadius: Radius.lg).fill(palette.bgCardSoft))
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg).strokeBorder(Brand.danger.opacity(0.4), lineWidth: 1))
+        .padding(.top, Space.s5)
+    }
+
+    // MARK: Data + actions
+
+    private func load() async {
+        loading = true
+        actionError = nil
+        applyNote = nil
+        struct In: Encodable {}
+        do {
+            async let oppsCall: [Opportunity] = EusoTripAPI.shared.query("dispatchRole.getOpportunities", input: In())
+            async let statsCall: OpportunityStats = EusoTripAPI.shared.queryNoInput("dispatchRole.getOpportunityStats")
+            let (o, s) = try await (oppsCall, statsCall)
+            opportunities = o
+            stats = s
+        } catch {
+            actionError = "Opportunities couldn't refresh. Retry from this screen or open the dispatch board."
+        }
+        loading = false
+    }
+
+    private func apply(_ o: Opportunity) async {
+        guard !appliedIds.contains(o.id) else { return }
+        applying = true
+        applyNote = nil
+        struct In: Encodable { let opportunityId: String }
+        struct Out: Decodable { let success: Bool? }
+        do {
+            let _: Out = try await EusoTripAPI.shared.mutation("dispatchRole.applyToOpportunity", input: In(opportunityId: o.id))
+            appliedIds.insert(o.id)
+            let lane = "\(o.origin ?? "?") → \(o.destination ?? "?")"
+            applyNote = "Applied to \(lane) · \(o.loadNumber ?? o.id)."
+        } catch {
+            applyNote = "Couldn't apply to \(o.loadNumber ?? o.id). Try again."
+        }
+        applying = false
+    }
+
+    private func back() {
+        NotificationCenter.default.post(name: .eusoDispatchNavSwap, object: nil, userInfo: ["screenId": "Disp401"])
+    }
+}
+
+// MARK: ─────────────────────────────────────────────────────────
+// MARK: Opportunity row
+// MARK: ─────────────────────────────────────────────────────────
+
+private struct OpportunityRow: View {
+    @Environment(\.palette) private var palette
+    let opp: Opportunity
+    let applied: Bool
+    let onApply: () -> Void
+
+    private var lane: String {
+        "\(opp.origin ?? "Unknown") → \(opp.destination ?? "Unknown")"
+    }
+    private var sub: String {
+        var parts: [String] = []
+        if let e = opp.equipment, !e.isEmpty { parts.append(e) }
+        if let p = opp.pickupDate, !p.isEmpty { parts.append("pickup \(p)") }
+        return parts.joined(separator: " · ")
+    }
+
+    var body: some View {
+        Button(action: onApply) {
+            HStack(alignment: .top, spacing: Space.s3) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10).fill(Brand.info.opacity(0.14))
+                    Image(systemName: "shippingbox.fill")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Brand.info)
+                }
+                .frame(width: 40, height: 40)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(lane)
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(1)
+                    Text(sub.isEmpty ? (opp.loadNumber ?? "posted") : sub)
+                        .font(EType.mono(.caption)).tracking(0.4)
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: Space.s2)
+
+                VStack(alignment: .trailing, spacing: 6) {
+                    Text(applied ? "APPLIED" : (opp.equipment ?? "OPEN").uppercased())
+                        .font(EType.micro).tracking(0.5)
+                        .foregroundStyle(applied ? Brand.success : Brand.info)
+                        .padding(.horizontal, 10).frame(height: 24)
+                        .background(Capsule().fill((applied ? Brand.success : Brand.info).opacity(0.18)))
+                    Text(Opp.money(opp.rate ?? 0, compact: false))
+                        .font(EType.caption.weight(.heavy).monospacedDigit())
+                        .foregroundStyle(palette.textPrimary)
+                }
+            }
+            .padding(Space.s4)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: ─────────────────────────────────────────────────────────
+// MARK: Skeleton
+// MARK: ─────────────────────────────────────────────────────────
+
+private struct OppSkeleton: View {
+    @Environment(\.palette) private var palette
+    var body: some View {
+        VStack(spacing: Space.s3) {
+            RoundedRectangle(cornerRadius: 20).fill(palette.bgCardSoft).frame(height: 116)
+            HStack(spacing: Space.s3) {
+                ForEach(0..<3, id: \.self) { _ in
+                    RoundedRectangle(cornerRadius: 16).fill(palette.bgCardSoft).frame(height: 72)
+                }
+            }
+            RoundedRectangle(cornerRadius: 16).fill(palette.bgCardSoft).frame(height: 252)
+        }
+        .redacted(reason: .placeholder)
+    }
+}
+
+// MARK: ─────────────────────────────────────────────────────────
+// MARK: Formatting helpers
+// MARK: ─────────────────────────────────────────────────────────
+
+private enum Opp {
+    static func money(_ v: Double, compact: Bool) -> String {
+        if compact {
+            if v >= 1000 {
+                let k = v / 1000
+                return String(format: "$%.1fK", k)
+            }
+            return "$\(Int(v))"
+        }
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.maximumFractionDigits = 0
+        let n = f.string(from: NSNumber(value: v)) ?? "\(Int(v))"
+        return "$\(n)"
+    }
+}
+
+#if DEBUG
+#Preview("537 · Dispatcher Opportunities · Dark") {
+    DispatcherOpportunitiesBoardScreen(theme: Theme.dark)
+        .environment(\.palette, Theme.dark)
+}
+#Preview("537 · Dispatcher Opportunities · Light") {
+    DispatcherOpportunitiesBoardScreen(theme: Theme.light)
+        .environment(\.palette, Theme.light)
+}
+#endif

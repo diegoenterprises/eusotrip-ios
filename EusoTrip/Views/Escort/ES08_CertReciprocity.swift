@@ -23,23 +23,46 @@ import SwiftUI
 
 private struct CertSummary: Decodable, Identifiable {
     let id: String
+    let certificationId: String
     let certType: String
+    let certNumber: String?
     let issuingState: String
-    let issuingAuthority: String
+    let issuingAuthority: String?
     let status: String
+    let displayStatus: String
+    let issueDate: String?
     let expirationDate: String?
+    let verificationStatus: String?
+    let verificationMethod: String?
+    let verificationSourceReference: String?
+    let verificationSourceObservedAt: String?
     let heightPoleCertified: Bool
     let hazmatEscortCertified: Bool
     let nightOperationsCertified: Bool
+    let documentUrl: String?
+    let notes: String?
 }
 private struct CertStatus: Decodable {
     let total: Int
     let active: Int
+    let valid: Int
     let expiringSoon: Int
     let expired: Int
+    let pending: Int
+    let suspended: Int
+    let revoked: Int
+    let unverified: Int
     let statesCleared: [String]
     let reciprocalStatesCleared: [String]
+    let states: [CertStateRow]
     let certifications: [CertSummary]
+    let tracking: EscortCertificationTracking
+}
+private struct CertStateRow: Decodable {
+    let code: String
+    let name: String
+    let status: String
+    let expirationDate: String?
 }
 private struct ReciprocityCell: Decodable, Identifiable {
     let state: String
@@ -48,8 +71,6 @@ private struct ReciprocityCell: Decodable, Identifiable {
 }
 private struct EligibilityInput: Encodable { let state: String }
 private struct EligibilityResult: Decodable { let eligible: Bool; let reason: String }
-private struct UploadInput: Encodable { let state: String; let type: String; let expirationDate: String }
-private struct UploadResult: Decodable { let success: Bool; let certId: String }
 
 // MARK: - Screen
 
@@ -84,9 +105,9 @@ struct EscortCertReciprocity: View {
         }
         .safeAreaInset(edge: .bottom) { uploadBar }
         .sheet(isPresented: $showUpload) {
-            UploadCertSheet(onUpload: { state, type, expiry in
-                Task { await upload(state: state, type: type, expiry: expiry) }
-            })
+            EscortAddCertificationSheet { submission in
+                await upload(submission)
+            }
             .environment(\.palette, palette)
         }
         .eusoRefreshTask { await load() }
@@ -213,6 +234,9 @@ struct EscortCertReciprocity: View {
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(c.certType).font(.system(size: 13, weight: .semibold)).foregroundStyle(palette.textPrimary)
+                if let authority = c.issuingAuthority {
+                    Text(authority).font(EType.caption).foregroundStyle(palette.textSecondary).lineLimit(1)
+                }
                 HStack(spacing: 5) {
                     if c.heightPoleCertified { tag("HIGH POLE") }
                     if c.hazmatEscortCertified { tag("HAZMAT") }
@@ -221,9 +245,12 @@ struct EscortCertReciprocity: View {
             }
             Spacer(minLength: 0)
             VStack(alignment: .trailing, spacing: 2) {
-                Text(c.status.uppercased())
+                Text(c.displayStatus.uppercased())
                     .font(.system(size: 9, weight: .heavy)).tracking(0.5)
-                    .foregroundStyle(c.status == "active" ? Brand.success : (c.status == "expired" ? Brand.danger : palette.textTertiary))
+                    .foregroundStyle(c.displayStatus == "valid" ? Brand.success : (c.displayStatus == "expired" ? Brand.danger : Brand.warning))
+                if c.verificationStatus != "verified" {
+                    Text("UNVERIFIED").font(EType.mono(.micro)).foregroundStyle(Brand.warning)
+                }
                 if let exp = c.expirationDate { Text(shortDate(exp)).font(EType.mono(.micro)).foregroundStyle(palette.textTertiary) }
             }
         }
@@ -294,10 +321,19 @@ struct EscortCertReciprocity: View {
     private func load() async {
         loading = true
         defer { loading = false }
-        async let st: CertStatus? = try? await EusoTripAPI.shared.query("escorts.getCertificationStatus", input: EmptyInput())
-        async let mp: [ReciprocityCell]? = try? await EusoTripAPI.shared.query("escorts.getReciprocityMap", input: EmptyInput())
-        status = await st
-        map = await mp ?? []
+        errorMessage = nil
+        do {
+            async let statusRequest: CertStatus = EusoTripAPI.shared.query(
+                "escorts.getCertificationStatus", input: EmptyInput())
+            async let mapRequest: [ReciprocityCell] = EusoTripAPI.shared.query(
+                "escorts.getReciprocityMap", input: EmptyInput())
+            let (freshStatus, freshMap) = try await (statusRequest, mapRequest)
+            status = freshStatus
+            map = freshMap
+        } catch {
+            errorMessage = (error as? EusoTripAPIError)?.errorDescription
+                ?? "Certification records are unavailable. Pull to retry."
+        }
     }
 
     private func checkEligibility() async {
@@ -310,13 +346,23 @@ struct EscortCertReciprocity: View {
         }
     }
 
-    private func upload(state: String, type: String, expiry: String) async {
+    private func upload(_ submission: EscortCertificationSubmissionInput) async -> Bool {
         do {
-            let _: UploadResult = try await EusoTripAPI.shared.mutation(
-                "escorts.uploadCertification", input: UploadInput(state: state, type: type, expirationDate: expiry))
+            let receipt: EscortCertificationSubmissionResult = try await EusoTripAPI.shared.mutation(
+                "escorts.uploadCertification", input: submission)
+            guard receipt.success,
+                  receipt.status == "pending",
+                  receipt.verificationStatus == "unverified",
+                  receipt.requiresVerification,
+                  receipt.evidenceAttached else {
+                errorMessage = "Certification evidence wasn't submitted. Review the file and certification details, then try again."
+                return false
+            }
             await load()
+            return true
         } catch {
             errorMessage = (error as? EusoTripAPIError)?.errorDescription ?? "Couldn't upload the certification. Try again."
+            return false
         }
     }
 
@@ -330,61 +376,6 @@ struct EscortCertReciprocity: View {
 
 /// Empty input for the no-arg queries.
 private struct EmptyInput: Encodable {}
-
-// MARK: - Upload sheet
-
-private struct UploadCertSheet: View {
-    let onUpload: (_ state: String, _ type: String, _ expiry: String) -> Void
-
-    @Environment(\.palette) private var palette
-    @Environment(\.dismiss) private var dismiss
-    @State private var state = ""
-    @State private var type = "Pilot/Escort"
-    @State private var expiry = Date().addingTimeInterval(60 * 60 * 24 * 365)
-
-    private var valid: Bool { state.count == 2 && !type.isEmpty }
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: Space.s4) {
-                Text("Upload certification").font(.system(size: 20, weight: .heavy)).foregroundStyle(palette.textPrimary)
-                labeled("ISSUING STATE") {
-                    TextField("e.g. TX", text: $state).textInputAutocapitalization(.characters)
-                        .font(EType.body).padding(.horizontal, 10).padding(.vertical, 9)
-                        .background(palette.bgCard).clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
-                }
-                labeled("CERT TYPE") {
-                    TextField("e.g. Pilot/Escort", text: $type)
-                        .font(EType.body).padding(.horizontal, 10).padding(.vertical, 9)
-                        .background(palette.bgCard).clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
-                }
-                labeled("EXPIRATION") {
-                    DatePicker("", selection: $expiry, displayedComponents: .date).labelsHidden()
-                }
-                Button {
-                    let iso = ISO8601DateFormatter().string(from: expiry)
-                    onUpload(state.uppercased(), type, iso)
-                    dismiss()
-                } label: {
-                    Text("Upload").font(.system(size: 14, weight: .heavy))
-                        .frame(maxWidth: .infinity).padding(.vertical, 13).foregroundStyle(.white)
-                        .background(valid ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.textTertiary))
-                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-                }
-                .buttonStyle(.plain).disabled(!valid)
-            }
-            .padding(16)
-        }
-        .presentationDetents([.medium])
-    }
-
-    private func labeled<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
-            content()
-        }
-    }
-}
 
 // MARK: - Registered surface wrapper (id 610)
 

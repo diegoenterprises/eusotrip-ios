@@ -1392,7 +1392,10 @@ enum YardLayoutGeoJSON {
               let outer = rings.first as? [[Double]] else { return nil }
         let outerCoords = outer.compactMap { pair -> CLLocationCoordinate2D? in
             guard pair.count >= 2 else { return nil }
-            return CLLocationCoordinate2D(latitude: pair[1], longitude: pair[0])
+            return LatLongParser.validatedCoordinate(
+                latitude: pair[1],
+                longitude: pair[0]
+            )
         }
         guard outerCoords.count >= 3 else { return nil }
 
@@ -1402,7 +1405,10 @@ enum YardLayoutGeoJSON {
             guard let pts = ring as? [[Double]] else { continue }
             let holeCoords = pts.compactMap { pair -> CLLocationCoordinate2D? in
                 guard pair.count >= 2 else { return nil }
-                return CLLocationCoordinate2D(latitude: pair[1], longitude: pair[0])
+                return LatLongParser.validatedCoordinate(
+                    latitude: pair[1],
+                    longitude: pair[0]
+                )
             }
             if holeCoords.count >= 3 {
                 holes.append(MKPolygon(coordinates: holeCoords, count: holeCoords.count))

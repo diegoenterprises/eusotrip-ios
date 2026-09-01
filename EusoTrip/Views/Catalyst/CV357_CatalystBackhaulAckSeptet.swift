@@ -445,6 +445,8 @@ private struct CatalystBackhaulTenderBody357: View {
     @State private var load: CBLoadCtx?
     @State private var loadFailed = false
     @State private var drivers: [CBDriver357] = []
+    @State private var hosEvidence: [HOSFleetDriver] = []
+    @State private var hosWarning: String?
     @State private var esangTip: String?
 
     @State private var accepting = false
@@ -481,13 +483,16 @@ private struct CatalystBackhaulTenderBody357: View {
     private var windowClose: Date? { CB357Fmt.date(load?.pickupDate) }
     private var windowOpen: Date? { CB357Fmt.date(load?.createdAt) }
 
-    /// Best candidate: a driver free of a current load, else the roster head.
+    /// Assignment candidates require both an open roster row and current,
+    /// sourced HOS evidence. Employment or availability alone is not proof.
     private var candidate: CBDriver357? {
-        drivers.first(where: { ($0.currentLoad ?? "").isEmpty }) ?? drivers.first
+        drivers.first {
+            ($0.currentLoad ?? "").isEmpty
+                && evidence(for: $0.id)?.assignmentEligibility() == .eligible
+        }
     }
     private var candidateHOS: String {
-        guard let h = candidate?.hoursRemaining else { return "—" }
-        return String(format: "%.1fh", h)
+        HOSStatus.formatHours(candidate.flatMap { evidence(for: $0.id)?.hoursAvailable?.drivingRemaining })
     }
 
     private var alreadyTaken: Bool {
@@ -506,6 +511,14 @@ private struct CatalystBackhaulTenderBody357: View {
                 } else {
                     tenderHero
                     kpiStrip
+                    if let hosWarning {
+                        Text(hosWarning)
+                            .font(.system(size: 11.5, weight: .semibold))
+                            .foregroundStyle(Brand.warning)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, 16).padding(.vertical, 10)
+                            .background(RoundedRectangle(cornerRadius: 14).fill(Brand.warning.opacity(0.10)))
+                    }
                     eligibilityGate
                     driverRow
                     esangCard
@@ -742,7 +755,7 @@ private struct CatalystBackhaulTenderBody357: View {
     // MARK: Eligibility gate — real rows only
 
     private var eligibilityGate: some View {
-        let hosOk = (candidate?.hoursRemaining ?? 0) > 0
+        let hosOk = candidate.flatMap { evidence(for: $0.id) }?.assignmentEligibility() == .eligible
         let freeOk = candidate != nil && (candidate?.currentLoad ?? "").isEmpty
         let rows: [(String, String, Bool)] = [
             ("Drive time — \(candidateHOS) left today", hosOk ? "FIT" : "NO DATA", hosOk),
@@ -796,6 +809,9 @@ private struct CatalystBackhaulTenderBody357: View {
                             .lineLimit(1)
                         Text((d.currentLoad?.cb357NilIfEmpty).map { "finishing \($0)" } ?? "free for the return leg")
                             .font(.system(size: 9.5)).foregroundStyle(palette.textTertiary)
+                        Text("\(evidence(for: d.id)?.source?.uppercased() ?? "HOS SOURCE UNAVAILABLE") · \(humanISO(evidence(for: d.id)?.freshness))")
+                            .font(.system(size: 8.5, design: .monospaced))
+                            .foregroundStyle(palette.textTertiary)
                     }
                     .padding(.leading, 12)
                     Spacer()
@@ -809,17 +825,17 @@ private struct CatalystBackhaulTenderBody357: View {
                     .padding(.horizontal, 9).padding(.vertical, 4)
                     .background(Capsule().fill(((d.currentLoad ?? "").isEmpty ? Brand.success : Brand.warning).opacity(0.13)))
                 }
-                .padding(.horizontal, 16).frame(height: 60)
+                .padding(.horizontal, 16).frame(minHeight: 74)
             } else {
                 HStack(spacing: 12) {
                     Circle().fill(palette.bgCardSoft).frame(width: 34, height: 34)
                         .overlay(Image(systemName: "person.slash")
                             .font(.system(size: 13)).foregroundStyle(palette.textTertiary))
-                    Text("No drivers on your roster yet — add one to take tenders.")
+                    Text("No roster driver has current, sourced HOS evidence for this tender.")
                         .font(.system(size: 12.5, weight: .semibold)).foregroundStyle(palette.textSecondary)
                     Spacer()
                 }
-                .padding(.horizontal, 16).frame(height: 60)
+                .padding(.horizontal, 16).frame(minHeight: 60)
             }
         }
         .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(palette.bgCard))
@@ -905,8 +921,17 @@ private struct CatalystBackhaulTenderBody357: View {
         } catch {
             loadFailed = (load == nil)
         }
-        if let d: [CBDriver357] = try? await api.query("catalysts.getMyDrivers", input: LimitIn(limit: 25)) {
-            drivers = d
+        do {
+            async let roster: [CBDriver357] = api.query("catalysts.getMyDrivers", input: LimitIn(limit: 25))
+            async let evidence: [HOSFleetDriver] = api.queryNoInput("hos.getFleetHOS")
+            let (driverRows, hosRows) = try await (roster, evidence)
+            drivers = driverRows
+            hosEvidence = hosRows
+            hosWarning = nil
+        } catch {
+            drivers = []
+            hosEvidence = []
+            hosWarning = "Current company HOS evidence could not refresh. Tender acceptance is held."
         }
         if let e: CBEsang357 = try? await api.query(
             "esangCoach.forScreen",
@@ -927,6 +952,12 @@ private struct CatalystBackhaulTenderBody357: View {
         acceptError = nil
         defer { accepting = false }
         do {
+            let refreshed: [HOSFleetDriver] = try await EusoTripAPI.shared.queryNoInput("hos.getFleetHOS")
+            hosEvidence = refreshed
+            guard evidence(for: d.id)?.assignmentEligibility() == .eligible else {
+                acceptError = "Current HOS evidence no longer permits this assignment. Nothing was booked."
+                return
+            }
             let out: CBAssignResult357 = try await EusoTripAPI.shared.mutation(
                 "dispatch.assignDriver",
                 input: AssignIn(
@@ -943,6 +974,12 @@ private struct CatalystBackhaulTenderBody357: View {
             }
         } catch {
             acceptError = "The assignment gate didn't clear — nothing was booked. Review the driver's credentials and vehicle, then try again."
+        }
+    }
+
+    private func evidence(for driverId: String) -> HOSFleetDriver? {
+        hosEvidence.first { row in
+            row.driverId == driverId || row.userId.map { String($0) } == driverId
         }
     }
 

@@ -34,9 +34,11 @@ struct NextLoadBrief: View {
     @EnvironmentObject private var session: EusoTripSession
 
     @StateObject private var lifecycle = TripLifecycleStore()
+    @StateObject private var hos = HOSLiveStore()
     @State private var activeLoad: Load?
     @State private var isAccepting: Bool = false
     @State private var isDeclining: Bool = false
+    @State private var actionError: String?
 
     enum Register { case night, afternoon }
     let register: Register
@@ -74,8 +76,6 @@ struct NextLoadBrief: View {
     private let fallbackDeliveryWindow = "06:00-08:00"
     private let fallbackPickupPlace    = "-"
     private let fallbackDeliveryPlace  = "Mount Vernon Chemicals Plant"
-    private let fallbackHosHead        = "Tight · 14h window at 06:12"
-    private let fallbackHosSub         = "Delivery opens 06:00. 12-min buffer."
     private let fallbackPayHero        = "-"
     private let fallbackPaySub         = "-"
     private let fallbackAdvisoryLead   = "-"
@@ -367,6 +367,25 @@ struct NextLoadBrief: View {
 
     // MARK: HOS fit card
 
+    private var hosFitHeadline: String {
+        guard let status = hos.status else { return "HOS evidence unavailable" }
+        let eligibility = status.assignmentEligibility()
+        guard eligibility == .eligible else { return "Assignment held" }
+        return "Eligible · \(HOSStatus.formatHours(status.drivingRemaining)) drive remaining"
+    }
+
+    private var hosFitDetail: String {
+        guard let status = hos.status else {
+            return hos.lastError ?? "Refresh current ELD/HOS evidence before accepting this load."
+        }
+        if let reason = status.assignmentEligibility().reason { return reason }
+        let source = status.source ?? "source unavailable"
+        if let observed = HOSObservationClock.parse(status.freshness) {
+            return "\(source) · observed \(observed.formatted(.relative(presentation: .named)))"
+        }
+        return "\(source) · observation time unavailable"
+    }
+
     private var hosFitCard: some View {
         HStack(alignment: .top, spacing: Space.s3) {
             ZStack {
@@ -385,10 +404,10 @@ struct NextLoadBrief: View {
                         .foregroundStyle(palette.textTertiary)
                     Spacer()
                 }
-                Text(fallbackHosHead)
+                Text(hosFitHeadline)
                     .font(EType.body.weight(.semibold))
                     .foregroundStyle(palette.textPrimary)
-                Text(fallbackHosSub)
+                Text(hosFitDetail)
                     .font(EType.mono(.micro)).tracking(0.3)
                     .foregroundStyle(palette.textSecondary)
             }
@@ -478,49 +497,75 @@ struct NextLoadBrief: View {
     // MARK: Footer CTAs
 
     private var footerActions: some View {
-        HStack(spacing: Space.s3) {
-            Button { Task { await declineBrief() } } label: {
-                Text("Decline")
-                    .font(EType.body.weight(.semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(palette.bgCard)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                            .strokeBorder(palette.borderSoft)
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-                    .opacity(isDeclining ? 0.6 : 1)
+        VStack(alignment: .leading, spacing: Space.s2) {
+            if let actionError {
+                Text(actionError)
+                    .font(EType.caption)
+                    .foregroundStyle(Brand.danger)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .disabled(isDeclining)
+            HStack(spacing: Space.s3) {
+                Button { Task { await declineBrief() } } label: {
+                    Text("Decline")
+                        .font(EType.body.weight(.semibold))
+                        .foregroundStyle(palette.textPrimary)
+                        .frame(maxWidth: .infinity, minHeight: 52)
+                        .background(palette.bgCard)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                                .strokeBorder(palette.borderSoft)
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                        .opacity(isDeclining ? 0.6 : 1)
+                }
+                .disabled(isDeclining)
 
-            CTAButton(
-                title: "Accept · drive",
-                action: { Task { await acceptBrief() } },
-                isLoading: isAccepting
-            )
+                CTAButton(
+                    title: "Accept · drive",
+                    action: { Task { await acceptBrief() } },
+                    isLoading: isAccepting
+                )
+            }
         }
     }
 
     // MARK: - Hydration + actions
 
     private func hydrateLiveTrip() async {
+        actionError = nil
+        async let hosRefresh: Void = hos.refreshAll()
         await lifecycle.hydrateActiveLoad()
         await lifecycle.refresh()
-        guard !lifecycle.loadId.isEmpty, let n = Int(lifecycle.loadId) else { return }
-        activeLoad = try? await EusoTripAPI.shared.loads.getById(n)
+        if !lifecycle.loadId.isEmpty, let n = Int(lifecycle.loadId) {
+            activeLoad = try? await EusoTripAPI.shared.loads.getById(n)
+        }
+        await hosRefresh
     }
 
     private func acceptBrief() async {
         isAccepting = true
         defer { isAccepting = false }
-        let forwardKeys = ["accepted", "assigned", "locked", "prehaul"]
-        let candidate = lifecycle.availableTransitions.first { t in
+        actionError = nil
+        await hos.refreshAll()
+        guard let status = hos.status,
+              status.assignmentEligibility() == .eligible else {
+            actionError = hos.status?.assignmentEligibility().reason
+                ?? hos.lastError
+                ?? "Current HOS evidence is unavailable. Nothing was accepted."
+            return
+        }
+        let forwardKeys = ["accept", "assigned", "locked", "prehaul"]
+        guard let candidate = lifecycle.availableTransitions.first(where: { t in
             let to = t.to.lowercased()
             return forwardKeys.contains(where: { to.contains($0) })
-        } ?? lifecycle.availableTransitions.first
-        if let transition = candidate {
-            _ = await lifecycle.execute(transition)
+        }) else {
+            actionError = "No eligible acceptance step is available for this load. Nothing was accepted."
+            return
+        }
+        guard await lifecycle.execute(candidate) else {
+            actionError = lifecycle.lastError?.eusoUserCopy
+                ?? "Acceptance was not confirmed. Nothing was accepted."
+            return
         }
         advance?()
     }

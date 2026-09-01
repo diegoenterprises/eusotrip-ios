@@ -14,9 +14,16 @@
 //          input {status?} → id / loadNumber / status / loadStatus /
 //          position / cargoType / hazmatClass / origin / destination /
 //          rate / rateType / distance / pickupDate, updatedAt desc, limit 30.
-//    REAL  escorts.getJobsSummary   escorts.ts:2392 → the volume band
-//          pending / accepted / inProgress / completed / totalEarnings /
-//          weeklyEarnings.
+//    REAL  escorts.getJobsSummary   escorts.ts:2392 → the volume band.
+//          The return at escorts.ts:2413-2419 is exactly
+//          available / accepted / completed / totalEarnings / assigned /
+//          inProgress / weeklyEarnings. There is NO `pending` key: the
+//          server counts pending rows only to fold them into `assigned`
+//          (assigned = accepted + pending, escorts.ts:2416), so PENDING on
+//          this board is DERIVED CLIENT-SIDE as assigned − accepted
+//          (count(_:) below at :597-607, `case .pending` at :602) and is
+//          floored at zero. Re-pinned this fire — the previous :498-500
+//          cite had drifted.
 //    REAL  escorts.updateJobStatus  escorts.ts:1171 → ADVANCE STAGE
 //          and it is a real gate, not a label: promoting a job to en_route
 //          requires a PASSED escort_vehicle_inspection for that assignment
@@ -63,21 +70,82 @@
 //  ADVANCE STAGE stays ONLINE_ONLY — the escort role has no outbox lanes
 //  (PLANNED per the Offline Mode Encyclopedia v2). No queue badge, ever.
 //
-//  CHAIN: stage transitions are PARTLY CLOSED on the phone.
-//  escort:job_assigned, escort:job_started and escort:job_completed all
-//  reach iOS and refresh this surface (RealtimeService.swift:451-458), so
-//  ACCEPTED, EN ROUTE and DONE light on push. Two halves are missing and
-//  named for the ledger: no event distinguishes ON SITE from ESCORTING (both
-//  ride the generic job_started lane), and an application going stale in
-//  PENDING emits nothing at all — those move on poll only. This screen is
-//  also the receiving end of ES-13's A1 SILENT chain: a tender that never
-//  lights the marketplace still lands here correctly, because applyForJob
-//  broadcasts ESCORT_JOB_APPLIED back to the applicant's own user channel
-//  (escorts.ts:918).
+//  CHAIN: stage transitions are PARTLY CLOSED on the phone, and the causal
+//  picture is stated in full because a shorter version of it read as if this
+//  screen's own ADVANCE STAGE fanned out. It does not.
 //
-//  RBAC: escortProcedure (escorts.ts:11) → roleProcedure(ROLES.ESCORT);
-//  every row self-scoped by resolveEscortUserId (escorts.ts:138). The money
-//  shown is the escort's own assignment rate — never the shipper's linehaul.
+//  Real on the receiving side: escort:job_assigned, escort:job_started and
+//  escort:job_completed are handled by RealtimeService.swift:499-508 —
+//  REPOINTED this fire from a stale :451-459, which is the financial/wallet
+//  case block, not the escort one. That arm posts `.esangRefreshSurface` at
+//  RealtimeService.swift:507 (name declared EusoTripApp.swift:389). This
+//  screen OBSERVES that notification and re-runs refresh() at :337-339 — the
+//  same subscriber pattern Views/Shipper/200_ShipperHome.swift:196 carries —
+//  so the event reaches the board instead of being dropped at the process
+//  edge.
+//
+//  NOT real: escorts.updateJobStatus (escorts.ts:1171-1205) carries NO emit
+//  and NO broadcast anywhere in its body. It resolves the escort, loads the
+//  assignment, enforces the ES-06 pre-trip interlock, builds `updates`, runs
+//  one db.update on escortAssignments and returns. Every escort job event on
+//  this chain is emitted elsewhere and never on this screen:
+//  escort:job_assigned by convoy.createConvoy for the lead at convoy.ts:144
+//  and the chase at convoy.ts:158, and by dispatch.assignEscort at
+//  dispatch.ts:3137; escort:job_started by convoy.updateConvoyStatus when the
+//  convoy goes active (convoy.ts:297); escort:job_completed by that same
+//  procedure when it closes (convoy.ts:316). So ACCEPTED, EN ROUTE and DONE
+//  light on push only when a convoy or dispatch transition drives them; after
+//  a self-initiated advance this board repaints from its own reload path, not
+//  from a pushed frame. That is exactly why the badge below is gated on BOTH
+//  halves rather than on the observer alone.
+//
+//  Two halves are missing and named for the ledger: no event distinguishes
+//  ON SITE from ESCORTING (both ride the generic job_started lane), and an
+//  application going stale in PENDING emits nothing at all — those move on
+//  poll only. This screen is also the receiving end of ES-13's A1 SILENT
+//  chain: a tender that never lights the marketplace still lands here
+//  correctly, because applyForJob broadcasts ESCORT_JOB_APPLIED back to the
+//  applicant's own user channel (escorts.ts:918).
+//
+//  DB ROW + CHAIN ANCHOR: the only write this screen can cause is
+//  updateJobStatus, and the row it writes is escortAssignments — one
+//  db.update at escorts.ts:1203 with {status, updatedAt} built at :1199,
+//  plus startedAt on escorting (:1201) and completedAt on completed (:1202).
+//  blockchainAuditTrail is ABSENT on this path and is named as a gap rather
+//  than implied: escorts.ts never imports the blockchainAuditTrail table
+//  anywhere in its 4745 lines, so an escort's own stage advance appends no
+//  chain anchor. escorts.ts does import recordAuditEvent (escorts.ts:17),
+//  but that helper writes the auditLogs table (server/_core/
+//  auditService.ts:201 and :230) — a different, weaker record — and
+//  updateJobStatus does not call even that. The pattern this path lacks is
+//  real and next door: dispatch.ts:4079 and wallet.ts:1190 both
+//  db.insert(blockchainAuditTrail) on their own state writes, against the
+//  table declared drizzle/schema.ts:10018.
+//
+//  WEB PARITY: /escort/jobs → client/src/pages/EscortJobs.tsx, lazy-imported
+//  client/src/App.tsx:224 and mounted client/src/App.tsx:940 behind
+//  guard(ESCT). Named divergence: that page reads escorts.getJobs
+//  (escorts.ts:2363) + escorts.getJobsSummary (escorts.ts:2392), NOT
+//  getMyJobs — route-and-purpose parity, not an identical projection.
+//
+//  RBAC: roleProcedure, pinned so it can be checked. escorts.ts:11 imports
+//  escortProcedure under the local alias `protectedProcedure`, and
+//  escortProcedure is declared `roleProcedure(ROLES.ESCORT)` at
+//  server/_core/trpc.ts:228 (roleProcedure itself at server/_core/
+//  trpc.ts:216). The alias is a naming artefact inside escorts.ts only — the
+//  gate is the ROLE gate, not a bare protectedProcedure. Every row is
+//  additionally self-scoped by resolveEscortUserId (escorts.ts:138). The
+//  money shown is the escort's own assignment rate — never the shipper's
+//  linehaul.
+//
+//  COUNTRY / CURRENCY: transportMode truck · COUNTRY US · CURRENCY USD.
+//  Every figure in the money slot is escortAssignments.rate as stored; no FX
+//  conversion happens on this surface and none is implied. A CA or MX
+//  assignment takes the same row and the same stage ladder.
+//
+//  VALUE: the operator sees the whole book as flow — what is rolling, what is
+//  staged, what is waiting on someone else — and can tell in one glance that
+//  one application has been sitting twelve days without an answer.
 //
 //  Sole author: Mike "Diego" Usoro / Eusorone Technologies, Inc.
 //  Powered by ESANG AI™.
@@ -238,6 +306,10 @@ struct EscortMyJobs: View {
     @State private var stalenessLine: String? = nil
     @State private var advancing: String? = nil
     @State private var toast: String? = nil
+    /// True only while this screen's `.esangRefreshSurface` observer is
+    /// actually mounted. The push badge is gated on it — the board never
+    /// claims a live link it is not holding.
+    @State private var pushLinked = false
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -254,6 +326,19 @@ struct EscortMyJobs: View {
         }
         .task { await refresh() }
         .eusoRefreshable { await refresh() }
+        // CHAIN CLOSURE — DO NOT REMOVE. RealtimeService.swift:499-508 turns
+        // escort:job_assigned / job_started / job_completed into
+        // `.esangRefreshSurface` (posted at :507); without this observer the
+        // event reached the process and died there. Same pattern as
+        // 200_ShipperHome.swift:196. Note this closes only the RECEIVING half:
+        // the emitters are convoy.ts:144/158/297/316 and dispatch.ts:3137 —
+        // escorts.updateJobStatus emits nothing, so a self-initiated advance
+        // never arrives back through this line.
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task { await refresh() }
+        }
+        .onAppear { pushLinked = true }
+        .onDisappear { pushLinked = false }
         .overlay(alignment: .bottom) { toastLayer }
     }
 
@@ -279,8 +364,12 @@ struct EscortMyJobs: View {
 
     private var titleRow: some View {
         HStack(alignment: .center, spacing: Space.s3) {
+            // Axis E · HOME ramp 34/700/-0.6. This is a home-archetype board
+            // (full escort role tab bar, hairline on the y158 home line), not
+            // a pushed detail, so it takes the HOME H1 and not 28/700/-0.4.
+            // Weight 700 is `.bold` in SwiftUI — `.heavy` is 900.
             Text("My Jobs")
-                .font(.system(size: 28, weight: .heavy)).tracking(-0.4)
+                .font(.system(size: 34, weight: .bold)).tracking(-0.6)
                 .foregroundStyle(LinearGradient.diagonal)
             Spacer(minLength: 0)
             if let rolling = rollingJob, let n = rolling.loadNumber {
@@ -303,6 +392,16 @@ struct EscortMyJobs: View {
         jobs.first { $0.stage == .escorting } ?? jobs.first { $0.stage == .onSite }
     }
 
+    /// PUSH is only said when both halves are true: the numbers came off a
+    /// live read (no staleness line) AND this screen's `.esangRefreshSurface`
+    /// observer is mounted. A snapshot reads SNAPSHOT; a live read with no
+    /// observer attached reads LIVE and nothing more.
+    private var badgeCaps: String {
+        if stalenessLine != nil { return "SNAPSHOT" }
+        return pushLinked ? "LIVE · PUSH" : "LIVE"
+    }
+    private var badgeIsLive: Bool { stalenessLine == nil }
+
     /// Green dot is earned here — three of this board's transitions arrive as
     /// push. It flips to grey the moment the board is painting a snapshot.
     private var metaRow: some View {
@@ -315,13 +414,16 @@ struct EscortMyJobs: View {
                     .background(stage.tint(palette).opacity(0.16))
                     .clipShape(Capsule())
             }
-            Text("\(liveCount) in book\(rollingJob == nil ? "" : " · 1 rolling")")
+            // "· N rolling" RESTORED (cut had been measured on the DejaVu
+            // substitute only; in Geist 600 the caption ends x181-187.5 vs a
+            // glow ring at x189 — see the SVG meta-row comment for the table).
+            Text("\(liveCount) in book · \(rowCount(.escorting)) rolling")
                 .font(EType.caption).foregroundStyle(palette.textSecondary)
             HStack(spacing: 5) {
                 Circle()
-                    .fill(AnyShapeStyle(stalenessLine == nil ? Brand.success : palette.textTertiary))
+                    .fill(AnyShapeStyle(badgeIsLive ? Brand.success : palette.textTertiary))
                     .frame(width: 7, height: 7)
-                Text(stalenessLine == nil ? "LIVE · PUSH" : "SNAPSHOT")
+                Text(badgeCaps)
                     .font(EType.caption.weight(.semibold))
                     .foregroundStyle(palette.textPrimary)
             }
@@ -378,9 +480,9 @@ struct EscortMyJobs: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Space.s4)
         .background(palette.bgCard)
-        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+        .overlay(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
             .strokeBorder(palette.borderFaint, lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous))
     }
 
     private var errorCard: some View {
@@ -408,9 +510,9 @@ struct EscortMyJobs: View {
         .padding(Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(palette.bgCard)
-        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+        .overlay(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
             .strokeBorder(Brand.danger.opacity(0.4), lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous))
     }
 
     // MARK: Volume band (the escort's own throughput — the personality figure)
@@ -447,9 +549,9 @@ struct EscortMyJobs: View {
             .padding(Space.s3)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(palette.bgCard)
-            .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+            .overlay(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
                 .strokeBorder(palette.borderFaint, lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous))
             Text("Lifetime figure. A rolling 12-month window isn't enforced on your record yet, so this screen won't label it as one.")
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundStyle(palette.textTertiary)
@@ -637,64 +739,113 @@ struct EscortMyJobs: View {
         }
     }
 
+    /// Axis G · the 14-kit ListRow. 40×40 rx10 icon chip · title 14/700 +
+    /// mono sub + mono code · SHORT right pill (position — lead|chase|both
+    /// only) on line 1 · money on line 2 · code, STALLED and the real ADVANCE
+    /// CTA on line 3. The pill and the money sit on DIFFERENT lines by
+    /// construction, so a long pill can never grow into the money.
     private func jobRow(_ job: MyJobRow) -> some View {
         let stalled = isStalled(job)
-        return VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                if let p = job.position { positionBadge(p) }
-                if stalled {
-                    Text("STALLED")
-                        .font(.system(size: 9, weight: .heavy)).tracking(0.4)
-                        .foregroundStyle(Brand.warning)
-                        .padding(.horizontal, 10).padding(.vertical, 3)
-                        .background(Brand.warning.opacity(0.22))
-                        .clipShape(Capsule())
-                }
-                Spacer(minLength: 0)
-                if let n = job.loadNumber {
-                    Text(n).font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
-                }
-            }
-            HStack(alignment: .bottom, spacing: Space.s2) {
-                VStack(alignment: .leading, spacing: 3) {
+        let tint = stalled ? Brand.warning : job.stage.tint(palette)
+        return HStack(alignment: .top, spacing: 10) {
+            rowIconChip(stalled: stalled, tint: tint)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
                     Text(job.lane)
-                        .font(.system(size: 13, weight: .bold))
+                        .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(palette.textPrimary)
                         .lineLimit(1).minimumScaleFactor(0.8)
+                    Spacer(minLength: 8)
+                    if let p = job.position { positionBadge(p) }
+                }
+                HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
                     Text(metaLine(job))
                         .font(EType.mono(.caption))
                         .foregroundStyle(stalled ? Brand.warning : palette.textSecondary)
                         .lineLimit(1).minimumScaleFactor(0.75)
+                    Spacer(minLength: 8)
+                    Text(moneyLine(job))
+                        .font(.system(size: 14, weight: .bold, design: .monospaced))
+                        .foregroundStyle(hasRate(job) ? palette.textPrimary
+                                         : (stalled ? Brand.warning : palette.textTertiary))
+                        .lineLimit(1).minimumScaleFactor(0.8)
                 }
-                Spacer(minLength: 0)
-                if let next = job.stage.next {
-                    advanceButton(job, to: next)
+                HStack(alignment: .center, spacing: 8) {
+                    if let n = job.loadNumber {
+                        Text(n).font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
+                    }
+                    if stalled {
+                        Text("STALLED")
+                            .font(.system(size: 8, weight: .heavy)).tracking(0.4)
+                            .foregroundStyle(Brand.warning)
+                            .padding(.horizontal, 8).padding(.vertical, 2)
+                            .background(Brand.warning.opacity(0.22))
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    }
+                    Spacer(minLength: 8)
+                    if let next = job.stage.next {
+                        advanceButton(job, to: next)
+                    }
                 }
             }
         }
         .padding(Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(stalled ? AnyShapeStyle(Brand.warning.opacity(0.08)) : AnyShapeStyle(palette.bgCard))
-        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+        .overlay(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
             .strokeBorder(stalled ? Brand.warning.opacity(0.45)
                           : (job.stage.isLive ? Brand.escort.opacity(0.30) : palette.borderFaint),
                           lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous))
     }
 
+    /// The 40×40 rx10 ListRow icon chip: a lane mark — origin dot, the run,
+    /// and the corner it turns into. Dashed when the row is stalled.
+    private func rowIconChip(stalled: Bool, tint: Color) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(tint.opacity(0.14))
+            LaneMark()
+                .stroke(tint, style: StrokeStyle(lineWidth: 1.7, lineCap: .round, lineJoin: .round,
+                                                 dash: stalled ? [3, 3] : []))
+                .frame(width: 22, height: 22)
+            Circle().fill(tint).frame(width: 6, height: 6).offset(x: -8, y: -8)
+        }
+        .frame(width: 40, height: 40)
+    }
+
+    /// Origin → destination lane mark used inside the ListRow icon chip.
+    private struct LaneMark: Shape {
+        func path(in r: CGRect) -> Path {
+            var p = Path()
+            p.move(to: CGPoint(x: r.minX + 2, y: r.minY + 2))
+            p.addLine(to: CGPoint(x: r.maxX - 2, y: r.maxY - 2))
+            p.move(to: CGPoint(x: r.maxX - 8, y: r.maxY - 2))
+            p.addLine(to: CGPoint(x: r.maxX - 2, y: r.maxY - 2))
+            p.addLine(to: CGPoint(x: r.maxX - 2, y: r.maxY - 8))
+            return p
+        }
+    }
+
+    /// Distance and timing only — the money has its own slot on line 2.
     private func metaLine(_ job: MyJobRow) -> String {
         var parts: [String] = []
         if let d = job.distance, d > 0 { parts.append("\(Int(d.rounded())) mi") }
-        if let r = job.rate, r > 0 {
-            parts.append("$\(Int(r.rounded()).formatted())\(job.rateType.map { " \($0)" } ?? "")")
-        } else {
-            parts.append("rate on award")
-        }
         if let p = job.pickupDate, let rel = pickupLabel(p) { parts.append(rel) }
-        return parts.joined(separator: " · ")
+        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+    }
+
+    private func hasRate(_ job: MyJobRow) -> Bool { (job.rate ?? 0) > 0 }
+
+    /// The money slot, in SF-Mono. An unawarded row states the honest money
+    /// state rather than a number nobody has agreed to yet.
+    private func moneyLine(_ job: MyJobRow) -> String {
+        guard let r = job.rate, r > 0 else { return "rate on award" }
+        return "$\(Int(r.rounded()).formatted())\(job.rateType.map { " \($0)" } ?? "")"
     }
 
     /// lead | chase | both — nothing else can appear in this column.
+    /// Deliberately SHORT: this is the right pill of the ListRow anatomy.
     private func positionBadge(_ position: String) -> some View {
         let upper = position.uppercased()
         let tint: Color = upper == "CHASE" ? Brand.escort : (upper == "BOTH" ? Brand.info : Brand.blue)
@@ -703,7 +854,8 @@ struct EscortMyJobs: View {
             .foregroundStyle(tint)
             .padding(.horizontal, 10).padding(.vertical, 3)
             .background(tint.opacity(0.14))
-            .clipShape(Capsule())
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .fixedSize()
     }
 
     /// Client-side aging read: a pending application older than seven days
@@ -759,6 +911,10 @@ struct EscortMyJobs: View {
         .overlay(Capsule().strokeBorder(palette.borderFaint, lineWidth: 1))
     }
 
+    /// The 44pt action-bar button takes Radius.xl (20) — the 14-kit card radius,
+    /// and the same value sibling ES-12 draws its CTA buttons at. It previously
+    /// carried Radius.md (12), which is neither a kit value nor a capsule (a 44pt
+    /// bar reads as a capsule only at 22).
     private var actionBar: some View {
         HStack(spacing: 8) {
             Button {
@@ -773,7 +929,7 @@ struct EscortMyJobs: View {
                     .background(rollingJob == nil
                                 ? AnyShapeStyle(palette.textTertiary.opacity(0.4))
                                 : AnyShapeStyle(LinearGradient.primary))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous))
             }
             .buttonStyle(.plain)
             .disabled(rollingJob == nil)

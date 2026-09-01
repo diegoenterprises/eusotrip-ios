@@ -107,7 +107,61 @@ enum VesselOperatorNavRoute {
         "account":            "Vesl656",
         "statusUpdate":       "Vesl657",
         "demurrageWatch":     "Vesl658",
+
+        // 2026-08-17 · B/L + RELEASE-DOCUMENTS BAND (Vesl679/714/715/718/719/
+        // 763/765/766/767/768). These ten screens shipped their SVG twins and
+        // Swift ports but carried no route key, so every one of them was an
+        // unreachable orphan while its own header asserted a SHIPMENTS mount.
+        // Registering the keys is the whole cure; the bottom-nav `map` above
+        // is untouched and the four canonical tabs are unchanged.
+        //
+        // Documents-of-title (negotiable — surrender/endorse gated):
+        "telexRelease":       "Vesl679",
+        "blDraftApproval":    "Vesl715",
+        "cargoRelease":       "Vesl718",
+        "electronicBL":       "Vesl719",
+        "blDuplicateCheck":   "Vesl763",
+        "letterOfCredit":     "Vesl765",
+        "letterOfIndemnity":  "Vesl766",
+        "masterHouseBL":      "Vesl768",
+        // Non-negotiable / pre-issue documents:
+        "shippingInstructions": "Vesl714",
+        "seaWaybill":         "Vesl767",
+
+        // 2026-08-18 · vessel §17 · PORT-FORMALITIES & RECORD-BOOKS BAND (844-853).
+        // The last ten identities in the vessel catalog to reach Views/Vessel. They
+        // are registered here as well as in the ContentView registry because the
+        // 834-843 band above was given a registry row and never a route key, which
+        // is the same unreachable-orphan class the B/L band was cured of earlier —
+        // a registry entry is reachable from the surface list, a deep link or a push
+        // payload still lands nowhere. Filed for 834-843 rather than fixed here,
+        // because that band is not in this fire's claim manifest.
+        //
+        // MARPOL record books (regulated logbooks — signature is irreversible):
+        "oilRecordBook":      "Vesl844",
+        "garbageRecordBook":  "Vesl845",
+        // Crew (MLC 2006 / STCW):
+        "crewChange":         "Vesl846",
+        "hoursOfRest":        "Vesl847",
+        // Port formalities (IMO FAL Convention):
+        "singleWindow":       "Vesl848",
+        "generalDeclaration": "Vesl849",
+        "shipStores":         "Vesl850",
+        "portClearance":      "Vesl851",
+        // Port account + sailing window:
+        "portDisbursement":   "Vesl852",
+        "tidalWindow":        "Vesl853",
     ]
+
+    /// Case-insensitive resolution for `deepMap`. The map keys are lowerCamel
+    /// by convention but deep links and push payloads arrive in whatever case
+    /// the sender used; matching only the exact literal is how a registered
+    /// route still reads as a dead tap in the field.
+    static func deepRoute(for key: String) -> String? {
+        if let hit = deepMap[key] { return hit }
+        let folded = key.folding(options: .caseInsensitive, locale: nil)
+        return deepMap.first { $0.key.folding(options: .caseInsensitive, locale: nil) == folded }?.value
+    }
 }
 
 @MainActor
@@ -124,7 +178,7 @@ enum VesselOperatorNavDispatcher {
         }
 
         guard let screenId = VesselOperatorNavRoute.map[key]
-                ?? VesselOperatorNavRoute.deepMap[label] else { return }
+                ?? VesselOperatorNavRoute.deepRoute(for: label) else { return }
         NotificationCenter.default.post(
             name: .eusoVesselNavSwap,
             object: nil,

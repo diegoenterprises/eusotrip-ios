@@ -17,6 +17,75 @@
 import Foundation
 import SwiftUI
 
+/// One policy boundary for every route-weather surface. Ambient weather has
+/// its own WeatherKit-first chain; route weather is accepted only when the
+/// server names an approved route provider, supplies a provider computation
+/// timestamp, and the row is still operationally fresh.
+enum WeatherRouteDataPolicy {
+    enum Authority: Equatable {
+        case here
+        case weatherKitFallback
+        case rejected
+
+        var attribution: String {
+            switch self {
+            case .here: return "HERE ROUTE WEATHER"
+            case .weatherKitFallback: return "APPLE WEATHERKIT FALLBACK"
+            case .rejected: return "ROUTE WEATHER SOURCE UNAVAILABLE"
+            }
+        }
+    }
+
+    static let maxAge: TimeInterval = 30 * 60
+    static let futureClockSkewTolerance: TimeInterval = 5 * 60
+
+    static func authority(for rawSource: String?) -> Authority {
+        switch rawSource?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() {
+        case "here", "here_route_weather", "here_destination_weather", "here-destination-weather":
+            return .here
+        case "weatherkit", "weatherkit_route_fallback", "apple_weather", "apple weather":
+            return .weatherKitFallback
+        default:
+            return .rejected
+        }
+    }
+
+    static func parseProviderDate(_ raw: String?) -> Date? {
+        guard let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty else { return nil }
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let plain = ISO8601DateFormatter()
+        plain.formatOptions = [.withInternetDateTime]
+        return fractional.date(from: raw) ?? plain.date(from: raw)
+    }
+
+    static func isFresh(
+        _ computedAt: Date?,
+        at now: Date = Date(),
+        maxAge: TimeInterval = maxAge
+    ) -> Bool {
+        guard let computedAt else { return false }
+        let age = now.timeIntervalSince(computedAt)
+        return age >= -futureClockSkewTolerance && age <= maxAge
+    }
+
+    /// Production can contain internal QA loads. They must never be promoted
+    /// into a customer-facing live-weather panel merely because a provider
+    /// produced a valid response for them.
+    static func isSyntheticLoadIdentifier(_ raw: String) -> Bool {
+        let normalized = raw
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .uppercased()
+        let forbiddenPrefixes = [
+            "AP-TEST-", "TEST-", "DEMO-", "SAMPLE-", "FIXTURE-", "PREVIEW-",
+        ]
+        return normalized.isEmpty || forbiddenPrefixes.contains { normalized.hasPrefix($0) }
+    }
+}
+
 // Level-100 / always-on doctrine (2026-06-19): the home weather widget
 // must NEVER show "unavailable". The whole snapshot graph is `Codable`
 // so the last-good REAL reading can be persisted to disk (UserDefaults
@@ -72,8 +141,8 @@ struct WeatherSnapshot: Hashable, Codable {
     var alert: ActiveAlert? = nil
 
     /// Per-load ETA-risk segments for the LANE IMPACT panel — populated
-    /// by `weather.laneImpact` (HERE route weather at ETA, with an explicitly
-    /// attributed WeatherKit fallback).
+    /// by `weather.laneImpact` from HERE route weather at ETA. Ambient
+    /// providers never populate this route-intelligence surface.
     /// Nil/empty → the panel collapses (between loads, Enterprise route
     /// tier absent, or the call returned no data). Never seeded.
     var laneImpact: [LaneImpactSegment]? = nil
@@ -185,7 +254,10 @@ struct WeatherSnapshot: Hashable, Codable {
 
         /// "40%" or nil (hidden below the 10% noise floor).
         var precipDisplay: String? {
-            guard let p = precipChancePct, p >= 10 else { return nil }
+            guard let p = WeatherNumeric.validatedInt(
+                precipChancePct,
+                allowed: WeatherNumeric.percent
+            ), p >= 10 else { return nil }
             return "\(p)%"
         }
     }
@@ -219,10 +291,17 @@ struct WeatherSnapshot: Hashable, Codable {
 
         var peakMinute: Minute? {
             minutes.max { lhs, rhs in
-                let lChance = lhs.precipChancePct ?? 0
-                let rChance = rhs.precipChancePct ?? 0
+                let lChance = WeatherNumeric.validatedInt(
+                    lhs.precipChancePct,
+                    allowed: WeatherNumeric.percent
+                ) ?? 0
+                let rChance = WeatherNumeric.validatedInt(
+                    rhs.precipChancePct,
+                    allowed: WeatherNumeric.percent
+                ) ?? 0
                 if lChance != rChance { return lChance < rChance }
-                return (lhs.intensityMmPerHour ?? 0) < (rhs.intensityMmPerHour ?? 0)
+                return (WeatherNumeric.nonnegativeFinite(lhs.intensityMmPerHour) ?? 0)
+                    < (WeatherNumeric.nonnegativeFinite(rhs.intensityMmPerHour) ?? 0)
             }
         }
 
@@ -230,27 +309,44 @@ struct WeatherSnapshot: Hashable, Codable {
             let cutoff = Date().addingTimeInterval(-60)
             return minutes.first { minute in
                 minute.date >= cutoff &&
-                ((minute.precipChancePct ?? 0) >= 35 || (minute.intensityMmPerHour ?? 0) > 0)
+                ((WeatherNumeric.validatedInt(
+                    minute.precipChancePct,
+                    allowed: WeatherNumeric.percent
+                ) ?? 0) >= 35 || (WeatherNumeric.nonnegativeFinite(minute.intensityMmPerHour) ?? 0) > 0)
             }
         }
 
         var dominantPrecipitationType: String? {
-            summaries.first(where: { ($0.precipChancePct ?? 0) >= 35 || ($0.intensityMmPerHour ?? 0) > 0 })?
+            summaries.first(where: {
+                (WeatherNumeric.validatedInt(
+                    $0.precipChancePct,
+                    allowed: WeatherNumeric.percent
+                ) ?? 0) >= 35 || (WeatherNumeric.nonnegativeFinite($0.intensityMmPerHour) ?? 0) > 0
+            })?
                 .precipitationType
         }
 
         var displayLine: String? {
             guard let minute = nextMeaningfulMinute ?? peakMinute,
-                  let chance = minute.precipChancePct,
-                  chance >= 25 || (minute.intensityMmPerHour ?? 0) > 0 else { return nil }
-            let now = Date()
-            let delta = Int(minute.date.timeIntervalSince(now) / 60.0)
-            let label = Self.precipitationLabel(for: dominantPrecipitationType)
-            if delta <= 1 {
-                return "\(label) now · \(chance)%"
+                  let chance = WeatherNumeric.validatedInt(
+                    minute.precipChancePct,
+                    allowed: WeatherNumeric.percent
+                  ),
+                  chance >= 25 || (WeatherNumeric.nonnegativeFinite(minute.intensityMmPerHour) ?? 0) > 0 else {
+                return nil
             }
-            if delta < 60 {
-                return "\(label) starts in \(delta) min · \(chance)%"
+            let now = Date()
+            let label = Self.precipitationLabel(for: dominantPrecipitationType)
+            if let delta = WeatherNumeric.roundedInt(
+                minute.date.timeIntervalSince(now) / 60.0,
+                allowed: -1...525_600
+            ) {
+                if delta <= 1 {
+                    return "\(label) now · \(chance)%"
+                }
+                if delta < 60 {
+                    return "\(label) starts in \(delta) min · \(chance)%"
+                }
             }
             let f = DateFormatter()
             f.locale = .current
@@ -381,8 +477,13 @@ struct WeatherSnapshot: Hashable, Codable {
 
         /// "30%" or nil.
         var precipDisplay: String? {
-            guard let p = precipChance, p > 0.05 else { return nil }
-            return "\(Int((p * 100).rounded()))%"
+            guard let p = WeatherNumeric.finite(precipChance, allowed: 0...1),
+                  p > 0.05,
+                  let percent = WeatherNumeric.roundedInt(
+                    p * 100,
+                    allowed: WeatherNumeric.percent
+                  ) else { return nil }
+            return "\(percent)%"
         }
     }
 
@@ -645,9 +746,12 @@ struct WeatherSnapshot: Hashable, Codable {
         let recommendation: Recommendation?
         /// §3 `computedAt` — when the route reduction ran. Nil → omitted.
         let computedAt: Date?
-        /// Provider that actually produced the route samples (`here` primary,
-        /// `weatherkit` fallback). Optional preserves older persisted snapshots.
+        /// Provider that actually produced the route samples. Only HERE earns
+        /// route-display authority; optional preserves older cached snapshots.
         var source: String? = nil
+        /// Authenticated source identifier used for follow-up mutations. This
+        /// remains distinct from `loadId`, which is the human-facing number.
+        var sourceLoadId: String? = nil
 
         // ── EusoTrip render helpers (alongside the contract) ─────────
         /// "Austin → Dallas · I-35" — the lane string the route-cell
@@ -664,15 +768,68 @@ struct WeatherSnapshot: Hashable, Codable {
 
         var id: String { loadId }
 
+        var routeWeatherAuthority: WeatherRouteDataPolicy.Authority {
+            WeatherRouteDataPolicy.authority(for: source)
+        }
+
+        func isFreshRouteWeather(at date: Date = Date()) -> Bool {
+            WeatherRouteDataPolicy.isFresh(computedAt, at: date)
+        }
+
+        var isSyntheticLoad: Bool {
+            WeatherRouteDataPolicy.isSyntheticLoadIdentifier(loadId)
+        }
+
+        /// A route row is allowed onto a live surface only with HERE authority,
+        /// a fresh provider timestamp, a customer load identifier,
+        /// and real endpoint text. Unknown provider rows and stale/test rows
+        /// remain data-contract evidence but do not masquerade as live.
+        func isRenderableRouteWeather(at date: Date = Date()) -> Bool {
+            routeWeatherAuthority == .here
+                && isFreshRouteWeather(at: date)
+                && !isSyntheticLoad
+                && !route.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+
+        /// ESANG is stricter than display: only a fresh HERE route reduction
+        /// with at least one real provider driver can ground an AI request.
+        /// Ambient providers never gain route-grounding authority.
+        func canRequestGroundedESang(at date: Date = Date()) -> Bool {
+            isRenderableRouteWeather(at: date)
+                && routeWeatherAuthority == .here
+                && analysisLoadId != nil
+                && drivers.contains(where: { $0.available })
+        }
+
+        var analysisLoadId: String? {
+            let value = sourceLoadId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return value.isEmpty ? nil : value
+        }
+
+        /// Answers are keyed to the exact route reduction. A refresh for the
+        /// same load must not reuse analysis grounded against older weather.
+        var esangGroundingKey: String {
+            let timestamp = computedAt.map { String($0.timeIntervalSince1970) } ?? "missing"
+            return "\(loadId)|\(analysisLoadId ?? "missing")|\(source ?? "missing")|\(timestamp)"
+        }
+
         var routeWeatherAttribution: String {
-            switch source?.lowercased() {
-            case "here", "here_route_weather":
-                return "HERE ROUTE WEATHER"
-            case "weatherkit", "weatherkit_route_fallback":
-                return "APPLE WEATHERKIT FALLBACK"
-            default:
-                return "ROUTE WEATHER SOURCE UNAVAILABLE"
+            routeWeatherAuthority.attribution
+        }
+
+        func routeWeatherProvenance(at date: Date = Date()) -> String {
+            var parts = [routeWeatherAttribution]
+            if let computedAt,
+               let age = WeatherNumeric.elapsedWholeSeconds(from: computedAt, to: date) {
+                if age < 60 {
+                    parts.append("UPDATED JUST NOW")
+                } else if age < 3600 {
+                    parts.append("UPDATED \(age / 60)M AGO")
+                } else {
+                    parts.append("UPDATED \(age / 3600)H AGO")
+                }
             }
+            return parts.joined(separator: " · ")
         }
 
         /// The risk readout shown in the route footer — the §3 `headline`
@@ -728,31 +885,58 @@ struct WeatherSnapshot: Hashable, Codable {
     }
 
     /// "72°"
-    var tempDisplay: String { "\(tempF)°" }
+    var tempDisplay: String {
+        guard let value = WeatherNumeric.validatedInt(
+            tempF,
+            allowed: WeatherNumeric.temperatureF
+        ) else { return "—" }
+        return "\(value)°"
+    }
 
     /// "Feels 91°" or "Feels —".
     var feelsLikeDisplay: String {
-        guard let f = feelsLikeF else { return "—" }
+        guard let f = WeatherNumeric.validatedInt(
+            feelsLikeF,
+            allowed: WeatherNumeric.temperatureF
+        ) else { return "—" }
         return "\(f)°"
     }
 
     /// "64%" or "—".
     var humidityDisplay: String {
-        guard let h = humidityPct else { return "—" }
+        guard let h = WeatherNumeric.validatedInt(
+            humidityPct,
+            allowed: WeatherNumeric.percent
+        ) else { return "—" }
         return "\(h)%"
     }
 
     /// "12 mph" or "12 G 28" when gusting meaningfully above sustained.
     var windDisplay: String {
-        if let g = windGustMph, g >= windMph + 8 {
-            return "\(windMph) G \(g)"
+        guard let sustained = WeatherNumeric.validatedInt(
+            windMph,
+            allowed: WeatherNumeric.windMph
+        ) else { return "—" }
+        if let gust = WeatherNumeric.validatedInt(
+            windGustMph,
+            allowed: WeatherNumeric.windMph
+        ), gust >= sustained + 8 {
+            return "\(sustained) G \(gust)"
         }
-        return "\(windMph) mph"
+        return "\(sustained) mph"
     }
 
     /// "12 mph · 9 mi vis" — visibility clause reads "—" when unreported.
     var metaDisplay: String {
-        "\(windMph) mph · \(visibilityMi.map(String.init) ?? "—") mi vis"
+        let wind = WeatherNumeric.validatedInt(
+            windMph,
+            allowed: WeatherNumeric.windMph
+        ).map { "\($0) mph" } ?? "—"
+        let visibility = WeatherNumeric.validatedInt(
+            visibilityMi,
+            allowed: WeatherNumeric.visibilityMi
+        ).map { "\($0) mi vis" } ?? "— mi vis"
+        return "\(wind) · \(visibility)"
     }
 
     /// Highest-severity active alert — drives the ribbon.
@@ -764,19 +948,28 @@ struct WeatherSnapshot: Hashable, Codable {
 
     /// "UV 7" or "—".
     var uvDisplay: String {
-        guard let uv = uvIndex else { return "—" }
+        guard let uv = WeatherNumeric.validatedInt(
+            uvIndex,
+            allowed: WeatherNumeric.uvIndex
+        ) else { return "—" }
         return "UV \(uv)"
     }
 
     /// "18%" precip chance or "—".
     var precipChanceDisplay: String {
-        guard let p = precipChancePct else { return "—" }
+        guard let p = WeatherNumeric.validatedInt(
+            precipChancePct,
+            allowed: WeatherNumeric.percent
+        ) else { return "—" }
         return "\(p)%"
     }
 
     /// Visibility "10 mi" — "—" when the source omitted a reading.
     var visibilityDisplay: String {
-        guard let v = visibilityMi else { return "—" }
+        guard let v = WeatherNumeric.validatedInt(
+            visibilityMi,
+            allowed: WeatherNumeric.visibilityMi
+        ) else { return "—" }
         return "\(v) mi"
     }
 
@@ -789,23 +982,35 @@ struct WeatherSnapshot: Hashable, Codable {
         if let display = nextHourPrecip?.displayLine {
             return display
         }
-        if let p = precipChancePct, p >= 50 {
+        if let p = WeatherNumeric.validatedInt(
+            precipChancePct,
+            allowed: WeatherNumeric.percent
+        ), p >= 50 {
             return "Precip likely this hour · \(p)%"
         }
         let now = Date()
         if let hour = hourly.first(where: { hour in
-            hour.date >= now && (hour.precipChancePct ?? 0) >= 40
-        }) {
+            hour.date >= now && (WeatherNumeric.validatedInt(
+                hour.precipChancePct,
+                allowed: WeatherNumeric.percent
+            ) ?? 0) >= 40
+        }), let chance = WeatherNumeric.validatedInt(
+            hour.precipChancePct,
+            allowed: WeatherNumeric.percent
+        ) {
             let event = precipitationLabel(for: hour.weatherCode)
-            return "\(event) chance \(hour.precipChancePct ?? 0)% near \(hour.hourLabel)"
+            return "\(event) chance \(chance)% near \(hour.hourLabel)"
         }
         if let peak = peakHourIndex, hourly.indices.contains(peak) {
             let hour = hourly[peak]
             let event = precipitationLabel(for: hour.weatherCode)
             return "\(event) watch near \(hour.hourLabel)"
         }
-        if let uvIndex, uvIndex >= 8 {
-            return "High UV now · UV \(uvIndex)"
+        if let uv = WeatherNumeric.validatedInt(
+            uvIndex,
+            allowed: WeatherNumeric.uvIndex
+        ), uv >= 8 {
+            return "High UV now · UV \(uv)"
         }
         return nextAlert
     }
@@ -855,8 +1060,8 @@ struct WeatherSnapshot: Hashable, Codable {
 
     /// "2m ago" / "just now" / "1h ago" — nil when `observedAt` unknown.
     var updatedAgoDisplay: String? {
-        guard let observedAt else { return nil }
-        let secs = max(0, Int(Date().timeIntervalSince(observedAt)))
+        guard let observedAt,
+              let secs = WeatherNumeric.elapsedWholeSeconds(from: observedAt) else { return nil }
         if secs < 60 { return "just now" }
         let mins = secs / 60
         if mins < 60 { return "\(mins)m ago" }
@@ -883,7 +1088,11 @@ struct WeatherSnapshot: Hashable, Codable {
             case 2000, 2100:                    bucket = 1   // fog
             default:                            bucket = 0
             }
-            return bucket * 1000 + (h.precipChancePct ?? 0)
+            let precip = WeatherNumeric.validatedInt(
+                h.precipChancePct,
+                allowed: WeatherNumeric.percent
+            ) ?? 0
+            return bucket * 1000 + precip
         }
         let scored = hourly.enumerated().max { hazard($0.element) < hazard($1.element) }
         guard let best = scored, hazard(best.element) > 0 else { return nil }
@@ -895,7 +1104,8 @@ struct WeatherSnapshot: Hashable, Codable {
     /// the count is the real segment count, the id is the worst-risk
     /// load's id.
     var collapsedLaneStrip: (text: String, loadId: String, delay: String)? {
-        guard let segs = laneImpact, !segs.isEmpty else { return nil }
+        let segs = renderableLaneImpact()
+        guard !segs.isEmpty else { return nil }
         let worst = segs.max { $0.riskTier < $1.riskTier } ?? segs[0]
         let noun = segs.count == 1 ? "load" : "loads"
         return (
@@ -905,13 +1115,25 @@ struct WeatherSnapshot: Hashable, Codable {
         )
     }
 
+    func renderableLaneImpact(at date: Date = Date()) -> [LaneImpactSegment] {
+        (laneImpact ?? []).filter { $0.isRenderableRouteWeather(at: date) }
+    }
+
     // ── Freight thresholds (derived from live values — never invented) ──
 
     /// Sustained ≥ 25 mph or gusts ≥ 40 mph — the band where a loaded
     /// high-profile van/reefer starts crabbing and an empty one is at
     /// genuine blow-over risk.
     var windHazard: Bool {
-        windMph >= 25 || (windGustMph ?? 0) >= 40
+        let sustained = WeatherNumeric.validatedInt(
+            windMph,
+            allowed: WeatherNumeric.windMph
+        )
+        let gust = WeatherNumeric.validatedInt(
+            windGustMph,
+            allowed: WeatherNumeric.windMph
+        )
+        return (sustained ?? 0) >= 25 || (gust ?? 0) >= 40
     }
 
     /// Frozen-precip signature: wintry condition text at ≤ 34 °F —
@@ -927,7 +1149,10 @@ struct WeatherSnapshot: Hashable, Codable {
     /// Visibility ≤ 2 mi — CMV slow-down territory. Gated on a REAL
     /// reading: an unreported visibility never fires (or suppresses) it.
     var visibilityHazard: Bool {
-        guard let v = visibilityMi else { return false }
+        guard let v = WeatherNumeric.validatedInt(
+            visibilityMi,
+            allowed: WeatherNumeric.visibilityMi
+        ) else { return false }
         return v <= 2
     }
 
@@ -937,8 +1162,8 @@ struct WeatherSnapshot: Hashable, Codable {
     // derived from the REAL fields above (latitude, sunriseAt/sunsetAt,
     // observedAt) via the pure helpers at file scope so the engine, a unit
     // test, and a SwiftUI preview all compute identically. Nothing is
-    // fabricated: when an input is nil the helper falls back honestly
-    // (coordinate/timezone fallback for day/night, northern hemisphere for season).
+    // fabricated: coordinate/timezone evidence may resolve solar state, while
+    // missing latitude keeps hemisphere and season explicitly unknown.
 
     /// Observation age remains anchored to the provider timestamp. Visual
     /// solar state deliberately does not: a cached 3 PM payload must become a
@@ -991,13 +1216,14 @@ struct WeatherSnapshot: Hashable, Codable {
         if let window = projectedSunWindow(for: date) {
             return (date >= window.rise && date < window.set) ? .daylight : .night
         }
-        if let latitude, let longitude,
-           latitude.isFinite, longitude.isFinite,
-           (-90...90).contains(latitude), (-180...180).contains(longitude) {
+        if let coordinate = LatLongParser.validatedCoordinate(
+            latitude: latitude,
+            longitude: longitude
+        ) {
             return Self.solarElevationDegrees(
                 at: date,
-                latitude: latitude,
-                longitude: longitude
+                latitude: coordinate.latitude,
+                longitude: coordinate.longitude
             ) > -0.833 ? .daylight : .night
         }
         guard let timezoneId, let zone = TimeZone(identifier: timezoneId) else {
@@ -1014,16 +1240,26 @@ struct WeatherSnapshot: Hashable, Codable {
     var isNight: Bool { displaySolarState() == .night }
     var isDaytime: Bool { displaySolarState() == .daylight }
 
-    /// Hemisphere from latitude. Defaults to northern when latitude is
-    /// absent (the safe majority assumption — never blocks the scene).
+    /// Hemisphere from a verified latitude. Missing or invalid latitude is
+    /// explicitly unknown; geographic absence must not become "northern".
     var hemisphere: Hemisphere {
-        guard let lat = latitude else { return .northern }
+        guard let coordinate = LatLongParser.validatedCoordinate(
+            latitude: latitude,
+            longitude: longitude
+        ) else { return .unknown }
+        let lat = coordinate.latitude
+        if lat == 0 { return .equatorial }
         return lat >= 0 ? .northern : .southern
     }
 
     /// Meteorological season for the observation, hemisphere-aware.
     var season: Season {
-        WeatherSnapshot.seasonFor(date: Date(), latitude: latitude)
+        WeatherSnapshot.seasonFor(
+            date: Date(),
+            latitude: latitude,
+            longitude: longitude,
+            timezoneId: timezoneId
+        )
     }
 
     /// Fine-grained part of the local day the scene should render
@@ -1050,7 +1286,12 @@ struct WeatherSnapshot: Hashable, Codable {
     }
 
     func season(at date: Date) -> Season {
-        WeatherSnapshot.seasonFor(date: date, latitude: latitude)
+        WeatherSnapshot.seasonFor(
+            date: date,
+            latitude: latitude,
+            longitude: longitude,
+            timezoneId: timezoneId
+        )
     }
 
     func moonPhase(at date: Date) -> MoonPhase {
@@ -1090,10 +1331,12 @@ struct WeatherSnapshot: Hashable, Codable {
 
     // MARK: - Sky-engine value types
 
-    enum Hemisphere: String, Hashable, Codable { case northern, southern }
+    enum Hemisphere: String, Hashable, Codable {
+        case northern, southern, equatorial, unknown
+    }
 
     enum Season: String, Hashable, Codable {
-        case spring, summer, fall, winter
+        case spring, summer, fall, winter, unknown
     }
 
     /// Six day-parts the sky palette keys off. `night` covers everything
@@ -1200,11 +1443,25 @@ struct WeatherSnapshot: Hashable, Codable {
         return degrees(elevation)
     }
 
-    /// Meteorological season for a date, hemisphere-aware. A nil latitude
-    /// assumes the northern hemisphere (safe default — never blocks).
-    static func seasonFor(date: Date, latitude: Double?) -> Season {
-        let month = Calendar.current.component(.month, from: date)
-        let northern = (latitude ?? 0) >= 0
+    /// Meteorological season for a date, hemisphere-aware. Missing or invalid
+    /// latitude remains unknown rather than being assigned a hemisphere.
+    static func seasonFor(
+        date: Date,
+        latitude: Double?,
+        longitude: Double?,
+        timezoneId: String? = nil
+    ) -> Season {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timezoneId.flatMap(TimeZone.init(identifier:))
+            ?? TimeZone(secondsFromGMT: 0)!
+        guard let coordinate = LatLongParser.validatedCoordinate(
+            latitude: latitude,
+            longitude: longitude
+        ) else { return .unknown }
+        let latitude = coordinate.latitude
+        guard latitude != 0 else { return .unknown }
+        let month = calendar.component(.month, from: date)
+        let northern = latitude >= 0
         // Northern meteorological seasons; flip 6 months for the south.
         let northernSeason: Season
         switch month {
@@ -1219,6 +1476,7 @@ struct WeatherSnapshot: Hashable, Codable {
         case .summer: return .winter
         case .fall:   return .spring
         case .winter: return .summer
+        case .unknown: return .unknown
         }
     }
 
@@ -1250,7 +1508,10 @@ struct WeatherSnapshot: Hashable, Codable {
         // Hour-gate fallback only in the observation location's timezone.
         // Device-local time is not evidence for destination weather.
         guard let timezoneId, let zone = TimeZone(identifier: timezoneId) else {
-            return .noon
+            // `SolarState.unknown` intentionally renders no celestial body.
+            // Pair it with the neutral dark palette instead of inventing a
+            // daytime atmosphere from the device clock.
+            return .night
         }
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = zone
@@ -1292,6 +1553,26 @@ struct LaneWeather: Hashable {
     var points: [Point] { [origin, destination].compactMap { $0 } }
 
     var isEmpty: Bool { points.isEmpty }
+
+    /// HERE endpoint observations age independently from ambient WeatherKit.
+    /// Drop stale or mislabeled points before any temperature, visibility, or
+    /// freight threshold is rendered as live route intelligence.
+    func live(at date: Date = Date()) -> LaneWeather? {
+        func accepted(_ point: Point?) -> Point? {
+            guard let point,
+                  point.snapshot.dataSource == .here,
+                  WeatherRouteDataPolicy.isFresh(point.snapshot.observedAt, at: date) else {
+                return nil
+            }
+            return point
+        }
+        let filtered = LaneWeather(
+            origin: accepted(origin),
+            destination: accepted(destination),
+            isTempControlled: isTempControlled
+        )
+        return filtered.isEmpty ? nil : filtered
+    }
 
     /// Highest-severity alert anywhere on the lane.
     var topAlert: WeatherSnapshot.SevereAlert? {

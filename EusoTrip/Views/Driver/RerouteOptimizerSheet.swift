@@ -187,10 +187,15 @@ struct RerouteOptimizerSheet: View {
                 zoom: 6,
                 interactive: false,
                 route: routePolyline,
-                baseLayers: [.route(polyline: routePolyline, colorHex: "#1473FF")],
+                baseLayers: [.eusoRoute(
+                    polyline: routePolyline,
+                    state: .active,
+                    label: "Current active corridor"
+                )],
                 addOns: [],
                 showLegend: false,
-                showTicker: false
+                showTicker: false,
+                mapModeContext: .primary(.truck)
             )
             .frame(height: 170)
             .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))

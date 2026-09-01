@@ -5,6 +5,8 @@
 //  represented here (10 truck + 6 rail + 6 vessel) each have a tailored
 //  provider-capability wish list. ADMIN and SUPER_ADMIN are aggregate server
 //  roles and intentionally do not duplicate every row in this Swift registry.
+//  SERVICE_PROVIDER is additive repair-provider identity and is live-catalog
+//  only; it is not one of the 22 transport-operational parity roles.
 //
 //  A row and reachable docs URL do not claim an active connector. Executable
 //  status, precise blocked disposition, role/mode eligibility, and connection
@@ -94,10 +96,44 @@ struct RoleIntegration: Identifiable, Hashable {
 
 enum RoleIntegrationRegistry {
 
+    enum Coverage: String {
+        /// A transport-operational role with an offline doctrine parity list.
+        case operationalParity
+        /// ADMIN/SUPER_ADMIN aggregate rows dynamically on the server.
+        case aggregateServerRole
+        /// Backend-eligible role whose providers must come only from the server.
+        case liveCatalogOnly
+        case unknown
+    }
+
+    /// Canon revision 2026-08-23.1 transport-operational role set.
+    static let operationalRoleKeys: Set<String> = [
+        "SHIPPER", "CATALYST", "BROKER", "DRIVER", "DISPATCH", "ESCORT",
+        "TERMINAL_MANAGER", "COMPLIANCE_OFFICER", "SAFETY_MANAGER", "FACTORING",
+        "RAIL_SHIPPER", "RAIL_CATALYST", "RAIL_DISPATCHER", "RAIL_ENGINEER",
+        "RAIL_CONDUCTOR", "RAIL_BROKER",
+        "VESSEL_SHIPPER", "VESSEL_OPERATOR", "PORT_MASTER", "SHIP_CAPTAIN",
+        "VESSEL_BROKER", "CUSTOMS_BROKER",
+    ]
+
+    static let aggregateServerRoleKeys: Set<String> = ["ADMIN", "SUPER_ADMIN"]
+    static let liveCatalogOnlyRoleKeys: Set<String> = ["SERVICE_PROVIDER"]
+
+    static func coverage(for role: String) -> Coverage {
+        let roleKey = role.uppercased()
+        if operationalRoleKeys.contains(roleKey) { return .operationalParity }
+        if aggregateServerRoleKeys.contains(roleKey) { return .aggregateServerRole }
+        if liveCatalogOnlyRoleKeys.contains(roleKey) { return .liveCatalogOnly }
+        return .unknown
+    }
+
     /// Canonical lookup — return all providers for a given role
-    /// key. Falls back to an empty list when the role is unknown.
+    /// key. Aggregate, live-only, and unknown roles deliberately return an
+    /// empty list; the app never turns this audit registry into runtime rows.
     static func providers(for role: String) -> [RoleIntegration] {
-        all.filter { $0.roleKey == role.uppercased() }
+        let roleKey = role.uppercased()
+        guard operationalRoleKeys.contains(roleKey) else { return [] }
+        return all.filter { $0.roleKey == roleKey }
     }
 
     /// Same data flat — useful for an admin-side registry view.
@@ -111,7 +147,37 @@ enum RoleIntegrationRegistry {
         vesselBroker + customsBroker
     )
 
-    // MARK: - TRUCK (12)
+    /// Fast local integrity evidence for focused iOS/source gates. URL syntax
+    /// is checked here; reachability and activation remain separate audits.
+    static var validationIssues: [String] {
+        var issues: [String] = []
+        let actualRoleKeys = Set(all.map(\.roleKey))
+        for roleKey in operationalRoleKeys.subtracting(actualRoleKeys).sorted() {
+            issues.append("Missing operational role: \(roleKey)")
+        }
+        for roleKey in actualRoleKeys.subtracting(operationalRoleKeys).sorted() {
+            issues.append("Unexpected parity role: \(roleKey)")
+        }
+
+        var seenIds: Set<String> = []
+        for row in all {
+            if row.slug.isEmpty || row.name.isEmpty || row.function.isEmpty {
+                issues.append("Incomplete registry row: \(row.id)")
+            }
+            if !seenIds.insert(row.id).inserted {
+                issues.append("Duplicate registry row: \(row.id)")
+            }
+            guard let url = URL(string: row.docs),
+                  url.scheme?.lowercased() == "https",
+                  url.host != nil else {
+                issues.append("Invalid documentation URL: \(row.id)")
+                continue
+            }
+        }
+        return issues.sorted()
+    }
+
+    // MARK: - TRUCK (10)
 
     private static let truckShipper: [RoleIntegration] = [
         .init(roleKey: "SHIPPER", slug: "dat-rateview",          name: "DAT RateView",            function: "Contract & spot rate benchmarking", docs: "https://www.dat.com/api-integration",                      category: .rateData),

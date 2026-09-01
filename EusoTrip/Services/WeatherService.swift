@@ -27,6 +27,8 @@ enum WeatherNumeric {
     static let visibilityMi = 0...1_000
     static let percent = 0...100
     static let uvIndex = 0...100
+    static let latitudeCell = -90_000...90_000
+    static let longitudeCell = -180_000...180_000
 
     /// Network weather feeds may legally decode `NaN`/infinity. Swift traps
     /// when either is converted directly to `Int`, so every provider crosses
@@ -41,6 +43,32 @@ enum WeatherNumeric {
         let result = Int(rounded)
         guard range?.contains(result) ?? true else { return nil }
         return result
+    }
+
+    static func validatedInt(
+        _ value: Int?,
+        allowed range: ClosedRange<Int>? = nil
+    ) -> Int? {
+        guard let value, range?.contains(value) ?? true else { return nil }
+        return value
+    }
+
+    static func finite(
+        _ value: Double?,
+        allowed range: ClosedRange<Double>? = nil
+    ) -> Double? {
+        guard let value, value.isFinite, range?.contains(value) ?? true else { return nil }
+        return value
+    }
+
+    static func nonnegativeFinite(_ value: Double?) -> Double? {
+        guard let value = finite(value), value >= 0 else { return nil }
+        return value
+    }
+
+    static func elapsedWholeSeconds(from start: Date, to end: Date = Date()) -> Int? {
+        guard let interval = finite(end.timeIntervalSince(start)) else { return nil }
+        return roundedInt(max(0, interval.rounded(.down)))
     }
 }
 
@@ -144,10 +172,20 @@ final class WeatherService: NSObject, ObservableObject {
         let longitudeCell: Int
         let includesLaneImpact: Bool
 
-        init(scope: WeatherRequestScope, location: CLLocation, includesLaneImpact: Bool) {
+        init?(scope: WeatherRequestScope, location: CLLocation, includesLaneImpact: Bool) {
+            guard
+                let latitudeCell = WeatherNumeric.roundedInt(
+                    location.coordinate.latitude * 1_000,
+                    allowed: WeatherNumeric.latitudeCell
+                ),
+                let longitudeCell = WeatherNumeric.roundedInt(
+                    location.coordinate.longitude * 1_000,
+                    allowed: WeatherNumeric.longitudeCell
+                )
+            else { return nil }
             self.scope = scope
-            latitudeCell = Int((location.coordinate.latitude * 1_000).rounded())
-            longitudeCell = Int((location.coordinate.longitude * 1_000).rounded())
+            self.latitudeCell = latitudeCell
+            self.longitudeCell = longitudeCell
             self.includesLaneImpact = includesLaneImpact
         }
     }
@@ -281,16 +319,17 @@ final class WeatherService: NSObject, ObservableObject {
             for: scope.context,
             deadline: deadline
         ),
+              LatLongParser.isValid(location.coordinate),
               !Task.isCancelled,
               activeContext == scope.context else {
             return nil
         }
 
-        let key = WeatherFlightKey(
+        guard let key = WeatherFlightKey(
             scope: scope,
             location: location,
             includesLaneImpact: includeLaneImpact
-        )
+        ) else { return nil }
         return await weatherFlights.value(
             for: key,
             deadline: deadline,
@@ -781,7 +820,9 @@ final class WeatherService: NSObject, ObservableObject {
                     precipChancePct: minute.precipPct.flatMap {
                         WeatherNumeric.roundedInt($0, allowed: WeatherNumeric.percent)
                     },
-                    intensityMmPerHour: minute.precipIntensityMmPerHour
+                    intensityMmPerHour: WeatherNumeric.nonnegativeFinite(
+                        minute.precipIntensityMmPerHour
+                    )
                 )
             }
             let summaries = (next.summary ?? []).compactMap { summary -> WeatherSnapshot.NextHourPrecip.Summary? in
@@ -792,7 +833,9 @@ final class WeatherService: NSObject, ObservableObject {
                     precipChancePct: summary.precipPct.flatMap {
                         WeatherNumeric.roundedInt($0, allowed: WeatherNumeric.percent)
                     },
-                    intensityMmPerHour: summary.precipIntensityMmPerHour,
+                    intensityMmPerHour: WeatherNumeric.nonnegativeFinite(
+                        summary.precipIntensityMmPerHour
+                    ),
                     precipitationType: summary.precipitationType
                 )
             }
@@ -830,7 +873,9 @@ final class WeatherService: NSObject, ObservableObject {
                 lowF: lowF,
                 symbol: Self.symbolForCode(for: dayCode),
                 condition: d.condition ?? Self.conditionForCode(for: dayCode),
-                precipChance: d.precipPct.map { $0 / 100.0 }
+                precipChance: d.precipPct.flatMap {
+                    WeatherNumeric.finite($0, allowed: 0...100).map { $0 / 100.0 }
+                }
             )
         }
 
@@ -912,6 +957,7 @@ final class WeatherService: NSObject, ObservableObject {
             snap.sunriseAt = parseDate(today.sunrise)
             snap.sunsetAt  = parseDate(today.sunset)
         }
+        snap.isNightHint = Self.serverIsNightHint(icon: cur.icon)
         // Provenance was allowlisted before any reading was composed, so this
         // assignment can never silently relabel another provider as ambient.
         snap.dataSource = ambientSource
@@ -929,13 +975,14 @@ final class WeatherService: NSObject, ObservableObject {
     }
 
     // Wire types for the tRPC `weather.laneImpact` proc — per-load ETA risk
-    // from HERE route weather with an attributed WeatherKit fallback.
-    // so a partial/honest payload decodes; nil/empty → the panel hides.
+    // from HERE route weather. A partial/honest payload still decodes;
+    // non-HERE or nil/empty rows never reach the live panel.
     private struct ServerLaneImpact: Decodable {
         let available: Bool?
         let loads: [ServerSegment]?
         struct ServerSegment: Decodable {
             let loadId: String?
+            let sourceLoadId: Int?
             /// Per-row availability — the server marks a load it could not
             /// compute (no coords / tier absent) `available: false`; those
             /// rows must NOT render as blank Lane Impact segments.
@@ -1028,6 +1075,7 @@ final class WeatherService: NSObject, ObservableObject {
         iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let isoPlain = ISO8601DateFormatter()
         isoPlain.formatOptions = [.withInternetDateTime]
+        let routeWeatherReadAt = Date()
 
         let mapped: [WeatherSnapshot.LaneImpactSegment] = segs.compactMap { s in
             guard let loadId = s.loadId, !loadId.isEmpty else { return nil }
@@ -1035,13 +1083,19 @@ final class WeatherService: NSObject, ObservableObject {
             // they carried no risk data and rendered as blank segments
             // exposing the internal DB id.
             guard s.available != false else { return nil }
-            let mode: WeatherSnapshot.LaneMode = {
-                switch (s.mode ?? "").lowercased() {
-                case "rail":   return .rail
-                case "vessel": return .vessel
-                default:       return .truck
-                }
-            }()
+            let displayLoadId = (s.loadNumber?.trimmingCharacters(in: .whitespacesAndNewlines))
+                .flatMap { $0.isEmpty ? nil : $0 } ?? loadId
+            guard !WeatherRouteDataPolicy.isSyntheticLoadIdentifier(displayLoadId),
+                  WeatherRouteDataPolicy.authority(for: s.source) == .here else {
+                return nil
+            }
+            let mode: WeatherSnapshot.LaneMode
+            switch (s.mode ?? "").lowercased() {
+            case "truck":  mode = .truck
+            case "rail":   mode = .rail
+            case "vessel": mode = .vessel
+            default:       return nil
+            }
             let risk: WeatherSnapshot.RiskTier = {
                 switch (s.riskTier ?? "").lowercased() {
                 case "severe":         return .severe
@@ -1052,6 +1106,9 @@ final class WeatherService: NSObject, ObservableObject {
             }()
             let pickup = s.pickupTime.flatMap { iso.date(from: $0) ?? isoPlain.date(from: $0) }
             let computed = s.computedAt.flatMap { iso.date(from: $0) ?? isoPlain.date(from: $0) }
+            guard WeatherRouteDataPolicy.isFresh(computed, at: routeWeatherReadAt) else {
+                return nil
+            }
 
             // §3 peakLeg { label, time } — only built when a real label
             // came back; never synthesised. A legacy string-only payload
@@ -1107,10 +1164,15 @@ final class WeatherService: NSObject, ObservableObject {
                 if !o.isEmpty && !d.isEmpty { return "\(o) → \(d)" }
                 return o
             }()
+            guard !routeString.isEmpty else { return nil }
+
+            let authenticatedSourceLoadId = s.sourceLoadId.flatMap { value in
+                value > 0 ? String(value) : nil
+            }
 
             return WeatherSnapshot.LaneImpactSegment(
                 // Prefer the human load number over the internal DB id.
-                loadId: s.loadNumber?.isEmpty == false ? s.loadNumber! : loadId,
+                loadId: displayLoadId,
                 mode: mode,
                 riskTier: risk,
                 headline: s.headline ?? "",
@@ -1119,6 +1181,7 @@ final class WeatherService: NSObject, ObservableObject {
                 recommendation: recommendation,
                 computedAt: computed,
                 source: s.source,
+                sourceLoadId: authenticatedSourceLoadId,
                 route: routeString,
                 pickupTime: pickup,
                 etaDelayMin: s.etaDelayMin,
@@ -1254,6 +1317,26 @@ final class WeatherService: NSObject, ObservableObject {
         if text.contains("cloud") || text.contains("overcast") { return 1001 }
         if text.contains("clear") || text.contains("sun") { return 1000 }
         return 0
+    }
+
+    /// Day/night evidence carried by the normalized server provider. Apple
+    /// Weather symbols name sun/moon/day/night; the attributed OpenWeather
+    /// fallback uses the documented two-digit `d`/`n` icon suffix. Ambiguous
+    /// cloud and precipitation icons stay nil so sunrise/sunset, coordinate,
+    /// and location timezone decide instead.
+    private static func serverIsNightHint(icon: String?) -> Bool? {
+        guard let icon else { return nil }
+        let value = icon
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        guard !value.isEmpty else { return nil }
+        if value.range(of: #"^\d{2}n(?:@\dx)?$"#, options: .regularExpression) != nil {
+            return true
+        }
+        if value.range(of: #"^\d{2}d(?:@\dx)?$"#, options: .regularExpression) != nil {
+            return false
+        }
+        return WeatherIcons.daylightHint(forSymbol: value).map { !$0 }
     }
 
     /// Parse a "yyyy-MM-dd" day string (Apple WeatherKit daily timestamps can
@@ -1558,6 +1641,7 @@ final class WeatherService: NSObject, ObservableObject {
                 let wind: Int? = p.windSpeed
                     .flatMap { $0.split(separator: " ").first }
                     .flatMap { Int($0) }
+                    .flatMap { WeatherNumeric.validatedInt($0, allowed: WeatherNumeric.windMph) }
                 let convertedTemperature = (p.temperatureUnit ?? "F").uppercased() == "C"
                     ? Double(t) * 9.0 / 5.0 + 32.0
                     : Double(t)
@@ -1713,7 +1797,10 @@ final class WeatherService: NSObject, ObservableObject {
                 } else {
                     if let t = p.temperature { byDay[idx].acc.lowF = t }
                 }
-                if let pop = p.probabilityOfPrecipitation?.value, byDay[idx].acc.precipChance == nil {
+                if let pop = WeatherNumeric.finite(
+                    p.probabilityOfPrecipitation?.value,
+                    allowed: 0...100
+                ), byDay[idx].acc.precipChance == nil {
                     byDay[idx].acc.precipChance = pop / 100.0
                 }
             } else {
@@ -1727,7 +1814,10 @@ final class WeatherService: NSObject, ObservableObject {
                     acc.symbol    = nwsSymbol(for: p.shortForecast ?? "", iconURL: p.icon)
                     acc.condition = p.shortForecast ?? acc.condition
                 }
-                if let pop = p.probabilityOfPrecipitation?.value {
+                if let pop = WeatherNumeric.finite(
+                    p.probabilityOfPrecipitation?.value,
+                    allowed: 0...100
+                ) {
                     acc.precipChance = pop / 100.0
                 }
                 byDay.append((key: key, acc: acc))
@@ -1735,9 +1825,17 @@ final class WeatherService: NSObject, ObservableObject {
         }
 
         let cal = Calendar.current
-        return byDay.prefix(6).map { entry -> WeatherSnapshot.DailyForecast in
-            let high = entry.acc.highF ?? entry.acc.lowF ?? 0
-            let low  = entry.acc.lowF  ?? entry.acc.highF ?? 0
+        return byDay.prefix(6).compactMap { entry -> WeatherSnapshot.DailyForecast? in
+            guard
+                let high = WeatherNumeric.validatedInt(
+                    entry.acc.highF,
+                    allowed: WeatherNumeric.temperatureF
+                ),
+                let low = WeatherNumeric.validatedInt(
+                    entry.acc.lowF,
+                    allowed: WeatherNumeric.temperatureF
+                )
+            else { return nil }
             let label = cal.isDateInToday(entry.acc.date) ? "Today" : weekdayFmt.string(from: entry.acc.date)
             return WeatherSnapshot.DailyForecast(
                 date: entry.acc.date,
@@ -2223,12 +2321,12 @@ final class WeatherService: NSObject, ObservableObject {
             let windMph = WeatherNumeric.roundedInt(
                 current.wind.speed.converted(to: .milesPerHour).value,
                 allowed: WeatherNumeric.windMph
-            ),
-            let visibilityMi = WeatherNumeric.roundedInt(
-                current.visibility.converted(to: .miles).value,
-                allowed: WeatherNumeric.visibilityMi
             )
         else { return nil }
+        let visibilityMi = WeatherNumeric.roundedInt(
+            current.visibility.converted(to: .miles).value,
+            allowed: WeatherNumeric.visibilityMi
+        )
 
         // Condition line + matching SF Symbol.
         let condition = current.condition.description
@@ -2264,7 +2362,7 @@ final class WeatherService: NSObject, ObservableObject {
                 return .warn
             }
             let hazardousWind = windMph >= 25
-            let lowVis = visibilityMi <= 2
+            let lowVis = (visibilityMi ?? .max) <= 2
             let hazardCondition: Bool = {
                 switch current.condition {
                 case .thunderstorms, .heavyRain, .heavySnow, .blizzard,
@@ -2324,7 +2422,10 @@ final class WeatherService: NSObject, ObservableObject {
                     lowF: lo,
                     symbol: day.symbolName,
                     condition: day.condition.description,
-                    precipChance: day.precipitationChance
+                    precipChance: WeatherNumeric.finite(
+                        day.precipitationChance,
+                        allowed: 0...1
+                    )
                 )
             }
         }()
@@ -2393,8 +2494,10 @@ final class WeatherService: NSObject, ObservableObject {
                     date: m.date,
                     precipChancePct: precipChancePct,
                     // UnitSpeed m/s → mm/hr (1 m/s = 3,600,000 mm/hr).
-                    intensityMmPerHour: m.precipitationIntensity
-                        .converted(to: .metersPerSecond).value * 3_600_000
+                    intensityMmPerHour: WeatherNumeric.nonnegativeFinite(
+                        m.precipitationIntensity
+                            .converted(to: .metersPerSecond).value * 3_600_000
+                    )
                 )
             }
             guard !minutes.isEmpty else { return nil }
@@ -2585,7 +2688,11 @@ extension WeatherService: CLLocationManagerDelegate {
             let now = Date()
             let acceptable: CLLocation? = {
                 guard let s = snapshot else { return nil }
-                return abs(now.timeIntervalSince(s.timestamp)) <= self.maxLocationAgeSeconds ? s : nil
+                guard LatLongParser.isValid(s.coordinate),
+                      abs(now.timeIntervalSince(s.timestamp)) <= self.maxLocationAgeSeconds else {
+                    return nil
+                }
+                return s
             }()
             // A rejected STALE cached fix gets one retry: CoreLocation is
             // typically already acquiring the fresh reading, so instead of

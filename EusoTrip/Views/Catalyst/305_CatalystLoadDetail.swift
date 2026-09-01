@@ -43,7 +43,6 @@
 //
 
 import SwiftUI
-import CoreLocation
 
 // MARK: - Screen wrapper
 
@@ -122,14 +121,16 @@ private struct CatalystLoadDetail: View {
 
     @State private var load: LoadsAPI.LoadDetail? = nil
     @State private var assignedDriver: CatalystAPI.FleetDriver? = nil
+    @State private var hosEvidence: [HOSFleetDriver] = []
     @State private var loading: Bool = true
     @State private var loadError: String? = nil
-    /// REAL decoded HERE Routing geometry for the pickup→delivery corridor
-    /// (curved road polyline), loaded by `refreshRoutePolyline(_:)` once the
-    /// load's geocoded endpoints are on file. Empty = no real route yet
-    /// (un-geocoded lane, vessel/barge leg, or HERE error) → the map falls
-    /// back to the straight 2-point pickup→delivery line. Never fabricated.
-    @State private var routePolyline: [HereLatLng] = []
+    /// Exact renderer-safe members of the server-owned route plan. The client
+    /// never joins, repairs, snaps, interpolates, or authors these lines.
+    @State private var canonicalRouteLines: [[HereLatLng]] = []
+    @State private var canonicalRouteStatus: String?
+    @State private var canonicalRouteVersion: Int?
+    @State private var canonicalResolvedPurpose: CanonicalRoutePlanClient.Purpose?
+    @State private var canonicalRouteMode: CanonicalRoutePlanClient.Mode?
 
     // MARK: Sheet presentation state
     @State private var showStatusPicker: Bool = false
@@ -410,25 +411,41 @@ private struct CatalystLoadDetail: View {
         if let coords = laneCoords(l) {
             let midLat = (coords.pickupLat + coords.deliveryLat) / 2
             let midLng = (coords.pickupLng + coords.deliveryLng) / 2
-            let mode = TransportMode(rawValue: l.transportMode ?? "truck") ?? .truck
-            let line: [HereLatLng] = mode == .truck && routePolyline.count >= 2
-                ? routePolyline : []
+            let mapTransportMode = EusoTripMapTransportMode(
+                canonicalValue: canonicalRouteMode?.rawValue ?? l.transportMode
+            )
+            let requestedPurpose = canonicalRoutePurpose(for: l.status)
             let markerLayer = HereMapLayer.markers([
                 .init(at: .init(coords.pickupLat, coords.pickupLng),
                       kind: .pickup, label: coords.originTitle),
                 .init(at: .init(coords.deliveryLat, coords.deliveryLng),
                       kind: .delivery, label: coords.destinationTitle)
             ])
-            let mapLayers: [HereMapLayer] = line.count >= 2
-                ? [.route(polyline: line, colorHex: "#1473FF"), markerLayer]
-                : [markerLayer]
-            HereLiveMapView(
-                center: .init(midLat, midLng),
-                zoom: 6,
-                route: line,
-                baseLayers: mapLayers,
-                addOns: mode == .truck ? .shipperTracking : .weather
-            )
+            let mapLayers: [HereMapLayer] = canonicalRouteLines.enumerated().map { index, line in
+                .eusoRoute(
+                    polyline: line,
+                    state: canonicalResolvedPurpose == .activeJob ? .active : .planned,
+                    label: index == 0
+                        ? "Eusorone \(mapTransportMode.rawValue) route plan version \(canonicalRouteVersion ?? 0)"
+                        : nil
+                )
+            } + [markerLayer]
+            ZStack(alignment: .bottomLeading) {
+                HereLiveMapView(
+                    center: canonicalRouteLines.lazy.compactMap(\.first).first
+                        ?? .init(midLat, midLng),
+                    zoom: 6,
+                    route: [],
+                    baseLayers: mapLayers,
+                    addOns: mapTransportMode == .truck ? .shipperTracking : .weather,
+                    activeJob: requestedPurpose == .activeJob,
+                    mapModeContext: .unconfirmed(mapTransportMode)
+                )
+                if let canonicalRouteStatus {
+                    canonicalRouteStatusPill(canonicalRouteStatus)
+                        .padding(10)
+                }
+            }
             .frame(height: 200)
             .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             .overlay(
@@ -450,6 +467,13 @@ private struct CatalystLoadDetail: View {
                             .font(.system(size: 11, weight: .heavy))
                             .tracking(0.8)
                             .foregroundStyle(palette.textTertiary)
+                        if let canonicalRouteStatus {
+                            Text(canonicalRouteStatus)
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(palette.textSecondary)
+                                .multilineTextAlignment(.center)
+                                .accessibilityLabel(canonicalRouteStatus)
+                        }
                     }
                 )
                 .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
@@ -471,13 +495,21 @@ private struct CatalystLoadDetail: View {
             originTitle: String, destinationTitle: String)? {
         guard let p = l.pickupLocation,
               let d = l.deliveryLocation,
-              let pLat = p.lat, let pLng = p.lng,
-              let dLat = d.lat, let dLng = d.lng,
-              !(pLat == 0 && pLng == 0),
-              !(dLat == 0 && dLng == 0) else { return nil }
+              let pickup = LatLongParser.validatedCoordinate(
+                  latitude: p.lat,
+                  longitude: p.lng
+              ),
+              let delivery = LatLongParser.validatedCoordinate(
+                  latitude: d.lat,
+                  longitude: d.lng
+              ) else { return nil }
         let origin = p.cityState.isEmpty ? "Origin" : p.cityState
         let dest = d.cityState.isEmpty ? "Dest" : d.cityState
-        return (pLat, pLng, dLat, dLng, origin, dest)
+        return (
+            pickup.latitude, pickup.longitude,
+            delivery.latitude, delivery.longitude,
+            origin, dest
+        )
     }
 
     // MARK: - Route weather panel (bespoke, promoted from the dormant add-on)
@@ -644,23 +676,11 @@ private struct CatalystLoadDetail: View {
         case .bidding:   return "Bidding open · catalyst seeking match"
         case .awarded:   return "Awarded to \(driverName) · awaiting pickup dispatch"
         case .pickup:    return "Pickup phase · \(driverName) en-route to origin"
-        case .inTransit:
-            if let prog = progressPercent(l) {
-                return "In transit · driver \(driverName) · \(prog)% of route"
-            }
-            return "In transit · driver \(driverName)"
+        case .inTransit: return "In transit · driver \(driverName) · route projection pending"
         case .delivery:  return "Delivery in progress · \(driverName) at receiver"
         case .paperwork: return "Paperwork · POD pending · settlement next"
         case .closed:    return "Closed · settled · BOL archived"
         }
-    }
-
-    private func progressPercent(_ l: LoadsAPI.LoadDetail) -> Int? {
-        // Without GPS-derived completion ratio in the load envelope,
-        // we show the linehaul fraction off `actualDeliveryDate` if
-        // present, or nil to drop the percent from the kicker.
-        guard l.actualDeliveryDate == nil else { return 100 }
-        return nil
     }
 
     // MARK: - Money + receivable card (gradient rim)
@@ -700,7 +720,7 @@ private struct CatalystLoadDetail: View {
                         .foregroundStyle(palette.textTertiary)
                 }
                 Spacer(minLength: 0)
-                progressGauge(l)
+                routeEvidenceGauge
             }
         }
         .padding(14)
@@ -774,17 +794,19 @@ private struct CatalystLoadDetail: View {
         return "net \(netStr) after 5% platform · settles on POD"
     }
 
-    private func progressGauge(_ l: LoadsAPI.LoadDetail) -> some View {
+    /// Route completion is never inferred from lifecycle status or an actual
+    /// delivery timestamp. Until a server observation is projected onto the
+    /// exact plan, this card reports plan evidence only.
+    private var routeEvidenceGauge: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("PROGRESS")
+            Text("ROUTE EVIDENCE")
                 .font(.system(size: 9, weight: .heavy))
                 .tracking(0.6)
                 .foregroundStyle(palette.textTertiary)
-            Text(progressPercent(l).map { "\($0)%" } ?? "-")
-                .font(.system(size: 18, weight: .bold))
-                .monospacedDigit()
+            Text(canonicalRouteVersion.map { "PLAN v\($0)" } ?? "PENDING")
+                .font(.system(size: 14, weight: .bold))
                 .foregroundStyle(palette.textPrimary)
-            Text(distanceLabel(l))
+            Text(canonicalRouteVersion == nil ? "Awaiting canonical plan" : "Progress pending projection")
                 .font(.system(size: 10))
                 .foregroundStyle(palette.textSecondary)
         }
@@ -829,8 +851,10 @@ private struct CatalystLoadDetail: View {
                         .tracking(0.4)
                         .foregroundStyle(palette.textSecondary)
                     HStack(spacing: 6) {
-                        if let h = driver.hoursRemaining {
+                        if let h = canonicalDrivingHours(for: driver) {
                             chip(text: "HOS · \(formatHOS(h)) LEFT", tint: palette.textPrimary)
+                        } else {
+                            chip(text: "HOS UNAVAILABLE", tint: Brand.warning)
                         }
                         chip(text: "OWNER-OP", tint: Brand.success)
                     }
@@ -1501,46 +1525,107 @@ private struct CatalystLoadDetail: View {
         return out.string(from: date)
     }
 
-    // MARK: - Route geometry (REAL HERE corridor)
-    //
-    // Resolves the pickup→delivery corridor via HERE Routing v8 and decodes
-    // its section polyline into `routePolyline` — the real curved road
-    // geometry, not the straight 2-point segment the map used to draw. The
-    // surface holds a `LoadDetail` (not the full `Load` that
-    // `TruckProfile.from(load:)` needs), so we build `HereStops` from the
-    // already-resolved `laneCoords(_:)` and route on the default
-    // `.standardUSSemiLoaded` profile — the same baseEquipment
-    // `HereRoutingClient.route(for:)` applies. On any failure (missing
-    // coords, HERE error) the polyline stays empty and the map keeps the
-    // straight pickup→delivery base line — never a fabricated path.
-    //
-    // Water modes are SKIPPED: a vessel/barge leg is a great-circle ocean
-    // path, not a road route — fetching road geometry would be dishonest, so
-    // we leave `routePolyline` empty and the map draws the direct connector.
+    // MARK: - Canonical route authority
+
+    /// Only exact server status selects route purpose. Market states request
+    /// a posting requirement plan, awarded-but-not-active states request a
+    /// planning plan, and an explicit active assignment requests active_job.
+    private func canonicalRoutePurpose(for status: String) -> CanonicalRoutePlanClient.Purpose {
+        let normalized = status
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "-", with: "_")
+            .replacingOccurrences(of: " ", with: "_")
+        let active: Set<String> = [
+            "assigned", "dispatched", "en_route", "enroute", "at_pickup",
+            "loaded", "in_transit", "approaching_delivery", "at_receiver",
+            "at_delivery", "unloading", "delivering"
+        ]
+        if active.contains(normalized) { return .activeJob }
+        if ["accepted", "awarded"].contains(normalized) { return .planning }
+        return .posting
+    }
+
+    /// Sends only the persisted load subject and purpose to route.plan. Mode,
+    /// waypoints, profile, graph, source rights, evidence, constraints, and
+    /// geometry remain server-owned.
     @MainActor
-    private func refreshRoutePolyline(_ l: LoadsAPI.LoadDetail) async {
-        let mode = TransportMode(rawValue: l.transportMode ?? "truck") ?? .truck
-        guard mode == .truck,
-              let coords = laneCoords(l) else {
-            routePolyline = []
+    private func refreshCanonicalRoute(_ l: LoadsAPI.LoadDetail) async {
+        canonicalRouteLines = []
+        canonicalRouteVersion = nil
+        canonicalResolvedPurpose = nil
+        canonicalRouteMode = nil
+        canonicalRouteStatus = "Verified route is still being prepared"
+        guard let numericId = Int(l.id), numericId > 0 else {
+            canonicalRouteStatus = "Canonical route pending a persisted load identity"
             return
         }
-        let stops = HereStops(
-            origin: CLLocationCoordinate2D(latitude: coords.pickupLat, longitude: coords.pickupLng),
-            destination: CLLocationCoordinate2D(latitude: coords.deliveryLat, longitude: coords.deliveryLng)
-        )
+        let expectedPurpose = canonicalRoutePurpose(for: l.status)
         do {
-            let resp = try await HereRoutingClient.shared.route(
-                stops: stops, profile: .standardUSSemiLoaded)
-            guard let section = resp.routes.first?.sections.first else {
-                routePolyline = []
-                return
+            let result = try await CanonicalRoutePlanClient.shared.planLoad(
+                id: numericId,
+                purpose: expectedPurpose
+            )
+            switch result {
+            case .persisted(let persisted):
+                applyCanonicalRoute(persisted.route, expectedPurpose: expectedPurpose)
+            case .pending(let pending):
+                canonicalRouteStatus = pending.blockers.first?.message
+                    ?? "Canonical mode-native route pending verified authority"
+                await readExistingCanonicalRoute(loadId: numericId, expectedPurpose: expectedPurpose)
             }
-            let decoded = HereRoutingClient.polyline(for: section)
-            routePolyline = decoded.count >= 2 ? decoded.map { HereLatLng($0) } : []
         } catch {
-            routePolyline = []
+            canonicalRouteStatus = error.eusoUserCopy
+            await readExistingCanonicalRoute(loadId: numericId, expectedPurpose: expectedPurpose)
         }
+    }
+
+    @MainActor
+    private func readExistingCanonicalRoute(
+        loadId: Int,
+        expectedPurpose: CanonicalRoutePlanClient.Purpose
+    ) async {
+        do {
+            applyCanonicalRoute(
+                try await CanonicalRoutePlanClient.shared.getBoundLoad(id: loadId),
+                expectedPurpose: expectedPurpose
+            )
+        } catch {
+            if canonicalRouteStatus == nil { canonicalRouteStatus = error.eusoUserCopy }
+        }
+    }
+
+    @MainActor
+    private func applyCanonicalRoute(
+        _ route: CanonicalRoutePlanClient.BoundRoutePlan,
+        expectedPurpose: CanonicalRoutePlanClient.Purpose
+    ) {
+        guard route.plan.purpose == expectedPurpose,
+              let payload = route.rendererPayload else {
+            canonicalRouteLines = []
+            canonicalRouteVersion = nil
+            canonicalResolvedPurpose = nil
+            canonicalRouteMode = nil
+            canonicalRouteStatus = "Canonical \(expectedPurpose.rawValue) route exists but is not released for rendering"
+            return
+        }
+        canonicalRouteLines = payload.lines
+        canonicalRouteVersion = payload.identity.version
+        canonicalResolvedPurpose = route.plan.purpose
+        canonicalRouteMode = payload.identity.mode
+        canonicalRouteStatus = nil
+    }
+
+    private func canonicalRouteStatusPill(_ message: String) -> some View {
+        Text(message)
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(palette.textSecondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(palette.bgCard.opacity(0.92))
+            .overlay(Capsule().strokeBorder(Brand.warning.opacity(0.45)))
+            .clipShape(Capsule())
+            .accessibilityLabel(message)
     }
 
     // MARK: - Network
@@ -1551,7 +1636,11 @@ private struct CatalystLoadDetail: View {
         defer { loading = false }
         guard !loadId.isEmpty, loadId != "0" else {
             // No id — leave load nil so emptyLoadState renders.
-            routePolyline = []
+            canonicalRouteLines = []
+            canonicalRouteVersion = nil
+            canonicalResolvedPurpose = nil
+            canonicalRouteMode = nil
+            canonicalRouteStatus = "Canonical route pending a persisted load identity"
             return
         }
         do {
@@ -1560,18 +1649,25 @@ private struct CatalystLoadDetail: View {
             // If the load has a driverId, try to find the matching
             // FleetDriver row in this catalyst's roster.
             if let driverId = detail?.driverId {
-                let roster = (try? await EusoTripAPI.shared.catalyst.getMyDrivers(limit: 50)) ?? []
-                self.assignedDriver = roster.first { $0.id == String(driverId) }
+                do {
+                    let roster = try await EusoTripAPI.shared.catalyst.getMyDrivers(limit: 50)
+                    let evidence: [HOSFleetDriver] = try await EusoTripAPI.shared.queryNoInput("hos.getFleetHOS")
+                    self.hosEvidence = evidence
+                    self.assignedDriver = roster.first { $0.id == String(driverId) }
+                } catch {
+                    self.hosEvidence = []
+                    self.driverAssignError = "Assigned-driver HOS evidence could not refresh. No availability is inferred."
+                }
             }
-            // Once the load (and thus its real pickup/delivery coords) is on
-            // file, fetch + decode the truck/rail route so the lane map
-            // paints the real road geometry instead of a straight line.
-            // Honest no-op for un-geocoded lanes and water (vessel/barge) legs.
-            // Don't block the screen on the route polyline — the load detail
-            // is already on file, so let `loading` resolve now and paint the
-            // lane geometry in asynchronously (bounded by the HERE client's
-            // request timeout). No long lingering skeleton waiting on a route.
-            if let detail { Task { @MainActor in await refreshRoutePolyline(detail) } } else { routePolyline = [] }
+            if let detail {
+                Task { @MainActor in await refreshCanonicalRoute(detail) }
+            } else {
+                canonicalRouteLines = []
+                canonicalRouteVersion = nil
+                canonicalResolvedPurpose = nil
+                canonicalRouteMode = nil
+                canonicalRouteStatus = "Canonical route pending a persisted load identity"
+            }
         } catch {
             self.loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
@@ -1607,7 +1703,12 @@ private struct CatalystLoadDetail: View {
         defer { driverPickerLoading = false }
         do {
             let roster = try await EusoTripAPI.shared.catalyst.getMyDrivers(limit: 50)
-            self.availableDrivers = roster
+            let evidence: [HOSFleetDriver] = try await EusoTripAPI.shared.queryNoInput("hos.getFleetHOS")
+            self.hosEvidence = evidence
+            self.availableDrivers = roster.filter { hosEligibility(for: $0) == .eligible }
+            if !roster.isEmpty, availableDrivers.isEmpty {
+                driverAssignError = "No fleet driver has current, complete HOS evidence. Assignment remains held."
+            }
         } catch {
             self.driverAssignError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
             self.availableDrivers = []
@@ -1617,10 +1718,20 @@ private struct CatalystLoadDetail: View {
     private func assignDriver(_ driver: CatalystAPI.FleetDriver) async {
         driverAssignError = nil
         do {
-            _ = try await EusoTripAPI.shared.drivers.assignLoad(
+            let evidence: [HOSFleetDriver] = try await EusoTripAPI.shared.queryNoInput("hos.getFleetHOS")
+            self.hosEvidence = evidence
+            guard hosEligibility(for: driver) == .eligible else {
+                throw CatalystAssignmentEvidenceError.unavailable
+            }
+            let result = try await EusoTripAPI.shared.drivers.assignLoad(
                 driverId: driver.id,
                 loadId: loadId
             )
+            guard result.success,
+                  result.driverId == driver.id,
+                  result.loadId == loadId else {
+                throw CatalystAssignmentEvidenceError.unconfirmed
+            }
             // Server emits LOAD_ASSIGNED on success; the WebSocket
             // listener refetches. Close the sheet immediately for
             // responsive UX.
@@ -1630,6 +1741,21 @@ private struct CatalystLoadDetail: View {
         } catch {
             self.driverAssignError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
+    }
+
+    private func hosEvidence(for driver: CatalystAPI.FleetDriver) -> HOSFleetDriver? {
+        hosEvidence.first { $0.driverId == driver.id }
+    }
+
+    private func hosEligibility(for driver: CatalystAPI.FleetDriver) -> HOSAssignmentEligibility {
+        hosEvidence(for: driver)?.assignmentEligibility() ?? .notTracked
+    }
+
+    private func canonicalDrivingHours(for driver: CatalystAPI.FleetDriver) -> Double? {
+        guard let evidence = hosEvidence(for: driver), evidence.hasCurrentObservation(),
+              let hours = evidence.hoursAvailable?.drivingRemaining,
+              hours.isFinite, hours >= 0 else { return nil }
+        return hours
     }
 
     // MARK: - Status update
@@ -1650,6 +1776,20 @@ private struct CatalystLoadDetail: View {
             await fetch()
         } catch {
             self.statusUpdateError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+}
+
+private enum CatalystAssignmentEvidenceError: LocalizedError {
+    case unavailable
+    case unconfirmed
+
+    var errorDescription: String? {
+        switch self {
+        case .unavailable:
+            return "Current, complete HOS evidence is unavailable. Refresh before assigning this load."
+        case .unconfirmed:
+            return "The assignment response was not an exact confirmation. Refresh before notifying the driver."
         }
     }
 }

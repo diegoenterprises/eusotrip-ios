@@ -61,35 +61,42 @@ struct OffDuty: View {
     // overview tiles.
 
     /// True only after the first HOS fetch resolved (success or empty).
-    private var hosReady: Bool { hos.status != nil }
+    private var hosReady: Bool { hos.status?.hasCurrentObservation() == true }
 
     private var driveBankValue: String {
-        guard let s = hos.status else { return Self.em }
+        guard let s = hos.status, s.hasCurrentObservation() else { return Self.em }
         return HOSStatus.formatHours(s.drivingRemaining)
     }
     private var windowBankValue: String {
-        guard let s = hos.status else { return Self.em }
+        guard let s = hos.status, s.hasCurrentObservation() else { return Self.em }
         return HOSStatus.formatHours(s.onDutyRemaining)
     }
     private var cycleBankValue: String {
-        guard let s = hos.status else { return Self.em }
+        guard let s = hos.status, s.hasCurrentObservation() else { return Self.em }
         return HOSStatus.formatHours(s.cycleRemaining)
+    }
+
+    private var eligibilityAccent: Color {
+        guard let status = hos.status, status.hasCurrentObservation() else { return palette.textTertiary }
+        if status.canDrive == true { return Brand.success }
+        if status.canDrive == false { return Brand.warning }
+        return palette.textTertiary
     }
 
     /// Ring fill fractions — bank remaining over the FMCSA cap. Zero
     /// (empty ring) until the snapshot lands so nothing animates from a
     /// fake value.
-    private var driveFraction: Double {
-        guard let s = hos.status else { return 0 }
-        return max(0, min(1, s.drivingRemaining / 11.0))
+    private var driveFraction: Double? {
+        guard let s = hos.status, s.hasCurrentObservation(), let remaining = s.drivingRemaining else { return nil }
+        return max(0, min(1, remaining / 11.0))
     }
-    private var windowFraction: Double {
-        guard let s = hos.status else { return 0 }
-        return max(0, min(1, s.onDutyRemaining / 14.0))
+    private var windowFraction: Double? {
+        guard let s = hos.status, s.hasCurrentObservation(), let remaining = s.onDutyRemaining else { return nil }
+        return max(0, min(1, remaining / 14.0))
     }
-    private var cycleFraction: Double {
-        guard let s = hos.status else { return 0 }
-        return max(0, min(1, s.cycleRemaining / 70.0))
+    private var cycleFraction: Double? {
+        guard let s = hos.status, s.hasCurrentObservation(), let remaining = s.cycleRemaining else { return nil }
+        return max(0, min(1, remaining / 70.0))
     }
 
     /// Eligible-to-drive countdown. The federal reset returns the driver
@@ -107,8 +114,9 @@ struct OffDuty: View {
     private var countdownUnit: String { hosReady ? "h" : "" }
 
     private var eligibleByLabel: String {
-        guard let s = hos.status else { return "" }
-        if s.canDrive { return "ELIGIBLE NOW" }
+        guard let s = hos.status, s.hasCurrentObservation() else { return "HOS EVIDENCE UNAVAILABLE" }
+        if s.canDrive == true { return "ELIGIBLE NOW" }
+        guard s.canDrive == false else { return "ELIGIBILITY UNAVAILABLE" }
         guard let iso = s.nextBreakDue,
               let date = Self.iso.date(from: iso) else { return "RESET IN PROGRESS" }
         let f = DateFormatter()
@@ -118,8 +126,9 @@ struct OffDuty: View {
 
     /// Minutes until the driver can roll again. nil = unhydrated.
     private func minutesUntilEligible() -> Int? {
-        guard let s = hos.status else { return nil }
-        if s.canDrive { return 0 }
+        guard let s = hos.status, s.hasCurrentObservation() else { return nil }
+        if s.canDrive == true { return 0 }
+        guard s.canDrive == false else { return nil }
         guard let iso = s.nextBreakDue,
               let date = Self.iso.date(from: iso) else { return nil }
         let delta = Int(date.timeIntervalSinceNow / 60)
@@ -172,7 +181,7 @@ struct OffDuty: View {
     }
 
     private var eligibleByLabelTip: String? {
-        guard let s = hos.status, !s.canDrive,
+        guard let s = hos.status, s.hasCurrentObservation(), s.canDrive == false,
               let iso = s.nextBreakDue,
               let date = Self.iso.date(from: iso) else { return nil }
         let f = DateFormatter()
@@ -191,8 +200,8 @@ struct OffDuty: View {
     /// Progress along the reset window. Derived from how much of the
     /// 10-hour reset is already behind the driver (server `nextBreakDue`
     /// minus remaining). Zero until the snapshot lands.
-    private var progressFraction: CGFloat {
-        guard let mins = minutesUntilEligible() else { return 0 }
+    private var progressFraction: CGFloat? {
+        guard let mins = minutesUntilEligible() else { return nil }
         let total: Double = 600 // 10 hr reset
         let elapsed = total - Double(mins)
         return max(0, min(1, CGFloat(elapsed / total)))
@@ -307,9 +316,9 @@ struct OffDuty: View {
             if !eligibleByLabel.isEmpty {
                 Text(eligibleByLabel)
                     .font(.system(size: 10, weight: .heavy)).tracking(0.8)
-                    .foregroundStyle(Brand.success)
+                    .foregroundStyle(eligibilityAccent)
                     .padding(.horizontal, 8).padding(.vertical, 3)
-                    .overlay(Capsule().stroke(Brand.success.opacity(0.5), lineWidth: 1))
+                    .overlay(Capsule().stroke(eligibilityAccent.opacity(0.5), lineWidth: 1))
             }
 
             // Progress rail
@@ -318,7 +327,7 @@ struct OffDuty: View {
                     Capsule().fill(palette.bgCardSoft).frame(height: 5)
                     Capsule()
                         .fill(LinearGradient.diagonal)
-                        .frame(width: geo.size.width * progressFraction, height: 5)
+                        .frame(width: geo.size.width * (progressFraction ?? 0), height: 5)
                 }
             }
             .frame(height: 5)
@@ -360,20 +369,22 @@ struct OffDuty: View {
         }
     }
 
-    private func bankRing(label: String, value: String, cap: String, fraction: Double) -> some View {
+    private func bankRing(label: String, value: String, cap: String, fraction: Double?) -> some View {
         VStack(spacing: 6) {
             ZStack {
                 Circle()
                     .stroke(palette.bgCardSoft, lineWidth: 5)
                     .frame(width: 76, height: 76)
-                Circle()
-                    .trim(from: 0, to: CGFloat(fraction))
-                    .stroke(
-                        LinearGradient.diagonal,
-                        style: StrokeStyle(lineWidth: 5, lineCap: .round)
-                    )
-                    .rotationEffect(.degrees(-90))
-                    .frame(width: 76, height: 76)
+                if let fraction {
+                    Circle()
+                        .trim(from: 0, to: CGFloat(fraction))
+                        .stroke(
+                            LinearGradient.diagonal,
+                            style: StrokeStyle(lineWidth: 5, lineCap: .round)
+                        )
+                        .rotationEffect(.degrees(-90))
+                        .frame(width: 76, height: 76)
+                }
                 Text(value)
                     .font(.system(size: 16, weight: .heavy, design: .rounded))
                     .foregroundStyle(palette.textPrimary)

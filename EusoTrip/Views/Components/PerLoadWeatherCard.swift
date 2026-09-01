@@ -59,6 +59,9 @@ struct PerLoadWeatherCard: View {
 
     /// v3 two-state: collapsed dashboard tile ↔ expanded full view.
     @State private var expanded: Bool
+    /// Route impact is a secondary operational register. It starts folded so
+    /// the current conditions remain scannable and opens only on user intent.
+    @State private var laneImpactExpanded = false
     /// Presentation-only astronomy clock. It advances independently of the
     /// provider observation so a retained card crosses sunrise/sunset without
     /// mutating the real weather values or remounting the view.
@@ -113,17 +116,10 @@ struct PerLoadWeatherCard: View {
         )
         snap.latitude = card.origin?.lat
         snap.longitude = card.origin?.lon
-        let normalizedSource = (card.source ?? "").lowercased()
-        if normalizedSource.contains("here") {
+        if card.routeWeatherAuthority == .here {
             snap.dataSource = .here
-        } else if normalizedSource.contains("weatherkit") || normalizedSource.contains("apple weather") {
-            snap.dataSource = .weatherKit
-        } else if normalizedSource.contains("openweather") {
-            snap.dataSource = .openWeather
         }
-        if let iso = rt?.observedAt {
-            snap.observedAt = ISO8601DateFormatter().date(from: iso)
-        }
+        snap.observedAt = card.routeWeatherObservedAt
         return snap
     }
 
@@ -133,8 +129,10 @@ struct PerLoadWeatherCard: View {
                 // We hold a (last-good) payload — render it, honestly
                 // flagged stale via the eyebrow chip when the last refresh
                 // failed. `available == false` → the honest no-data state.
-                if card.isAvailable {
+                if card.isAvailable && card.canRenderLiveRouteWeather(at: displayDate) {
                     content(card)
+                } else if card.isAvailable {
+                    providerDegradedState(card)
                 } else {
                     unavailableState(card)
                 }
@@ -168,6 +166,12 @@ struct PerLoadWeatherCard: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .eusoWeatherDisplayClockChanged)) { _ in
             displayDate = Date()
+        }
+        .eusoRefreshHandler(domains: [.weather]) {
+            await store.load(loadId: loadId)
+        }
+        .onChange(of: loadId) { _, _ in
+            laneImpactExpanded = false
         }
         .task {
             while !Task.isCancelled {
@@ -241,6 +245,7 @@ struct PerLoadWeatherCard: View {
             case .truck:  return "LANE"
             case .rail:   return "CORRIDOR"
             case .vessel: return "VOYAGE"
+            case .unknown: return "ROUTE"
             }
         }()
         let id = (card.loadNumber ?? card.loadId).trimmingCharacters(in: .whitespaces)
@@ -587,7 +592,11 @@ struct PerLoadWeatherCard: View {
             case 2000, 2100:                                 bucket = 1
             default:                                         bucket = 0
             }
-            return bucket * 1000 + (h.precipChancePct ?? 0)
+            let precip = WeatherNumeric.validatedInt(
+                h.precipChancePct,
+                allowed: WeatherNumeric.percent
+            ) ?? 0
+            return bucket * 1000 + precip
         }
         let scored = series.enumerated().max { hazard($0.element) < hazard($1.element) }
         guard let best = scored, hazard(best.element) > 0 else { return nil }
@@ -599,67 +608,84 @@ struct PerLoadWeatherCard: View {
 
     @ViewBuilder
     private func laneImpactPanel(_ card: WeatherForLoad, _ li: WeatherForLoad.LaneImpact) -> some View {
-        let seg = bridgedSegment(card, li)
-        VStack(alignment: .leading, spacing: 0) {
-            // header: route glyph · {LANE/CORRIDOR/VOYAGE} IMPACT
-            HStack(spacing: 8) {
-                WeatherIcons.utility(.route, size: 15, tint: WeatherV3.nodeOrigin)
-                Text(laneHeaderTitle(card.mode))
-                    .font(.system(size: 11, weight: .heavy)).tracking(0.6)
-                    .foregroundStyle(.white.opacity(0.7))
-                Spacer()
-                Text(seg.riskTier.rawValue.uppercased())
-                    .font(.system(size: 11, weight: .heavy))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 9).padding(.vertical, 3)
-                    .background(Capsule().fill(WeatherV3.danger.opacity(0.18)))
-                    .overlay(Capsule().strokeBorder(WeatherV3.danger.opacity(0.46), lineWidth: 1))
-            }
+        if let seg = bridgedSegment(card, li) {
+            VStack(alignment: .leading, spacing: 0) {
+                Button {
+                    withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
+                        laneImpactExpanded.toggle()
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        WeatherIcons.utility(.route, size: 15, tint: WeatherV3.nodeOrigin)
+                        Text(laneHeaderTitle(card.mode))
+                            .font(.system(size: 11, weight: .heavy)).tracking(0.6)
+                            .foregroundStyle(.white.opacity(0.7))
+                        Spacer()
+                        Text(seg.riskTier.rawValue.uppercased())
+                            .font(.system(size: 11, weight: .heavy))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 9).padding(.vertical, 3)
+                            .background(Capsule().fill(WeatherV3.danger.opacity(0.18)))
+                            .overlay(Capsule().strokeBorder(WeatherV3.danger.opacity(0.46), lineWidth: 1))
+                        WeatherIcons.utility(.chev, size: 13, tint: .white.opacity(0.7))
+                            .rotationEffect(.degrees(laneImpactExpanded ? 180 : 0))
+                    }
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(laneHeaderTitle(card.mode)), \(seg.riskTier.rawValue)")
+                .accessibilityValue(laneImpactExpanded ? "Expanded" : "Collapsed")
+                .accessibilityHint(laneImpactExpanded
+                    ? "Collapses route weather details"
+                    : "Expands route weather details")
 
-            // route-cell diagram + footer (the Wave-1 showpiece, unchanged)
-            VStack(spacing: 0) {
-                RouteCellDiagram(segment: seg)
-                routeFooter(seg, li)
+                if laneImpactExpanded {
+                    VStack(spacing: 0) {
+                        RouteCellDiagram(segment: seg)
+                        routeFooter(seg, li)
+                    }
+                    .padding(.top, 13)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(LinearGradient(
+                                colors: [Color(red: 0x17 / 255, green: 0x1A / 255, blue: 0x24 / 255),
+                                         Color(red: 0x12 / 255, green: 0x14 / 255, blue: 0x1C / 255)],
+                                startPoint: .top, endPoint: .bottom)))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+
+                    if !seg.drivers.isEmpty {
+                        driverTiles(seg).padding(.top, 11)
+                    }
+
+                    Text(seg.routeWeatherProvenance(at: displayDate))
+                        .font(.system(size: 9.5, weight: .bold))
+                        .tracking(0.4)
+                        .foregroundStyle(.white.opacity(0.48))
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                        .padding(.top, 8)
+
+                    // Deterministic policy guidance; no AI branding without a model call.
+                    if let rec = seg.recommendation {
+                        operationalRecommendation(rec).padding(.top, 12)
+                    }
+                }
             }
-            .padding(.top, 13)
+            .padding(.horizontal, 15)
+            .padding(.vertical, laneImpactExpanded ? 15 : 8)
             .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(LinearGradient(
-                        colors: [Color(red: 0x17 / 255, green: 0x1A / 255, blue: 0x24 / 255),
-                                 Color(red: 0x12 / 255, green: 0x14 / 255, blue: 0x1C / 255)],
-                        startPoint: .top, endPoint: .bottom)))
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(WeatherV3.cardInk)
+            )
             .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-
-            // §3 drivers — mode-specific tiles (server-formatted values)
-            if !seg.drivers.isEmpty {
-                driverTiles(seg).padding(.top, 11)
-            }
-
-            Text(seg.routeWeatherAttribution)
-                .font(.system(size: 9.5, weight: .bold))
-                .tracking(0.4)
-                .foregroundStyle(.white.opacity(0.48))
-                .frame(maxWidth: .infinity, alignment: .trailing)
-                .padding(.top, 8)
-
-            // Deterministic policy guidance; no AI branding without a model call.
-            if let rec = seg.recommendation {
-                operationalRecommendation(rec).padding(.top, 12)
-            }
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .strokeBorder(modeAccent(card.mode).opacity(0.35), lineWidth: 1)
+            )
+            .transition(.opacity)
         }
-        .padding(15)
-        .background(
-            // Always-dark ink — white panel text must survive light mode.
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(WeatherV3.cardInk)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .strokeBorder(modeAccent(card.mode).opacity(0.35), lineWidth: 1)
-        )
     }
 
     /// Build the Wave-1 `WeatherSnapshot.LaneImpactSegment` from the §3
@@ -670,22 +696,22 @@ struct PerLoadWeatherCard: View {
     /// §3 structured form. Nothing is fabricated — the headline falls
     /// through to the §3 `headline`, the labels to the real endpoint names.
     private func bridgedSegment(_ card: WeatherForLoad,
-                                _ li: WeatherForLoad.LaneImpact) -> WeatherSnapshot.LaneImpactSegment {
-        let mode: WeatherSnapshot.LaneMode = {
-            switch li.mode {
-            case .truck:  return .truck
-            case .rail:   return .rail
-            case .vessel: return .vessel
-            }
-        }()
-        let tier: WeatherSnapshot.RiskTier = {
-            switch li.riskTier {
-            case .none:     return .none
-            case .watch:    return .watch
-            case .elevated: return .elevated
-            case .severe:   return .severe
-            }
-        }()
+                                _ li: WeatherForLoad.LaneImpact) -> WeatherSnapshot.LaneImpactSegment? {
+        let mode: WeatherSnapshot.LaneMode
+        switch li.mode {
+        case .truck:  mode = .truck
+        case .rail:   mode = .rail
+        case .vessel: mode = .vessel
+        case .unknown: return nil
+        }
+        let tier: WeatherSnapshot.RiskTier
+        switch li.riskTier {
+        case .none:     tier = .none
+        case .watch:    tier = .watch
+        case .elevated: tier = .elevated
+        case .severe:   tier = .severe
+        case .unknown:  return nil
+        }
         let peak: WeatherSnapshot.PeakLeg? = li.peakLeg.map {
             WeatherSnapshot.PeakLeg(label: $0.label, time: laneClockLabel($0.time))
         }
@@ -715,8 +741,9 @@ struct PerLoadWeatherCard: View {
             peakLeg: peak,
             drivers: drivers,
             recommendation: rec,
-            computedAt: li.computedAt.flatMap { ISO8601DateFormatter().date(from: $0) },
+            computedAt: WeatherRouteDataPolicy.parseProviderDate(li.computedAt),
             source: li.source,
+            sourceLoadId: card.loadId,
             route: route,
             pickupTime: nil,
             etaDelayMin: nil,
@@ -742,6 +769,7 @@ struct PerLoadWeatherCard: View {
         case .rail:   return "CORRIDOR IMPACT"
         case .vessel: return "VOYAGE + BERTH IMPACT"
         case .truck:  return "LANE IMPACT"
+        case .unknown: return "ROUTE IMPACT"
         }
     }
 
@@ -896,6 +924,7 @@ struct PerLoadWeatherCard: View {
         case .rail:   return WeatherV3.rail
         case .vessel: return WeatherV3.vessel
         case .truck:  return WeatherV3.truck
+        case .unknown: return Color.white.opacity(0.45)
         }
     }
 
@@ -982,12 +1011,7 @@ struct PerLoadWeatherCard: View {
     /// freshness, each clause omitted when its data is absent.
     private func sourceLine(_ card: WeatherForLoad) -> some View {
         var parts: [String] = []
-        if let source = card.source?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !source.isEmpty {
-            parts.append("Conditions · \(source)")
-        } else {
-            parts.append("Conditions source pending")
-        }
+        parts.append("Route · \(card.routeWeatherAttribution)")
         if let forecastSource = store.forecastSourceAttribution {
             parts.append("Forecast · \(forecastSource)")
         }
@@ -1058,6 +1082,42 @@ struct PerLoadWeatherCard: View {
             .strokeBorder(Color.white.opacity(0.07), lineWidth: 1))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Updating lane weather")
+    }
+
+    /// A payload exists but cannot be promoted to live route intelligence.
+    /// Keep the state explicit without presenting ambient readings as if they
+    /// described the route.
+    private func providerDegradedState(_ card: WeatherForLoad) -> some View {
+        let message: String = {
+            if WeatherRouteDataPolicy.isSyntheticLoadIdentifier(card.displayLoadIdentifier) {
+                return "Live route weather is hidden for this internal test load."
+            }
+            if card.routeWeatherAuthority != .here {
+                return "Refreshing HERE route weather. Ambient conditions are not shown as lane intelligence."
+            }
+            if !WeatherRouteDataPolicy.isFresh(card.routeWeatherComputedAt, at: displayDate)
+                || !WeatherRouteDataPolicy.isFresh(card.routeWeatherObservedAt, at: displayDate) {
+                return "Refreshing HERE route weather. The last provider observation is too old to present as live."
+            }
+            return "Refreshing HERE route weather for this load's mapped endpoints."
+        }()
+
+        return VStack(alignment: .leading, spacing: 8) {
+            eyebrow
+            HStack(alignment: .top, spacing: 9) {
+                WeatherIcons.utility(.route, size: 16, tint: WeatherV3.nodeOrigin)
+                Text(message)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.white.opacity(0.7))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 26, style: .continuous).fill(WeatherV3.cardInk))
+        .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous)
+            .strokeBorder(Color.white.opacity(0.07), lineWidth: 1))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(message)
     }
 
     /// Server returned a card but `available == false` (no coords / route

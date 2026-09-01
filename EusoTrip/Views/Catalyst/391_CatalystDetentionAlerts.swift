@@ -82,7 +82,7 @@ private struct DetentionAlertsBody_391: View {
                 iridescentHairline
 
                 heroCard
-                sectionEyebrow("ACTIVE DETENTIONS · getActiveDetentions · calculateDetention")
+                sectionEyebrow("ACTIVE DETENTIONS · VERIFIED COMMERCIAL STATE")
                 detentionsCard
                 worstFacilityStrip
                 tieStrip
@@ -284,7 +284,7 @@ private struct DetentionAlertsBody_391: View {
                 Text("\(w.facilityName) · avg \(String(format: "%.1f", Double(w.avgWaitMinutes) / 60.0))h dwell · \(w.eventCount) event\(w.eventCount == 1 ? "" : "s")")
                     .font(.system(size: 11))
                     .foregroundStyle(palette.textSecondary)
-                Text("\(formatCurrency_391(w.totalCharges)) charged · \(w.disputeCount) disputed")
+                Text("Charge currency unavailable · \(w.disputeCount) disputed")
                     .font(.system(size: 11))
                     .foregroundStyle(palette.textSecondary)
             } else {
@@ -367,8 +367,10 @@ private struct DetentionAlertsBody_391: View {
         do {
             let dash = try await EusoTripAPI.shared.detention.getDashboard()
             atRiskCount = dash.activeDetentions
-            let exposure = dash.billedAmount > 0 ? dash.billedAmount : dash.totalCharges
-            exposureDollars = exposure > 0 ? formatCurrency_391(exposure) : "—"
+            exposureDollars = formatCurrency_391(
+                dash.billedAmount ?? dash.totalCharges,
+                currency: dash.currency
+            )
             anySucceeded = true
         } catch { /* fall through to the shared error below */ }
 
@@ -377,13 +379,15 @@ private struct DetentionAlertsBody_391: View {
         do {
             let active = try await EusoTripAPI.shared.detention.getActive(limit: 25)
             rows = active.detentions.map { d in
-                DetentionRow_391(
-                    loadId: d.loadId.map { "LD-\($0)" } ?? d.facilityName,
+                let isOver = d.billableMinutes.map { $0 > 0 } == true
+                    && d.commercialState.hasPrefix("verified_")
+                return DetentionRow_391(
+                    loadId: d.loadId.map { "LD-\($0)" } ?? d.facilityName ?? "Load unavailable",
                     facility: facilityLine_391(d),
-                    value: d.billableMinutes > 0
-                        ? formatCurrency_391(d.currentCharge)
+                    value: isOver
+                        ? formatCurrency_391(d.currentCharge, currency: d.currency)
                         : freeRemainingLabel_391(d),
-                    isOver: d.billableMinutes > 0
+                    isOver: isOver
                 )
             }
             anySucceeded = true
@@ -392,12 +396,14 @@ private struct DetentionAlertsBody_391: View {
         // Worst facility — detentionAccessorials.getDetentionByFacility (live bridge).
         struct FacilityInput: Encodable { let limit: Int }
         struct FacilitiesWire: Decodable { let facilities: [WorstFacility_391] }
-        if let wire: FacilitiesWire = try? await EusoTripAPI.shared.query(
-            "detentionAccessorials.getDetentionByFacility", input: FacilityInput(limit: 1)
-        ) {
+        do {
+            let wire: FacilitiesWire = try await EusoTripAPI.shared.query(
+                "detentionAccessorials.getDetentionByFacility",
+                input: FacilityInput(limit: 1)
+            )
             worstFacility = wire.facilities.first
             anySucceeded = true
-        } else {
+        } catch {
             worstFacility = nil
         }
 
@@ -417,49 +423,71 @@ private struct DetentionAlertsBody_391: View {
         // Dispute the highest-exposure active row — detentionAccessorials.disputeDetention (EXISTS).
         // Live id arrives via getActive(); seed rows carry no numeric id, so we
         // resolve the worst active id at dispute time from the live fetch.
-        guard let active = try? await EusoTripAPI.shared.detention.getActive(limit: 25),
-              let worst = active.detentions.max(by: { $0.currentCharge < $1.currentCharge }) else {
-            disputeAck = "No active detention to dispute"
-            return
-        }
-        let result = try? await EusoTripAPI.shared.detention.dispute(
-            detentionId: worst.id,
-            reason: "Carrier dispute · excess dwell beyond 2h free time · escort/appointment delay"
-        )
-        if result?.success == true || result?.status == "disputed" {
-            disputeAck = "Dispute filed · \(worst.facilityName)"
-            await reload()
-        } else {
-            disputeAck = "Couldn’t file dispute - try again"
+        do {
+            let active = try await EusoTripAPI.shared.detention.getActive(limit: 25)
+            guard let worst = active.detentions
+                .filter({ $0.currentCharge != nil && $0.currency != nil })
+                .max(by: { ($0.currentCharge ?? -Double.infinity) < ($1.currentCharge ?? -Double.infinity) }) else {
+                disputeAck = "No verified active detention to dispute"
+                return
+            }
+            let result = try await EusoTripAPI.shared.detention.dispute(
+                detentionId: worst.id,
+                reason: "Carrier disputes this active detention charge and requests evidence review."
+            )
+            if result.success == true || result.status == "disputed" {
+                disputeAck = "Dispute filed · \(worst.facilityName ?? "facility unavailable")"
+                await reload()
+            } else {
+                disputeAck = "Couldn’t confirm the dispute - try again"
+            }
+        } catch {
+            disputeAck = "Couldn’t file dispute - \(error.eusoUserCopy)"
         }
     }
 
     // MARK: - Formatting helpers (free closures · not @ViewBuilder funcs)
 
     private func facilityLine_391(_ d: DetentionAPI.ActiveDetention) -> String {
-        let overMin = max(0, d.elapsedMinutes - d.freeTimeMinutes)
-        let overHrs = String(format: "%.1f", Double(overMin) / 60.0)
-        let loc = d.locationType.isEmpty ? "dock" : d.locationType
-        if d.billableMinutes > 0 {
-            return "\(d.facilityName) · \(loc) · \(overHrs)h over free"
+        let facility = d.facilityName ?? "Facility unavailable"
+        let location = d.locationType.flatMap { $0.isEmpty ? nil : $0 } ?? "location unavailable"
+        guard d.commercialState.hasPrefix("verified_"),
+              let elapsed = d.elapsedMinutes,
+              let freeTime = d.freeTimeMinutes else {
+            let state = d.commercialState == "awaiting_suspension_adjudication"
+                ? "awaiting suspension allocation"
+                : "commercial state unavailable"
+            return "\(facility) · \(location) · \(state)"
         }
-        let remainMin = max(0, d.freeTimeMinutes - d.elapsedMinutes)
+        let overMin = max(0, elapsed - freeTime)
+        let overHrs = String(format: "%.1f", Double(overMin) / 60.0)
+        if d.billableMinutes.map({ $0 > 0 }) == true {
+            return "\(facility) · \(location) · \(overHrs)h over free"
+        }
+        let remainMin = max(0, freeTime - elapsed)
         let remainHrs = String(format: "%.1f", Double(remainMin) / 60.0)
-        return "\(d.facilityName) · \(loc) · \(remainHrs)h to free expiry"
+        return "\(facility) · \(location) · \(remainHrs)h to free expiry"
     }
 
     private func freeRemainingLabel_391(_ d: DetentionAPI.ActiveDetention) -> String {
-        let remainMin = max(0, d.freeTimeMinutes - d.elapsedMinutes)
+        guard d.commercialState.hasPrefix("verified_"),
+              let freeTime = d.freeTimeMinutes,
+              let elapsed = d.elapsedMinutes else {
+            return d.commercialState == "awaiting_suspension_adjudication" ? "ADJUDICATING" : "—"
+        }
+        let remainMin = max(0, freeTime - elapsed)
         return String(format: "%.1fh", Double(remainMin) / 60.0)
     }
 
-    private func formatCurrency_391(_ value: Double) -> String {
-        guard value > 0 else { return "-" }
-        let f = NumberFormatter()
-        f.numberStyle = .currency
-        f.currencyCode = "USD"
-        f.maximumFractionDigits = 0
-        return f.string(from: NSNumber(value: value)) ?? "$\(Int(value))"
+    private func formatCurrency_391(
+        _ value: Double?,
+        currency: TruckDetentionNegotiatedTerms.Currency?
+    ) -> String {
+        guard let value, let currency else { return "—" }
+        return value.formatted(
+            .currency(code: currency.rawValue)
+                .precision(.fractionLength(0...2))
+        )
     }
 }
 

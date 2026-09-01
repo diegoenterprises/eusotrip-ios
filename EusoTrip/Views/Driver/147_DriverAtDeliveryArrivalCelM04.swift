@@ -12,7 +12,7 @@
 //           flips driving → on-duty organically), then "unloading" once
 //           the door opens
 //    READ   loads.getById              — bound load + resolved parties
-//    READ   drivers.getMyHOSStatus     — duty status + clocks
+//    READ   hos.getStatus              — sourced duty status + clocks
 //    READ   drivers.lifecycle          — delivery stop arrivedAt
 //  Fan-out truth: the arrival status write notifies the shipper and the
 //  carrier directly; dispatch picks it up on its board sync. The hero
@@ -43,12 +43,6 @@ private struct ADLoadCtx: Decodable, Hashable {
     struct ADParty: Decodable, Hashable {
         let name: String?; let initials: String?; let companyName: String?; let mcNumber: String?
     }
-}
-
-private struct ADHos: Decodable, Hashable {
-    let status: String?
-    let drivingRemaining: String?
-    let onDutyRemaining: String?
 }
 
 private struct ADLifecycle: Decodable, Hashable {
@@ -91,7 +85,8 @@ private struct ADBody: View {
     @EnvironmentObject private var session: EusoTripSession
 
     @State private var load: ADLoadCtx?
-    @State private var hos: ADHos?
+    @State private var hos: HOSStatus?
+    @State private var hosError: String?
     @State private var lifecycle: ADLifecycle?
 
     @State private var actionInFlight = false
@@ -104,6 +99,10 @@ private struct ADBody: View {
     }
 
     private var status: String { (load?.status ?? "").lowercased() }
+    private var currentHOS: HOSStatus? {
+        guard let hos, hos.hasCurrentObservation() else { return nil }
+        return hos
+    }
     private var arrived: Bool {
         ["at_delivery", "unloading", "delivered", "pod_pending", "paid", "completed"].contains(status)
     }
@@ -188,9 +187,11 @@ private struct ADBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 row("Gate-in", arrived ? "confirmed" : "awaiting your confirm", done: arrived)
-                row("Duty status", hos?.status?.replacingOccurrences(of: "_", with: " ") ?? "-",
-                    done: ["on_duty", "off_duty"].contains(hos?.status ?? ""))
-                row("Drive clock held", hos?.drivingRemaining ?? "-", done: false)
+                row("Duty status", currentHOS?.status?.replacingOccurrences(of: "_", with: " ") ?? "—",
+                    done: [HOSDutyCode.onDuty.rawValue, HOSDutyCode.offDuty.rawValue]
+                        .contains(currentHOS?.status ?? ""))
+                row("Drive clock held", currentHOS?.drivingRemainingDisplay ?? "—", done: false)
+                row("HOS evidence", hosEvidenceLabel, done: currentHOS != nil)
                 row("Unloading", status == "unloading" ? "in progress"
                         : (["delivered", "pod_pending", "paid", "completed"].contains(status) ? "complete" : "not started"),
                     done: status == "unloading" || ["delivered", "pod_pending", "paid", "completed"].contains(status))
@@ -323,7 +324,13 @@ private struct ADBody: View {
         do { load = try await EusoTripAPI.shared.query("loads.getById", input: In(id: loadId)) } catch { /* "-" */ }
     }
     private func readHos() async {
-        do { hos = try await EusoTripAPI.shared.queryNoInput("drivers.getMyHOSStatus") } catch { /* "-" */ }
+        do {
+            hos = try await EusoTripAPI.shared.hos.getStatus()
+            hosError = nil
+        } catch {
+            hos = nil
+            hosError = "source unavailable"
+        }
     }
     private func readLifecycle() async {
         struct In: Encodable { let loadId: String }
@@ -331,6 +338,15 @@ private struct ADBody: View {
     }
 
     // MARK: derivations
+
+    private var hosEvidenceLabel: String {
+        if let hosError { return hosError }
+        guard let hos else { return "not returned" }
+        guard hos.hasCurrentObservation() else {
+            return hos.assignmentEligibility().reason ?? "not current"
+        }
+        return "\(hos.source ?? "source unavailable") · current"
+    }
 
     private var arrivedTimeDisplay: String {
         guard let d = ADBody.parseISO(lifecycle?.delivery?.arrivedAt) else { return arrived ? "now" : "-" }

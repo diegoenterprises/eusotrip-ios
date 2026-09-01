@@ -1,68 +1,70 @@
 //
 //  656_RailClaimPayments.swift
-//  EusoTrip — Rail Engineer · Claim Payments — RECONCILIATION & AGING.
+//  EusoTrip - Rail Engineer - Claim Payments.
 //
-//  Bespoke port of "05 Rail/Code/656_RailClaimPayments.swift" (Light + Dark),
-//  reconstructed 2026-06-02 into a distinct reconciliation/aging surface:
-//    outstanding-payables hero + 4-bucket payables aging bars + reconciliation rows
-//    matching payouts to the settlement ledger + variance flag.
-//  Adapted to app convention: Shell + rail BottomNav (COMPLIANCE slot inked).
-//  Role: RAIL_ENGINEER. transportMode=rail · US/BNSF. RBAC: protectedProcedure.
-//
-//  Data:
-//    freightClaims.getClaimPayments (EXISTS freightClaims.ts:728)
-//      input  → { claimId?, status?, limit, offset }
-//      output → { payments:[{id,claimId,claimNumber,amount,status,method,
-//                            scheduledDate,paidDate,reference}], total, totalPaid, totalPending }
-//    processClaimPayment reconciles the next pending claim payout from the live ledger.
-//    generateClaimReport exports the selected claim as CSV from the server-side report generator.
-//
-//  NAV (REAL): HOME · SHIPMENTS · [orb] · COMPLIANCE(current) · ME
+//  Payment totals are rendered from mode-scoped ISO currency buckets with
+//  explicit metric state, page scope, and source/calculation timestamps.
 //
 
 import SwiftUI
 import UIKit
 
-struct RailClaimPaymentsScreen: View {
-    let theme: Theme.Palette
-
-    var body: some View {
-        Shell(theme: theme) { RailClaimPaymentsBody656() } nav: {
-            BottomNav(
-                leading: [NavSlot(label: "Home",      systemImage: "house",       isCurrent: false),
-                          NavSlot(label: "Shipments", systemImage: "shippingbox", isCurrent: false)],
-                trailing: [NavSlot(label: "Compliance", systemImage: "checkmark.shield", isCurrent: true),
-                           NavSlot(label: "Me",          systemImage: "person",          isCurrent: false)],
-                orbState: .idle
-            )
-        }
-    }
-}
-
-// MARK: - Input / data shapes
-
-private struct ClaimPaymentsInput656: Encodable {
-    let limit: Int
-    let offset: Int
-}
+private struct ClaimPaymentsInput656: Encodable { let transportMode: String; let limit: Int; let offset: Int }
 
 private struct ClaimPayment656: Decodable, Identifiable {
     let id: String
-    let claimId: String?
-    let claimNumber: String?
-    let amount: Double?
-    let status: String?
+    let claimId: String
+    let claimNumber: String
+    let amount: Double
+    let currency: String
+    let status: String
     let method: String?
     let scheduledDate: String?
     let paidDate: String?
-    let reference: String?
+    let reference: String
+    let transportMode: String?
+    let transactionReference: String?
+}
+
+private struct PaymentCurrencyBucket656: Decodable {
+    let currency: String
+    let paid: Double
+    let pending: Double
+    let count: Int
 }
 
 private struct ClaimPaymentsResp656: Decodable {
     let payments: [ClaimPayment656]
-    let total: Double?
+    let total: Int
     let totalPaid: Double?
     let totalPending: Double?
+    let totalCurrency: String?
+    let totalsByCurrency: [PaymentCurrencyBucket656]
+    let transportMode: String?
+    let metricStates: ClaimPaymentMetricStates656
+    let pageScope: ClaimPaymentPageScope656
+    let provenance: ClaimPaymentProvenance656
+}
+
+private struct ClaimPaymentMetricStates656: Decodable {
+    let total: FreightClaimsAPI.MetricTruth
+    let totalPaid: FreightClaimsAPI.MetricTruth
+    let totalPending: FreightClaimsAPI.MetricTruth
+}
+
+private struct ClaimPaymentPageScope656: Decodable {
+    let offset: Int
+    let limit: Int
+    let returnedCount: Int
+    let totalMatching: Int
+    let status: String?
+    let transportMode: String?
+}
+
+private struct ClaimPaymentProvenance656: Decodable {
+    let observedAt: String?
+    let computedAt: String
+    let transportMode: String?
 }
 
 private struct ProcessClaimPaymentInput656: Encodable {
@@ -72,12 +74,7 @@ private struct ProcessClaimPaymentInput656: Encodable {
     let reference: String?
     let notes: String?
 }
-
-private struct ProcessClaimPaymentResp656: Decodable {
-    let success: Bool
-    let paymentId: String?
-    let status: String?
-}
+private struct ProcessClaimPaymentResp656: Decodable { let success: Bool; let paymentId: String?; let status: String? }
 
 private struct ClaimReportInput656: Encodable {
     let claimId: String
@@ -87,96 +84,76 @@ private struct ClaimReportInput656: Encodable {
     let includeFinancials: Bool
     let purpose: String
 }
-
-private struct ClaimReportResp656: Decodable {
-    let success: Bool
-    let filename: String?
-    let content: String?
-}
-
-// MARK: - Aging bar (decorative payables-aging visual)
+private struct ClaimReportResp656: Decodable { let success: Bool; let filename: String?; let content: String? }
 
 private struct AgingBar656: Identifiable {
     let id = UUID()
     let label: String
-    let frac: CGFloat
+    let fraction: CGFloat
+    let count: Int
     let tint: Color
 }
 
-// MARK: - Body
+struct RailClaimPaymentsScreen: View {
+    let theme: Theme.Palette
+    var body: some View {
+        Shell(theme: theme) { RailClaimPaymentsBody656() } nav: {
+            BottomNav(
+                leading: [NavSlot(label: "Home", systemImage: "house", isCurrent: false),
+                          NavSlot(label: "Shipments", systemImage: "shippingbox", isCurrent: false)],
+                trailing: [NavSlot(label: "Compliance", systemImage: "checkmark.shield", isCurrent: true),
+                           NavSlot(label: "Me", systemImage: "person", isCurrent: false)],
+                orbState: .idle
+            )
+        }
+    }
+}
 
 private struct RailClaimPaymentsBody656: View {
     @Environment(\.palette) private var palette
-
-    @State private var payments: [ClaimPayment656] = []
-    @State private var total: Double = 0
-    @State private var totalPaid: Double = 0
-    @State private var totalPending: Double = 0
+    @State private var response: ClaimPaymentsResp656?
     @State private var loading = true
-    @State private var loadError: String? = nil
+    @State private var loadError: String?
 
-    // MARK: Derived
-
-    private var reconciledPct: Int {
-        guard total > 0 else { return 0 }
-        return Int((totalPaid / total * 100).rounded())
-    }
-    private var inProcessCount: Int {
-        payments.filter { ($0.status ?? "").lowercased() == "processing" || ($0.status ?? "").lowercased() == "pending" }.count
-    }
-
-    // Payables-aging buckets. With no per-payment scheduledDate data today (payments[]
-    // empty server-side), the bars read a flat baseline so the aging visual still
-    // communicates the 0–30 / 31–60 / 61–90 / 90+ structure honestly.
     private var aging: [AgingBar656] {
-        let buckets = bucketFractions()
-        return [ .init(label: "0–30",  frac: buckets.0, tint: Brand.blue),
-                 .init(label: "31–60", frac: buckets.1, tint: Brand.warning),
-                 .init(label: "61–90", frac: buckets.2, tint: Brand.magenta),
-                 .init(label: "90+",   frac: buckets.3, tint: Brand.danger) ]
-    }
-
-    private func bucketFractions() -> (CGFloat, CGFloat, CGFloat, CGFloat) {
-        guard !payments.isEmpty else { return (1.0, 0.0, 0.0, 0.0) }
-        var b0 = 0.0, b1 = 0.0, b2 = 0.0, b3 = 0.0
-        for p in payments {
-            let amt = p.amount ?? 0
-            switch ageDays(p.scheduledDate) {
-            case ..<31:  b0 += amt
-            case 31..<61: b1 += amt
-            case 61..<91: b2 += amt
-            default:      b3 += amt
+        guard let response else { return [] }
+        var counts = [0, 0, 0, 0]
+        for payment in response.payments {
+            guard let days = ageDays(payment.scheduledDate) else { continue }
+            switch days {
+            case ..<31: counts[0] += 1
+            case 31..<61: counts[1] += 1
+            case 61..<91: counts[2] += 1
+            default: counts[3] += 1
             }
         }
-        let maxV = max(b0, b1, b2, b3, 1)
-        return (CGFloat(b0 / maxV), CGFloat(b1 / maxV), CGFloat(b2 / maxV), CGFloat(b3 / maxV))
+        guard let maximum = counts.max(), maximum > 0 else { return [] }
+        let labels = ["0-30", "31-60", "61-90", "90+"]
+        let colors = [Brand.blue, Brand.warning, Brand.magenta, Brand.danger]
+        return counts.indices.map {
+            AgingBar656(label: labels[$0], fraction: CGFloat(counts[$0]) / CGFloat(maximum),
+                        count: counts[$0], tint: colors[$0])
+        }
     }
 
-    private func ageDays(_ iso: String?) -> Int {
-        guard let iso, let d = ISO8601DateFormatter().date(from: iso) else { return 0 }
-        return max(0, Int(Date().timeIntervalSince(d) / 86_400))
+    private var missingScheduleCount: Int {
+        guard let response else { return 0 }
+        return response.payments.filter { ageDays($0.scheduledDate) == nil }.count
     }
-
-    private func money(_ v: Double) -> String {
-        if v >= 1000 { return String(format: "$%.1fK", v / 1000) }
-        return String(format: "$%.0f", v)
-    }
-
-    // MARK: Body
 
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s3) {
                 header
                 if loading {
-                    LifecycleCard { Text("Loading payments…").font(EType.caption).foregroundStyle(palette.textSecondary) }
-                } else if let err = loadError {
-                    LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) }
-                } else {
-                    hero
-                    list
-                    reconBand
-                    ctaRow
+                    LifecycleCard { Text("Loading payments...").font(EType.caption).foregroundStyle(palette.textSecondary) }
+                } else if let loadError {
+                    LifecycleCard(accentDanger: true) { Text(loadError).font(EType.caption).foregroundStyle(Brand.danger) }
+                } else if let response {
+                    hero(response)
+                    paymentList(response)
+                    contractBand(response)
+                    actions(response)
                 }
                 Color.clear.frame(height: 96)
             }
@@ -186,266 +163,227 @@ private struct RailClaimPaymentsBody656: View {
         .eusoRefreshable { await load() }
     }
 
-    // MARK: - Header
-
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 0) {
-                HStack(spacing: 6) {
-                    EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
-                    Text("RAIL ENGINEER · CLAIM PAYMENTS")
-                        .font(.system(size: 9, weight: .heavy)).tracking(1.0)
-                        .foregroundStyle(LinearGradient.diagonal)
-                }
+            HStack {
+                EusoTripEyebrow(verbatim: "RAIL ENGINEER · CLAIM PAYMENTS")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1).foregroundStyle(LinearGradient.diagonal)
                 Spacer()
-                Text("RECON · BNSF")
-                    .font(.system(size: 9, weight: .heavy, design: .monospaced))
-                    .foregroundStyle(palette.textTertiary)
+                Text("RECON · BNSF").font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
             }
-            HStack(alignment: .firstTextBaseline) {
-                Text("Payments")
-                    .font(.system(size: 28, weight: .heavy)).kerning(-0.4)
-                    .foregroundStyle(palette.textPrimary)
-                Spacer()
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(palette.textTertiary)
-            }
+            Text("Payments").font(.system(size: 28, weight: .heavy)).foregroundStyle(palette.textPrimary)
             IridescentHairline()
         }
     }
 
-    // MARK: - Hero (outstanding payables + aging bars)
-
-    private var hero: some View {
+    private func hero(_ value: ClaimPaymentsResp656) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack { pillChip656("outstanding"); Spacer() }
-            HStack(alignment: .firstTextBaseline) {
-                Text(money(totalPending))
-                    .font(.system(size: 30, weight: .bold)).monospacedDigit()
-                    .foregroundStyle(LinearGradient.diagonal)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("payables open").font(.system(size: 11, weight: .semibold)).foregroundStyle(palette.textSecondary)
-                    Text("\(inProcessCount) in process").font(.system(size: 11)).foregroundStyle(palette.textSecondary)
-                }
+            HStack {
+                Text("PENDING BY ISO CURRENCY").font(EType.micro).foregroundStyle(palette.textTertiary)
                 Spacer()
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("RECONCILED").font(.system(size: 10, weight: .heavy)).kerning(0.6).foregroundStyle(palette.textTertiary)
-                    Text("\(reconciledPct)%").font(.system(size: 22, weight: .bold)).monospacedDigit().foregroundStyle(palette.textPrimary)
-                    Text("to settlement").font(.system(size: 11)).foregroundStyle(Brand.success)
-                }
+                Text("\(metricCount(value.total, truth: value.metricStates.total)) payments")
+                    .font(EType.mono(.caption)).foregroundStyle(palette.textSecondary)
             }
-            HStack(alignment: .bottom, spacing: 8) {
-                ForEach(aging) { b in
-                    VStack(spacing: 4) {
-                        RoundedRectangle(cornerRadius: 4).fill(b.tint).frame(height: 8 + 24 * b.frac)
-                        Text(b.label).font(.system(size: 9, weight: .bold)).foregroundStyle(palette.textTertiary)
-                    }.frame(maxWidth: .infinity)
-                }
-            }.frame(height: 44)
+            Text(bucketMoney(value.totalsByCurrency, keyPath: \.pending, truth: value.metricStates.totalPending))
+                .font(.system(size: 25, weight: .bold)).monospacedDigit().foregroundStyle(LinearGradient.diagonal)
+                .fixedSize(horizontal: false, vertical: true)
+            if aging.isEmpty {
+                Text("Payment aging unavailable: no scheduled dates are present on this page.")
+                    .font(.system(size: 11)).foregroundStyle(palette.textTertiary)
+            } else {
+                HStack(alignment: .bottom, spacing: 8) {
+                    ForEach(aging) { bucket in
+                        VStack(spacing: 4) {
+                            RoundedRectangle(cornerRadius: 4).fill(bucket.tint).frame(height: 8 + 24 * bucket.fraction)
+                            Text("\(bucket.label) · \(bucket.count)").font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(palette.textTertiary)
+                        }.frame(maxWidth: .infinity)
+                    }
+                }.frame(height: 48)
+            }
         }
-        .padding(18)
-        .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(palette.bgCard))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(LinearGradient.primary, lineWidth: 1.5))
+        .padding(18).background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).strokeBorder(LinearGradient.primary, lineWidth: 1.5))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
-    // MARK: - Reconcile list
-
-    private var list: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("RECONCILE · CLAIM PAYMENTS")
-                    .font(.system(size: 9, weight: .heavy)).tracking(1)
-                    .foregroundStyle(palette.textTertiary)
-                Spacer()
-                Text("settlement ledger")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(palette.textTertiary)
-            }
-            if payments.isEmpty {
-                EusoEmptyState(systemImage: "checklist",
-                               title: "No payments to reconcile",
-                               subtitle: "Outstanding totals are tracked above. Per-payment reconciliation rows appear once the settlement ledger posts claim lines.")
+    private func paymentList(_ value: ClaimPaymentsResp656) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("RECONCILE · CLAIM PAYMENTS").font(EType.micro).foregroundStyle(palette.textTertiary)
+            if value.payments.isEmpty {
+                EusoEmptyState(systemImage: "checklist", title: "No payment rows returned",
+                               subtitle: "No claim-payment rows are present on the current page.")
             } else {
-                VStack(spacing: 0) {
-                    ForEach(Array(payments.prefix(8).enumerated()), id: \.element.id) { i, p in
-                        reconRow(p)
-                        if i < min(payments.count, 8) - 1 {
-                            Divider().overlay(palette.borderFaint)
+                LifecycleCard {
+                    VStack(spacing: 0) {
+                        ForEach(Array(value.payments.prefix(8).enumerated()), id: \.element.id) { index, payment in
+                            paymentRow(payment)
+                            if index < min(value.payments.count, 8) - 1 { Divider().overlay(palette.borderFaint) }
                         }
                     }
-                    Text("ties payouts to the settlement's shipper charge · per-diem basis")
-                        .font(.system(size: 10)).foregroundStyle(palette.textTertiary)
-                        .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
                 }
-                .padding(16)
-                .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCard))
-                .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
             }
         }
     }
 
-    private func reconRow(_ p: ClaimPayment656) -> some View {
-        let info = statusInfo656(p.status)
-        let sub = [p.claimNumber, p.reference].compactMap { $0 }.joined(separator: " · ")
+    private func paymentRow(_ payment: ClaimPayment656) -> some View {
+        let info = statusInfo(payment.status)
         return HStack(spacing: 12) {
-            chip656(info.glyph, info.tint)
+            RoundedRectangle(cornerRadius: 10).fill(info.tint.opacity(0.16)).frame(width: 40, height: 40)
+                .overlay(Image(systemName: info.icon).foregroundStyle(info.tint))
             VStack(alignment: .leading, spacing: 3) {
-                Text(p.claimNumber ?? p.claimId ?? p.id)
-                    .font(.system(size: 14, weight: .bold)).foregroundStyle(palette.textPrimary).lineLimit(1)
-                Text(sub.isEmpty ? (p.method ?? "-") : sub)
-                    .font(.system(size: 11, design: .monospaced)).foregroundStyle(palette.textSecondary).lineLimit(1)
+                Text(payment.claimNumber).font(.system(size: 14, weight: .bold)).foregroundStyle(palette.textPrimary)
+                Text("\(payment.reference) · \(payment.method ?? "method unavailable") · \(payment.transportMode ?? "mode unavailable")")
+                    .font(.system(size: 10, design: .monospaced)).foregroundStyle(palette.textSecondary).lineLimit(1)
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 4) {
-                StatusPill(text: info.pill, kind: info.kind)
-                Text(money(p.amount ?? 0)).font(.system(size: 13, weight: .bold)).monospacedDigit().foregroundStyle(palette.textPrimary)
+                StatusPill(text: info.label, kind: info.kind)
+                Text(money(payment.amount, currency: payment.currency)).font(.system(size: 13, weight: .bold))
+                    .monospacedDigit().foregroundStyle(palette.textPrimary)
+            }
+        }.padding(.vertical, 10)
+    }
+
+    private func contractBand(_ value: ClaimPaymentsResp656) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text("PAID BY ISO CURRENCY · \(bucketMoney(value.totalsByCurrency, keyPath: \.paid, truth: value.metricStates.totalPaid))")
+                .font(.system(size: 11, weight: .bold)).foregroundStyle(palette.textPrimary)
+            Text("Current page: \(value.pageScope.returnedCount) rows · total matching rail ledger: \(value.pageScope.totalMatching)")
+                .font(.system(size: 10)).foregroundStyle(palette.textSecondary)
+            Text("\(truthLabel(value.metricStates.total)) · source \(timestampLabel(value.provenance.observedAt)) · calculated \(timestampLabel(value.provenance.computedAt))")
+                .font(.system(size: 10)).foregroundStyle(palette.textSecondary)
+            Text("Amounts remain separated by ISO currency; no FX conversion is applied.")
+                .font(.system(size: 10)).foregroundStyle(palette.textTertiary)
+            if missingScheduleCount > 0 {
+                Text("\(missingScheduleCount) current-page payments have no scheduled date and are excluded from aging.")
+                    .font(.system(size: 10)).foregroundStyle(palette.textTertiary)
             }
         }
-        .padding(.vertical, 12)
+        .padding(Space.s4).frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCardSoft).clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
-    // MARK: - Recon band
-
-    private var reconBand: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("RECON · payee Eusorone Technologies (DU)")
-                .font(.system(size: 9, weight: .heavy)).tracking(0.8)
-                .foregroundStyle(palette.textTertiary)
-            Text("Variances need review before close · ACH 2–3 business days")
-                .font(.system(size: 11)).foregroundStyle(palette.textSecondary)
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCardSoft))
-    }
-
-    private var nextPendingPayment: ClaimPayment656? {
-        payments.first { payment in
-            (payment.status ?? "").lowercased() == "pending" &&
-            !(payment.claimId ?? "").isEmpty &&
-            (payment.amount ?? 0) > 0
-        }
-    }
-
-    private var reportClaimId: String? {
-        payments.first { !($0.claimId ?? "").isEmpty }?.claimId
-    }
-
-    // MARK: - CTA row
-
-    private var ctaRow: some View {
+    private func actions(_ value: ClaimPaymentsResp656) -> some View {
         HStack(spacing: Space.s2) {
-            CTAButton(title: "Reconcile", action: { Task { await reconcileNextPayment() } })
-                .disabled(nextPendingPayment == nil)
-                .opacity(nextPendingPayment == nil ? 0.45 : 1)
-            Button {
-                Task { await exportClaimReport() }
-            } label: {
-                Text("Export")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(width: 148, height: 48)
-                    .background(palette.bgCard)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .disabled(reportClaimId == nil)
-            .opacity(reportClaimId == nil ? 0.45 : 1)
+            CTAButton(title: "Reconcile", action: { Task { await reconcileNextPayment(value) } })
+                .disabled(nextPendingPayment(value) == nil).opacity(nextPendingPayment(value) == nil ? 0.45 : 1)
+            Button { Task { await exportClaimReport(value) } } label: {
+                Text("Export").font(.system(size: 15, weight: .semibold)).foregroundStyle(palette.textPrimary)
+                    .frame(width: 148, height: 48).background(palette.bgCard)
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(palette.borderFaint))
+            }.buttonStyle(.plain).disabled(value.payments.first == nil)
         }
     }
 
-    // MARK: - Sub-views
-
-    private func pillChip656(_ t: String) -> some View {
-        Text(t).font(.system(size: 11, weight: .bold)).kerning(0.5)
-            .foregroundStyle(palette.textSecondary)
-            .padding(.horizontal, 10).padding(.vertical, 4)
-            .background(Capsule().fill(palette.tintNeutral))
+    private func ageDays(_ iso: String?) -> Int? {
+        guard let iso, let date = ISO8601DateFormatter().date(from: iso) else { return nil }
+        return max(0, Int(Date().timeIntervalSince(date) / 86_400))
     }
 
-    private func chip656(_ icon: String, _ tint: Color) -> some View {
-        RoundedRectangle(cornerRadius: 10, style: .continuous).fill(tint.opacity(0.16)).frame(width: 40, height: 40)
-            .overlay(Image(systemName: icon).font(.system(size: 16, weight: .semibold)).foregroundStyle(tint))
+    private func money(_ amount: Double, currency: String) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.currencyCode = currency
+        formatter.maximumFractionDigits = 0
+        return formatter.string(from: NSNumber(value: amount)) ?? "\(currency) \(String(format: "%.0f", amount))"
     }
 
-    private func statusInfo656(_ status: String?) -> (glyph: String, tint: Color, pill: String, kind: StatusPill.Kind) {
-        switch (status ?? "").lowercased() {
-        case "paid":       return ("checkmark.circle",       Brand.success, "RECONCILED", .success)
-        case "processing": return ("clock",                  Brand.warning, "OPEN",       .warning)
-        case "failed":     return ("exclamationmark.triangle", Brand.danger, "REVIEW",     .danger)
-        case "pending":    return ("clock",                  Brand.warning, "PENDING",    .warning)
-        default:           return ("circle",                 Brand.info,    "-",          .info)
+    private func bucketMoney(
+        _ buckets: [PaymentCurrencyBucket656],
+        keyPath: KeyPath<PaymentCurrencyBucket656, Double>,
+        truth: FreightClaimsAPI.MetricTruth
+    ) -> String {
+        if let unavailable = metricUnavailableLabel(truth) { return unavailable }
+        guard !buckets.isEmpty else { return "No observations" }
+        return buckets.map { money($0[keyPath: keyPath], currency: $0.currency) }.joined(separator: " · ")
+    }
+
+    private func truthLabel(_ truth: FreightClaimsAPI.MetricTruth) -> String {
+        if let unavailable = metricUnavailableLabel(truth) { return truth.reason ?? unavailable }
+        switch truth.valueState {
+        case .measured: return "Measured"
+        case .measuredByDimension: return "Measured by currency"
+        case .partial: return "Partial"
+        case .noObservations: return "No observations"
+        case .notModeled: return "Not modeled"
         }
     }
 
-    // MARK: - Load
+    private func metricCount(_ value: Int, truth: FreightClaimsAPI.MetricTruth) -> String {
+        metricUnavailableLabel(truth) ?? value.formatted()
+    }
+
+    private func metricUnavailableLabel(_ truth: FreightClaimsAPI.MetricTruth) -> String? {
+        guard truth.accessState == .granted else {
+            return truth.accessState == .restricted ? "Restricted" : "Access unknown"
+        }
+        guard truth.trackingState == .tracked else { return "Not tracked" }
+        switch truth.valueState {
+        case .notModeled: return "Not modeled"
+        case .noObservations: return "No observations"
+        case .measured, .measuredByDimension, .partial: return nil
+        }
+    }
+
+    private func timestampLabel(_ value: String?) -> String {
+        guard let value, let date = ISO8601DateFormatter().date(from: value) else { return "not observed" }
+        return date.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    private func statusInfo(_ status: String) -> (icon: String, tint: Color, label: String, kind: StatusPill.Kind) {
+        switch status.lowercased() {
+        case "paid": return ("checkmark.circle", Brand.success, "PAID", .success)
+        case "processing": return ("clock", Brand.warning, "PROCESSING", .warning)
+        case "failed": return ("exclamationmark.triangle", Brand.danger, "FAILED", .danger)
+        case "pending": return ("clock", Brand.warning, "PENDING", .warning)
+        default: return ("circle", Brand.info, status.uppercased(), .info)
+        }
+    }
+
+    private func nextPendingPayment(_ value: ClaimPaymentsResp656) -> ClaimPayment656? {
+        value.payments.first { $0.status.lowercased() == "pending" && !$0.claimId.isEmpty && $0.amount > 0 }
+    }
 
     private func load() async {
-        loading = true; loadError = nil
+        loading = true
+        loadError = nil
         do {
-            let resp: ClaimPaymentsResp656 = try await EusoTripAPI.shared.query(
-                "freightClaims.getClaimPayments",
-                input: ClaimPaymentsInput656(limit: 20, offset: 0)
+            response = try await EusoTripAPI.shared.query(
+                "freightClaims.getClaimPayments", input: ClaimPaymentsInput656(transportMode: "RAIL", limit: 20, offset: 0)
             )
-            self.payments     = resp.payments
-            self.total        = resp.total ?? 0
-            self.totalPaid    = resp.totalPaid ?? 0
-            self.totalPending = resp.totalPending ?? 0
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }
 
-    private func reconcileNextPayment() async {
-        guard let payment = nextPendingPayment,
-              let claimId = payment.claimId,
-              let amount = payment.amount
-        else {
-            await load()
-            return
-        }
+    private func reconcileNextPayment(_ value: ClaimPaymentsResp656) async {
+        guard let payment = nextPendingPayment(value) else { return }
         do {
             let _: ProcessClaimPaymentResp656 = try await EusoTripAPI.shared.mutation(
                 "freightClaims.processClaimPayment",
-                input: ProcessClaimPaymentInput656(
-                    claimId: claimId,
-                    amount: amount,
-                    method: "ach",
-                    reference: nil,
-                    notes: "Rail claim reconciliation release"
-                )
+                input: ProcessClaimPaymentInput656(claimId: payment.claimId, amount: payment.amount,
+                                                   method: "ach", reference: payment.reference,
+                                                   notes: "Rail claim reconciliation release")
             )
             await load()
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
     }
 
-    private func exportClaimReport() async {
-        guard let claimId = reportClaimId else {
-            await load()
-            return
-        }
+    private func exportClaimReport(_ value: ClaimPaymentsResp656) async {
+        guard let claimId = value.payments.first?.claimId else { return }
         do {
             let report: ClaimReportResp656 = try await EusoTripAPI.shared.mutation(
                 "freightClaims.generateClaimReport",
-                input: ClaimReportInput656(
-                    claimId: claimId,
-                    format: "csv",
-                    includeEvidence: true,
-                    includeTimeline: true,
-                    includeFinancials: true,
-                    purpose: "internal"
-                )
+                input: ClaimReportInput656(claimId: claimId, format: "csv", includeEvidence: true,
+                                           includeTimeline: true, includeFinancials: true, purpose: "internal")
             )
-            if let content = report.content, !content.isEmpty {
-                UIPasteboard.general.string = content
-            }
+            if let content = report.content, !content.isEmpty { UIPasteboard.general.string = content }
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
     }
 }

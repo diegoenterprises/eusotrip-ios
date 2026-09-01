@@ -51,7 +51,13 @@ private struct CancelInTransitBody: View {
             if let g = live.lastGeofence {
                 LifecycleRow(label: "Event",     value: g.type.uppercased())
                 LifecycleRow(label: "Recorded",  value: humanISO(g.eventTimestamp))
-                LifecycleRow(label: "GPS",       value: String(format: "%.4f, %.4f", g.latitude, g.longitude))
+                LifecycleRow(
+                    label: "GPS",
+                    value: LatLongParser.validatedCoordinate(
+                        latitude: g.latitude,
+                        longitude: g.longitude
+                    ).map(LatLongParser.displayString) ?? "Not recorded"
+                )
             } else {
                 Text("No live geofence event for this load.")
                     .font(EType.caption).foregroundStyle(palette.textSecondary)

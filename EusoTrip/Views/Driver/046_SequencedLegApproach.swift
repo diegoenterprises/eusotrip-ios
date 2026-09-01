@@ -31,7 +31,6 @@
 //
 
 import SwiftUI
-import CoreLocation
 
 struct SequencedLegApproach: View {
     @Environment(\.palette) private var palette
@@ -51,13 +50,6 @@ struct SequencedLegApproach: View {
     // coord, HERE error) the cached values stay nil and the HUD
     // renders an honest em-dash.
 
-    /// Remaining distance to the home yard, meters (HERE summary).
-    @State private var remainingMeters: Double?
-    /// Remaining drive time to the home yard, seconds (HERE summary).
-    @State private var remainingSeconds: Double?
-    /// ISO-8601 arrival time HERE computed for the home yard.
-    @State private var etaISO: String?
-
     /// Most-recent appointment for the active load — supplies the
     /// honest scheduled-arrival time when one is on file.
     @State private var appointment: AppointmentsAPI.ByLoadAppointment?
@@ -73,8 +65,6 @@ struct SequencedLegApproach: View {
     private var ctx: LifecycleProductContext {
         LifecycleProductContext(load: activeLoad, role: session.user?.role)
     }
-
-    private static let metersPerMile = 1609.344
 
     private static func parseISO(_ s: String) -> Date? {
         let f = ISO8601DateFormatter()
@@ -94,23 +84,13 @@ struct SequencedLegApproach: View {
 
     /// "5.4" — live HERE remaining length in miles (numeric only,
     /// the "mi" suffix is rendered separately in the hero), else "—".
-    private var heroMilesText: String {
-        guard let m = remainingMeters else { return "—" }
-        return String(format: "%.1f", m / Self.metersPerMile)
-    }
+    private var heroMilesText: String { "—" }
 
     /// "16 min" — live HERE remaining drive time, else "—".
-    private var etaMinText: String {
-        guard let s = remainingSeconds, s.isFinite, s >= 0 else { return "—" }
-        let mins = Int((s / 60).rounded())
-        return "\(mins) min"
-    }
+    private var etaMinText: String { "—" }
 
     /// "23:14" — HERE arrival clock for the home yard, else "—".
-    private var arriveByText: String {
-        guard let iso = etaISO, let date = Self.parseISO(iso) else { return "—" }
-        return Self.clock(date)
-    }
+    private var arriveByText: String { "—" }
 
     /// Header device clock, e.g. "22:58". Live wall time, never seeded.
     private var nowClockText: String { Self.clock(nowDate) }
@@ -125,7 +105,7 @@ struct SequencedLegApproach: View {
     /// City+state when present, else "—". No fabricated yard name.
     private var yardName: String {
         if let loc = activeLoad?.deliveryLocation,
-           !(loc.lat == 0 && loc.lng == 0) || !loc.cityState.isEmpty {
+           loc.coordinatePair != nil || !loc.cityState.isEmpty {
             if !loc.cityState.isEmpty { return loc.cityState }
         }
         return "—"
@@ -469,60 +449,6 @@ struct SequencedLegApproach: View {
         // Appointment (scheduled-arrival window) for this load — honest
         // nil when none is on file. No fabricated appt clock.
         appointment = try? await EusoTripAPI.shared.appointments.getByLoad(loadId: lifecycle.loadId)
-        if let load { await refreshLiveNav(for: load) }
-    }
-
-    /// Computes the live remaining leg from the driver's current GPS
-    /// fix to the home-yard coordinate via HERE Routing v8 (truck-aware),
-    /// and caches the summary numbers that drive the hero. The target is
-    /// the load's `deliveryLocation` (the terminal this screen carries)
-    /// because no first-class carrier home-yard coordinate exists on the
-    /// wire. Every value is a real HERE measurement; on any failure (no
-    /// fix, no coord, HERE error) the cached values stay nil and the hero
-    /// renders an honest em-dash. Mirrors 013_ActiveEnroute:~208.
-    @MainActor
-    private func refreshLiveNav(for load: Load) async {
-        // Home-yard target coord: the delivery/terminal coordinate.
-        guard let dest = load.deliveryLocation,
-              !(dest.lat == 0 && dest.lng == 0) else {
-            remainingMeters = nil
-            remainingSeconds = nil
-            etaISO = nil
-            return
-        }
-
-        // Live GPS fix. nil when denied / timed out → hero reads "—".
-        guard let fix = await DriverLocationResolver.shared.currentCoordinate() else {
-            remainingMeters = nil
-            remainingSeconds = nil
-            etaISO = nil
-            return
-        }
-
-        let stops = HereStops(
-            origin: fix,
-            destination: CLLocationCoordinate2D(latitude: dest.lat, longitude: dest.lng)
-        )
-        let profile = TruckProfile.from(load: load)
-        do {
-            let resp = try await HereRoutingClient.shared.route(stops: stops, profile: profile)
-            guard let section = resp.routes.first?.sections.first,
-                  let summary = section.summary else {
-                remainingMeters = nil
-                remainingSeconds = nil
-                etaISO = nil
-                return
-            }
-            remainingMeters = Double(summary.length)
-            remainingSeconds = Double(summary.duration)
-            etaISO = section.arrival.time
-        } catch {
-            // Honest failure: leave the numbers nil so the hero shows
-            // "—" rather than a stale or fabricated figure.
-            remainingMeters = nil
-            remainingSeconds = nil
-            etaISO = nil
-        }
     }
 }
 

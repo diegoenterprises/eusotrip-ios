@@ -214,16 +214,14 @@ enum VoiceDispatch {
 
     @MainActor
     private static func replyForDriveClock() -> String {
+        guard let observation = HOSStore.shared.currentObservation else {
+            return "Current sourced HOS evidence is unavailable."
+        }
         // HOSClockSwap carries a live-ticking extrapolation; fall back
         // to HOSStore if it hasn't been started yet.
-        let swapSeconds = HOSClockSwap.shared.liveDriveRemaining
-        let minutes: Int
-        if swapSeconds > 0 {
-            minutes = swapSeconds / 60
-        } else {
-            minutes = HOSStore.shared.current.driveRemainingMinutes
-        }
-        guard minutes > 0 else { return "No drive time remaining. You're on break." }
+        let minutes = HOSClockSwap.shared.liveDriveRemaining.map { $0 / 60 }
+            ?? observation.driveRemainingMinutes
+        guard minutes > 0 else { return "No drive time remains in the current HOS observation." }
         let h = minutes / 60
         let m = minutes % 60
         if h == 0 { return "\(m) minutes of drive time remaining." }

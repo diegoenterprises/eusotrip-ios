@@ -12,6 +12,7 @@
 //
 
 import Foundation
+import CoreLocation
 
 // MARK: - Location
 
@@ -21,8 +22,8 @@ struct LoadLocation: Codable, Hashable {
     let city: String
     let state: String
     let zipCode: String
-    let lat: Double
-    let lng: Double
+    let lat: Double?
+    let lng: Double?
 
     /// "Shreveport, LA"
     var cityState: String {
@@ -37,16 +38,26 @@ struct LoadLocation: Codable, Hashable {
     }
 
     var hasDisplayableCoordinate: Bool {
-        lat.isFinite && lng.isFinite
-        && (-90...90).contains(lat)
-        && (-180...180).contains(lng)
-        && !(lat == 0 && lng == 0)
+        coordinatePair != nil
+    }
+
+    var coordinatePair: (lat: Double, lng: Double)? {
+        guard let coordinate = LatLongParser.validatedCoordinate(
+            latitude: lat,
+            longitude: lng
+        ) else { return nil }
+        return (coordinate.latitude, coordinate.longitude)
     }
 
     var mapDisplayLabel: String {
         if !streetCityStateZip.isEmpty { return streetCityStateZip }
-        if hasDisplayableCoordinate {
-            return String(format: "%.4f, %.4f", lat, lng)
+        if let coordinatePair {
+            return LatLongParser.displayString(
+                CLLocationCoordinate2D(
+                    latitude: coordinatePair.lat,
+                    longitude: coordinatePair.lng
+                )
+            )
         }
         return ""
     }
@@ -57,7 +68,7 @@ struct LoadLocation: Codable, Hashable {
     }
 
     static let empty = LoadLocation(
-        address: "", city: "", state: "", zipCode: "", lat: 0, lng: 0
+        address: "", city: "", state: "", zipCode: "", lat: nil, lng: nil
     )
 }
 
@@ -481,12 +492,22 @@ struct Load: Codable, Identifiable, Hashable {
         // round-trip is lossless against the server shape.
         if let p = pickupLocation {
             try c.encode(CityStateEcho(city: p.city, state: p.state), forKey: .pickupLocation)
-            try c.encode(CoordEcho(lat: p.lat, lng: p.lng), forKey: .pickupCoord)
+            if let coordinate = p.coordinatePair {
+                try c.encode(CoordEcho(lat: coordinate.lat, lng: coordinate.lng),
+                             forKey: .pickupCoord)
+            } else {
+                try c.encodeNil(forKey: .pickupCoord)
+            }
             try c.encode(AddressEcho(address: p.address, city: p.city, state: p.state, zip: p.zipCode), forKey: .origin)
         }
         if let d = deliveryLocation {
             try c.encode(CityStateEcho(city: d.city, state: d.state), forKey: .deliveryLocation)
-            try c.encode(CoordEcho(lat: d.lat, lng: d.lng), forKey: .deliveryCoord)
+            if let coordinate = d.coordinatePair {
+                try c.encode(CoordEcho(lat: coordinate.lat, lng: coordinate.lng),
+                             forKey: .deliveryCoord)
+            } else {
+                try c.encodeNil(forKey: .deliveryCoord)
+            }
             try c.encode(AddressEcho(address: d.address, city: d.city, state: d.state, zip: d.zipCode), forKey: .destination)
         }
         try c.encodeIfPresent(pickupDate, forKey: .pickupDate)
@@ -527,20 +548,21 @@ struct Load: Codable, Identifiable, Hashable {
         let state = echo?.state ?? addr?.state ?? ""
         let address = addr?.address ?? ""
         let zip     = addr?.zip ?? ""
-        let lat = coord?.lat ?? 0
-        let lng = coord?.lng ?? 0
+        let coordinate = LatLongParser.validatedCoordinate(
+            latitude: coord?.lat,
+            longitude: coord?.lng
+        )
 
         let hasPlace = !city.isEmpty || !state.isEmpty
-        let hasCoord = lat != 0 || lng != 0
-        guard hasPlace || hasCoord else { return nil }
+        guard hasPlace || coordinate != nil else { return nil }
 
         return LoadLocation(
             address: address,
             city: city,
             state: state,
             zipCode: zip,
-            lat: lat,
-            lng: lng
+            lat: coordinate?.latitude,
+            lng: coordinate?.longitude
         )
     }
 

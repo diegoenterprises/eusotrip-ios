@@ -425,6 +425,13 @@ struct ShipperCompliance: View {
                 myDocumentsSection(summary: summary, documents: documents)
                     .padding(.horizontal, Space.s5)
                     .padding(.top, Space.s5)
+                // §27 — cross-border lanes. Reads this account's real
+                // cross-border loads and drills each one into the 216B
+                // customs gate WITH its load id. Hidden entirely when
+                // the account has no cross-border lane on file.
+                ShipperCrossBorderLanesCard216()
+                    .padding(.horizontal, Space.s5)
+                    .padding(.top, Space.s5)
             }
         }
     }
@@ -791,7 +798,7 @@ struct ShipperCompliance: View {
 
     private func creditCard(_ s: ShipperComplianceAPI.Summary) -> some View {
         let creditTracked = s.tracked?.credit == true
-        VStack(alignment: .leading, spacing: Space.s2) {
+        return VStack(alignment: .leading, spacing: Space.s2) {
             HStack(spacing: 6) {
                 Image(systemName: "creditcard.fill")
                     .font(.system(size: 12, weight: .heavy))
@@ -1146,6 +1153,117 @@ struct ShipperCompliance: View {
         if n >= 1_000     { return String(format: "$%.1fk", Double(n) / 1_000) }
         if n == 0          { return "—" }   // graceful empty, not a dev hyphen
         return "$\(n)"
+    }
+}
+
+// MARK: - Cross-border lanes card (§27 inbound edge · 216 → 216B)
+
+private struct CrossBorderLaneRow216: Decodable, Identifiable {
+    let id: String                 // "load_<n>"
+    let loadNumber: String
+    let originCountry: String
+    let destinationCountry: String
+    let usmcaEligible: Bool
+    let customsStatus: String
+}
+
+private struct CrossBorderLaneEnvelope216: Decodable {
+    let lanes: [CrossBorderLaneRow216]
+}
+
+/// Lists the account's real cross-border lanes and routes each into the
+/// 216B customs gate carrying that lane's load id. Self-contained: it
+/// owns its own fetch so the compliance store's state machine is
+/// untouched. Renders nothing at all when there are no lanes or the
+/// lookup fails — this card never invents a lane, and it never claims a
+/// clearance verdict of its own (the gate screen derives that).
+private struct ShipperCrossBorderLanesCard216: View {
+    @Environment(\.palette) private var palette
+    @State private var lanes: [CrossBorderLaneRow216] = []
+    @State private var loaded = false
+
+    var body: some View {
+        Group {
+            if loaded, !lanes.isEmpty {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("CROSS-BORDER LANES · \(lanes.count)")
+                        .font(EType.micro).tracking(0.8)
+                        .foregroundStyle(palette.textTertiary)
+                        .padding(.horizontal, Space.s4)
+                        .padding(.top, Space.s4)
+                        .padding(.bottom, Space.s2)
+                    ForEach(Array(lanes.enumerated()), id: \.element.id) { index, lane in
+                        laneRow(lane)
+                        if index < lanes.count - 1 {
+                            Divider().overlay(palette.borderFaint).padding(.leading, 56)
+                        }
+                    }
+                }
+                .background(palette.bgCard)
+                .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                            .strokeBorder(palette.borderFaint))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+            }
+        }
+        .task { await load() }
+    }
+
+    private func laneRow(_ lane: CrossBorderLaneRow216) -> some View {
+        Button {
+            NotificationCenter.default.post(
+                name: .eusoShipperNavSwap,
+                object: nil,
+                userInfo: ["screenId": "216B", "loadId": lane.id]
+            )
+        } label: {
+            HStack(alignment: .center, spacing: Space.s3) {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Brand.info.opacity(0.18))
+                    .frame(width: 36, height: 36)
+                    .overlay(
+                        Image(systemName: "globe.americas")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(Brand.info)
+                    )
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(lane.loadNumber)
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(palette.textPrimary)
+                    Text("\(lane.originCountry.uppercased()) → \(lane.destinationCountry.uppercased()) · \(lane.customsStatus.replacingOccurrences(of: "_", with: " ").uppercased())")
+                        .font(EType.mono(.caption))
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: Space.s2)
+                if lane.usmcaEligible {
+                    Text("USMCA")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.4)
+                        .foregroundStyle(Brand.info)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(Capsule().fill(Brand.info.opacity(0.18)))
+                }
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(palette.textTertiary)
+            }
+            .padding(.horizontal, Space.s4)
+            .padding(.vertical, Space.s3)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Open the customs gate for \(lane.loadNumber)")
+    }
+
+    private func load() async {
+        guard !loaded else { return }
+        do {
+            let envelope: CrossBorderLaneEnvelope216 = try await EusoTripAPI.shared
+                .queryNoInput("shippers.getCrossBorderSummary")
+            lanes = envelope.lanes
+        } catch {
+            lanes = []
+        }
+        loaded = true
     }
 }
 

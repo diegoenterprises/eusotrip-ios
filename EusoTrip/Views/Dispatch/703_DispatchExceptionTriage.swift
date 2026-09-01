@@ -134,26 +134,32 @@ private struct DispatchTriageBreakdownRow: Decodable, Hashable {
 
 /// `eld.getDriverStatus` row (subset).
 private struct EldDriverStatusRow: Decodable, Hashable {
-    let driverId: Int?
+    struct Tracking: Decodable, Hashable {
+        let driveTime: Bool?
+        let violation: Bool?
+    }
+
+    let driverId: String?
     let id: Int?
     let name: String?
     let hasViolation: Bool?
     let driveTimeRemaining: Double?       // minutes
     let lastUpdate: String?
+    let provider: String?
+    let tracked: Tracking?
 
     enum CodingKeys: String, CodingKey {
-        case driverId, id, name, hasViolation, driveTimeRemaining, lastUpdate
+        case driverId, id, name, hasViolation, driveTimeRemaining, lastUpdate, provider, tracked
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        // Server returns driverId as string (e.g., "d123" or UUID).
-        // Parse it; if non-numeric, store nil.
-        if let dIdStr = try c.decodeIfPresent(String.self, forKey: .driverId),
-           let dIdInt = Int(dIdStr) {
-            self.driverId = dIdInt
+        // Identity is opaque on the wire. Preserve string/UUID values instead
+        // of converting an unreadable identity into driver 0.
+        if let value = try c.decodeIfPresent(String.self, forKey: .driverId) {
+            self.driverId = value
         } else if let dIdInt = try c.decodeIfPresent(Int.self, forKey: .driverId) {
-            self.driverId = dIdInt
+            self.driverId = String(dIdInt)
         } else {
             self.driverId = nil
         }
@@ -162,7 +168,57 @@ private struct EldDriverStatusRow: Decodable, Hashable {
         self.hasViolation = try c.decodeIfPresent(Bool.self, forKey: .hasViolation)
         self.driveTimeRemaining = try c.decodeIfPresent(Double.self, forKey: .driveTimeRemaining)
         self.lastUpdate = try c.decodeIfPresent(String.self, forKey: .lastUpdate)
+        self.provider = try c.decodeIfPresent(String.self, forKey: .provider)
+        self.tracked = try c.decodeIfPresent(Tracking.self, forKey: .tracked)
     }
+
+    var stableIdentity: String? {
+        let opaque = driverId?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let opaque, !opaque.isEmpty { return opaque }
+        return id.map(String.init)
+    }
+
+    var sourceIdentity: String? {
+        let value = provider?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value?.isEmpty == false ? value : nil
+    }
+
+    var observedAt: Date? {
+        guard let lastUpdate else { return nil }
+        return Self.fractional.date(from: lastUpdate) ?? Self.internet.date(from: lastUpdate)
+    }
+
+    func hasCurrentDriveEvidence(at now: Date = Date()) -> Bool {
+        guard stableIdentity != nil,
+              sourceIdentity != nil,
+              tracked?.driveTime == true,
+              let driveTimeRemaining,
+              driveTimeRemaining.isFinite,
+              driveTimeRemaining >= 0,
+              let observedAt else { return false }
+        let age = now.timeIntervalSince(observedAt)
+        return age >= -(5 * 60) && age <= 15 * 60
+    }
+
+    var hasRecordedViolationEvidence: Bool {
+        stableIdentity != nil
+            && sourceIdentity != nil
+            && tracked?.violation == true
+            && hasViolation == true
+            && observedAt != nil
+    }
+
+    private static let fractional: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private static let internet: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
 }
 
 /// `weather.getImpactedLoads` row — an in-transit load whose pickup or
@@ -268,10 +324,17 @@ private enum AlertSeverity: String, Hashable, Comparable {
 // MARK: - Body
 
 private struct OperationsAlertsBody: View {
+    private enum ELDFeedState: Equatable {
+        case loading
+        case current(observedAt: Date)
+        case failed(message: String)
+    }
+
     @Environment(\.palette) private var palette
     @State private var loadExceptions: [DispatchExceptionRow] = []
     @State private var breakdowns: [DispatchTriageBreakdownRow] = []
     @State private var drivers: [EldDriverStatusRow] = []
+    @State private var eldFeedState: ELDFeedState = .loading
     @State private var weatherImpacted: [WeatherImpactedLoadRow] = []
     @State private var loading: Bool = true
     @State private var loadError: String?
@@ -314,6 +377,13 @@ private struct OperationsAlertsBody: View {
                         Text(e).font(EType.caption).foregroundStyle(Brand.danger)
                     }
                 }
+                if case .failed(let message) = eldFeedState {
+                    LifecycleCard(accentDanger: true) {
+                        Text("ELD/HOS feed unavailable · \(message)")
+                            .font(EType.caption)
+                            .foregroundStyle(Brand.danger)
+                    }
+                }
                 content
                 Color.clear.frame(height: 96)
             }
@@ -321,6 +391,11 @@ private struct OperationsAlertsBody: View {
         }
         .task { await loadAll() }
         .eusoRefreshable { await loadAll() }
+        // RealtimeService → `dispatch:board_update`. Live exception +
+        // breakdown queue; same reasoning as 410.
+        .onReceive(NotificationCenter.default.publisher(for: .eusoDispatchBoardUpdated)) { _ in
+            Task { await loadAll() }
+        }
     }
 
     // MARK: subviews
@@ -352,12 +427,16 @@ private struct OperationsAlertsBody: View {
         let high     = alerts.filter { $0.severity == .high }.count
         let zeun     = alerts.filter { $0.source   == .zeun }.count
         let eld      = alerts.filter { $0.source   == .eld  }.count
+        let eldValue: String = {
+            if case .current = eldFeedState { return "\(eld)" }
+            return "—"
+        }()
         let wx       = alerts.filter { $0.source   == .weather }.count
         return HStack(spacing: Space.s2) {
             LifecycleStatTile(label: "CRITICAL",  value: "\(critical)", icon: "exclamationmark.octagon.fill", danger: critical > 0)
             LifecycleStatTile(label: "HIGH",      value: "\(high)",     icon: "exclamationmark.triangle.fill")
             LifecycleStatTile(label: "ZEUN",      value: "\(zeun)",     icon: "wrench.and.screwdriver.fill")
-            LifecycleStatTile(label: "ELD/HOS",   value: "\(eld)",      icon: "clock.badge.exclamationmark")
+            LifecycleStatTile(label: "ELD/HOS",   value: eldValue,      icon: "clock.badge.exclamationmark")
             // WEATHER tile is bespoke (WeatherIcons glyph, ZERO SF Symbol) —
             // it mirrors the LifecycleStatTile idiom but renders the v2 alert
             // glyph rather than an SF symbol, per the bespoke doctrine.
@@ -587,8 +666,12 @@ private struct OperationsAlertsBody: View {
                 "eld.getDriverStatus", input: In(filter: nil)
             )
             drivers = r
+            eldFeedState = .current(observedAt: Date())
         } catch {
-            // Best-effort: same reasoning as breakdowns.
+            drivers = []
+            let message = (error as? EusoTripAPIError)?.errorDescription
+                ?? error.localizedDescription
+            eldFeedState = .failed(message: message)
         }
     }
 
@@ -660,10 +743,11 @@ private struct OperationsAlertsBody: View {
                 }
             }()
             let coords: String? = {
-                if let lat = b.latitude, let lng = b.longitude {
-                    return String(format: "%.4f, %.4f", lat, lng)
-                }
-                return nil
+                guard let coordinate = LatLongParser.validatedCoordinate(
+                    latitude: b.latitude,
+                    longitude: b.longitude
+                ) else { return nil }
+                return LatLongParser.displayString(coordinate)
             }()
             out.append(UnifiedAlert(
                 id: "zeun-\(b.id)",
@@ -686,14 +770,16 @@ private struct OperationsAlertsBody: View {
 
         // 3. ELD HOS violations + warnings.
         for d in drivers {
+            guard let identity = d.stableIdentity,
+                  let source = d.sourceIdentity else { continue }
             let driverLabel = d.name ?? "Driver"
-            if d.hasViolation == true {
+            if d.hasRecordedViolationEvidence {
                 out.append(UnifiedAlert(
-                    id: "eld-\(d.driverId ?? d.id ?? 0)",
+                    id: "eld-\(identity)",
                     source: .eld,
                     severity: .critical,
-                    title: "HOS Violation",
-                    description: "\(driverLabel) has exceeded Hours of Service limits. Contact immediately to ensure FMCSA compliance.",
+                    title: "Recorded HOS Violation",
+                    description: "\(driverLabel) has a sourced HOS violation record from \(source). Revalidate current legal status before assignment.",
                     driverName: d.name,
                     vehicle: nil,
                     loadNumber: nil,
@@ -703,9 +789,10 @@ private struct OperationsAlertsBody: View {
                     multiVehicleCount: nil,
                     resolvableExceptionId: nil
                 ))
-            } else if let m = d.driveTimeRemaining, m > 0, m < 60 {
+            } else if d.hasCurrentDriveEvidence(),
+                      let m = d.driveTimeRemaining, m > 0, m < 60 {
                 out.append(UnifiedAlert(
-                    id: "eld-warn-\(d.driverId ?? d.id ?? 0)",
+                    id: "eld-warn-\(identity)",
                     source: .eld,
                     severity: .high,
                     title: "HOS Warning · Low Drive Time",

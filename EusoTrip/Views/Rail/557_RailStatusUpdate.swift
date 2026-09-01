@@ -155,7 +155,7 @@ private struct RailStatusUpdateBody: View {
 
     private func confirm() async {
         submitting = true; errorText = nil
-        struct StatusIn: Encodable { let id: Int; let status: String }
+        struct StatusIn: Encodable { let id: Int; let newStatus: String; let requestKey: String }
         struct Empty557: Decodable {
             let success: Bool
             let newStatus: String
@@ -173,7 +173,7 @@ private struct RailStatusUpdateBody: View {
         do {
             _ = try await EusoTripAPI.shared.mutation(
                 "railShipments.updateRailShipmentStatus",
-                input: StatusIn(id: shipmentId, status: selected)) as Empty557
+                input: StatusIn(id: shipmentId, newStatus: selected, requestKey: UUID().uuidString)) as Empty557
             done = true
         } catch {
             errorText = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

@@ -387,7 +387,13 @@ private struct RailCrewCertificationsBody: View {
             "Active crew: \(crew.filter { $0.relievedAt == nil }.count)"
         ]
         for member in crew.prefix(5) {
-            lines.append("\(displayName(for: member)) - \(roleLabel(member.role)) - HOS \((member.hoursOfServiceCompliant ?? false) ? "ok" : "review")")
+            let hosLabel: String
+            switch member.hoursOfServiceCompliant {
+            case true: hosLabel = "ok"
+            case false: hosLabel = "not compliant"
+            case nil: hosLabel = "untracked"
+            }
+            lines.append("\(displayName(for: member)) - \(roleLabel(member.role)) - HOS \(hosLabel)")
         }
         return lines
     }

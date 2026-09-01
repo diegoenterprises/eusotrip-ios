@@ -35,12 +35,61 @@
 //      both projections is UNDER-counted, and this screen says so rather than
 //      presenting a short number as complete.
 //    • There is NO escort-entered blackout write path anywhere in escorts.ts and
-//      no blackout column in the escort schema, so "+ Block dates" renders inert
-//      with its reason on its face. It never opens a sheet and never fakes a
-//      write.
+//      no blackout column in the escort schema, so the SECONDARY action "Block
+//      dates" ships DISABLED with STUB · NO WRITE PATH on its face. It has no
+//      handler, never opens a sheet and never fakes a write. Searched, not
+//      assumed: `blackout` returns ZERO hits across server/routers/. The nearest
+//      callable anywhere in the tree is availability.blockTime
+//      (server/routers/availability.ts:202, with unblockTime :236 and
+//      setAvailability :265, mounted routers.ts:1747) and it is deliberately NOT
+//      wired here — it is gated by isolatedProcedure (_core/trpc.ts:517: auth +
+//      isolation + autoAudit, NO role gate, therefore not escort-scoped) and it
+//      writes driver_availability_blocks.driverId, which no escorts.* read ever
+//      returns. Wiring it would persist a block this lattice can never draw.
 //    • updateAvailability persists to users.metadata and emits NOTHING — no
 //      audit row, no WebSocket fan-out. A dispatcher board does not learn that
 //      Saturday just went dark. Named as a one-sided chain, not hidden.
+//    • STUB — NO CLOCK ON THE PRIMARY READ. getUpcomingJobs returns
+//      id/loadNumber/position/origin/destination/scheduledDate/pay/distance
+//      (escorts.ts:754-762) and carries NO start time of any kind; only
+//      getSchedule projects `startTime` (escorts.ts:2291, formatted off
+//      loads.pickupDate) and it reaches at most 10 rows for the whole book.
+//      Rows this screen cannot match to a schedule row therefore have no
+//      start time, and none is synthesised: they render TIME TBD, ordered
+//      after the timed rows, unplaced on the hour ruler, and excluded from
+//      the overlap count and the overlap duration. PROPOSED SERVER SHAPE:
+//      add `startTime` (and ideally `endTime`) to the getUpcomingJobs
+//      projection so the month's headline day is fully timed.
+//    • STUB — SPEED CAP AND FALLBACK DURATION ARE CLIENT-SIDE. Bar length is
+//      distance ÷ 45 mph, with 90 min when a row has no distance.
+//      convoys.maxSpeedMph is a real column (drizzle/schema.ts:3727, int,
+//      default 45) but is NOT projected by getUpcomingJobs, getSchedule or
+//      getJobDetails, so it is unreachable from this screen's reads. Both
+//      constants are printed on the density panel as assumptions.
+//    • BOUNDED DETAIL RESOLUTION. Multi-day band end days come from
+//      getJobDetails one row at a time. That loop is capped at
+//      spanResolveBudget and scoped to the month actually on screen; the
+//      remainder is reported as UNRESOLVED in the footer rather than fetched
+//      serially while the user waits.
+//
+//  WEB PARITY ROUTE: /escort/schedule → client/src/pages/EscortSchedule.tsx,
+//  lazy-imported client/src/App.tsx:280, mounted client/src/App.tsx:944 behind
+//  guard(ESCT). That page reads escorts.getSchedule / getAvailability /
+//  getUpcomingJobs / getJobsSummary (EscortSchedule.tsx:23-26) and mutates
+//  escorts.updateAvailability (EscortSchedule.tsx:28) — the SAME single write,
+//  so the missing second action is a platform gap, not a phone omission.
+//
+//  WRITE PATH · blockchainAuditTrail · WS BROADCAST: the only write reachable
+//  from this screen is escorts.updateAvailability, and it touches exactly ONE
+//  row — db.update(users).set({metadata}) at escorts.ts:2334. No second table,
+//  no audit row (it does not even call recordAuditEvent, which escorts.ts:17
+//  imports), no emit anywhere in escorts.ts:2318-2336.
+//  blockchainAuditTrail = STUB·escort-lane-blockchain-audit-absent, verified for
+//  THESE procedures: the table is real (drizzle/schema.ts:10018, GAP-444) and is
+//  written next door by wallet.ts:1190, detentionAccessorials.ts:909 and
+//  dispatch.ts:4079, but escorts.ts references it ZERO times across all 4745
+//  lines. No chain anchor is appended when an escort turns a day on or off, and
+//  this screen paints no chain badge it cannot source.
 //
 //  Offline duty (§W): reads = READ_CACHED(30m) through EscortOfflineCache.
 //  When a snapshot is painted the staleness line is visible in the section rail
@@ -49,9 +98,25 @@
 //  toggle is ONLINE_ONLY — the Unified Outbox is Driver-only today, so no queue
 //  badge is ever drawn.
 //
-//  RBAC: registered role .escort only; every procedure resolves the caller's own
-//  escort rows server-side (resolveEscortUserId escorts.ts:138). No loads.rate,
-//  no shipper margin, no other escort's schedule reaches this surface.
+//  RBAC: a genuine ROLE gate, pinned hop by hop rather than asserted —
+//  escorts.ts:11 imports escortProcedure under the local alias
+//  `protectedProcedure`; escortProcedure = roleProcedure(ROLES.ESCORT) at
+//  server/_core/trpc.ts:228; the roleProcedure factory is at
+//  server/_core/trpc.ts:216. The alias is a naming artefact inside escorts.ts
+//  only — it is NOT the bare authenticated procedure the name suggests, and it
+//  is not described here as if it were. Registered role .escort only; every
+//  procedure resolves the caller's own escort rows server-side
+//  (resolveEscortUserId escorts.ts:138). No loads.rate, no shipper margin, no
+//  other escort's schedule reaches this surface.
+//
+//  COMPONENT KIT (FD-008): cards rx20 · tiles rx16 · inner rx14 · chips rx10.
+//  Radius (Theme/DesignSystem.swift:237) ships 8/12/16/20/28 and has NO 10 and
+//  NO 14, so the chip value lives as a named local constant in ES15Chip below
+//  rather than as a bare literal at the call site (every other surface here is a
+//  card at Radius.xl 20 or a button at Radius.md 12; nothing needs the inner
+//  14). This screen is a date LATTICE and an
+//  hour ruler: it contains NO ListRows, so the 40x40 rx10 ListRow icon chip is
+//  deliberately absent rather than invented to satisfy the clause.
 //
 //  Sole author: Mike "Diego" Usoro / Eusorone Technologies, Inc.
 //  Powered by ESANG AI™.
@@ -132,6 +197,10 @@ private struct ES15MonthSnapshot: Codable {
     let availability: [ES15AvailabilityDay]
     let certs: [ES15Cert]
     let spans: [ES15JobSpan]
+    /// Multi-day candidates in the visible month whose end day was NOT
+    /// resolved because the per-row detail budget ran out. Optional so
+    /// snapshots written before this field decode as zero rather than fail.
+    let unresolvedSpans: Int?
 }
 
 // MARK: - Screen-local derived types
@@ -198,10 +267,31 @@ private struct ES15Band: Identifiable, Equatable {
 private struct ES15DayMove: Identifiable, Equatable {
     let id: String
     let index: Int
-    let startMinutes: Int
-    let endMinutes: Int
+    /// nil when NO server-supplied start time exists for this row. The screen
+    /// never fills this in — getUpcomingJobs carries no clock at all
+    /// (escorts.ts:754-762) and getSchedule reaches at most 10 rows.
+    let startMinutes: Int?
+    /// Client-side estimate only — see ES15Assumption.
+    let durationMinutes: Int
     let position: ES15Position
-    var startLabel: String { String(format: "%02d:%02d", startMinutes / 60, startMinutes % 60) }
+
+    var hasTime: Bool { startMinutes != nil }
+    var endMinutes: Int? { startMinutes.map { min($0 + durationMinutes, 23 * 60 + 59) } }
+    var startLabel: String {
+        guard let s = startMinutes else { return "TIME TBD" }
+        return String(format: "%02d:%02d", s / 60, s % 60)
+    }
+}
+
+/// The two numbers this screen assumes because no read on it carries them.
+/// Both are printed on the surface so nothing here looks server-derived.
+private enum ES15Assumption {
+    /// convoys.maxSpeedMph EXISTS (drizzle/schema.ts:3727, int, default 45)
+    /// but is NOT projected by getUpcomingJobs, getSchedule or getJobDetails,
+    /// so this screen cannot read the real cap for a given convoy.
+    static let escortCapMph = 45
+    /// Used only when a row has no distance at all.
+    static let fallbackMinutes = 90
 }
 
 private struct ES15Overlap: Identifiable, Equatable {
@@ -209,6 +299,18 @@ private struct ES15Overlap: Identifiable, Equatable {
     let firstIndex: Int
     let secondIndex: Int
     let minutes: Int
+}
+
+/// 14-kit radii that `Radius` does not carry.
+/// Radius (Theme/DesignSystem.swift:237) ships 8 / 12 / 16 / 20 / 28 — there is
+/// no 10 and no 14 — so the chip value lives here as a named constant rather
+/// than as a bare literal scattered through the body. Nothing on this screen
+/// needs the inner-surface 14: every surface here is a card (20) or a chip (10).
+/// This screen is a date lattice with no ListRows, so there is no 40x40 icon
+/// chip: the side length the ListRow anatomy would use is deliberately absent
+/// rather than invented (FD-008).
+private enum ES15Chip {
+    static let radius: CGFloat = 10   // chip · SVG rx10
 }
 
 // MARK: - Screen
@@ -236,6 +338,15 @@ struct EscortSchedule: View {
     private let cacheTTL: TimeInterval = 30 * 60
     private let cacheKey = "escort.schedule.month"
 
+    /// Hard ceiling on per-row `getJobDetails` calls in one load. The month
+    /// lattice can only draw a handful of multi-day bands legibly, so nothing
+    /// beyond this is worth blocking the load for — the remainder is rendered
+    /// as an unresolved count, not fetched serially.
+    private static let spanResolveBudget = 8
+
+    /// Multi-day candidates in the visible month whose end day was not fetched.
+    @State private var unresolvedSpanCount = 0
+
     private var isDark: Bool { colorScheme == .dark }
     private var calendar: Calendar { Calendar(identifier: .gregorian) }
 
@@ -251,7 +362,7 @@ struct EscortSchedule: View {
                     }
                     sectionRail
                     monthLattice
-                    blockDatesAffordance
+                    bandsReadOnlyNote
                     densityHeader
                     dayDensityPanel
                     availabilityHeader
@@ -270,6 +381,10 @@ struct EscortSchedule: View {
 
     // MARK: Header
 
+    // HOME type ramp: H1 34/700/-0.6. The month ledger used to sit ABOVE the H1
+    // as a right-of-centre caption row; at 34 the headline runs the full width
+    // of the safe area and collided with it, so the ledger was RE-ANCHORED onto
+    // the lattice pager row (its own month card) rather than the H1 being cut.
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 4) {
@@ -281,8 +396,7 @@ struct EscortSchedule: View {
                 Text(monthLabel).font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
             }
-            Text(ledgerLine).font(EType.mono(.micro)).foregroundStyle(palette.textSecondary)
-            Text(headlineText).font(.system(size: 27, weight: .bold)).tracking(-0.6)
+            Text(headlineText).font(.system(size: 34, weight: .bold)).tracking(-0.6)
                 .foregroundStyle(LinearGradient.diagonal)
                 .lineLimit(1).minimumScaleFactor(0.8)
             Text(subheadText).font(.system(size: 11, weight: .semibold))
@@ -295,8 +409,10 @@ struct EscortSchedule: View {
         let f = DateFormatter(); f.dateFormat = "MMM yyyy"
         return f.string(from: anchorMonth).uppercased()
     }
+    /// Month totals. Sits on the lattice pager row, where the month name is
+    /// already centred — so the label itself is not repeated here.
     private var ledgerLine: String {
-        "\(monthLabel) · \(bookedTotal) BOOKED · \(blockedDayCount) BLOCKED"
+        "\(bookedTotal) BOOKED · \(blockedDayCount) BLOCKED"
     }
     private var headlineText: String {
         guard let day = focusedDay, let count = countsByDay[day], count > 0 else {
@@ -305,10 +421,17 @@ struct EscortSchedule: View {
         return "\(count) moves on \(weekdayShort(day)) \(day)"
     }
     private var subheadText: String {
+        // A suppressed figure states its reason rather than showing a number
+        // computed over rows that never carried a clock.
+        if let reason = overlapSuppressionReason { return reason }
+        let tbd = focusedUntimedCount > 0 ? " · \(focusedUntimedCount) TIME TBD" : ""
         let overlaps = focusedOverlaps
-        guard !overlaps.isEmpty else { return "No double-booking on the peak day" }
+        guard !overlaps.isEmpty else {
+            return "No double-booking across \(focusedTimedMoves.count) timed moves" + tbd
+        }
         let total = overlaps.reduce(0) { $0 + $1.minutes }
-        return "Peak day · \(overlaps.count) overlaps · \(total / 60) h \(total % 60) m double-booked"
+        return "\(overlaps.count) overlaps · \(total / 60) h \(total % 60) m double-booked "
+            + "across \(focusedTimedMoves.count) timed moves" + tbd
     }
 
     private var sectionRail: some View {
@@ -340,6 +463,10 @@ struct EscortSchedule: View {
                     Image(systemName: "chevron.left").font(.system(size: 11, weight: .bold))
                         .foregroundStyle(palette.textSecondary)
                 }.buttonStyle(.plain)
+                // The month ledger re-anchored off the header for the 34-point H1.
+                Text(ledgerLine).font(.system(size: 8, weight: .bold).monospaced())
+                    .foregroundStyle(palette.textTertiary)
+                    .lineLimit(1).minimumScaleFactor(0.8)
                 Spacer()
                 Text(monthLabel).font(.system(size: 11, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textPrimary)
@@ -376,8 +503,8 @@ struct EscortSchedule: View {
             densityLegend.padding(.top, Space.s2).padding(.bottom, Space.s3)
         }
         .padding(.horizontal, Space.s3)
-        .background(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).fill(palette.bgCard))
-        .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).strokeBorder(palette.borderFaint))
+        .background(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous).fill(palette.bgCard))
+        .overlay(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous).strokeBorder(palette.borderFaint))
     }
 
     private func weekRow(week: Int, pitch: CGFloat) -> some View {
@@ -422,11 +549,11 @@ struct EscortSchedule: View {
             if info.inMonth { focusedDay = info.day }
         } label: {
             ZStack(alignment: .topLeading) {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: ES15Chip.radius, style: .continuous)
                     .fill(cellWash(blocked: blocked, isToday: isToday, isFocused: isFocused))
                     .overlay {
                         if isFocused {
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            RoundedRectangle(cornerRadius: ES15Chip.radius, style: .continuous)
                                 .strokeBorder(LinearGradient.primary, lineWidth: 1.6)
                         }
                     }
@@ -521,27 +648,24 @@ struct EscortSchedule: View {
         }
     }
 
-    // MARK: The inert block-dates affordance
+    // MARK: The bands-are-read-only note
     //
-    // No procedure writes a date range and no blackout column exists. Rather
-    // than hide the capability or open a sheet that cannot save, the control is
-    // drawn dashed, inert, with its reason on its face.
+    // No procedure writes a date range and no blackout column exists. The
+    // affordance itself now lives in the action pair at the foot of the screen,
+    // disabled and labelled, so the shortfall is stated where a user would
+    // otherwise reach for it; this line explains the bands they can already see.
 
-    private var blockDatesAffordance: some View {
+    private var bandsReadOnlyNote: some View {
         HStack {
-            Text("+ BLOCK DATES · NO WRITE PATH YET")
+            Text("BLOCKING BANDS · VIEW ONLY")
                 .font(.system(size: 7.5, weight: .heavy)).tracking(0.4)
                 .foregroundStyle(palette.textTertiary)
-                .padding(.horizontal, Space.s3).padding(.vertical, 5)
-                .background(Capsule().fill(palette.bgCard.opacity(0.55)))
-                .overlay(Capsule().strokeBorder(palette.textTertiary.opacity(0.45),
-                                                style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
             Spacer()
-            Text("BANDS ARE READ-ONLY").font(.system(size: 7.5, weight: .bold).monospaced())
+            Text("SCHEDULING UNAVAILABLE").font(.system(size: 7.5, weight: .bold).monospaced())
                 .foregroundStyle(palette.textTertiary)
         }
         .allowsHitTesting(false)
-        .accessibilityLabel("Block dates is unavailable: blocked dates cannot be saved yet, so nothing you set here would be recorded.")
+        .accessibilityLabel("Blocked-date scheduling is unavailable. Use weekly availability or contact dispatch to coordinate a specific date.")
     }
 
     // MARK: Day density panel
@@ -558,13 +682,18 @@ struct EscortSchedule: View {
     }
     private var densityHeaderRight: String {
         let moves = focusedMoves
-        guard !focusedOverlaps.isEmpty else { return "\(moves.count) MOVES" }
+        let tbd = focusedUntimedCount > 0 ? " · \(focusedUntimedCount) TBD" : ""
+        if overlapSuppressionReason != nil { return "\(moves.count) MOVES · NO OVERLAP MATH" }
+        guard !focusedOverlaps.isEmpty else { return "\(moves.count) MOVES" + tbd }
         let total = focusedOverlaps.reduce(0) { $0 + $1.minutes }
-        return "\(focusedOverlaps.count) OVERLAPS · \(total / 60)H\(String(format: "%02d", total % 60))M"
+        return "\(focusedOverlaps.count) OVERLAPS · \(total / 60)H\(String(format: "%02d", total % 60))M" + tbd
     }
 
     private var dayDensityPanel: some View {
-        let moves = focusedMoves.sorted { $0.startMinutes < $1.startMinutes }
+        // Already ordered by focusedMoves: timed rows in clock order, then
+        // every TIME TBD row. No second sort — an optional start has no place
+        // in a comparison.
+        let moves = focusedMoves
         let dayStart = 5 * 60, dayEnd = 21 * 60
         return VStack(alignment: .leading, spacing: 0) {
             if moves.isEmpty {
@@ -593,14 +722,24 @@ struct EscortSchedule: View {
                                     .frame(width: 18, alignment: .leading)
                                 Text(move.startLabel)
                                     .font(.system(size: 6.5, weight: .bold).monospaced())
-                                    .foregroundStyle(move.position.ink)
+                                    .foregroundStyle(move.hasTime ? move.position.ink : palette.textTertiary)
                                     .frame(width: gutter - 18, alignment: .leading)
                                 ZStack(alignment: .leading) {
                                     Color.clear.frame(height: 6)
-                                    Capsule().fill(move.position.ink)
-                                        .frame(width: max(track * CGFloat(move.endMinutes - move.startMinutes) / span, 6),
-                                               height: 6)
-                                        .offset(x: track * CGFloat(move.startMinutes - dayStart) / span)
+                                    if let start = move.startMinutes, let end = move.endMinutes {
+                                        Capsule().fill(move.position.ink)
+                                            .frame(width: max(track * CGFloat(end - start) / span, 6),
+                                                   height: 6)
+                                            .offset(x: track * CGFloat(start - dayStart) / span)
+                                    } else {
+                                        // No server clock: an unplaced capsule
+                                        // sitting outside the ruler, never a
+                                        // bar at an hour the server never sent.
+                                        Capsule()
+                                            .strokeBorder(palette.textTertiary.opacity(0.65),
+                                                          style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
+                                            .frame(width: min(track, 96), height: 8)
+                                    }
                                 }
                                 .frame(width: track, alignment: .leading)
                             }
@@ -622,12 +761,31 @@ struct EscortSchedule: View {
                     Spacer(minLength: 0)
                 }
                 .padding(.top, Space.s2)
+
+                assumptionNote.padding(.top, Space.s2)
             }
         }
         .padding(Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).fill(palette.bgCard))
-        .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).strokeBorder(palette.borderFaint))
+        .background(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous).fill(palette.bgCard))
+        .overlay(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous).strokeBorder(palette.borderFaint))
+    }
+
+    /// Everything on this panel that is NOT a stored server value, named on
+    /// the panel itself so no bar reads as server-derived.
+    private var assumptionNote: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            if focusedUntimedCount > 0 {
+                Text("\(focusedUntimedCount) of \(focusedMoves.count) moves have no start time. They remain unplaced and are excluded from overlap totals.")
+                    .font(.system(size: 7.5, weight: .semibold).monospaced())
+                    .foregroundStyle(Brand.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Text("ESTIMATED DURATION · Timed bars use distance at \(ES15Assumption.escortCapMph) mph; moves without distance use \(ES15Assumption.fallbackMinutes) minutes. Confirm the schedule before relying on overlaps.")
+                .font(.system(size: 7.5, weight: .semibold).monospaced())
+                .foregroundStyle(palette.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     // MARK: Availability rail (ONLINE_ONLY write)
@@ -655,8 +813,8 @@ struct EscortSchedule: View {
         }
         .padding(Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).fill(palette.bgCard))
-        .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).strokeBorder(palette.borderFaint))
+        .background(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous).fill(palette.bgCard))
+        .overlay(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous).strokeBorder(palette.borderFaint))
     }
 
     private func availabilityPill(_ dow: Int) -> some View {
@@ -675,9 +833,9 @@ struct EscortSchedule: View {
                     .foregroundStyle(ink)
             }
             .frame(maxWidth: .infinity).frame(height: 30)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .background(RoundedRectangle(cornerRadius: ES15Chip.radius, style: .continuous)
                 .fill(on ? tint.opacity(isDark ? 0.22 : 0.14) : palette.bgCardSoft))
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .overlay(RoundedRectangle(cornerRadius: ES15Chip.radius, style: .continuous)
                 .strokeBorder(on ? tint.opacity(0.45) : palette.borderSoft))
             .opacity(writeInFlight == dow ? 0.55 : 1)
         }
@@ -704,8 +862,8 @@ struct EscortSchedule: View {
                 .foregroundStyle(palette.textSecondary)
         }
         .padding(Space.s3)
-        .background(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).fill(palette.bgCard))
-        .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).strokeBorder(palette.borderFaint))
+        .background(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous).fill(palette.bgCard))
+        .overlay(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous).strokeBorder(palette.borderFaint))
         .overlay(alignment: .leading) {
             RoundedRectangle(cornerRadius: 1.5, style: .continuous)
                 .fill(LinearGradient.diagonal).frame(width: 3)
@@ -733,17 +891,71 @@ struct EscortSchedule: View {
             Text("A day busier than that under-counts here — treat a full day as at least what you see.")
                 .font(.system(size: 7.5, weight: .semibold).monospaced())
                 .foregroundStyle(palette.textTertiary)
+            if unresolvedSpanCount > 0 {
+                Text("\(unresolvedSpanCount) multi-day move\(unresolvedSpanCount == 1 ? "" : "s") UNRESOLVED — no end day was fetched for \(unresolvedSpanCount == 1 ? "it" : "them"), so no band is drawn. They still count as day ticks.")
+                    .font(.system(size: 7.5, weight: .semibold).monospaced())
+                    .foregroundStyle(Brand.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
+    // MARK: Action pair
+    //
+    // PRIMARY   re-commits the seven day-of-week rows through
+    //           escorts.updateAvailability (escorts.ts:2318). That procedure
+    //           takes ONE day per call and there is no batch input, so the
+    //           button says so on its face rather than implying a single write.
+    // SECONDARY is DISABLED and carries its own reason. No escort-scoped
+    //           date-range block mutation exists anywhere in the tree; the only
+    //           candidate, availability.blockTime (availability.ts:202), is
+    //           isolatedProcedure (trpc.ts:517 — no role gate) writing
+    //           driver_availability_blocks, which no escorts.* read returns.
+    //           Nothing is invented to fill the pair.
+
     private var saveBar: some View {
-        VStack(spacing: 6) {
-            Text("\(availability.filter { $0.available }.count) of 7 days on · availability saves per tap")
-                .font(.system(size: 9, weight: .semibold)).foregroundStyle(palette.textSecondary)
+        HStack(spacing: 10) {
+            Button {
+                Task { await saveAllAvailability() }
+            } label: {
+                VStack(spacing: 1) {
+                    Text("Save availability")
+                        .font(.system(size: 13, weight: .heavy)).tracking(0.3)
+                    Text(availabilitySummary)
+                        .font(.system(size: 6.5, weight: .bold).monospaced())
+                        .opacity(0.85)
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity).frame(height: 40)
+                .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .fill(LinearGradient.primary))
+            }
+            .buttonStyle(.plain)
+            .disabled(writeInFlight != nil)
+            .opacity(writeInFlight == nil ? 1 : 0.6)
+
+            VStack(spacing: 1) {
+                Text("Block dates").font(.system(size: 12, weight: .heavy)).tracking(0.3)
+                Text("NOT AVAILABLE").font(.system(size: 6.5, weight: .bold).monospaced())
+            }
+            .foregroundStyle(palette.textTertiary)
+            .frame(width: 154, height: 40)
+            .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .fill(palette.bgCard.opacity(0.55)))
+            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(palette.textTertiary.opacity(0.45),
+                              style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+            .allowsHitTesting(false)
+            .accessibilityLabel("Block dates is unavailable. Use weekly availability or contact dispatch to coordinate a specific date.")
         }
         .padding(.horizontal, 14).padding(.vertical, 8)
         .frame(maxWidth: .infinity)
         .background(.ultraThinMaterial)
+    }
+
+    private var availabilitySummary: String {
+        let on = availability.filter { $0.available }.count
+        return "\(on) OF 7 DAYS ON · ONE WRITE PER DAY"
     }
 
     // MARK: Derived data
@@ -823,10 +1035,17 @@ struct EscortSchedule: View {
         }
     }
 
-    /// Lanes for the focused day. Start times come from the REAL `startTime`
-    /// string the schedule projection returns; a row without one is placed at
-    /// the day's open rather than invented at a plausible hour, and the panel
-    /// says how many rows lacked a time.
+    /// Lanes for the focused day.
+    ///
+    /// A clock is drawn ONLY where the server supplied one. getUpcomingJobs —
+    /// the read that populates this whole lattice — returns no time field at
+    /// all (escorts.ts:754-762: id / loadNumber / position / origin /
+    /// destination / scheduledDate / pay / distance), and getSchedule, which
+    /// does project `startTime` (escorts.ts:2291, off loads.pickupDate), is
+    /// hard-capped at 10 rows for the entire book (escorts.ts:2282). Rows the
+    /// schedule read cannot reach therefore have NO start time, and this
+    /// screen refuses to invent one: they render as TIME TBD, ordered after
+    /// every timed row so the ruler stays readable.
     private var focusedMoves: [ES15DayMove] {
         guard let day = focusedDay else { return [] }
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
@@ -836,31 +1055,60 @@ struct EscortSchedule: View {
                 && calendar.component(.day, from: d) == day
         }
         let clock = DateFormatter(); clock.dateFormat = "hh:mm a"
-        return sameDay.enumerated().map { idx, job in
-            let row = scheduleRows.first { $0.id == job.id }
-            var start = 5 * 60 + idx * 45          // deterministic lane order, not a fake clock
-            if let raw = row?.startTime, let t = clock.date(from: raw) {
-                start = calendar.component(.hour, from: t) * 60 + calendar.component(.minute, from: t)
+
+        // Resolve each row's real start (or nothing) and its estimated length.
+        let resolved: [(job: ES15UpcomingJob, start: Int?, minutes: Int, pos: ES15Position)] =
+            sameDay.map { job in
+                let row = scheduleRows.first { $0.id == job.id }
+                var start: Int? = nil
+                if let raw = row?.startTime, !raw.isEmpty, let t = clock.date(from: raw) {
+                    start = calendar.component(.hour, from: t) * 60 + calendar.component(.minute, from: t)
+                }
+                let miles = job.distance ?? row?.distance ?? 0
+                let minutes = miles > 0
+                    ? Int((miles / Double(ES15Assumption.escortCapMph) * 60).rounded())
+                    : ES15Assumption.fallbackMinutes
+                return (job: job, start: start, minutes: minutes,
+                        pos: ES15Position(wire: job.position ?? row?.position))
             }
-            // Duration from REAL leg distance at the common 45 mph escort cap.
-            let miles = job.distance ?? row?.distance ?? 0
-            let minutes = miles > 0 ? Int((miles / 45 * 60).rounded()) : 90
-            return ES15DayMove(id: job.id, index: idx + 1,
-                               startMinutes: start,
-                               endMinutes: min(start + minutes, 23 * 60 + 59),
-                               position: ES15Position(wire: job.position ?? row?.position))
+
+        // Timed rows first, in clock order; untimed rows after them.
+        let timed = resolved.filter { $0.start != nil }.sorted { ($0.start ?? 0) < ($1.start ?? 0) }
+        let untimed = resolved.filter { $0.start == nil }
+        return (timed + untimed).enumerated().map { idx, r in
+            ES15DayMove(id: r.job.id, index: idx + 1,
+                        startMinutes: r.start,
+                        durationMinutes: r.minutes,
+                        position: r.pos)
         }
     }
 
+    /// Rows the server actually gave a clock to. Everything derived from time
+    /// is computed over THIS set only.
+    private var focusedTimedMoves: [ES15DayMove] { focusedMoves.filter { $0.hasTime } }
+    private var focusedUntimedCount: Int { focusedMoves.count - focusedTimedMoves.count }
+
+    /// Overlap is arithmetic over real clocks or it is not computed. A row
+    /// with no server start time cannot collide with anything here.
     private var focusedOverlaps: [ES15Overlap] {
-        let sorted = focusedMoves.sorted { $0.startMinutes < $1.startMinutes }
+        let sorted = focusedTimedMoves.sorted { ($0.startMinutes ?? 0) < ($1.startMinutes ?? 0) }
         var out: [ES15Overlap] = []
         for i in 0..<max(0, sorted.count - 1) {
             let a = sorted[i], b = sorted[i + 1]
-            let m = a.endMinutes - b.startMinutes
+            guard let aEnd = a.endMinutes, let bStart = b.startMinutes else { continue }
+            let m = aEnd - bStart
             if m > 0 { out.append(ES15Overlap(id: "\(a.id)-\(b.id)", firstIndex: a.index, secondIndex: b.index, minutes: m)) }
         }
         return out
+    }
+
+    /// Why an overlap figure is absent, when it is. nil == the figure stands.
+    private var overlapSuppressionReason: String? {
+        guard focusedDay != nil, !focusedMoves.isEmpty else { return nil }
+        // Only a suppression when the missing clocks are what makes the
+        // figure impossible. A fully-timed day needs no excuse.
+        guard focusedUntimedCount > 0, focusedTimedMoves.count < 2 else { return nil }
+        return "Overlap unavailable — \(focusedUntimedCount) of \(focusedMoves.count) moves have no start time."
     }
 
     private var positionSplit: [(ES15Position, Int)] {
@@ -915,21 +1163,34 @@ struct EscortSchedule: View {
                 "escorts.getCertificationStatus", input: ES15EmptyInput())
 
             // Multi-day bands need loads.deliveryDate, which neither schedule
-            // read projects — one getJobDetails per candidate row, and only for
-            // rows that could plausibly span (distance over a single shift).
+            // read projects — one getJobDetails per candidate row. That read
+            // is BOUNDED here: only rows that could plausibly span (distance
+            // over a single shift) AND that fall inside the month actually
+            // being drawn, and never more than `spanResolveBudget` of them.
+            // Anything past the budget is not fetched and not guessed — it is
+            // reported as unresolved on the surface.
+            let df = DateFormatter(); df.dateFormat = "yyyy-MM-dd"
+            let candidates = fetchedUpcoming.filter { job in
+                guard (job.distance ?? 0) > 400 else { return false }
+                guard let key = job.scheduledDate, let d = df.date(from: key) else { return false }
+                return calendar.isDate(d, equalTo: anchorMonth, toGranularity: .month)
+            }
+            let budgeted = candidates.prefix(Self.spanResolveBudget)
             var fetchedSpans: [ES15JobSpan] = []
-            for job in fetchedUpcoming where (job.distance ?? 0) > 400 {
+            for job in budgeted {
                 if let span: ES15JobSpan = try? await EusoTripAPI.shared.query(
                     "escorts.getJobDetails", input: ES15JobIdInput(jobId: job.id)) {
                     fetchedSpans.append(span)
                 }
             }
+            let unresolved = max(0, candidates.count - budgeted.count)
 
             let snapshot = ES15MonthSnapshot(upcoming: fetchedUpcoming,
                                              schedule: fetchedSchedule,
                                              availability: fetchedAvailability,
                                              certs: certStatus?.certifications ?? [],
-                                             spans: fetchedSpans)
+                                             spans: fetchedSpans,
+                                             unresolvedSpans: unresolved)
             apply(snapshot)
             cacheAge = nil                    // live read — the staleness line goes away
             errorMessage = nil
@@ -955,6 +1216,7 @@ struct EscortSchedule: View {
         availability = snap.availability
         certs = snap.certs
         spans = snap.spans
+        unresolvedSpanCount = snap.unresolvedSpans ?? 0
         if focusedDay == nil { focusedDay = peakDay() }
     }
 
@@ -982,6 +1244,18 @@ struct EscortSchedule: View {
                 ?? "Availability needs a connection — escort writes are not queued yet."
         }
     }
+
+    /// Re-commits all seven rows. escorts.updateAvailability takes ONE day per
+    /// call and declares no batch input (escorts.ts:2318), so this is seven
+    /// sequential mutations and the button says as much. ONLINE_ONLY: there is
+    /// no escort outbox, so a failure surfaces as an error rather than a queue.
+    private func saveAllAvailability() async {
+        guard writeInFlight == nil else { return }
+        for day in availability {
+            await toggle(dayOfWeek: day.dayOfWeek, to: day.available)
+            if errorMessage != nil { return }
+        }
+    }
 }
 
 // MARK: - Registered surface wrapper
@@ -993,8 +1267,11 @@ struct EscortScheduleScreen: View {
         Shell(theme: theme) {
             EscortSchedule()
         } nav: {
-            // Escort role enum TRIP·COMMS·PERMIT·ME — schedule is pushed under
-            // ME, matching the ES-08 precedent.
+            // Canonical escort bar HOME · ASSIGNMENTS · [orb] · CORRIDOR · ME,
+            // built from the real enum (EscortNavController.swift: EscortNavTab
+            // :32, orbLabels :63, leading/trailing NavSlots :77-85). Schedule is
+            // pushed under ME, so ME carries isCurrent. The stale four-tab
+            // TRIP · COMMS · PERMIT · ME label set is NOT this bar.
             BottomNav(
                 leading: EscortNavRoute.leading(current: .me),
                 trailing: EscortNavRoute.trailing(current: .me),

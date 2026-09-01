@@ -163,9 +163,12 @@ struct HomeWeatherWidget: View {
     /// impact flights even if the device remains in the same weather cell.
     private var routeFingerprint: String {
         let points: [String] = lane?.points.map { point in
-            let latitude = point.snapshot.latitude.map { String(format: "%.4f", $0) } ?? "-"
-            let longitude = point.snapshot.longitude.map { String(format: "%.4f", $0) } ?? "-"
-            return "\(point.role)|\(point.city)|\(latitude),\(longitude)"
+            let coordinate = LatLongParser.validatedCoordinate(
+                latitude: point.snapshot.latitude,
+                longitude: point.snapshot.longitude
+            )
+            let location = coordinate.map(LatLongParser.displayString) ?? "unavailable"
+            return "\(point.role)|\(point.city)|\(location)"
         } ?? []
         return points.isEmpty ? "active-route-unresolved" : points.joined(separator: ";")
     }

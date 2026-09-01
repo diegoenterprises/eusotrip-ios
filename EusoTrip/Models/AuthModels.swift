@@ -479,6 +479,14 @@ struct GenericMessageResponse: Codable {
     let message: String?
 }
 
+/// Response from `auth.refreshSession`. Credentials rotate in httpOnly
+/// cookies; only non-secret expiry metadata is exposed to the app.
+struct SessionRefreshResponse: Codable {
+    let success: Bool
+    let accessExpiresAt: String?
+    let refreshExpiresAt: String?
+}
+
 // MARK: - Registration (shared envelope across all register* mutations)
 
 struct RegistrationResponse: Codable {

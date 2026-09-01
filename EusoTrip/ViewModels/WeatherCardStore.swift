@@ -55,9 +55,24 @@ final class WeatherCardStore: ObservableObject {
     @Published private(set) var errorText: String?
 
     private var pollTask: Task<Void, Never>?
+    private var requestGeneration = 0
+    private var loadedLoadId: String?
 
     // MARK: One-shot load
     func load(loadId: String) async {
+        if loadedLoadId != loadId {
+            loadedLoadId = loadId
+            card = nil
+            hourly = []
+            daily = []
+            alert = nil
+            forecastSourceAttribution = nil
+            lastUpdated = nil
+            isStale = false
+            errorText = nil
+        }
+        requestGeneration += 1
+        let generation = requestGeneration
         if card == nil { phase = .loading }
         do {
             // 1) Canonical per-load card.
@@ -65,6 +80,7 @@ final class WeatherCardStore: ObservableObject {
             let forLoad: WeatherForLoad = try await EusoTripAPI.shared.query(
                 "weather.forLoad", input: In(loadId: loadId)
             )
+            guard generation == requestGeneration, loadedLoadId == loadId else { return }
             self.card = forLoad
             self.errorText = nil
             self.isStale = false
@@ -75,12 +91,18 @@ final class WeatherCardStore: ObservableObject {
             //    scopes the DB alert fallback to this lane — without them a
             //    nationwide max-severity alert could paint the hero bar as if
             //    local to the load's origin.
-            if let lat = forLoad.origin?.lat, let lon = forLoad.origin?.lon {
+            if let coordinate = LatLongParser.validatedCoordinate(
+                latitude: forLoad.origin?.lat,
+                longitude: forLoad.origin?.lon
+            ) {
+                let lat = coordinate.latitude
+                let lon = coordinate.longitude
                 let state = Self.stateCode(from: forLoad.origin?.name)
                 async let tl: WeatherTimelines? = Self.fetchTimelines(lat: lat, lon: lon)
                 async let al: [WeatherAlertRow] = Self.fetchAlerts(
                     lat: lat, lon: lon, state: state, country: Self.country(forState: state))
                 let (timelines, alerts) = await (tl, al)
+                guard generation == requestGeneration, loadedLoadId == loadId else { return }
                 if let timelines {
                     self.hourly = timelines.hourPoints
                     self.daily = timelines.dayPoints
@@ -92,6 +114,7 @@ final class WeatherCardStore: ObservableObject {
             self.lastUpdated = Date()
             self.phase = .loaded
         } catch {
+            guard generation == requestGeneration, loadedLoadId == loadId else { return }
             // Keep last good; surface staleness honestly.
             self.errorText = (error as NSError).localizedDescription
             if self.card == nil {
@@ -101,6 +124,15 @@ final class WeatherCardStore: ObservableObject {
                 self.phase = .loaded
             }
         }
+    }
+
+    func refreshIfNeeded(loadId: String, maxAge: TimeInterval = 60) async {
+        let routeIsFresh = card?.canRenderLiveRouteWeather() == true
+        let receiptIsFresh = lastUpdated.flatMap {
+            WeatherNumeric.finite(Date().timeIntervalSince($0))
+        }.map { $0 >= 0 && $0 <= maxAge } ?? false
+        guard !routeIsFresh || !receiptIsFresh else { return }
+        await load(loadId: loadId)
     }
 
     // MARK: Auto-refresh
@@ -120,7 +152,11 @@ final class WeatherCardStore: ObservableObject {
         }
     }
 
-    func stop() { pollTask?.cancel(); pollTask = nil }
+    func stop() {
+        pollTask?.cancel()
+        pollTask = nil
+        requestGeneration += 1
+    }
     deinit { pollTask?.cancel() }
 
     // MARK: - Secondary fetches (feed the rest of the v3 widget)
@@ -248,19 +284,42 @@ struct WeatherTimelines: Decodable {
 
     private static let iso = ISO8601DateFormatter()
     var hourPoints: [HourPoint] {
-        (hourly ?? []).map {
-            HourPoint(time: $0.t.flatMap(Self.iso.date(from:)),
-                      tempF: WeatherNumeric.roundedInt($0.temp, allowed: WeatherNumeric.temperatureF),
-                      weatherCode: $0.weatherCode ?? 0,
-                      precipPct: $0.precipPct)
+        (hourly ?? []).compactMap { row in
+            guard let time = row.t.flatMap(Self.iso.date(from:)),
+                  let tempF = WeatherNumeric.roundedInt(
+                    row.temp,
+                    allowed: WeatherNumeric.temperatureF
+                  ),
+                  let weatherCode = row.weatherCode else { return nil }
+            return HourPoint(
+                time: time,
+                tempF: tempF,
+                weatherCode: weatherCode,
+                precipPct: WeatherNumeric.validatedInt(
+                    row.precipPct,
+                    allowed: WeatherNumeric.percent
+                )
+            )
         }
     }
     var dayPoints: [DayPoint] {
-        (daily ?? []).map {
-            DayPoint(day: $0.d.flatMap(Self.iso.date(from:)),
-                     highF: WeatherNumeric.roundedInt($0.hi, allowed: WeatherNumeric.temperatureF),
-                     lowF: WeatherNumeric.roundedInt($0.lo, allowed: WeatherNumeric.temperatureF),
-                     weatherCode: $0.weatherCode ?? 0)
+        (daily ?? []).compactMap { row in
+            guard let day = row.d.flatMap(Self.iso.date(from:)),
+                  let highF = WeatherNumeric.roundedInt(
+                    row.hi,
+                    allowed: WeatherNumeric.temperatureF
+                  ),
+                  let lowF = WeatherNumeric.roundedInt(
+                    row.lo,
+                    allowed: WeatherNumeric.temperatureF
+                  ),
+                  let weatherCode = row.weatherCode else { return nil }
+            return DayPoint(
+                day: day,
+                highF: highF,
+                lowF: lowF,
+                weatherCode: weatherCode
+            )
         }
     }
 }

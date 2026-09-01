@@ -1,55 +1,6 @@
 //
 //  219_ShipperFreightClaims.swift
-//  EusoTrip 2027 UI — Shipper · Freight Claims (parity-reconciled 2026-04-29)
-//
-//  PARITY AUDIT 2026-04-29 — reconciled to wireframe canon at
-//  /02 Shipper/Code/219_ShipperFreightClaims.swift. Persona: Diego
-//  Usoro / Eusorone Technologies (companyId 1) per §11. Resolved
-//  history rows reference the §11.2 MATRIX-50 audit trail — claim
-//  records join historical `loads` rows on the LD- hex tail (e.g.
-//  LD-260224, LD-260118, LD-251114). When the active set is on the
-//  MATRIX-50-2026-04-26 batch (UN1203 gasoline / NH₃ MC-306 /
-//  reefer berries) the hero counter reads "0 OPEN · {N} PAID YTD"
-//  in textTertiary because clean-record is the canonical Diego
-//  posture. The primary surface is the clean-record claims summary
-//  (3-tile KPI strip · empty-state success hero · File-a-claim CTA
-//  · resolved history rows with success-tinted check glyphs). When
-//  open claims exist, the empty hero swaps for the AGING breakdown
-//  + filter row + claim list (real backend wiring preserved).
-//
-//  Layout (top → bottom):
-//    1. TopBar           ✦ SHIPPER · FREIGHT CLAIMS / "{N} OPEN · {M} PAID YTD"
-//    2. Title block      Freight claims / "Damage · short · loss · contamination · temp excursion"
-//    3. IridescentHairline
-//    4. KPI strip        OPEN (success-sub when 0) · RESOLVED YTD (avg cycle) · RECOVERED (gradient $)
-//    5. OPEN CLAIMS section eyebrow
-//        - empty path:  empty-state success hero (CheckCircleGlyph + clean-record copy)
-//        - active path: AGING breakdown card + search · filter chips · claim list
-//    6. File a claim     gradient pill CTA (always present)
-//    7. CLAIM HISTORY · {N} RESOLVED — 3 resolved rows with success-tinted
-//                        check glyphs + "See full history" gradient mid-link
-//
-//  Real wiring preserved: `freightClaims.getClaimsDashboard` +
-//  `freightClaims.getClaims(...)` via `ShipperFreightClaimsStore`.
-//  Detail sheet (preserved) opens on row tap with hero / meta /
-//  association / description / actions cards.
-//
-//  Backend gaps surfaced (logged in audit log, no fake data):
-//    EUSO-2124 — `freightClaims.fileClaim` not yet on iOS API
-//                surface. File-a-claim CTA posts notification only;
-//                wizard intake (type · severity · description ·
-//                evidence · valuation) lands when backend ships.
-//    EUSO-2125 — `dashboard.totalValue` is the lifetime aggregate.
-//                Wireframe RECOVERED tile sub-line wants per-year
-//                breakdown ("2024 + 2025 + 2026"); paint single
-//                lifetime sub-line until per-year split ships.
-//
-//  Doctrine refs: §2 ME-tab nav (handled by ContentView); §3
-//  numbers-first copy ("0 OPEN · 1 PAID YTD"); §4.3 single
-//  iridescent hairline; §11 Diego canon; §15.2 gradient mid-link
-//  recipe; §17.2 success-tinted check-circle glyph; §19.2 file-
-//  scoped paint extensions; §20.4 no dead buttons; §22.2 counter
-//  color (textTertiary informational).
+//  EusoTrip - Shipper freight-claim register, filing, evidence, and disputes.
 //
 
 import SwiftUI
@@ -89,8 +40,8 @@ private enum ClaimStatusFilter: String, CaseIterable, Identifiable {
         switch self {
         case .all:      return nil
         case .open:     return "investigating"
-        case .pending:  return "reported"
-        case .resolved: return "resolved"
+        case .pending:  return "pending_evidence"
+        case .resolved: return "settled"
         case .denied:   return "denied"
         }
     }
@@ -102,7 +53,6 @@ private enum ClaimStatusFilter: String, CaseIterable, Identifiable {
 final class ShipperFreightClaimsStore: ObservableObject {
     enum LoadState {
         case loading
-        case empty
         case error(String)
         case loaded(
             dashboard: ShipperFreightClaimsAPI.Dashboard,
@@ -118,10 +68,10 @@ final class ShipperFreightClaimsStore: ObservableObject {
     }
     @Published var searchTerm: String = ""
 
-    /// Weather-peril classification per claim id (freightClaims.classifyClaimPeril).
-    /// Lazily filled as rows render; the gated shape still lands a verdict from
-    /// the deterministic type heuristic. Never a fabricated cited snapshot.
+    /// Weather-peril classification per claim id. A failed read remains a
+    /// failed read; the UI never infers weather from the claim type.
     @Published fileprivate var perils: [String: ClaimPerilClassification] = [:]
+    @Published fileprivate var perilReadFailures: Set<String> = []
 
     private let api: EusoTripAPI
 
@@ -129,19 +79,16 @@ final class ShipperFreightClaimsStore: ObservableObject {
         self.api = api
     }
 
-    /// Classify one claim's weather peril. Cached; a gated/missing proc falls to
-    /// the deterministic type-shaped verdict so the badge is honest, never blank.
+    /// Classify one claim's weather peril and cache only server-grounded results.
     func classifyPeril(_ claim: ShipperFreightClaimsAPI.ClaimRow) async {
-        if perils[claim.id] != nil { return }
+        if perils[claim.id] != nil || perilReadFailures.contains(claim.id) { return }
         struct In: Encodable { let claimId: String }
         do {
             let c: ClaimPerilClassification = try await api.query(
                 "freightClaims.classifyClaimPeril", input: In(claimId: claim.id))
             perils[claim.id] = c
         } catch {
-            // Proc gated/unregistered → synthesize a TYPE-only verdict (no cited
-            // snapshot, available:false) so the row still badges honestly.
-            perils[claim.id] = ClaimPerilClassification.fromType(claim.type)
+            perilReadFailures.insert(claim.id)
         }
     }
 
@@ -155,13 +102,7 @@ final class ShipperFreightClaimsStore: ObservableObject {
                 limit: 50
             )
             let (dashboard, listResponse) = try await (d, l)
-            if dashboard.recentClaims.isEmpty && listResponse.claims.isEmpty
-                && dashboard.open == 0 && dashboard.pending == 0
-                && dashboard.resolved == 0 {
-                state = .empty
-            } else {
-                state = .loaded(dashboard: dashboard, claims: listResponse.claims)
-            }
+            state = .loaded(dashboard: dashboard, claims: listResponse.claims)
         } catch {
             state = .error("Couldn't reach freight claims service.")
         }
@@ -185,19 +126,18 @@ private func severityStyle(_ raw: String?) -> SeverityStyle {
     }
 }
 
-private func statusColor(_ raw: String, palette: Theme.Palette) -> Color {
-    switch raw.lowercased() {
-    case "investigating", "open":     return Brand.warning
-    case "reported", "pending":       return Brand.info
-    case "resolved":                  return Brand.success
-    case "denied", "rejected":        return Brand.danger
-    case "paid":                      return Brand.success
+private func statusColor(_ raw: String?, palette: Theme.Palette) -> Color {
+    switch (raw ?? "").lowercased() {
+    case "filed", "under_review", "investigating", "pending_evidence": return Brand.warning
+    case "approved", "partial_approval", "counter_offer":                return Brand.info
+    case "settled", "paid", "closed":                                   return Brand.success
+    case "denied":                                                         return Brand.danger
     default:                           return palette.textSecondary
     }
 }
 
-private func typeIcon(_ raw: String) -> String {
-    switch raw.lowercased() {
+private func typeIcon(_ raw: String?) -> String {
+    switch (raw ?? "").lowercased() {
     case "damage":         return "hammer.fill"
     case "loss":           return "questionmark.diamond.fill"
     case "shortage":       return "minus.diamond.fill"
@@ -208,8 +148,9 @@ private func typeIcon(_ raw: String) -> String {
     }
 }
 
-private func prettifyType(_ raw: String) -> String {
-    raw.replacingOccurrences(of: "_", with: " ").capitalized
+private func prettifyType(_ raw: String?) -> String {
+    guard let raw, !raw.isEmpty else { return "Unknown" }
+    return raw.replacingOccurrences(of: "_", with: " ").capitalized
 }
 
 // MARK: - Weather-peril classification (freightClaims.classifyClaimPeril)
@@ -224,85 +165,22 @@ private func prettifyType(_ raw: String) -> String {
 // EVERY field is optional so the gated shape decodes without throwing. We
 // NEVER fabricate a peril verdict or a snapshot.
 struct ClaimPerilClassification: Decodable, Hashable {
-    let isWeatherPeril: Bool?
-    let peril: String?          // none | named_storm | freeze | wind | flood …
-    let title: String?
-    let available: Bool?        // enterprise feed present → cited snapshot real
-    let note: String?
-    let snapshot: PerilSnapshot?
-
-    struct PerilSnapshot: Decodable, Hashable {
-        let weatherCode: Int?
-        let peakCondition: String?
-        let maxGustMph: Double?
-        let minVisibilityMi: Double?
+    struct Verdict: Decodable, Hashable {
+        let classification: String
+        let matchedTerms: [String]
+        let isWeatherPeril: Bool
     }
 
-    private enum CodingKeys: String, CodingKey {
-        case isWeatherPeril, weatherPeril, peril, title, available, note, message, snapshot, weather
+    let claimId: String
+    let available: Bool
+    let weatherPeril: Verdict
+
+    var shouldBadge: Bool {
+        available && weatherPeril.isWeatherPeril
     }
 
-    /// Type/cause-shaped heuristic used when the classifier proc is gated or
-    /// unregistered — purely deterministic off the claim TYPE, never invented.
-    static func typeShaped(_ claimType: String) -> Bool {
-        ["weather", "delay", "reefer_excursion", "contamination", "freeze", "storm"]
-            .contains(claimType.lowercased())
-    }
-
-    private init(isWeatherPeril: Bool?, peril: String?, title: String?,
-                 available: Bool?, note: String?, snapshot: PerilSnapshot?) {
-        self.isWeatherPeril = isWeatherPeril; self.peril = peril; self.title = title
-        self.available = available; self.note = note; self.snapshot = snapshot
-    }
-
-    /// Deterministic, TYPE-only fallback verdict (no cited snapshot, gated) used
-    /// when the classifier proc isn't reachable — honest, never fabricated.
-    static func fromType(_ claimType: String) -> ClaimPerilClassification {
-        ClaimPerilClassification(isWeatherPeril: typeShaped(claimType), peril: nil,
-                                 title: nil, available: false, note: nil, snapshot: nil)
-    }
-
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        if let b = try? c.decodeIfPresent(Bool.self, forKey: .isWeatherPeril) {
-            isWeatherPeril = b
-        } else {
-            isWeatherPeril = try? c.decodeIfPresent(Bool.self, forKey: .weatherPeril)
-        }
-        peril = try? c.decodeIfPresent(String.self, forKey: .peril)
-        title = try? c.decodeIfPresent(String.self, forKey: .title)
-        available = try? c.decodeIfPresent(Bool.self, forKey: .available)
-        if let n = try? c.decodeIfPresent(String.self, forKey: .note) {
-            note = n
-        } else {
-            note = try? c.decodeIfPresent(String.self, forKey: .message)
-        }
-        if let s = try? c.decodeIfPresent(PerilSnapshot.self, forKey: .snapshot) {
-            snapshot = s
-        } else {
-            snapshot = try? c.decodeIfPresent(PerilSnapshot.self, forKey: .weather)
-        }
-    }
-
-    /// Whether to badge the row as weather-peril. A real classifier verdict
-    /// wins; otherwise we fall to the deterministic type heuristic.
-    func badged(forType claimType: String) -> Bool {
-        if let v = isWeatherPeril { return v }
-        if let p = peril, p.lowercased() != "none", !p.isEmpty { return true }
-        return Self.typeShaped(claimType)
-    }
-
-    /// A short peril label for the badge (e.g. "Named storm"), honest about
-    /// the cause without asserting a cited reading we don't have.
     var perilLabel: String {
-        if let t = title, !t.isEmpty { return t }
-        switch (peril ?? "").lowercased() {
-        case "named_storm": return "Named storm"
-        case "freeze":      return "Freeze"
-        case "wind":        return "High wind"
-        case "flood":       return "Flood"
-        default:            return "Weather peril"
-        }
+        weatherPeril.classification == "weather_peril" ? "Weather peril" : "Weather review"
     }
 }
 
@@ -376,14 +254,18 @@ struct ShipperFreightClaims: View {
 
     private var counterEyebrow: String {
         if case .loaded(let d, _) = store.state {
-            return "\(d.open) OPEN · \(d.resolved) PAID YTD"
+            let open = openClaimsMetric(d)
+            let resolved = resolvedClaimsMetric(d)
+            return "\(open.value) OPEN · \(resolved.value) RESOLVED"
         }
-        return "-"
+        return "—"
     }
 
     private var counterAccessibility: String {
         if case .loaded(let d, _) = store.state {
-            return "\(d.open) open claims, \(d.resolved) paid year to date"
+            let open = openClaimsMetric(d)
+            let resolved = resolvedClaimsMetric(d)
+            return "\(open.accessibilityLabel) \(resolved.accessibilityLabel)"
         }
         return "Loading freight claims"
     }
@@ -396,7 +278,7 @@ struct ShipperFreightClaims: View {
                 .font(.system(size: 28, weight: .bold))
                 .tracking(-0.4)
                 .foregroundStyle(palette.textPrimary)
-            Text("Damage · short · loss · contamination · temp excursion")
+            Text("Damage · shortage · loss · delay · contamination · overcharge")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
         }
@@ -418,19 +300,6 @@ struct ShipperFreightClaims: View {
                 }
             }
             .padding(.horizontal, Space.s5)
-        case .empty:
-            VStack(alignment: .leading, spacing: 0) {
-                kpiStrip(d: nil)
-                    .padding(.horizontal, Space.s5)
-                sectionLabel("OPEN CLAIMS")
-                    .padding(.top, Space.s4)
-                emptyHeroCard
-                    .padding(.horizontal, Space.s5)
-                    .padding(.top, Space.s2)
-                fileClaimCTA
-                    .padding(.horizontal, Space.s5)
-                    .padding(.top, Space.s4)
-            }
         case .error(let msg):
             errorBanner(msg)
                 .padding(.horizontal, Space.s5)
@@ -442,12 +311,18 @@ struct ShipperFreightClaims: View {
                 sectionLabel("OPEN CLAIMS")
                     .padding(.top, Space.s4)
 
-                if dashboard.open == 0 {
-                    emptyHeroCard
+                let openMetric = openClaimsMetric(dashboard)
+                let resolvedMetric = resolvedClaimsMetric(dashboard)
+                if openMetric.valueState == .measured && dashboard.open == 0 {
+                    emptyHeroCard(metric: openMetric)
+                        .padding(.horizontal, Space.s5)
+                        .padding(.top, Space.s2)
+                } else if openMetric.displaysMeasurement && dashboard.open > 0 {
+                    activeClaimsBlock(dashboard: dashboard, claims: claims)
                         .padding(.horizontal, Space.s5)
                         .padding(.top, Space.s2)
                 } else {
-                    activeClaimsBlock(dashboard: dashboard, claims: claims)
+                    openClaimsTruthCard(openMetric)
                         .padding(.horizontal, Space.s5)
                         .padding(.top, Space.s2)
                 }
@@ -458,9 +333,10 @@ struct ShipperFreightClaims: View {
 
                 let history = resolvedHistory(from: claims, dashboard: dashboard)
                 if !history.isEmpty {
-                    sectionLabel("CLAIM HISTORY · \(dashboard.resolved) RESOLVED")
+                    sectionLabel("CLAIM HISTORY · \(resolvedMetric.value) RESOLVED")
+                        .accessibilityLabel(resolvedMetric.accessibilityLabel)
                         .padding(.top, Space.s5)
-                    historyCard(rows: history, total: dashboard.resolved)
+                    historyCard(rows: history, metric: resolvedMetric)
                         .padding(.horizontal, Space.s5)
                         .padding(.top, Space.s2)
                 }
@@ -482,48 +358,64 @@ struct ShipperFreightClaims: View {
 
     @ViewBuilder
     private func kpiStrip(d: ShipperFreightClaimsAPI.Dashboard?) -> some View {
-        let openValue     = d.map { "\($0.open)" } ?? "-"
-        let openSub       = (d?.open ?? 0) == 0 ? "none active" : "needs triage"
-        let openSubTone: SubTone = (d?.open ?? 0) == 0 ? .success : .secondary
-        let resolvedValue = d.map { "\($0.resolved)" } ?? "-"
-        let resolvedSub: String = {
-            guard let d, d.avgResolutionDays > 0 else { return "avg cycle -" }
-            return "avg cycle \(Int(d.avgResolutionDays.rounded())) days"
-        }()
-        let recoveredValue = d.map { formatMoney($0.totalValue) } ?? "-"
-        // EUSO-2125 — per-year breakdown not on API surface.
-        let recoveredSub = d.map { _ in "lifetime · per-year split pending" } ?? "-"
+        let open = d.map { openClaimsMetric($0) }
+            ?? unavailableMetric(label: "Open claims", kind: .open)
+        let resolved = d.map { resolvedClaimsMetric($0) }
+            ?? unavailableMetric(label: "Resolved claims", kind: .resolved)
+        let average = FreightClaimsMetricPresenter.averageResolution(
+            label: "Average resolution time",
+            dashboard: d
+        )
+        let claimValue = FreightClaimsMetricPresenter.money(
+            label: "Total claim value",
+            dashboard: d,
+            truth: d?.metricStates?.totalValue
+        )
 
-        HStack(spacing: 8) {
-            kpiTile(label: "OPEN",
-                    value: openValue,
-                    sub:   openSub,
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                kpiTile(
+                    label: "OPEN",
+                    metric: open,
+                    sub: open.stateLabel,
                     valueStyle: .primary,
                     valueSize: 28,
-                    subTone: openSubTone)
-            kpiTile(label: "RESOLVED YTD",
-                    value: resolvedValue,
-                    sub:   resolvedSub,
+                    subColor: shipperMetricStateColor(open)
+                )
+                kpiTile(
+                    label: "RESOLVED",
+                    metric: resolved,
+                sub: "\(resolved.stateLabel)\n" + "Avg \(average.value) · \(average.stateLabel)",
                     valueStyle: .primary,
                     valueSize: 28,
-                    subTone: .secondary)
-            kpiTile(label: "RECOVERED",
-                    value: recoveredValue,
-                    sub:   recoveredSub,
+                    subColor: shipperMetricStateColor(average),
+                    accessibility: "\(resolved.accessibilityLabel) \(average.accessibilityLabel)"
+                )
+                kpiTile(
+                    label: "CLAIM VALUE",
+                    metric: claimValue,
+                    sub: claimValue.stateLabel,
                     valueStyle: .gradient,
                     valueSize: 22,
-                    subTone: .secondary)
+                    subColor: shipperMetricStateColor(claimValue)
+                )
+            }
+            if let d {
+                dashboardProofRow(d)
+            }
         }
-        .frame(maxWidth: .infinity)
     }
 
     @ViewBuilder
-    private func kpiTile(label: String,
-                         value: String,
-                         sub: String,
-                         valueStyle: KpiValueStyle,
-                         valueSize: CGFloat,
-                         subTone: SubTone) -> some View {
+    private func kpiTile(
+        label: String,
+        metric: FreightClaimsMetricPresentation,
+        sub: String,
+        valueStyle: KpiValueStyle,
+        valueSize: CGFloat,
+        subColor: Color,
+        accessibility: String? = nil
+    ) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(label)
                 .font(EType.micro)
@@ -531,27 +423,29 @@ struct ShipperFreightClaims: View {
                 .foregroundStyle(palette.textTertiary)
                 .padding(.top, 14)
                 .padding(.leading, 14)
-            valueText(value, size: valueSize, style: valueStyle)
+            valueText(metric.value, size: valueSize, style: valueStyle)
                 .padding(.top, 12)
                 .padding(.leading, 14)
             Text(sub)
                 .font(.system(size: 11))
-                .foregroundStyle(subTone.color(palette: palette))
+                .foregroundStyle(subColor)
                 .padding(.top, 6)
                 .padding(.leading, 14)
                 .padding(.trailing, 14)
                 .padding(.bottom, 14)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
+                .lineLimit(2)
+                .minimumScaleFactor(0.74)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(minHeight: 96)
+        .frame(minHeight: 118, alignment: .topLeading)
         .background(palette.bgCard)
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(palette.borderFaint, lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibility ?? metric.accessibilityLabel)
     }
 
     @ViewBuilder
@@ -576,9 +470,74 @@ struct ShipperFreightClaims: View {
         }
     }
 
-    // MARK: Empty hero card (clean-record success message)
+    private func openClaimsMetric(
+        _ dashboard: ShipperFreightClaimsAPI.Dashboard
+    ) -> FreightClaimsMetricPresentation {
+        FreightClaimsMetricPresenter.count(
+            label: "Open claims",
+            value: dashboard.open,
+            truth: dashboard.metricStates?.open,
+            kind: .open,
+            dashboardProvenance: dashboard.provenance
+        )
+    }
 
-    private var emptyHeroCard: some View {
+    private func resolvedClaimsMetric(
+        _ dashboard: ShipperFreightClaimsAPI.Dashboard
+    ) -> FreightClaimsMetricPresentation {
+        FreightClaimsMetricPresenter.count(
+            label: "Resolved claims",
+            value: dashboard.resolved,
+            truth: dashboard.metricStates?.resolved,
+            kind: .resolved,
+            dashboardProvenance: dashboard.provenance
+        )
+    }
+
+    private func unavailableMetric(
+        label: String,
+        kind: FreightClaimsMetricKind
+    ) -> FreightClaimsMetricPresentation {
+        FreightClaimsMetricPresenter.count(
+            label: label,
+            value: nil,
+            truth: nil,
+            kind: kind,
+            dashboardProvenance: nil
+        )
+    }
+
+    private func dashboardProofRow(_ dashboard: ShipperFreightClaimsAPI.Dashboard) -> some View {
+        let proof = FreightClaimsMetricPresenter.dashboardProof(dashboard.provenance)
+        return HStack(spacing: Space.s2) {
+            Image(systemName: dashboard.provenance == nil ? "questionmark.circle" : "checkmark.shield")
+                .accessibilityHidden(true)
+            Text(proof)
+                .lineLimit(2)
+        }
+        .font(EType.micro)
+        .foregroundStyle(palette.textTertiary)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Dashboard provenance. \(proof).")
+    }
+
+    private func shipperMetricStateColor(_ metric: FreightClaimsMetricPresentation) -> Color {
+        switch metric.valueState {
+        case .measured:
+            return metric.stateLabel == "Measured zero" ? Brand.success : palette.textSecondary
+        case .measuredByDimension:
+            return Brand.info
+        case .partial:
+            return Brand.warning
+        case .noObservations, .notModeled, .none:
+            return palette.textTertiary
+        }
+    }
+
+    // MARK: Empty / unavailable truth states
+
+    private func emptyHeroCard(metric: FreightClaimsMetricPresentation) -> some View {
         ZStack {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(palette.bgCard)
@@ -589,13 +548,17 @@ struct ShipperFreightClaims: View {
                 CheckCircleGlyph()
                     .frame(width: 48, height: 48)
                 VStack(spacing: 4) {
-                    Text("No open claims · clean record")
+                    Text("No open freight claims")
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(palette.textPrimary)
                         .multilineTextAlignment(.center)
-                    Text("All deliveries closed without dispute")
+                    Text("Measured zero in the authorized claims ledger.")
                         .font(.system(size: 11))
                         .foregroundStyle(palette.textSecondary)
+                        .multilineTextAlignment(.center)
+                    Text(metric.proofText)
+                        .font(EType.micro)
+                        .foregroundStyle(palette.textTertiary)
                         .multilineTextAlignment(.center)
                 }
             }
@@ -603,7 +566,74 @@ struct ShipperFreightClaims: View {
         }
         .frame(minHeight: 140)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("No open claims, clean record. All deliveries closed without dispute.")
+        .accessibilityLabel("No open freight claims. \(metric.accessibilityLabel)")
+    }
+
+    private func openClaimsTruthCard(_ metric: FreightClaimsMetricPresentation) -> some View {
+        let copy = openClaimsTruthCopy(metric.valueState)
+        return VStack(alignment: .leading, spacing: Space.s2) {
+            HStack(spacing: Space.s2) {
+                Image(systemName: copy.icon)
+                    .foregroundStyle(shipperMetricStateColor(metric))
+                Text(copy.title)
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+            }
+            Text(copy.detail)
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(metric.proofText)
+                .font(EType.micro)
+                .foregroundStyle(palette.textTertiary)
+        }
+        .padding(Space.s4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(copy.title). \(copy.detail) \(metric.accessibilityLabel)")
+    }
+
+    private func openClaimsTruthCopy(
+        _ state: FreightClaimsAPI.MetricValueState?
+    ) -> (icon: String, title: String, detail: String) {
+        switch state {
+        case .noObservations:
+            return (
+                "tray",
+                "No claim observations",
+                "No freight claims were observed for this authorized company view."
+            )
+        case .partial:
+            return (
+                "circle.lefthalf.filled",
+                "Open-claim count is partial",
+                "The current count covers only part of the available claim record."
+            )
+        case .measuredByDimension:
+            return (
+                "square.grid.2x2",
+                "Open claims measured by dimension",
+                "The count is complete within its recorded dimensions, not as one undifferentiated total."
+            )
+        case .notModeled:
+            return (
+                "questionmark.circle",
+                "Open claims not modeled",
+                "This view does not currently calculate an open-claim count."
+            )
+        case .measured, .none:
+            return (
+                "exclamationmark.circle",
+                "Open-claim truth unavailable",
+                "The current response does not establish a measured open-claim total."
+            )
+        }
     }
 
     // MARK: Active claims block (when open > 0 — supplemental EXTRA-OK)
@@ -612,7 +642,16 @@ struct ShipperFreightClaims: View {
     private func activeClaimsBlock(dashboard d: ShipperFreightClaimsAPI.Dashboard,
                                    claims: [ShipperFreightClaimsAPI.ClaimRow]) -> some View {
         VStack(spacing: Space.s3) {
-            agingCard(d.aging)
+            agingCard(
+                d.aging,
+                metric: FreightClaimsMetricPresenter.count(
+                    label: "Open claim aging",
+                    value: d.aging.under30 + d.aging.days30to60 + d.aging.days60to90 + d.aging.over90,
+                    truth: d.metricStates?.aging,
+                    kind: .aging,
+                    dashboardProvenance: d.provenance
+                )
+            )
             searchBar
             filterChipRow
             if claims.isEmpty {
@@ -629,7 +668,7 @@ struct ShipperFreightClaims: View {
                     .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
             } else {
                 VStack(spacing: Space.s2) {
-                    ForEach(claims.filter { $0.status.lowercased() != "resolved" }) { row in
+                    ForEach(claims.filter { !Self.resolvedStatuses.contains(($0.status ?? "").lowercased()) }) { row in
                         claimRow(row)
                     }
                 }
@@ -675,12 +714,17 @@ struct ShipperFreightClaims: View {
     ) -> [ShipperFreightClaimsAPI.ClaimRow] {
         // Prefer resolved claims from the active list; fall back to
         // dashboard.recentClaims filtered to resolved.
-        let inList = claims.filter { $0.status.lowercased() == "resolved" }
+        let inList = claims.filter { Self.resolvedStatuses.contains(($0.status ?? "").lowercased()) }
         if !inList.isEmpty { return Array(inList.prefix(3)) }
-        return Array(dashboard.recentClaims.filter { $0.status.lowercased() == "resolved" }.prefix(3))
+        return Array(dashboard.recentClaims.filter {
+            Self.resolvedStatuses.contains(($0.status ?? "").lowercased())
+        }.prefix(3))
     }
 
-    private func historyCard(rows: [ShipperFreightClaimsAPI.ClaimRow], total: Int) -> some View {
+    private func historyCard(
+        rows: [ShipperFreightClaimsAPI.ClaimRow],
+        metric: FreightClaimsMetricPresentation
+    ) -> some View {
         VStack(spacing: 0) {
             ForEach(rows.indices, id: \.self) { idx in
                 historyRowView(rows[idx])
@@ -698,7 +742,7 @@ struct ShipperFreightClaims: View {
                 .frame(height: 1)
                 .padding(.horizontal, 20)
             Button(action: tapSeeFullHistory) {
-                Text("See full history → \(total) resolved")
+                Text("See full history → \(metric.value) resolved")
                     .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(LinearGradient.primary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -706,7 +750,7 @@ struct ShipperFreightClaims: View {
                     .padding(.vertical, 16)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("See full history. \(total) resolved claims.")
+            .accessibilityLabel("See full history. \(metric.accessibilityLabel)")
         }
         .background(palette.bgCard)
         .overlay(
@@ -775,8 +819,8 @@ struct ShipperFreightClaims: View {
 
     private func historyTitle(_ row: ShipperFreightClaimsAPI.ClaimRow) -> String {
         let kind = prettifyType(row.type)
-        let amt = row.amount > 0 ? formatMoney(row.amount) : "-"
-        return "\(kind) · settled \(amt)"
+        let amount = formatMoney(row.amount, currency: row.currency)
+        return amount == "—" ? "\(kind) · settled" : "\(kind) · settled \(amount)"
     }
 
     private func historyKicker(_ row: ShipperFreightClaimsAPI.ClaimRow) -> String {
@@ -784,8 +828,8 @@ struct ShipperFreightClaims: View {
         if let load = row.loadNumber, !load.isEmpty, load != "-" {
             parts.append(load)
         }
-        if !row.description.isEmpty {
-            parts.append(row.description)
+        if let description = row.description, !description.isEmpty {
+            parts.append(description)
         }
         return parts.isEmpty ? row.claimNumber : parts.joined(separator: " · ")
     }
@@ -799,7 +843,10 @@ struct ShipperFreightClaims: View {
 
     // MARK: Aging breakdown card (preserved)
 
-    private func agingCard(_ aging: ShipperFreightClaimsAPI.AgingBuckets) -> some View {
+    private func agingCard(
+        _ aging: ShipperFreightClaimsAPI.AgingBuckets,
+        metric: FreightClaimsMetricPresentation
+    ) -> some View {
         let total = aging.under30 + aging.days30to60 + aging.days60to90 + aging.over90
         return VStack(alignment: .leading, spacing: Space.s3) {
             HStack {
@@ -810,12 +857,12 @@ struct ShipperFreightClaims: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(0.9)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("\(total) open")
+                Text("\(metric.value) open")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.4)
                     .foregroundStyle(palette.textTertiary)
             }
-            if total == 0 {
-                Text("No open claims - every filed claim is moving.")
+            if !metric.displaysMeasurement {
+                Text(metric.stateLabel)
                     .font(EType.caption)
                     .foregroundStyle(palette.textTertiary)
                     .padding(.vertical, Space.s2)
@@ -836,6 +883,10 @@ struct ShipperFreightClaims: View {
                     agingLegend(label: ">90d",    value: aging.over90,     color: Brand.danger)
                 }
             }
+            Text("\(metric.stateLabel) · \(metric.proofText)")
+                .font(EType.micro)
+                .foregroundStyle(shipperMetricStateColor(metric))
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -845,6 +896,12 @@ struct ShipperFreightClaims: View {
                 .strokeBorder(palette.borderFaint, lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            metric.displaysMeasurement
+                ? "\(metric.accessibilityLabel) Under 30 days, \(aging.under30). 30 to 60 days, \(aging.days30to60). 60 to 90 days, \(aging.days60to90). Over 90 days, \(aging.over90)."
+                : metric.accessibilityLabel
+        )
     }
 
     private func width(for value: Int, total: Int, in geo: GeometryProxy) -> CGFloat {
@@ -971,7 +1028,7 @@ struct ShipperFreightClaims: View {
                         statusPill(label: row.status, color: stColor)
                         Spacer(minLength: 0)
                     }
-                    Text(row.description.isEmpty ? "-" : row.description)
+                    Text(row.description?.isEmpty == false ? row.description! : "Description unavailable")
                         .font(EType.bodyStrong)
                         .foregroundStyle(palette.textPrimary)
                         .lineLimit(2)
@@ -995,8 +1052,9 @@ struct ShipperFreightClaims: View {
                         }
                     }
                 }
-                if row.amount > 0 {
-                    Text(formatMoney(row.amount))
+                if let value = row.amount,
+                   let currency = row.currency {
+                    Text(formatMoney(value, currency: currency))
                         .font(.system(size: 13, weight: .heavy, design: .rounded))
                         .foregroundStyle(LinearGradient.diagonal)
                         .monospacedDigit()
@@ -1015,8 +1073,7 @@ struct ShipperFreightClaims: View {
             .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
         }
         .buttonStyle(ClaimRowStyle())
-        // Classify the weather peril when the row renders — the verdict badges
-        // inline. Gated/missing proc → deterministic type-shaped verdict.
+        // Classify when the row renders. Failed reads remain unbadged.
         .task(id: row.id) { await store.classifyPeril(row) }
     }
 
@@ -1025,25 +1082,21 @@ struct ShipperFreightClaims: View {
     /// heuristic) flags the claim as weather-caused. ZERO SF Symbols.
     @ViewBuilder
     private func weatherPerilBadge(_ row: ShipperFreightClaimsAPI.ClaimRow) -> some View {
-        let cls = store.perils[row.id]
-        // Pre-classification we still show the type-shaped hint so the badge
-        // doesn't pop in late; the real verdict supersedes it.
-        let badged = cls?.badged(forType: row.type) ?? ClaimPerilClassification.typeShaped(row.type)
-        if badged {
+        if let cls = store.perils[row.id], cls.shouldBadge {
             HStack(spacing: 3) {
                 WeatherIcons.utility(.alert, size: 9, tint: Brand.info)
-                Text((cls?.perilLabel ?? "Weather peril").uppercased())
+                Text(cls.perilLabel.uppercased())
                     .font(.system(size: 9, weight: .heavy)).tracking(0.4)
                     .foregroundStyle(Brand.info)
             }
             .padding(.horizontal, 6).padding(.vertical, 2)
             .background(Capsule().fill(Brand.info.opacity(0.12)))
             .overlay(Capsule().strokeBorder(Brand.info.opacity(0.35), lineWidth: 0.75))
-            .accessibilityLabel("Weather peril claim. \(cls?.perilLabel ?? "Weather peril").")
+            .accessibilityLabel("Weather peril claim. \(cls.perilLabel).")
         }
     }
 
-    private func statusPill(label: String, color: Color) -> some View {
+    private func statusPill(label: String?, color: Color) -> some View {
         Text(prettifyType(label).uppercased())
             .font(.system(size: 9, weight: .heavy)).tracking(0.5)
             .foregroundStyle(color)
@@ -1128,13 +1181,19 @@ struct ShipperFreightClaims: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
-    private func formatMoney(_ value: Double) -> String {
-        let n = Int(value.rounded())
-        if n >= 1_000_000 { return String(format: "$%.1fM", Double(n) / 1_000_000) }
-        if n >= 10_000    { return String(format: "$%.0fk", Double(n) / 1_000) }
-        if n >= 1_000     { return String(format: "$%.1fk", Double(n) / 1_000) }
-        if n == 0          { return "-" }
-        return "$\(n)"
+    private static let resolvedStatuses: Set<String> = ["settled", "paid", "closed"]
+
+    private func formatMoney(
+        _ value: Double?,
+        currency: FreightClaimsAPI.CurrencyCode?
+    ) -> String {
+        guard let value, let currency else { return "—" }
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.currencyCode = currency.rawValue
+        formatter.maximumFractionDigits = 0
+        return formatter.string(from: NSNumber(value: value))
+            ?? "\(currency.rawValue) \(value.formatted(.number.precision(.fractionLength(0))))"
     }
 }
 
@@ -1148,20 +1207,9 @@ private struct ClaimRowStyle: ButtonStyle {
     }
 }
 
-// MARK: - KPI value style + sub-line tone
+// MARK: - KPI value style
 
 private enum KpiValueStyle { case gradient, primary, success, danger }
-
-private enum SubTone {
-    case success, secondary
-
-    func color(palette: Theme.Palette) -> Color {
-        switch self {
-        case .success:   return Brand.success
-        case .secondary: return palette.textSecondary
-        }
-    }
-}
 
 // MARK: - File-scoped paint extensions (§19.2)
 
@@ -1236,7 +1284,7 @@ private struct ClaimDetailSheet: View {
                 if let l = claim.loadNumber, !l.isEmpty, l != "-" {
                     associationCard(loadNumber: l)
                 }
-                if !claim.description.isEmpty {
+                if claim.description?.isEmpty == false {
                     descriptionCard
                 }
                 weatherEvidenceCard
@@ -1274,7 +1322,11 @@ private struct ClaimDetailSheet: View {
                     .padding(.bottom, 24)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                     .task {
-                        try? await Task.sleep(nanoseconds: 1_800_000_000)
+                        do {
+                            try await Task.sleep(nanoseconds: 1_800_000_000)
+                        } catch {
+                            return
+                        }
                         actionToast = nil
                     }
             }
@@ -1291,8 +1343,9 @@ private struct ClaimDetailSheet: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(0.9)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                if claim.amount > 0 {
-                    Text(formatMoney(claim.amount))
+                if let amount = claim.amount,
+                   let currency = claim.currency {
+                    Text(formatMoney(amount, currency: currency))
                         .font(.system(size: 18, weight: .heavy, design: .rounded))
                         .foregroundStyle(LinearGradient.diagonal)
                         .monospacedDigit()
@@ -1353,98 +1406,34 @@ private struct ClaimDetailSheet: View {
 
     private var descriptionCard: some View {
         sectionCard(title: "DESCRIPTION") {
-            Text(claim.description)
+            Text(claim.description ?? "Description unavailable")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
 
-    // MARK: Weather-peril evidence (classifyClaimPeril + the cited report)
-    //
-    // Surfaces the attached weather.historical evidence the claim references.
-    // Bespoke: the sky condition via WeatherIcons, the gust/visibility metrics
-    // via utility glyphs. HONEST: rendered only when the claim is weather-shaped;
-    // the cited report is Enterprise-gated → available:false today → the
-    // ENTERPRISE state ("evidence available with the enterprise feed"). We NEVER
-    // fabricate a cited report, a peril verdict, or a snapshot.
+    // MARK: Weather-peril classification
+
     @ViewBuilder
     private var weatherEvidenceCard: some View {
-        let badged = peril?.badged(forType: claim.type) ?? ClaimPerilClassification.typeShaped(claim.type)
-        if badged {
-            sectionCard(title: "WEATHER PERIL · EVIDENCE") {
-                if let p = peril, p.available == true, let snap = p.snapshot {
-                    // LIVE cited report (enterprise key present).
-                    citedWeatherReport(p: p, snap: snap)
-                } else {
-                    // Enterprise-gated today — honest ENTERPRISE state.
-                    weatherEnterpriseState(note: peril?.note)
+        if let peril, peril.shouldBadge {
+            sectionCard(title: "WEATHER PERIL · CLASSIFICATION") {
+                HStack(spacing: 8) {
+                    WeatherIcons.utility(.alert, size: 12, tint: Brand.info)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(peril.perilLabel)
+                            .font(EType.bodyStrong)
+                            .foregroundStyle(palette.textPrimary)
+                        Text(peril.weatherPeril.matchedTerms.isEmpty
+                             ? "Classified from the stored claim narrative."
+                             : "Matched narrative terms: \(peril.weatherPeril.matchedTerms.joined(separator: ", ")).")
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
                 }
-            }
-        }
-    }
-
-    private func citedWeatherReport(p: ClaimPerilClassification, snap: ClaimPerilClassification.PerilSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(Color.white.opacity(0.06)).frame(width: 44, height: 44)
-                    WeatherIcons.symbolView(for: snap.weatherCode ?? 0, size: 30)
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(snap.peakCondition?.isEmpty == false ? snap.peakCondition! : p.perilLabel)
-                        .font(.system(size: 13, weight: .heavy)).foregroundStyle(palette.textPrimary)
-                    Text("weather.historical · cited on this claim")
-                        .font(.system(size: 9, weight: .heavy)).tracking(0.5)
-                        .foregroundStyle(Brand.success)
-                }
-                Spacer(minLength: 0)
-            }
-            HStack(spacing: 16) {
-                if let g = snap.maxGustMph {
-                    weatherMetric(.wind, value: String(format: "%.0f mph", g), label: "MAX GUST")
-                }
-                if let v = snap.minVisibilityMi {
-                    weatherMetric(.eye, value: String(format: "%.1f mi", v), label: "MIN VIS")
-                }
-            }
-        }
-    }
-
-    private func weatherEnterpriseState(note: String?) -> some View {
-        HStack(spacing: 10) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.white.opacity(0.06)).frame(width: 40, height: 40)
-                WeatherIcons.symbolView(for: 1001, size: 26)   // neutral cloud — no guessed condition
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 5) {
-                    WeatherIcons.utility(.alert, size: 10, tint: Brand.info)
-                    Text((peril?.perilLabel ?? "Weather peril").uppercased())
-                        .font(.system(size: 9, weight: .heavy)).tracking(0.5)
-                        .foregroundStyle(Brand.info)
-                }
-                Text("Evidence available with the enterprise feed")
-                    .font(.system(size: 12, weight: .heavy)).foregroundStyle(palette.textPrimary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(note?.isEmpty == false ? note! : "The cited weather.historical report lights here the instant the enterprise weather key lands.")
-                    .font(EType.caption).foregroundStyle(palette.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
-        }
-    }
-
-    private func weatherMetric(_ kind: WeatherIcons.Utility, value: String, label: String) -> some View {
-        HStack(spacing: 5) {
-            WeatherIcons.utility(kind, size: 13, tint: palette.textSecondary)
-            VStack(alignment: .leading, spacing: 0) {
-                Text(value).font(.system(size: 13, weight: .heavy)).monospacedDigit()
-                    .foregroundStyle(palette.textPrimary)
-                Text(label).font(.system(size: 8, weight: .heavy)).tracking(0.5)
-                    .foregroundStyle(palette.textTertiary)
             }
         }
     }
@@ -1456,9 +1445,7 @@ private struct ClaimDetailSheet: View {
             peril = try await EusoTripAPI.shared.query(
                 "freightClaims.classifyClaimPeril", input: In(claimId: claim.id))
         } catch {
-            // Gated/missing proc → deterministic TYPE-only verdict (no cited
-            // snapshot). Honest, never fabricated.
-            peril = ClaimPerilClassification.fromType(claim.type)
+            peril = nil
         }
     }
 
@@ -1552,13 +1539,17 @@ private struct ClaimDetailSheet: View {
             .overlay(Capsule().strokeBorder(color.opacity(0.4), lineWidth: 0.75))
     }
 
-    private func formatMoney(_ value: Double) -> String {
-        let n = Int(value.rounded())
-        if n >= 1_000_000 { return String(format: "$%.1fM", Double(n) / 1_000_000) }
-        if n >= 10_000    { return String(format: "$%.0fk", Double(n) / 1_000) }
-        if n >= 1_000     { return String(format: "$%.1fk", Double(n) / 1_000) }
-        if n == 0          { return "-" }
-        return "$\(n)"
+    private func formatMoney(
+        _ value: Double?,
+        currency: FreightClaimsAPI.CurrencyCode?
+    ) -> String {
+        guard let value, let currency else { return "—" }
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.currencyCode = currency.rawValue
+        formatter.maximumFractionDigits = 0
+        return formatter.string(from: NSNumber(value: value))
+            ?? "\(currency.rawValue) \(value.formatted(.number.precision(.fractionLength(0))))"
     }
 }
 
@@ -1598,15 +1589,18 @@ private struct AddEvidenceSheet: View {
     @State private var evidenceURL: String = ""
     @State private var submitting: Bool = false
     @State private var errorMsg: String? = nil
+    @State private var requestKey = UUID()
 
     private let evidenceTypes: [(String, String)] = [
         ("photo", "Photo"),
-        ("document", "Document"),
         ("bol", TransportLexicon.generic(key: "billOfLading")),
-        ("pod", TransportLexicon.generic(key: "proofOfDelivery")),
+        ("delivery_receipt", TransportLexicon.generic(key: "proofOfDelivery")),
         ("inspection_report", "Inspection report"),
-        ("repair_invoice", "Repair invoice"),
-        ("statement", "Statement"),
+        ("temperature_log", "Temperature log"),
+        ("video", "Video"),
+        ("witness_statement", "Witness statement"),
+        ("police_report", "Police report"),
+        ("weight_ticket", "Weight ticket"),
         ("other", "Other")
     ]
 
@@ -1736,16 +1730,36 @@ private struct AddEvidenceSheet: View {
         let trimmedURL = evidenceURL.trimmingCharacters(in: .whitespaces)
         Task {
             do {
-                _ = try await EusoTripAPI.shared.shipperFreightClaims.addClaimEvidence(
+                let name = evidenceName.trimmingCharacters(in: .whitespacesAndNewlines)
+                let record = try await EusoTripAPI.shared.shipperFreightClaims.addClaimEvidence(
                     claimId: claim.id,
                     type: evidenceType,
-                    name: evidenceName.trimmingCharacters(in: .whitespaces),
+                    name: name,
                     description: trimmedDesc.isEmpty ? nil : trimmedDesc,
-                    url: trimmedURL.isEmpty ? nil : trimmedURL
+                    url: trimmedURL.isEmpty ? nil : trimmedURL,
+                    requestKey: requestKey
                 )
+                guard record.claimId == claim.id,
+                      record.type == evidenceType,
+                      record.name == name else {
+                    throw ClaimEvidenceConfirmationError.acknowledgementMismatch
+                }
+                if let mode = claim.transportMode, record.transportMode != mode {
+                    throw ClaimEvidenceConfirmationError.transactionMismatch
+                }
+                if let reference = claim.referenceNumber,
+                   !reference.isEmpty,
+                   record.referenceNumber != reference {
+                    throw ClaimEvidenceConfirmationError.transactionMismatch
+                }
+                guard let detail = try await EusoTripAPI.shared.shipperFreightClaims.getClaimById(id: claim.id),
+                      detail.claimId == claim.id,
+                      detail.evidence.contains(where: { $0.id == record.id }) else {
+                    throw ClaimEvidenceConfirmationError.readbackMismatch
+                }
                 await MainActor.run {
                     submitting = false
-                    onResult("Evidence added")
+                    onResult("Evidence confirmed on claim \(claim.claimNumber)")
                     dismiss()
                 }
             } catch {
@@ -1754,6 +1768,23 @@ private struct AddEvidenceSheet: View {
                     errorMsg = "Couldn't add evidence: \(error.localizedDescription)"
                 }
             }
+        }
+    }
+}
+
+private enum ClaimEvidenceConfirmationError: LocalizedError {
+    case acknowledgementMismatch
+    case transactionMismatch
+    case readbackMismatch
+
+    var errorDescription: String? {
+        switch self {
+        case .acknowledgementMismatch:
+            return "The evidence acknowledgement did not match the submitted evidence."
+        case .transactionMismatch:
+            return "The evidence acknowledgement referenced a different freight transaction."
+        case .readbackMismatch:
+            return "The evidence was acknowledged but could not be confirmed on the claim record. Retry with the same request."
         }
     }
 }
@@ -1771,30 +1802,37 @@ private struct OpenDisputeSheet: View {
     @Environment(\.palette) private var palette
     @Environment(\.dismiss) private var dismiss
 
-    @State private var disputeType: String = "billing_error"
+    @State private var disputeType: String = "rate"
     @State private var invoiceNumber: String = ""
     @State private var amountText: String = ""
+    @State private var currencyText: String = ""
     @State private var description: String = ""
     @State private var submitting: Bool = false
     @State private var errorMsg: String? = nil
 
     private let disputeTypes: [(String, String)] = [
-        ("billing_error", "Billing error"),
-        ("duplicate_charge", "Duplicate charge"),
-        ("rate_disagreement", "Rate disagreement"),
-        ("damage_claim_dispute", "Damage claim dispute"),
-        ("delivery_issue", "Delivery issue"),
-        ("contract_violation", "Contract violation"),
-        ("other", "Other")
+        ("rate", "Rate"),
+        ("accessorial", "Accessorial"),
+        ("detention", "Detention"),
+        ("lumper", "Lumper"),
+        ("fuel_surcharge", "Fuel surcharge"),
+        ("duplicate_billing", "Duplicate billing"),
+        ("service_failure", "Service failure"),
+        ("contract_violation", "Contract violation")
     ]
 
     private var amount: Double? {
         Double(amountText.trimmingCharacters(in: .whitespaces))
     }
 
+    private var currency: FreightClaimsAPI.CurrencyCode? {
+        FreightClaimsAPI.CurrencyCode(rawValue: currencyText)
+    }
+
     private var canSubmit: Bool {
-        !invoiceNumber.trimmingCharacters(in: .whitespaces).isEmpty &&
-        (amount ?? 0) > 0 &&
+        guard let amount, currency != nil else { return false }
+        return !invoiceNumber.trimmingCharacters(in: .whitespaces).isEmpty &&
+        amount > 0 &&
         description.trimmingCharacters(in: .whitespaces).count >= 10
     }
 
@@ -1816,7 +1854,8 @@ private struct OpenDisputeSheet: View {
                             .pickerStyle(.menu)
                         }
                         labeledField("Invoice number", text: $invoiceNumber)
-                        labeledField("Amount (USD)", text: $amountText, keyboard: .decimalPad)
+                        labeledField("Amount in the invoice currency", text: $amountText, keyboard: .decimalPad)
+                        labeledField("Three-letter ISO currency", text: $currencyText)
                     }
                     section("DESCRIPTION") {
                         Text("MIN 10 CHARS")
@@ -1923,22 +1962,70 @@ private struct OpenDisputeSheet: View {
     }
 
     private func doSubmit() {
-        guard let amt = amount, amt > 0 else { return }
+        guard let amt = amount, amt > 0, let currency else { return }
         submitting = true
         errorMsg = nil
         Task {
+            struct ReadbackInput: Encodable {
+                let status: String?
+                let type: String?
+                let limit: Int
+                let offset: Int
+            }
+            struct Readback: Decodable {
+                struct Row: Decodable {
+                    struct States: Decodable {
+                        let amount: FreightClaimsAPI.MetricTruth
+                    }
+                    let id: String
+                    let disputeNumber: String
+                    let status: String
+                    let amount: Double?
+                    let currency: FreightClaimsAPI.CurrencyCode?
+                    let invoiceNumber: String
+                    let metricStates: States
+                }
+                let disputes: [Row]
+            }
             do {
                 let resp = try await EusoTripAPI.shared.shipperFreightClaims.fileDispute(
                     type: disputeType,
                     invoiceNumber: invoiceNumber.trimmingCharacters(in: .whitespaces),
                     amount: amt,
+                    currency: currency,
                     description: description.trimmingCharacters(in: .whitespaces),
                     loadId: nil,
                     carrierId: nil
                 )
+                guard !resp.id.isEmpty,
+                      !resp.disputeNumber.isEmpty,
+                      resp.status.lowercased() == "filed",
+                      abs(resp.amount - amt) < 0.005,
+                      resp.currency == currency else {
+                    throw FormalDisputeConfirmationError.invalidAcknowledgement
+                }
+                let readback: Readback = try await EusoTripAPI.shared.query(
+                    "freightClaims.getDisputeResolution",
+                    input: ReadbackInput(status: "filed", type: nil, limit: 50, offset: 0)
+                )
+                let invoice = invoiceNumber.trimmingCharacters(in: .whitespaces)
+                guard readback.disputes.contains(where: {
+                    $0.id == resp.id
+                        && $0.disputeNumber == resp.disputeNumber
+                        && $0.status.lowercased() == "filed"
+                        && $0.invoiceNumber == invoice
+                        && $0.currency == currency
+                        && $0.metricStates.amount.valueState == .measured
+                        && $0.metricStates.amount.accessState == .granted
+                        && $0.metricStates.amount.trackingState == .tracked
+                        && $0.metricStates.amount.provenance.source == "disputes.amountInDispute+baseCurrency"
+                        && $0.amount.map { abs($0 - amt) < 0.005 } == true
+                }) else {
+                    throw FormalDisputeConfirmationError.readbackMismatch
+                }
                 await MainActor.run {
                     submitting = false
-                    onResult("Dispute \(resp.disputeNumber) filed")
+                    onResult("Dispute \(resp.disputeNumber) confirmed")
                     dismiss()
                 }
             } catch {
@@ -1947,6 +2034,20 @@ private struct OpenDisputeSheet: View {
                     errorMsg = "Couldn't file dispute: \(error.localizedDescription)"
                 }
             }
+        }
+    }
+}
+
+private enum FormalDisputeConfirmationError: LocalizedError {
+    case invalidAcknowledgement
+    case readbackMismatch
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidAcknowledgement:
+            return "The dispute acknowledgement was incomplete."
+        case .readbackMismatch:
+            return "The dispute was acknowledged but could not be confirmed in the live dispute register."
         }
     }
 }

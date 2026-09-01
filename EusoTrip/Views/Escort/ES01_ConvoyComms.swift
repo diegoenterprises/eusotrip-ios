@@ -37,6 +37,7 @@
 //
 
 import SwiftUI
+import CoreLocation
 
 // MARK: - Wire projections (screen-local, private)
 
@@ -97,6 +98,10 @@ private struct ConvoyPositionRow: Decodable, Identifiable {
     let speed: Double?
     let heading: Double?
     let timestamp: String?
+
+    var coordinate: CLLocationCoordinate2D? {
+        LatLongParser.validatedCoordinate(latitude: lat, longitude: lng)
+    }
 }
 
 private struct ConvoyPositionsEnvelope: Decodable {
@@ -313,8 +318,13 @@ struct EscortConvoyComms: View {
     /// Members with a GPS report inside the last 2 minutes — the
     /// honest "reporting" count (never a fabricated member total).
     private var onlineCount: Int? {
-        guard let rows = positions?.positions, !rows.isEmpty else { return nil }
+        let rows = mappablePositions
+        guard !rows.isEmpty else { return nil }
         return rows.filter { gpsAgeSeconds($0.timestamp).map { $0 < 120 } ?? false }.count
+    }
+
+    private var mappablePositions: [ConvoyPositionRow] {
+        positions?.positions.filter { $0.coordinate != nil } ?? []
     }
 
     private var operatorCaps: String {
@@ -429,12 +439,14 @@ struct EscortConvoyComms: View {
                     }
                 }
             }
-            if let rows = positions?.positions, !rows.isEmpty {
+            let rows = mappablePositions
+            if let center = mapCenter(rows), !rows.isEmpty {
                 HereVectorMapView(
-                    center: mapCenter(rows),
+                    center: center,
                     zoom: 12,
                     interactive: false,
-                    layers: [.markers(markers(rows))]
+                    layers: [.markers(markers(rows))],
+                    mapModeContext: .escort(activeRoadEscort: true)
                 )
                 .frame(height: 190)
                 .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
@@ -493,16 +505,19 @@ struct EscortConvoyComms: View {
         return "CORRIDOR · \(o) → \(d)".uppercased()
     }
 
-    private func mapCenter(_ rows: [ConvoyPositionRow]) -> HereLatLng {
-        let lat = rows.map(\.lat).reduce(0, +) / Double(rows.count)
-        let lng = rows.map(\.lng).reduce(0, +) / Double(rows.count)
+    private func mapCenter(_ rows: [ConvoyPositionRow]) -> HereLatLng? {
+        let coordinates = rows.compactMap(\.coordinate)
+        guard !coordinates.isEmpty else { return nil }
+        let lat = coordinates.map(\.latitude).reduce(0, +) / Double(coordinates.count)
+        let lng = coordinates.map(\.longitude).reduce(0, +) / Double(coordinates.count)
         return HereLatLng(lat, lng)
     }
 
     private func markers(_ rows: [ConvoyPositionRow]) -> [HereMarker] {
-        rows.map { row in
-            HereMarker(
-                at: HereLatLng(row.lat, row.lng),
+        rows.compactMap { row in
+            guard let coordinate = row.coordinate else { return nil }
+            return HereMarker(
+                at: HereLatLng(coordinate),
                 kind: .truck,
                 label: roleAbbrev(row.role)
             )
@@ -666,12 +681,12 @@ struct EscortConvoyComms: View {
     }
 
     private func gpsAge(for role: String) -> TimeInterval? {
-        guard let row = positions?.positions.first(where: { $0.role.lowercased() == role }) else { return nil }
+        guard let row = mappablePositions.first(where: { $0.role.lowercased() == role }) else { return nil }
         return gpsAgeSeconds(row.timestamp)
     }
 
     private var freshestGpsAge: TimeInterval? {
-        positions?.positions.compactMap { gpsAgeSeconds($0.timestamp) }.min()
+        mappablePositions.compactMap { gpsAgeSeconds($0.timestamp) }.min()
     }
 
     private func gpsAgeSeconds(_ iso: String?) -> TimeInterval? {

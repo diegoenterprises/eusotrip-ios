@@ -8,9 +8,9 @@
 //  mutations, and publishes enough state for a plain SwiftUI view to
 //  render provider tiles, a status pill, and success/error toasts.
 //
-//  All state is fetched through `EusoTripAPI.shared.eld` — the same
-//  `eld.getAllProviders`, `eld.getConnectionStatus`, `eld.connectProvider`,
-//  `eld.disconnectProvider` procedures the web platform calls.
+//  Read state comes from the production RIOS registry. That is the same
+//  company/user ownership, provider-entitlement, live-probe, first-sync, and
+//  feed-freshness contract used by Connected Apps on iOS and web.
 //
 //  HOS real-time data is NOT a separate iOS concern: once a provider is
 //  connected, the existing `hos.getStatus` / `hos.getDailyLog` endpoints
@@ -32,6 +32,26 @@ import Foundation
 import Combine
 import SwiftUI
 
+enum ELDConnectionVerificationState: Equatable {
+    case notLoaded
+    case current
+    case failed
+}
+
+struct ELDFeedEvidence: Equatable {
+    let providerId: String
+    let feedState: String?
+    let feedStateReason: String?
+    let syncMode: String?
+    let lastSuccessfulSyncAt: String?
+    let staleAt: String?
+    let isUsable: Bool?
+
+    var isCurrentAndUsable: Bool {
+        isUsable == true && ["live", "on_demand"].contains(feedState ?? "")
+    }
+}
+
 @MainActor
 final class ELDIntegrationStore: ObservableObject {
 
@@ -45,6 +65,12 @@ final class ELDIntegrationStore: ObservableObject {
     /// `providers` is the list of slugs currently in "connected" status
     /// for this fleet. Typically zero or one entry per fleet.
     @Published private(set) var connection: ELDConnectionStatus?
+
+    /// Per-provider activation and freshness truth from the RIOS feed spine.
+    @Published private(set) var feedEvidenceByProvider: [String: ELDFeedEvidence] = [:]
+
+    /// A failed refresh cannot leave a prior connection presented as current.
+    @Published private(set) var verificationState: ELDConnectionVerificationState = .notLoaded
 
     /// Primary-provider rich config. Only populated when a single
     /// provider is canonically configured (Samsara for now). Exposes
@@ -87,17 +113,32 @@ final class ELDIntegrationStore: ObservableObject {
 
     /// True if at least one provider is in "connected" status for this fleet.
     var isConnected: Bool {
-        connection?.connected == true
+        guard verificationState == .current,
+              connection?.connected == true else { return false }
+        return connection?.providers.contains(where: { providerId in
+            feedEvidenceByProvider[providerId]?.isCurrentAndUsable == true
+        }) == true
     }
 
     /// The single connected provider, if any — matches the server's
     /// "one provider per fleet" normal case. Returns nil when 0 or 2+
     /// are connected so the caller can fall back to a list view.
     var primaryConnectedSlug: String? {
+        guard isConnected else { return nil }
         guard let slugs = connection?.providers, slugs.count == 1 else {
-            return connection?.providers.first
+            return connection?.providers.first(where: {
+                feedEvidenceByProvider[$0]?.isCurrentAndUsable == true
+            })
         }
-        return slugs.first
+        return slugs.first(where: {
+            feedEvidenceByProvider[$0]?.isCurrentAndUsable == true
+        })
+    }
+
+    func isProviderConnected(_ slug: String) -> Bool {
+        verificationState == .current
+            && connection?.providers.contains(slug) == true
+            && feedEvidenceByProvider[slug]?.isCurrentAndUsable == true
     }
 
     /// Resolve a slug back to a provider record (for display).
@@ -115,17 +156,23 @@ final class ELDIntegrationStore: ObservableObject {
         await refresh()
     }
 
-    /// Re-hit every read endpoint. Errors set `errorMessage` but leave
+    /// Re-hit the RIOS catalog and company-visible connection state. Errors set
+    /// `errorMessage` but leave
     /// prior state in place so a transient outage doesn't wipe the
     /// provider grid the user already had in front of them.
     func refresh() async {
         async let providers = fetchProviders()
         async let connection = fetchConnection()
-        async let config = fetchConfig()
-        let (p, c, cfg) = await (providers, connection, config)
+        let (p, c) = await (providers, connection)
         if let p { self.providers = p }
-        if let c { self.connection = c }
-        if let cfg { self.config = cfg }
+        if let c {
+            self.connection = c.connection
+            self.feedEvidenceByProvider = c.evidence
+            self.verificationState = .current
+        } else {
+            self.verificationState = .failed
+        }
+        self.config = nil
 
         // Default the picker selection to the currently-connected
         // provider so the Disconnect action is one tap away on re-entry.
@@ -142,30 +189,95 @@ final class ELDIntegrationStore: ObservableObject {
 
     private func fetchProviders() async -> [ELDProvider]? {
         do {
-            return try await EusoTripAPI.shared.eld.getAllProviders()
+            let rows: [RIOSProviderRow] = try await EusoTripAPI.shared.queryNoInput(
+                "userIntegrations.listCatalog"
+            )
+            return rows
+                .filter { $0.category.lowercased() == "operational_eld" }
+                .map {
+                    ELDProvider(
+                        name: $0.displayName,
+                        slug: $0.id,
+                        satisfaction: nil,
+                        logoColor: nil,
+                        features: $0.journey?.capabilityTags
+                    )
+                }
         } catch {
             setError("Couldn't load ELD provider catalog — \(errorText(error))")
             return nil
         }
     }
 
-    private func fetchConnection() async -> ELDConnectionStatus? {
+    private struct ELDConnectionSnapshot {
+        let connection: ELDConnectionStatus
+        let evidence: [String: ELDFeedEvidence]
+    }
+
+    private func fetchConnection() async -> ELDConnectionSnapshot? {
         do {
-            return try await EusoTripAPI.shared.eld.getConnectionStatus()
+            async let catalog: [RIOSProviderRow] = EusoTripAPI.shared.queryNoInput(
+                "userIntegrations.listCatalog"
+            )
+            async let connectionRows: [RIOSConnectionRow] = EusoTripAPI.shared.queryNoInput(
+                "userIntegrations.listConnections"
+            )
+            let (providers, connections) = try await (catalog, connectionRows)
+            let eldProviderIds = Set(
+                providers
+                    .filter { $0.category.lowercased() == "operational_eld" }
+                    .map(\.id)
+            )
+            let eldConnections = connections.filter { eldProviderIds.contains($0.providerId) }
+            var evidence: [String: ELDFeedEvidence] = [:]
+            for row in eldConnections {
+                evidence[row.providerId] = ELDFeedEvidence(
+                    providerId: row.providerId,
+                    feedState: row.feedState,
+                    feedStateReason: row.feedStateReason,
+                    syncMode: row.syncMode,
+                    lastSuccessfulSyncAt: row.lastSuccessfulSyncAt,
+                    staleAt: row.staleAt,
+                    isUsable: row.isUsable
+                )
+            }
+            let usable = eldConnections.filter { $0.isUsable == true }
+            let providerIds = usable.map(\.providerId).reduce(into: [String]()) { ids, providerId in
+                if !ids.contains(providerId) { ids.append(providerId) }
+            }
+            return ELDConnectionSnapshot(
+                connection: ELDConnectionStatus(
+                    connected: !providerIds.isEmpty,
+                    providers: providerIds,
+                    provider: providerIds.first
+                ),
+                evidence: evidence
+            )
         } catch {
-            // Silent: connection check failing shouldn't show a loud
-            // banner on first launch. The primary flow (picker +
-            // Connect) still works without a known status.
+            setError("Couldn't verify the live ELD feed — \(errorText(error))")
             return nil
         }
     }
 
-    private func fetchConfig() async -> ELDProviderConfig? {
-        do {
-            return try await EusoTripAPI.shared.eld.getProviderConfig()
-        } catch {
-            return nil
-        }
+    private struct RIOSProviderRow: Decodable {
+        let id: String
+        let displayName: String
+        let category: String
+        let journey: RIOSJourney?
+    }
+
+    private struct RIOSJourney: Decodable {
+        let capabilityTags: [String]?
+    }
+
+    private struct RIOSConnectionRow: Decodable {
+        let providerId: String
+        let isUsable: Bool?
+        let feedState: String?
+        let feedStateReason: String?
+        let syncMode: String?
+        let lastSuccessfulSyncAt: String?
+        let staleAt: String?
     }
 
     // MARK: - Mutations
@@ -196,13 +308,17 @@ final class ELDIntegrationStore: ObservableObject {
             )
             if result.success {
                 let name = provider(for: slug)?.name ?? slug.capitalized
-                setSuccess("\(name) connected. HOS data is now flowing from the vendor.")
                 // Wipe the key field — it's persisted server-side and
                 // we don't want it sitting in memory on the device.
                 apiKeyDraft = ""
                 apiKeyRevealed = false
                 // Pull fresh status so the header pill flips to Connected.
                 await refresh()
+                if isProviderConnected(slug) {
+                    setSuccess("\(name) feed verified and current.")
+                } else {
+                    setSuccess("\(name) credentials saved. Activation and first sync are still pending.")
+                }
             } else {
                 setError("Server rejected the credential. Double-check the key and try again.")
             }
@@ -220,12 +336,22 @@ final class ELDIntegrationStore: ObservableObject {
         defer { isMutating = false }
 
         do {
-            _ = try await EusoTripAPI.shared.eld.disconnectProvider(providerSlug: slug)
+            let result = try await EusoTripAPI.shared.eld.disconnectProvider(providerSlug: slug)
             let name = provider(for: slug)?.name ?? slug.capitalized
-            setSuccess("\(name) disconnected. HOS will revert to self-reported until you reconnect.")
+            guard result.success == true,
+                  result.providerSlug == nil || result.providerSlug == slug else {
+                setError("\(name) disconnect was not confirmed by the server.")
+                return
+            }
             apiKeyDraft = ""
             apiKeyRevealed = false
             await refresh()
+            guard verificationState == .current,
+                  connection?.providers.contains(slug) != true else {
+                setError("\(name) disconnect is pending verification. Refresh before relying on this state.")
+                return
+            }
+            setSuccess("\(name) disconnected. Vendor HOS remains unavailable until another current source is verified.")
         } catch {
             setError("Couldn't disconnect \(slug) — \(errorText(error))")
         }

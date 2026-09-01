@@ -399,16 +399,47 @@ private struct MeHomeBody: View {
     private func tierCard(_ s: ShipperAPI.Stats) -> some View {
         LifecycleCard(accentGradient: true) {
             LifecycleSection(label: "TIER", icon: "rosette")
-            LifecycleRow(label: "Total loads",        value: "\(s.totalLoads)")
-            LifecycleRow(
-                label: "Total spend",
-                value: s.totalSpend.formatted(
-                    .currency(code: "USD").precision(.fractionLength(0))
-                )
+            tierMetricRow(label: "Total loads", value: "\(s.totalLoads)")
+            tierMetricRow(
+                label: "Total spend · USD",
+                value: ShipperMetricFormatting.wholeCurrency(Double(s.totalSpend))
             )
-            LifecycleRow(label: "On-time delivery",   value: "\(s.onTimeDeliveryRate)%")
-            LifecycleRow(label: "Preferred catalysts", value: "\(s.preferredCatalysts)")
+            tierMetricRow(label: "On-time delivery", value: "\(s.onTimeDeliveryRate)%")
+            tierMetricRow(label: "Preferred catalysts", value: "\(s.preferredCatalysts)")
         }
+    }
+
+    /// Horizontal at ordinary text sizes, then naturally becomes a stacked
+    /// proof row when the localized label and value cannot coexist. This keeps
+    /// the full grouped amount intact instead of truncating or splitting it.
+    private func tierMetricRow(label: String, value: String) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
+                Text(label)
+                    .font(.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                Spacer(minLength: Space.s2)
+                Text(value)
+                    .font(.body.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+
+            VStack(alignment: .leading, spacing: Space.s1) {
+                Text(label)
+                    .font(.caption)
+                    .foregroundStyle(palette.textSecondary)
+                Text(value)
+                    .font(.body.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(palette.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .accessibilityElement(children: .combine)
     }
 
     /// Big tappable hub card — visually distinct from a leaf cell so
@@ -570,7 +601,7 @@ private struct MeHubBody: View {
         let sectionID = sectionAnchor(section)
         let isExpanded = expandedSection == sectionID
 
-        LifecycleCard {
+        return LifecycleCard {
             Button {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     expandedSection = isExpanded ? "" : sectionID
@@ -800,7 +831,7 @@ private struct MeSettingsHubBody: View {
         let sectionID = sectionAnchor(section)
         let isExpanded = expandedSection == sectionID
 
-        LifecycleCard {
+        return LifecycleCard {
             Button {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     expandedSection = isExpanded ? "" : sectionID

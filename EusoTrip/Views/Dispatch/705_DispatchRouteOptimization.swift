@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import CoreLocation
 
 struct DispatchRouteOptimizationScreen: View {
     let theme: Theme.Palette
@@ -32,6 +33,13 @@ private struct FleetPin: Decodable, Identifiable, Hashable {
     let etaISO: String?
     let origin: String?
     let destination: String?
+
+    var coordinate: CLLocationCoordinate2D? {
+        LatLongParser.validatedCoordinate(
+            latitude: latitude,
+            longitude: longitude
+        )
+    }
     
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -102,7 +110,7 @@ private struct RouteBody: View {
     @State private var loading = true
     @State private var loadError: String? = nil
 
-    private var livePins: [FleetPin] { pins.filter { $0.latitude != nil && $0.longitude != nil } }
+    private var livePins: [FleetPin] { pins.filter { $0.coordinate != nil } }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -154,7 +162,9 @@ private struct RouteBody: View {
         let now = Date()
         let fmt = ISO8601DateFormatter()
         return pins.filter { p in
-            guard let iso = p.lastPingISO, let d = fmt.date(from: iso) else { return p.latitude == nil || p.longitude == nil }
+            guard let iso = p.lastPingISO, let d = fmt.date(from: iso) else {
+                return p.coordinate == nil
+            }
             return now.timeIntervalSince(d) > 600
         }.count
     }
@@ -176,7 +186,7 @@ private struct RouteBody: View {
         LifecycleCard {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 8) {
-                    Image(systemName: p.latitude == nil ? "antenna.radiowaves.left.and.right.slash" : "location.north.line.fill")
+                    Image(systemName: p.coordinate == nil ? "antenna.radiowaves.left.and.right.slash" : "location.north.line.fill")
                         .font(.system(size: 12, weight: .heavy))
                         .foregroundStyle(LinearGradient.diagonal)
                     Text((p.loadNumber ?? "Unassigned").uppercased())
@@ -202,7 +212,7 @@ private struct RouteBody: View {
                         .minimumScaleFactor(0.7)
                 }
                 HStack(spacing: 8) {
-                    telemetryTile("Position", latlng(p), p.latitude == nil)
+                    telemetryTile("Position", latlng(p), p.coordinate == nil)
                     telemetryTile("Speed", speedLabel(p), p.speed == nil)
                     telemetryTile("ETA", etaLabel(p), p.etaISO == nil)
                 }
@@ -234,8 +244,8 @@ private struct RouteBody: View {
     }
 
     private func latlng(_ p: FleetPin) -> String {
-        guard let lat = p.latitude, let lng = p.longitude else { return "No ping" }
-        return String(format: "%.3f, %.3f", lat, lng)
+        guard let coordinate = p.coordinate else { return "No ping" }
+        return LatLongParser.displayString(coordinate)
     }
 
     private func speedLabel(_ p: FleetPin) -> String {

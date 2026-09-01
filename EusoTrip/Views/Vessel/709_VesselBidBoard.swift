@@ -207,11 +207,6 @@ private struct VesselBidBoardBody: View {
                     Text(lane.meta).font(.system(size: 11)).foregroundColor(.secondary).monospaced()
                 }
                 Spacer()
-                Button(action: { Task { await award() } }) {   // awardLane · STUB · named-gap (no rfpId on a load_bids lane)
-                    Text("Award").font(.system(size: 12, weight: .bold)).foregroundColor(.white)
-                        .padding(.horizontal, 22).padding(.vertical, 8)
-                        .background(Capsule().fill(eusoPrimary))
-                }.buttonStyle(.plain)
             }
             .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 12)
             Divider().padding(.horizontal, 16)
@@ -269,29 +264,22 @@ private struct VesselBidBoardBody: View {
 
     // Nudge derived from the live board (worst-/best-exposure lane = first ranked lane).
     private var esangTitle: String {
-        guard let top = lanes.first, let best = top.bids.first else { return "Award your best open lane now" }
-        return "Award \(best.carrier) on \(top.route)"
+        guard let top = lanes.first, let best = top.bids.first else { return "Review your best open lane" }
+        return "Review \(best.carrier) on \(top.route)"
     }
     private var esangSubtitle: String {
         guard let top = lanes.first, let best = top.bids.first else { return "Lock the best rate before it expires" }
-        return "\(best.rate) best · \(top.meta)"
+        return "\(best.rate) best verified bid · \(top.meta)"
     }
 
     // MARK: CTA pair
     private var ctaRow: some View {
-        HStack(spacing: 8) {
-            Button(action: { Task { await award() } }) {        // awardLane (best across lanes) — STUB · named-gap
-                Text("Award best lane").font(.system(size: 15, weight: .bold)).foregroundColor(.white)
-                    .frame(maxWidth: .infinity).frame(height: 48)
-                    .background(Capsule().fill(eusoPrimary))
-            }.buttonStyle(.plain)
-            Button(action: { Task { await load() } }) {         // refresh the comparison matrix
-                Text("Compare all").font(.system(size: 15, weight: .semibold)).foregroundColor(.primary)
-                    .frame(width: 148, height: 48)
-                    .background(Capsule().fill(Color(.secondarySystemGroupedBackground)))
-                    .overlay(Capsule().strokeBorder(Color.primary.opacity(0.10), lineWidth: 1))
-            }.buttonStyle(.plain)
-        }
+        Button(action: { Task { await load() } }) {
+            Text("Refresh bid comparison").font(.system(size: 15, weight: .semibold)).foregroundColor(.primary)
+                .frame(maxWidth: .infinity).frame(height: 48)
+                .background(Capsule().fill(Color(.secondarySystemGroupedBackground)))
+                .overlay(Capsule().strokeBorder(Color.primary.opacity(0.10), lineWidth: 1))
+        }.buttonStyle(.plain)
     }
 
     // MARK: - Load + group (honest wiring)
@@ -333,13 +321,6 @@ private struct VesselBidBoardBody: View {
         }
         loading = false
     }
-
-    /// awardLane — STUB · named-gap. A load_bids lane carries no rfpId/laneId, and
-    /// bidReview.awardLane writes the RFP-domain rfpAwards table; composing a real
-    /// award payload from this board is the surfaced backend gap. Re-load rather
-    /// than fake a write.
-    @MainActor
-    private func award() async { await load() }
 
     @MainActor
     private func recomputeSummary(_ rows: [(Double, String?)]) {

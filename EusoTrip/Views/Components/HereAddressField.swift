@@ -33,6 +33,7 @@
 //
 
 import SwiftUI
+import CoreLocation
 
 struct HereAddressField: View {
     @Binding var text: String
@@ -58,9 +59,9 @@ struct HereAddressField: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
-                Image(systemName: lat != nil ? "checkmark.circle.fill" : "magnifyingglass")
+                Image(systemName: parsedBindingCoordinate != nil ? "checkmark.circle.fill" : "magnifyingglass")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(lat != nil ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.textTertiary))
+                    .foregroundStyle(parsedBindingCoordinate != nil ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.textTertiary))
                 TextField(placeholder, text: $text)
                     .textFieldStyle(.plain)
                     .font(EType.body)
@@ -85,7 +86,7 @@ struct HereAddressField: View {
             if focused, !suggestions.isEmpty {
                 suggestionList
             }
-            if let coordHint = parseCoords(text) {
+            if let coordHint = LatLongParser.parse(text) {
                 coordChip(coordHint)
             }
         }
@@ -132,12 +133,12 @@ struct HereAddressField: View {
         Divider().overlay(palette.borderFaint)
     }
 
-    private func coordChip(_ c: (Double, Double)) -> some View {
+    private func coordChip(_ coordinate: CLLocationCoordinate2D) -> some View {
         HStack(spacing: 6) {
             Image(systemName: "scope")
                 .font(.system(size: 10, weight: .heavy))
                 .foregroundStyle(LinearGradient.diagonal)
-            Text(String(format: "Coordinates · %.4f, %.4f", c.0, c.1))
+            Text("Coordinates · \(LatLongParser.displayString(coordinate))")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
         }
@@ -148,9 +149,17 @@ struct HereAddressField: View {
     private func handleTextChange(_ newValue: String) {
         // Coord paste — short-circuit autosuggest entirely so the user
         // gets a clean confirmation chip without a bogus dropdown.
-        if let coords = parseCoords(newValue) {
-            lat = coords.0; lng = coords.1
+        if let coordinate = LatLongParser.parse(newValue) {
+            lat = coordinate.latitude
+            lng = coordinate.longitude
             suggestions = []
+            return
+        }
+
+        // A programmatic suggestion selection owns its resolved coordinate.
+        // Do not clear that coordinate when assigning the suggestion label.
+        if suppressNextSuggest {
+            suppressNextSuggest = false
             return
         }
 
@@ -159,15 +168,6 @@ struct HereAddressField: View {
         // geocode fallback will rebuild it on submit if needed.
         if lat != nil || lng != nil {
             lat = nil; lng = nil
-        }
-
-        // Skip the network round-trip when we know the next change
-        // came from `acceptSuggestion` (it sets text + lat/lng then
-        // dismisses the list — running autosuggest on that exact
-        // string would re-pop the dropdown immediately).
-        if suppressNextSuggest {
-            suppressNextSuggest = false
-            return
         }
 
         debounceTask?.cancel()
@@ -235,6 +235,10 @@ struct HereAddressField: View {
         // destination each resolve to their TRUE coordinate independently,
         // and the stored label is rebuilt from structured fields, never the
         // raw "Part near (of) …" title.
+        let suggestionCoordinate = LatLongParser.validatedCoordinate(
+            latitude: s.lat,
+            longitude: s.lng
+        )
         let hint = HereGeocodeItem(
             id: s.id,
             title: s.title,
@@ -244,16 +248,21 @@ struct HereAddressField: View {
                 city: s.city, district: nil, street: nil,
                 postalCode: nil, houseNumber: nil
             ),
-            position: (s.lat != nil && s.lng != nil)
-                ? HerePlace.Coord(lat: s.lat!, lng: s.lng!) : nil,
+            position: suggestionCoordinate.map {
+                HerePlace.Coord(lat: $0.latitude, lng: $0.longitude)
+            },
             mapView: nil,
             resultType: s.resultType
         )
 
-        if let resolved = await HereGeocodingClient.shared.resolve(hint) {
+        if let resolved = await HereGeocodingClient.shared.resolve(hint),
+           let coordinate = LatLongParser.validatedCoordinate(
+               latitude: resolved.coordinate.latitude,
+               longitude: resolved.coordinate.longitude
+           ) {
             text = resolved.label
-            self.lat = resolved.coordinate.latitude
-            self.lng = resolved.coordinate.longitude
+            self.lat = coordinate.latitude
+            self.lng = coordinate.longitude
             // Re-suppress: assigning `text` after the await re-fires
             // onChange, which would re-pop the dropdown.
             suppressNextSuggest = true
@@ -265,29 +274,17 @@ struct HereAddressField: View {
         // isn't blocked — server-side geocode fallback still runs at submit.
         text = s.title
         suppressNextSuggest = true
-        if let lat = s.lat, let lng = s.lng {
-            self.lat = lat; self.lng = lng
+        if let coordinate = LatLongParser.validatedCoordinate(
+            latitude: s.lat,
+            longitude: s.lng
+        ) {
+            self.lat = coordinate.latitude
+            self.lng = coordinate.longitude
         }
     }
 
-    // MARK: - Coordinate parsing
-
-    /// Accepts "lat,lng", "lat, lng", "lat lng", "lat;lng". Both numbers
-    /// must fall in valid ranges (lat ±90, lng ±180); otherwise nil.
-    /// `40.7,-74.0` → (40.7, -74.0); `40 -74` → nil (whitespace alone is
-    /// ambiguous against city-state strings like "Austin TX").
-    private func parseCoords(_ s: String) -> (Double, Double)? {
-        let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.contains(",") || trimmed.contains(";") else { return nil }
-        let parts = trimmed
-            .replacingOccurrences(of: ";", with: ",")
-            .split(separator: ",", maxSplits: 1)
-            .map { String($0).trimmingCharacters(in: .whitespaces) }
-        guard parts.count == 2,
-              let lat = Double(parts[0]), let lng = Double(parts[1]),
-              (-90...90).contains(lat), (-180...180).contains(lng)
-        else { return nil }
-        return (lat, lng)
+    private var parsedBindingCoordinate: CLLocationCoordinate2D? {
+        LatLongParser.validatedCoordinate(latitude: lat, longitude: lng)
     }
 }
 

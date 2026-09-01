@@ -528,7 +528,7 @@ private struct VesselParticularsBody699: View {
                 scaleMax: 62,
                 value: vessel?.beamMeters,
                 limit: beamLimit,
-                limitCaption: "PORT BEAM LIMIT · STUB",
+                limitCaption: "PORT BEAM LIMIT · NOT VERIFIED",
                 isOver: false,
                 gapNotice: "NO BEAM-LIMIT COLUMN IN ports OR port_berths",
                 onGapTap: nil)

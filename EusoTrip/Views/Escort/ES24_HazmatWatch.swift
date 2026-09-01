@@ -18,13 +18,60 @@
 //  once before the wheels turn). This screen has no arc, no gauge, no map
 //  tiles, no route line, no pass/fail cells — it has magnitudes and ages.
 //
+//  CANON 2026-08-23.1 RE-SKIN (2026-08-26) — token + type-scale pass over
+//  the run-1 face. Nothing about the wiring, the parsing or the honest
+//  unavailable states below changed; what changed is how they are drawn.
+//    · §3 TYPE SCALE — every call site is now one of 10 · 12 · 14 · 15 ·
+//      17 · 28 · 34. The retired sizes (4 · 6 · 6.5 · 7 · 7.5 · 8 · 9 ·
+//      9.5 · 11 · 11.5 · 13 · 26 · 38) are gone. 10 belongs to bottom-nav
+//      captions only, which `BottomNav` owns; this file's floor is 12.
+//    · §3 TRACKING — every positive `.tracking()` is deleted. The only
+//      surviving optical tracking is -0.4 on the 28-pt screen title and
+//      -0.6 on the 34-pt hero number.
+//    · §1 EYEBROW — the 9-pt all-caps gradient eyebrow chip is removed
+//      outright; the orientation row is sentence case at 12.
+//    · §5 GRADIENTS — `LinearGradient.diagonal` / `.primary` and the
+//      iridescent hairline are gone from this surface. `eusoLine` is
+//      referenced EXACTLY ONCE, on the scheduled-check ring, which is the
+//      one temporal spine this screen is about. `esangOrb` / `orbSpec`
+//      belong to the nav orb and are not drawn in this file.
+//    · §4 PALETTE — ES24Ink pins the §4 token pairs locally rather than
+//      reaching across into the band-wide single-writer palette.
+//    · §8 DOCK — the primary command is a FLAT #0B66E5 fill at 52 pt,
+//      rx 12, with a white 15/600 label. The shared `CTAButton` is
+//      gradient-backed at a 17-pt label, so it is deliberately not used.
+//    · §7 NAV — BottomNav is bound to the shipped escort enum
+//      HOME · ASSIGNMENTS · [ESang orb] · CORRIDOR · ME
+//      (EscortNavController.swift:77-85; orb :63) with ASSIGNMENTS
+//      current, because the hazmat watch is a pushed route under it.
+//
+//  DIVERGENCE FROM THE SVG TWIN, stated rather than hidden: the canon SVG
+//  pair withdraws the ambient-gas organ outright, because a wireframe must
+//  not depict a reading store the tree does not have. This view keeps the
+//  organ because at runtime it renders only what the check-in log actually
+//  contains — `ES24NoteParser` returns an empty set when no line carries a
+//  reading, and every empty path here already prints an unavailable state
+//  rather than a zero. The organ paints when there is something to paint
+//  and says "no reading logged" when there is not.
+//
 //  WIRING (every anchor opened at the line first-hand this fire)
 //    EXISTS hazmatEscort.getStatus        hazmatEscort.ts:40
 //           → {active:null} | {active:{assignmentId,loadId,position,status,
 //             startedAt,nextCheckInAt,notes,load{...}}}
 //    EXISTS CHECKIN_INTERVAL_MINUTES = 30 hazmatEscort.ts:30 — the cadence is
-//           SERVER-OWNED (49 CFR §177.817, cited at :29). The client mirrors
-//           it as a fallback only and prefers the server's nextCheckInAt.
+//           SERVER-OWNED (49 CFR §177.817, cited at :29) but it is NOT ON THE
+//           WIRE. getStatus returns only nextCheckInAt, computed server-side as
+//           row.updatedAt + 30 min (hazmatEscort.ts:95-98). The staleness
+//           boundary on this screen is therefore PINNED to a named client
+//           mirror of that constant and is NEVER derived from a diffed pair of
+//           timestamps: escortAssignments.updatedAt is written by procedures
+//           that append NO sample line — escorts.updateJobStatus
+//           (escorts.ts:1199) sets it on a bare status write — so
+//           (nextCheckInAt − lastSample) drifts upward and would grade a rotted
+//           reading LIVE with a fabricated statutory number beside it.
+//    STUB   explicit interval on the wire — hazmatEscort.getStatus should
+//           return checkInIntervalMinutes: CHECKIN_INTERVAL_MINUTES so the
+//           client never has to mirror a statutory figure at all.
 //    EXISTS hazmatEscort.checkIn  (MUT)   hazmatEscort.ts:130   ONLINE_ONLY
 //           BRIEF CORRECTION, verified: the check-in procedure is NOT at :34.
 //           Line 34 is `export const hazmatEscortRouter = router({`;
@@ -66,6 +113,24 @@
 //    STUB   school / hospital / residential receptors — no dataset. Proposed
 //           hazmat.getSensitiveReceptors({lat,lng,radiusKm}).
 //    STUB   condensation advisory; per-class cadence table.
+//    STUB   exposure thresholds — no procedure in the tree serves a PEL/STEL/
+//           IDLH figure, so the ruler is a CLIENT-SIDE table and is labelled
+//           "THRESHOLDS · LOCAL TABLE" on its face. Proposed
+//           hazmat.getExposureLimits({unNumber}) →
+//           {analyte, pelPpm, stelPpm, idlhPpm, source, revisedAt}.
+//    STUB   downwind verdict — getStatus returns NO coordinate for the tank and
+//           nothing anywhere supplies the escort's bearing to it, so "YOU ARE
+//           DOWNWIND OF THE TANK" is not a renderable verdict. This screen
+//           prints only PLUME RUNS <compass>, which is arithmetic on the wind
+//           bearing alone. Proposed hazmatEscort.getStatus →
+//           load.tankLat/tankLon (or hazmatEscort.getTankPosition) so a real
+//           downwind verdict could be computed against the escort's own fix.
+//    STUB   position-based wind — weather.getCurrent (weather.ts:1993) accepts
+//           {city,state} ONLY, and weather.byLatLon (weather.ts:1545) carries
+//           wind SPEED with no direction, so there is no lat/lon wind BEARING
+//           anywhere in the tree. Proposed
+//           weather.getCurrentByPosition({lat,lon}) → {...,windDirection}.
+//           Until it exists the rose names the station city it actually queried.
 //
 //  OFFLINE (§W) — mutations ONLINE_ONLY (escort outbox not yet ported,
 //  PLANNED per Encyclopedia v2). A queue badge is NEVER drawn. Reads split
@@ -275,9 +340,29 @@ private enum ES24Freshness: Equatable {
     case stale(ageMinutes: Int)
     case unavailable
 
-    static func of(ageMinutes: Int?, intervalMinutes: Int) -> ES24Freshness {
+    /// THE STALENESS BOUNDARY. Pinned to the server constant
+    /// CHECKIN_INTERVAL_MINUTES = 30 (hazmatEscort.ts:30, carrying the
+    /// 49 CFR §177.817 citation at :29). The server does NOT put the interval
+    /// on the wire — getStatus returns only nextCheckInAt — so this named
+    /// client constant mirrors it.
+    ///
+    /// It is deliberately a CONSTANT and never a diff of two timestamps.
+    /// nextCheckInAt is computed as escortAssignments.updatedAt + 30 min
+    /// (hazmatEscort.ts:95-98), and that column is written by procedures that
+    /// append no sample line — escorts.updateJobStatus (escorts.ts:1199) is one
+    /// — so a status write slides nextCheckInAt away from the last sample and
+    /// (nextCheckInAt − lastSample) grows without limit. Grading against that
+    /// difference would light a forty-minute-old H₂S reading as LIVE and print
+    /// a statutory boundary that no regulation contains.
+    static let statutoryIntervalMinutes = 30
+
+    /// A caller may only ever TIGHTEN the boundary, never widen it, so no call
+    /// site can promote a sample older than the statutory interval to `.live`.
+    static func of(ageMinutes: Int?,
+                   intervalMinutes: Int = ES24Freshness.statutoryIntervalMinutes) -> ES24Freshness {
         guard let a = ageMinutes else { return .unavailable }
-        return a >= intervalMinutes ? .stale(ageMinutes: a) : .live(ageMinutes: a)
+        let boundary = max(1, min(intervalMinutes, statutoryIntervalMinutes))
+        return a >= boundary ? .stale(ageMinutes: a) : .live(ageMinutes: a)
     }
 
     var isLive: Bool { if case .live = self { return true }; return false }
@@ -289,7 +374,7 @@ private enum ES24Freshness: Equatable {
     }
     var label: String {
         switch self {
-        case .live(let a), .stale(let a): return "\(a) MIN"
+        case .live(let a), .stale(let a): return "\(a) min"
         case .unavailable: return "—"
         }
     }
@@ -334,7 +419,7 @@ private enum ES24NoteParser {
             guard let stamp = parseISO(stampText) else { continue }
             let tail = String(line[line.index(after: close)...])
             out.append(ES24Sample(id: "\(idx)-\(stampText)",
-                                  point: point(in: tail) ?? "CHECK-IN",
+                                  point: point(in: tail) ?? "Check-in",
                                   ppm: ppm(in: tail),
                                   loggedAt: stamp))
         }
@@ -344,8 +429,11 @@ private enum ES24NoteParser {
 
     /// `POINT=<label>` — the convention this screen writes and reads. No match
     /// means we do not know where the sample was taken, and we say so.
+    /// Returned display-ready. `value(for:)` matches the key case-insensitively
+    /// and hands back an upper-cased token; canon §3 forbids shouting on the
+    /// face, so the label is capitalised here rather than at each call site.
     static func point(in s: String) -> String? {
-        value(for: "POINT", in: s)?.uppercased()
+        value(for: "POINT", in: s)?.capitalized
     }
 
     /// `PPM=<value>`, with a tolerant fallback for "<number> ppm" typed by hand.
@@ -399,11 +487,13 @@ private struct ES24Bands: Equatable {
         }
     }
 
+    /// Sentence case per canon §3 — the run-1 all-caps verdict chips were
+    /// part of the shouting the 2026-08-23.1 gate named.
     func verdict(_ ppm: Double) -> (String, Int) {   // label, severity 0..2
-        if ppm >= idlh { return ("IDLH", 2) }
-        if ppm >= stel { return ("OVER STEL", 2) }
-        if ppm >= pel  { return ("OVER PEL", 1) }
-        return ("UNDER PEL", 0)
+        if ppm >= idlh { return ("Immediately dangerous", 2) }
+        if ppm >= stel { return ("Over STEL", 2) }
+        if ppm >= pel  { return ("Over PEL", 1) }
+        return ("Under PEL", 0)
     }
 }
 
@@ -420,6 +510,102 @@ private struct ES24Snapshot: Codable, Equatable {
     var dose: ES24DosimetryLog?
 }
 
+// MARK: - Canon tokens (§4 of the 2026-08-23.1 rework spec)
+//
+// The shared `Theme.Palette` is band-wide and predates this gate; its
+// tertiary inks and inset tracks do not carry the canon pairs. Rather than
+// reach across into a single-writer file, ES-24 pins its own tokens here.
+// Every value below is one row of the §4 table, light column then dark.
+
+private enum ES24Ink {
+    static func pageBg(_ dark: Bool)     -> Color { dark ? Color(hex: 0x030309) : Color(hex: 0xEEF0F5) }
+    static func surface(_ dark: Bool)    -> Color { dark ? Color(hex: 0x0D0E1A) : Color(hex: 0xFFFFFF) }
+    static func track(_ dark: Bool)      -> Color { dark ? Color(hex: 0x0B0C16) : Color(hex: 0xE6E9EF) }
+    static func hairline(_ dark: Bool)   -> Color { dark ? Color(hex: 0x25283A) : Color(hex: 0xD8DDE6) }
+    static func primary(_ dark: Bool)    -> Color { dark ? Color(hex: 0xF5F5F7) : Color(hex: 0x0D1117) }
+    static func secondary(_ dark: Bool)  -> Color { dark ? Color(hex: 0xAAB2BB) : Color(hex: 0x52606D) }
+    static func tertiary(_ dark: Bool)   -> Color { dark ? Color(hex: 0x7F8996) : Color(hex: 0x596978) }
+    /// Action primary is deliberately identical on both twins — the CTA is
+    /// the one surface that must not shift register between themes.
+    static let action                     = Color(hex: 0x0B66E5)
+    static func link(_ dark: Bool)       -> Color { dark ? Color(hex: 0x4DA3FF) : Color(hex: 0x075FAB) }
+    static let warnDot                    = Color(hex: 0xFFA726)
+    static func warnInk(_ dark: Bool)    -> Color { dark ? Color(hex: 0xFFA726) : Color(hex: 0x7A4400) }
+    static let successDot                 = Color(hex: 0x00C48C)
+    static func successInk(_ dark: Bool) -> Color { dark ? Color(hex: 0x00C48C) : Color(hex: 0x006B4D) }
+    /// §4 IS SILENT ON A DANGER PAIR — the exemplar carries no danger state at
+    /// all, and the spec's own rule is that where the exemplar is silent you say
+    /// so and do not invent. A poison-gas panel still has to separate "over PEL"
+    /// from "immediately dangerous to life", so this surface falls back to the
+    /// SHIPPED platform token `Brand.danger` (#F44336 · DesignSystem.swift:66)
+    /// on both twins rather than minting a hex that no table contains. KNOWN
+    /// SHORTFALL, stated rather than hidden: #F44336 on #FFFFFF measures about
+    /// 3.7:1, which clears AA-large but not AA body. The fix is a danger row in
+    /// the §4 table, not a colour picked here.
+    static func dangerInk(_: Bool)       -> Color { Brand.danger }
+    static func accent(_ dark: Bool)     -> Color { dark ? Color(hex: 0xD28BEB) : Color(hex: 0x6B2B83) }
+    static let neutralDot                 = Color(hex: 0x6B7280)
+    static func ctaStroke(_ dark: Bool)  -> Color { dark ? Color(hex: 0x7F8996) : Color(hex: 0x778391) }
+}
+
+/// §5 — the only gradient this surface is allowed to reference.
+private enum ES24Grad {
+    /// `eusoLine`. Used EXACTLY ONCE on this screen: the scheduled-check
+    /// ring, which is the one temporal spine the panel is about. Both its
+    /// ends are sourced — the last check-in comes from the `[ISO]` stamp
+    /// hazmatEscort.ts:167 writes itself, the far end from `nextCheckInAt`
+    /// (hazmatEscort.ts:107).
+    static let eusoLine = LinearGradient(
+        stops: [.init(color: Color(hex: 0x1473FF), location: 0.0),
+                .init(color: Color(hex: 0x813FF5), location: 0.52),
+                .init(color: Color(hex: 0xBE01FF), location: 1.0)],
+        startPoint: .leading, endPoint: .trailing)
+}
+
+/// §3 — the exemplar histogram, spelled out so no call site can drift
+/// below the floor. 10 belongs to bottom-nav captions, which `BottomNav`
+/// owns; nothing in this file is allowed to reach for it.
+private enum ES24Type {
+    static let heroNumber  = Font.system(size: 34, weight: .bold, design: .monospaced)
+    static let screenTitle = Font.system(size: 28, weight: .bold)
+    static let large       = Font.system(size: 17, weight: .semibold)
+    static let largeValue  = Font.system(size: 17, weight: .bold, design: .monospaced)
+    static let rowTitle    = Font.system(size: 15, weight: .semibold)
+    static let value       = Font.system(size: 15, weight: .bold, design: .monospaced)
+    static let chevron     = Font.system(size: 14, weight: .semibold)
+    static let label       = Font.system(size: 12, weight: .semibold)
+    static let body        = Font.system(size: 12, weight: .medium)
+    static let mono        = Font.system(size: 12, weight: .medium, design: .monospaced)
+    static let monoStrong  = Font.system(size: 12, weight: .bold, design: .monospaced)
+}
+
+/// §6 — canon geometry: card radius rx 20 over the §4 surface with a
+/// one-point hairline stroke and 16-pt inner padding. The shared
+/// `LifecycleCard` clips at `Radius.md` (12), carries an `accentGradient`
+/// path this gate bans, and is single-writer owned by the Shipper band, so
+/// ES-24 carries its own card rather than editing across a boundary.
+private struct ES24Card<Content: View>: View {
+    let isDark: Bool
+    var accent: Color?
+    let content: Content
+
+    init(isDark: Bool, accent: Color? = nil, @ViewBuilder content: () -> Content) {
+        self.isDark = isDark
+        self.accent = accent
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.s2) { content }
+            .padding(Space.s4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(ES24Ink.surface(isDark))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
+                .strokeBorder(accent ?? ES24Ink.hairline(isDark), lineWidth: 1))
+    }
+}
+
 // MARK: - Screen
 
 struct EscortHazmatWatch: View {
@@ -431,6 +617,9 @@ struct EscortHazmatWatch: View {
 
     /// NEVER cached — both are position-dependent. See the header offline note.
     @State private var weather: ES24Weather?
+    /// Which end of the lane the wind read was keyed to. Neither end is the
+    /// escort's position; the panel names the one it asked about.
+    @State private var weatherFromPickup = false
     @State private var proximity: ES24Proximity?
     @State private var fix: CLLocationCoordinate2D?
 
@@ -445,9 +634,12 @@ struct EscortHazmatWatch: View {
     private let cacheTTL: TimeInterval = 90
     private let cacheKey = "escort.hazmatwatch.panel"
 
-    /// Mirror of CHECKIN_INTERVAL_MINUTES (hazmatEscort.ts:30). Used only when
-    /// the server's own nextCheckInAt cannot be read.
-    private let fallbackIntervalMinutes = 30
+    /// The staleness boundary this whole screen grades and prints against.
+    /// PINNED to ES24Freshness's mirror of CHECKIN_INTERVAL_MINUTES
+    /// (hazmatEscort.ts:30 · 49 CFR §177.817). Every "STALE AT n MIN" string on
+    /// this panel prints THIS number, so the statutory figure on the face is
+    /// always the statutory figure and never a derived one.
+    private let intervalMinutes = ES24Freshness.statutoryIntervalMinutes
 
     private var isDark: Bool { colorScheme == .dark }
     private var isSnapshot: Bool { cacheAge != nil }
@@ -457,14 +649,6 @@ struct EscortHazmatWatch: View {
     private var bands: ES24Bands? { ES24Bands.forUN(load?.unNumber) }
     private var samples: [ES24Sample] { ES24NoteParser.samples(from: active?.notes) }
     private var latest: ES24Sample? { samples.first { $0.ppm != nil } }
-
-    private var intervalMinutes: Int {
-        guard let nextText = active?.nextCheckInAt,
-              let next = ES24NoteParser.parseISO(nextText),
-              let last = samples.first?.loggedAt else { return fallbackIntervalMinutes }
-        let m = Int(next.timeIntervalSince(last) / 60)
-        return m > 0 ? m : fallbackIntervalMinutes
-    }
 
     private var heroFreshness: ES24Freshness {
         ES24Freshness.of(ageMinutes: latest?.ageMinutes(now: now), intervalMinutes: intervalMinutes)
@@ -476,15 +660,16 @@ struct EscortHazmatWatch: View {
                 header
 
                 if loading && active == nil {
-                    LifecycleCard {
+                    ES24Card(isDark: isDark) {
                         Text("Reading the hazmat watch…")
-                            .font(EType.caption).foregroundStyle(palette.textSecondary)
+                            .font(ES24Type.body).foregroundStyle(ES24Ink.secondary(isDark))
                     }
                 } else if active == nil {
                     noActiveWatch
                 } else {
                     if let errorMessage {
-                        Text(errorMessage).font(EType.caption).foregroundStyle(Brand.danger)
+                        Text(errorMessage).font(ES24Type.body)
+                            .foregroundStyle(ES24Ink.dangerInk(isDark))
                     }
                     ambientSection
                     arraySection
@@ -508,47 +693,48 @@ struct EscortHazmatWatch: View {
 
     // MARK: Header
 
+    /// §1 — the run-1 eyebrow (9 pt, all caps, 1.0 tracking, gradient fill)
+    /// was the gate's first named defect class and is gone. What replaces it
+    /// is an orientation row in sentence case at the 12-pt floor.
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 4) {
-                EusoTripBrandMark(size: 12).font(.system(size: 9, weight: .heavy))
-                    .foregroundStyle(LinearGradient.diagonal)
-                Text("ESCORT · HAZMAT WATCH")
-                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
-                    .foregroundStyle(LinearGradient.diagonal)
+                Text("Escort · hazmat watch")
+                    .font(ES24Type.label)
+                    .foregroundStyle(ES24Ink.secondary(isDark))
                 Spacer()
                 if let a = active?.assignmentId {
-                    Text("ASSIGNMENT \(a)")
-                        .font(.system(size: 9, weight: .heavy)).tracking(1.0)
-                        .foregroundStyle(palette.textTertiary)
+                    Text("Assignment \(a)")
+                        .font(ES24Type.mono)
+                        .foregroundStyle(ES24Ink.tertiary(isDark))
                 }
             }
 
-            Text(ledgerLine).font(EType.mono(.micro))
-                .foregroundStyle(palette.textSecondary).lineLimit(1)
+            Text(ledgerLine).font(ES24Type.mono)
+                .foregroundStyle(ES24Ink.secondary(isDark)).lineLimit(1)
 
             Text(headlineText)
-                .font(.system(size: 26, weight: .bold)).tracking(-0.5)
-                .foregroundStyle(LinearGradient.diagonal)
+                .font(ES24Type.screenTitle).tracking(-0.4)
+                .foregroundStyle(ES24Ink.primary(isDark))
                 .lineLimit(1).minimumScaleFactor(0.7)
 
-            Text(subheadText).font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(palette.textSecondary).lineLimit(1)
+            Text(subheadText).font(ES24Type.body)
+                .foregroundStyle(ES24Ink.secondary(isDark)).lineLimit(1)
 
             metaRow
-            IridescentHairline()
+            Rectangle().fill(ES24Ink.hairline(isDark)).frame(height: 1)
         }
     }
 
     private var ledgerLine: String {
-        guard let l = load else { return "NO LOAD ON THIS ASSIGNMENT" }
+        guard let l = load else { return "No load on this assignment" }
         var parts: [String] = []
         if let un = l.unNumber { parts.append("UN\(un)") }
         if let a = bands?.analyte { parts.append(a) }
-        if let c = l.hazmatClass { parts.append("CLASS \(c)") }
-        if snap.erg?.isTIH == true { parts.append("TIH") }
+        if let c = l.hazmatClass { parts.append("Class \(c)") }
+        if snap.erg?.isTIH == true { parts.append("Inhalation hazard") }
         if let n = l.loadNumber { parts.append(n) }
-        return parts.isEmpty ? "NO HAZMAT CLASSIFICATION ON THIS LOAD" : parts.joined(separator: " · ")
+        return parts.isEmpty ? "No hazmat classification on this load" : parts.joined(separator: " · ")
     }
 
     /// The reading and its age are welded together. When there is no reading the
@@ -579,12 +765,12 @@ struct EscortHazmatWatch: View {
     /// green live dot here would be the panel's first lie.
     private var metaRow: some View {
         HStack(spacing: 10) {
-            if let pos = active?.position?.uppercased() {
-                Text(pos)
-                    .font(.system(size: 10, weight: .heavy)).tracking(0.5)
-                    .foregroundStyle(positionInk(pos))
-                    .padding(.horizontal, 12).frame(height: 20)
-                    .background(Capsule().fill(positionInk(pos).opacity(0.16)))
+            if let pos = active?.position {
+                Text(pos.capitalized)
+                    .font(ES24Type.label)
+                    .foregroundStyle(positionInk(pos.uppercased()))
+                    .padding(.horizontal, 12).frame(height: 22)
+                    .background(Capsule().fill(positionInk(pos.uppercased()).opacity(0.16)))
             }
 
             ZStack {
@@ -592,52 +778,53 @@ struct EscortHazmatWatch: View {
                 Circle().fill(dotColor).frame(width: 8, height: 8)
             }
 
-            Text(dotLabel).font(EType.mono(.micro)).foregroundStyle(palette.textPrimary)
+            Text(dotLabel).font(ES24Type.body)
+                .foregroundStyle(ES24Ink.secondary(isDark))
                 .lineLimit(1)
 
             Spacer(minLength: 4)
 
             if let city = load?.destCity, let st = load?.destState {
-                Text("\(city), \(st)".uppercased())
-                    .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
+                Text("\(city), \(st)")
+                    .font(ES24Type.mono).foregroundStyle(ES24Ink.tertiary(isDark))
                     .lineLimit(1)
             }
         }
     }
 
     private var dotColor: Color {
-        if isSnapshot { return Brand.neutral }
+        if isSnapshot { return ES24Ink.neutralDot }
         switch heroFreshness {
-        case .live: return Brand.warning       // never green — see above
-        case .stale: return Brand.danger
-        case .unavailable: return Brand.neutral
+        case .live: return ES24Ink.warnDot       // never green — see above
+        case .stale: return ES24Ink.dangerInk(isDark)
+        case .unavailable: return ES24Ink.neutralDot
         }
     }
 
     private var dotLabel: String {
-        if let age = cacheAge { return EscortOfflineCache.stalenessLine(age: age).uppercased() }
+        if let age = cacheAge { return EscortOfflineCache.stalenessLine(age: age) }
         switch heroFreshness {
-        case .live(let a): return "SAMPLE \(a) MIN · NO LIVE FEED"
-        case .stale(let a): return "STALE \(a) MIN · PAST INTERVAL"
-        case .unavailable: return "NO READING LOGGED · NO LIVE FEED"
+        case .live(let a): return "Sample \(a) min · no live feed"
+        case .stale(let a): return "Stale \(a) min · past interval"
+        case .unavailable: return "No reading logged · no live feed"
         }
     }
 
     private func positionInk(_ p: String) -> Color {
         switch p {
-        case "LEAD": return Brand.blue
-        case "CHASE": return Brand.escort
-        case "STEER": return Brand.warning
-        default: return Brand.hazmat
+        case "LEAD": return ES24Ink.action
+        case "CHASE": return ES24Ink.accent(isDark)
+        case "STEER": return ES24Ink.warnInk(isDark)
+        default: return ES24Ink.warnInk(isDark)
         }
     }
 
     private var noActiveWatch: some View {
-        LifecycleCard {
+        ES24Card(isDark: isDark) {
             Text("No hazmat escort assignment")
-                .font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+                .font(ES24Type.rowTitle).foregroundStyle(ES24Ink.primary(isDark))
             Text("You have no active hazmat escort assignment right now. Nothing on this panel has anything to measure, so nothing is drawn.")
-                .font(EType.caption).foregroundStyle(palette.textSecondary)
+                .font(ES24Type.body).foregroundStyle(ES24Ink.secondary(isDark))
         }
     }
 
@@ -645,29 +832,29 @@ struct EscortHazmatWatch: View {
 
     private var ambientSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            sectionLabel("AMBIENT SAMPLE · CADENCE \(intervalMinutes) MIN",
-                         trailing: "HAND-LOGGED · NO SENSOR FEED")
+            sectionLabel("Ambient sample · every \(intervalMinutes) min",
+                         trailing: "Hand-logged · no sensor feed")
 
-            LifecycleCard(accentGradient: true) {
+            ES24Card(isDark: isDark) {
                 HStack(alignment: .top, spacing: 12) {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("AMBIENT \(bands?.analyte ?? "READING") · \(latest?.point ?? "POINT UNKNOWN")")
-                            .font(.system(size: 8, weight: .heavy)).tracking(0.5)
-                            .foregroundStyle(palette.textTertiary).lineLimit(1)
+                        Text("Ambient \(bands?.analyte ?? "reading") · \(latest?.point ?? "point unknown")")
+                            .font(ES24Type.label)
+                            .foregroundStyle(ES24Ink.secondary(isDark)).lineLimit(1)
 
                         if let s = latest, let ppm = s.ppm {
                             HStack(alignment: .lastTextBaseline, spacing: 6) {
                                 Text(heroFreshness.isLive ? fmt(ppm) : "[\(fmt(ppm))]")
-                                    .font(.system(size: 38, weight: .heavy, design: .monospaced))
+                                    .font(ES24Type.heroNumber).tracking(-0.6)
                                     .foregroundStyle(heroInk(ppm))
-                                Text("ppm").font(.system(size: 13, weight: .bold))
-                                    .foregroundStyle(palette.textSecondary)
+                                Text("ppm").font(ES24Type.rowTitle)
+                                    .foregroundStyle(ES24Ink.secondary(isDark))
                             }
                             if let b = bands {
                                 let v = b.verdict(ppm)
-                                Text(heroFreshness.isLive ? v.0 : "— NOT LIVE")
-                                    .font(.system(size: 9, weight: .heavy)).tracking(0.5)
-                                    .foregroundStyle(heroFreshness.isLive ? severityInk(v.1) : palette.textTertiary)
+                                Text(heroFreshness.isLive ? v.0 : "Not live")
+                                    .font(ES24Type.label)
+                                    .foregroundStyle(heroFreshness.isLive ? severityInk(v.1) : ES24Ink.tertiary(isDark))
                                     .padding(.horizontal, 12).padding(.vertical, 4)
                                     .background {
                                         if heroFreshness.isLive {
@@ -675,16 +862,16 @@ struct EscortHazmatWatch: View {
                                         } else {
                                             Capsule().strokeBorder(
                                                 style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
-                                                .foregroundStyle(palette.textTertiary.opacity(0.55))
+                                                .foregroundStyle(ES24Ink.tertiary(isDark).opacity(0.55))
                                         }
                                     }
                             } else {
-                                unavailableChip("NO BAND TABLE FOR UN\(load?.unNumber ?? "—")")
+                                unavailableChip("No band table for UN\(load?.unNumber ?? "—")")
                             }
                         } else {
-                            Text("—").font(.system(size: 38, weight: .heavy, design: .monospaced))
-                                .foregroundStyle(palette.textTertiary)
-                            unavailableChip("NO READING IN THE CHECK-IN LOG")
+                            Text("—").font(ES24Type.heroNumber).tracking(-0.6)
+                                .foregroundStyle(ES24Ink.tertiary(isDark))
+                            unavailableChip("No reading in the check-in log")
                         }
                     }
 
@@ -698,22 +885,23 @@ struct EscortHazmatWatch: View {
     }
 
     private func heroInk(_ ppm: Double) -> Color {
-        guard heroFreshness.isLive else { return palette.textTertiary }
-        guard let b = bands else { return palette.textPrimary }
+        guard heroFreshness.isLive else { return ES24Ink.tertiary(isDark) }
+        guard let b = bands else { return ES24Ink.primary(isDark) }
         return severityInk(b.verdict(ppm).1)
     }
 
     private func severityInk(_ s: Int) -> Color {
-        s >= 2 ? Brand.danger : (s == 1 ? Brand.warning : Brand.success)
+        s >= 2 ? ES24Ink.dangerInk(isDark)
+               : (s == 1 ? ES24Ink.warnInk(isDark) : ES24Ink.successInk(isDark))
     }
 
     /// The bands are a LOCAL table and the ruler says so, because no procedure
     /// in the tree serves an exposure threshold.
     private var thresholdRuler: some View {
         VStack(alignment: .trailing, spacing: 4) {
-            Text("THRESHOLDS · LOCAL TABLE")
-                .font(.system(size: 7, weight: .heavy)).tracking(0.4)
-                .foregroundStyle(palette.textTertiary)
+            Text("Thresholds · local table")
+                .font(ES24Type.body)
+                .foregroundStyle(ES24Ink.tertiary(isDark))
 
             if let b = bands {
                 let top = max(b.stel * 1.35, (latest?.ppm ?? 0) * 1.2, b.pel * 2)
@@ -722,20 +910,20 @@ struct EscortHazmatWatch: View {
                     let x = { (v: Double) in max(0, min(w, w * v / top)) }
                     ZStack(alignment: .topLeading) {
                         HStack(spacing: 0) {
-                            Rectangle().fill(Brand.success.opacity(0.30)).frame(width: x(b.pel))
-                            Rectangle().fill(Brand.warning.opacity(0.50))
+                            Rectangle().fill(ES24Ink.successDot.opacity(0.30)).frame(width: x(b.pel))
+                            Rectangle().fill(ES24Ink.warnDot.opacity(0.50))
                                 .frame(width: max(0, x(b.stel) - x(b.pel)))
-                            Rectangle().fill(Brand.danger.opacity(0.40))
+                            Rectangle().fill(ES24Ink.dangerInk(isDark).opacity(0.40))
                         }
                         .frame(height: 6).clipShape(Capsule()).padding(.top, 7)
 
-                        Rectangle().fill(Brand.warning).frame(width: 1.2, height: 15)
+                        Rectangle().fill(ES24Ink.warnDot).frame(width: 1.2, height: 15)
                             .offset(x: x(b.pel) - 0.6, y: 3)
-                        Rectangle().fill(Brand.danger).frame(width: 1.2, height: 15)
+                        Rectangle().fill(ES24Ink.dangerInk(isDark)).frame(width: 1.2, height: 15)
                             .offset(x: x(b.stel) - 0.6, y: 3)
 
                         if let ppm = latest?.ppm, heroFreshness.isLive {
-                            ES24Triangle().fill(Brand.warning)
+                            ES24Triangle().fill(ES24Ink.warnDot)
                                 .frame(width: 9, height: 7)
                                 .offset(x: x(ppm) - 4.5, y: 0)
                         }
@@ -744,16 +932,18 @@ struct EscortHazmatWatch: View {
                 .frame(width: 150, height: 24)
 
                 HStack(spacing: 0) {
-                    Text("PEL \(fmt(b.pel))").font(EType.mono(.micro)).foregroundStyle(Brand.warning)
+                    Text("PEL \(fmt(b.pel))").font(ES24Type.mono)
+                        .foregroundStyle(ES24Ink.warnInk(isDark))
                     Spacer(minLength: 6)
-                    Text("STEL \(fmt(b.stel))").font(EType.mono(.micro)).foregroundStyle(Brand.danger)
+                    Text("STEL \(fmt(b.stel))").font(ES24Type.mono)
+                        .foregroundStyle(ES24Ink.dangerInk(isDark))
                 }
                 .frame(width: 150)
 
-                Text("IDLH \(fmt(b.idlh))").font(.system(size: 6.5, weight: .bold))
-                    .foregroundStyle(palette.textTertiary)
+                Text("IDLH \(fmt(b.idlh))").font(ES24Type.mono)
+                    .foregroundStyle(ES24Ink.tertiary(isDark))
             } else {
-                unavailableChip("NO BAND")
+                unavailableChip("No band table")
             }
         }
     }
@@ -767,12 +957,12 @@ struct EscortHazmatWatch: View {
 
         return VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("SAMPLE AGE").font(.system(size: 7.5, weight: .heavy)).tracking(0.5)
-                    .foregroundStyle(palette.textTertiary)
+                Text("Sample age").font(ES24Type.label)
+                    .foregroundStyle(ES24Ink.secondary(isDark))
                 Spacer(minLength: 6)
-                Text("STALE AT \(intervalMinutes) MIN · 49 CFR §177.817")
-                    .font(.system(size: 7, weight: .bold))
-                    .foregroundStyle(palette.textTertiary).lineLimit(1)
+                Text("Stale at \(intervalMinutes) min · 49 CFR §177.817")
+                    .font(ES24Type.body)
+                    .foregroundStyle(ES24Ink.tertiary(isDark)).lineLimit(1)
             }
 
             GeometryReader { geo in
@@ -780,42 +970,42 @@ struct EscortHazmatWatch: View {
                 let x = { (m: Double) in max(0, min(w, w * m / span)) }
                 ZStack(alignment: .topLeading) {
                     HStack(spacing: 0) {
-                        Rectangle().fill(Brand.success.opacity(0.32))
+                        Rectangle().fill(ES24Ink.successDot.opacity(0.32))
                             .frame(width: x(Double(intervalMinutes) / 2))
-                        Rectangle().fill(Brand.warning.opacity(0.45))
+                        Rectangle().fill(ES24Ink.warnDot.opacity(0.45))
                             .frame(width: x(Double(intervalMinutes)) - x(Double(intervalMinutes) / 2))
-                        ES24Hatch(ink: palette.textTertiary)
-                            .overlay(Rectangle().stroke(Brand.danger.opacity(0.55), lineWidth: 1))
+                        ES24Hatch(ink: ES24Ink.tertiary(isDark))
+                            .overlay(Rectangle().stroke(ES24Ink.dangerInk(isDark).opacity(0.55), lineWidth: 1))
                     }
                     .frame(height: 8).clipShape(RoundedRectangle(cornerRadius: 4)).padding(.top, 6)
 
-                    Rectangle().fill(Brand.danger).frame(width: 1.4, height: 16)
+                    Rectangle().fill(ES24Ink.dangerInk(isDark)).frame(width: 1.4, height: 16)
                         .offset(x: x(Double(intervalMinutes)) - 0.7, y: 2)
 
                     if heroFreshness != .unavailable {
                         Rectangle()
-                            .fill(heroFreshness.isLive ? Brand.warning : Brand.danger)
+                            .fill(heroFreshness.isLive ? ES24Ink.warnDot : ES24Ink.dangerInk(isDark))
                             .frame(width: 2, height: 16)
                             .offset(x: x(age) - 1, y: 2)
                         Text(heroFreshness.label)
-                            .font(.system(size: 7.5, weight: .heavy, design: .monospaced))
+                            .font(ES24Type.mono)
                             .foregroundStyle(.white)
                             .padding(.horizontal, 7).padding(.vertical, 2)
-                            .background(Capsule().fill(heroFreshness.isLive ? Brand.warning : Brand.danger))
-                            .offset(x: max(0, min(w - 46, x(age) - 23)), y: -15)
+                            .background(Capsule().fill(heroFreshness.isLive ? ES24Ink.warnDot : ES24Ink.dangerInk(isDark)))
+                            .offset(x: max(0, min(w - 62, x(age) - 31)), y: -18)
                     }
                 }
             }
-            .frame(height: 22).padding(.top, 12)
+            .frame(height: 24).padding(.top, 16)
 
             HStack(spacing: 0) {
-                Text("0").font(.system(size: 6.5, weight: .bold)).foregroundStyle(palette.textTertiary)
+                Text("0").font(ES24Type.mono).foregroundStyle(ES24Ink.tertiary(isDark))
                 Spacer()
-                Text("\(intervalMinutes) · STALE").font(.system(size: 6.5, weight: .heavy))
-                    .foregroundStyle(Brand.danger)
+                Text("\(intervalMinutes) · stale").font(ES24Type.monoStrong)
+                    .foregroundStyle(ES24Ink.dangerInk(isDark))
                 Spacer()
-                Text("\(Int(span))+ MIN").font(.system(size: 6.5, weight: .bold))
-                    .foregroundStyle(palette.textTertiary)
+                Text("\(Int(span))+ min").font(ES24Type.mono)
+                    .foregroundStyle(ES24Ink.tertiary(isDark))
             }
             .padding(.top, 4)
         }
@@ -828,36 +1018,36 @@ struct EscortHazmatWatch: View {
         let staleCount = rows.filter { $0.ageMinutes(now: now) >= intervalMinutes }.count
 
         return VStack(alignment: .leading, spacing: 6) {
-            sectionLabel("DETECTOR ARRAY · \(rows.count) POINT\(rows.count == 1 ? "" : "S")",
-                         trailing: rows.isEmpty ? "NO POINTS LOGGED"
-                                                : "\(rows.count - staleCount) LIVE · \(staleCount) STALE")
+            sectionLabel("Detector array · \(rows.count) point\(rows.count == 1 ? "" : "s")",
+                         trailing: rows.isEmpty ? "No points logged"
+                                                : "\(rows.count - staleCount) live · \(staleCount) stale")
 
-            LifecycleCard {
+            ES24Card(isDark: isDark) {
                 if rows.isEmpty {
                     Text("No check-in has been logged on this assignment.")
-                        .font(EType.caption).foregroundStyle(palette.textSecondary)
+                        .font(ES24Type.rowTitle).foregroundStyle(ES24Ink.primary(isDark))
                     Text("There is no detector registry and no telemetry feed, so this array is exactly the check-in log and nothing more.")
-                        .font(.system(size: 9)).foregroundStyle(palette.textTertiary)
+                        .font(ES24Type.body).foregroundStyle(ES24Ink.secondary(isDark))
                 } else {
                     HStack(spacing: 0) {
-                        Text("SAMPLE POINT").font(.system(size: 6.5, weight: .heavy)).tracking(0.6)
-                            .foregroundStyle(palette.textTertiary)
+                        Text("Sample point").font(ES24Type.label)
+                            .foregroundStyle(ES24Ink.secondary(isDark))
                         Spacer()
-                        Text("PPM").font(.system(size: 6.5, weight: .heavy)).tracking(0.6)
-                            .foregroundStyle(palette.textTertiary).frame(width: 46, alignment: .trailing)
-                        Text("VERDICT").font(.system(size: 6.5, weight: .heavy)).tracking(0.6)
-                            .foregroundStyle(palette.textTertiary).frame(width: 82, alignment: .center)
-                        Text("AGE").font(.system(size: 6.5, weight: .heavy)).tracking(0.6)
-                            .foregroundStyle(palette.textTertiary).frame(width: 50, alignment: .trailing)
+                        Text("ppm").font(ES24Type.label)
+                            .foregroundStyle(ES24Ink.secondary(isDark)).frame(width: 52, alignment: .trailing)
+                        Text("Verdict").font(ES24Type.label)
+                            .foregroundStyle(ES24Ink.secondary(isDark)).frame(width: 104, alignment: .center)
+                        Text("Age").font(ES24Type.label)
+                            .foregroundStyle(ES24Ink.secondary(isDark)).frame(width: 56, alignment: .trailing)
                     }
-                    Rectangle().fill(palette.borderFaint).frame(height: 1)
+                    Rectangle().fill(ES24Ink.hairline(isDark)).frame(height: 1)
 
                     ForEach(Array(rows)) { row in sampleRow(row) }
 
                     if samples.count > rows.count {
-                        Text("\(samples.count - rows.count) OLDER CHECK-IN\(samples.count - rows.count == 1 ? "" : "S") NOT SHOWN")
-                            .font(.system(size: 6.5, weight: .bold))
-                            .foregroundStyle(palette.textTertiary)
+                        Text("\(samples.count - rows.count) older check-in\(samples.count - rows.count == 1 ? "" : "s") not shown")
+                            .font(ES24Type.body)
+                            .foregroundStyle(ES24Ink.tertiary(isDark))
                     }
                 }
             }
@@ -875,64 +1065,65 @@ struct EscortHazmatWatch: View {
         }()
 
         return HStack(spacing: 0) {
-            Text(row.point).font(EType.mono(.micro))
-                .foregroundStyle(stale ? palette.textTertiary : palette.textPrimary)
+            Text(row.point).font(ES24Type.body)
+                .foregroundStyle(stale ? ES24Ink.tertiary(isDark) : ES24Ink.primary(isDark))
                 .lineLimit(1)
             Spacer(minLength: 6)
 
             ZStack(alignment: .trailing) {
                 if stale, row.ppm != nil {
-                    ES24Hatch(ink: palette.textTertiary)
-                        .frame(width: 34, height: 16)
+                    ES24Hatch(ink: ES24Ink.tertiary(isDark))
+                        .frame(width: 40, height: 18)
                         .clipShape(RoundedRectangle(cornerRadius: 3))
                 }
                 Text(numeral(row, stale: stale))
-                    .font(.system(size: 12, weight: .heavy, design: .monospaced))
+                    .font(ES24Type.monoStrong)
                     .foregroundStyle(stale || row.ppm == nil
-                                     ? palette.textTertiary
+                                     ? ES24Ink.tertiary(isDark)
                                      : severityInk(v?.1 ?? 0))
             }
-            .frame(width: 46, alignment: .trailing)
+            .frame(width: 52, alignment: .trailing)
 
             Group {
                 if row.ppm == nil {
-                    Text("NO READING").font(.system(size: 6.5, weight: .heavy)).tracking(0.4)
-                        .foregroundStyle(palette.textTertiary)
-                        .frame(width: 74, height: 15)
+                    Text("No reading").font(ES24Type.body)
+                        .foregroundStyle(ES24Ink.tertiary(isDark))
+                        .frame(width: 96, height: 20)
                         .background {
-                            RoundedRectangle(cornerRadius: 7.5)
+                            RoundedRectangle(cornerRadius: 10)
                                 .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
-                                .foregroundStyle(palette.textTertiary.opacity(0.55))
+                                .foregroundStyle(ES24Ink.tertiary(isDark).opacity(0.55))
                         }
                 } else if stale || v == nil {
-                    Text("— NOT LIVE").font(.system(size: 6.5, weight: .heavy)).tracking(0.4)
-                        .foregroundStyle(palette.textTertiary)
-                        .frame(width: 74, height: 15)
+                    Text("Not live").font(ES24Type.body)
+                        .foregroundStyle(ES24Ink.tertiary(isDark))
+                        .frame(width: 96, height: 20)
                         .background {
-                            RoundedRectangle(cornerRadius: 7.5)
+                            RoundedRectangle(cornerRadius: 10)
                                 .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
-                                .foregroundStyle(palette.textTertiary.opacity(0.55))
+                                .foregroundStyle(ES24Ink.tertiary(isDark).opacity(0.55))
                         }
                 } else {
-                    Text(v!.0).font(.system(size: 6.5, weight: .heavy)).tracking(0.4)
+                    Text(v!.0).font(ES24Type.body)
                         .foregroundStyle(severityInk(v!.1))
-                        .frame(width: 74, height: 15)
+                        .lineLimit(1).minimumScaleFactor(0.9)
+                        .frame(width: 96, height: 20)
                         .background(Capsule().fill(severityInk(v!.1).opacity(0.16)))
                 }
             }
-            .frame(width: 82, alignment: .center)
+            .frame(width: 104, alignment: .center)
 
-            Text("\(age) MIN")
-                .font(.system(size: 8, weight: stale ? .heavy : .bold, design: .monospaced))
-                .foregroundStyle(stale ? Brand.danger : palette.textSecondary)
-                .frame(width: 50, alignment: .trailing)
+            Text("\(age) min")
+                .font(stale ? ES24Type.monoStrong : ES24Type.mono)
+                .foregroundStyle(stale ? ES24Ink.dangerInk(isDark) : ES24Ink.secondary(isDark))
+                .frame(width: 56, alignment: .trailing)
         }
-        .frame(height: 24)
+        .frame(height: 28)
         .background {
             if stale {
                 RoundedRectangle(cornerRadius: 6)
                     .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                    .foregroundStyle(palette.textTertiary.opacity(0.55))
+                    .foregroundStyle(ES24Ink.tertiary(isDark).opacity(0.55))
             }
         }
     }
@@ -946,54 +1137,89 @@ struct EscortHazmatWatch: View {
 
     private var plumeSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            sectionLabel("PLUME GEOMETRY · WIND + ERG RINGS",
+            sectionLabel("Plume geometry · wind and ERG rings",
                          trailing: windAgeLabel)
 
-            LifecycleCard(accentDanger: downwind) {
+            ES24Card(isDark: isDark,
+                     accent: downwind ? ES24Ink.dangerInk(isDark).opacity(0.55) : nil) {
                 HStack(alignment: .top, spacing: 12) {
-                    ES24WindRose(pal: palette,
-                                 isDark: isDark,
-                                 windFromBearing: windBearing,
-                                 lit: weather != nil && !isSnapshot)
-                        .frame(width: 132, height: 132)
+                    // The rose's own caption was a 6.5-pt node inside the dial.
+                    // It now sits under the dial at the 12-pt floor, where it
+                    // has the width to be read.
+                    VStack(spacing: 4) {
+                        ES24WindRose(pal: palette,
+                                     isDark: isDark,
+                                     windFromBearing: windBearing,
+                                     lit: weather != nil && !isSnapshot)
+                            .frame(width: 104, height: 104)
+                        Text(weather != nil && !isSnapshot ? "Upwind park · derived"
+                                                           : "No bearing · rose unlit")
+                            .font(ES24Type.body)
+                            .foregroundStyle(weather != nil && !isSnapshot
+                                             ? ES24Ink.successInk(isDark)
+                                             : ES24Ink.tertiary(isDark))
+                            .lineLimit(1).minimumScaleFactor(0.85)
+                    }
+                    .frame(width: 132)
 
                     VStack(alignment: .leading, spacing: 0) {
                         if isSnapshot || weather == nil {
                             // Never hold the last bearing. A cached or missing
                             // wind is drawn as absent, not as a picture.
-                            unavailableChip(isSnapshot ? "WIND NOT CACHED · RECONNECT"
-                                                       : "WIND UNAVAILABLE · NWS DID NOT ANSWER")
+                            unavailableChip(isSnapshot ? "Wind not cached · reconnect"
+                                                       : "Wind unavailable · NWS did not answer")
                         } else {
                             if downwind {
-                                Text("PLUME RUNS \(downwindCompass)")
-                                    .font(.system(size: 8, weight: .heavy)).tracking(0.2)
-                                    .foregroundStyle(Brand.danger)
+                                Text("Plume runs \(downwindCompass)")
+                                    .font(ES24Type.label)
+                                    .foregroundStyle(ES24Ink.dangerInk(isDark))
                                     .padding(.horizontal, 9).padding(.vertical, 4)
                                     .background {
-                                        Capsule().fill(Brand.danger.opacity(0.14))
-                                            .overlay(Capsule().stroke(Brand.danger.opacity(0.45), lineWidth: 1))
+                                        Capsule().fill(ES24Ink.dangerInk(isDark).opacity(0.14))
+                                            .overlay(Capsule().stroke(ES24Ink.dangerInk(isDark).opacity(0.45), lineWidth: 1))
                                     }
                             }
-                            Text("WIND · NWS \(weather?.location?.uppercased() ?? "—")")
-                                .font(.system(size: 7, weight: .heavy)).tracking(0.5)
-                                .foregroundStyle(palette.textTertiary)
+                            // The station's city is NOT stated here — it is
+                            // stated in the caveat block below, where it is read
+                            // as a qualification rather than as a location badge.
+                            Text("Wind · NWS observation")
+                                .font(ES24Type.label)
+                                .foregroundStyle(ES24Ink.secondary(isDark))
                                 .padding(.top, downwind ? 10 : 0).lineLimit(1)
                             Text(windHeadline)
-                                .font(.system(size: 13, weight: .heavy, design: .monospaced))
-                                .foregroundStyle(palette.textPrimary).padding(.top, 3)
+                                .font(ES24Type.value)
+                                .foregroundStyle(ES24Ink.primary(isDark)).padding(.top, 3)
+                                .lineLimit(1).minimumScaleFactor(0.8)
                             Text(windObservedLine)
-                                .font(.system(size: 6.5, weight: .bold, design: .monospaced))
-                                .foregroundStyle(Brand.warning).padding(.top, 2)
-                            Text("BEARING IS FOR THAT STATION, NOT THE TANK")
-                                .font(.system(size: 6, weight: .bold))
-                                .foregroundStyle(palette.textTertiary).padding(.top, 2)
+                                .font(ES24Type.mono)
+                                .foregroundStyle(ES24Ink.warnInk(isDark)).padding(.top, 2)
+                                .lineLimit(1).minimumScaleFactor(0.8)
+                            // NOT a footnote. The bearing belongs to a station
+                            // tied to one end of the lane, not to the ground the
+                            // escort is standing on, and that has to be as loud
+                            // as the bearing it qualifies.
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text("Bearing is not your position")
+                                Text(windPlaceCaveat)
+                                    .lineLimit(1).minimumScaleFactor(0.8)
+                            }
+                            .font(ES24Type.label)
+                            .foregroundStyle(ES24Ink.warnInk(isDark))
+                            .padding(.horizontal, 8).padding(.vertical, 4)
+                            .background {
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(ES24Ink.warnDot.opacity(0.16))
+                                    .overlay(RoundedRectangle(cornerRadius: 6)
+                                        .stroke(ES24Ink.warnDot.opacity(0.55), lineWidth: 1))
+                            }
+                            .padding(.top, 4)
                         }
 
-                        Rectangle().fill(palette.borderFaint).frame(height: 1).padding(.vertical, 7)
+                        Rectangle().fill(ES24Ink.hairline(isDark)).frame(height: 1).padding(.vertical, 7)
 
                         ergRings
 
-                        Rectangle().fill(palette.borderFaint).frame(height: 1).padding(.vertical, 7)
+                        Rectangle().fill(ES24Ink.hairline(isDark)).frame(height: 1).padding(.vertical, 7)
 
                         receptorBlock
                     }
@@ -1005,26 +1231,29 @@ struct EscortHazmatWatch: View {
     /// Real ERG figures or nothing. There is no fallback ring.
     private var ergRings: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("ERG RINGS · UN\(load?.unNumber ?? "—")")
-                .font(.system(size: 6.5, weight: .heavy)).tracking(0.5)
-                .foregroundStyle(palette.textTertiary)
+            Text("ERG rings · UN\(load?.unNumber ?? "—")")
+                .font(ES24Type.label)
+                .foregroundStyle(ES24Ink.secondary(isDark))
 
             if let pd = snap.erg?.protectiveDistance,
                let large = pd.largeSpill,
                let day = large.day, let night = large.night,
                (day.isolateMeters ?? 0) > 0 {
-                Text("\(Int(day.isolateMeters ?? 0)) M ISOLATE · \(fmt(day.protectKm ?? 0)) KM DAY")
-                    .font(.system(size: 7.5, weight: .bold, design: .monospaced))
-                    .foregroundStyle(palette.textPrimary)
-                Text("\(fmt(night.protectKm ?? 0)) KM PROTECT AFTER DARK")
-                    .font(.system(size: 7.5, weight: .bold, design: .monospaced))
-                    .foregroundStyle(Brand.danger)
+                Text("Isolate \(Int(day.isolateMeters ?? 0)) m · protect \(fmt(day.protectKm ?? 0)) km by day")
+                    .font(ES24Type.body)
+                    .foregroundStyle(ES24Ink.primary(isDark))
+                    .lineLimit(1).minimumScaleFactor(0.8)
+                Text("Protect \(fmt(night.protectKm ?? 0)) km after dark")
+                    .font(ES24Type.body)
+                    .foregroundStyle(ES24Ink.dangerInk(isDark))
+                    .lineLimit(1).minimumScaleFactor(0.8)
             } else if let iso = snap.erg?.guideFull?.isolationDistanceMeters {
-                Text("INITIAL ISOLATE \(Int(iso)) M · NO TABLE-1 ENTRY")
-                    .font(.system(size: 7.5, weight: .bold, design: .monospaced))
-                    .foregroundStyle(palette.textPrimary)
+                Text("Initial isolate \(Int(iso)) m · no Table 1 entry")
+                    .font(ES24Type.body)
+                    .foregroundStyle(ES24Ink.primary(isDark))
+                    .lineLimit(1).minimumScaleFactor(0.8)
             } else {
-                unavailableChip("NO ERG DISTANCES FOR THIS LOAD")
+                unavailableChip("No ERG distances for this load")
             }
         }
     }
@@ -1033,18 +1262,22 @@ struct EscortHazmatWatch: View {
     /// so instead of drawing a comforting zero.
     private var receptorBlock: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("RECEPTORS INSIDE RINGS")
-                .font(.system(size: 6.5, weight: .heavy)).tracking(0.5)
-                .foregroundStyle(palette.textTertiary)
-            Text("NOT EVALUATED · NO SCHOOL / HOSPITAL /")
-                .font(.system(size: 6.5, weight: .bold, design: .monospaced))
-                .foregroundStyle(palette.textSecondary)
-            Text("RESIDENTIAL DATASET EXISTS")
-                .font(.system(size: 6.5, weight: .bold, design: .monospaced))
-                .foregroundStyle(palette.textSecondary)
+            Text("Receptors inside rings")
+                .font(ES24Type.label)
+                .foregroundStyle(ES24Ink.secondary(isDark))
+            Text("Not evaluated — no school, hospital or")
+                .font(ES24Type.body)
+                .foregroundStyle(ES24Ink.secondary(isDark))
+                .lineLimit(1).minimumScaleFactor(0.8)
+            Text("residential dataset exists.")
+                .font(ES24Type.body)
+                .foregroundStyle(ES24Ink.secondary(isDark))
+                .lineLimit(1).minimumScaleFactor(0.8)
             Text(zoneLine)
-                .font(.system(size: 6.5, weight: .bold, design: .monospaced))
-                .foregroundStyle(proximity?.inRestrictedZone == true ? Brand.danger : palette.textTertiary)
+                .font(ES24Type.body)
+                .foregroundStyle(proximity?.inRestrictedZone == true
+                                 ? ES24Ink.dangerInk(isDark) : ES24Ink.tertiary(isDark))
+                .lineLimit(1).minimumScaleFactor(0.8)
                 .padding(.top, 2)
         }
     }
@@ -1052,17 +1285,17 @@ struct EscortHazmatWatch: View {
     /// checkProximity's table is 13 hard-coded tunnels and metro zones. An empty
     /// result means the table had nothing nearby — never that the road is clear.
     private var zoneLine: String {
-        if isSnapshot { return "ZONES NOT CACHED · RECONNECT" }
+        if isSnapshot { return "Zones not cached · reconnect" }
         guard let p = proximity else {
-            return fix == nil ? "ZONES NOT EVALUATED · NO GPS FIX"
-                              : "ZONES NOT EVALUATED · CALL FAILED"
+            return fix == nil ? "Zones not evaluated · no GPS fix"
+                              : "Zones not evaluated · call failed"
         }
         let alerts = p.alerts ?? []
         if let first = alerts.first {
             let d = first.distanceMiles.map { fmt($0) } ?? "—"
-            return "\(first.alert?.uppercased() ?? "NEAR") \(first.zoneName?.uppercased() ?? "ZONE") · \(d) MI"
+            return "\(first.alert?.capitalized ?? "Near") \(first.zoneName ?? "zone") · \(d) mi"
         }
-        return "ZONE TABLE · 0 OF 13 IN RANGE"
+        return "Zone table 0 of 13 in range"
     }
 
     private var windBearing: Double? {
@@ -1076,67 +1309,82 @@ struct EscortHazmatWatch: View {
     }
     private var windHeadline: String {
         let from = weather?.windDirection ?? "—"
-        let mph = weather?.windSpeed.map { "\($0) MPH" } ?? "— MPH"
+        let mph = weather?.windSpeed.map { "\($0) mph" } ?? "— mph"
         return "\(from) → \(downwindCompass) \(mph)"
     }
     private var windObservedLine: String {
         guard let t = weather?.updatedAt, let d = ES24NoteParser.parseISO(t) else {
-            return "OBSERVATION TIME UNKNOWN"
+            return "Observation time unknown"
         }
         let mins = max(0, Int(now.timeIntervalSince(d) / 60))
-        return "OBSERVED \(clock(d)) · \(mins) MIN AGO"
+        return "Observed \(clock(d)) · \(mins) min ago"
     }
+    /// Names the city the wind was actually asked about, and which end of the
+    /// lane it is, so the operator can see for themselves that it is not here.
+    /// There is no coordinate-keyed wind bearing in the tree (STUB filed).
+    private var windPlaceCaveat: String {
+        let place = weather?.location ?? "unknown city"
+        return "NWS \(place) · \(weatherFromPickup ? "pickup" : "delivery") city, not the tank"
+    }
+
     private var windAgeLabel: String {
-        if isSnapshot { return "NOT CACHED" }
+        if isSnapshot { return "Not cached" }
         guard let t = weather?.updatedAt, let d = ES24NoteParser.parseISO(t) else { return "NWS · —" }
-        return "NWS · \(max(0, Int(now.timeIntervalSince(d) / 60))) MIN OLD"
+        return "NWS · \(max(0, Int(now.timeIntervalSince(d) / 60))) min old"
     }
 
     // MARK: Cadence 4 · the scheduled-check clock
 
     private var scheduleSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            sectionLabel("SCHEDULED CHECKS", trailing: securityLabel)
+            sectionLabel("Scheduled checks", trailing: securityLabel)
 
-            LifecycleCard(accentWarning: overdue) {
+            ES24Card(isDark: isDark,
+                     accent: overdue ? ES24Ink.warnDot.opacity(0.55) : nil) {
                 HStack(alignment: .top, spacing: 14) {
                     ZStack {
-                        Circle().stroke(palette.borderFaint, lineWidth: 6).frame(width: 48, height: 48)
+                        Circle().stroke(ES24Ink.track(isDark), lineWidth: 6).frame(width: 64, height: 64)
+                        // §5 — THE ONE `eusoLine` ON THIS SCREEN. The check-in
+                        // interval is the single temporal spine ES-24 is about,
+                        // and both its ends are sourced: the near end from the
+                        // [ISO] stamp hazmatEscort.ts:167 writes, the far end
+                        // from nextCheckInAt (hazmatEscort.ts:107).
                         Circle()
                             .trim(from: 0, to: CGFloat(min(1, elapsedFraction)))
-                            .stroke(LinearGradient.primary,
+                            .stroke(ES24Grad.eusoLine,
                                     style: StrokeStyle(lineWidth: 6, lineCap: .round))
-                            .rotationEffect(.degrees(-90)).frame(width: 48, height: 48)
+                            .rotationEffect(.degrees(-90)).frame(width: 64, height: 64)
                         VStack(spacing: 0) {
                             Text(countdownText)
-                                .font(.system(size: 12, weight: .heavy, design: .monospaced))
-                                .foregroundStyle(overdue ? Brand.danger : palette.textPrimary)
-                            Text("MIN").font(.system(size: 6, weight: .bold))
-                                .foregroundStyle(palette.textTertiary)
+                                .font(ES24Type.largeValue)
+                                .foregroundStyle(overdue ? ES24Ink.dangerInk(isDark) : ES24Ink.primary(isDark))
+                            Text("min").font(ES24Type.body)
+                                .foregroundStyle(ES24Ink.tertiary(isDark))
                         }
                     }
 
                     VStack(alignment: .leading, spacing: 3) {
                         HStack {
-                            Text(nextCheckText).font(.system(size: 11, weight: .bold))
-                                .foregroundStyle(palette.textPrimary)
+                            Text(nextCheckText).font(ES24Type.rowTitle)
+                                .foregroundStyle(ES24Ink.primary(isDark))
+                                .lineLimit(1).minimumScaleFactor(0.8)
                             Spacer(minLength: 6)
-                            Text("EVERY \(intervalMinutes) MIN")
-                                .font(.system(size: 7, weight: .heavy)).tracking(0.4)
-                                .foregroundStyle(palette.textTertiary)
+                            Text("Every \(intervalMinutes) min")
+                                .font(ES24Type.body)
+                                .foregroundStyle(ES24Ink.tertiary(isDark))
                         }
                         Text(lastCheckText)
-                            .font(.system(size: 7, weight: .bold, design: .monospaced))
-                            .foregroundStyle(palette.textSecondary).lineLimit(1)
+                            .font(ES24Type.body)
+                            .foregroundStyle(ES24Ink.secondary(isDark)).lineLimit(1)
 
                         // Cadence roster. Every entry states WHY it is not lighting.
                         HStack(spacing: 5) {
-                            stubChip("PHOTO SLOT · STUB")
+                            stubChip("Photo not captured")
                             dosimetryChip
                         }.padding(.top, 4)
                         HStack(spacing: 5) {
-                            stubChip("CONDENSATION · NO FEED")
-                            stubChip("PER-CLASS CADENCE · STUB")
+                            stubChip("Condensation · no feed")
+                            stubChip("Cadence not verified")
                         }
                     }
                 }
@@ -1153,16 +1401,17 @@ struct EscortHazmatWatch: View {
     /// In every case the WRITE is unavailable to this role, which the chip says.
     @ViewBuilder private var dosimetryChip: some View {
         if !isClass7 {
-            stubChip("DOSIMETRY · CLASS 7 ONLY")
+            stubChip("Dosimetry · class 7 only")
         } else if let d = snap.dose, let total = d.cumulativeMrem,
                   !(d.readings ?? []).isEmpty {
-            Text("DOSE \(fmt(total)) MREM · \((d.severity ?? "—").uppercased()) · LOG ONLY")
-                .font(.system(size: 6.5, weight: .heavy)).tracking(0.3)
-                .foregroundStyle(Brand.warning)
-                .padding(.horizontal, 8).frame(height: 16)
-                .background(Capsule().fill(Brand.warning.opacity(0.16)))
+            Text("Dose \(fmt(total)) mrem · \(d.severity ?? "—") · read only")
+                .font(ES24Type.body)
+                .foregroundStyle(ES24Ink.warnInk(isDark))
+                .lineLimit(1).minimumScaleFactor(0.8)
+                .padding(.horizontal, 8).frame(height: 22)
+                .background(Capsule().fill(ES24Ink.warnDot.opacity(0.16)))
         } else {
-            stubChip("DOSIMETRY · NO DOSE LOGGED")
+            stubChip("Dosimetry · no dose logged")
         }
     }
 
@@ -1184,109 +1433,126 @@ struct EscortHazmatWatch: View {
         guard let t = active?.nextCheckInAt, let d = ES24NoteParser.parseISO(t) else {
             return "Next check time unavailable"
         }
-        return overdue ? "Check OVERDUE since \(clock(d))" : "Next check \(clock(d))"
+        return overdue ? "Check overdue since \(clock(d))" : "Next check \(clock(d))"
     }
     private var lastCheckText: String {
-        guard let s = samples.first else { return "NO CHECK-IN ON RECORD" }
-        return "LAST \(clock(s.loggedAt)) · \(s.ageMinutes(now: now)) MIN AGO"
+        guard let s = samples.first else { return "No check-in on record" }
+        return "Last \(clock(s.loggedAt)) · \(s.ageMinutes(now: now)) min ago"
     }
     private var securityLabel: String {
-        guard let sec = snap.security else { return "TSA PLAN · NOT EVALUATED" }
-        guard let req = sec.requiresSecurityPlan else { return "TSA PLAN · UNKNOWN" }
-        return req ? "TSA PLAN REQUIRED · 172.800" : "TSA PLAN NOT TRIGGERED"
+        guard let sec = snap.security else { return "Security plan not evaluated" }
+        guard let req = sec.requiresSecurityPlan else { return "Security plan unknown" }
+        return req ? "Security plan required · 172.800" : "Security plan not triggered"
     }
 
     // MARK: Cadence 5 · emergency reference
 
     private var ergSection: some View {
-        LifecycleCard(accentDanger: true) {
+        ES24Card(isDark: isDark, accent: ES24Ink.dangerInk(isDark).opacity(0.55)) {
             HStack(spacing: 12) {
                 ES24Placard(code: snap.erg?.hazardClass ?? load?.hazmatClass ?? "—",
-                            label: (snap.erg?.placard ?? "PLACARD").uppercased(),
+                            label: snap.erg?.placard ?? "Placard",
                             isDark: isDark)
                     .frame(width: 46, height: 46)
 
                 VStack(alignment: .leading, spacing: 3) {
                     if let g = snap.erg?.guideNumber {
-                        Text("ERG GUIDE \(g)").font(.system(size: 11, weight: .heavy)).tracking(0.2)
-                            .foregroundStyle(Brand.escort)
+                        Text("ERG guide \(g)").font(ES24Type.rowTitle)
+                            .foregroundStyle(ES24Ink.accent(isDark))
                     } else {
-                        Text("NO ERG GUIDE").font(.system(size: 11, weight: .heavy))
-                            .foregroundStyle(palette.textTertiary)
+                        Text("No ERG guide").font(ES24Type.rowTitle)
+                            .foregroundStyle(ES24Ink.tertiary(isDark))
                     }
-                    Text((snap.erg?.guideFull?.title ?? snap.erg?.name ?? "NO UN NUMBER ON THE LOAD").uppercased())
-                        .font(.system(size: 7, weight: .bold, design: .monospaced))
-                        .foregroundStyle(palette.textSecondary).lineLimit(2)
+                    Text(snap.erg?.guideFull?.title ?? snap.erg?.name ?? "No UN number on the load")
+                        .font(ES24Type.body)
+                        .foregroundStyle(ES24Ink.secondary(isDark)).lineLimit(2)
                     if let m = snap.erg?.guideFull?.isolationDistanceMeters,
                        let f = snap.erg?.guideFull?.isolationDistanceFeet {
-                        Text("INITIAL ISOLATE \(Int(m)) M / \(Int(f)) FT")
-                            .font(.system(size: 7, weight: .bold, design: .monospaced))
-                            .foregroundStyle(palette.textPrimary)
+                        Text("Initial isolate \(Int(m)) m / \(Int(f)) ft")
+                            .font(ES24Type.body)
+                            .foregroundStyle(ES24Ink.primary(isDark))
+                            .lineLimit(1).minimumScaleFactor(0.8)
                     }
                 }
 
                 Spacer(minLength: 4)
 
                 VStack(alignment: .trailing, spacing: 3) {
-                    Text("CHEMTREC · 24 H").font(.system(size: 7, weight: .heavy)).tracking(0.5)
-                        .foregroundStyle(palette.textTertiary)
+                    Text("CHEMTREC · 24 h").font(ES24Type.body)
+                        .foregroundStyle(ES24Ink.tertiary(isDark))
                     // Read from erg.getEmergencyContacts — never typed into the view.
                     if let phone = snap.contacts?.chemtrec?.phone {
-                        Text(phone).font(.system(size: 9.5, weight: .heavy, design: .monospaced))
-                            .foregroundStyle(Brand.danger)
-                        Text("TAP TO CALL").font(.system(size: 6.5, weight: .bold))
-                            .foregroundStyle(palette.textTertiary)
+                        Text(phone).font(ES24Type.value)
+                            .foregroundStyle(ES24Ink.dangerInk(isDark))
+                            .lineLimit(1).minimumScaleFactor(0.8)
+                        Text("Tap to call").font(ES24Type.body)
+                            .foregroundStyle(ES24Ink.tertiary(isDark))
                     } else {
-                        unavailableChip("NO CONTACT FEED")
+                        unavailableChip("No contact feed")
                     }
                 }
 
-                Image(systemName: "chevron.right").font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(palette.textTertiary)
+                Image(systemName: "chevron.right").font(ES24Type.chevron)
+                    .foregroundStyle(ES24Ink.tertiary(isDark))
             }
             .contentShape(Rectangle())
             .onTapGesture { callChemtrec() }
 
             if let radius = snap.spill?.evacuationRadius {
-                Text("SPILL PROTOCOL · EVACUATE \(radius.uppercased())")
-                    .font(.system(size: 7, weight: .bold, design: .monospaced))
-                    .foregroundStyle(palette.textSecondary).lineLimit(1)
+                Text("Spill protocol · evacuate \(radius)")
+                    .font(ES24Type.body)
+                    .foregroundStyle(ES24Ink.secondary(isDark)).lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
             if let first = snap.spill?.immediateActions?.first {
-                Text(first).font(.system(size: 9)).foregroundStyle(palette.textSecondary).lineLimit(2)
+                Text(first).font(ES24Type.body)
+                    .foregroundStyle(ES24Ink.secondary(isDark)).lineLimit(2)
             }
         }
     }
 
     // MARK: CTA bar (ONLINE_ONLY — no outbox, no queue badge, ever)
 
+    /// §8 command dock: 52-pt tall, rx 12, primary is a FLAT #0B66E5 fill
+    /// with a white 15/600 label. The shared `CTAButton` is gradient-backed
+    /// at a 17-pt label, so it is deliberately not used on this surface.
     private var ctaBar: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(ctaHonestyLine)
-                .font(.system(size: 7, weight: .bold, design: .monospaced))
-                .foregroundStyle(palette.textTertiary)
+                .font(ES24Type.body)
+                .foregroundStyle(ES24Ink.tertiary(isDark))
+                .lineLimit(1).minimumScaleFactor(0.8)
 
             if let checkInReceipt {
-                Text(checkInReceipt).font(EType.caption).foregroundStyle(Brand.success)
+                Text(checkInReceipt).font(ES24Type.body)
+                    .foregroundStyle(ES24Ink.successInk(isDark))
             }
 
-            HStack(spacing: 8) {
-                CTAButton(title: canCheckIn ? "LOG CHECK-IN" : "CHECK-IN NEEDS A GPS FIX",
-                          action: { Task { await logCheckIn() } },
-                          trailingIcon: canCheckIn ? "arrow.right" : nil,
-                          isLoading: checkInFlight)
-                    .opacity(canCheckIn ? 1 : 0.5)
-                    .disabled(!canCheckIn || checkInFlight)
+            HStack(spacing: Space.s3) {
+                Button {
+                    guard canCheckIn, !checkInFlight else { return }
+                    Task { await logCheckIn() }
+                } label: {
+                    Text(canCheckIn ? "Log check-in" : "Check-in needs a GPS fix")
+                        .font(ES24Type.rowTitle)
+                        .foregroundStyle(Color.white)
+                        .lineLimit(1).minimumScaleFactor(0.8)
+                        .frame(maxWidth: .infinity).frame(height: 52)
+                        .background(ES24Ink.action)
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .opacity(canCheckIn && !checkInFlight ? 1 : 0.45)
+                .disabled(!canCheckIn || checkInFlight)
 
                 Button { callChemtrec() } label: {
-                    Text("ERG CARD").font(.system(size: 11.5, weight: .heavy)).tracking(0.3)
-                        .foregroundStyle(Brand.danger)
-                        .frame(width: 128, height: 44)
-                        .background {
-                            RoundedRectangle(cornerRadius: 14).fill(palette.bgCard)
-                                .overlay(RoundedRectangle(cornerRadius: 14)
-                                    .stroke(Brand.danger.opacity(0.55), lineWidth: 1.5))
-                        }
+                    Text("ERG card").font(ES24Type.rowTitle)
+                        .foregroundStyle(ES24Ink.primary(isDark))
+                        .frame(width: 140, height: 52)
+                        .background(ES24Ink.surface(isDark))
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                            .strokeBorder(ES24Ink.ctaStroke(isDark), lineWidth: 1))
                 }
                 .buttonStyle(.plain)
             }
@@ -1300,29 +1566,34 @@ struct EscortHazmatWatch: View {
     private var canCheckIn: Bool { active != nil && fix != nil }
 
     private var ctaHonestyLine: String {
-        "CHECK-IN WRITES ONLINE ONLY · NO ESCORT OUTBOX · A QUEUE BADGE IS NEVER DRAWN"
+        "Check-in writes online only · no outbox · no queue badge"
     }
 
     // MARK: Small parts
 
+    /// §8 — section label 12/600 secondary at left, 12/500 tertiary count at
+    /// right. Sentence case, zero tracking; the run-1 all-caps 9-pt labels on
+    /// 1.0 tracking were the gate's first named defect class.
     private func sectionLabel(_ title: String, trailing: String) -> some View {
         HStack {
-            Text(title).font(.system(size: 9, weight: .heavy)).tracking(1.0)
-                .foregroundStyle(palette.textTertiary)
+            Text(title).font(ES24Type.label)
+                .foregroundStyle(ES24Ink.secondary(isDark))
             Spacer(minLength: 6)
-            Text(trailing).font(.system(size: 9, weight: .heavy)).tracking(0.4)
-                .foregroundStyle(palette.textTertiary).lineLimit(1)
+            Text(trailing).font(ES24Type.body)
+                .foregroundStyle(ES24Ink.tertiary(isDark))
+                .lineLimit(1).minimumScaleFactor(0.8)
         }
     }
 
     private func unavailableChip(_ t: String) -> some View {
-        Text(t).font(.system(size: 6.5, weight: .heavy)).tracking(0.3)
-            .foregroundStyle(palette.textTertiary)
-            .padding(.horizontal, 8).frame(height: 16)
+        Text(t).font(ES24Type.body)
+            .foregroundStyle(ES24Ink.tertiary(isDark))
+            .lineLimit(1).minimumScaleFactor(0.8)
+            .padding(.horizontal, 10).frame(height: 24)
             .background {
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: 12)
                     .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                    .foregroundStyle(palette.textTertiary.opacity(0.5))
+                    .foregroundStyle(ES24Ink.tertiary(isDark).opacity(0.5))
             }
     }
 
@@ -1395,9 +1666,24 @@ struct EscortHazmatWatch: View {
             }
 
             // Position-DEPENDENT reads — never cached, never replayed.
+            // WIND IS KEYED TO A CITY, NOT TO THE ESCORT. weather.getCurrent
+            // (weather.ts:1993) accepts {city,state} only, and the one
+            // coordinate-taking read, weather.byLatLon (weather.ts:1545),
+            // carries wind SPEED with no direction — so the escort's own fix
+            // cannot buy a bearing anywhere in this tree (STUB filed). Of the
+            // two cities this screen actually holds, the PICKUP city is
+            // preferred: the DELIVERY city is the one place an escort standing
+            // beside a staged load is provably not. Whichever city is asked
+            // about is then named in the rendered caveat.
             var freshWeather: ES24Weather?
-            if let city = status.active?.load?.destCity,
-               let st = status.active?.load?.destState {
+            var freshWeatherFromPickup = false
+            if let city = status.active?.load?.originCity,
+               let st = status.active?.load?.originState {
+                freshWeatherFromPickup = true
+                freshWeather = await softQuery("weather.getCurrent",
+                                               ES24WeatherInput(city: city, state: st))
+            } else if let city = status.active?.load?.destCity,
+                      let st = status.active?.load?.destState {
                 freshWeather = await softQuery("weather.getCurrent",
                                                ES24WeatherInput(city: city, state: st))
             }
@@ -1412,6 +1698,7 @@ struct EscortHazmatWatch: View {
             await MainActor.run {
                 snap = next
                 weather = freshWeather
+                weatherFromPickup = freshWeatherFromPickup
                 proximity = freshProximity
                 cacheAge = nil
                 loading = false
@@ -1429,6 +1716,7 @@ struct EscortHazmatWatch: View {
                     snap = hit.value
                     cacheAge = hit.age
                     weather = nil          // position-dependent — blanked on purpose
+                    weatherFromPickup = false
                     proximity = nil        // position-dependent — blanked on purpose
                     loading = false
                     errorMessage = nil
@@ -1541,37 +1829,34 @@ private struct ES24WindRose: View {
                 if lit, let from = windFromBearing {
                     let downwind = (from + 180).truncatingRemainder(dividingBy: 360)
                     ES24Wedge(centre: c, radius: rOuter, from: downwind - 22.5, to: downwind + 22.5)
-                        .fill(Brand.danger.opacity(isDark ? 0.19 : 0.13))
+                        .fill(ES24Ink.dangerInk(isDark).opacity(isDark ? 0.19 : 0.13))
                 }
 
-                Circle().stroke(Brand.danger.opacity(lit ? 0.35 : 0.14),
+                Circle().stroke(ES24Ink.dangerInk(isDark).opacity(lit ? 0.35 : 0.14),
                                 style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
                     .frame(width: rOuter * 2, height: rOuter * 2)
-                Circle().stroke(Brand.warning.opacity(lit ? 0.55 : 0.18), lineWidth: 1)
+                Circle().stroke(ES24Ink.warnDot.opacity(lit ? 0.55 : 0.18), lineWidth: 1)
                     .frame(width: rMid * 2, height: rMid * 2)
-                Circle().stroke(Brand.danger.opacity(lit ? 0.75 : 0.22), lineWidth: 1.4)
+                Circle().stroke(ES24Ink.dangerInk(isDark).opacity(lit ? 0.75 : 0.22), lineWidth: 1.4)
                     .frame(width: rInner * 2, height: rInner * 2)
 
                 if lit, let from = windFromBearing {
                     // Reciprocal upwind-park arc — DERIVED arithmetic on the bearing.
                     ES24Arc(centre: c, radius: rOuter, from: from - 22.5, to: from + 22.5)
-                        .stroke(Brand.success.opacity(0.8),
+                        .stroke(ES24Ink.successDot.opacity(0.8),
                                 style: StrokeStyle(lineWidth: 4, lineCap: .round))
                     ES24WindArrow(centre: c, from: from,
                                   tailRadius: rOuter * 1.18, headRadius: rOuter * 0.5)
-                        .stroke(Brand.blue, style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
+                        .stroke(ES24Ink.action, style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
                 }
 
-                Circle().fill(LinearGradient.diagonal).frame(width: 15, height: 15).position(c)
+                // §5 — the run-1 brand gradient at the centroid is retired; the
+                // load reads as a flat ink mark, not as a second EusoLine.
+                Circle().fill(ES24Ink.primary(isDark)).frame(width: 13, height: 13).position(c)
 
-                Text("N").font(.system(size: 7, weight: .heavy))
+                Text("N").font(ES24Type.body)
                     .foregroundStyle(pal.textTertiary)
-                    .position(x: c.x, y: c.y - rOuter - 7)
-
-                Text(lit ? "UPWIND PARK · DERIVED" : "NO BEARING · ROSE UNLIT")
-                    .font(.system(size: 6.5, weight: .heavy)).tracking(0.3)
-                    .foregroundStyle(lit ? Brand.success : pal.textTertiary)
-                    .position(x: c.x, y: geo.size.height - 3)
+                    .position(x: c.x, y: c.y - rOuter - 8)
             }
         }
     }
@@ -1657,13 +1942,17 @@ private struct ES24Placard: View {
                 .overlay(Rectangle().stroke(Color.black.opacity(0.9), lineWidth: 1.5))
                 .rotationEffect(.degrees(45))
                 .frame(width: 32, height: 32)
-            VStack(spacing: 0) {
-                Text(code).font(.system(size: 10, weight: .heavy, design: .monospaced))
-                Text(label).font(.system(size: 4, weight: .heavy)).tracking(0.2)
-                    .lineLimit(1).minimumScaleFactor(0.6).frame(width: 34)
-            }
-            .foregroundStyle(Color.black.opacity(0.9))
+            // §3 — the run-1 placard carried its hazard word at 4 pt, the
+            // smallest node in the whole band. The word now travels as the
+            // accessibility label instead of as unreadable ink; the class
+            // number, which is what a placard is actually read for, sits at
+            // the 12-pt floor.
+            Text(code)
+                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                .foregroundStyle(Color.black.opacity(0.9))
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Hazard class \(code), \(label)")
     }
 }
 
@@ -1676,11 +1965,14 @@ struct EscortHazmatWatchScreen: View {
         Shell(theme: theme) {
             EscortHazmatWatch()
         } nav: {
-            // Escort role enum TRIP·COMMS·PERMIT·ME. The hazmat watch is a pushed
-            // route under TRIP, exactly like ES-02 Height Pole, so TRIP stays
-            // current. Nav registration is single-writer owned; this file does not
-            // touch EscortNavController.swift — the needed entry is listed in the
-            // build manifest instead.
+            // §7 — the SHIPPED escort enum, read at the line rather than
+            // recited: HOME · ASSIGNMENTS · [ESang orb] · CORRIDOR · ME.
+            // `EscortNavRoute.leading` is EscortNavController.swift:77-80 and
+            // `.trailing` is :82-85; the orb sits between them at :63. The
+            // hazmat watch is a pushed route under ASSIGNMENTS, exactly like
+            // ES-02 Height Pole, so ASSIGNMENTS stays current. Nav
+            // registration is single-writer owned; this file does not touch
+            // EscortNavController.swift.
             BottomNav(
                 leading: EscortNavRoute.leading(current: .assignments),
                 trailing: EscortNavRoute.trailing(current: .assignments),

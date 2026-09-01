@@ -23,7 +23,33 @@ public enum EldComplianceRouter: ComplianceRouter {
         overlays: CompositeLoadState?
     ) -> [CompliancePrompt] {
         var out: [CompliancePrompt] = []
-        let eld = overlays?.eld ?? []
+        guard let eld = overlays?.eld else {
+            switch transition.to {
+            case .enRouteToPickup, .enRouteToDelivery:
+                out.append(.init(
+                    id: "eld.evidence.unavailable",
+                    routerKey: key,
+                    severity: .blocker,
+                    title: "ELD evidence unavailable",
+                    body: "Current ELD and HOS evidence was not returned. This move remains blocked until the source refreshes.",
+                    regulatoryRef: "49 CFR 395.22 / SOR-2005-313",
+                    documentTypes: []
+                ))
+            case .delivered:
+                out.append(.init(
+                    id: "eld.certification.evidence.unavailable",
+                    routerKey: key,
+                    severity: .warning,
+                    title: "Log certification evidence unavailable",
+                    body: "The current log-certification state was not returned. No certification status is inferred.",
+                    regulatoryRef: "49 CFR 395.30",
+                    documentTypes: []
+                ))
+            default:
+                break
+            }
+            return out
+        }
 
         switch transition.to {
         case .enRouteToPickup, .enRouteToDelivery:

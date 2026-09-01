@@ -29,16 +29,39 @@ import SafariServices
 import UIKit
 import WebKit
 #endif
-// 2026-05-20: the Apple `Translation` + `NaturalLanguage` imports were
-// removed when translation moved to the Gemini 3.5 (ESANG) backend.
-// Source-language detection now happens server-side (ESANG auto-detects),
-// so no on-device framework dependency remains.
+
+private enum ReaderTranslationState {
+    case original
+    case extracting(TranslateLanguage)
+    case translating(TranslateLanguage, ArticleTranslationDocument)
+    case result(
+        TranslateLanguage,
+        ArticleTranslationDocument,
+        ArticleTranslationResponse,
+        appliedCount: Int,
+        localCacheHit: Bool
+    )
+    case unavailable(TranslateLanguage, String)
+    case failed(TranslateLanguage, String)
+
+    var target: TranslateLanguage? {
+        switch self {
+        case .original:
+            return nil
+        case .extracting(let target), .translating(let target, _),
+             .result(let target, _, _, _, _), .unavailable(let target, _),
+             .failed(let target, _):
+            return target
+        }
+    }
+}
 
 // MARK: - NewsArticleReader
 
 struct NewsArticleReader: View {
     @Environment(\.palette) var palette
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let article: NewsArticle
 
@@ -60,28 +83,50 @@ struct NewsArticleReader: View {
     /// navigate it to a new URL without tearing it down. Used by the
     /// retry button to re-hit the original article URL.
     @State private var webViewLoadURL: ((URL) -> Void)? = nil
-    /// Handler the embedded WKWebView assigns so the reader can pull
-    /// the article's visible text out of the live DOM. Feeds Apple's
-    /// native Translation framework — far more reliable than the old
-    /// `translate.goog` proxy, which publishers' CSPs + Google's
-    /// crawler blocks silently defeated on ~70% of trucking-news
-    /// sources (CDL Life, TTNews, FreightWaves, CCJ, NYT…).
-    @State private var webViewExtractText: ((@escaping (String) -> Void) -> Void)? = nil
+    @State private var webViewExtractArticle: ((@escaping (Result<ArticleTranslationDocument, Error>) -> Void) -> Void)? = nil
+    @State private var webViewApplyTranslation: (([ArticleTranslatedSegment], @escaping (Result<Int, Error>) -> Void) -> Void)? = nil
+    @State private var webViewRestoreOriginal: ((@escaping (Bool) -> Void) -> Void)? = nil
     @State private var showLanguagePicker: Bool = false
-    /// Tracks the current target language (nil = original). Used so the
-    /// translate button can render as active and "Reset" back to source.
-    @State private var activeLanguage: TranslateLanguage? = nil
-    /// Text pulled from the currently-loaded page, fed into the native
-    /// translation sheet once the driver picks a language.
-    @State private var extractedArticleText: String = ""
-    /// Presents the native-translation reader sheet on top of the
-    /// WKWebView. Dismissing this sheet is what "untranslates" the
-    /// view — the underlying webView is left untouched the whole time.
-    @State private var showTranslationSheet: Bool = false
-    /// Surfaces a "Translation is unavailable on this iOS" alert if the
-    /// driver is on 17.0–17.3 (no `Translation` framework at all) or
-    /// `article.articleURL` is nil (nothing to extract text from).
-    @State private var showTranslationUnavailableAlert: Bool = false
+    @State private var translationState: ReaderTranslationState = .original
+    @State private var translationTask: Task<Void, Never>? = nil
+    @State private var translationGeneration: Int = 0
+    private var activeLanguage: TranslateLanguage? {
+        guard case .result(let target, _, let response, let appliedCount, _) = translationState,
+              response.status != .notNeeded,
+              appliedCount > 0 else { return nil }
+        return target
+    }
+
+    private var translationButtonAccessibilityLabel: String {
+        switch translationState {
+        case .extracting(let target), .translating(let target, _):
+            return "Translating article to \(target.displayName). Tap for language options."
+        case .result(let target, _, let response, let appliedCount, _)
+            where response.status != .notNeeded && appliedCount > 0:
+            return "Machine translated to \(target.displayName). Tap for language options."
+        case .failed, .unavailable:
+            return "Translation unavailable. Tap for language options."
+        default:
+            return "Translate complete article"
+        }
+    }
+
+    private var articlePageZoom: CGFloat {
+        switch dynamicTypeSize {
+        case .xSmall: return 0.90
+        case .small: return 0.95
+        case .medium, .large: return 1.00
+        case .xLarge: return 1.10
+        case .xxLarge: return 1.20
+        case .xxxLarge: return 1.30
+        case .accessibility1: return 1.45
+        case .accessibility2: return 1.60
+        case .accessibility3: return 1.75
+        case .accessibility4: return 1.90
+        case .accessibility5: return 2.00
+        @unknown default: return 1.00
+        }
+    }
     /// In-app SFSafariViewController presentation for "Open in
     /// Safari" — the previous raw URL hand-off
     /// kicked the driver out to the system browser. Per founder
@@ -98,6 +143,12 @@ struct NewsArticleReader: View {
         VStack(spacing: 0) {
             topBar
             IridescentHairline()
+            if case .original = translationState {
+                EmptyView()
+            } else {
+                translationProofRow
+                Divider().background(palette.borderFaint)
+            }
             if loadProgress > 0 && loadProgress < 1 && !failedToLoad {
                 progressBar
             }
@@ -109,69 +160,12 @@ struct NewsArticleReader: View {
         // which broke the pattern every other sheet sets.
         .screenTileRoot()
         .eusoRefreshHandler {
+            resetTranslation()
             webViewReload?()
         }
         .eusoRefreshSurface("modal:news:\(article.id)")
-        // Native-translation reader. Only constructible on iOS 17.4+
-        // — older devices are routed to the unavailable alert above.
-        .fullScreenCover(isPresented: $showTranslationSheet, onDismiss: {
-            // Closing the cover is the driver's signal that they want
-            // the untranslated article back. Clear the active-language
-            // pill so the translate button returns to its idle glyph.
-            if !showTranslationSheet {
-                activeLanguage = nil
-                extractedArticleText = ""
-            }
-        }) {
-            if let lang = activeLanguage {
-                TranslatedArticleSheet(
-                    article: article,
-                    sourceText: extractedArticleText,
-                    target: lang
-                )
-                .environment(\.palette, palette)
-                .eusoCloseX()
-                .eusoRefreshSurface("modal:news-translation:\(article.id)")
-            } else {
-                // Cover can't present empty — only reached if state was
-                // cleared mid-transition. Gemini translation has no OS
-                // floor, so this is purely a defensive fallback.
-                TranslationUnavailableView(reason: "Pick a language to translate this article.")
-                    .environment(\.palette, palette)
-                    .eusoCloseX()
-                    .eusoRefreshSurface("modal:news-translation:\(article.id)")
-            }
-        }
-        // Replaced the old hard "Translation unavailable" alert with an
-        // inline toast that auto-dismisses. The alert was alarming for
-        // drivers (reads like a crash), and Apple's framework-level
-        // "requires iOS 17.4 or later and a loaded article page" message
-        // tells a driver at the wheel nothing actionable. The toast now:
-        //   • Appears at the bottom of the reader, not modally.
-        //   • Self-dismisses after 2.8 s.
-        //   • Suggests the "Open in Safari" button as the fallback path
-        //     (which is right there in the top bar).
-        .overlay(alignment: .bottom) {
-            if showTranslationUnavailableAlert {
-                TranslationToast(
-                    onDismiss: {
-                        showTranslationUnavailableAlert = false
-                        activeLanguage = nil
-                    }
-                )
-                .padding(.horizontal, Space.s4)
-                .padding(.bottom, Space.s6)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-        }
-        .animation(.spring(response: 0.45, dampingFraction: 0.85), value: showTranslationUnavailableAlert)
-        .task(id: showTranslationUnavailableAlert) {
-            guard showTranslationUnavailableAlert else { return }
-            try? await Task.sleep(nanoseconds: 2_800_000_000)
-            await MainActor.run {
-                showTranslationUnavailableAlert = false
-                activeLanguage = nil
-            }
+        .onDisappear {
+            translationTask?.cancel()
         }
         // In-app SFSafariViewController fallback for the "Open in
         // Safari" affordances. Stays inside the EusoTrip app.
@@ -250,11 +244,8 @@ struct NewsArticleReader: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            // Translate button — opens a language picker sheet and, on
-            // pick, reloads the current article through Google Translate's
-            // public proxy so the whole page (title, body, captions) gets
-            // translated in place. We keep the same WKWebView instance so
-            // the reader back stack still works.
+            // The publisher's readable article is translated inside this
+            // same WKWebView. EusoTrip and publisher chrome remain original.
             if article.articleURL != nil {
                 Button {
                     showLanguagePicker = true
@@ -268,7 +259,7 @@ struct NewsArticleReader: View {
                             ? palette.textSecondary
                             : .white
                         )
-                        .frame(width: 36, height: 36)
+                        .frame(width: 44, height: 44)
                         .background(
                             ZStack {
                                 palette.bgCardSoft
@@ -288,10 +279,7 @@ struct NewsArticleReader: View {
                         .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(
-                    activeLanguage.map { "Translated to \($0.displayName). Tap to change." }
-                    ?? "Translate article"
-                )
+                .accessibilityLabel(translationButtonAccessibilityLabel)
             }
 
             // "Open in Safari" escape-hatch — driver asked for the
@@ -345,93 +333,320 @@ struct NewsArticleReader: View {
     }
 
     // MARK: Translation
-    //
-    // 2026-05-20 rewrite — translation now runs through EusoTrip's own
-    // Gemini 3.5 (ESANG) backend via `news.translateArticle`. The two
-    // legacy engines this replaces both failed silently:
-    //
-    //   • Apple's on-device `Translation` framework — gated to iOS
-    //     17.4+, required ~40 MB language-pack downloads, and no-op'd
-    //     whenever its own detector decided source == target. Drivers
-    //     on 17.0–17.3 got nothing at all.
-    //   • The `translate.google.com/translate?u=` URL proxy — Google
-    //     RETIRED this endpoint years ago. Every fallback to it 404'd /
-    //     redirected, and publisher CSPs (X-Frame-Options) blocked it
-    //     on top of that. This was the silent failure that surfaced the
-    //     "Translation not available for this page" toast.
-    //
-    // The new path:
-    //   1. Pull the article's visible text out of the live DOM via the
-    //      existing `webViewExtractText` handler (prefers <article>/<main>).
-    //   2. POST that string to `news.translateArticle` (Gemini 3.5).
-    //   3. Render the returned translation in `TranslatedArticleSheet`
-    //      on top of the WKWebView. Dismissing the sheet returns the
-    //      driver to the untranslated page instantly — the WebView is
-    //      never navigated, so the back stack and the publisher's own
-    //      CSP are both untouched.
-    //
-    // Works on EVERY iOS version, EVERY publisher, and EVERY language
-    // Gemini supports — including translating a foreign article INTO
-    // English (the most common driver case), which the old Apple path
-    // silently refused to do.
 
-    /// Pick-a-language → extract DOM text → present the Gemini sheet.
-    ///
-    /// ROOT-CAUSE FIX (2026-05-30): the previous guard bailed to the
-    /// "Translation not available" toast whenever `webViewExtractText`
-    /// was still nil — which is the common case when the driver taps
-    /// Translate before the WKWebView has finished its first layout (the
-    /// extractor handler is only assigned inside `makeUIView`), or when
-    /// the page failed to load entirely. In both cases we ALREADY hold a
-    /// perfectly translatable `article.summary` from the feed payload, so
-    /// there is never a reason to refuse translation. We now extract from
-    /// the DOM when the handler is available and ALWAYS fall back to the
-    /// summary — the toast is reserved for the genuine impossible case
-    /// where even the summary is empty.
-    private func applyTranslation(to lang: TranslateLanguage) {
-        activeLanguage = lang
+    private func applyTranslation(to language: TranslateLanguage, forceRefresh: Bool = false) {
+        translationTask?.cancel()
+        translationGeneration += 1
+        let generation = translationGeneration
+        translationState = .extracting(language)
 
-        // No DOM extractor yet (WebView not laid out, or load failed):
-        // translate the summary we already have rather than toasting.
-        guard let extract = webViewExtractText else {
-            presentTranslation(body: article.summary, lang: lang)
+        guard let extract = webViewExtractArticle else {
+            translationState = .unavailable(
+                language,
+                "The full publisher article has not finished loading."
+            )
             return
         }
 
-        // Pull the visible body copy out of the live DOM. The extractor
-        // always calls back (never hangs) with a possibly-empty string.
-        extract { text in
-            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            // Even a short blurb is worth translating — but if the page
-            // genuinely yielded nothing (hard paywall, blank SPA shell),
-            // fall back to the article summary we already hold so the
-            // driver still gets a translated gist rather than a toast.
-            let bodyToTranslate = trimmed.count >= 40 ? trimmed : article.summary
-            presentTranslation(body: bodyToTranslate, lang: lang)
+        let extractOriginal = {
+            extract { result in
+                Task { @MainActor in
+                    guard generation == translationGeneration else { return }
+                    switch result {
+                    case .success(let document):
+                        startTranslation(
+                            document: document,
+                            language: language,
+                            forceRefresh: forceRefresh,
+                            generation: generation
+                        )
+                    case .failure(let error):
+                        translationState = .unavailable(
+                            language,
+                            error.localizedDescription
+                        )
+                    }
+                }
+            }
+        }
+
+        // A second language must always start from publisher originals,
+        // never from text that was already machine translated.
+        if let restore = webViewRestoreOriginal {
+            restore { _ in extractOriginal() }
+        } else {
+            extractOriginal()
         }
     }
 
-    /// Final gate before the translation sheet: only the truly-empty
-    /// case (no DOM text AND no summary) falls through to the toast.
-    private func presentTranslation(body: String, lang: TranslateLanguage) {
-        let clean = body.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !clean.isEmpty else {
-            showTranslationUnavailableAlert = true
-            activeLanguage = nil
-            return
+    private func startTranslation(
+        document: ArticleTranslationDocument,
+        language: TranslateLanguage,
+        forceRefresh: Bool,
+        generation: Int
+    ) {
+        translationState = .translating(language, document)
+        translationTask = Task {
+            do {
+                let delivery = try await withArticleTranslationTimeout(seconds: 45) {
+                    try await ArticleTranslationClient.shared.translate(
+                        document: document,
+                        targetLocale: language.code,
+                        forceRefresh: forceRefresh
+                    )
+                }
+                try Task.checkCancellation()
+                guard generation == translationGeneration else { return }
+
+                let response = delivery.response
+                switch response.status {
+                case .complete, .partial:
+                    guard let apply = webViewApplyTranslation else {
+                        translationState = .failed(
+                            language,
+                            "The publisher page changed before translation could be applied."
+                        )
+                        return
+                    }
+                    apply(response.segments) { result in
+                        Task { @MainActor in
+                            guard generation == translationGeneration else { return }
+                            switch result {
+                            case .success(let appliedCount):
+                                translationState = .result(
+                                    language,
+                                    document,
+                                    response,
+                                    appliedCount: appliedCount,
+                                    localCacheHit: delivery.localCacheHit
+                                )
+                            case .failure(let error):
+                                translationState = .failed(language, error.localizedDescription)
+                            }
+                        }
+                    }
+                case .notNeeded:
+                    translationState = .result(
+                        language,
+                        document,
+                        response,
+                        appliedCount: 0,
+                        localCacheHit: delivery.localCacheHit
+                    )
+                case .unavailable:
+                    translationState = .unavailable(
+                        language,
+                        "The translation provider did not return any verified article passages."
+                    )
+                }
+            } catch is CancellationError {
+                // Reset/cancel already placed the reader in its truthful state.
+            } catch is ArticleTranslationTimeoutError {
+                guard generation == translationGeneration else { return }
+                translationState = .failed(
+                    language,
+                    "Translation timed out. The original article remains available."
+                )
+            } catch {
+                guard generation == translationGeneration else { return }
+                translationState = .failed(language, error.localizedDescription)
+            }
         }
-        extractedArticleText = clean
-        showTranslationSheet = true
     }
 
-    /// Dismiss the translation overlay. The underlying WKWebView was
-    /// never navigated (translation happens in an overlay sheet fed by
-    /// the Gemini backend), so there's nothing to reload — we just clear
-    /// state and the driver is back on the original page instantly.
     private func resetTranslation() {
-        activeLanguage = nil
-        showTranslationSheet = false
-        extractedArticleText = ""
+        translationTask?.cancel()
+        translationTask = nil
+        translationGeneration += 1
+        translationState = .original
+        webViewRestoreOriginal? { _ in }
+    }
+
+    private func cancelTranslation() {
+        resetTranslation()
+    }
+
+    private func retryTranslation(_ language: TranslateLanguage) {
+        applyTranslation(to: language, forceRefresh: true)
+    }
+
+    @ViewBuilder
+    private var translationProofRow: some View {
+        HStack(alignment: .top, spacing: Space.s3) {
+            translationProofIcon
+                .frame(width: 20, height: 20)
+                .padding(.top, 2)
+
+            VStack(alignment: .leading, spacing: Space.s1) {
+                Text(translationProofTitle)
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let detail = translationProofDetail {
+                    Text(detail)
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            translationProofActions
+        }
+        .padding(.horizontal, Space.s4)
+        .padding(.vertical, Space.s3)
+        .background(palette.bgCardSoft)
+        .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder
+    private var translationProofIcon: some View {
+        switch translationState {
+        case .extracting, .translating:
+            ProgressView().tint(palette.textPrimary)
+        case .result(_, _, let response, let appliedCount, _):
+            if response.status == .partial || appliedCount < response.translatedSegmentCount {
+                Image(systemName: "exclamationmark.circle.fill")
+                    .foregroundStyle(Brand.warning)
+            } else if response.status == .notNeeded {
+                Image(systemName: "textformat")
+                    .foregroundStyle(palette.textSecondary)
+            } else {
+                Image(systemName: "character.bubble.fill")
+                    .foregroundStyle(LinearGradient.diagonal)
+            }
+        case .unavailable, .failed:
+            Image(systemName: "exclamationmark.circle.fill")
+                .foregroundStyle(Brand.warning)
+        case .original:
+            EmptyView()
+        }
+    }
+
+    private var translationProofTitle: String {
+        switch translationState {
+        case .original:
+            return "Original article"
+        case .extracting:
+            return "Finding the complete readable article"
+        case .translating(let target, let document):
+            return "Machine translating \(document.segments.count) passages to \(target.displayName)"
+        case .result(let target, _, let response, let appliedCount, _):
+            if response.status == .notNeeded {
+                return "Article is already in \(target.displayName)"
+            }
+            let visibleCount = min(appliedCount, response.translatedSegmentCount)
+            if response.status == .partial || visibleCount < response.requestedSegmentCount {
+                return "Partial machine translation: \(visibleCount) of \(response.requestedSegmentCount) passages"
+            }
+            return "Machine translated to \(target.displayName)"
+        case .unavailable:
+            return "Complete article translation unavailable"
+        case .failed:
+            return "Translation failed"
+        }
+    }
+
+    private var translationProofDetail: String? {
+        switch translationState {
+        case .extracting:
+            return "Publisher summaries are not used as full articles."
+        case .translating:
+            return "The original remains visible while ESANG processes the article."
+        case .result(_, _, let response, _, let localCacheHit):
+            let source = languageName(response.sourceLanguage)
+            let sourceEvidence: String
+            switch response.sourceLanguageEvidence {
+            case "document": sourceEvidence = "publisher page language"
+            case "provider": sourceEvidence = "provider detected"
+            default: sourceEvidence = "source not identified"
+            }
+            if response.status == .notNeeded {
+                return "Source language: \(source) (\(sourceEvidence)). No machine translation was applied."
+            }
+            let model = response.provenance.models.joined(separator: ", ")
+            let provider = model.isEmpty
+                ? "\(response.provenance.service) · \(response.provenance.provider)"
+                : "\(response.provenance.service) · \(response.provenance.provider) · \(model)"
+            let freshness = translationFreshness(response, localCacheHit: localCacheHit)
+            return "From \(source) (\(sourceEvidence)) · \(provider) · \(freshness)"
+        case .unavailable(_, let message), .failed(_, let message):
+            return message
+        case .original:
+            return nil
+        }
+    }
+
+    @ViewBuilder
+    private var translationProofActions: some View {
+        switch translationState {
+        case .extracting, .translating:
+            Button(action: cancelTranslation) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 13, weight: .semibold))
+                    .frame(width: 44, height: 44)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Cancel translation and show original")
+        case .result(let language, _, let response, let appliedCount, _):
+            HStack(spacing: Space.s1) {
+                if response.status == .partial || appliedCount < response.translatedSegmentCount {
+                    Button { retryTranslation(language) } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Retry incomplete translation")
+                }
+                Button(action: resetTranslation) {
+                    Image(systemName: "textformat")
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Show original article")
+            }
+        case .unavailable(let language, _), .failed(let language, _):
+            HStack(spacing: Space.s1) {
+                Button { retryTranslation(language) } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Retry translation")
+                Button(action: resetTranslation) {
+                    Image(systemName: "textformat")
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Show original article")
+            }
+        case .original:
+            EmptyView()
+        }
+    }
+
+    private func languageName(_ code: String) -> String {
+        guard code != "und" else { return "not identified" }
+        return Locale.current.localizedString(forLanguageCode: code)
+            ?? Locale.current.localizedString(forLanguageCode: code.split(separator: "-").first.map(String.init) ?? code)
+            ?? code
+    }
+
+    private func translationFreshness(
+        _ response: ArticleTranslationResponse,
+        localCacheHit: Bool
+    ) -> String {
+        let expiry = response.expiresAtDate?.formatted(date: .abbreviated, time: .shortened)
+            ?? response.cache.expiresAt
+        if localCacheHit {
+            return "device cache, expires \(expiry)"
+        }
+        if response.cache.status == "hit" {
+            return "server cache, expires \(expiry)"
+        }
+        let generated = response.generatedAtDate?.formatted(date: .omitted, time: .shortened)
+            ?? response.cache.generatedAt
+        return "generated \(generated), expires \(expiry)"
     }
 
     private var progressBar: some View {
@@ -457,6 +672,7 @@ struct NewsArticleReader: View {
                 #if canImport(UIKit)
                 ArticleWebView(
                     url: url,
+                    pageZoom: articlePageZoom,
                     isLoading: $isLoading,
                     progress: $loadProgress,
                     failed: $failedToLoad,
@@ -466,7 +682,15 @@ struct NewsArticleReader: View {
                     goForwardHandler: $webViewGoForward,
                     reloadHandler: $webViewReload,
                     loadURLHandler: $webViewLoadURL,
-                    extractTextHandler: $webViewExtractText
+                    extractArticleHandler: $webViewExtractArticle,
+                    applyTranslationHandler: $webViewApplyTranslation,
+                    restoreOriginalHandler: $webViewRestoreOriginal,
+                    onDocumentChanged: {
+                        translationTask?.cancel()
+                        translationTask = nil
+                        translationGeneration += 1
+                        translationState = .original
+                    }
                 )
                 #endif
                 if isLoading && loadProgress < 0.2 {
@@ -533,6 +757,10 @@ struct NewsArticleReader: View {
                         .foregroundStyle(palette.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
 
+                    Text("Publisher summary")
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textSecondary)
+
                     Text(article.summary)
                         .font(.system(size: 17, weight: .regular))
                         .foregroundStyle(palette.textPrimary)
@@ -543,8 +771,8 @@ struct NewsArticleReader: View {
                     // Honest note: this is the feed summary, not the full
                     // publisher article. Offer the full page without
                     // implying the in-app load is "coming".
-                    Text("Showing the summary — the full article page couldn't load.")
-                        .font(EType.micro)
+                    Text("The full publisher page is currently unavailable in this reader.")
+                        .font(EType.caption)
                         .foregroundStyle(palette.textTertiary)
                         .lineSpacing(3)
 
@@ -612,12 +840,17 @@ struct NewsArticleReader: View {
                 .font(EType.bodyStrong)
                 .foregroundStyle(palette.textPrimary)
             if !article.summary.isEmpty {
-                Text(article.summary)
-                    .font(EType.caption)
-                    .foregroundStyle(palette.textSecondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, Space.s5)
-                    .lineLimit(8)
+                VStack(spacing: Space.s2) {
+                    Text("Publisher summary")
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textSecondary)
+                    Text(article.summary)
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(8)
+                }
+                .padding(.horizontal, Space.s5)
             }
             HStack(spacing: Space.s2) {
                 Button {
@@ -661,6 +894,7 @@ struct NewsArticleReader: View {
     /// before the failure, the coordinator re-runs the Translate
     /// injection on the fresh load.
     private func retryWebLoad(url: URL) {
+        resetTranslation()
         failedToLoad = false
         isLoading = true
         loadProgress = 0
@@ -673,10 +907,16 @@ struct NewsArticleReader: View {
                 .font(.system(size: 22, weight: .heavy))
                 .foregroundStyle(palette.textPrimary)
             if !article.summary.isEmpty {
+                Text("Publisher summary")
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textSecondary)
                 Text(article.summary)
                     .font(EType.body)
                     .foregroundStyle(palette.textSecondary)
             }
+            Text("No valid publisher page link was provided.")
+                .font(EType.caption)
+                .foregroundStyle(palette.textTertiary)
             Spacer()
         }
         .padding(Space.s5)
@@ -691,6 +931,7 @@ struct NewsArticleReader: View {
 /// handler so the reader's top bar can drive in-page navigation.
 private struct ArticleWebView: UIViewRepresentable {
     let url: URL
+    let pageZoom: CGFloat
     @Binding var isLoading: Bool
     @Binding var progress: Double
     @Binding var failed: Bool
@@ -705,11 +946,10 @@ private struct ArticleWebView: UIViewRepresentable {
     /// Handler the parent reader assigns so it can push a new URL into
     /// the same WKWebView instance (retry flow).
     @Binding var loadURLHandler: ((URL) -> Void)?
-    /// Handler the parent reader assigns so it can pull visible body
-    /// copy out of the live DOM and hand it to Apple's Translation
-    /// framework. Completion closure is always called with a (possibly
-    /// empty) string — never hangs.
-    @Binding var extractTextHandler: ((@escaping (String) -> Void) -> Void)?
+    @Binding var extractArticleHandler: ((@escaping (Result<ArticleTranslationDocument, Error>) -> Void) -> Void)?
+    @Binding var applyTranslationHandler: (([ArticleTranslatedSegment], @escaping (Result<Int, Error>) -> Void) -> Void)?
+    @Binding var restoreOriginalHandler: ((@escaping (Bool) -> Void) -> Void)?
+    let onDocumentChanged: () -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -727,6 +967,7 @@ private struct ArticleWebView: UIViewRepresentable {
         webView.isOpaque = false
         webView.scrollView.showsVerticalScrollIndicator = true
         webView.scrollView.contentInsetAdjustmentBehavior = .automatic
+        webView.pageZoom = pageZoom
 
         context.coordinator.observeProgress(on: webView)
         goBackHandler = { [weak webView] in webView?.goBack() }
@@ -735,33 +976,78 @@ private struct ArticleWebView: UIViewRepresentable {
         loadURLHandler = { [weak webView] newURL in
             webView?.load(URLRequest(url: newURL))
         }
-        extractTextHandler = { [weak webView] completion in
-            guard let webView = webView else { completion(""); return }
-            // Prefer the semantic article container if the publisher
-            // uses one (keeps us out of nav/footer/sidebar cruft).
-            // Fall back to body.innerText — WKWebView returns this as
-            // a String when the page is a normal document.
-            let js = """
-            (function() {
-                try {
-                    var candidates = document.querySelectorAll(
-                        'article, main, [role="main"], .post-content, .entry-content, .article-body'
-                    );
-                    var best = null;
-                    var bestLen = 0;
-                    for (var i = 0; i < candidates.length; i++) {
-                        var t = (candidates[i].innerText || '').trim();
-                        if (t.length > bestLen) { best = t; bestLen = t.length; }
+        extractArticleHandler = { [weak webView] completion in
+            guard let webView else {
+                completion(.failure(ArticleTranslationContractError.invalidDocument))
+                return
+            }
+            Task { @MainActor in
+                do {
+                    let value = try await webView.callAsyncJavaScript(
+                        ArticleTranslationDOM.extractScript,
+                        arguments: [:],
+                        in: nil,
+                        contentWorld: .defaultClient
+                    )
+                    guard let value else {
+                        throw ArticleTranslationContractError.invalidDocument
                     }
-                    if (best && bestLen > 200) return best;
-                    return (document.body && document.body.innerText) || '';
-                } catch (e) {
-                    return '';
+                    completion(.success(try ArticleTranslationDocument(
+                        javaScriptValue: value,
+                        fallbackURL: url
+                    )))
+                } catch {
+                    completion(.failure(error))
                 }
-            })();
-            """
-            webView.evaluateJavaScript(js) { value, _ in
-                completion((value as? String) ?? "")
+            }
+        }
+        applyTranslationHandler = { [weak webView] segments, completion in
+            guard let webView else {
+                completion(.failure(ArticleTranslationContractError.responseMismatch))
+                return
+            }
+            let translations = segments.map { ["id": $0.id, "text": $0.text] }
+            Task { @MainActor in
+                do {
+                    let value = try await webView.callAsyncJavaScript(
+                        ArticleTranslationDOM.applyScript,
+                        arguments: ["translations": translations],
+                        in: nil,
+                        contentWorld: .defaultClient
+                    )
+                    let dictionary = value as? [String: Any]
+                    if let count = dictionary?["appliedCount"] as? NSNumber {
+                        completion(.success(count.intValue))
+                    } else {
+                        completion(.failure(ArticleTranslationContractError.responseMismatch))
+                    }
+                } catch {
+                    completion(.failure(error))
+                }
+            }
+        }
+        restoreOriginalHandler = { [weak webView] completion in
+            guard let webView else {
+                completion(false)
+                return
+            }
+            Task { @MainActor in
+                guard let value = try? await webView.callAsyncJavaScript(
+                    ArticleTranslationDOM.restoreScript,
+                    arguments: [:],
+                    in: nil,
+                    contentWorld: .defaultClient
+                ) else {
+                    completion(false)
+                    return
+                }
+                if let restored = value as? Bool {
+                    completion(restored)
+                } else if let restored = value as? NSNumber {
+                    completion(restored.boolValue)
+                } else {
+                    completion(false)
+                }
             }
         }
 
@@ -790,6 +1076,9 @@ private struct ArticleWebView: UIViewRepresentable {
         // coordinator's bindings (isLoading, progress, etc.) dispatch
         // back into the current view instance.
         context.coordinator.parent = self
+        if abs(webView.pageZoom - pageZoom) > 0.01 {
+            webView.pageZoom = pageZoom
+        }
     }
 
     static func dismantleUIView(_ webView: WKWebView, coordinator: Coordinator) {
@@ -863,6 +1152,7 @@ private struct ArticleWebView: UIViewRepresentable {
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
             armLoadTimeout()
             Task { @MainActor in
+                parent.onDocumentChanged()
                 parent.isLoading = true
                 parent.failed = false
             }
@@ -874,12 +1164,13 @@ private struct ArticleWebView: UIViewRepresentable {
             Task { @MainActor in
                 parent.isLoading = false
                 parent.progress = 1.0
+                // A slow page can finish after the watchdog exposed the
+                // summary fallback. The successful main-frame completion is
+                // authoritative and must remove that now-stale overlay.
+                parent.failed = false
             }
-            // Translation is handled outside the webView entirely now —
-            // no DOM injection, no reloads. The reader's translate
-            // button pulls the page's text on demand via the
-            // `extractTextHandler` binding and feeds it to the Gemini
-            // (ESANG) translation backend.
+            // Translation remains in this mounted document. No reader
+            // replacement or publisher-page navigation is involved.
         }
 
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
@@ -901,6 +1192,16 @@ private struct ArticleWebView: UIViewRepresentable {
             loadTimeoutTask = nil
             if (error as NSError).code == NSURLErrorCancelled { return }
             Task { @MainActor in
+                parent.isLoading = false
+                parent.failed = true
+            }
+        }
+
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            loadTimeoutTask?.cancel()
+            loadTimeoutTask = nil
+            Task { @MainActor in
+                parent.onDocumentChanged()
                 parent.isLoading = false
                 parent.failed = true
             }
@@ -1022,7 +1323,7 @@ private struct LanguagePickerSheet: View {
                         .foregroundStyle(palette.textPrimary)
                     Text(
                         active.map { "Currently: \($0.displayName)" }
-                        ?? "Pick a language to auto-translate the whole page."
+                        ?? "Pick a language for the complete readable article."
                     )
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
@@ -1171,384 +1472,303 @@ private struct LanguagePickerSheet: View {
     }
 }
 
-// MARK: - Translated article sheet
-//
-// The reader's translation pane. Translation runs through EusoTrip's
-// own Gemini 3.5 (ESANG) backend via `news.translateArticle` — a single
-// rendering path with no OS floor. Replaces TWO failed legacy engines:
-//   • Apple's on-device `Translation` framework (iOS 17.4+ only, needed
-//     ~40 MB language-pack downloads, silently no-op'd on its own
-//     source==target detection — including refusing foreign→English).
-//   • The `translate.google.com/translate?u=` URL proxy, which Google
-//     retired years ago and publisher CSPs blocked on top of that.
-// Both surfaced the "Translation not available for this page" toast.
+// MARK: - Structured same-document translation
 
-private struct TranslatedArticleSheet: View {
-    @Environment(\.palette) var palette
-    @Environment(\.dismiss) private var dismiss
+private enum ArticleTranslationDOM {
+    static let extractScript = #"""
+    const excludedSelector = [
+      "nav", "header", "footer", "aside", "form", "button", "input", "select", "textarea",
+      "script", "style", "noscript", "iframe", "canvas", "svg", "dialog", "[hidden]", "[inert]",
+      "[aria-hidden='true']", "[role='navigation']", "[role='banner']", "[role='complementary']",
+      "[role='contentinfo']", "[translate='no']", ".advertisement", ".advertising", ".ad-container",
+      "[data-ad]", "[aria-label*='advertisement' i]", ".social-share", ".share-tools", ".newsletter",
+      ".subscribe", ".subscription", ".related", ".recommended", ".comments", ".comment-list",
+      ".author-bio", ".cookie", ".paywall", ".promo", ".toolbar", ".breadcrumbs"
+    ].join(",");
+    const blockSelector = "h1,h2,h3,h4,h5,h6,p,li,blockquote,figcaption,caption,th,td,dt,dd";
+    const candidateSelector = [
+      "[itemprop='articleBody']", "article", "[role='article']", ".article-body", ".article-content",
+      ".entry-content", ".post-content", ".story-body", ".story__body", "main", "[role='main']"
+    ].join(",");
 
-    let article: NewsArticle
-    let sourceText: String
-    let target: TranslateLanguage
-
-    var body: some View {
-        VStack(spacing: 0) {
-            header
-            IridescentHairline()
-            // Single rendering path — Gemini 3.5 (ESANG) backed. No OS
-            // floor; works identically on iOS 16/17/18+ because the
-            // translation happens server-side, not on-device.
-            GeminiTranslatedArticleReader(
-                sourceText: sourceText,
-                target: target,
-                article: article
-            )
-        }
-        .background(palette.bgPage.ignoresSafeArea())
-        .screenTileRoot()
+    function visible(element) {
+      if (!element || !element.isConnected) return false;
+      const style = getComputedStyle(element);
+      return style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
     }
 
-    private var header: some View {
-        HStack(alignment: .center, spacing: Space.s3) {
-            Button {
-                dismiss()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(width: 36, height: 36)
-                    .background(palette.bgCardSoft)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
-                            .strokeBorder(palette.borderFaint)
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Close translation")
+    function excluded(element, root) {
+      if (!element) return true;
+      const blocked = element.closest(excludedSelector);
+      return Boolean(blocked && (blocked === root || root.contains(blocked)));
+    }
 
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: Space.s2) {
-                    Text("TRANSLATED")
-                        .font(EType.micro).tracking(0.8)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(LinearGradient.diagonal)
-                        .clipShape(Capsule())
-                    Text("\(target.flag)  \(target.displayName)")
-                        .font(EType.micro).tracking(0.6)
-                        .foregroundStyle(palette.textSecondary)
-                        .lineLimit(1)
-                }
-                Text(article.title)
-                    .font(.system(size: 15, weight: .heavy))
-                    .foregroundStyle(palette.textPrimary)
-                    .lineLimit(2)
-                    .truncationMode(.tail)
+    function kindFor(element) {
+      const tag = element.tagName.toLowerCase();
+      if (/^h[1-6]$/.test(tag)) return "heading";
+      if (tag === "li" || tag === "dt" || tag === "dd") return "listItem";
+      if (tag === "blockquote") return "quote";
+      if (tag === "figcaption" || tag === "caption") return "caption";
+      if (tag === "th" || tag === "td") return "tableCell";
+      return "paragraph";
+    }
+
+    function collect(root, keepReferences) {
+      const segments = [];
+      const references = [];
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+      let node = walker.currentNode;
+      while (node) {
+        if (node.nodeType === Node.TEXT_NODE) {
+          const parent = node.parentElement;
+          const block = parent && parent.closest(blockSelector);
+          const code = parent && parent.closest("pre,code,kbd,samp");
+          const text = (node.nodeValue || "").trim();
+          if (block && (block === root || root.contains(block)) && !code && text &&
+              !excluded(parent, root) && visible(block)) {
+            const id = `s${segments.length}`;
+            segments.push({ id, kind: kindFor(block), text });
+            if (keepReferences) {
+              references.push({ id, type: "text", node, original: node.nodeValue || "", source: text, applied: false });
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+          }
+        } else if (node.nodeType === Node.ELEMENT_NODE && node.tagName === "IMG") {
+          const alt = (node.getAttribute("alt") || "").trim();
+          if (alt && !excluded(node, root) && visible(node)) {
+            const id = `s${segments.length}`;
+            segments.push({ id, kind: "imageAlt", text: alt });
+            if (keepReferences) {
+              references.push({ id, type: "alt", node, original: node.getAttribute("alt") || "", source: alt, applied: false });
+            }
+          }
         }
-        .padding(.horizontal, Space.s4)
-        .padding(.top, Space.s4)
-        .padding(.bottom, Space.s3)
+        node = walker.nextNode();
+      }
+      return { segments, references };
+    }
+
+    const candidates = Array.from(new Set(document.querySelectorAll(candidateSelector)));
+    let best = null;
+    let bestScore = -Infinity;
+    for (const candidate of candidates) {
+      if (!visible(candidate) || candidate.closest(excludedSelector)) continue;
+      const collected = collect(candidate, false);
+      const characters = collected.segments.reduce((sum, segment) => sum + segment.text.length, 0);
+      if (characters < 200 || collected.segments.length < 3) continue;
+      const linkCharacters = Array.from(candidate.querySelectorAll("a"))
+        .reduce((sum, link) => sum + (link.innerText || "").trim().length, 0);
+      const linkPenalty = Math.min(characters, linkCharacters) * 1.5;
+      let semanticBonus = 0;
+      if (candidate.matches("article")) semanticBonus = 4000;
+      else if (candidate.matches("[itemprop='articleBody'],[role='article']")) semanticBonus = 3500;
+      else if (!candidate.matches("main,[role='main']")) semanticBonus = 1800;
+      const score = characters + collected.segments.length * 35 + semanticBonus - linkPenalty;
+      if (score > bestScore) {
+        best = candidate;
+        bestScore = score;
+      }
+    }
+
+    if (!best) throw new Error("No complete readable article root was found.");
+    const collected = collect(best, true);
+    const canonicalElement = document.querySelector("link[rel~='canonical'][href]");
+    const canonicalURL = canonicalElement ? canonicalElement.href : location.href;
+    const sourceLanguage = best.getAttribute("lang") || document.documentElement.lang || null;
+
+    function rectFor(reference) {
+      if (!reference.node || !reference.node.isConnected) return null;
+      if (reference.type === "alt") return reference.node.getBoundingClientRect();
+      const range = document.createRange();
+      range.selectNodeContents(reference.node);
+      return range.getBoundingClientRect();
+    }
+
+    function captureAnchor() {
+      let chosen = null;
+      for (const reference of collected.references) {
+        const rect = rectFor(reference);
+        if (!rect || rect.bottom < 0 || rect.top > innerHeight) continue;
+        if (!chosen || Math.abs(rect.top) < Math.abs(chosen.top)) {
+          chosen = { id: reference.id, top: rect.top };
+        }
+      }
+      return chosen || { id: null, top: 0, scrollY };
+    }
+
+    function restoreAnchor(anchor) {
+      if (!anchor) return;
+      if (!anchor.id) {
+        scrollTo({ top: anchor.scrollY || 0, left: scrollX, behavior: "instant" });
+        return;
+      }
+      const reference = collected.references.find((item) => item.id === anchor.id);
+      const rect = reference && rectFor(reference);
+      if (rect) scrollBy(0, rect.top - anchor.top);
+    }
+
+    function settle() {
+      return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    }
+
+    globalThis.__eusoArticleTranslationV1 = {
+      canonicalURL,
+      references: collected.references,
+      captureAnchor,
+      restoreAnchor,
+      settle
+    };
+    return { canonicalURL, sourceLanguage, segments: collected.segments };
+    """#
+
+    static let applyScript = #"""
+    const state = globalThis.__eusoArticleTranslationV1;
+    if (!state || !Array.isArray(translations)) throw new Error("Article translation state is unavailable.");
+    const translatedById = new Map();
+    for (const item of translations) {
+      if (item && typeof item.id === "string" && typeof item.text === "string") {
+        translatedById.set(item.id, item.text);
+      }
+    }
+    const anchor = state.captureAnchor();
+    let appliedCount = 0;
+    for (const reference of state.references) {
+      const translated = translatedById.get(reference.id);
+      if (typeof translated !== "string" || !translated.trim() || !reference.node || !reference.node.isConnected) continue;
+      const current = reference.type === "alt"
+        ? (reference.node.getAttribute("alt") || "").trim()
+        : (reference.node.nodeValue || "").trim();
+      if (!reference.applied && current !== reference.source) continue;
+      if (reference.type === "alt") {
+        reference.node.setAttribute("alt", translated.trim());
+      } else {
+        const leading = (reference.original.match(/^\s*/) || [""])[0];
+        const trailing = (reference.original.match(/\s*$/) || [""])[0];
+        reference.node.nodeValue = leading + translated.trim() + trailing;
+      }
+      reference.applied = true;
+      appliedCount += 1;
+    }
+    await state.settle();
+    state.restoreAnchor(anchor);
+    await state.settle();
+    return { appliedCount };
+    """#
+
+    static let restoreScript = #"""
+    const state = globalThis.__eusoArticleTranslationV1;
+    if (!state) return false;
+    const anchor = state.captureAnchor();
+    for (const reference of state.references) {
+      if (!reference.applied || !reference.node || !reference.node.isConnected) continue;
+      if (reference.type === "alt") reference.node.setAttribute("alt", reference.original);
+      else reference.node.nodeValue = reference.original;
+      reference.applied = false;
+    }
+    await state.settle();
+    state.restoreAnchor(anchor);
+    await state.settle();
+    return true;
+    """#
+}
+
+private struct ArticleTranslationDelivery: Sendable {
+    let response: ArticleTranslationResponse
+    let localCacheHit: Bool
+}
+
+private actor ArticleTranslationClient {
+    static let shared = ArticleTranslationClient()
+
+    private var cache: [String: ArticleTranslationResponse] = [:]
+    private var loadedCache = false
+    private let cacheLimit = 40
+
+    func translate(
+        document: ArticleTranslationDocument,
+        targetLocale: String,
+        forceRefresh: Bool
+    ) async throws -> ArticleTranslationDelivery {
+        loadCacheIfNeeded()
+        let key = "\(document.cacheKey)\u{0000}\(targetLocale.lowercased())"
+        if !forceRefresh,
+           let cached = cache[key],
+           let expiresAt = cached.expiresAtDate,
+           expiresAt > Date(),
+           let validated = try? cached.validated(for: document, targetLocale: targetLocale) {
+            return ArticleTranslationDelivery(response: validated, localCacheHit: true)
+        }
+
+        cache[key] = nil
+        let request = ArticleTranslationRequest(
+            document: document,
+            targetLocale: targetLocale,
+            forceRefresh: forceRefresh
+        )
+        let response: ArticleTranslationResponse = try await EusoTripAPI.shared.mutation(
+            "articleTranslation.translate",
+            input: request
+        )
+        let validated = try response.validated(for: document, targetLocale: targetLocale)
+        if validated.status != .unavailable,
+           let expiresAt = validated.expiresAtDate,
+           expiresAt > Date() {
+            cache[key] = validated
+            trimCache()
+            persistCache()
+        }
+        return ArticleTranslationDelivery(response: validated, localCacheHit: false)
+    }
+
+    private func loadCacheIfNeeded() {
+        guard !loadedCache else { return }
+        loadedCache = true
+        guard
+            let data = try? Data(contentsOf: cacheURL),
+            let decoded = try? JSONDecoder().decode([String: ArticleTranslationResponse].self, from: data)
+        else { return }
+        let now = Date()
+        cache = decoded.filter { $0.value.expiresAtDate.map { $0 > now } == true }
+        trimCache()
+    }
+
+    private func trimCache() {
+        guard cache.count > cacheLimit else { return }
+        let orderedKeys = cache.keys.sorted {
+            (cache[$0]?.generatedAtDate ?? .distantPast) < (cache[$1]?.generatedAtDate ?? .distantPast)
+        }
+        for key in orderedKeys.prefix(cache.count - cacheLimit) {
+            cache[key] = nil
+        }
+    }
+
+    private func persistCache() {
+        guard let data = try? JSONEncoder().encode(cache) else { return }
+        try? data.write(to: cacheURL, options: .atomic)
+    }
+
+    private var cacheURL: URL {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("article-translations-v1.json", isDirectory: false)
     }
 }
 
-// MARK: Gemini-backed translated reader (all iOS versions)
-//
-// 2026-05-20: replaces both the iOS-18 `TranslationSession` inline
-// reader and the iOS-17.4 `.translationPresentation` overlay. Posts the
-// extracted article text to `news.translateArticle` (Gemini 3.5 / ESANG)
-// and renders the returned translation. No OS floor, no language-pack
-// download, no on-device detection no-op. Translating a foreign article
-// INTO English now works (the old Apple path silently refused it).
+private struct ArticleTranslationTimeoutError: Error {}
 
-/// Process-lifetime cache of completed translations keyed on
-/// (articleId · targetLang · body-hash). A driver who toggles a language
-/// off and back on — or re-opens the same article in a session — gets the
-/// translation instantly instead of paying the Gemini round-trip twice.
-/// Bounded so a long browsing session can't grow it without limit.
-private final class TranslationCache {
-    static let shared = TranslationCache()
-    private var store: [String: String] = [:]
-    private var order: [String] = []
-    private let limit = 60
-    private let lock = NSLock()
-
-    func key(articleId: String, lang: String, body: String) -> String {
-        "\(articleId)|\(lang)|\(body.hashValue)"
-    }
-
-    func get(_ key: String) -> String? {
-        lock.lock(); defer { lock.unlock() }
-        return store[key]
-    }
-
-    func set(_ key: String, _ value: String) {
-        lock.lock(); defer { lock.unlock() }
-        if store[key] == nil { order.append(key) }
-        store[key] = value
-        if order.count > limit, let oldest = order.first {
-            order.removeFirst()
-            store[oldest] = nil
-        }
-    }
-}
-
-/// Thrown when the Gemini translate call exceeds its deadline.
-private struct TranslationTimeoutError: Error {}
-
-/// Race `operation` against a wall-clock deadline. Whichever finishes
-/// first wins; the loser is cancelled. Prevents the translation spinner
-/// from hanging forever on a stalled connection.
-private func withTranslationTimeout<T: Sendable>(
+private func withArticleTranslationTimeout<T: Sendable>(
     seconds: Double,
-    _ operation: @escaping @Sendable () async throws -> T
+    operation: @escaping @Sendable () async throws -> T
 ) async throws -> T {
     try await withThrowingTaskGroup(of: T.self) { group in
         group.addTask { try await operation() }
         group.addTask {
             try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-            throw TranslationTimeoutError()
+            throw ArticleTranslationTimeoutError()
         }
         guard let first = try await group.next() else {
-            throw TranslationTimeoutError()
+            throw ArticleTranslationTimeoutError()
         }
         group.cancelAll()
         return first
-    }
-}
-
-private struct GeminiTranslatedArticleReader: View {
-    @Environment(\.palette) var palette
-
-    let sourceText: String
-    let target: TranslateLanguage
-    let article: NewsArticle
-
-    @State private var translatedText: String = ""
-    @State private var isTranslating: Bool = true
-    @State private var failureMessage: String?
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: Space.s4) {
-                // Eyebrow — source + category in the publisher's own
-                // language (proper nouns don't benefit from translation).
-                HStack(spacing: Space.s2) {
-                    CategoryTag(category: article.typedCategory, compact: true)
-                    Text(article.source)
-                        .font(EType.micro).tracking(0.6)
-                        .foregroundStyle(palette.textTertiary)
-                }
-
-                if isTranslating && translatedText.isEmpty {
-                    loadingState
-                } else if let err = failureMessage, translatedText.isEmpty {
-                    failureState(err)
-                } else {
-                    Text(translatedText)
-                        .font(.system(size: 17, weight: .regular))
-                        .foregroundStyle(palette.textPrimary)
-                        .lineSpacing(6)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-
-                Spacer(minLength: Space.s6)
-            }
-            .padding(.horizontal, Space.s4)
-            .padding(.top, Space.s4)
-            .padding(.bottom, Space.s6)
-        }
-        .task(id: sourceText + target.code) {
-            await translate()
-        }
-    }
-
-    private func translate() async {
-        let body = sourceText.isEmpty ? article.summary : sourceText
-        guard !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            await MainActor.run {
-                failureMessage = "No readable text was extracted from this article."
-                isTranslating = false
-            }
-            return
-        }
-
-        // Cache hit → render instantly, skip the network entirely.
-        let cacheKey = TranslationCache.shared.key(
-            articleId: article.id, lang: target.code, body: body
-        )
-        if let cached = TranslationCache.shared.get(cacheKey) {
-            await MainActor.run {
-                translatedText = cached
-                failureMessage = nil
-                isTranslating = false
-            }
-            return
-        }
-
-        await MainActor.run {
-            isTranslating = true
-            failureMessage = nil
-            translatedText = ""
-        }
-        do {
-            // 8 s ceiling: ESANG normally returns in ~1–3 s, but a cold
-            // backend or a flaky cab-of-the-truck connection used to hang
-            // the spinner indefinitely. Race the call against a timeout so
-            // the driver always lands on either a translation or an
-            // actionable failure card.
-            let result = try await withTranslationTimeout(seconds: 8) {
-                try await EusoTripAPI.shared.news.translateArticle(
-                    text: body,
-                    targetLanguage: target.code,
-                    sourceLanguage: nil,        // let ESANG auto-detect the source
-                    articleId: article.id
-                )
-            }
-            await MainActor.run {
-                if result.ok {
-                    translatedText = result.translated
-                    failureMessage = nil
-                    if !result.translated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        TranslationCache.shared.set(cacheKey, result.translated)
-                    }
-                } else {
-                    failureMessage = result.error ?? "Translation failed. Try again."
-                }
-                isTranslating = false
-            }
-        } catch is TranslationTimeoutError {
-            await MainActor.run {
-                failureMessage = "Translation is taking too long. Check your connection and try again."
-                isTranslating = false
-            }
-        } catch {
-            await MainActor.run {
-                failureMessage = error.localizedDescription
-                isTranslating = false
-            }
-        }
-    }
-
-    private var loadingState: some View {
-        VStack(alignment: .leading, spacing: Space.s3) {
-            ProgressView()
-                .tint(palette.textPrimary)
-            Text("Translating into \(target.displayName)…")
-                .font(EType.caption)
-                .foregroundStyle(palette.textSecondary)
-            Text("Powered by ESANG · Gemini. Works on any connection, no language pack download.")
-                .font(EType.micro)
-                .foregroundStyle(palette.textTertiary)
-                .lineSpacing(3)
-        }
-        .padding(.top, Space.s4)
-    }
-
-    private func failureState(_ msg: String) -> some View {
-        VStack(alignment: .leading, spacing: Space.s2) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 22, weight: .semibold))
-                .foregroundStyle(Brand.warning)
-            Text("Translation failed")
-                .font(EType.bodyStrong)
-                .foregroundStyle(palette.textPrimary)
-            Text(msg)
-                .font(EType.caption)
-                .foregroundStyle(palette.textSecondary)
-                .lineSpacing(3)
-        }
-        .padding(.top, Space.s4)
-    }
-}
-
-// MARK: - Unsupported-OS fallback
-
-private struct TranslationUnavailableView: View {
-    @Environment(\.palette) var palette
-    @Environment(\.dismiss) private var dismiss
-    let reason: String
-
-    var body: some View {
-        VStack(spacing: Space.s3) {
-            Image(systemName: "character.bubble")
-                .font(.system(size: 28, weight: .semibold))
-                .foregroundStyle(palette.textSecondary)
-            Text("Translation unavailable")
-                .font(EType.bodyStrong)
-                .foregroundStyle(palette.textPrimary)
-            Text(reason)
-                .font(EType.caption)
-                .foregroundStyle(palette.textSecondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, Space.s5)
-            Button { dismiss() } label: {
-                Text("Close")
-                    .font(EType.bodyStrong)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, Space.s4)
-                    .padding(.vertical, 10)
-                    .background(LinearGradient.diagonal)
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }
-            .buttonStyle(.plain)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(palette.bgPage.ignoresSafeArea())
-    }
-}
-
-// MARK: - TranslationToast
-//
-// Graceful inline toast that replaces the old "Translation unavailable"
-// system alert. Shows up at the bottom of the reader for ~2.8s, gives
-// the driver a next-step hint (Open in Safari), and auto-dismisses —
-// never blocks the read flow. No exclamation-triangle icon, no
-// crash-report vocabulary.
-
-private struct TranslationToast: View {
-    @Environment(\.palette) var palette
-    let onDismiss: () -> Void
-
-    var body: some View {
-        HStack(spacing: Space.s3) {
-            Image(systemName: "text.bubble")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(palette.textSecondary)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Translation not available for this page")
-                    .font(EType.caption)
-                    .foregroundStyle(palette.textPrimary)
-                Text("Try Open in Safari from the top bar.")
-                    .font(EType.micro)
-                    .tracking(0.4)
-                    .foregroundStyle(palette.textTertiary)
-            }
-            Spacer(minLength: Space.s2)
-            Button(action: onDismiss) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(palette.textSecondary)
-                    .padding(6)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Dismiss")
-        }
-        .padding(.horizontal, Space.s3)
-        .padding(.vertical, Space.s3)
-        .background(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .fill(palette.bgCard)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(palette.borderFaint, lineWidth: 1)
-        )
-        .shadow(color: Color.black.opacity(0.22), radius: 16, y: 8)
     }
 }
 

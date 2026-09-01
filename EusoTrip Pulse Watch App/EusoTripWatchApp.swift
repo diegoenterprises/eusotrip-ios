@@ -188,13 +188,15 @@ struct EusoTripWatchApp: App {
                                 FleetCRDT.shared.configure(
                                     driverId: auth.userId ?? "unpaired"
                                 )
-                                FleetCRDT.shared.seedIfEmpty(
-                                    status:        hos.current.status.rawValue,
-                                    driveMinutes:  hos.current.driveRemainingMinutes,
-                                    windowMinutes: hos.current.windowRemainingMinutes,
-                                    cycleMinutes:  hos.current.cycleRemainingMinutes,
-                                    statusSince:   hos.current.statusSince
-                                )
+                                if let observation = hos.currentObservation {
+                                    FleetCRDT.shared.seedIfEmpty(
+                                        status:        observation.status.rawValue,
+                                        driveMinutes:  observation.driveRemainingMinutes,
+                                        windowMinutes: observation.windowRemainingMinutes,
+                                        cycleMinutes:  observation.cycleRemainingMinutes,
+                                        statusSince:   observation.statusSince
+                                    )
+                                }
                             }
                         }
                         // Q3 — bring up the BLE mesh transport if enabled.
@@ -250,6 +252,24 @@ struct EusoTripWatchApp: App {
                             }
                         }
                     }
+                    #if targetEnvironment(simulator)
+                    // Native-pixel visual QA can enter either emergency
+                    // mode without seeding a receipt or bypassing the real
+                    // relay controller. This code is absent from physical
+                    // Watch builds.
+                    if let visualState = ProcessInfo.processInfo.environment["EUSOTRIP_PULSE_VISUAL_STATE"],
+                       visualState == "emergency-loud" || visualState == "emergency-silent" {
+                        Task { @MainActor in
+                            try? await Task.sleep(for: .milliseconds(900))
+                            await EmergencyController.shared.activate(
+                                reason: "manual-home",
+                                auth: auth,
+                                connectivity: connectivity,
+                                silent: visualState == "emergency-silent"
+                            )
+                        }
+                    }
+                    #endif
                 }
                 .onChange(of: auth.isSignedIn) { _, signed in
                     // Drive OrbStateMachine off the live auth flip —

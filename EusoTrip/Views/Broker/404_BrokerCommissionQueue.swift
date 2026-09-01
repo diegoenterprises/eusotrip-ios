@@ -140,6 +140,15 @@ private struct CommissionQueueBody: View {
         }
         .task { await load() }
         .eusoRefreshable { await load() }
+        // RealtimeService → the bid family (`bid:received` /
+        // `bid:awarded`, server socketService.ts emit to room
+        // `role:broker`) is re-posted as `.esangRefreshSurface`
+        // (Services/RealtimeService.swift:375), so this approval queue
+        // picks up a newly-earned commission row live.
+        // eusotrip-killers-elite :01 §20 · 2026-08-25
+        .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
+            Task { await load() }
+        }
         .alert("Sign out?", isPresented: $showSignOutConfirm) {
             Button("Sign out", role: .destructive) { Task { await session.signOut() } }
             Button("Cancel", role: .cancel) {}

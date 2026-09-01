@@ -31,6 +31,42 @@
 
 import SwiftUI
 
+// MARK: - Shipper metric presentation
+
+/// One formatting boundary for the money and rate values shared by Shipper
+/// Home and Profile. The server contracts currently denominate these sums in
+/// USD; passing the code explicitly keeps that basis visible to localized
+/// formatters instead of relying on a device-region default.
+enum ShipperMetricFormatting {
+    static let ratePerMileLabel = "Rate\u{00A0}/\u{00A0}mi"
+
+    static func wholeCurrency(
+        _ amount: Double?,
+        currencyCode: String = "USD",
+        locale: Locale = .autoupdatingCurrent
+    ) -> String {
+        guard let amount, amount.isFinite else { return "—" }
+        return amount.formatted(
+            .currency(code: currencyCode)
+                .precision(.fractionLength(0))
+                .locale(locale)
+        )
+    }
+
+    static func ratePerMile(
+        _ amount: Double?,
+        currencyCode: String = "USD",
+        locale: Locale = .autoupdatingCurrent
+    ) -> String {
+        guard let amount, amount.isFinite, amount > 0 else { return "—" }
+        return amount.formatted(
+            .currency(code: currencyCode)
+                .precision(.fractionLength(2))
+                .locale(locale)
+        )
+    }
+}
+
 // MARK: - Screen root
 
 struct ShipperHome: View {
@@ -38,6 +74,7 @@ struct ShipperHome: View {
     @Environment(\.weatherRequestContext) private var weatherRequestContext
     @Environment(\.openURL) private var openURL
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @EnvironmentObject private var session: EusoTripSession
 
     @StateObject private var dashboard = ShipperDashboardStore()
@@ -75,13 +112,6 @@ struct ShipperHome: View {
     // Per home-widget doctrine the weather card sits between the
     // attention card and the CTA row across every role.
     @State private var weather: WeatherSnapshot? = nil
-    /// Collapsible state for the attention card. Founder ask
-    /// 2026-05-07: 'loads requiring attention on home screen needs
-    /// to be hideable. not just stretched out no matter what. let
-    /// it be collapsable in a graceful manner.' Default expanded so
-    /// the user sees the urgent context on first paint; persisted
-    /// via UserDefaults so the user's choice carries across sessions.
-    @State private var attentionExpanded: Bool = (UserDefaults.standard.object(forKey: "shipper.home.attentionExpanded") as? Bool) ?? true
     /// Mirrors `DriverHomeViewModel.WeatherAvailability` — same four
     /// states (.pending / .live / .needsLocation / .unavailable) so
     /// the shipper home renders the same enable-location CTA the
@@ -95,42 +125,24 @@ struct ShipperHome: View {
     @State private var avatarImage: UIImage? = nil
 
     // ── Home-widget customization ─────────────────────────────────────
-    // Founder bug 2026-06-02 — "there is no resizing the widget capability
-    // you said you did on homescreen". The shared HomeWidgetGrid DOES carry
-    // a span/resize engine, but the shipper catalog rows
-    // (HomeWidgetCatalog.shipper, owned by 010_DriverHome) all declare a
-    // single `[.full]` span, so its edit-mode size picker never appeared on
-    // the shipper home. Rather than reach into another file's catalog, the
-    // shipper home now owns a bespoke `ShipperWidgetBoard` that surfaces a
-    // real per-widget size chooser (Compact · Half · Full) on EVERY tile and
-    // honors the chosen span in the rendered layout — while persisting to
-    // the *same* UserDefaults cache key + the *same* `users.{get,save}
-    // DashboardLayout` slot shape the shared grid uses, so the size survives
-    // relaunch and stays cross-platform with web's 12-col w/h model.
+    // The shared grid is the cross-role layout authority. It owns resize,
+    // reorder, remove/re-add, reset, server sync, and the offline cache while
+    // this screen supplies Shipper-specific content for each slot.
     private let widgetLayoutKey = "shipper.home.widgetOrder"
 
-    /// Canonical secondary widgets + the spans each may resize to. Every
-    /// shipper tile is span-aware (reads `\.homeWidgetSpan`), so all three
-    /// sizes are offered. `.full` is always the seed.
-    private let shipperWidgetSlots: [ShipperWidgetBoard.Slot] = [
-        .init(id: "activeLoads",      sizes: [.full, .compact]),
-        .init(id: "esang",            sizes: [.full, .half, .compact]),
-        .init(id: "spend_summary",    sizes: [.full, .compact]),
-        .init(id: "attention_alerts", sizes: [.full, .compact]),
-        .init(id: "recent",           sizes: [.full, .compact]),
-        .init(id: "news",             sizes: [.full, .half]),
+    private let shipperHomeCanonicalOrder: [String] = [
+        "weather", "shipper_actions", "shipper_summary", "activeLoads",
+        "esang", "spend_summary", "attention_alerts", "recent", "news",
     ]
 
-    /// Per-tile renderer. The span arrives as an EXPLICIT parameter from
-    /// ShipperWidgetBoard — NOT via `@Environment(\.homeWidgetSpan)` on
-    /// ShipperHome itself. The previous environment read resolved against
-    /// ShipperHome's OWN environment (always `.full`, since the board's
-    /// `.environment(...)` modifier wraps the rendered tile, not this
-    /// screen), which is why choosing "Compact" in the size picker changed
-    /// nothing on screen — founder evidence 2026-06-11. Passing the span
-    /// down the call chain makes every size tier actually re-layout.
+    /// Per-tile renderer. The shared grid passes the resolved span explicitly,
+    /// so every size tier re-lays out the role-owned content without relying
+    /// on an environment value read above the widget boundary.
     private func shipperHomeRender(_ id: String, _ span: HomeWidgetSpan) -> AnyView {
         switch id {
+        case "weather":           AnyView(weatherSection)
+        case "shipper_actions":   AnyView(shipperActionsWidget(span))
+        case "shipper_summary":   AnyView(statRow)
         case "activeLoads":       AnyView(activeLoadsSection(span))
         case "esang":             AnyView(esangStrip(span))
         case "spend_summary":     AnyView(spendSummaryWidget(span))
@@ -151,28 +163,12 @@ struct ShipperHome: View {
                 // into place top-to-bottom (scale 0.92 + blur 5pt + 50 ms
                 // stagger) once per cold launch; settled on re-visit.
                 StaggeredEntranceStack(alignment: .leading, spacing: Space.s5) {
-                    // Founder ask 2026-05-07: weather widget pinned
-                    // to the top of every role's home, everything
-                    // else after.
-                    weatherSection
-                    // ESANG day-part Brief (Spark) — Tier 1 #21 ship
-                    // 2026-05-21. The card adapts its label to the time
-                    // of day (Morning/Afternoon/Evening). Per home-widget
-                    // doctrine sits between weather and the role-specific
-                    // attention card.
-                    SparkBriefCard(role: .shipper)
-                    collapsibleAttentionCard
-                    ctaRow
-                    statRow
-                    // Reorderable + RESIZABLE secondary-widget zone. The
-                    // bespoke ShipperWidgetBoard surfaces a per-widget size
-                    // chooser on every tile and packs the chosen spans into
-                    // the single-column home, persisting across launches.
-                    ShipperWidgetBoard(
-                        slots: shipperWidgetSlots,
+                    HomeWidgetGrid(
+                        canonicalOrder: shipperHomeCanonicalOrder,
                         role: "SHIPPER",
                         storageKey: widgetLayoutKey,
-                        render: { id, span in shipperHomeRender(id, span) }
+                        weather: { AnyView(weatherSection) },
+                        renderWithSpan: { id, span in shipperHomeRender(id, span) }
                     )
                     Color.clear.frame(height: 96) // bottom-nav clearance
                 }
@@ -512,132 +508,65 @@ struct ShipperHome: View {
         .accessibilityHint("Open your account, wallet, network and settings")
     }
 
-    // MARK: - Attention card — gradient-rimmed, danger-washed top
+    // MARK: - Shipper actions widget
 
-    /// Wraps the existing attentionCard with a collapsible chrome —
-    /// header always visible, body slides + fades on toggle. When
-    /// the user collapses it, only the count + chevron remain so
-    /// the home reclaims vertical space.
+    /// The two primary shipper commands stay on Home, but now participate in
+    /// the same move/resize/remove contract as every other role module.
     @ViewBuilder
-    private var collapsibleAttentionCard: some View {
-        if case .loaded(let rows) = alerts.state, !rows.isEmpty {
-            VStack(alignment: .leading, spacing: 0) {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.22)) {
-                        attentionExpanded.toggle()
-                    }
-                    UserDefaults.standard.set(attentionExpanded, forKey: "shipper.home.attentionExpanded")
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 13, weight: .heavy))
-                            .foregroundStyle(LinearGradient.diagonal)
-                        Text("LOADS REQUIRING ATTENTION")
-                            .font(.system(size: 10, weight: .heavy)).tracking(0.8)
-                            .foregroundStyle(palette.textPrimary)
-                        Text("\(rows.count)")
-                            .font(.system(size: 9, weight: .heavy, design: .monospaced))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(Capsule().fill(LinearGradient.diagonal))
-                        Spacer(minLength: 0)
-                        Image(systemName: attentionExpanded ? "chevron.up" : "chevron.down")
-                            .font(.system(size: 11, weight: .heavy))
-                            .foregroundStyle(palette.textTertiary)
-                            .rotationEffect(.degrees(attentionExpanded ? 0 : 0))
-                    }
-                    .padding(.horizontal, Space.s4).padding(.vertical, Space.s3)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                if attentionExpanded {
-                    attentionCard
-                        .transition(.asymmetric(
-                            insertion: .opacity.combined(with: .move(edge: .top)),
-                            removal: .opacity
-                        ))
-                }
-            }
-            .background(palette.bgCard)
-            .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                        .strokeBorder(LinearGradient.diagonal.opacity(0.45), lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
-        } else {
-            // Loading / empty / error states still flow through the
-            // original card so the user gets the same skeleton +
-            // empty + error UX.
-            attentionCard
-        }
-    }
-
-    @ViewBuilder
-    private var attentionCard: some View {
-        switch alerts.state {
-        case .loading:
-            attentionShell { attentionSkeleton }
-        case .loaded(let rows):
-            if rows.isEmpty { EmptyView() }
-            else { attentionShell { attentionRowsList(rows) } }
-        case .empty:
-            EmptyView()  // silence is the right empty for an alert feed
-        case .error(let e):
-            inlineError(e) { Task { await alerts.refresh() } }
-        }
-    }
-
-    @ViewBuilder
-    private func attentionShell<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        // Real alert count from `shippers.getLoadsRequiringAttention`; any
-        // non-loaded state shows 0 rather than an invented figure.
-        let attentionCount: Int = {
-            if case .loaded(let rows) = alerts.state { return rows.count }
-            return 0
-        }()
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: Space.s2) {
-                Image(systemName: "exclamationmark.triangle")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(Brand.danger)
-                Text("Loads requiring attention")
-                    .font(EType.bodyStrong)
+    private func shipperActionsWidget(_ span: HomeWidgetSpan) -> some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(spacing: 6) {
+                Image(systemName: "shippingbox.and.arrow.backward.fill")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("SHIPPER ACTIONS")
+                    .font(EType.micro).tracking(0.8)
                     .foregroundStyle(palette.textPrimary)
-                Spacer()
-                Text("\(attentionCount)")
-                    .font(.system(size: 12, weight: .heavy)).monospacedDigit()
-                    .foregroundStyle(Brand.danger)
-                    .padding(.horizontal, 9).padding(.vertical, 4)
-                    .background(Capsule().fill(palette.tintDanger))
+                Spacer(minLength: 0)
             }
-            .padding(.horizontal, Space.s4)
-            .padding(.vertical, Space.s3)
-            .background(
-                LinearGradient(colors: [Brand.danger.opacity(0.10),
-                                        Brand.warning.opacity(0.10)],
-                               startPoint: .leading, endPoint: .trailing)
-            )
-
-            content()
+            if span == .half {
+                VStack(spacing: Space.s2) {
+                    postLoadAction
+                    browseCarriersAction
+                }
+            } else {
+                HStack(spacing: Space.s2) {
+                    postLoadAction
+                    browseCarriersAction
+                }
+            }
         }
-        .background(palette.bgCard)
-        .clipShape(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
-                .strokeBorder(LinearGradient.diagonal, lineWidth: 1.5)
-        )
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Loads requiring attention, \(attentionCount)")
+        .padding(Space.s3)
+        .eusoCard(radius: Radius.lg)
     }
 
-    @ViewBuilder
-    private func attentionRowsList(_ rows: [ShipperAPI.LoadAlert]) -> some View {
-        ForEach(Array(rows.enumerated()), id: \.element.id) { idx, r in
-            attentionRow(
-                loadId: r.id,
-                meta: "\(r.loadNumber) · \(r.message)",
-                title: r.issue.uppercased()
-            )
-            if idx < rows.count - 1 { Divider().overlay(palette.borderFaint) }
+    private var postLoadAction: some View {
+        CTAButton(title: "Post a load") {
+            NotificationCenter.default.post(name: .eusoShipperLoadCreate, object: nil)
         }
+        .frame(maxWidth: .infinity)
+        .accessibilityLabel("Post a load, primary action")
+    }
+
+    private var browseCarriersAction: some View {
+        Button {
+            NotificationCenter.default.post(name: .eusoShipperBrowseCarriers, object: nil)
+        } label: {
+            Text("Browse carriers")
+                .font(EType.bodyStrong)
+                .foregroundStyle(palette.textPrimary)
+                .frame(maxWidth: .infinity, minHeight: 50)
+                .background(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .fill(palette.bgCard)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.borderSoft, lineWidth: 1)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        }
+        .buttonStyle(.plain)
     }
 
     private func attentionRow(loadId: String, meta: String, title: String) -> some View {
@@ -756,7 +685,7 @@ struct ShipperHome: View {
         // weighted on-time). Dashboard value still wins if the server ever
         // starts emitting a non-zero figure.
         Group {
-            if horizontalSizeClass == .regular {
+            if horizontalSizeClass == .regular && !dynamicTypeSize.isAccessibilitySize {
                 HStack(spacing: Space.s2) {
                     primaryStatTiles(s)
                 }
@@ -776,10 +705,11 @@ struct ShipperHome: View {
         statTile(label: "Bids pending", value: "\(s.pendingBids)",
                  trail: "awaiting award",
                  trailColor: palette.textSecondary)
-        statTile(label: "Rate / mi", value: rateValue(resolvedRatePerMile(s)),
+        statTile(label: ShipperMetricFormatting.ratePerMileLabel,
+                 value: rateValue(resolvedRatePerMile(s)),
                  trail: "avg",
                  trailColor: palette.textSecondary,
-                 gradientNumeral: true, valueSize: 22)
+                 gradientNumeral: true, valueTextStyle: .title3)
         statTile(label: "On-time", value: percentValue(resolvedOnTimeRate(s)),
                  trail: "delivery rate",
                  trailColor: palette.textSecondary,
@@ -787,7 +717,10 @@ struct ShipperHome: View {
     }
 
     private var compactMetricColumns: [GridItem] {
-        [
+        if dynamicTypeSize.isAccessibilitySize {
+            return [GridItem(.flexible(minimum: 0), alignment: .topLeading)]
+        }
+        return [
             GridItem(.flexible(minimum: 0), spacing: Space.s2, alignment: .topLeading),
             GridItem(.flexible(minimum: 0), spacing: Space.s2, alignment: .topLeading),
         ]
@@ -812,7 +745,7 @@ struct ShipperHome: View {
 
     private var statSkeleton: some View {
         Group {
-            if horizontalSizeClass == .regular {
+            if horizontalSizeClass == .regular && !dynamicTypeSize.isAccessibilitySize {
                 HStack(spacing: Space.s2) {
                     statSkeletonTiles
                 }
@@ -828,7 +761,7 @@ struct ShipperHome: View {
         ForEach(0..<4, id: \.self) { _ in
             RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                 .fill(palette.bgCardSoft)
-                .frame(height: 104)
+                .frame(height: dynamicTypeSize.isAccessibilitySize ? 132 : 112)
                 .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                             .strokeBorder(palette.borderFaint))
         }
@@ -837,11 +770,14 @@ struct ShipperHome: View {
     private func statTile(label: String, value: String,
                           trail: String, trailColor: Color,
                           gradientNumeral: Bool = false,
-                          valueSize: CGFloat = 28) -> some View {
+                          valueTextStyle: Font.TextStyle = .title2) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(label.uppercased())
-                .font(EType.micro).tracking(0.6)
+                .font(.caption2.weight(.semibold))
+                .tracking(0.4)
                 .foregroundStyle(palette.textTertiary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
             Group {
                 if gradientNumeral {
                     Text(value).foregroundStyle(LinearGradient.diagonal)
@@ -849,17 +785,21 @@ struct ShipperHome: View {
                     Text(value).foregroundStyle(palette.textPrimary)
                 }
             }
-            .font(.system(size: valueSize, weight: .semibold).monospacedDigit())
+            .font(.system(valueTextStyle, design: .default, weight: .semibold).monospacedDigit())
             .lineLimit(1)
-            .minimumScaleFactor(0.52)
+            .allowsTightening(true)
             Text(trail)
-                .font(EType.caption)
+                .font(.caption)
                 .foregroundStyle(trailColor)
-                .lineLimit(1)
-                .minimumScaleFactor(0.65)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(Space.s3)
-        .frame(maxWidth: .infinity, minHeight: 104, alignment: .leading)
+        .frame(
+            maxWidth: .infinity,
+            minHeight: dynamicTypeSize.isAccessibilitySize ? 132 : 112,
+            alignment: .leading
+        )
         // Bespoke EusoCard surface — iridescent rim + glow per stat tile,
         // matching the SVG's lit stat strip and the DriverHome metric idiom.
         .eusoCard(radius: Radius.lg)
@@ -1167,7 +1107,7 @@ struct ShipperHome: View {
     /// when no real rate is present we render a neutral, honest prompt.
     private var esangHeadline: String {
         if let s = dashboard.state.value ?? nil, s.ratePerMile > 0 {
-            return "Ask eSang to source carriers under your \(dollarsPerMile(s.ratePerMile))/mi target"
+            return "Ask eSang to source carriers under your \(ShipperMetricFormatting.ratePerMile(s.ratePerMile))/mi target"
         }
         return "Ask eSang for carrier and rate insights"
     }
@@ -1330,17 +1270,12 @@ struct ShipperHome: View {
     }
 
     private func dollars(_ v: Double) -> String {
-        let f = NumberFormatter()
-        f.numberStyle = .currency
-        f.maximumFractionDigits = 0
-        f.currencyCode = "USD"
-        return f.string(from: NSNumber(value: v)) ?? "$\(Int(v))"
+        ShipperMetricFormatting.wholeCurrency(v)
     }
-    private func dollarsPerMile(_ v: Double) -> String { String(format: "$%.2f", v) }
     private func percent(_ v: Double) -> String { String(format: "%.1f%%", v * 100) }
     /// Honest rate/mi: renders the real value when the server has a non-zero
     /// rate, else an em-dash sentinel (no rate computed yet) rather than "$0.00".
-    private func rateValue(_ v: Double) -> String { v > 0 ? dollarsPerMile(v) : "—" }
+    private func rateValue(_ v: Double) -> String { ShipperMetricFormatting.ratePerMile(v) }
     /// Honest on-time percent: real value when present, else em-dash sentinel.
     private func percentValue(_ v: Double) -> String { v > 0 ? percent(v) : "—" }
 
@@ -1379,28 +1314,38 @@ struct ShipperHome: View {
         // source has data — the previous `percent(0)` printed a
         // fabricated-looking "0.0%" on every fresh account.
         if span == .compact {
-            // Condensed glance row — single lit card with the three numbers
-            // inline, so the widget shrinks to a one-line height.
-            HStack(spacing: Space.s4) {
-                compactStat(value: dollars(s.totalSpendThisMonth), label: "spend", gradient: true)
-                Divider().frame(height: 22).overlay(palette.borderFaint)
-                compactStat(value: "\(s.pendingBids)", label: "bids", gradient: false)
-                Divider().frame(height: 22).overlay(palette.borderFaint)
-                compactStat(value: percentValue(resolvedOnTimeRate(s)), label: "on-time", gradient: true)
-                Spacer(minLength: 0)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: Space.s2) {
+                    compactStat(value: dollars(s.totalSpendThisMonth), label: "spend · USD", gradient: true, expands: false)
+                        .fixedSize(horizontal: true, vertical: false)
+                    Divider().frame(height: 28).overlay(palette.borderFaint)
+                    compactStat(value: "\(s.pendingBids)", label: "bids", gradient: false, expands: false)
+                        .fixedSize(horizontal: true, vertical: false)
+                    Divider().frame(height: 28).overlay(palette.borderFaint)
+                    compactStat(value: percentValue(resolvedOnTimeRate(s)), label: "on-time", gradient: true, expands: false)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+
+                VStack(alignment: .leading, spacing: Space.s2) {
+                    compactStat(value: dollars(s.totalSpendThisMonth), label: "spend · USD", gradient: true)
+                    Divider().overlay(palette.borderFaint)
+                    compactStat(value: "\(s.pendingBids)", label: "bids", gradient: false)
+                    Divider().overlay(palette.borderFaint)
+                    compactStat(value: percentValue(resolvedOnTimeRate(s)), label: "on-time", gradient: true)
+                }
             }
             .padding(Space.s3)
             .eusoCard(radius: Radius.lg)
         } else {
-            if horizontalSizeClass == .regular {
+            if horizontalSizeClass == .regular && !dynamicTypeSize.isAccessibilitySize {
                 HStack(spacing: Space.s2) {
                     spendStatTiles(s)
                 }
             } else {
                 VStack(spacing: Space.s2) {
-                    statTile(label: "This month", value: dollars(s.totalSpendThisMonth),
+                    statTile(label: "This month · USD", value: dollars(s.totalSpendThisMonth),
                              trail: "total spend", trailColor: palette.textSecondary,
-                             gradientNumeral: true, valueSize: 22)
+                             gradientNumeral: true, valueTextStyle: .title3)
                     HStack(spacing: Space.s2) {
                         statTile(label: "Bids open", value: "\(s.pendingBids)",
                                  trail: "awaiting award", trailColor: palette.textSecondary)
@@ -1415,9 +1360,9 @@ struct ShipperHome: View {
 
     @ViewBuilder
     private func spendStatTiles(_ s: ShipperAPI.DashboardStats) -> some View {
-        statTile(label: "This month", value: dollars(s.totalSpendThisMonth),
+        statTile(label: "This month · USD", value: dollars(s.totalSpendThisMonth),
                  trail: "total spend", trailColor: palette.textSecondary,
-                 gradientNumeral: true, valueSize: 18)
+                 gradientNumeral: true, valueTextStyle: .headline)
         statTile(label: "Bids open", value: "\(s.pendingBids)",
                  trail: "awaiting award", trailColor: palette.textSecondary)
         statTile(label: "On-time", value: percentValue(resolvedOnTimeRate(s)),
@@ -1426,17 +1371,22 @@ struct ShipperHome: View {
     }
 
     /// Inline number+label used by the `.compact` spend strip.
-    private func compactStat(value: String, label: String, gradient: Bool) -> some View {
+    private func compactStat(value: String, label: String, gradient: Bool, expands: Bool = true) -> some View {
         VStack(alignment: .leading, spacing: 1) {
             Group {
                 if gradient { Text(value).foregroundStyle(LinearGradient.diagonal) }
                 else { Text(value).foregroundStyle(palette.textPrimary) }
             }
-            .font(.system(size: 16, weight: .semibold).monospacedDigit())
+            .font(.headline.weight(.semibold).monospacedDigit())
+            .lineLimit(1)
+            .allowsTightening(true)
             Text(label.uppercased())
-                .font(EType.micro).tracking(0.6)
+                .font(.caption2.weight(.semibold)).tracking(0.4)
                 .foregroundStyle(palette.textTertiary)
+                .lineLimit(1)
         }
+        .frame(maxWidth: expands ? .infinity : nil, alignment: .leading)
+        .layoutPriority(gradient ? 1 : 0)
     }
 
     // MARK: - Attention alerts widget
@@ -1493,11 +1443,9 @@ struct ShipperHome: View {
         }
     }
 
-    // Reorderable secondary-widget zone is the bespoke ShipperWidgetBoard
-    // (below) — it owns the per-widget RESIZE chooser the founder asked for.
 }
 
-// MARK: - ShipperWidgetBoard — bespoke resizable + reorderable widget zone
+// MARK: - Retired shipper widget board
 //
 // Founder bug 2026-06-02: "there is no resizing the widget capability you
 // said you did on homescreen". The shared HomeWidgetGrid already carries a
@@ -1518,7 +1466,9 @@ struct ShipperHome: View {
 //   .half    → two tiles share a row (w = 6 on the 12-col model)
 //   .full    → one tile per row       (w = 12)
 
-struct ShipperWidgetBoard: View {
+#if false // Retained only as migration history; HomeWidgetGrid is the sole runtime authority.
+@available(*, unavailable, message: "Use HomeWidgetGrid as the single layout authority")
+private struct RetiredShipperWidgetBoard: View {
     /// A widget slot + the spans the user may resize it to. `.full` is
     /// always the seed when no saved choice exists.
     struct Slot {
@@ -1935,7 +1885,7 @@ struct ShipperWidgetBoard: View {
 // it strokes crisply at any scale and inherits whatever style (gradient
 // while resizing, tertiary at rest) the handle applies.
 
-struct CornerGrabberShape: Shape {
+private struct CornerGrabberShape: Shape {
     func path(in rect: CGRect) -> Path {
         var p = Path()
         // Outer L — full corner.
@@ -1950,6 +1900,7 @@ struct CornerGrabberShape: Shape {
         return p
     }
 }
+#endif
 
 // MARK: - Notification names (canonical CTA hooks for the Shipper Home)
 

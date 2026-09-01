@@ -12,8 +12,9 @@
 //  motivation "no fake data"):
 //
 //    • Every score + event comes from the live `safety.getDriverScoreDetail`
-//      tRPC procedure — MCP-verified at
-//      `frontend/server/routers/safety.ts:820`. The server computes
+//      tRPC procedure — re-verified against the live tree 2026-08-17 at
+//      `frontend/server/routers/safety.ts:905` (this comment previously
+//      read :820, which had drifted). The server computes
 //      compliance + vehicle-care scores in-line from inspection rows
 //      joined on `drivers.userId`, so the numbers match what dispatch
 //      and carrier scorecards see. No client-side recomputation.

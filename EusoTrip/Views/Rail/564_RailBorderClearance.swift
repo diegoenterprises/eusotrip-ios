@@ -14,6 +14,48 @@
 //    railShipments.checkCrossBorderRailCompliance  (EXISTS :903) → regulatory checklist
 //    railShipments.getCrossBorderRailDocs          (EXISTS :899) → required documents list
 //
+//  OFFLINE POLICY (§W): READ_CACHED(5m) reads · ONLINE_ONLY submit.
+//    · READ_CACHED(5m) — the interchange point, the clearance ladder and the
+//      required-doc set are held for the session and stamped on every
+//      successful read. A permanently visible monospaced staleness line sits in
+//      the header register and flips to Brand.warning past the 5m TTL, and the
+//      hero carries its own "cached · not live" band the moment the read ages
+//      out or the device drops offline. This is a customs go/no-go surface: a
+//      cached CLEARED must never render as live. No cold-launch disk cache is
+//      claimed here — offline with nothing read this session the screen shows
+//      its real load error rather than an invented clearance.
+//    · ONLINE_ONLY(a customs filing must be server-confirmed before the consist
+//      can be cleared to cross) — no filing is queued, replayed, or
+//      optimistically marked filed on this device.
+//
+//  NAMED GAP · railShipments.submitCrossBorderRailFiling: the wireframe's
+//    second CTA reads "Submit pedimento", but every cross-border rail procedure
+//    on the live router is a read (`railReadProcedure` + `.query`):
+//    getCrossBorderInterchangePoints railShipments.ts:2967 ·
+//    getCrossBorderRailDocs :2979 · checkCrossBorderRailCompliance :2983 ·
+//    estimateRailBorderCrossingTime :3019. There is NO filing mutation, so this
+//    port ships no submit control at all rather than one that cannot file.
+//    Proposed shape (nothing stubbed here):
+//      submitCrossBorderRailFiling: railOpsWriteProcedure   // railShipments.ts:160
+//        .input(z.object({
+//          shipmentId: z.number(),
+//          interchangePointId: z.string(),
+//          direction: z.string(),
+//          documentIds: z.array(z.number()),
+//          requestKey: z.string(),
+//        }))
+//        .mutation(...)   // -> { success, filingId, filedAt, authority }
+//
+//  ESANG: esangCoach.forScreen EXISTS (esangCoach.ts:264) but its SCREEN_ENUM
+//    (esangCoach.ts:112) is a driver in-cab list — home / trips / earnings /
+//    tax / dvir / availability / missions / badges / referrals / zeun / haul /
+//    active-trip — with no rail or clearance key, and its system prompt speaks
+//    HOS and DVIR. Calling it from a border-clearance surface would return the
+//    wrong entity, so the ESANG band below is derived on device from the ladder
+//    already decoded and says so on its face. Same call 559 and 665 made.
+//
+//  Author: Mike "Diego" Usoro / Eusorone Technologies, Inc
+//
 
 import SwiftUI
 
@@ -32,6 +74,13 @@ struct RailBorderClearanceScreen: View {
                            NavSlot(label: "Me",          systemImage: "person",          isCurrent: false)],
                 orbState: .idle
             )
+        }
+        // Real top back affordance for this pushed Rail Engineer surface. Fixed
+        // leading slot → never overlaps the eyebrow/title; posts the shared
+        // NavBack that RailEngineerSurface pops on
+        // (RoleSurfaceRouter.swift:4813), so context is preserved on the way out.
+        .injectBespokeBackBar(title: nil) {
+            NotificationCenter.default.post(name: .eusoRoleNavBack, object: nil)
         }
     }
 }
@@ -90,6 +139,7 @@ private struct CrossBorderCompliance564: Decodable {
 
 private struct RailBorderClearanceBody: View {
     @Environment(\.palette) private var palette
+    @ObservedObject private var reach = OfflineReachabilityHub.shared
     let shipmentId: Int
     let interchangePointId: String
 
@@ -99,6 +149,8 @@ private struct RailBorderClearanceBody: View {
     @State private var requiredDocs: [String] = []
     @State private var loading = true
     @State private var loadError: String? = nil
+    /// §W READ_CACHED(5m) clock — stamped on every successful server evaluation.
+    @State private var lastReadAt: Date? = nil
 
     private var hasDG: Bool { detail?.hazmatClass != nil }
     private var passCount: Int { compliance?.regulatory.filter { $0.status == "pass" }.count ?? 0 }
@@ -111,6 +163,33 @@ private struct RailBorderClearanceBody: View {
         let stB = p.stateProvinceB ?? (p.countryB ?? "MX")
         let kind = p.interchangeType ?? "crossing"
         return "\(stA) → \(stB) · \(kind)"
+    }
+
+    // MARK: §W READ_CACHED(5m) staleness
+
+    private static let readTTL: TimeInterval = 300
+
+    private var readAge: TimeInterval? {
+        guard let at = lastReadAt else { return nil }
+        return Date().timeIntervalSince(at)
+    }
+
+    private var readIsStale: Bool {
+        guard let age = readAge else { return true }
+        return age > Self.readTTL
+    }
+
+    private var stalenessLine: String {
+        guard let age = readAge else { return "not checked yet" }
+        if age < 60 { return "checked · just now" }
+        if age < 3600 { return "checked · \(Int(age / 60))m ago" }
+        return "checked · \(Int(age / 3600))h ago"
+    }
+
+    /// The go/no-go is only allowed to read as live when the device is online
+    /// AND the last server evaluation is still inside the 5m TTL.
+    private var clearanceIsLive: Bool {
+        reach.isOnline && lastReadAt != nil && !readIsStale
     }
 
     var body: some View {
@@ -128,9 +207,13 @@ private struct RailBorderClearanceBody: View {
                     }
                 } else {
                     hero
+                    // §W honesty law: cached / offline clearance is drawn as a
+                    // visibly distinct state, never as a live go/no-go.
+                    if !clearanceIsLive { cachedClearanceBand }
                     kpiStrip
                     checklistSection
                     if !requiredDocs.isEmpty { docsStrip }
+                    esangBand
                     actionsRow
                 }
                 Color.clear.frame(height: 96)
@@ -157,19 +240,66 @@ private struct RailBorderClearanceBody: View {
                     .font(.system(size: 28, weight: .heavy))
                     .kerning(-0.4)
                     .foregroundStyle(palette.textPrimary)
+                    .accessibilityAddTraits(.isHeader)
                 Spacer()
                 if let num = detail?.shipmentNumber {
                     Text(num)
                         .font(.system(size: 9, weight: .heavy, design: .monospaced))
                         .foregroundStyle(palette.textTertiary)
+                        .accessibilityLabel("Shipment \(num)")
                 }
             }
-            if let p = interchange {
-                Text("\(p.name ?? interchangePointId) · \(p.customsOffice ?? "CBP/SAT")")
-                    .font(EType.caption).foregroundStyle(palette.textSecondary)
+            HStack(alignment: .firstTextBaseline) {
+                if let p = interchange {
+                    Text("\(p.name ?? interchangePointId) · \(p.customsOffice ?? "CBP/SAT")")
+                        .font(EType.caption).foregroundStyle(palette.textSecondary)
+                        .lineLimit(1).minimumScaleFactor(0.8)
+                }
+                Spacer(minLength: 8)
+                // §W READ_CACHED(5m) staleness — always visible, warns past TTL.
+                Text(stalenessLine)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(readIsStale ? Brand.warning : palette.textTertiary)
+                    .fixedSize()
+                    .accessibilityLabel("Clearance \(stalenessLine)")
             }
             IridescentHairline()
+                .accessibilityHidden(true)
         }
+    }
+
+    // MARK: Cached-clearance honesty band
+
+    /// A customs go/no-go is the one surface where a stale CLEARED is worse than
+    /// no answer at all, so cached and offline states are drawn distinctly
+    /// rather than left to look live.
+    private var cachedClearanceBand: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(Brand.warning)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(reach.isOnline ? "CACHED CLEARANCE · NOT LIVE" : "OFFLINE · CACHED CLEARANCE · NOT LIVE")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(Brand.warning)
+                Text("This go/no-go is the last server evaluation (\(stalenessLine)), not a live one. Re-check on a connection before the consist is cleared to cross.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .fill(Brand.warning.opacity(0.10))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(Brand.warning.opacity(0.45), lineWidth: 1)
+                )
+        )
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: Hero Card
@@ -227,6 +357,22 @@ private struct RailBorderClearanceBody: View {
                         .strokeBorder(LinearGradient.diagonal, lineWidth: 1.5)
                 )
         )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(heroAccessibilityLabel)
+    }
+
+    /// Spoken form of the hero. The freshness of the verdict is part of the
+    /// sentence, so a cached CLEARED is never read aloud as a live one.
+    private var heroAccessibilityLabel: String {
+        let ok = compliance?.overallCompliant ?? false
+        var s = ok ? "Cleared" : "Hold"
+        s += ", \(crossingLabel), \(clearanceIsLive ? "live" : "cached, not live")."
+        s += " \(failCount) blocker\(failCount == 1 ? "" : "s")."
+        if hasDG, let d = detail {
+            let cars = d.numberOfCars ?? 1
+            s += " Dangerous goods on \(cars) car\(cars == 1 ? "" : "s")."
+        }
+        return s
     }
 
     // MARK: KPI Strip
@@ -237,6 +383,8 @@ private struct RailBorderClearanceBody: View {
             MetricTile(label: "PASSED",       value: "\(passCount)", gradientNumeral: passCount > 0)
             MetricTile(label: "BLOCKERS",     value: "\(failCount)", accent: failCount > 0 ? Brand.danger : nil)
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(totalCount) requirement\(totalCount == 1 ? "" : "s"), \(passCount) passed, \(failCount) blocking.")
     }
 
     // MARK: Checklist
@@ -297,6 +445,9 @@ private struct RailBorderClearanceBody: View {
                 .foregroundStyle(tint)
         }
         .padding(14)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(item.requirement), \(verdict.lowercased())")
+        .accessibilityValue("\(item.details). \(item.regulation).")
     }
 
     private func verdictStyle(_ status: String) -> (String, Color, String) {
@@ -341,16 +492,128 @@ private struct RailBorderClearanceBody: View {
                         .strokeBorder(palette.borderFaint, lineWidth: 1)
                 )
         )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Required documents, \(requiredDocs.count)")
+        .accessibilityValue(requiredDocs.joined(separator: ", "))
+    }
+
+    // MARK: ESANG band (derived on device — see the ESANG note in the header)
+
+    private var esangBand: some View {
+        HStack(alignment: .top, spacing: Space.s3) {
+            ZStack {
+                Circle().fill(LinearGradient.diagonal).frame(width: 30, height: 30)
+                Image(systemName: "flag.2.crossed")
+                    .font(.system(size: 12, weight: .heavy))
+                    .foregroundStyle(.white)
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                Text("ESANG · CLEARANCE READ")
+                    .font(.system(size: 9, weight: .black)).kerning(1.0)
+                    .foregroundStyle(LinearGradient.primary)
+                Text(esangHeadline)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(palette.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(esangDetail)
+                    .font(.system(size: 11))
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("DERIVED ON DEVICE FROM THIS LADDER · NOT AN ASSISTANT")
+                    .font(.system(size: 7.5, weight: .heavy)).tracking(0.5)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            Spacer(minLength: 4)
+        }
+        .padding(.vertical, 12).padding(.horizontal, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+            .strokeBorder(palette.borderFaint, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Clearance read, derived on this device. \(esangHeadline) \(esangDetail)")
+    }
+
+    /// One sentence off the decoded ladder — the first blocking gate by name, or
+    /// the honest cleared state. Never a fabricated instruction or saved-hours
+    /// figure: there is no rail next-best-action source on the wire.
+    private var esangHeadline: String {
+        if let blocker = compliance?.regulatory.first(where: { $0.status.lowercased() == "fail" }) {
+            return "Blocking gate: \(blocker.requirement)."
+        }
+        if totalCount == 0 { return "No clearance ladder has been returned for this crossing yet." }
+        if failCount == 0 { return "All \(totalCount) gates are cleared for this crossing." }
+        return "\(failCount) gate\(failCount == 1 ? "" : "s") still blocking this crossing."
+    }
+
+    private var esangDetail: String {
+        if let blocker = compliance?.regulatory.first(where: { $0.status.lowercased() == "fail" }) {
+            return "\(blocker.regulation) · \(blocker.details)"
+        }
+        return "\(passCount) of \(totalCount) cleared · \(stalenessLine)"
     }
 
     // MARK: Actions
 
     private var actionsRow: some View {
-        HStack(spacing: Space.s2) {
-            CTAButton(title: "Re-check clearance", action: { Task { await load() } },
-                      leadingIcon: "arrow.clockwise", isLoading: loading)
-            CTAButton(title: "Consist", leadingIcon: "tram.fill")
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: Space.s2) {
+                CTAButton(title: "Re-check clearance", action: { Task { await load() } },
+                          leadingIcon: "arrow.clockwise", isLoading: loading)
+                    .accessibilityLabel("Re-check clearance")
+                    .accessibilityHint("Re-runs the cross-border compliance check against the server and re-stamps the freshness line.")
+                // DEAD-PRIMARY CURE (§18): this slot shipped as a bare CTAButton
+                // titled "Consist" with a tram leading icon and with neither an
+                // action argument nor a trailing closure, so it inherited the
+                // control's empty-closure default
+                // (Theme/DesignSystem.swift:1486) — a full-gradient primary that
+                // was permanently inert. Re-cut to the band's own cure for inert
+                // secondaries (Views/Rail/RailSecondaryActionButton.swift:12,
+                // the same control 566 and 586 use) over the consist facts this
+                // screen has ALREADY decoded from the server. No new call, no
+                // invented rows, and no fabricated success.
+                RailSecondaryActionButton(
+                    title: "Consist",
+                    sheetTitle: "Consist context",
+                    lines: consistContextLines,
+                    width: 132,
+                    systemImage: "tram.fill"
+                )
+                .accessibilityLabel("Consist context")
+                .accessibilityHint("Opens the cars, railroad and waybill this clearance check is running against.")
+            }
+            if !reach.isOnline {
+                Text("Offline · the ladder above is a cached read, and a customs filing is ONLINE_ONLY. Nothing is queued for replay.")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Brand.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
+    }
+
+    /// Consist facts already decoded on this screen. Every line is a live server
+    /// field or is omitted entirely — nothing is substituted or rounded in.
+    private var consistContextLines: [String] {
+        var lines: [String] = []
+        if let num = detail?.shipmentNumber { lines.append("Shipment \(num)") }
+        if let n = detail?.numberOfCars { lines.append("\(n) car\(n == 1 ? "" : "s") on the consist") }
+        if let rr = detail?.originRailroad { lines.append("Origin railroad \(rr)") }
+        if let wb = detail?.waybillNumber { lines.append("Waybill \(wb)") }
+        if let dg = detail?.hazmatClass {
+            if let un = detail?.unNumber {
+                lines.append("Dangerous goods \(dg) · UN\(un)")
+            } else {
+                lines.append("Dangerous goods \(dg)")
+            }
+        }
+        if let o = detail?.originYard?.name { lines.append("Origin yard \(o)") }
+        if let d = detail?.destinationYard?.name { lines.append("Destination yard \(d)") }
+        if let p = interchange {
+            lines.append("Interchange \(p.name ?? interchangePointId) · \(p.customsOffice ?? "customs office not returned")")
+        }
+        lines.append("\(passCount) of \(totalCount) gates cleared · \(stalenessLine)")
+        return lines
     }
 
     // MARK: Load
@@ -400,6 +663,9 @@ private struct RailBorderClearanceBody: View {
                     hasInsurance: true
                 ))
             self.compliance = result
+            // §W READ_CACHED(5m): stamp the evaluation the moment the server
+            // returns it. Everything drawn above ages against this stamp.
+            self.lastReadAt = Date()
 
             do {
                 let docs: [String] = try await EusoTripAPI.shared.query(

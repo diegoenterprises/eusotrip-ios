@@ -64,11 +64,18 @@ private struct DeliveryApproachingBody: View {
             // Receiver coords first; truck pin second; receiver address last.
             // Gate null-island (0,0): an un-geocoded delivery must fall through
             // to the truck pin / address link, never deep-link to the ocean.
-            if let lat = live.delivery?.lat, let lng = live.delivery?.lng, !(lat == 0 && lng == 0) {
-                return URL(string: "maps://?ll=\(lat),\(lng)&q=Receiver")
+            if let coordinate = LatLongParser.validatedCoordinate(
+                latitude: live.delivery?.lat,
+                longitude: live.delivery?.lng
+            ) {
+                return URL(string: "maps://?ll=\(coordinate.latitude),\(coordinate.longitude)&q=Receiver")
             }
-            if let g = live.lastGeofence, !(g.latitude == 0 && g.longitude == 0) {
-                return URL(string: "maps://?ll=\(g.latitude),\(g.longitude)&q=Truck")
+            if let g = live.lastGeofence,
+               let coordinate = LatLongParser.validatedCoordinate(
+                   latitude: g.latitude,
+                   longitude: g.longitude
+               ) {
+                return URL(string: "maps://?ll=\(coordinate.latitude),\(coordinate.longitude)&q=Truck")
             }
             if let addr = live.delivery?.address, !addr.isEmpty {
                 let q = addr.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
@@ -102,7 +109,13 @@ private struct DeliveryApproachingBody: View {
             if let g = live.lastGeofence {
                 LifecycleRow(label: "Type",      value: g.type.uppercased())
                 LifecycleRow(label: "Recorded",  value: humanISO(g.eventTimestamp))
-                LifecycleRow(label: "GPS",       value: String(format: "%.4f, %.4f", g.latitude, g.longitude))
+                LifecycleRow(
+                    label: "GPS",
+                    value: LatLongParser.validatedCoordinate(
+                        latitude: g.latitude,
+                        longitude: g.longitude
+                    ).map(LatLongParser.displayString) ?? "Not recorded"
+                )
             } else {
                 Text("No geofence event yet for the receiver radius.").font(EType.caption).foregroundStyle(palette.textSecondary)
             }

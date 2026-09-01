@@ -1,0 +1,1750 @@
+//
+//  ES21_TrainingCenter.swift
+//  EusoTrip — Escort · Training Center (ES-21).
+//
+//  Sole author: Mike "Diego" Usoro / Eusorone Technologies, Inc.
+//
+//  NEW SURFACE. Nothing in the escort tree owns the escort's own
+//  certification runway today, so this file shadows no brick and edits
+//  none. It needs a registry entry it does NOT write:
+//  `ContentView.swift` and `EscortNavController.swift` are single-writer
+//  owned; the route this screen wants ("training" →
+//  `EscortTrainingCenterES21Screen`) is filed in the build manifest for
+//  those writers. Until it lands, the screen is reachable only by direct
+//  push from ES-12 Me Profile.
+//
+//  Built from the ES-21 design-authority SVG pair
+//  ("07 Escort/{Light,Dark}-SVG/ES-21 Training Center.svg").
+//
+//  ─────────────────────────────────────────────────────────────────────
+//  ARCHETYPE HOME/LIST — RENEWAL RUNWAY. The organising device is one
+//  horizontal shelf-life strip spanning the content width. The window
+//  opens at `userCertificates.issuedAt`; elapsed days are consumed from
+//  the left as flat spent track; the days that remain run as live
+//  gradient into a HARD TERMINAL bar at `expiresAt`. The seeded modules
+//  hang beneath the strip as filled blocks whose WIDTH is the module's
+//  real minutes and whose RIGHT EDGE lands on the day its quiz was
+//  passed. A module that has not passed cannot be placed, so it hangs in
+//  a lower UNPLACED lane, dashed, at the hours it will still cost. Two
+//  encodings on one axis — when the work happened, and what it cost —
+//  against a clock that is running out.
+//
+//  Anti-clone:
+//    · NOT ES-12 Me Profile, the nearest credential sibling. ES-12 is a
+//      three-rung RISING CERT STAIRCASE — a ladder of achieved STATES
+//      climbing upward with no time axis at all. ES-21 has no rungs, no
+//      ascent and no staircase; its axis is DAYS and its subject is
+//      DEPLETION. The same escort can be at the top of ES-12's staircase
+//      and still be 209 days from zero here.
+//    · NOT ES-20 Onboarding Registration, the other horizontal escort
+//      rail. ES-20's organ is a SEVERED GATE TRACK whose barriers
+//      physically cut the rail and kill everything past the first closed
+//      one, encoding PERMEABILITY. ES-21's strip is never severed — it is
+//      continuous by construction, because time does not stop when a
+//      module fails. The failure shows up as an UNPLACED block off the
+//      runway, not as a barrier across it.
+//
+//  ─────────────────────────────────────────────────────────────────────
+//  WIRING — every anchor opened at the pin first-hand against the live
+//  tree (~/Desktop/eusoronetechnologiesinc/frontend). trainingLMS.ts is
+//  834 lines. Router registered `trainingLMS: trainingLMSRouter`
+//  (routers.ts:2373), imported routers.ts:251.
+//
+//    EXISTS trainingLMS.getCourseDetail    trainingLMS.ts:157
+//           {courseId?|slug?} → course row spread + modules[] (each with
+//           lessons[] and quiz) + enrollment. Modules ordered
+//           asc(orderIndex) at :175.
+//    EXISTS trainingLMS.listCourses        trainingLMS.ts:96
+//           WHERE is status/category/search only (:117-119); country is a
+//           post-filter at :134-143.
+//    EXISTS trainingLMS.getMyCertificates  trainingLMS.ts:549
+//           userCertificates INNER JOIN trainingCourses, own-user scoped
+//           by Number(ctx.user.id) at :552, ordered issuedAt desc.
+//    EXISTS trainingLMS.getModuleProgress  trainingLMS.ts:524
+//           {enrollmentId} → userModuleProgress joined to
+//           lmsModules.title/orderIndex, ordered asc(orderIndex).
+//    EXISTS trainingLMS.getMyEnrollments   trainingLMS.ts:251
+//    EXISTS trainingLMS.getLMSDashboard    trainingLMS.ts:600
+//           averageScore = Math.round(COALESCE(AVG(quizScore),0)) over
+//           userModuleProgress joined to the caller's enrollments
+//           (:631-635).
+//    EXISTS trainingLMS.getQuiz            trainingLMS.ts:384
+//           REPOINT ON THE RECORD: input is {moduleId} ONLY
+//           (trainingLMS.ts:385) — not "moduleId/quizId". It returns the
+//           FIRST quiz row for that module (:390) and strips
+//           correctAnswer/explanation by column selection (:393-401).
+//    EXISTS trainingLMS.submitQuiz         trainingLMS.ts:423
+//           {quizId, answers[{questionId,answer}]} → {score, passed,
+//           passingScore, correctCount, totalQuestions, results[]}.
+//           Graded server-side. Refuses a quiz the caller is not
+//           enrolled in — `throw new Error("Not enrolled")` at :444.
+//    EXISTS trainingLMS.getCertificate     trainingLMS.ts:574
+//    EXISTS trainingLMS.enrollInCourse     trainingLMS.ts:215
+//           Writes user_course_enrollments and bumps
+//           training_courses.enrollmentCount at :240. GATE VERIFIED —
+//           see RBAC below; an authenticated escort is admitted, so the
+//           enrol CTA in the `.notEnrolled` branch is a real verb and
+//           not a link to nowhere.
+//
+//  STUBS — named shapes, zero endpoints invented, each with the grep
+//  that returned zero. This file renders the absence; it never fills it.
+//
+//    (a) NO RENEWAL SEAM. userCertificates is INSERTed exactly once, at
+//        trainingLMS.ts:819, behind a guard that skips when a row already
+//        exists for (userId, courseId) at :806-810.
+//        `grep -n "update(userCertificates)" server/routers/trainingLMS.ts`
+//        → 0. expiresAt is WRITE-ONCE. Re-passing module 5 restores the
+//        enrollment to 100% and issues NOTHING. The nearest real renewal
+//        write, trainingCompliance.renewCertification
+//        (trainingCompliance.ts:360), updates the UNRELATED
+//        `certifications` table and never touches userCertificates.
+//        Owed: trainingLMS.renewCertificate({courseId}).
+//    (b) NO ROLE FILTER ON THE CATALOG.
+//        `grep -rn "mandatoryForRoles" server/` → 0.
+//        The column is seeded (drizzle/schema.ts:10758,
+//        seed_courses.cjs:384) and read by nothing. "The escort's
+//        mandatory course" is a CLIENT-SIDE PROJECTION, and this file
+//        says so on its face rather than implying a server filter.
+//    (c) TRACKED HOURS ARE STRUCTURALLY ZERO ON A QUIZ-ONLY PATH.
+//        userCourseEnrollments.totalTimeSpentMinutes (schema.ts:10926) is
+//        incremented in exactly one place — completeLesson,
+//        trainingLMS.ts:363-366 — and submitQuiz writes
+//        `timeSpentMinutes: 0` on insert (:499) and never touches the
+//        enrollment total. An escort who advances by passing quizzes logs
+//        0 minutes forever. The rollup names the cause; it does not
+//        divide 360 by anything.
+//    (d) MODULE 5 HAS NO SUBJECT-SPECIFIC QUESTION BANK.
+//        qz_oversize.cjs replaces the template banks with 15
+//        regulation-referenced questions each, but only for orderIndex 1,
+//        2, 3 and 4 (qz_oversize.cjs:3, :20, :37, :54). Key 5 is absent,
+//        so its quiz keeps seed_quizzes.cjs's four template questions
+//        (questionCount 4 at seed_quizzes.cjs:29). The row says
+//        4 GENERIC Q instead of pretending it is 15.
+//    (e) maxRetakes IS NOT ENFORCED. trainingQuizzes carries allowRetakes
+//        and maxRetakes 3 (drizzle/schema.ts, quiz_helper.cjs:64,
+//        seed_quizzes.cjs:28), but
+//        `grep -n "maxRetakes\|allowRetakes" server/routers/trainingLMS.ts`
+//        → 0. submitQuiz only increments quizAttempts (:485). This file
+//        decodes the column and labels it ADVISORY — it never gates the
+//        CTA on a cap the server does not hold.
+//    (f) NO ESCORT TRAINING SURFACE.
+//        `grep -rn "escortTraining\|escort_training" server/ drizzle/` → 0.
+//    (g) THE LEGACY `training` ROUTER IS A TRAP FOR THIS ROLE. training.ts
+//        is company-scoped through resolveUserContext (training.ts:18-22)
+//        and returns [] at :34 for a caller with companyId 0 — the
+//        ordinary shape of an independent escort. Nothing here reads it.
+//
+//  PERSIST · AUDIT · REALTIME. submitQuiz writes user_module_progress
+//  (UPDATE :483-493 / INSERT :495-505) then recalculateProgress (:771)
+//  writes user_course_enrollments.progressPercentage + status, and on a
+//  100% roll INSERTs user_certificates (:819). NO blockchainAuditTrail
+//  row is inserted — the literal token appears 0 times in trainingLMS.ts,
+//  0 times in escorts.ts and 0 times in hazmatEscort.ts. trainingLMS.ts
+//  also has ZERO recordAuditEvent and ZERO import of _core/auditService
+//  (the escort tree's real audit surface, called at escorts.ts:110 et
+//  al), so a quiz submission, a progress roll and a certificate issuance
+//  are ALL unaudited. WS fan-out: NONE —
+//  `grep -n "emitNotification\|broadcast\|getIO"` in trainingLMS.ts → 0.
+//  This screen therefore invalidates on mutation and NEVER subscribes.
+//  Filed as GAP-LMS-AUDIT and GAP-LMS-WS.
+//
+//  RBAC — stated precisely, because two different things share one name.
+//  Every procedure on THIS surface is `protectedProcedure` imported at
+//  trainingLMS.ts:9 from _core/trpc, and that symbol is
+//  `t.procedure.use(requireUser)` at _core/trpc.ts:155. requireUser
+//  (_core/trpc.ts:140-153) throws UNAUTHORIZED when ctx.user is absent
+//  and performs NO role check. It is ROLE-BLIND: an authenticated escort
+//  passes, and so does every other authenticated role.
+//  `grep -c "roleProcedure" server/routers/trainingLMS.ts` → 0.
+//  That is NOT the same identifier as escorts.ts's `protectedProcedure`,
+//  which is a local alias —
+//  `import { escortProcedure as protectedProcedure … }` at escorts.ts:11
+//  — for escortProcedure, which IS roleProcedure(ROLES.ESCORT) at
+//  _core/trpc.ts:228. Conflating the two would be a real misstatement, so
+//  this file declares the weaker gate it actually sits behind. Row scope
+//  is by IDENTITY, not role: every read pins to Number(ctx.user.id)
+//  server-side (getMyCertificates :552, getMyEnrollments :257,
+//  getLMSDashboard :613).
+//
+//  §W OFFLINE — READ_CACHED(600s) via EscortOfflineCache (key
+//  `escort.training.runway`) for the five reads. Every mutation is
+//  ONLINE_ONLY: EscortOfflineCache is a read cache only, there is no
+//  escort outbox on the phone, and `EusoTripAPI.enqueueIfOfflineEligible`
+//  is path-gated to a driver allow-list that contains no trainingLMS
+//  path — so a mutation offline throws rather than silently queueing. NO
+//  QUEUE BADGE IS EVER DRAWN. On a cached paint the staleness line
+//  REPLACES the "TODAY" tick label, the today marker is suppressed, both
+//  CTAs go inert and the consumed/remaining figures dim: a stale day-count
+//  on a depleting window is a lie with a number attached, so the window
+//  stops advancing rather than advancing on a guess.
+//
+//  §C CHAIN — read chain CLOSED for all five reads. Quiz-submit chain is
+//  ONE-SIDED (commits server-side, emits no event, writes no audit row,
+//  notifies no counter-party). Enrol chain is ONE-SIDED (writes the row,
+//  fans out to nobody). Renewal chain is SILENT (no initiator, no verb,
+//  no counter-party — STUB (a)). Certificate-expiry chain is SILENT:
+//  userCertificates.renewalReminderSent (schema.ts:11010) is never
+//  written — `grep -rn "renewalReminderSent" server/` → 0.
+//
+//  TYPING — the class that has killed three escort screens.
+//  · `progressPercentage` is `int` (drizzle/schema.ts), NOT decimal, so
+//    it is a JSON number. It still goes through the lenient decoder
+//    because being wrong in the safe direction costs nothing.
+//  · `getLMSDashboard.totalTimeSpent` is
+//    `COALESCE(SUM(totalTimeSpentMinutes), 0)` (:626-629) with NO
+//    Math.round around it. MySQL SUM() over an INT column returns
+//    DECIMAL, and the mysql2 driver serialises DECIMAL as a **JSON
+//    STRING**. The `sql<number>` annotation is a TypeScript claim, not a
+//    runtime guarantee. A plain `Int` here decodes to nil and paints 0.
+//    THIS is the trap on this screen; ES21Number absorbs it.
+//  · `averageScore` IS wrapped in Math.round (:641), so it arrives as a
+//    number — but the same decoder is used, because the wrapper could be
+//    removed by anyone.
+//  · `averageRating` decimal(3,2) and `completionRate` decimal(5,2) on
+//    trainingCourses come through the `...course` spread of
+//    getCourseDetail as STRINGS for the same reason.
+//  · `mandatoryForRoles` / `countryScope` are `json` columns seeded from
+//    string literals (seed_courses.cjs:378, :384). The server itself
+//    hedges — `typeof c.countryScope === "string" ? JSON.parse(…)` at
+//    trainingLMS.ts:136 — so they decode as EITHER a string or an array.
+//  · Timestamps arrive as ISO strings, never Date.
+//
+
+import SwiftUI
+
+// MARK: - Wire projections (screen-local, private)
+//
+// Every field is OPTIONAL. A missing key decodes to nil, never to 0.
+
+/// Accepts Int, Double or a numeric String; fails loudly on anything
+/// else rather than quietly yielding a zero. See TYPING above.
+private struct ES21Number: Codable, Equatable {
+    let value: Double
+    var int: Int { Int(value.rounded()) }
+
+    init(_ v: Double) { value = v }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        if let i = try? c.decode(Int.self) { value = Double(i); return }
+        if let d = try? c.decode(Double.self) { value = d; return }
+        if let s = try? c.decode(String.self), let d = Double(s) { value = d; return }
+        throw DecodingError.dataCorruptedError(
+            in: c,
+            debugDescription: "ES-21: numeric field was neither a number nor a numeric string")
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer()
+        try c.encode(value)
+    }
+}
+
+/// A `json` column that the seeds wrote as a JSON string literal. Decodes
+/// from either shape. See trainingLMS.ts:136 — the server hedges too.
+private struct ES21StringList: Codable, Equatable {
+    let items: [String]
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        if let arr = try? c.decode([String].self) { items = arr; return }
+        if let s = try? c.decode(String.self) {
+            if let data = s.data(using: .utf8),
+               let arr = try? JSONDecoder().decode([String].self, from: data) {
+                items = arr
+            } else {
+                items = [s]
+            }
+            return
+        }
+        items = []
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer()
+        try c.encode(items)
+    }
+}
+
+/// One row of `trainingQuizzes`, as spread by getCourseDetail's module map
+/// and by getQuiz. `maxRetakes` is decoded and labelled ADVISORY — the
+/// server does not enforce it (STUB (e)).
+private struct ES21Quiz: Codable, Equatable {
+    let id: Int?
+    let moduleId: Int?
+    let title: String?
+    let passingScore: ES21Number?
+    let questionCount: ES21Number?
+    let timeLimitMinutes: ES21Number?
+    let allowRetakes: Bool?
+    let maxRetakes: ES21Number?
+}
+
+/// `lmsModules` row + the quiz getCourseDetail attaches at :199.
+private struct ES21Module: Codable, Equatable, Identifiable {
+    let id: Int?
+    let title: String?
+    let description: String?
+    let orderIndex: ES21Number?
+    let contentType: String?
+    let estimatedDurationMinutes: ES21Number?
+    let quiz: ES21Quiz?
+}
+
+/// `userCourseEnrollments` row. progressPercentage is `int` in the
+/// schema, not decimal — see TYPING.
+private struct ES21Enrollment: Codable, Equatable {
+    let id: Int?
+    let courseId: Int?
+    let status: String?
+    let progressPercentage: ES21Number?
+    let totalTimeSpentMinutes: ES21Number?
+    let startedAt: String?
+    let completedAt: String?
+}
+
+/// getCourseDetail's return: `{...course, modules:[…], enrollment}`.
+private struct ES21CourseDetail: Codable, Equatable {
+    let id: Int?
+    let slug: String?
+    let title: String?
+    let category: String?
+    let difficultyLevel: String?
+    let estimatedDurationMinutes: ES21Number?
+    let moduleCount: ES21Number?
+    let passingScore: ES21Number?
+    let renewalIntervalMonths: ES21Number?
+    let regulatoryReference: String?
+    let mandatoryForRoles: ES21StringList?
+    let countryScope: ES21StringList?
+    /// decimal(3,2) → JSON string.
+    let averageRating: ES21Number?
+    /// decimal(5,2) → JSON string.
+    let completionRate: ES21Number?
+    let modules: [ES21Module]?
+    let enrollment: ES21Enrollment?
+}
+
+/// The `user_certificates` half of getMyCertificates' join.
+private struct ES21CertificateRecord: Codable, Equatable {
+    let id: Int?
+    let courseId: Int?
+    let enrollmentId: Int?
+    let certificateNumber: String?
+    let issuedAt: String?
+    let expiresAt: String?
+    let verificationCode: String?
+    let status: String?
+}
+
+/// One row of getMyCertificates — trainingLMS.ts:554-562.
+private struct ES21CertificateRow: Codable, Equatable {
+    let certificate: ES21CertificateRecord?
+    let courseTitle: String?
+    let courseSlug: String?
+    let courseCategory: String?
+}
+
+/// The `user_module_progress` half of getModuleProgress' join.
+private struct ES21ProgressRecord: Codable, Equatable {
+    let id: Int?
+    let enrollmentId: Int?
+    let moduleId: Int?
+    let status: String?
+    let quizScore: ES21Number?
+    let quizAttempts: ES21Number?
+    let startedAt: String?
+    let completedAt: String?
+    let lastQuizAttemptAt: String?
+    let timeSpentMinutes: ES21Number?
+}
+
+/// One row of getModuleProgress — trainingLMS.ts:531-535.
+private struct ES21ProgressRow: Codable, Equatable {
+    let progress: ES21ProgressRecord?
+    let moduleTitle: String?
+    let moduleOrder: ES21Number?
+}
+
+/// getLMSDashboard — trainingLMS.ts:637-645. `totalTimeSpent` is the
+/// decimal-as-string trap; see TYPING.
+private struct ES21Dashboard: Codable, Equatable {
+    let totalCourses: ES21Number?
+    let enrolledCourses: ES21Number?
+    let completedCourses: ES21Number?
+    let inProgressCourses: ES21Number?
+    let totalCertificates: ES21Number?
+    let totalTimeSpent: ES21Number?
+    let averageScore: ES21Number?
+}
+
+// MARK: Inputs
+
+private struct ES21SlugInput: Encodable { let slug: String }
+private struct ES21EnrollmentInput: Encodable { let enrollmentId: Int }
+private struct ES21ModuleInput: Encodable { let moduleId: Int }
+private struct ES21CourseIdInput: Encodable { let courseId: Int }
+private struct ES21CertificateInput: Encodable { let certificateId: Int }
+
+// MARK: - Snapshot
+
+/// Everything this surface holds. Each half is optional so a partial
+/// answer stays partial instead of collapsing into zeros.
+private struct ES21Snapshot: Codable, Equatable {
+    var course: ES21CourseDetail? = nil
+    var certificates: [ES21CertificateRow]? = nil
+    var moduleProgress: [ES21ProgressRow]? = nil
+    var dashboard: ES21Dashboard? = nil
+}
+
+// MARK: - The runway
+//
+// The organising device, computed on device from wire values only. Every
+// derivation refuses rather than guesses: no terminal means no runway,
+// and an unpassed module is UNPLACED rather than placed at "today".
+
+/// The escort's one mandatory course. `mandatoryForRoles` is never read
+/// by the server (STUB (b)), so the slug is the client-side projection
+/// and the screen labels it as such.
+private let es21MandatorySlug = "oversize-overweight-load-compliance"
+
+private enum ES21Placement: Equatable {
+    /// Passed: the block can be placed, right edge on the pass date.
+    case placed(day: Int, score: Int)
+    /// Attempted and failed, or never attempted. It hangs off the runway.
+    case unplaced(score: Int?)
+}
+
+private struct ES21Block: Identifiable, Equatable {
+    let moduleId: Int?
+    let order: Int
+    let title: String
+    let contentType: String?
+    let minutes: Int?
+    let questionCount: Int?
+    let placement: ES21Placement
+    let quizId: Int?
+    let passingScore: Int?
+    let maxRetakes: Int?
+
+    var id: String { "\(order)-\(moduleId.map(String.init) ?? "nil")" }
+
+    var isPlaced: Bool {
+        if case .placed = placement { return true }
+        return false
+    }
+
+    var score: Int? {
+        switch placement {
+        case .placed(_, let s): return s
+        case .unplaced(let s):  return s
+        }
+    }
+}
+
+/// The window itself. Only constructible when BOTH terminals answered —
+/// a runway with one end missing is not a shorter runway, it is no
+/// runway, and the screen says so instead of drawing half a strip.
+private struct ES21Window: Equatable {
+    let issuedAt: Date
+    let expiresAt: Date
+    let today: Date
+
+    var totalDays: Int {
+        max(1, Calendar.current.dateComponents([.day], from: issuedAt, to: expiresAt).day ?? 1)
+    }
+
+    var consumedDays: Int {
+        let raw = Calendar.current.dateComponents([.day], from: issuedAt, to: today).day ?? 0
+        return min(max(raw, 0), totalDays)
+    }
+
+    var remainingDays: Int { max(0, totalDays - consumedDays) }
+
+    /// 0…1 along the strip.
+    var consumedFraction: Double {
+        Double(consumedDays) / Double(totalDays)
+    }
+
+    /// 0…1 for an arbitrary date inside the window, clamped.
+    func fraction(for date: Date) -> Double {
+        let d = Calendar.current.dateComponents([.day], from: issuedAt, to: date).day ?? 0
+        return min(max(Double(d) / Double(totalDays), 0), 1)
+    }
+
+    func day(of date: Date) -> Int {
+        Calendar.current.dateComponents([.day], from: issuedAt, to: date).day ?? 0
+    }
+}
+
+private enum ES21Runway {
+
+    static let iso: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+
+    static let isoPlain: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+
+    static func date(_ s: String?) -> Date? {
+        guard let s, !s.isEmpty else { return nil }
+        if let d = iso.date(from: s) { return d }
+        if let d = isoPlain.date(from: s) { return d }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return f.date(from: s)
+    }
+
+    /// The certificate row for the mandatory course, if the escort holds
+    /// one. Never falls back to "the first certificate" — a certificate
+    /// for a different course would draw the wrong window.
+    static func certificate(_ snap: ES21Snapshot) -> ES21CertificateRecord? {
+        let rows = snap.certificates ?? []
+        if let match = rows.first(where: { $0.courseSlug == es21MandatorySlug }) {
+            return match.certificate
+        }
+        if let courseId = snap.course?.id,
+           let match = rows.first(where: { $0.certificate?.courseId == courseId }) {
+            return match.certificate
+        }
+        return nil
+    }
+
+    /// The window, or nil. `now` is injected so the derivation is pure.
+    static func window(_ snap: ES21Snapshot, now: Date) -> ES21Window? {
+        guard let cert = certificate(snap),
+              let issued = date(cert.issuedAt),
+              let expires = date(cert.expiresAt),
+              expires > issued
+        else { return nil }
+        return ES21Window(issuedAt: issued, expiresAt: expires, today: now)
+    }
+
+    /// One block per seeded module, in orderIndex order. A module with no
+    /// progress row is `.unplaced(score: nil)` — absent, not zero.
+    static func blocks(_ snap: ES21Snapshot, window: ES21Window?) -> [ES21Block] {
+        guard let modules = snap.course?.modules, !modules.isEmpty else { return [] }
+        let rows = snap.moduleProgress ?? []
+        let coursePass = snap.course?.passingScore?.int
+
+        return modules
+            .sorted { ($0.orderIndex?.int ?? 0) < ($1.orderIndex?.int ?? 0) }
+            .map { module in
+                let row = rows.first { $0.progress?.moduleId == module.id }?.progress
+                let pass = module.quiz?.passingScore?.int ?? coursePass
+                let score = row?.quizScore?.int
+                let completed = date(row?.completedAt)
+
+                let placement: ES21Placement
+                if let completed, let window, row?.status == "completed" {
+                    placement = .placed(day: window.day(of: completed), score: score ?? 0)
+                } else {
+                    // Either the module has not passed, or it passed but
+                    // there is no window to place it on. With no axis a
+                    // pass is not "placed at zero" — it stays unplaced.
+                    placement = .unplaced(score: score)
+                }
+
+                return ES21Block(
+                    moduleId: module.id,
+                    order: module.orderIndex?.int ?? 0,
+                    title: module.title ?? "Untitled module",
+                    contentType: module.contentType,
+                    minutes: module.estimatedDurationMinutes?.int,
+                    questionCount: module.quiz?.questionCount?.int,
+                    placement: placement,
+                    quizId: module.quiz?.id,
+                    passingScore: pass,
+                    maxRetakes: module.quiz?.maxRetakes?.int)
+            }
+    }
+
+    /// The one module standing between the escort and 100%: the lowest
+    /// orderIndex that is not placed AND has a quiz to retake. Returns
+    /// nil when nothing is retakeable — the CTA disappears rather than
+    /// pointing nowhere.
+    static func nextRetake(_ blocks: [ES21Block]) -> ES21Block? {
+        blocks.first { !$0.isPlaced && $0.quizId != nil }
+    }
+
+    static func placedCount(_ blocks: [ES21Block]) -> Int {
+        blocks.filter(\.isPlaced).count
+    }
+
+    /// Minutes still owed — summed only over blocks whose minutes the
+    /// server actually gave us. A module with a nil duration is counted
+    /// as unknown, not as zero.
+    static func unplacedMinutes(_ blocks: [ES21Block]) -> (known: Int, unknown: Int) {
+        var known = 0
+        var unknown = 0
+        for b in blocks where !b.isPlaced {
+            if let m = b.minutes { known += m } else { unknown += 1 }
+        }
+        return (known, unknown)
+    }
+}
+
+// MARK: - Service seam
+//
+// A protocol, so the live reader is the only thing that touches the
+// network and the DEBUG fixture reader can stand in for it without a
+// `try?` anywhere in the view.
+
+private protocol ES21Reading {
+    func courseDetail() async throws -> ES21CourseDetail?
+    func certificates() async throws -> [ES21CertificateRow]
+    func moduleProgress(enrollmentId: Int) async throws -> [ES21ProgressRow]
+    func dashboard() async throws -> ES21Dashboard?
+}
+
+private protocol ES21Writing {
+    /// trainingLMS.getQuiz — {moduleId} ONLY (trainingLMS.ts:385).
+    func openQuiz(moduleId: Int) async throws -> ES21Quiz?
+    /// trainingLMS.enrollInCourse — trainingLMS.ts:215.
+    func enrol(courseId: Int) async throws -> Bool
+}
+
+private struct ES21LiveService: ES21Reading, ES21Writing {
+
+    func courseDetail() async throws -> ES21CourseDetail? {
+        try await EusoTripAPI.shared.query(
+            "trainingLMS.getCourseDetail",
+            input: ES21SlugInput(slug: es21MandatorySlug))
+    }
+
+    func certificates() async throws -> [ES21CertificateRow] {
+        try await EusoTripAPI.shared.queryNoInput("trainingLMS.getMyCertificates")
+    }
+
+    func moduleProgress(enrollmentId: Int) async throws -> [ES21ProgressRow] {
+        try await EusoTripAPI.shared.query(
+            "trainingLMS.getModuleProgress",
+            input: ES21EnrollmentInput(enrollmentId: enrollmentId))
+    }
+
+    func dashboard() async throws -> ES21Dashboard? {
+        try await EusoTripAPI.shared.queryNoInput("trainingLMS.getLMSDashboard")
+    }
+
+    func openQuiz(moduleId: Int) async throws -> ES21Quiz? {
+        try await EusoTripAPI.shared.query(
+            "trainingLMS.getQuiz",
+            input: ES21ModuleInput(moduleId: moduleId))
+    }
+
+    func enrol(courseId: Int) async throws -> Bool {
+        struct Out: Decodable { let success: Bool?; let enrollmentId: Int?; let alreadyEnrolled: Bool? }
+        let out: Out = try await EusoTripAPI.shared.mutation(
+            "trainingLMS.enrollInCourse",
+            input: ES21CourseIdInput(courseId: courseId))
+        return out.success ?? false
+    }
+}
+
+// MARK: - Nav intents (this file never touches EscortNavController)
+
+extension Notification.Name {
+    static let esES21OpenQuiz        = Notification.Name("esES21OpenQuiz")
+    static let esES21OpenCertificate = Notification.Name("esES21OpenCertificate")
+}
+
+// MARK: - Paint register
+//
+// File scope rather than nested, so the DEBUG preview initialiser can
+// name it without widening the type's access.
+
+private enum ES21Phase { case loading, live, cached, partial, failed }
+
+// MARK: - Screen body
+
+struct EscortTrainingCenterES21: View {
+
+    @Environment(\.palette) private var palette
+    @Environment(\.colorScheme) private var scheme
+
+    @State private var phase: ES21Phase = .loading
+    @State private var snap = ES21Snapshot()
+    @State private var cacheAge: TimeInterval? = nil
+    @State private var readAt: Date? = nil
+    /// Reads that threw, named on the face. A read that did not answer is
+    /// an absence, never a zero.
+    @State private var failures: [String] = []
+    /// The last mutation error, surfaced verbatim. Nothing is swallowed.
+    @State private var writeError: String? = nil
+    @State private var writeInFlight = false
+
+    private let reader: ES21Reading = ES21LiveService()
+    private let writer: ES21Writing = ES21LiveService()
+    private let cacheKey = "escort.training.runway"
+    private let cacheTTL: TimeInterval = 600      // READ_CACHED(600s)
+
+    #if DEBUG
+    /// Preview-only injection point. Never set in a shipping build.
+    fileprivate init(previewSnapshot: ES21Snapshot? = nil, previewPhase: ES21Phase? = nil) {
+        if let previewSnapshot { _snap = State(initialValue: previewSnapshot) }
+        if let previewPhase { _phase = State(initialValue: previewPhase) }
+    }
+    #else
+    init() {}
+    #endif
+
+    // Inks derived from Brand and the palette — no local Pal struct.
+    private var isDark: Bool { scheme == .dark }
+    private var okInk: Color      { isDark ? Color(hex: 0x34D399) : Color(hex: 0x0B7A4B) }
+    private var okFill: Color     { Brand.success }
+    private var alarmInk: Color   { isDark ? Color(hex: 0xF87171) : Color(hex: 0xB91C1C) }
+    private var alarmFill: Color  { Brand.danger }
+    private var blueInk: Color    { isDark ? Color(hex: 0x60A5FA) : Color(hex: 0x1D4ED8) }
+    private var spentTrack: Color { isDark ? Color(hex: 0x2A2F3D) : Color(hex: 0xD7DCE4) }
+
+    /// A cached paint must not advance the clock. The window is computed
+    /// against the capture instant, not against `Date()`.
+    private var asOf: Date {
+        if let age = cacheAge { return Date().addingTimeInterval(-age) }
+        return readAt ?? Date()
+    }
+
+    private var window: ES21Window? { ES21Runway.window(snap, now: asOf) }
+    private var blocks: [ES21Block] { ES21Runway.blocks(snap, window: window) }
+    private var certificate: ES21CertificateRecord? { ES21Runway.certificate(snap) }
+    private var isStale: Bool { cacheAge != nil }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.s4) {
+            eyebrowRow
+            titleRow
+            subline
+            IridescentHairline()
+            content
+        }
+        .padding(.horizontal, Space.s5)
+        .padding(.top, Space.s2)
+        .task { await refresh() }
+    }
+
+    // MARK: Header — HOME/LIST archetype
+
+    private var eyebrowRow: some View {
+        HStack(spacing: Space.s2) {
+            EusoTripEyebrow(verbatim: "ESCORT · TRAINING CENTER")
+                .font(EType.micro)
+                .tracking(1.0)
+                .foregroundStyle(LinearGradient.primary)
+            Spacer(minLength: Space.s2)
+            Text("JORDAN ESCOTO · LEAD")
+                .font(EType.micro)
+                .tracking(1.0)
+                .foregroundStyle(palette.textTertiary)
+                .lineLimit(1)
+        }
+    }
+
+    /// The H1 is the remaining day-count when a window exists and an
+    /// explicit refusal when it does not. It is never "0 days".
+    private var titleRow: some View {
+        Text(headline)
+            .font(.system(size: 34, weight: .bold))
+            .tracking(-0.6)
+            .monospacedDigit()
+            .foregroundStyle(palette.textPrimary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
+    }
+
+    private var headline: String {
+        guard let w = window else { return "No certificate window" }
+        return "\(w.remainingDays) days to expiry"
+    }
+
+    private var subline: some View {
+        Text(sublineText)
+            .font(EType.caption)
+            .foregroundStyle(palette.textSecondary)
+            .lineLimit(2)
+    }
+
+    private var sublineText: String {
+        let title = snap.course?.title ?? "Mandatory course not loaded"
+        guard !blocks.isEmpty else { return title }
+        return "\(title) · \(ES21Runway.placedCount(blocks)) of \(blocks.count) modules re-passed"
+    }
+
+    // MARK: Content
+
+    @ViewBuilder private var content: some View {
+        switch phase {
+        case .loading:
+            VStack(alignment: .leading, spacing: Space.s3) {
+                RoundedRectangle(cornerRadius: Radius.xl).fill(palette.bgCard).frame(height: 212)
+                RoundedRectangle(cornerRadius: Radius.lg).fill(palette.bgCard).frame(height: 194)
+                RoundedRectangle(cornerRadius: Radius.lg).fill(palette.bgCard).frame(height: 136)
+            }
+        case .failed:
+            VStack(alignment: .leading, spacing: Space.s3) {
+                emptyState(
+                    title: "Nothing answered",
+                    body: "Training records couldn't be loaded and no recent saved copy is available. Renewal timing stays hidden until the records are confirmed.")
+                failureList
+                CTAButton(title: "Try again", action: { Task { await refresh() } })
+            }
+        case .live, .cached, .partial:
+            VStack(alignment: .leading, spacing: Space.s5) {
+                runwaySection
+                curriculumSection
+                certificateSection
+                footnotes
+                ctaRow
+            }
+        }
+    }
+
+    private func emptyState(title: String, body: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title).font(EType.title).foregroundStyle(palette.textPrimary)
+            Text(body).font(EType.caption).foregroundStyle(palette.textSecondary)
+        }
+        .padding(Space.s4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: Radius.lg).fill(palette.bgCard))
+    }
+
+    @ViewBuilder private var failureList: some View {
+        if !failures.isEmpty {
+            Text("UNAVAILABLE · " + failures.joined(separator: " · "))
+                .font(EType.mono(.micro))
+                .foregroundStyle(alarmInk)
+                .lineLimit(3)
+        }
+    }
+
+    // MARK: Band A — the runway (the ONE ActiveCard)
+
+    private var runwaySection: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            sectionLabel(
+                "RENEWAL RUNWAY · 24-MONTH WINDOW",
+                trailing: window.map { "\($0.consumedDays) OF \($0.totalDays) D CONSUMED" } ?? "NO WINDOW")
+
+            ActiveCard {
+                VStack(alignment: .leading, spacing: Space.s3) {
+                    runwayHeader
+                    if let w = window {
+                        ES21RunwayStrip(
+                            window: w,
+                            blocks: blocks,
+                            isStale: isStale,
+                            stalenessLine: cacheAge.map { EscortOfflineCache.stalenessLine(age: $0).uppercased() },
+                            spentTrack: spentTrack,
+                            okFill: okFill,
+                            okInk: okInk,
+                            alarmFill: alarmFill,
+                            alarmInk: alarmInk,
+                            ink: palette.textPrimary,
+                            muted: palette.textTertiary)
+                    } else {
+                        noWindowNotice
+                    }
+                    Divider().overlay(palette.borderFaint)
+                    runwayFigures
+                    Text("RENEWAL UPDATES THIS CERTIFICATE RATHER THAN CREATING A SECOND RECORD")
+                        .font(EType.mono(.micro))
+                        .foregroundStyle(palette.textTertiary)
+                        .lineLimit(2)
+                }
+            }
+        }
+    }
+
+    private var runwayHeader: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .top, spacing: Space.s2) {
+                Text(snap.course?.title ?? "Course not loaded")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(2)
+                Spacer(minLength: Space.s2)
+                certChip
+            }
+            Text(certLine)
+                .font(EType.mono(.micro))
+                .foregroundStyle(palette.textTertiary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+    }
+
+    @ViewBuilder private var certChip: some View {
+        if let status = certificate?.status, !status.isEmpty {
+            chip(status.uppercased() == "ACTIVE" ? "CERT ACTIVE" : "CERT \(status.uppercased())",
+                 tint: status.uppercased() == "ACTIVE" ? okFill : alarmFill,
+                 ink: status.uppercased() == "ACTIVE" ? okInk : alarmInk)
+        } else {
+            chip("NO CERT ON FILE", tint: Brand.neutral, ink: palette.textSecondary)
+        }
+    }
+
+    private var certLine: String {
+        var parts: [String] = []
+        if let n = certificate?.certificateNumber, !n.isEmpty { parts.append(n) }
+        if let d = ES21Runway.date(certificate?.issuedAt) { parts.append("ISSUED \(Self.dayMonthYear(d))") }
+        if let m = snap.course?.renewalIntervalMonths?.int { parts.append("RENEWAL \(m) MO") }
+        return parts.isEmpty ? "CERTIFICATE DETAILS UNAVAILABLE" : parts.joined(separator: " · ")
+    }
+
+    private var noWindowNotice: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("NO RUNWAY TO DRAW")
+                .font(EType.micro).tracking(0.8)
+                .foregroundStyle(alarmInk)
+            Text("No complete certificate period is available. Submit or verify certification evidence before relying on the renewal timeline.")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: Radius.md).fill(alarmFill.opacity(isDark ? 0.14 : 0.08)))
+    }
+
+    private var runwayFigures: some View {
+        HStack(alignment: .top, spacing: 0) {
+            figure("CONSUMED", window.map { "\($0.consumedDays) d" })
+            figure("REMAINING", window.map { "\($0.remainingDays) d" })
+            figure("RE-PASSED", blocks.isEmpty ? nil : "\(ES21Runway.placedCount(blocks)) / \(blocks.count)")
+        }
+        // A stale window must not read as a live one.
+        .opacity(isStale ? 0.55 : 1.0)
+    }
+
+    private func figure(_ label: String, _ value: String?) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(EType.micro).tracking(1.0)
+                .foregroundStyle(palette.textTertiary)
+            Text(value ?? "—")
+                .font(.system(size: 22, weight: .semibold))
+                .monospacedDigit()
+                .foregroundStyle(value == nil ? palette.textTertiary : palette.textPrimary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: Band B — curriculum ledger
+
+    private var curriculumSection: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            sectionLabel(
+                blocks.isEmpty ? "CURRICULUM · NOT LOADED" : "CURRICULUM · \(blocks.count) SEEDED MODULES",
+                trailing: curriculumTrailing)
+
+            VStack(alignment: .leading, spacing: 0) {
+                if blocks.isEmpty {
+                    Text("No course modules are available. Refresh or choose another course.")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .padding(Space.s4)
+                } else {
+                    ForEach(Array(blocks.enumerated()), id: \.element.id) { idx, b in
+                        moduleRow(b)
+                        if idx < blocks.count - 1 {
+                            Divider().overlay(palette.borderFaint).padding(.leading, 54)
+                        }
+                    }
+                    Divider().overlay(palette.borderFaint)
+                    Text("REGULATION REFERENCES ARE UNAVAILABLE FOR THIS MODULE")
+                        .font(EType.mono(.micro))
+                        .foregroundStyle(palette.textTertiary)
+                        .padding(.horizontal, Space.s4)
+                        .padding(.vertical, 8)
+                        .lineLimit(2)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: Radius.lg)
+                    .fill(palette.bgCard)
+                    .overlay(RoundedRectangle(cornerRadius: Radius.lg).strokeBorder(palette.borderFaint))
+            )
+            .overlay(alignment: .leading) {
+                LinearGradient.diagonal
+                    .frame(width: 3)
+                    .clipShape(RoundedRectangle(cornerRadius: 1.5))
+            }
+        }
+    }
+
+    private var curriculumTrailing: String {
+        var parts: [String] = []
+        if let m = snap.course?.estimatedDurationMinutes?.int { parts.append("\(m) MIN") }
+        if let p = snap.course?.passingScore?.int { parts.append("PASS \(p)") }
+        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+    }
+
+    private func moduleRow(_ b: ES21Block) -> some View {
+        HStack(alignment: .center, spacing: 10) {
+            // ListRow icon chip — 28x28 rx10 inside the ledger.
+            ZStack {
+                RoundedRectangle(cornerRadius: Radius.sm + 2)
+                    .fill((b.isPlaced ? okFill : alarmFill).opacity(isDark ? 0.18 : 0.13))
+                Text("\(b.order)")
+                    .font(.system(size: 12, weight: .heavy))
+                    .monospacedDigit()
+                    .foregroundStyle(b.isPlaced ? okInk : alarmInk)
+            }
+            .frame(width: 28, height: 28)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(b.title)
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                Text(moduleMeta(b))
+                    .font(EType.mono(.micro))
+                    .foregroundStyle(palette.textTertiary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+
+            Spacer(minLength: Space.s2)
+
+            Text(moduleVerdict(b))
+                .font(.system(size: 10, weight: .bold))
+                .tracking(0.5)
+                .monospacedDigit()
+                .foregroundStyle(b.isPlaced ? okInk : alarmInk)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, Space.s4)
+        .padding(.vertical, 9)
+    }
+
+    private func moduleMeta(_ b: ES21Block) -> String {
+        var parts: [String] = []
+        if let t = b.contentType, !t.isEmpty { parts.append(t) }
+        if let m = b.minutes { parts.append("\(m) min") } else { parts.append("min TBD") }
+        // The question count is whatever the quiz row holds. Module 5's
+        // bank is the four seeded templates; it is labelled, not inflated.
+        if let q = b.questionCount {
+            parts.append(q <= 4 ? "\(q) generic Q" : "\(q) Q")
+        } else {
+            parts.append("no quiz row")
+        }
+        if case .placed(let day, _) = b.placement, let w = window {
+            let d = Calendar.current.date(byAdding: .day, value: day, to: w.issuedAt)
+            if let d { parts.append(Self.dayMonthYearLower(d)) }
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private func moduleVerdict(_ b: ES21Block) -> String {
+        switch b.placement {
+        case .placed(_, let s):
+            return "PASS \(s) · PLACED"
+        case .unplaced(let s):
+            guard let s else { return "NO ATTEMPT · UNPLACED" }
+            return "FAIL \(s) · UNPLACED"
+        }
+    }
+
+    // MARK: Band C — certificate + competency (40x40 rx10 ListRows)
+
+    private var certificateSection: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            sectionLabel("CERTIFICATE + COMPETENCY", trailing: "getMyCertificates:549")
+
+            VStack(alignment: .leading, spacing: 0) {
+                listRow(
+                    glyph: "rosette",
+                    tint: certificate == nil ? Brand.neutral : okFill,
+                    ink: certificate == nil ? palette.textSecondary : okInk,
+                    title: certificate == nil ? "Certificate · none on file" : "Certificate · \(certificate?.status ?? "unknown")",
+                    detail: certificate?.certificateNumber.map { "\($0) · WRITE-ONCE" } ?? "NOT ON THE WIRE",
+                    trailingTop: certificate?.status?.uppercased() ?? "ABSENT",
+                    trailingTopInk: certificate == nil ? palette.textTertiary : okInk,
+                    trailingBottom: window.map { "\($0.remainingDays) d" } ?? "—")
+
+                Divider().overlay(palette.borderFaint).padding(.leading, 72)
+
+                listRow(
+                    glyph: "chart.bar.fill",
+                    tint: Brand.info,
+                    ink: blueInk,
+                    title: "Competency rollup",
+                    detail: rollupDetail,
+                    trailingTop: snap.dashboard?.averageScore.map { "AVG \($0.int)" } ?? "AVG —",
+                    trailingTopInk: blueInk,
+                    trailingBottom: snap.course?.enrollment?.progressPercentage.map { "\($0.int) %" } ?? "—")
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: Radius.lg)
+                    .fill(palette.bgCard)
+                    .overlay(RoundedRectangle(cornerRadius: Radius.lg).strokeBorder(palette.borderFaint))
+            )
+        }
+    }
+
+    /// STUB (c) rendered as a sentence, not as a division. The number is
+    /// whatever the dashboard returned — including the string "0" that
+    /// SUM() produces — and the cause is named beside it.
+    private var rollupDetail: String {
+        guard let t = snap.dashboard?.totalTimeSpent else {
+            return "TIME LOGGED — · DASHBOARD DID NOT ANSWER"
+        }
+        return "TIME LOGGED \(t.int) M · QUIZ LOGS NO MIN"
+    }
+
+    private func listRow(glyph: String,
+                         tint: Color,
+                         ink: Color,
+                         title: String,
+                         detail: String,
+                         trailingTop: String,
+                         trailingTopInk: Color,
+                         trailingBottom: String) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: Radius.sm + 2)
+                    .fill(tint.opacity(isDark ? 0.18 : 0.13))
+                Image(systemName: glyph)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(ink)
+            }
+            .frame(width: 40, height: 40)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(1)
+                Text(detail)
+                    .font(EType.mono(.caption))
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+
+            Spacer(minLength: Space.s2)
+
+            VStack(alignment: .trailing, spacing: 3) {
+                Text(trailingTop)
+                    .font(.system(size: 11, weight: .bold))
+                    .tracking(0.6)
+                    .monospacedDigit()
+                    .foregroundStyle(trailingTopInk)
+                Text(trailingBottom)
+                    .font(.system(size: 14, weight: .bold))
+                    .monospacedDigit()
+                    .foregroundStyle(palette.textPrimary)
+            }
+        }
+        .padding(.horizontal, Space.s4)
+        .padding(.vertical, 14)
+    }
+
+    // MARK: Footnotes
+
+    private var footnotes: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            // §W, stated on the face. No queue badge is drawn anywhere,
+            // because there is no queue.
+            Text("QUIZ SUBMISSIONS REQUIRE A CONNECTION · UNSENT ANSWERS ARE NOT SAVED")
+                .font(EType.mono(.micro))
+                .foregroundStyle(palette.textTertiary)
+                .lineLimit(2)
+            // STUB (b), stated on the face.
+            Text("ESCORT RELEVANCE IS GUIDANCE · VERIFY COMPANY REQUIREMENTS BEFORE ASSIGNMENT")
+                .font(EType.mono(.micro))
+                .foregroundStyle(palette.textTertiary)
+                .lineLimit(2)
+            if let cap = ES21Runway.nextRetake(blocks)?.maxRetakes {
+                // STUB (e): decoded, labelled, never enforced.
+                Text("RETAKE LIMIT SHOWN: \(cap) · ELIGIBILITY IS CONFIRMED WHEN YOU RETRY")
+                    .font(EType.mono(.micro))
+                    .foregroundStyle(palette.textTertiary)
+                    .lineLimit(2)
+            }
+            failureList
+            if let writeError {
+                Text("ACTION NOT COMPLETED · \(writeError)")
+                    .font(EType.mono(.micro))
+                    .foregroundStyle(alarmInk)
+                    .lineLimit(3)
+            }
+            Text(readRegister)
+                .font(EType.mono(.micro))
+                .foregroundStyle(isStale ? Brand.warning : palette.textSecondary)
+                .lineLimit(1)
+        }
+    }
+
+    private var readRegister: String {
+        if let age = cacheAge { return EscortOfflineCache.stalenessLine(age: age).uppercased() + " · WINDOW HELD AT CAPTURE" }
+        guard let at = readAt else { return "READING…" }
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        return "LIVE · READ \(f.string(from: at))"
+    }
+
+    // MARK: CTAs
+    //
+    // Both are real verbs against verified procedures, and both go inert
+    // on a cached paint because every mutation here is ONLINE_ONLY.
+
+    @ViewBuilder private var ctaRow: some View {
+        HStack(spacing: Space.s3) {
+            primaryCTA
+            secondaryCTA
+        }
+    }
+
+    @ViewBuilder private var primaryCTA: some View {
+        if snap.course?.enrollment == nil, let courseId = snap.course?.id {
+            // Not enrolled: the runway never opened. enrollInCourse
+            // (trainingLMS.ts:215) is real and its gate admits an
+            // authenticated escort, so this is a verb and not a link.
+            CTAButton(
+                title: "ENROL IN COURSE",
+                action: { Task { await enrol(courseId: courseId) } },
+                isLoading: writeInFlight || isStale)
+                .disabled(writeInFlight || isStale)
+        } else if let retake = ES21Runway.nextRetake(blocks), let moduleId = retake.moduleId {
+            CTAButton(
+                title: "RETAKE MODULE \(retake.order) QUIZ",
+                action: { Task { await openQuiz(moduleId: moduleId, order: retake.order) } },
+                isLoading: writeInFlight || isStale)
+                .disabled(writeInFlight || isStale)
+        } else {
+            // Nothing to retake and nothing to enrol in. Rather than draw
+            // a disabled ghost of a button, the slot states the fact.
+            Text(blocks.isEmpty ? "NO CURRICULUM LOADED" : "ALL MODULES PLACED · NOTHING TO RETAKE")
+                .font(EType.micro).tracking(0.6)
+                .foregroundStyle(palette.textSecondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    @ViewBuilder private var secondaryCTA: some View {
+        if let certId = certificate?.id {
+            Button {
+                NotificationCenter.default.post(
+                    name: .esES21OpenCertificate, object: nil,
+                    userInfo: ["certificateId": certId])
+            } label: {
+                Text("OPEN CERTIFICATE")
+                    .font(.system(size: 11.5, weight: .heavy))
+                    .tracking(0.3)
+                    .foregroundStyle(blueInk)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 42)
+                    .background(
+                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                            .fill(palette.bgCard)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                                    .strokeBorder(Brand.blue.opacity(0.55), lineWidth: 1.5))
+                    )
+            }
+            .buttonStyle(.plain)
+            .opacity(isStale ? 0.5 : 1.0)
+            .disabled(isStale)
+            .frame(maxWidth: 144)
+        }
+    }
+
+    // MARK: Shared chrome
+
+    private func sectionLabel(_ text: String, trailing: String) -> some View {
+        HStack {
+            Text(text)
+                .font(EType.micro).tracking(1.0)
+                .foregroundStyle(palette.textTertiary)
+            Spacer(minLength: Space.s2)
+            Text(trailing)
+                .font(EType.micro).tracking(0.4)
+                .monospacedDigit()
+                .foregroundStyle(palette.textTertiary)
+                .lineLimit(1)
+        }
+    }
+
+    private func chip(_ text: String, tint: Color, ink: Color) -> some View {
+        Text(text)
+            .font(.system(size: 9, weight: .heavy))
+            .tracking(0.6)
+            .foregroundStyle(ink)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(Capsule().fill(tint.opacity(isDark ? 0.18 : 0.13)))
+    }
+
+    private static func dayMonthYear(_ d: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "dd MMM yyyy"
+        return f.string(from: d).uppercased()
+    }
+
+    private static func dayMonthYearLower(_ d: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "dd MMM yyyy"
+        return f.string(from: d).lowercased()
+    }
+
+    // MARK: Load
+    //
+    // No `try?` anywhere. Every read that throws is named and shown.
+
+    private func refresh() async {
+        var next = ES21Snapshot()
+        var failed: [String] = []
+
+        do { next.course = try await reader.courseDetail() }
+        catch { failed.append("course details") }
+
+        do { next.certificates = try await reader.certificates() }
+        catch { failed.append("certificates") }
+
+        // getModuleProgress needs the enrollment id, which only
+        // getCourseDetail can supply. If that read failed there is no id,
+        // and the dependent read is reported as skipped rather than
+        // silently producing an empty ledger.
+        if let enrollmentId = next.course?.enrollment?.id {
+            do { next.moduleProgress = try await reader.moduleProgress(enrollmentId: enrollmentId) }
+            catch { failed.append("module progress") }
+        } else if next.course != nil {
+            failed.append("module progress (enrollment required)")
+        }
+
+        do { next.dashboard = try await reader.dashboard() }
+        catch { failed.append("training summary") }
+
+        let anythingAnswered = next != ES21Snapshot()
+
+        if anythingAnswered {
+            let stamp = Date()
+            await MainActor.run {
+                snap = next
+                failures = failed
+                cacheAge = nil
+                readAt = stamp
+                phase = failed.isEmpty ? .live : .partial
+            }
+            EscortOfflineCache.store(next, key: cacheKey)
+            return
+        }
+
+        if let hit = EscortOfflineCache.load(ES21Snapshot.self, key: cacheKey, ttl: cacheTTL) {
+            await MainActor.run {
+                snap = hit.value
+                failures = failed
+                cacheAge = hit.age
+                phase = .cached
+            }
+        } else {
+            await MainActor.run {
+                snap = ES21Snapshot()      // no runway. Not a window of zeros.
+                failures = failed
+                cacheAge = nil
+                phase = .failed
+            }
+        }
+    }
+
+    // MARK: Writes — ONLINE_ONLY, never queued, never swallowed
+
+    private func openQuiz(moduleId: Int, order: Int) async {
+        await MainActor.run { writeInFlight = true; writeError = nil }
+        do {
+            let quiz = try await writer.openQuiz(moduleId: moduleId)
+            await MainActor.run {
+                writeInFlight = false
+                guard let quiz, let quizId = quiz.id else {
+                    // getQuiz returns null when the module has no quiz row
+                    // (trainingLMS.ts:391). Say so; do not open an empty
+                    // sheet.
+                    writeError = "No quiz is available for module \(order)."
+                    return
+                }
+                NotificationCenter.default.post(
+                    name: .esES21OpenQuiz, object: nil,
+                    userInfo: ["quizId": quizId, "moduleId": moduleId, "moduleOrder": order])
+            }
+        } catch {
+            await MainActor.run {
+                writeInFlight = false
+                writeError = "The quiz couldn't be opened. Check your connection and try again."
+            }
+        }
+    }
+
+    private func enrol(courseId: Int) async {
+        await MainActor.run { writeInFlight = true; writeError = nil }
+        do {
+            _ = try await writer.enrol(courseId: courseId)
+            await MainActor.run { writeInFlight = false }
+            await refresh()
+        } catch {
+            await MainActor.run {
+                writeInFlight = false
+                writeError = "Enrollment couldn't be completed. Check your connection and try again."
+            }
+        }
+    }
+}
+
+// MARK: - The runway strip
+//
+// The organising device. One horizontal axis, two encodings: WHEN the
+// work happened (right edge of each block) and WHAT IT COST (width of
+// each block). Nothing is drawn for a module that cannot be placed —
+// it drops to the unplaced lane instead.
+
+private struct ES21RunwayStrip: View {
+
+    let window: ES21Window
+    let blocks: [ES21Block]
+    let isStale: Bool
+    let stalenessLine: String?
+    let spentTrack: Color
+    let okFill: Color
+    let okInk: Color
+    let alarmFill: Color
+    let alarmInk: Color
+    let ink: Color
+    let muted: Color
+
+    /// Minutes → strip width. The seeded course is 360 minutes over a
+    /// 730-day window; the block width is the module's real minutes
+    /// scaled by the same factor for every block, so widths are
+    /// comparable to each other and to nothing else.
+    private func blockWidth(_ minutes: Int?, total: CGFloat) -> CGFloat {
+        let m = CGFloat(minutes ?? 70)
+        return max(18, min(total * 0.10, m * 0.35))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            GeometryReader { geo in
+                let w = geo.size.width
+                let terminalW: CGFloat = 6
+                let axisW = max(1, w - terminalW - 2)
+                let todayX = axisW * window.consumedFraction
+
+                ZStack(alignment: .topLeading) {
+
+                    // Tick row: OPENED … TODAY (or the staleness line).
+                    Text("OPENED \(Self.stamp(window.issuedAt))")
+                        .font(.system(size: 8, weight: .heavy)).tracking(0.5)
+                        .foregroundStyle(muted)
+                        .position(x: 60, y: 6)
+
+                    // §W: on a cached paint the staleness line REPLACES
+                    // the TODAY tick and the marker is suppressed. The
+                    // window does not advance on a guess.
+                    if let stalenessLine {
+                        Text(stalenessLine)
+                            .font(.system(size: 8, weight: .heavy)).tracking(0.5)
+                            .foregroundStyle(Brand.warning)
+                            .lineLimit(1)
+                            .frame(width: 150, alignment: .trailing)
+                            .position(x: min(max(todayX, 78), axisW - 4), y: 6)
+                    } else {
+                        Text("TODAY \(Self.stamp(window.today))")
+                            .font(.system(size: 8, weight: .heavy)).tracking(0.5)
+                            .foregroundStyle(ink)
+                            .lineLimit(1)
+                            .frame(width: 110, alignment: .trailing)
+                            .position(x: min(max(todayX, 58), axisW - 4), y: 6)
+                    }
+
+                    // Spent track — flat, no gradient. Days already gone.
+                    Rectangle()
+                        .fill(spentTrack)
+                        .frame(width: axisW, height: 16)
+                        .position(x: axisW / 2, y: 26)
+
+                    // Remaining — live gradient into the terminal.
+                    Rectangle()
+                        .fill(LinearGradient.primary)
+                        .frame(width: max(0, axisW - todayX), height: 16)
+                        .position(x: todayX + max(0, axisW - todayX) / 2, y: 26)
+                        .opacity(isStale ? 0.45 : 1.0)
+
+                    // The today marker — suppressed on a stale paint.
+                    if !isStale {
+                        Rectangle()
+                            .fill(ink)
+                            .frame(width: 1.5, height: 30)
+                            .position(x: todayX, y: 26)
+                    }
+
+                    // HARD TERMINAL at expiresAt. An I-bar, not a fade:
+                    // the window ends, it does not taper.
+                    ES21Terminal(color: alarmFill)
+                        .frame(width: 12, height: 36)
+                        .position(x: axisW + 3, y: 26)
+
+                    Text("EXP \(Self.stamp(window.expiresAt))")
+                        .font(.system(size: 8, weight: .heavy)).tracking(0.5)
+                        .foregroundStyle(alarmInk)
+                        .frame(width: 110, alignment: .trailing)
+                        .position(x: axisW - 46, y: 52)
+
+                    Text("PLACED")
+                        .font(.system(size: 8, weight: .heavy)).tracking(0.5)
+                        .foregroundStyle(muted)
+                        .position(x: 22, y: 52)
+
+                    // PLACED LANE — width is minutes, right edge is the
+                    // day the quiz was passed.
+                    ForEach(blocks.filter(\.isPlaced)) { b in
+                        if case .placed(let day, _) = b.placement {
+                            let right = axisW * min(max(Double(day) / Double(window.totalDays), 0), 1)
+                            let bw = blockWidth(b.minutes, total: axisW)
+                            let left = max(0, right - bw)
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 2)
+                                    .fill(okFill.opacity(0.16))
+                                    .overlay(RoundedRectangle(cornerRadius: 2).strokeBorder(okFill.opacity(0.7)))
+                                Text("\(b.order)")
+                                    .font(.system(size: 9, weight: .heavy))
+                                    .foregroundStyle(okInk)
+                            }
+                            .frame(width: bw, height: 18)
+                            .position(x: left + bw / 2, y: 51)
+
+                            // The stem that ties the block to its day.
+                            Rectangle()
+                                .fill(okFill)
+                                .frame(width: 1, height: 10)
+                                .position(x: right, y: 37)
+                        }
+                    }
+
+                    // UNPLACED LANE — dashed, at the hours it will still
+                    // cost, deliberately OFF the runway. It is never
+                    // parked at "today", which would read as done.
+                    ForEach(Array(blocks.filter { !$0.isPlaced }.enumerated()), id: \.element.id) { idx, b in
+                        let bw = blockWidth(b.minutes, total: axisW)
+                        let x = min(max(todayX, bw / 2 + 90), axisW - bw / 2) + CGFloat(idx) * (bw + 6)
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(alarmFill.opacity(0.13))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 2)
+                                        .strokeBorder(alarmFill.opacity(0.75),
+                                                      style: StrokeStyle(lineWidth: 1, dash: [3, 2.5])))
+                            Text("\(b.order)")
+                                .font(.system(size: 9, weight: .heavy))
+                                .foregroundStyle(alarmInk)
+                        }
+                        .frame(width: bw, height: 18)
+                        .position(x: x, y: 81)
+                    }
+
+                    Text(unplacedLabel)
+                        .font(.system(size: 8, weight: .heavy)).tracking(0.5)
+                        .foregroundStyle(muted)
+                        .position(x: 46, y: 81)
+
+                    if let failing = blocks.first(where: { !$0.isPlaced && $0.score != nil }),
+                       let s = failing.score, let pass = failing.passingScore {
+                        Text("QUIZ \(s) / \(pass)")
+                            .font(.system(size: 8, weight: .heavy)).tracking(0.5)
+                            .monospacedDigit()
+                            .foregroundStyle(alarmInk)
+                            .frame(width: 90, alignment: .trailing)
+                            .position(x: axisW - 45, y: 81)
+                    }
+                }
+            }
+            .frame(height: 96)
+
+            Text("BLOCK WIDTH = MODULE MINUTES · RIGHT EDGE = PASS DATE · UNPLACED HAS NO DATE")
+                .font(EType.mono(.micro))
+                .foregroundStyle(muted)
+                .lineLimit(2)
+        }
+    }
+
+    private var unplacedLabel: String {
+        let m = ES21Runway.unplacedMinutes(blocks)
+        if m.known == 0 && m.unknown == 0 { return "ALL PLACED" }
+        if m.unknown > 0 && m.known == 0 { return "UNPLACED · MIN TBD" }
+        return "UNPLACED · \(m.known) MIN"
+    }
+
+    private static func stamp(_ d: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "dd MMM yyyy"
+        return f.string(from: d).uppercased()
+    }
+}
+
+/// The hard terminal — an I-bar at expiresAt. The window does not fade
+/// out; it stops.
+private struct ES21Terminal: View {
+    let color: Color
+    var body: some View {
+        ZStack {
+            VStack(spacing: 0) {
+                Rectangle().fill(color).frame(height: 4)
+                Spacer(minLength: 0)
+                Rectangle().fill(color).frame(height: 4)
+            }
+            Rectangle().fill(color).frame(width: 4)
+        }
+    }
+}
+
+// MARK: - Screen wrapper
+//
+// The nav is rendered from the escort role enum, never hand-rolled.
+
+struct EscortTrainingCenterES21Screen: View {
+    let theme: Theme.Palette
+
+    var body: some View {
+        Shell(theme: theme) {
+            EscortTrainingCenterES21()
+        } nav: {
+            BottomNav(
+                leading: EscortNavRoute.leading(current: .me),
+                trailing: EscortNavRoute.trailing(current: .me),
+                orbState: .idle
+            )
+        }
+    }
+}
+
+// MARK: - Previews
+//
+// Every fixture below is fenced. Nothing here exists in a shipping build.
+
+#if DEBUG
+
+private enum ES21Fixture {
+
+    /// The scenario the SVG pair paints, expressed as a wire snapshot so
+    /// the preview exercises the SAME decode path the network does.
+    static var snapshot: ES21Snapshot {
+        let issued = "2025-03-14T09:00:00Z"
+        let expires = "2027-03-14T09:00:00Z"
+
+        func module(_ order: Int, _ title: String, _ type: String, _ minutes: Int,
+                    quizId: Int, questions: Int) -> ES21Module {
+            ES21Module(
+                id: 1400 + order,
+                title: title,
+                description: nil,
+                orderIndex: ES21Number(Double(order)),
+                contentType: type,
+                estimatedDurationMinutes: ES21Number(Double(minutes)),
+                quiz: ES21Quiz(
+                    id: quizId, moduleId: 1400 + order, title: "\(title) Quiz",
+                    passingScore: ES21Number(80),
+                    questionCount: ES21Number(Double(questions)),
+                    timeLimitMinutes: ES21Number(30),
+                    allowRetakes: true, maxRetakes: ES21Number(3)))
+        }
+
+        func progress(_ order: Int, score: Int, completed: String?) -> ES21ProgressRow {
+            ES21ProgressRow(
+                progress: ES21ProgressRecord(
+                    id: 900 + order, enrollmentId: 8842, moduleId: 1400 + order,
+                    status: completed == nil ? "in_progress" : "completed",
+                    quizScore: ES21Number(Double(score)),
+                    quizAttempts: ES21Number(1),
+                    startedAt: nil, completedAt: completed, lastQuizAttemptAt: completed,
+                    timeSpentMinutes: ES21Number(0)),
+                moduleTitle: nil,
+                moduleOrder: ES21Number(Double(order)))
+        }
+
+        let course = ES21CourseDetail(
+            id: 14, slug: es21MandatorySlug,
+            title: "Oversize/Overweight Load Compliance",
+            category: "specialized", difficultyLevel: "advanced",
+            estimatedDurationMinutes: ES21Number(360),
+            moduleCount: ES21Number(5),
+            passingScore: ES21Number(80),
+            renewalIntervalMonths: ES21Number(24),
+            regulatoryReference: "23 CFR Part 658, State permit programs",
+            mandatoryForRoles: nil, countryScope: nil,
+            averageRating: nil, completionRate: nil,
+            modules: [
+                module(1, "Federal Bridge Formula & Weight Limits", "text", 70, quizId: 501, questions: 15),
+                module(2, "State Permit Requirements", "text", 70, quizId: 502, questions: 15),
+                module(3, "Route Planning & Surveys", "interactive", 80, quizId: 503, questions: 15),
+                module(4, "Escort & Pilot Car Requirements", "text", 70, quizId: 504, questions: 15),
+                module(5, "Loading, Securement & Travel Restrictions", "quiz", 70, quizId: 505, questions: 4),
+            ],
+            enrollment: ES21Enrollment(
+                id: 8842, courseId: 14, status: "in_progress",
+                progressPercentage: ES21Number(80),
+                totalTimeSpentMinutes: ES21Number(0),
+                startedAt: issued, completedAt: nil))
+
+        return ES21Snapshot(
+            course: course,
+            certificates: [
+                ES21CertificateRow(
+                    certificate: ES21CertificateRecord(
+                        id: 771, courseId: 14, enrollmentId: 8842,
+                        certificateNumber: "EUSOTRIP-14-8842-M6QK2V",
+                        issuedAt: issued, expiresAt: expires,
+                        verificationCode: nil, status: "active"),
+                    courseTitle: "Oversize/Overweight Load Compliance",
+                    courseSlug: es21MandatorySlug,
+                    courseCategory: "specialized")
+            ],
+            moduleProgress: [
+                progress(1, score: 92, completed: "2025-11-21T15:00:00Z"),
+                progress(2, score: 88, completed: "2026-02-09T15:00:00Z"),
+                progress(3, score: 84, completed: "2026-05-22T15:00:00Z"),
+                progress(4, score: 96, completed: "2026-08-09T15:00:00Z"),
+                progress(5, score: 60, completed: nil),
+            ],
+            dashboard: ES21Dashboard(
+                totalCourses: ES21Number(20), enrolledCourses: ES21Number(1),
+                completedCourses: ES21Number(0), inProgressCourses: ES21Number(1),
+                totalCertificates: ES21Number(1),
+                // The decimal-as-string trap, reproduced verbatim: SUM()
+                // arrives as "0", not 0.
+                totalTimeSpent: ES21Number(0),
+                averageScore: ES21Number(84)))
+    }
+}
+
+#Preview("ES-21 · Training Center · Light") {
+    EscortTrainingCenterES21Screen(theme: Theme.light)
+        .preferredColorScheme(.light)
+}
+
+#Preview("ES-21 · Training Center · Dark") {
+    EscortTrainingCenterES21Screen(theme: Theme.dark)
+        .preferredColorScheme(.dark)
+}
+
+#Preview("ES-21 · Runway · painted") {
+    Shell(theme: Theme.dark) {
+        EscortTrainingCenterES21(previewSnapshot: ES21Fixture.snapshot, previewPhase: .live)
+    } nav: {
+        BottomNav(
+            leading: EscortNavRoute.leading(current: .me),
+            trailing: EscortNavRoute.trailing(current: .me),
+            orbState: .idle)
+    }
+    .preferredColorScheme(.dark)
+}
+
+#endif

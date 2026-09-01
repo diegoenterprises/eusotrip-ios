@@ -4,21 +4,19 @@
 //
 //  Verbatim reconstruction of "05 Rail/001 Rail Shipper Home" (canvas
 //  440×956, Theme.dark). Mode-agnostic SHIPPER app viewing rail loads
-//  off load.mode='rail' (Diego Usoro · Eusorone Technologies · companyId 1).
+//  off load.mode='rail'.
 //  Web parity: client/src/pages/shipper/ShipperDashboard.tsx.
 //
 //  RBAC: roleProcedure("SHIPPER","ADMIN","SUPER_ADMIN").
 //  transportMode = rail · country US · currency USD.
 //  Read-only landing; refresh on WS_CHANNELS.RAIL_SHIPMENT.
 //
-//  tRPC wiring (per <desc> — rail routers NOT mounted this fire, all five
-//  are named-gap STUB endpoints; wired honestly with real do/catch so they
-//  light up the moment the server mounts them):
-//    • shippers.getDashboardStats            (STUB · named-gap)
-//    • shippers.getLoadsRequiringAttention   (STUB · named-gap)
-//    • shippers.getActiveLoads               (STUB · named-gap)
-//    • railShipments.getRailShipments        (STUB · named-gap)
-//    • railShipments.getLiveDemurrage        (STUB · named-gap)
+//  tRPC wiring uses real do/catch and preserves unavailable values as
+//  unavailable rather than substituting design-time examples:
+//    • shippers.getDashboardStats
+//    • shippers.getLoadsRequiringAttention
+//    • railShipments.getRailShipments
+//    • railShipments.getLiveDemurrage
 //
 //  BottomNav: canonical Shipper enum HOME · LOADS · [orb] · WALLET · ME.
 //
@@ -51,14 +49,13 @@ struct RailShipperHomeScreen: View {
     }
 }
 
-// MARK: - Data shapes (decoded from the STUB rail routers)
+// MARK: - Data shapes
 
 private struct RailDashboardStats: Decodable {
     let activeShipments: Int?
     let carsRolling: Int?
     let consists: Int?
     let avgTransitDays: Double?
-    let monthlySpend: Double?
 }
 
 private struct RailAttentionAlert: Decodable, Identifiable {
@@ -76,7 +73,6 @@ private struct RailActiveShipment: Decodable, Identifiable {
     let destination: String?
     let meta: String?             // "intermodal · 6 cars · UP"
     let status: String?           // "in_transit" | "interchange" | "spotted"
-    let rate: Double?
     let progress: Double?         // 0…1 along the consist dot strip
     let equipmentKind: String?    // "intermodal" | "tankcar" | "hopper"
     let hazmat: Bool?
@@ -84,8 +80,8 @@ private struct RailActiveShipment: Decodable, Identifiable {
 
 private struct RailDemurrageTip: Decodable {
     let railRef: String?
-    let headline: String?         // "RAIL-260519 dwell trips demurrage in 4h"
-    let action: String?           // "Request early release at BNSF interchange · save ~$680"
+    let headline: String?
+    let action: String?
     let savings: Double?
 }
 
@@ -93,6 +89,7 @@ private struct RailDemurrageTip: Decodable {
 
 private struct RailShipperHome: View {
     @Environment(\.palette) private var palette
+    @EnvironmentObject private var session: EusoTripSession
 
     // Real loading + error state per card (honest wiring; no try?-collapse).
     @State private var stats: RailDashboardStats? = nil
@@ -110,6 +107,28 @@ private struct RailShipperHome: View {
     @State private var demurrage: RailDemurrageTip? = nil
     @State private var demurrageError: String? = nil
 
+    private let widgetLayoutKey = "railShipper.home.widgetOrder"
+    private let railCanonicalOrder = [
+        "rail_eusocard", "rail_actions", "rail_attention", "rail_eta_watch",
+        "rail_shipments", "rail_demurrage"
+    ]
+
+    private func railHomeRender(_ id: String) -> AnyView {
+        switch id {
+        case "rail_eusocard":
+            AnyView(EusoCardIssuePanel(
+                title: "EusoCard",
+                subtitle: "Rail shipper spend card for demurrage, accessorials and claims"
+            ))
+        case "rail_actions": AnyView(ctaRow)
+        case "rail_attention": AnyView(attentionCard)
+        case "rail_eta_watch": AnyView(statStrip)
+        case "rail_shipments": AnyView(activeShipmentsSection)
+        case "rail_demurrage": AnyView(esangStrip)
+        default: AnyView(EmptyView())
+        }
+    }
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 0) {
@@ -117,20 +136,14 @@ private struct RailShipperHome: View {
                 IridescentHairline()
                     .padding(.horizontal, Space.s5)
                     .padding(.top, Space.s4)
-                // First-load unlock cascade: each top-level section springs
-                // in top-to-bottom (scale 0.92 + blur 5pt + 50 ms stagger)
-	                // once per cold launch; settled on re-visit.
-	                StaggeredEntranceStack(alignment: .leading, spacing: Space.s5) {
-	                    HomeWeatherWidget()
-	                    EusoCardIssuePanel(
-	                        title: "EusoCard",
-	                        subtitle: "Rail shipper spend card for demurrage, accessorials and claims"
-	                    )
-	                    attentionCard
-                    ctaRow
-                    statStrip
-                    activeShipmentsSection
-                    esangStrip
+                StaggeredEntranceStack(alignment: .leading, spacing: Space.s5) {
+                    HomeWidgetGrid(
+                        canonicalOrder: railCanonicalOrder,
+                        role: "RAIL_SHIPPER",
+                        storageKey: widgetLayoutKey,
+                        weather: { AnyView(HomeWeatherWidget()) },
+                        render: { id in railHomeRender(id) }
+                    )
                     Color.clear.frame(height: 96) // bottom-nav clearance
                 }
                 .padding(.horizontal, Space.s5)
@@ -151,7 +164,7 @@ private struct RailShipperHome: View {
         _ = await (a, b, c, d)
     }
 
-    // MARK: - TopBar (SVG: eyebrow + counter, "Hey, Diego", DU avatar, subhead)
+    // MARK: - TopBar
 
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -165,11 +178,11 @@ private struct RailShipperHome: View {
                     .foregroundStyle(palette.textTertiary)
             }
             HStack(alignment: .firstTextBaseline) {
-                Text("Hey, Diego")
+                Text(greeting)
                     .font(.system(size: 34, weight: .bold)).kerning(-0.6)
                     .foregroundStyle(palette.textPrimary)
                 Spacer(minLength: 8)
-                duAvatar
+                accountAvatar
             }
             .padding(.top, Space.s2)
             Text(subhead)
@@ -180,37 +193,56 @@ private struct RailShipperHome: View {
         .padding(.top, Space.s5)
     }
 
-    /// SVG: "8 ACTIVE · 23 CARS ROLLING".
     private var counterLine: String {
-        let active = stats?.activeShipments ?? 8
-        let cars   = stats?.carsRolling ?? 23
-        return "\(active) ACTIVE · \(cars) CARS ROLLING"
+        if statsLoading { return "RAIL FLEET · UPDATING" }
+        if statsError != nil { return "RAIL FLEET · DATA UNAVAILABLE" }
+        var facts: [String] = []
+        if let active = stats?.activeShipments { facts.append("\(active) ACTIVE") }
+        if let cars = stats?.carsRolling { facts.append("\(cars) CARS ROLLING") }
+        return facts.isEmpty ? "RAIL FLEET · NOT REPORTED" : facts.joined(separator: " · ")
     }
 
-    /// SVG: "Eusorone Technologies · 8 rail shipments · 1 needs attention".
     private var subhead: String {
-        let count = stats?.activeShipments ?? 8
-        let attn  = alerts.isEmpty ? 1 : alerts.count
-        return "Eusorone Technologies · \(count) rail shipments · \(attn) needs attention"
+        var facts = ["Rail shipper workspace"]
+        if let count = stats?.activeShipments {
+            facts.append("\(count) rail shipment\(count == 1 ? "" : "s")")
+        }
+        if !alertsLoading, alertsError == nil {
+            facts.append("\(alerts.count) attention item\(alerts.count == 1 ? "" : "s")")
+        }
+        return facts.joined(separator: " · ")
     }
 
-    /// DU monogram on diagonal gradient + red unread dot (SVG translate(380,82)).
-    private var duAvatar: some View {
-        ZStack(alignment: .topTrailing) {
-            ZStack {
-                Circle().fill(LinearGradient.diagonal)
-                Text("DU")
-                    .font(.system(size: 14, weight: .bold)).tracking(0.4)
-                    .foregroundStyle(.white)
-            }
-            .frame(width: 40, height: 40)
-            Circle()
-                .fill(palette.bgCard)
-                .frame(width: 10, height: 10)
-                .overlay(Circle().fill(Brand.danger).frame(width: 7, height: 7))
-                .offset(x: 2, y: -2)
+    private var greeting: String {
+        let hour = Calendar.current.component(.hour, from: Date())
+        let salutation: String
+        switch hour {
+        case 5..<12: salutation = "Good morning"
+        case 12..<17: salutation = "Good afternoon"
+        case 17..<22: salutation = "Good evening"
+        default: salutation = "Welcome back"
         }
-        .accessibilityLabel("Diego Usoro · Eusorone Technologies")
+        let first = session.user?.firstName.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return first.isEmpty ? salutation : "\(salutation), \(first)"
+    }
+
+    private var accountInitials: String {
+        let parts = (session.user?.name ?? "")
+            .split(whereSeparator: \.isWhitespace)
+            .prefix(2)
+        let initials = parts.compactMap(\.first).map(String.init).joined().uppercased()
+        return initials.isEmpty ? "RS" : initials
+    }
+
+    private var accountAvatar: some View {
+        ZStack {
+            Circle().fill(LinearGradient.diagonal)
+            Text(accountInitials)
+                .font(.system(size: 14, weight: .bold)).tracking(0.4)
+                .foregroundStyle(.white)
+        }
+        .frame(width: 40, height: 40)
+        .accessibilityLabel(session.user?.name ?? "Rail shipper account")
     }
 
     // MARK: - Shipments requiring attention (gradient-rim, danger-washed head)
@@ -228,7 +260,7 @@ private struct RailShipperHome: View {
                     .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
                 Spacer()
-                Text("\(alertsLoading ? 1 : count)")
+                Text(alertsLoading ? "—" : "\(count)")
                     .font(.system(size: 12, weight: .heavy)).monospacedDigit()
                     .foregroundStyle(Brand.danger)
                     .padding(.horizontal, 9).padding(.vertical, 4)
@@ -329,10 +361,26 @@ private struct RailShipperHome: View {
     }
 
     private var railHomeContextLines: [String] {
+        let activeLine: String
+        if let active = stats?.activeShipments {
+            let noun = active == 1 ? "shipment" : "shipments"
+            activeLine = "\(active) active rail \(noun)"
+        } else {
+            activeLine = "Active rail shipments not reported"
+        }
+
+        let attentionNoun = alerts.count == 1 ? "item" : "items"
+        let rollingLine: String
+        if let carsRolling = stats?.carsRolling {
+            rollingLine = "\(alerts.count) attention \(attentionNoun) · \(carsRolling) cars rolling"
+        } else {
+            rollingLine = "\(alerts.count) attention \(attentionNoun) · cars rolling not reported"
+        }
+
         var lines = [
-            "\(stats?.activeShipments ?? shipments.count) active rail shipment\(shipments.count == 1 ? "" : "s")",
-            "\(alerts.count) attention item\(alerts.count == 1 ? "" : "s") · \(stats?.carsRolling ?? 0) cars rolling",
-            "Transit \(transitLabel) · spend \(spendLabel)"
+            activeLine,
+            rollingLine,
+            "Transit \(transitLabel) · consists \(stats?.consists.map(String.init) ?? "not reported")"
         ]
         if let tip = demurrage {
             lines.append("\(tip.headline ?? "Demurrage watch") · \(tip.action ?? "review release timing")")
@@ -346,7 +394,7 @@ private struct RailShipperHome: View {
         }
     }
 
-    // MARK: - 4-stat strip (Active · Cars rolling · Avg transit · Mo. spend)
+    // MARK: - Movement-only summary
 
     @ViewBuilder
     private var statStrip: some View {
@@ -356,30 +404,28 @@ private struct RailShipperHome: View {
             inlineError(err) { Task { await loadStats() } }
         } else {
             HStack(spacing: Space.s2) {
-                statTile(label: "Active", value: "\(stats?.activeShipments ?? 8)",
-                         trail: "+2 this wk", trailColor: Brand.success)
-                statTile(label: "Cars rolling", value: "\(stats?.carsRolling ?? 23)",
-                         trail: "\(stats?.consists ?? 5) consists", trailColor: palette.textSecondary)
+                statTile(label: "Active", value: stats?.activeShipments.map(String.init) ?? "—",
+                         trail: stats?.activeShipments == nil ? "not reported" : "live shipper scope",
+                         trailColor: palette.textSecondary)
+                statTile(label: "Cars rolling", value: stats?.carsRolling.map(String.init) ?? "—",
+                         trail: stats?.consists.map { "\($0) consists" } ?? "consists not reported",
+                         trailColor: palette.textSecondary)
                 statTile(label: "Avg transit", value: transitLabel,
-                         trail: "−0.3d", trailColor: Brand.success,
+                         trail: stats?.avgTransitDays == nil ? "not reported" : "live average",
+                         trailColor: palette.textSecondary,
                          gradientNumeral: true, valueSize: 22)
-                statTile(label: "Mo. spend", value: spendLabel,
-                         trail: "−3% vs Apr", trailColor: palette.textSecondary,
+                statTile(label: "Consists", value: stats?.consists.map(String.init) ?? "—",
+                         trail: stats?.consists == nil ? "not reported" : "current shipper scope",
+                         trailColor: palette.textSecondary,
                          gradientNumeral: true, valueSize: 22)
             }
         }
     }
 
     private var transitLabel: String {
-        let d = stats?.avgTransitDays ?? 4.2
+        guard let d = stats?.avgTransitDays else { return "—" }
         return String(format: "%.1fd", d)
     }
-    private var spendLabel: String {
-        let v = stats?.monthlySpend ?? 214_000
-        if v >= 1000 { return "$\(Int((v / 1000).rounded()))K" }
-        return "$\(Int(v))"
-    }
-
     private func statTile(label: String, value: String,
                           trail: String, trailColor: Color,
                           gradientNumeral: Bool = false,
@@ -428,7 +474,7 @@ private struct RailShipperHome: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("See all (\(shipmentsLoading ? 8 : shipments.count))")
+                Text(shipmentsLoading ? "Updating" : "See all (\(shipments.count))")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
             }
@@ -469,23 +515,23 @@ private struct RailShipperHome: View {
                     .font(EType.mono(.caption))
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(1)
-                // Real fraction along the consist's route (0…1). The strip
-                // animates its leading edge to this value on data arrival.
-                ConsistStrip(progress: max(0, min(1, s.progress ?? 0.5)),
-                             rolling: isRolling(s))
-                    .padding(.top, 2)
-            }
-            Spacer(minLength: Space.s2)
-            VStack(alignment: .trailing, spacing: 4) {
-                Text(statusText)
-                    .font(.system(size: 11, weight: .bold)).tracking(0.6)
-                    .foregroundStyle(statusColor)
-                if let rate = s.rate {
-                    Text(dollars(rate))
-                        .font(.system(size: 14, weight: .bold)).monospacedDigit()
-                        .foregroundStyle(palette.textPrimary)
+                if let progress = s.progress {
+                    // Real fraction along the consist's route (0…1). The strip
+                    // animates its leading edge to this value on data arrival.
+                    ConsistStrip(progress: max(0, min(1, progress)),
+                                 rolling: isRolling(s))
+                        .padding(.top, 2)
+                } else {
+                    Text("Route progress not reported")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textTertiary)
+                        .padding(.top, 2)
                 }
             }
+            Spacer(minLength: Space.s2)
+            Text(statusText)
+                .font(.system(size: 11, weight: .bold)).tracking(0.6)
+                .foregroundStyle(statusColor)
         }
         .padding(.horizontal, Space.s4)
         .padding(.vertical, 14)
@@ -574,11 +620,13 @@ private struct RailShipperHome: View {
 
     private var esangHeadline: String {
         if let h = demurrage?.headline, !h.isEmpty { return "ESang: \(h)" }
-        return "ESang: RAIL-260519 dwell trips demurrage in 4h"
+        if demurrageError != nil { return "ESang: Live recommendation unavailable" }
+        return "ESang: No live demurrage recommendation"
     }
     private var esangSubline: String {
         if let a = demurrage?.action, !a.isEmpty { return a }
-        return "Request early release at BNSF interchange · save ~$680"
+        if let demurrageError, !demurrageError.isEmpty { return demurrageError }
+        return "No provider-backed action is available for this rail scope."
     }
 
     // MARK: - Shared
@@ -625,7 +673,7 @@ private struct RailShipperHome: View {
 
     // MARK: - Loaders (honest do/catch — never try?-collapse)
 
-    /// STUB · named-gap: shippers.getDashboardStats (rail-filtered).
+    /// Rail-filtered shipper dashboard statistics.
     private func loadStats() async {
         statsLoading = true; statsError = nil
         struct In: Encodable { let transportMode: String }
@@ -640,7 +688,7 @@ private struct RailShipperHome: View {
         statsLoading = false
     }
 
-    /// STUB · named-gap: shippers.getLoadsRequiringAttention (rail-filtered).
+    /// Rail-filtered shipper attention queue.
     private func loadAlerts() async {
         alertsLoading = true; alertsError = nil
         struct In: Encodable { let transportMode: String }
@@ -655,9 +703,7 @@ private struct RailShipperHome: View {
         alertsLoading = false
     }
 
-    /// STUB · named-gap: railShipments.getRailShipments — active rail consists.
-    /// (<desc> also cites shippers.getActiveLoads as the mode-agnostic peer;
-    ///  rail screens read the rail router, which projects the same rows.)
+    /// Active rail consists in the authenticated shipper scope.
     private func loadShipments() async {
         shipmentsLoading = true; shipmentsError = nil
         struct In: Encodable { let limit: Int; let offset: Int; let transportMode: String }
@@ -672,7 +718,7 @@ private struct RailShipperHome: View {
         shipmentsLoading = false
     }
 
-    /// STUB · named-gap: railShipments.getLiveDemurrage — eSang dwell tip.
+    /// Provider-backed ESang dwell recommendation, when the server has one.
     private func loadDemurrage() async {
         demurrageError = nil
         do {
@@ -782,10 +828,12 @@ private struct ConsistStrip: View {
 
 #Preview("001 · Rail Shipper Home · Night") {
     RailShipperHomeScreen(theme: Theme.dark)
+        .environmentObject(EusoTripSession())
         .preferredColorScheme(.dark)
 }
 
 #Preview("001 · Rail Shipper Home · Afternoon") {
     RailShipperHomeScreen(theme: Theme.light)
+        .environmentObject(EusoTripSession())
         .preferredColorScheme(.light)
 }

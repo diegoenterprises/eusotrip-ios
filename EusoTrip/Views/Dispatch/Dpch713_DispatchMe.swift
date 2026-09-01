@@ -30,14 +30,14 @@ struct DispatchMeScreen: View {
     /// The custom role router reconstructs this screen after a child pop. Keep
     /// the active accordion and last tapped row in scene storage so Back returns
     /// to the user's working position instead of resetting to the top.
-    @SceneStorage("dispatch.me.expandedHub") private var expandedHubId: String = "operations"
+    @SceneStorage("dispatch.me.expandedHub") private var expandedHubId: String = ""
     @SceneStorage("dispatch.me.returnAnchor") private var returnAnchor: String = ""
 
     /// Which hub card is expanded. Consolidation (fix pack L15-11): the Me tab
     /// rendered 8 always-open sections = ~41 rows in one scroll (with "Comms
     /// hub" duplicated across two sections). Rebuilt into 7 bespoke collapsible
     /// hubs; the Command & Fleet and Fleet+HOS sections merged, the duplicate
-    /// Comms hub removed. Operations starts expanded; the rest collapse.
+    /// Comms hub removed. Every hub starts collapsed until the user opens it.
     var body: some View {
         Shell(theme: theme) {
             ScrollViewReader { proxy in
@@ -57,6 +57,7 @@ struct DispatchMeScreen: View {
                         exceptionsHub
                         analyticsHub
                         toolsHub
+                        deskHub
                         settingsHub
                         signOutButton
                         Color.clear.frame(height: 96)
@@ -249,10 +250,26 @@ struct DispatchMeScreen: View {
     private var toolsHub: some View {
         hubCard(id: "tools", icon: "wrench.and.screwdriver",
                 title: "Tools",
-                summary: "Bulk upload · Run ticket · Convoy composer", rowCount: 3) {
+                summary: "Bulk upload · Run ticket · Convoy · Run builder · Trailer pool", rowCount: 5) {
             row(label: "Bulk upload",         icon: "square.and.arrow.up.on.square", to: "Dpch709")
             row(label: "Run ticket capture",  icon: "camera.viewfinder",      to: "Dpch710")
             row(label: "Convoy composer",     icon: "car.2.fill",             to: "Dpch710A")
+            row(label: "Multi-stop run builder", detail: "Sequence stops against live HOS headroom", icon: "point.topleft.down.to.point.bottomright.curvepath", to: "Dpch832")
+            row(label: "Trailer pool",        detail: "Every box by site, dwell and detention exposure", icon: "shippingbox.and.arrow.backward", to: "Dpch833")
+        }
+    }
+
+    // 2026-08-26 — the desk quintet's inbound routes. Registering a screen is not
+    // reaching it: an id with a registry row and no control that pushes it is a
+    // catalog identity no user can ever open. These three plus the two added to
+    // Tools above are the inbound halves for Dpch830-834.
+    private var deskHub: some View {
+        hubCard(id: "desk", icon: "person.badge.clock",
+                title: "Desk & Shift",
+                summary: "Handover · Training · Performance", rowCount: 3) {
+            row(label: "Shift handover",      detail: "Carry-forward briefing for the incoming desk", icon: "arrow.left.arrow.right.circle", to: "Dpch830")
+            row(label: "Training simulator",  detail: "Assigned modules, certificates and compliance gap", icon: "graduationcap", to: "Dpch831")
+            row(label: "Performance review",  detail: "Your dispatch metrics against the guild board", icon: "chart.xyaxis.line", to: "Dpch834")
         }
     }
 
@@ -297,56 +314,18 @@ struct DispatchMeScreen: View {
                                         summary: String,
                                         rowCount: Int,
                                         @ViewBuilder content: () -> Content) -> some View {
-        let isOpen = expandedHubId == id
-        LifecycleCard {
-            Button {
-                withAnimation(.easeOut(duration: 0.22)) {
-                    expandedHubId = isOpen ? "" : id
-                    returnAnchor = "hub-\(id)"
-                }
-            } label: {
-                HStack(spacing: 12) {
-                    ZStack {
-                        Circle().fill(LinearGradient.diagonal).frame(width: 40, height: 40)
-                        Image(systemName: icon)
-                            .font(.system(size: 16, weight: .heavy))
-                            .foregroundStyle(.white)
-                    }
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(title)
-                            .font(.system(size: 15, weight: .heavy))
-                            .foregroundStyle(palette.textPrimary)
-                            .lineLimit(1).minimumScaleFactor(0.8)
-                        Text(summary)
-                            .font(EType.mono(.micro)).tracking(0.3)
-                            .foregroundStyle(palette.textSecondary)
-                            .lineLimit(1).minimumScaleFactor(0.7)
-                    }
-                    Spacer(minLength: 0)
-                    Text("\(rowCount)")
-                        .font(.system(size: 10, weight: .heavy)).monospacedDigit()
-                        .foregroundStyle(palette.textTertiary)
-                        .padding(.horizontal, 7).padding(.vertical, 3)
-                        .background(Capsule().fill(palette.bgCardSoft))
-                        .overlay(Capsule().strokeBorder(palette.borderFaint.opacity(0.5)))
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 11, weight: .heavy))
-                        .foregroundStyle(palette.textTertiary)
-                        .rotationEffect(.degrees(isOpen ? 90 : 0))
-                }
-            }
-            .buttonStyle(.plain)
-
-            if isOpen {
-                Rectangle()
-                    .fill(palette.borderFaint.opacity(0.4))
-                    .frame(height: 1)
-                    .padding(.vertical, 6)
-                VStack(spacing: 6) { content() }
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-            }
+        RoleDisclosureSection(
+            id: id,
+            systemImage: icon,
+            title: title,
+            summary: summary,
+            badgeText: "\(rowCount)",
+            anchorID: "hub-\(id)",
+            expandedID: $expandedHubId,
+            onToggle: { _ in returnAnchor = "hub-\(id)" }
+        ) {
+            VStack(spacing: 6) { content() }
         }
-        .id("hub-\(id)")
     }
 
     private func row(label: String, detail: String? = nil, icon: String, to screenId: String) -> some View {

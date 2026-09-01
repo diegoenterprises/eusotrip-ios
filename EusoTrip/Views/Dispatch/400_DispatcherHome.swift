@@ -64,10 +64,9 @@ private struct DispatcherDriverStatus: Decodable, Identifiable, Hashable {
     let name: String
     let status: String?
     let load: String?
-    let hoursRemaining: Double?
 }
 
-/// `dispatch.getPendingTenders` row — STUB · named-gap EUSO-2122.
+/// `dispatch.getPendingTenders` row.
 private struct PendingTender: Decodable, Identifiable, Hashable {
     let id: String
     let lane: String?
@@ -93,6 +92,8 @@ private struct DispatcherHomeBody: View {
     @State private var kpi: DispatcherKPI? = nil
     @State private var issues: [DispatcherIssue] = []
     @State private var drivers: [DispatcherDriverStatus] = []
+    @State private var hosEvidence: [HOSFleetDriver] = []
+    @State private var hosEvidenceError: String? = nil
     @State private var tenders: [PendingTender] = []
 
     @State private var loading = true
@@ -100,6 +101,12 @@ private struct DispatcherHomeBody: View {
     @State private var tenderError: String? = nil
     @State private var actionError: String? = nil
     @State private var acceptingId: String? = nil
+
+    private let widgetLayoutKey = "dispatcher.home.widgetOrder"
+    private let dispatchCanonicalOrder = [
+        "priority", "dispatch_summary", "tender_queue", "dispatch_esang",
+        "hosWatch", "exceptions_list"
+    ]
 
     private var dispatcherDisplayName: String {
         let raw = session.user?.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -112,9 +119,26 @@ private struct DispatcherHomeBody: View {
     }
 
     private var dispatchSummaryLine: String {
-        let active = kpi?.activeLoads ?? 0
+        if loading { return "Dispatch desk · updating" }
+        if loadError != nil { return "Dispatch desk · data unavailable" }
+        guard let active = kpi?.activeLoads else {
+            let label = drivers.count == 1 ? "driver" : "drivers"
+            return "Dispatch desk · \(drivers.count) \(label) · active hauls not reported"
+        }
         let label = drivers.count == 1 ? "driver" : "drivers"
         return "Dispatch desk · \(drivers.count) \(label) · \(active) active hauls"
+    }
+
+    private func dispatchHomeRender(_ id: String) -> AnyView {
+        switch id {
+        case "priority":         AnyView(dispatchPriorityWidget)
+        case "dispatch_summary": AnyView(dispatchSummaryWidget)
+        case "tender_queue":      AnyView(dispatchTenderWidget)
+        case "dispatch_esang":    AnyView(dispatchESangWidget)
+        case "hosWatch":          AnyView(dispatchHOSWidget)
+        case "exceptions_list":   AnyView(dispatchExceptionsWidget)
+        default:                   AnyView(EmptyView())
+        }
     }
 
     var body: some View {
@@ -127,24 +151,15 @@ private struct DispatcherHomeBody: View {
                 greeting
                 IridescentHairline()
 
-                HomeWeatherWidget(includeLaneImpact: (kpi?.activeLoads ?? 0) > 0)
-
-                if loading {
-                    LifecycleCard {
-                        Text("Loading dispatch desk…")
-                            .font(EType.caption).foregroundStyle(palette.textSecondary)
-                    }
-                } else if let err = loadError {
-                    LifecycleCard(accentDanger: true) {
-                        Text(err).font(EType.caption).foregroundStyle(Brand.danger)
-                    }
-                } else {
-                    attentionRow
-                    kpiStrip
-                    topTenders
-                    esangStrip
-                    liveDrivers
-                }
+                HomeWidgetGrid(
+                    canonicalOrder: dispatchCanonicalOrder,
+                    role: "DISPATCH",
+                    storageKey: widgetLayoutKey,
+                    weather: {
+                        AnyView(HomeWeatherWidget(includeLaneImpact: (kpi?.activeLoads ?? 0) > 0))
+                    },
+                    render: { id in dispatchHomeRender(id) }
+                )
 
                 // The shell navigation floats over the scroll surface. Keep
                 // expanded weather and the final driver row fully reachable.
@@ -154,6 +169,13 @@ private struct DispatcherHomeBody: View {
         }
         .task { await load() }
         .eusoRefreshable { await load() }
+        // RealtimeService → `dispatch:board_update`. The desk is the
+        // dispatcher's landing surface; every board mutation (assign,
+        // autopilot, tender flip, exception) must land here without
+        // waiting for a pull.
+        .onReceive(NotificationCenter.default.publisher(for: .eusoDispatchBoardUpdated)) { _ in
+            Task { await load() }
+        }
     }
 
     // MARK: TopBar eyebrow
@@ -171,10 +193,106 @@ private struct DispatcherHomeBody: View {
     }
 
     private var tickerLine: String {
-        let active = kpi?.activeLoads ?? 0
-        let pending = kpi?.pendingTenders ?? 0
-        let expiring = tenders.filter { ($0.expiresInMinutes ?? .max) < 60 && ($0.isPeer != true) }.count
+        if loading { return "UPDATING" }
+        let active = kpi?.activeLoads.map(String.init) ?? "—"
+        let pending = kpi?.pendingTenders.map(String.init) ?? "—"
+        let expiring = tenderError == nil
+            ? String(tenders.filter { ($0.expiresInMinutes ?? .max) < 60 && ($0.isPeer != true) }.count)
+            : "—"
         return "\(active) ACTIVE · \(pending) PENDING · \(expiring) EXPIRING"
+    }
+
+    // MARK: Widget state boundaries
+
+    @ViewBuilder
+    private var dispatchPriorityWidget: some View {
+        if loading {
+            widgetLoading("Loading priority tenders")
+        } else if let tenderError {
+            widgetError(tenderError) { Task { await loadTenders() } }
+        } else {
+            attentionRow
+        }
+    }
+
+    @ViewBuilder
+    private var dispatchSummaryWidget: some View {
+        if loading {
+            widgetLoading("Loading dispatch summary")
+        } else if let loadError {
+            widgetError(loadError) { Task { await load() } }
+        } else {
+            kpiStrip
+        }
+    }
+
+    @ViewBuilder
+    private var dispatchTenderWidget: some View {
+        if loading { widgetLoading("Loading tender queue") } else { topTenders }
+    }
+
+    @ViewBuilder
+    private var dispatchESangWidget: some View {
+        if loading {
+            widgetLoading("Loading dispatch counsel")
+        } else if loadError != nil, tenderError != nil {
+            widgetError("Dispatch counsel is waiting for current board evidence.") {
+                Task { await load() }
+            }
+        } else {
+            esangStrip
+        }
+    }
+
+    @ViewBuilder
+    private var dispatchHOSWidget: some View {
+        if loading {
+            widgetLoading("Loading driver duty evidence")
+        } else if let loadError {
+            widgetError(loadError) { Task { await load() } }
+        } else {
+            liveDrivers
+        }
+    }
+
+    @ViewBuilder
+    private var dispatchExceptionsWidget: some View {
+        if loading {
+            widgetLoading("Loading dispatch exceptions")
+        } else if let loadError {
+            widgetError(loadError) { Task { await load() } }
+        } else {
+            issuesRegister
+        }
+    }
+
+    private func widgetLoading(_ message: String) -> some View {
+        LifecycleCard {
+            HStack(spacing: Space.s2) {
+                ProgressView().controlSize(.small)
+                Text(message)
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+            }
+        }
+    }
+
+    private func widgetError(_ message: String, retry: @escaping () -> Void) -> some View {
+        LifecycleCard(accentDanger: true) {
+            HStack(alignment: .top, spacing: Space.s3) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(Brand.danger)
+                Text(message)
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                Spacer(minLength: Space.s2)
+                Button("Retry", action: retry)
+                    .font(EType.micro.weight(.bold))
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Brand.blue)
+                    .frame(minWidth: 44, minHeight: 44)
+            }
+        }
     }
 
     private var greeting: some View {
@@ -253,36 +371,49 @@ private struct DispatcherHomeBody: View {
     private var kpiStrip: some View {
         HStack(spacing: Space.s2) {
             kpiTile(label: "PENDING TENDERS",
-                    value: "\(kpi?.pendingTenders ?? 0)",
+                    value: kpi?.pendingTenders.map(String.init) ?? "—",
                     valueColor: Brand.warning,
-                    foot: "\(tenders.filter { ($0.expiresInMinutes ?? .max) < 60 && $0.isPeer != true }.count) expire < 1h",
+                    foot: tenderError == nil
+                        ? "\(tenders.filter { ($0.expiresInMinutes ?? .max) < 60 && $0.isPeer != true }.count) expire < 1h"
+                        : "tender timing unavailable",
                     footColor: palette.textSecondary)
             kpiTile(label: "ACTIVE HAULS",
-                    value: "\(kpi?.activeLoads ?? 0)",
+                    value: kpi?.activeLoads.map(String.init) ?? "—",
                     valueColor: palette.textPrimary,
-                    foot: "on time · \(Int((kpi?.onTimePct ?? 0).rounded()))%",
+                    foot: kpi?.onTimePct.map { "on time · \(Int($0.rounded()))%" } ?? "on-time rate not reported",
                     footColor: Brand.success)
             kpiTile(label: "DRIVERS IDLE",
-                    value: "\(kpi?.driversIdle ?? 0)",
+                    value: kpi?.driversIdle.map(String.init) ?? "—",
                     valueGradient: true,
                     foot: idleHosFoot,
                     footColor: palette.textSecondary)
             kpiTile(label: "OTR · 90D",
-                    value: String(format: "%.1f%%", kpi?.onTimePct ?? 0),
+                    value: kpi?.onTimePct.map { String(format: "%.1f%%", $0) } ?? "—",
                     valueGradient: true,
-                    foot: "util \(kpi?.avgUtilizationPct ?? 0)%",
+                    foot: kpi?.avgUtilizationPct.map { "util \($0)%" } ?? "utilization not reported",
                     footColor: Brand.success)
         }
     }
 
     private var idleHosFoot: String {
         let idle = drivers.filter { ($0.status ?? "").lowercased().contains("idle") }
-        let avg = idle.compactMap { $0.hoursRemaining }.reduce(0, +) / Double(max(idle.count, 1))
-        let h = Int(avg); let m = Int((avg - Double(h)) * 60)
-        if idle.isEmpty {
+        guard !idle.isEmpty else {
             let reported = kpi?.driversIdle ?? 0
-            return reported > 0 ? "\(reported) available" : "none available"
+            return reported > 0 ? "HOS evidence unavailable" : "none reported idle"
         }
+        let currentHours = idle.compactMap { driver -> Double? in
+            guard let evidence = evidence(for: driver.id),
+                  evidence.hasCurrentObservation(),
+                  let hours = evidence.hoursAvailable?.drivingRemaining,
+                  hours.isFinite,
+                  hours >= 0 else { return nil }
+            return hours
+        }
+        guard currentHours.count == idle.count else {
+            return hosEvidenceError ?? "HOS evidence incomplete"
+        }
+        let avg = currentHours.reduce(0, +) / Double(currentHours.count)
+        let h = Int(avg); let m = Int((avg - Double(h)) * 60)
         return "avg HOS \(h)h \(m)m"
     }
 
@@ -491,8 +622,7 @@ private struct DispatcherHomeBody: View {
                 }
                 .frame(width: 32, height: 32)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(pick.map { "ESANG says: tender \($0.lane ?? "this lane") to \($0.suggestedDriver ?? "best driver")" }
-                         ?? "ESANG says: queue is steady, no urgent tender")
+                    Text(esangHeadline(pick))
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(palette.textPrimary).lineLimit(1)
                     Text(esangReason(pick))
@@ -512,12 +642,24 @@ private struct DispatcherHomeBody: View {
         .buttonStyle(.plain)
     }
 
+    private func esangHeadline(_ tender: PendingTender?) -> String {
+        if tenderError != nil { return "ESANG is waiting for the current tender queue" }
+        if let tender {
+            return "ESANG says: tender \(tender.lane ?? "this lane") to \(tender.suggestedDriver ?? "best driver")"
+        }
+        return "ESANG says: queue is steady, no urgent tender"
+    }
+
     private func esangReason(_ t: PendingTender?) -> String {
         guard let t, let d = drivers.first(where: { $0.name.contains(t.suggestedDriver ?? "∅") }) else {
-            return "live HoS-aware matching from the driver board"
+            return "driver-board recommendation · HOS evidence unavailable"
         }
-        let hos = d.hoursRemaining.map { String(format: "HOS %.0fh %02.0fm", floor($0), ($0 - floor($0)) * 60) } ?? "HOS -"
-        return "\(hos) · home-base near lane · best rate vs avg"
+        guard let evidence = evidence(for: d.id),
+              evidence.hasCurrentObservation(),
+              let hours = evidence.hoursAvailable?.drivingRemaining else {
+            return "driver-board recommendation · HOS evidence unavailable"
+        }
+        return "HOS \(HOSStatus.formatHours(hours)) · \(evidence.source ?? "source unavailable") · driver-board recommendation"
     }
 
     // MARK: Live drivers strip
@@ -560,6 +702,60 @@ private struct DispatcherHomeBody: View {
         .buttonStyle(.plain)
     }
 
+    private var issuesRegister: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack {
+                Text("ACTIVE EXCEPTIONS")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer(minLength: 0)
+                Text("\(issues.count)")
+                    .font(EType.mono(.caption))
+                    .foregroundStyle(palette.textSecondary)
+            }
+            if issues.isEmpty {
+                EusoEmptyState(
+                    systemImage: "checkmark.circle",
+                    title: "No active exceptions",
+                    subtitle: "The current dispatch scope has no reported exceptions."
+                )
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(issues.prefix(4).enumerated()), id: \.element.id) { index, issue in
+                        issueRow(issue)
+                        if index < min(issues.count, 4) - 1 {
+                            Divider().overlay(palette.borderFaint)
+                        }
+                    }
+                }
+                .background(palette.bgCard)
+                .overlay(RoundedRectangle(cornerRadius: Radius.lg).strokeBorder(palette.borderFaint))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+            }
+        }
+    }
+
+    private func issueRow(_ issue: DispatcherIssue) -> some View {
+        let severe = ["critical", "danger", "high"].contains((issue.severity ?? "").lowercased())
+        let tint = severe ? Brand.danger : Brand.warning
+        return HStack(alignment: .top, spacing: Space.s3) {
+            Image(systemName: severe ? "exclamationmark.octagon.fill" : "exclamationmark.triangle.fill")
+                .foregroundStyle(tint)
+                .frame(width: 28, height: 28)
+            VStack(alignment: .leading, spacing: 3) {
+                Text((issue.type ?? "Dispatch exception").replacingOccurrences(of: "_", with: " ").capitalized)
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                Text([issue.loadNumber, issue.createdAt].compactMap { $0 }.joined(separator: " · "))
+                    .font(EType.mono(.caption))
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(Space.s3)
+    }
+
     private var rollingDriverCount: Int {
         drivers.filter { ($0.status ?? "").lowercased().contains("rolling") || ($0.status ?? "").lowercased().contains("driving") }.count
     }
@@ -598,6 +794,7 @@ private struct DispatcherHomeBody: View {
     private func load() async {
         loading = true; loadError = nil
         struct DriverIn: Encodable { let limit: Int }
+        async let hosRefresh: Void = loadHOSEvidence()
         do {
             async let kpiR: DispatcherKPI = EusoTripAPI.shared.queryNoInput("dispatch.getKPI")
             async let issuesR: [DispatcherIssue] = EusoTripAPI.shared.queryNoInput("dispatch.getActiveIssues")
@@ -610,10 +807,27 @@ private struct DispatcherHomeBody: View {
         } catch {
             loadError = "Dispatch desk couldn't refresh. Pull down to try again."
         }
+        await hosRefresh
         // Tenders load independently so a temporary provider/API issue does
         // not blank the rest of the desk.
         await loadTenders()
         loading = false
+    }
+
+    private func loadHOSEvidence() async {
+        do {
+            hosEvidence = try await EusoTripAPI.shared.queryNoInput("hos.getFleetHOS")
+            hosEvidenceError = nil
+        } catch {
+            hosEvidence = []
+            hosEvidenceError = "HOS evidence unavailable"
+        }
+    }
+
+    private func evidence(for driverId: String) -> HOSFleetDriver? {
+        hosEvidence.first { row in
+            row.driverId == driverId || row.userId.map { String($0) } == driverId
+        }
     }
 
     private func loadTenders() async {

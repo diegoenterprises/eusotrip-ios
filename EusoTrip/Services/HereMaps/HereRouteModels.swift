@@ -102,8 +102,11 @@ struct HerePlace: Decodable {
     let originalLocation: Coord?
     let type: String?           // "place", "waypoint", etc.
 
-    var coordinate: CLLocationCoordinate2D {
-        CLLocationCoordinate2D(latitude: location.lat, longitude: location.lng)
+    var coordinate: CLLocationCoordinate2D? {
+        LatLongParser.validatedCoordinate(
+            latitude: location.lat,
+            longitude: location.lng
+        )
     }
 }
 
@@ -280,35 +283,23 @@ struct HereGeocodeItem: Decodable, Identifiable {
         return isStateCode
     }
 
-    /// Clean, user-facing label derived from the STRUCTURED address rather
-    /// than HERE's raw `title` — which can read "Barbour Ct, San Pedro, CA"
-    /// for a Houston port query, or a malformed "Part near (of) …". We
-    /// rebuild "<place/street>, City, ST" from the resolved admin fields so
-    /// what the user sees always matches the coordinate we stored.
+    func formattedAddress(
+        provenance: HereAddressProvenance,
+        place: String? = nil
+    ) -> HereFormattedAddress {
+        HereAddressFormatter.format(
+            address: address,
+            place: place,
+            fallbackTitle: title,
+            provenance: provenance
+        )
+    }
+
+    /// Compatibility label for existing call sites. New address flows should
+    /// retain the full `HereFormattedAddress` so provider provenance is not
+    /// discarded at the UI boundary.
     var displayLabel: String {
-        let city  = address.city
-        let region = address.stateCode ?? address.state
-        // Lead with the most specific named component HERE resolved.
-        let lead: String? = {
-            if let hn = address.houseNumber, let st = address.street {
-                return "\(hn) \(st)"
-            }
-            if let st = address.street { return st }
-            // For a place/locality the title's first segment is the POI /
-            // locality name; keep it but strip any trailing admin echo so
-            // we don't double up city/state below.
-            let head = title.split(separator: ",").first.map {
-                $0.trimmingCharacters(in: .whitespaces)
-            }
-            return head?.isEmpty == false ? head : address.district
-        }()
-        let parts = [lead, city, region]
-            .compactMap { $0 }
-            .filter { !$0.isEmpty }
-        // De-dup if the lead already equals the city (e.g. "Dallas, Dallas").
-        var seen = Set<String>()
-        let deduped = parts.filter { seen.insert($0.lowercased()).inserted }
-        return deduped.isEmpty ? title : deduped.joined(separator: ", ")
+        formattedAddress(provenance: .hereGeocode).label
     }
 }
 
@@ -324,6 +315,113 @@ struct HereAddress: Decodable {
     let street: String?
     let postalCode: String?
     let houseNumber: String?
+}
+
+enum HereAddressProvenance: String, Codable, Equatable, Sendable {
+    case userEntered
+    case coordinateInput
+    case hereAutosuggest
+    case hereGeocode
+    case hereReverseGeocode
+
+    var provider: String? {
+        switch self {
+        case .hereAutosuggest, .hereGeocode, .hereReverseGeocode:
+            return "HERE"
+        case .userEntered, .coordinateInput:
+            return nil
+        }
+    }
+}
+
+struct HereFormattedAddress: Equatable, Sendable {
+    let place: String?
+    let street: String?
+    let city: String?
+    let state: String?
+    let postalCode: String?
+    let country: String?
+    let label: String
+    let provenance: HereAddressProvenance
+
+    var provider: String? { provenance.provider }
+    var isKnown: Bool { label != HereAddressFormatter.unknownLabel }
+}
+
+enum HereAddressFormatter {
+    static let unknownLabel = "Unknown address"
+
+    static func format(
+        address: HereAddress,
+        place explicitPlace: String? = nil,
+        fallbackTitle: String? = nil,
+        provenance: HereAddressProvenance
+    ) -> HereFormattedAddress {
+        let streetName = clean(address.street)
+        let houseNumber = clean(address.houseNumber)
+        let street = [houseNumber, streetName]
+            .compactMap { $0 }
+            .joined(separator: " ")
+            .nilIfEmpty
+        let city = clean(address.city)
+        let state = clean(address.stateCode) ?? clean(address.state)
+        let postalCode = clean(address.postalCode)
+        let country = clean(address.countryName) ?? clean(address.countryCode)
+
+        let titlePlace = cleanPlace(fallbackTitle?.split(separator: ",").first.map(String.init))
+        let place = cleanPlace(explicitPlace)
+            ?? (street == nil ? titlePlace : nil)
+            ?? clean(address.district)
+
+        let region = [state, postalCode]
+            .compactMap { $0 }
+            .joined(separator: " ")
+            .nilIfEmpty
+        let components = deduplicated([place, street, city, region, country])
+        let label = components.isEmpty ? unknownLabel : components.joined(separator: ", ")
+
+        return HereFormattedAddress(
+            place: place,
+            street: street,
+            city: city,
+            state: state,
+            postalCode: postalCode,
+            country: country,
+            label: label,
+            provenance: provenance
+        )
+    }
+
+    private static func clean(_ value: String?) -> String? {
+        value?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .nilIfEmpty
+    }
+
+    private static func cleanPlace(_ value: String?) -> String? {
+        guard var place = clean(value) else { return nil }
+        for prefix in ["Part near (of) ", "Part near of ", "Part near ", "Part of "] {
+            if let range = place.range(of: prefix, options: [.caseInsensitive, .anchored]) {
+                place.removeSubrange(range)
+                break
+            }
+        }
+        return clean(place)
+    }
+
+    private static func deduplicated(_ values: [String?]) -> [String] {
+        var seen = Set<String>()
+        return values.compactMap { value in
+            guard let value = clean(value) else { return nil }
+            let key = value.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            return seen.insert(key).inserted ? value : nil
+        }
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }
 
 // MARK: - Matrix v8 response

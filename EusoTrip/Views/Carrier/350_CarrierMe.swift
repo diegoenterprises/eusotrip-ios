@@ -25,9 +25,9 @@ struct CarrierMeScreen: View {
     /// used to render 6 always-open sections = ~52 rows in one flat scroll. Now
     /// it presents 6 bespoke collapsible hubs (canonical H1–H7 taxonomy) whose
     /// bodies open on tap, so the default view is a clean stack of hub headers.
-    /// Account starts expanded; the rest collapse. Every destination is
+    /// Every hub starts collapsed until the user opens it. Every destination is
     /// preserved — nothing was orphaned to "workspace".
-    @SceneStorage("carrier.me.expandedHub") private var expandedHubId: String = "account"
+    @SceneStorage("carrier.me.expandedHub") private var expandedHubId: String = ""
     @SceneStorage("carrier.me.returnAnchor") private var returnAnchor: String = ""
 
     var body: some View {
@@ -174,7 +174,7 @@ struct CarrierMeScreen: View {
     private var complianceHub: some View {
         hubCard(id: "compliance", icon: "checkmark.shield.fill",
                 title: "Compliance & Documents",
-                summary: "CSA · IFTA · DataQ · Claims · Insurance", rowCount: 10) {
+                summary: "CSA · IFTA · DataQ · Claims · Insurance · Permits", rowCount: 11) {
             row(label: "Compliance dash",   icon: "shield.checkered",              to: "316")  // .carrier
             row(label: "Driver compliance", icon: "person.badge.shield.checkmark", to: "326")  // .catalyst
             row(label: "Driver documents",  icon: "doc.on.doc",                    to: "322")  // .catalyst
@@ -185,6 +185,12 @@ struct CarrierMeScreen: View {
             row(label: "Detention alerts",  icon: "bell.badge",                    to: "Cat391")  // .catalyst
             row(label: "Cargo insurance",   icon: "checkmark.shield",              to: "Cat392")  // .catalyst
             row(label: "Fleet carbon",      icon: "leaf",                          to: "Cat403")  // .catalyst
+            // 2026-08-25 · eusotrip-killers-elite :01 §20. Cat406, same invisible-in-
+            // Release case as Cat404/405. Named as the container the carrier expects
+            // to find ("Registration & permits"), not the catalog's "Registration &
+            // Permit Renewals" — the renewal urgency is the screen's job to show, and
+            // a label that promises renewals but opens on a list misses expectation.
+            row(label: "Registration & permits", icon: "calendar.badge.exclamationmark", to: "Cat406")  // .catalyst
         }
     }
 
@@ -192,7 +198,7 @@ struct CarrierMeScreen: View {
     private var moneyHub: some View {
         hubCard(id: "money", icon: "wallet.pass.fill",
                 title: "Money & Wallet",
-                summary: "Earnings · Settlements · Bids · Factoring · Rates", rowCount: 12) {
+                summary: "Earnings · Settlements · Bids · Factoring · Rates", rowCount: 13) {
             row(label: "Earnings",      icon: "chart.line.uptrend.xyaxis", to: "312")  // .carrier
             row(label: "Settlements",   icon: "doc.text",                  to: "313")  // .carrier wins
             row(label: "My bids",       icon: "hand.tap",                  to: "308")  // .carrier
@@ -205,6 +211,11 @@ struct CarrierMeScreen: View {
             row(label: "Lane rate sheet",   icon: "tablecells",            to: "Cat396")  // .catalyst
             row(label: "Carrier tier",      icon: "star.circle",           to: "Cat397")  // .catalyst
             row(label: "Toll corridor cost", icon: "road.lanes",           to: "Cat399")  // .catalyst
+            // 2026-08-25 · eusotrip-killers-elite :01 §20. Cat405, same invisible-in-
+            // Release case as Cat404. "Equipment financing" over the catalog's "Asset
+            // Financials": neutral, industry-standard, and it sits beside Factoring as
+            // a peer instrument rather than reading like an internal ledger view.
+            row(label: "Equipment financing", icon: "building.columns",    to: "Cat405")  // .catalyst
         }
     }
 
@@ -212,7 +223,7 @@ struct CarrierMeScreen: View {
     private var fleetHub: some View {
         hubCard(id: "fleet", icon: "truck.box.fill",
                 title: "Fleet & Equipment",
-                summary: "Drivers · Vehicles · ELD · Maintenance · Monitors", rowCount: 16) {
+                summary: "Drivers · Vehicles · ELD · Maintenance · Monitors", rowCount: 17) {
             row(label: "Drivers",                icon: "person.2",            to: "304")  // .carrier
             row(label: "Driver list",            icon: "list.bullet",         to: "319")  // .carrier wins
             row(label: "Vehicles",               icon: "truck.box",           to: "320")  // .carrier wins
@@ -225,6 +236,12 @@ struct CarrierMeScreen: View {
             row(label: "Convoy · platooning",    icon: "car.2",               to: "Cat400")  // .catalyst
             row(label: "Crew wellness",          icon: "heart.text.square",   to: "Cat401")  // .catalyst
             row(label: "Capacity planner",       icon: "chart.bar",           to: "Cat402")  // .catalyst
+            // 2026-08-25 · eusotrip-killers-elite :01 §20. Cat404 was registered but
+            // had no entry point, so it was reachable only from the #if DEBUG screen
+            // walker — built, permitted, and invisible in Release. Named for the job,
+            // not the catalog title: the artifact is filed as "Asset Procurement",
+            // which is procurement-department language no carrier says out loud.
+            row(label: "Equipment · buy or lease", icon: "cart",              to: "Cat404")  // .catalyst
             row(label: "Driver performance",     icon: "gauge.with.dots.needle.67percent", to: "323")  // .catalyst
             row(label: "Driver ledger",          icon: "list.bullet.rectangle.portrait", to: "324")  // .catalyst
             row(label: "Driver onboarding",      icon: "person.badge.plus",   to: "325")  // .catalyst

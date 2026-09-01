@@ -10,46 +10,29 @@
 //              VES-260524-7B3D90F2C5 · TPEB wk21.
 //  transportMode = vessel.
 //
-//  tRPC (server/routers/vesselShipments.ts) — VERIFIED against the real procedure
-//  bodies + drizzle/schema.ts (the-oath §49). CONTRACT-DRIFT NOTE (the §25/§43
-//  discipline): the wireframe <desc> names createVesselBid / getCarrierRates /
-//  searchCarrierSchedules to back the three cards. Reading the real bodies:
-//      • createVesselBid (EXISTS :680) is a .mutation — it INSERTS a
-//        vessel_shipment_events "bid_submitted" row and returns { success } .
-//        It cannot POPULATE the "active request" hero (write-only, no list out).
-//      • getCarrierRates (EXISTS :1114) is an external INTTRA rate LOOKUP
-//        ({ originPort, destPort, containerSize } strings → quotes | null). It is
-//        NOT the shipper's own request HISTORY.
-//      • searchCarrierSchedules (EXISTS :1096) is an external INTTRA schedule
-//        LOOKUP — useful for "space probable", not a confirmation feed.
-//    None of them returns a shipper's tender requests with REQUESTED / CONFIRMED /
-//    DECLINED status. That endpoint did not exist → this fire ADDS it:
-//
-//    getMyVesselTenderRequests (NEW this fire, EXISTS after backend apply, vesselProcedure)
-//      → { active: TenderRequest | null, history: [TenderRequest] } .
-//      Derived from real persisted vessel_shipment_events (eventType in
-//      bid_submitted / booking_confirmed / booking_declined / booking_rolled)
-//      INNER JOINed to vessel_shipments (lane / bookingNumber / containerSize),
-//      LEFT JOINed to ports ×2 for UN/LOCODE display, SCOPED to the caller's own
-//      shipments (shipperId OR companyId — no IDOR). Every hero / status / history
-//      value below binds to a real column on that payload — no fabricated defaults.
-//
-//    createVesselBid (EXISTS :680, .mutation) — backs "Re-request alt carrier".
-//      Real write. This fire ALSO hardens it server-side with a
-//      blockchain_audit_trail row + a vessel:tender_requested WS broadcast
-//      (both were missing — rubric H + G). See INTEGRATION.md DROP 2.
+//  Live workflow contract:
+//    getMyVesselTenderRequests reads the caller-scoped invitation ledger.
+//    requestVesselTender issues invitations to verified operator companies.
+//    cancelVesselTenderInvitation withdraws an invitation and records fan-out.
+//    createVesselBid stores a carrier quote under a retained replay key.
+//    acceptVesselBid binds the winning operator, closes competing invitations,
+//    and co-commits durable audit and notification intent.
+//  External rate and schedule lookups are reference feeds, never tender history.
 //
 //  Author: Mike "Diego" Usoro / Eusorone Technologies, Inc
 //
 
+import CryptoKit
 import SwiftUI
 
 // MARK: - Decoders (match the new server return literal field-for-field)
 
 /// One tender/booking request, active or historical.
 private struct VesselTenderRequest009: Decodable, Identifiable {
-    var id: Int { eventId }
-    let eventId: Int
+    var id: Int { invitationId }
+    let invitationId: Int
+    let bidEventId: Int?
+    let operatorCompanyId: Int?
     let shipmentId: Int?
     let bookingNumber: String?
     let carrier: String?
@@ -57,6 +40,7 @@ private struct VesselTenderRequest009: Decodable, Identifiable {
     let containerSize: String?        // "40ft_hc" ...
     let amount: Double?               // FAK / FEU amount
     let rateType: String?             // per_teu | per_ton | per_cbm | lump_sum
+    let currency: String?
     let transitDays: Int?
     let timestamp: String?            // ISO-8601
     let status: String?               // requested | confirmed | declined | rolled
@@ -64,7 +48,35 @@ private struct VesselTenderRequest009: Decodable, Identifiable {
 
 private struct VesselTenderInbox009: Decodable {
     let active: VesselTenderRequest009?
+    let activeRequests: [VesselTenderRequest009]?
     let history: [VesselTenderRequest009]?
+}
+
+private struct VesselOperatorOption009: Decodable, Identifiable {
+    var id: Int { companyId }
+    let companyId: Int
+    let name: String?
+    let legalName: String?
+    let country: String?
+    let companyCategory: String?
+
+    var displayName: String {
+        let primary = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let legal = legalName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !primary.isEmpty { return primary }
+        if !legal.isEmpty { return legal }
+        return "Operator company #\(companyId)"
+    }
+}
+
+/// `acceptVesselBid` return literal, field-for-field (vesselShipments.ts:1889).
+private struct VesselAwardAck009: Decodable {
+    let success: Bool?
+    let status: String?
+    let shipmentId: Int?
+    let operatorId: Int?
+    let amount: Double?
+    let idempotent: Bool?
 }
 
 // MARK: - Screen wrapper (Shipper · mode-agnostic nav: HOME · LOADS · [orb] · TRACK · ME)
@@ -99,9 +111,36 @@ private struct VesselTenderWorkflowBody: View {
     @State private var actionNote: String? = nil
     @State private var rerequesting = false
     @State private var cancelling = false
+    @State private var awarding = false
+    @State private var showingRetenderSheet = false
+    @State private var eligibleOperators: [VesselOperatorOption009] = []
+    @State private var selectedOperatorCompanyIds: Set<Int> = []
+    @State private var operatorLoadError: String?
+    @State private var tenderExpiresAt = Date().addingTimeInterval(24 * 60 * 60)
+    @State private var confirmingCancellation = false
+    /// Two-step commit. Awarding binds the operator, sets the rate and moves the
+    /// booking to `booking_confirmed` — it is the money commit on this screen,
+    /// so it does not fire on a single tap.
+    @State private var confirmingAward = false
 
     private var active: VesselTenderRequest009? { inbox?.active }
+    private var activeRequests: [VesselTenderRequest009] { inbox?.activeRequests ?? [] }
     private var history: [VesselTenderRequest009] { inbox?.history ?? [] }
+    private var competingBids: Int {
+        activeRequests.filter { $0.bidEventId != nil }.count
+    }
+
+    /// The award CTA is live only for a request that is genuinely awardable:
+    /// `acceptVesselBid` requires an unawarded shipment in `booking_requested`
+    /// and a `bid_submitted` event id, which is exactly what `active` carries
+    /// when its status is "quote_received". Anything else and the server would
+    /// refuse — so the button does not offer it.
+    private var canAward: Bool {
+        guard let a = active, a.shipmentId != nil, a.bidEventId != nil else {
+            return false
+        }
+        return (a.status ?? "").lowercased() == "quote_received"
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -126,6 +165,7 @@ private struct VesselTenderWorkflowBody: View {
                         if let req = active {
                             activeRequestCard(req)
                             confirmationStatusCard(req)
+                            if canAward { awardBand(req) }
                         }
                         requestHistoryCard
                         esangAdvisory
@@ -139,6 +179,21 @@ private struct VesselTenderWorkflowBody: View {
             .padding(.horizontal, Space.s5)
         }
         .eusoRefreshTask { await load() }
+        .sheet(isPresented: $showingRetenderSheet) {
+            retenderSheet
+        }
+        .confirmationDialog(
+            "Withdraw this tender?",
+            isPresented: $confirmingCancellation,
+            titleVisibility: .visible
+        ) {
+            Button("Withdraw tender", role: .destructive) {
+                Task { await cancelRequest() }
+            }
+            Button("Keep tender", role: .cancel) {}
+        } message: {
+            Text("The selected operator will be notified and can no longer quote this invitation.")
+        }
     }
 
     // MARK: Top bar — back eyebrow + hero + subtitle
@@ -210,7 +265,7 @@ private struct VesselTenderWorkflowBody: View {
     }
     private func activeRateLine(_ req: VesselTenderRequest009) -> String {
         var parts: [String] = []
-        if let a = req.amount { parts.append("\(money(a)) \(rateUnitLabel(req.rateType))") }
+        if let a = req.amount { parts.append("\(money(a, currency: req.currency)) \(rateUnitLabel(req.rateType))") }
         if let d = req.transitDays { parts.append("\(d)d transit") }
         return parts.isEmpty ? "Rate pending" : parts.joined(separator: " · ")
     }
@@ -302,7 +357,7 @@ private struct VesselTenderWorkflowBody: View {
         case "declined", "rolled":
             parts.append("rolled - no space")
         default:
-            if let a = h.amount { parts.append("\(money(a)) \(rateUnitLabel(h.rateType))") }
+            if let a = h.amount { parts.append("\(money(a, currency: h.currency)) \(rateUnitLabel(h.rateType))") }
         }
         return parts.joined(separator: " · ")
     }
@@ -336,16 +391,115 @@ private struct VesselTenderWorkflowBody: View {
         return "ESang: space looks probable on this lane"
     }
 
-    // MARK: Actions — Re-request alt carrier (createVesselBid) · Cancel
+    // MARK: Award band — the money commit (acceptVesselBid)
+    //
+    // CHAIN CLOSURE, oath §6. `vesselShipments.acceptVesselBid` (:1765) is the
+    // SOLE writer of `vessel_shipments.operatorId` (:1836) and it had ZERO
+    // callers in either repo. Everything downstream keys on that column:
+    // `issueBOL` refuses without it, `createVesselSettlement` refuses without
+    // it, and before the settlement path was corrected it fell back to
+    // `operatorId || shipperId` and credited the carrier's payment into the
+    // SHIPPER's own wallet. So the whole vessel money chain hung on a verb no
+    // screen could reach. This band is that missing half.
+    //
+    // Placed as an additive band rather than folded into the ported CTA row:
+    // the 009 wireframe twins carry "Re-request alt carrier" + "Cancel" and
+    // those are reproduced verbatim below, untouched. The award affordance is
+    // net-new product surface the design predates — filed for canonisation as
+    // OATH6-DA-009-AWARDBAND so the SVG twins gain it deliberately rather than
+    // this port drifting from the catalog silently.
+    //
+    // §W OFFLINE: ONLINE_ONLY. An award binds an operator, fixes the rate and
+    // advances the booking state under a FOR UPDATE lock with a CAS guard
+    // (:1836) — an award commit is exactly the class the offline doctrine keeps
+    // online. Not queued, not optimistic; the CTA is inert without a network.
+
+    @ViewBuilder private func awardBand(_ req: VesselTenderRequest009) -> some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(spacing: Space.s2) {
+                Text("AWARD THIS QUOTE")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(LinearGradient.primary)
+                Spacer()
+                if competingBids > 0 {
+                    Text("\(competingBids) other quote\(competingBids == 1 ? "" : "s") live")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.4)
+                        .foregroundStyle(Brand.warning)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(Brand.warning.opacity(0.18), in: Capsule())
+                }
+            }
+
+            Text(money(req.amount, currency: req.currency) + " " + rateUnitLabel(req.rateType))
+                .font(.system(size: 26, weight: .bold)).monospacedDigit()
+                .tracking(-0.5)
+                .foregroundStyle(palette.textPrimary)
+
+            Text(awardSubtitle(req))
+                .font(.system(size: 11, weight: .regular))
+                .foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if confirmingAward {
+                // Second step. Says what the commit does before it does it —
+                // binding an operator is not reversible from this screen.
+                Text("Awarding binds \(req.carrier ?? "this carrier") as operator of record at \(money(req.amount, currency: req.currency)) and confirms the booking. This cannot be undone here.")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(palette.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(Space.s3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Brand.warning.opacity(0.14), in: RoundedRectangle(cornerRadius: Radius.md))
+
+                HStack(spacing: Space.s3) {
+                    CTAButton(title: "Confirm award",
+                              action: { Task { await awardActiveBid() } },
+                              isLoading: awarding)
+                        .frame(maxWidth: .infinity)
+                    Button { confirmingAward = false } label: {
+                        Text("Back").font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(palette.textPrimary)
+                            .frame(width: 96, height: 48)
+                            .background(palette.bgCard, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(palette.borderSoft))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(awarding)
+                }
+            } else {
+                CTAButton(title: "Award to \(req.carrier ?? "carrier")",
+                          action: { confirmingAward = true },
+                          isLoading: false)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+        .padding(Space.s4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: Radius.lg).fill(palette.bgCard)
+            .overlay(RoundedRectangle(cornerRadius: Radius.lg).strokeBorder(palette.borderFaint)))
+    }
+
+    private func awardSubtitle(_ req: VesselTenderRequest009) -> String {
+        var parts: [String] = []
+        if let lane = req.lane { parts.append(lane) }
+        let box = containerLabel(req.containerSize)
+        if !box.isEmpty { parts.append(box) }
+        if let t = req.transitDays { parts.append("\(t)d transit") }
+        if let bn = req.bookingNumber { parts.append(bn) }
+        return parts.isEmpty ? "Binds the operator of record and confirms this booking."
+                             : parts.joined(separator: " · ")
+    }
+
+    // MARK: Actions — invite another verified operator · withdraw invitation
 
     @ViewBuilder private var actions: some View {
         HStack(spacing: Space.s3) {
             CTAButton(title: "Re-request alt carrier",
-                      action: { Task { await rerequestAltCarrier() } },
+                      action: { Task { await prepareRetender() } },
                       isLoading: rerequesting)
                 .frame(maxWidth: .infinity)
                 .disabled(active == nil)
-            Button { Task { await cancelRequest() } } label: {
+            Button { confirmingCancellation = true } label: {
                 Group {
                     if cancelling { ProgressView().tint(palette.textPrimary) }
                     else { Text("Cancel").font(.system(size: 15, weight: .semibold)) }
@@ -360,12 +514,101 @@ private struct VesselTenderWorkflowBody: View {
         }
     }
 
+    @ViewBuilder private var retenderSheet: some View {
+        NavigationStack {
+            List {
+                Section {
+                    if rerequesting && eligibleOperators.isEmpty {
+                        HStack(spacing: Space.s2) {
+                            ProgressView()
+                            Text("Loading verified vessel operators…")
+                                .foregroundStyle(palette.textSecondary)
+                        }
+                    } else if let operatorLoadError {
+                        VStack(alignment: .leading, spacing: Space.s2) {
+                            Text("Operators unavailable")
+                                .font(EType.bodyStrong)
+                                .foregroundStyle(Brand.danger)
+                            Text(operatorLoadError)
+                                .font(EType.caption)
+                                .foregroundStyle(palette.textSecondary)
+                            Button("Retry") { Task { await loadEligibleOperators() } }
+                        }
+                    } else if eligibleOperators.isEmpty {
+                        Text("No additional verified, compliant vessel operator companies are currently eligible for this tender.")
+                            .font(EType.body)
+                            .foregroundStyle(palette.textSecondary)
+                    } else {
+                        ForEach(eligibleOperators) { operatorCompany in
+                            Button {
+                                if selectedOperatorCompanyIds.contains(operatorCompany.companyId) {
+                                    selectedOperatorCompanyIds.remove(operatorCompany.companyId)
+                                } else {
+                                    selectedOperatorCompanyIds.insert(operatorCompany.companyId)
+                                }
+                            } label: {
+                                HStack(spacing: Space.s3) {
+                                    Image(systemName: selectedOperatorCompanyIds.contains(operatorCompany.companyId)
+                                          ? "checkmark.circle.fill" : "circle")
+                                        .foregroundStyle(selectedOperatorCompanyIds.contains(operatorCompany.companyId)
+                                                         ? Brand.info : palette.textTertiary)
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(operatorCompany.displayName)
+                                            .font(EType.bodyStrong)
+                                            .foregroundStyle(palette.textPrimary)
+                                        let facts = [operatorCompany.country, operatorCompany.companyCategory]
+                                            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                                            .filter { !$0.isEmpty }
+                                        if !facts.isEmpty {
+                                            Text(facts.joined(separator: " · "))
+                                                .font(EType.caption)
+                                                .foregroundStyle(palette.textSecondary)
+                                        }
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                } header: {
+                    Text("Verified operator companies")
+                } footer: {
+                Text("Only active vessel operators with verified compliance are available for this tender.")
+                }
+
+                Section("Response deadline") {
+                    DatePicker(
+                        "Tender expires",
+                        selection: $tenderExpiresAt,
+                        in: Date().addingTimeInterval(20 * 60)...Date().addingTimeInterval(30 * 24 * 60 * 60)
+                    )
+                }
+            }
+            .scrollContentBackground(.hidden)
+            .background(palette.bgPage)
+            .navigationTitle("Invite operators")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { showingRetenderSheet = false }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Send") { Task { await submitRetender() } }
+                        .disabled(selectedOperatorCompanyIds.isEmpty || rerequesting)
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+    }
+
     // MARK: Status pill
 
     @ViewBuilder private func statusPill(_ status: String?) -> some View {
         let (text, fg, bg): (String, Color, Color) = {
             switch (status ?? "").lowercased() {
             case "confirmed": return ("CONFIRMED", Brand.success, Brand.success.opacity(0.22))
+            case "quote_received": return ("QUOTE RECEIVED", Brand.success, Brand.success.opacity(0.22))
             case "declined":  return ("DECLINED",  Brand.danger,  Brand.danger.opacity(0.24))
             case "rolled":    return ("ROLLED",    Brand.warning, Brand.warning.opacity(0.22))
             default:          return ("REQUESTED", Brand.info,    Brand.blue.opacity(0.20))
@@ -441,10 +684,11 @@ private struct VesselTenderWorkflowBody: View {
         default:         return "/FEU"
         }
     }
-    private func money(_ v: Double?) -> String {
+    private func money(_ v: Double?, currency: String? = nil) -> String {
         guard let v else { return "-" }
         let f = NumberFormatter()
-        f.numberStyle = .currency; f.currencyCode = "USD"
+        f.numberStyle = .currency
+        f.currencyCode = currency ?? active?.currency ?? "USD"
         f.maximumFractionDigits = (v.truncatingRemainder(dividingBy: 1) == 0) ? 0 : 2
         return f.string(from: NSNumber(value: v)) ?? "$\(Int(v))"
     }
@@ -488,59 +732,194 @@ private struct VesselTenderWorkflowBody: View {
         loading = false
     }
 
-    /// "Re-request alt carrier" → real createVesselBid mutation on the active
-    /// shipment, then refresh. Errors surfaced; never a dead tap.
-    private func rerequestAltCarrier() async {
-        guard let req = active, let sid = req.shipmentId else {
-            actionError = "No active request to re-tender."; return
+    /// "Confirm award" → the real `vesselShipments.acceptVesselBid` mutation.
+    ///
+    /// Server contract (vesselShipments.ts:1765-1890), matched field-for-field:
+    ///   in  { shipmentId: number, bidEventId: number, requestKey: UUID }
+    ///   out { success, status, shipmentId, operatorId, amount, idempotent }
+    /// `bidEventId` is the invitation's persisted bid-event foreign key.
+    /// `acceptVesselBid` re-reads that same event as the authoritative source,
+    /// so the two halves resolve the same quote. No client-side price is sent: amount
+    /// and rateType come off the stored event server-side, which is why a
+    /// tampered client cannot award at a price the carrier never quoted.
+    ///
+    /// Errors are surfaced verbatim — the server's CONFLICT copy names the
+    /// competing operator or the offending status, which is more useful to the
+    /// shipper than anything this screen could invent.
+    private func awardActiveBid() async {
+        guard let req = active,
+              let sid = req.shipmentId,
+              let bidEventId = req.bidEventId else {
+            actionError = "No active quote to award."; return
         }
-        actionError = nil; actionNote = nil; rerequesting = true
-        defer { rerequesting = false }
-        // Re-tender at the same economics the shipper last requested; backend logs a
-        // new bid_submitted event + audit row + WS fan-out.
-        struct BidIn: Encodable {
+        let storageKey = awardRequestStorageKey(shipmentId: sid, bidEventId: bidEventId)
+        let stored = UserDefaults.standard.string(forKey: storageKey)?.lowercased()
+        let requestKey = stored.flatMap { UUID(uuidString: $0) != nil ? $0 : nil }
+            ?? UUID().uuidString.lowercased()
+        UserDefaults.standard.set(requestKey, forKey: storageKey)
+        actionError = nil; actionNote = nil; awarding = true
+        defer { awarding = false }
+
+        struct AwardIn: Encodable {
             let shipmentId: Int
-            let amount: Double
-            let rateType: String?
-            let transitDays: Int?
-            let notes: String?
+            let bidEventId: Int
+            let requestKey: String
         }
-        struct Ack: Decodable { let success: Bool? }
         do {
-            let ack: Ack = try await EusoTripAPI.shared.mutation(
-                "vesselShipments.createVesselBid",
-                input: BidIn(shipmentId: sid,
-                             amount: req.amount ?? 0,
-                             rateType: req.rateType,
-                             transitDays: req.transitDays,
-                             notes: "Re-request alt carrier (auto re-tender)"))
+            let ack: VesselAwardAck009 = try await EusoTripAPI.shared.mutation(
+                "vesselShipments.acceptVesselBid",
+                input: AwardIn(
+                    shipmentId: sid,
+                    bidEventId: bidEventId,
+                    requestKey: requestKey
+                ))
+
             if ack.success == true {
-                actionNote = "Re-request sent to the next-best carrier."
+                if UserDefaults.standard.string(forKey: storageKey)?.lowercased() == requestKey {
+                    UserDefaults.standard.removeObject(forKey: storageKey)
+                }
+                confirmingAward = false
+                let who = req.carrier ?? "operator #\(ack.operatorId.map(String.init) ?? "—")"
+                actionNote = ack.idempotent == true
+                    ? "This booking was already awarded to \(who). Nothing changed."
+                    : "Awarded to \(who) at \(money(ack.amount ?? req.amount, currency: req.currency)). Booking confirmed — the operator is now bound as carrier of record."
                 await load()
             } else {
-                actionError = "Re-request was rejected — it was not recorded and the carrier was not notified. Try again."
+                // A false/absent `success` means no commit happened. Say so —
+                // never let the screen imply a booking was confirmed.
+                actionError = "The award was not committed. The booking is unchanged and no operator was bound."
             }
         } catch {
-            actionError = "Couldn't re-request. "
-                + (error.eusoUserCopy)
+            actionError = "Couldn't award this quote. " + error.eusoUserCopy
         }
     }
 
-    /// "Cancel" → withdraw the active tender. Honest behaviour: there is no
-    /// dedicated cancel mutation yet, so we log a cancel intent via the same
-    /// event surface (createVesselBid with amount 0 + cancel note is the wrong
-    /// shape) — instead we surface that cancellation routes through support until
-    /// withdrawVesselTender ships. This is NOT a dead tap: it posts a real intent
-    /// the host can wire, and tells the user the truth rather than faking success.
+    private func awardRequestStorageKey(shipmentId: Int, bidEventId: Int) -> String {
+        let sessionCredential = EusoTripAPI.shared.authToken
+            ?? HTTPCookieStorage.shared.cookies?.first(where: { $0.name == "app_session_id" })?.value
+            ?? "unauthenticated"
+        let digest = SHA256.hash(
+            data: Data("vesselShipments.acceptVesselBid|\(sessionCredential)|\(shipmentId)|\(bidEventId)".utf8)
+        )
+        return "com.eusotrip.commercial-award." + digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func prepareRetender() async {
+        guard active?.shipmentId != nil else {
+            actionError = "No active vessel booking to tender."
+            return
+        }
+        selectedOperatorCompanyIds.removeAll()
+        operatorLoadError = nil
+        tenderExpiresAt = Date().addingTimeInterval(24 * 60 * 60)
+        showingRetenderSheet = true
+        await loadEligibleOperators()
+    }
+
+    private func loadEligibleOperators() async {
+        rerequesting = true
+        operatorLoadError = nil
+        defer { rerequesting = false }
+        struct OperatorsIn: Encodable { let limit: Int }
+        do {
+            let rows: [VesselOperatorOption009] = try await EusoTripAPI.shared.query(
+                "vesselShipments.getEligibleVesselOperators",
+                input: OperatorsIn(limit: 50)
+            )
+            let alreadyActive = Set(activeRequests.compactMap(\.operatorCompanyId))
+            eligibleOperators = rows.filter { !alreadyActive.contains($0.companyId) }
+            selectedOperatorCompanyIds = selectedOperatorCompanyIds.intersection(
+                Set(eligibleOperators.map(\.companyId))
+            )
+        } catch {
+            eligibleOperators = []
+            operatorLoadError = error.eusoUserCopy
+        }
+    }
+
+    private func submitRetender() async {
+        guard let sid = active?.shipmentId else {
+            operatorLoadError = "No active vessel booking to tender."
+            return
+        }
+        let companyIds = selectedOperatorCompanyIds.sorted()
+        guard !companyIds.isEmpty else {
+            operatorLoadError = "Choose at least one verified operator company."
+            return
+        }
+        guard tenderExpiresAt.timeIntervalSinceNow >= 15 * 60 else {
+            operatorLoadError = "The response deadline must be at least 15 minutes from now."
+            return
+        }
+        rerequesting = true
+        operatorLoadError = nil
+        defer { rerequesting = false }
+        struct TenderIn: Encodable {
+            let shipmentId: Int
+            let operatorCompanyIds: [Int]
+            let expiresAt: String
+        }
+        struct TenderAck: Decodable { let success: Bool? }
+        do {
+            let formatter = ISO8601DateFormatter()
+            let ack: TenderAck = try await EusoTripAPI.shared.mutation(
+                "vesselShipments.requestVesselTender",
+                input: TenderIn(
+                    shipmentId: sid,
+                    operatorCompanyIds: companyIds,
+                    expiresAt: formatter.string(from: tenderExpiresAt)
+                )
+            )
+            guard ack.success == true else {
+                operatorLoadError = "The tender invitation was not committed. No operator was notified."
+                return
+            }
+            showingRetenderSheet = false
+            selectedOperatorCompanyIds.removeAll()
+            actionNote = "Tender sent to \(companyIds.count) verified operator \(companyIds.count == 1 ? "company" : "companies")."
+            await load()
+        } catch {
+            operatorLoadError = error.eusoUserCopy
+        }
+    }
+
+    /// Withdraws the persisted invitation. The mutation updates invitation state,
+    /// records the event and audit row, and notifies the operator company.
     private func cancelRequest() async {
+        guard let invitationId = active?.invitationId else {
+            actionError = "No active tender invitation to withdraw."
+            return
+        }
         actionError = nil; actionNote = nil; cancelling = true
         defer { cancelling = false }
-        NotificationCenter.default.post(
-            name: Notification.Name("eusoVesselTenderCancelRequested"),
-            object: nil,
-            userInfo: ["shipmentId": active?.shipmentId as Any,
-                       "bookingNumber": active?.bookingNumber as Any])
-        actionNote = "Cancellation requested. Your ops desk will confirm withdrawal."
+        struct CancelIn: Encodable {
+            let invitationId: Int
+            let reason: String
+        }
+        struct CancelAck: Decodable {
+            let success: Bool?
+            let status: String?
+            let idempotent: Bool?
+        }
+        do {
+            let ack: CancelAck = try await EusoTripAPI.shared.mutation(
+                "vesselShipments.cancelVesselTenderInvitation",
+                input: CancelIn(
+                    invitationId: invitationId,
+                    reason: "Withdrawn by the vessel shipper from the tender workflow"
+                )
+            )
+            guard ack.success == true, ack.status == "cancelled" else {
+                actionError = "The withdrawal was not committed. This tender remains active."
+                return
+            }
+            actionNote = ack.idempotent == true
+                ? "This tender invitation was already withdrawn."
+                : "Tender withdrawn. The operator company has been notified."
+            await load()
+        } catch {
+            actionError = "Couldn't withdraw this tender. " + error.eusoUserCopy
+        }
     }
 }
 

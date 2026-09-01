@@ -59,8 +59,8 @@ struct ShipperBids: View {
     /// the user sees a real composer instead of a button that
     /// silently posts a notification no one consumed.
     @State private var showCounterAllSheet: Bool = false
-    /// Counter offer amount (USD) typed in the Counter All sheet.
-    /// Initialized from the current best bid - 5% on sheet open.
+    /// Counter offer amount typed in the Counter All sheet. It begins empty so
+    /// the shipper explicitly states the amount and its live currency context.
     @State private var counterAllAmount: String = ""
     /// Per-bid in-flight markers used by the Counter All loop so the
     /// sheet can render a progress meter ("3 of 7 sent"). Cleared on
@@ -68,6 +68,10 @@ struct ShipperBids: View {
     @State private var counterAllInFlightIds: Set<String> = []
     @State private var counterAllSubmitted: Int = 0
     @State private var counterAllErrors: [String: String] = [:]
+    @State private var selectedLoadDetail: LoadsAPI.LoadDetail?
+    @State private var selectedBidChain: [LoadBiddingAPI.ChainRow] = []
+    @State private var proposesCounterAllDetentionOverride = false
+    @State private var counterAllDetentionDraft = TruckDetentionTermsDraft()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -119,12 +123,8 @@ struct ShipperBids: View {
         // sheet with a single amount field that, on submit, calls
         // `shippers.counterBid` per visible bid.
         .onReceive(NotificationCenter.default.publisher(for: .eusoShipperBidsCounterAll)) { _ in
-            // Seed the input with 95% of the current top bid so the
-            // user sees a sensible default rather than a blank field.
-            let top = rankedBids.first?.amount ?? 0
-            counterAllAmount = top > 0
-                ? String(Int((top * 0.95).rounded()))
-                : ""
+            counterAllAmount = ""
+            prepareCounterAllTerms()
             showCounterAllSheet = true
         }
         .sheet(isPresented: $showCounterAllSheet) {
@@ -138,7 +138,10 @@ struct ShipperBids: View {
         }
         .onChange(of: selectedLoadId) { _, newValue in
             bidsStore.setLoadId(newValue)
-            Task { await bidsStore.refresh() }
+            Task {
+                await bidsStore.refresh()
+                await refreshCounterContract()
+            }
         }
         .onChange(of: loadsStore.items.count) { _, _ in
             if selectedLoadId == nil, let first = loadsStore.items.first {
@@ -152,6 +155,7 @@ struct ShipperBids: View {
         async let a: Void = loadsStore.refresh()
         async let b: Void = bidsStore.refresh()
         _ = await (a, b)
+        await refreshCounterContract()
     }
 
     private var selectedLoad: ShipperAPI.ActiveLoad? {
@@ -1008,16 +1012,16 @@ struct ShipperBids: View {
             Form {
                 Section {
                     HStack {
-                        Text("$")
+                        Text(counterAllCurrencyLabel)
                             .font(.system(size: 18, weight: .heavy, design: .monospaced))
                             .foregroundStyle(palette.textSecondary)
                         TextField("0", text: $counterAllAmount)
-                            .keyboardType(.numberPad)
+                            .keyboardType(.decimalPad)
                             .font(.system(size: 22, weight: .heavy, design: .monospaced))
                             .disabled(isCounterAllRunning)
                     }
                 } header: {
-                    Text("Counter amount (USD per load)")
+                    Text("Counter amount per load")
                 } footer: {
                     Text(counterAllFooter)
                 }
@@ -1054,9 +1058,48 @@ struct ShipperBids: View {
                                 .foregroundStyle(palette.textSecondary)
                                 .monospacedDigit()
                         }
+                        if counterAllIsTruck {
+                            if let terms = parentTerms(for: b) {
+                                TruckDetentionTermsSummary(
+                                    terms: terms,
+                                    context: proposesCounterAllDetentionOverride
+                                        ? "WILL BE OVERRIDDEN"
+                                        : "WILL BE INHERITED"
+                                )
+                            } else {
+                                Text("No effective truck detention terms on this parent bid.")
+                                    .font(EType.caption)
+                                    .foregroundStyle(Brand.warning)
+                            }
+                        }
                     }
                 } header: {
                     Text("Affected bids")
+                }
+                if counterAllIsTruck {
+                    Section("Truck detention") {
+                        Toggle(
+                            "Apply one detention override to every counter",
+                            isOn: $proposesCounterAllDetentionOverride
+                        )
+                        .frame(minHeight: 44)
+                        if proposesCounterAllDetentionOverride || missingParentDetentionTerms {
+                            TruckDetentionTermsEditor(draft: $counterAllDetentionDraft)
+                        } else {
+                            Text("Each counter inherits the effective terms on its own parent bid.")
+                                .font(EType.caption)
+                                .foregroundStyle(palette.textSecondary)
+                        }
+                        if let mismatch = counterAllCurrencyMismatch {
+                            Text(mismatch).font(EType.caption).foregroundStyle(Brand.danger)
+                        }
+                    }
+                } else if selectedLoadDetail == nil {
+                    Section {
+                        Text("Load mode is unavailable. Refresh before countering so detention terms cannot be dropped or attached to the wrong mode.")
+                            .font(EType.caption)
+                            .foregroundStyle(Brand.warning)
+                    }
                 }
                 Section {
                     Button {
@@ -1096,15 +1139,102 @@ struct ShipperBids: View {
 
     private var canSubmitCounterAll: Bool {
         guard !isCounterAllRunning else { return false }
-        guard let amt = Int(counterAllAmount), amt > 0 else { return false }
-        return !rankedBids.isEmpty
+        guard let amt = Double(counterAllAmount), amt > 0 else { return false }
+        return !rankedBids.isEmpty && counterAllContractReady
     }
 
     private var counterAllFooter: String {
-        if let amt = Int(counterAllAmount), amt > 0 {
-            return "Will fire \(rankedBids.count) counter-offer\(rankedBids.count == 1 ? "" : "s") at $\(amt) each."
+        if let amt = Double(counterAllAmount), amt > 0 {
+            return "Will send \(rankedBids.count) counter-offer\(rankedBids.count == 1 ? "" : "s") at \(counterAllMoney(amt)) each."
         }
         return "Enter the counter amount to fire on every pending bid."
+    }
+
+    private var counterAllIsTruck: Bool {
+        if selectedBidChain.contains(where: { $0.truckDetentionTerms != nil }) { return true }
+        return selectedLoadDetail?.transportMode?.lowercased() == "truck"
+    }
+
+    private var missingParentDetentionTerms: Bool {
+        guard counterAllIsTruck else { return false }
+        return rankedBids.contains { parentTerms(for: $0) == nil }
+    }
+
+    private var counterAllProposedTerms: TruckDetentionNegotiatedTerms? {
+        guard counterAllIsTruck else { return nil }
+        return (proposesCounterAllDetentionOverride || missingParentDetentionTerms)
+            ? counterAllDetentionDraft.negotiatedTerms
+            : nil
+    }
+
+    private var counterAllContractReady: Bool {
+        guard let mode = selectedLoadDetail?.transportMode?.lowercased() else {
+            guard counterAllIsTruck else { return false }
+            if proposesCounterAllDetentionOverride || missingParentDetentionTerms {
+                return counterAllProposedTerms != nil && counterAllCurrencyMismatch == nil
+            }
+            return true
+        }
+        guard mode == "truck" else { return true }
+        if proposesCounterAllDetentionOverride || missingParentDetentionTerms {
+            return counterAllProposedTerms != nil && counterAllCurrencyMismatch == nil
+        }
+        return true
+    }
+
+    private var counterAllCurrencyLabel: String {
+        selectedLoadDetail?.currency
+            ?? selectedBidChain.compactMap({ $0.truckDetentionTerms?.currency.rawValue }).first
+            ?? "CURRENCY UNAVAILABLE"
+    }
+
+    private var counterAllCurrencyMismatch: String? {
+        guard let terms = counterAllProposedTerms,
+              let authoritativeCurrency = selectedLoadDetail?.currency?.uppercased()
+                ?? selectedBidChain.compactMap({ $0.truckDetentionTerms?.currency.rawValue }).first,
+              terms.currency.rawValue != authoritativeCurrency else { return nil }
+        return "Detention currency must match the inherited load currency (\(authoritativeCurrency))."
+    }
+
+    private func parentTerms(for bid: ShipperAPI.Bid) -> TruckDetentionNegotiatedTerms? {
+        guard let id = Int(bid.id) else { return nil }
+        return selectedBidChain.first(where: { $0.id == id })?.truckDetentionTerms
+    }
+
+    private func prepareCounterAllTerms() {
+        let terms = rankedBids.compactMap { parentTerms(for: $0) }
+        if let first = terms.first, terms.allSatisfy({ $0 == first }) {
+            counterAllDetentionDraft = TruckDetentionTermsDraft(terms: first)
+        } else {
+            counterAllDetentionDraft = TruckDetentionTermsDraft()
+            counterAllDetentionDraft.currency = selectedLoadDetail?.currency
+                .flatMap { TruckDetentionNegotiatedTerms.Currency(rawValue: $0) }
+        }
+        proposesCounterAllDetentionOverride = missingParentDetentionTerms
+    }
+
+    private func refreshCounterContract() async {
+        guard let selectedLoadId, let numericLoadId = Int(selectedLoadId) else {
+            selectedLoadDetail = nil
+            selectedBidChain = []
+            return
+        }
+        do {
+            selectedLoadDetail = try await EusoTripAPI.shared.loads.getDetail(id: selectedLoadId)
+            selectedBidChain = try await EusoTripAPI.shared.loadBidding.getBidChain(loadId: numericLoadId)
+        } catch {
+            selectedLoadDetail = nil
+            selectedBidChain = []
+            mutationError = "Couldn't verify load mode and bid detention authority. Pull to refresh before countering."
+        }
+    }
+
+    private func counterAllMoney(_ amount: Double) -> String {
+        guard let code = selectedLoadDetail?.currency else { return "—" }
+        return amount.formatted(
+            .currency(code: code)
+                .precision(.fractionLength(0...2))
+        )
     }
 
     /// Loop `loadBidding.counter` over every visible bid. Each call
@@ -1113,12 +1243,13 @@ struct ShipperBids: View {
     /// errors so a partial failure surfaces on the failing rows
     /// rather than rolling back the whole batch.
     private func submitCounterAll() async {
-        guard let amt = Int(counterAllAmount), amt > 0 else { return }
+        guard let amt = Double(counterAllAmount), amt > 0, counterAllContractReady else { return }
         guard let loadIdStr = selectedLoadId, let loadIdNum = Int(loadIdStr) else {
             mutationError = "Could not resolve numeric load id."
             return
         }
         let bids = rankedBids
+        let termsForEveryCounter = counterAllProposedTerms
         counterAllErrors = [:]
         counterAllSubmitted = 0
         counterAllInFlightIds = Set(bids.map(\.id))
@@ -1132,14 +1263,18 @@ struct ShipperBids: View {
                 }
                 group.addTask {
                     do {
-                        _ = try await EusoTripAPI.shared.loadBidding.counter(
+                        let ack = try await EusoTripAPI.shared.loadBidding.counter(
                             parentBidId: parentBidNum,
                             loadId: loadIdNum,
-                            counterAmount: Double(amt),
+                            counterAmount: amt,
                             rateType: "flat",
                             conditions: nil,
+                            truckDetentionTerms: termsForEveryCounter,
                             expiresInHours: 24
                         )
+                        guard ack.isConfirmed else {
+                            return (bid.id, "The server did not confirm this counter.")
+                        }
                         return (bid.id, nil)
                     } catch {
                         return (bid.id, EusoTripAPIError.bidActionMessage(for: error, noun: "counter"))
@@ -1301,11 +1436,11 @@ struct ShipperBids: View {
     }
 
     private func dollars(_ value: Double) -> String {
-        let f = NumberFormatter()
-        f.numberStyle = .currency
-        f.currencyCode = "USD"
-        f.maximumFractionDigits = 0
-        return f.string(from: NSNumber(value: value)) ?? "$0"
+        guard let code = selectedLoadDetail?.currency else { return "—" }
+        return value.formatted(
+            .currency(code: code)
+                .precision(.fractionLength(0...2))
+        )
     }
 
     private func submittedAbsolute(_ iso: String) -> String {

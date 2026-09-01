@@ -22,15 +22,22 @@ import SwiftUI
 // MARK: - Enums
 
 enum WeatherMode: String, Decodable, Hashable {
-    case truck, rail, vessel
-    init(server raw: String?) { self = WeatherMode(rawValue: (raw ?? "truck").lowercased()) ?? .truck }
+    case truck, rail, vessel, unknown
+
+    init(server raw: String?) {
+        let value = raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        self = WeatherMode(rawValue: value) ?? .unknown
+    }
 }
 
 /// §3 risk ladder. `none` renders no danger treatment; the widget tints
 /// the alert/peak column from `watch`+.
 enum LaneRiskTier: String, Decodable, Hashable {
-    case none, watch, elevated, severe
-    init(server raw: String?) { self = LaneRiskTier(rawValue: (raw ?? "none").lowercased()) ?? .none }
+    case none, watch, elevated, severe, unknown
+    init(server raw: String?) {
+        let value = raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        self = LaneRiskTier(rawValue: value) ?? .unknown
+    }
 
     /// Brand color for the risk pill / peak column (DesignSystem tokens).
     var color: Color {
@@ -38,9 +45,12 @@ enum LaneRiskTier: String, Decodable, Hashable {
         case .severe, .elevated: return Brand.danger
         case .watch:             return Brand.warning
         case .none:              return Brand.info
+        case .unknown:           return Brand.neutral
         }
     }
-    var isActionable: Bool { self != .none }
+    var isActionable: Bool {
+        self != .none && self != .unknown
+    }
 }
 
 // MARK: - WeatherForLoad
@@ -133,14 +143,60 @@ struct WeatherForLoad: Decodable, Hashable {
 // renders. All return honest "—"/nil when the field is absent.
 
 extension WeatherForLoad {
+    var routeWeatherAuthority: WeatherRouteDataPolicy.Authority {
+        WeatherRouteDataPolicy.authority(for: source)
+    }
+
+    var routeWeatherComputedAt: Date? {
+        WeatherRouteDataPolicy.parseProviderDate(computedAt)
+    }
+
+    var routeWeatherObservedAt: Date? {
+        WeatherRouteDataPolicy.parseProviderDate(origin?.realtime?.observedAt)
+    }
+
+    var displayLoadIdentifier: String {
+        let human = loadNumber?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return human.isEmpty ? loadId : human
+    }
+
+    /// The per-load card is route intelligence. Only HERE may drive the route
+    /// surface. WeatherKit and OpenWeather remain ambient-only providers and
+    /// cannot be promoted into route conditions by presentation code.
+    func canRenderLiveRouteWeather(at date: Date = Date()) -> Bool {
+        guard LatLongParser.validatedCoordinate(
+                  latitude: origin?.lat,
+                  longitude: origin?.lon
+              ) != nil,
+              available,
+              mode != .unknown,
+              routeWeatherAuthority == .here,
+              !WeatherRouteDataPolicy.isSyntheticLoadIdentifier(displayLoadIdentifier),
+              WeatherRouteDataPolicy.isFresh(routeWeatherComputedAt, at: date),
+              WeatherRouteDataPolicy.isFresh(routeWeatherObservedAt, at: date) else {
+            return false
+        }
+        return true
+    }
+
+    var routeWeatherAttribution: String {
+        routeWeatherAuthority.attribution
+    }
+
     /// Whole-degree temp for the hero, e.g. "88°" (origin "now").
     var heroTempDisplay: String {
-        guard let t = origin?.realtime?.temperature else { return "—" }
-        return "\(Int(t.rounded()))°"
+        guard let value = WeatherNumeric.roundedInt(
+            origin?.realtime?.temperature,
+            allowed: WeatherNumeric.temperatureF
+        ) else { return "—" }
+        return "\(value)°"
     }
     var feelsLikeDisplay: String? {
-        guard let f = origin?.realtime?.temperatureApparent else { return nil }
-        return "Feels like \(Int(f.rounded()))°"
+        guard let value = WeatherNumeric.roundedInt(
+            origin?.realtime?.temperatureApparent,
+            allowed: WeatherNumeric.temperatureF
+        ) else { return nil }
+        return "Feels like \(value)°"
     }
     var conditionLine: String? { origin?.realtime?.condition }
     var locationName: String? { origin?.name }
@@ -151,9 +207,18 @@ extension WeatherForLoad {
     /// Each is (key, value) with an honest dash when absent.
     var metricTiles: [(key: String, value: String)] {
         let rt = origin?.realtime
-        func mph(_ v: Double?) -> String { v.map { "\(Int($0.rounded())) mph" } ?? "—" }
-        func mi(_ v: Double?) -> String { v.map { "\(($0).formatted(.number.precision(.fractionLength(0...1)))) mi" } ?? "—" }
-        func pct(_ v: Double?) -> String { v.map { "\(Int($0.rounded()))%" } ?? "—" }
+        func mph(_ value: Double?) -> String {
+            WeatherNumeric.roundedInt(value, allowed: WeatherNumeric.windMph)
+                .map { "\($0) mph" } ?? "—"
+        }
+        func mi(_ value: Double?) -> String {
+            WeatherNumeric.finite(value, allowed: 0...1_000)
+                .map { "\($0.formatted(.number.precision(.fractionLength(0...1)))) mi" } ?? "—"
+        }
+        func pct(_ value: Double?) -> String {
+            WeatherNumeric.roundedInt(value, allowed: WeatherNumeric.percent)
+                .map { "\($0)%" } ?? "—"
+        }
         return [
             ("WIND", mph(rt?.windSpeedMph)),
             ("VISIBILITY", mi(rt?.visibilityMi)),
@@ -165,13 +230,19 @@ extension WeatherForLoad {
     /// True when the lane is in a state worth surfacing the Lane Impact card.
     var hasLaneRisk: Bool {
         guard let li = laneImpact, li.available else { return false }
-        return li.riskTier.isActionable
+        return li.mode != .unknown
+            && li.riskTier.isActionable
+            && WeatherRouteDataPolicy.authority(for: li.source) == .here
+            && WeatherRouteDataPolicy.isFresh(
+                WeatherRouteDataPolicy.parseProviderDate(li.computedAt)
+            )
+            && !WeatherRouteDataPolicy.isSyntheticLoadIdentifier(displayLoadIdentifier)
     }
 
     /// "updated 2m ago" from computedAt, or nil.
     var freshnessDisplay: String? {
-        guard let iso = computedAt, let date = ISO8601DateFormatter().date(from: iso) else { return nil }
-        let secs = max(0, Int(Date().timeIntervalSince(date)))
+        guard let date = routeWeatherComputedAt,
+              let secs = WeatherNumeric.elapsedWholeSeconds(from: date) else { return nil }
         if secs < 60 { return "updated just now" }
         if secs < 3600 { return "updated \(secs / 60)m ago" }
         return "updated \(secs / 3600)h ago"

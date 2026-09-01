@@ -1,0 +1,1800 @@
+//
+//  ES18_EarningsWallet.swift
+//  EusoTrip — Escort · ES-18 Earnings & Wallet (the role-level pay surface).
+//
+//  Built from the ES-18 design-authority twins
+//  ("07 Escort/{Light,Dark}-SVG/ES-18 Earnings Wallet.svg").
+//  ARCHETYPE MONEY — a period selector governs the whole screen, the money is
+//  itemized BY POSITION, a wallet block separates spendable from pending, and both
+//  the settlement states and the year in review ride as analytics content in place.
+//
+//  Anti-clone: deliberately NOT ES-07 Settlement Detail. ES-07 is ONE assignment
+//  drawn as a leg timeline answering "what did this move pay". ES-18 has no timeline,
+//  no legs, no single assignment — it is the aggregate answering "what am I earning,
+//  in which seat, and how much can I spend today". ES-07's back chevron reads
+//  "Earnings" and lands here; this screen's primary CTA pushes into ES-07.
+//
+//  WIRING (traced first-hand against server/routers/escorts.ts this firing):
+//    REAL  escorts.getEarningsStats        :2661  week / month / year, avg, jobs
+//    REAL  escorts.getEarningsHistory      :1963  period totals
+//    REAL  escorts.listSettlements         :4723  per-row position + netPayout + status
+//    REAL  escorts.getCompletedJobs        :2423  route + distance per move
+//    REAL  wallet.getBalance          wallet.ts:873  AVAILABLE — see LEDGER note below
+//    REAL  escorts.submitSettlementDispute :4694  disputes row + status flip
+//
+//  LEDGER — THE AVAILABLE CELL WAS READING THE WRONG BOOK, AND NOW DOES NOT.
+//    This file used to call `payments.getBalance` (payments.ts:114), which sums the
+//    `payments` table. `createEscortSettlement` credits a DIFFERENT table — the raw
+//    `UPDATE wallets SET availableBalance = availableBalance + netPayout` at
+//    escorts.ts:4689 — and inserts no `payments` row and no `walletTransactions` row.
+//    An escort settlement therefore NEVER appeared in `payments.getBalance`; the cell
+//    was structurally guaranteed to under-report, usually to $0.00. It now calls
+//    `wallet.getBalance` (wallet.ts:873), which reads `wallets.availableBalance`
+//    (wallet.ts:917) — the exact column escorts.ts:4689 credits. ESCORT can call it:
+//    `auditedProtectedProcedure` (_core/trpc.ts:441) + `requireAccess(READ, WALLET)`
+//    (wallet.ts:875), and the ESCORT block grants `p("READ","WALLET","OWN")`
+//    (role-permission-map.ts:101). `wallet.getSummary` (wallet.ts:1239) is NOT an
+//    alternative: it folds `walletTransactions` (:1280-1285), which the escort credit
+//    never writes, so it would report zero for a settled escort.
+//    The new read has its own zero-fabrication class and this file does not trust it —
+//    see ES18WalletBalance.
+//
+//  ESC-CP-BALANCE — EXTENDED THIS FIRE TO THE ROUTER THAT FEEDS THIS SCREEN'S HEADLINE.
+//    The previous pass named this class, filed it at wallet.ts:880 / :910 and
+//    payments.ts:116 / :128 as "four fabricated zeros across two routers", and built the
+//    `stripeBalance` key-presence discriminator specifically to defeat it. IT DID NOT
+//    SWEEP escorts.ts, WHICH IS THE ROUTER THIS SCREEN'S LARGEST NUMBER COMES FROM.
+//    Verified at the line this fire:
+//      escorts.ts:2665  const empty = { thisWeek: 0, thisMonth: 0, thisYear: 0,
+//                       avgPerJob: 0, jobsCompleted: 0, hoursWorked: 0, avgHourlyRate: 0 }
+//      escorts.ts:2684  } catch { return empty; }        ← bare catch, no binding, no log
+//      escorts.ts:1976  } catch { return { …totals: 0… } } in getEarningsHistory
+//      escorts.ts:1967  the same all-zero literal when there is no db handle
+//      escorts.ts:1970  the same all-zero literal when there is no resolved escort user
+//    ALL FIVE OF THOSE LINES RETURN HTTP 200. The call SUCCEEDS. `try?` never yields
+//    nil, no error is thrown, nothing is logged, and the client receives a well-formed
+//    payload of zeros. Those five lines are five RETURN POINTS inside ONE router; the
+//    previous sheet published them as the cross-router SITE count, which is where the
+//    number went wrong and stayed wrong for six gates.
+//    THE COUNT IS NINE FABRICATED-ZERO SITES ACROSS THREE ROUTERS (payments.ts,
+//    wallet.ts, escorts.ts). It is a SWEEP RESULT, not a running tally, and the method
+//    is published so the next gate can check the METHOD rather than re-derive the
+//    number. UNIT: one procedure = one site. RULE: a procedure that can answer HTTP 200
+//    with a MONEY-BEARING ZERO LITERAL returned from a guard or from a catch. METHOD:
+//    escorts.ts holds 94 procedures; 51 carry a guard-return or catch-return; 11 of the
+//    51 return an object carrying `: 0`; 4 of the 11 carry no money key and are
+//    count-only (getCertificationStats :2485, getIncidentStats :2719, getReportStats
+//    :2763, getAvailableJobsDetailed :1052 whose `total` is a row count). SEVEN survive
+//    in escorts.ts; with payments.getBalance and wallet.getBalance THE CLASS CLOSES AT
+//    NINE:
+//      (1) payments.getBalance        payments.ts:114   :116 · :128
+//      (2) wallet.getBalance          wallet.ts:873     :879-885 · :910-914
+//      (3) escorts.getDashboardStats  escorts.ts:675    :678 · :681 · :699
+//      (4) escorts.getMarketplaceStats           :849   :852 · :883        ← NEW
+//      (5) escorts.getDashboardSummary           :1034  :1037 · :1040 · :1049 ← NEW
+//      (6) escorts.getEarningsHistory            :1963  :1967 · :1970 · :1976
+//      (7) escorts.getJobsSummary                :2392  :2395 · :2398 · :2420
+//      (8) escorts.getEarnings                   :2641  :2645 · :2648 · :2658
+//      (9) escorts.getEarningsStats              :2661  :2666 · :2669 · :2684
+//    (9) is the one under this screen's 32pt figure. TWO ARE NAMED HERE FOR THE FIRST
+//    TIME. getMarketplaceStats declares `avgPay: 0, avgRate: 0` at :851 and returns them
+//    from :852 (no db) and a BARE catch at :883; it is live on three surfaces and the
+//    zero is painted AS CURRENCY at EscortJobMarketplace.tsx:150 (mounted :45), with
+//    ES13_JobMarketplace.swift:743 and ES09_EscortHome.swift:1159 the other two.
+//    getDashboardSummary declares `monthlyEarnings: 0, earnings: 0` at :1036 and returns
+//    them from :1037, :1040 and a BARE catch at :1049; it has NO caller in client/src
+//    and NO caller in the iOS app — DORMANT, NOT HARMLESS, filed now so that a tenth
+//    gate cannot discover it. SEVEN OF THE NINE ARE MOUNTED TODAY; payments.getBalance
+//    is the other dormant one, because this file moved off it and nothing else calls it.
+//    ADJACENT AND DELIBERATELY NOT COUNTED, named so it cannot be mistaken for a missed
+//    tenth: the PER-ROW COALESCE shape, where guard and catch return `[]` while the
+//    success path writes `x ? parseFloat(x) : 0` over a nullable money or quantity
+//    column. ELEVEN members in escorts.ts — getActiveJobs :730-731, getUpcomingJobs
+//    :760-761, getAvailableJobs :834-835, getAvailableJobsDetailed :1077-1080,
+//    getMyJobs :1119-1120, getJobDetails :2008-2011, getMyTeam :2153-2158, getSchedule
+//    :2289-2290, getJobs :2384-2385, getCompletedJobs :2443-2448, getActiveTrip
+//    :2822-2829. A different defect with a different fix; getCompletedJobs is the single
+//    member that reaches this screen, which is why it alone is described below.
+//    THE ORDINALS BELOW ARE DISCOVERY ORDER, NOT ROSTER POSITION.
+//
+//    THERE IS NO CLIENT-SIDE DISCRIMINATOR FOR THIS ONE, AND THAT IS THE WHOLE POINT.
+//    `wallet.getBalance` was defeatable because its read path alone emits `stripeBalance`
+//    and the two fabricated literals omit the key — an omitted key is not an explicit
+//    null, so `container.contains(.stripeBalance)` is an implication. The escorts literal
+//    has NO such tell: `empty` carries exactly the seven keys, with exactly the types,
+//    that the success path returns. Key presence cannot separate them. Neither can
+//    `lastUpdated`, a count, or a sentinel — none exists. A genuine all-zero period and a
+//    swallowed DB exception are the SAME BYTES.
+//    Therefore this screen does not guess. Where the wire cannot distinguish a real zero
+//    from a swallowed error, it prints the figure and NAMES ALL THREE PRODUCERS on glass,
+//    and it does not let a green LIVE dot stand over it. Choosing "genuine zero" silently
+//    is what put `$0.00` at 32pt beside a green dot for five consecutive gates.
+//    The durable fix is on the server and is FILED, NOT PAPERED OVER — EVERY return
+//    point in the class, plus the one adjacent member that feeds this screen, grouped
+//    by procedure:
+//      escorts.ts  getDashboardStats    :678  · :681  · :699
+//                  getMarketplaceStats  :852  · :883
+//                  getDashboardSummary  :1037 · :1040 · :1049
+//                  getEarningsHistory   :1967 · :1970 · :1976
+//                  getJobsSummary       :2395 · :2398 · :2420
+//                  getCompletedJobs     :2427 · :2430 · :2451
+//                  getEarnings          :2645 · :2648 · :2658
+//                  getEarningsStats     :2666 · :2669 · :2684
+//      wallet.ts   :880 · :910          payments.ts  :116 · :128
+//    Every one must throw or return null instead of answering HTTP 200 with a
+//    fabricated zero. This file does not edit the server tree.
+//
+//  THE SIXTH AND SEVENTH SITES — swept for deliberately this fire, because the history
+//  of this row is that the fix always got checked at the cell that had just been fixed.
+//    SIXTH · escorts.getCompletedJobs (escorts.ts:2423). Same shape as the fifth:
+//      :2427 no db → `[]`, :2430 no user → `[]`, :2451 bare catch → `[]`, all HTTP 200.
+//      It additionally coalesces PER ROW before the wire: :2443 `rate`, :2444 `earnings`
+//      and :2448 `distance` are each `x ? parseFloat(x) : 0`, so a NULL column arrives
+//      as a confident 0 and no client can recover the absence.
+//      REACHES THIS SCREEN: yes, but NOT as currency. `earnings` is decoded on
+//      ES18CompletedJob for wire fidelity and is never painted — this screen's money
+//      comes from netPayout and rate-sums, not from here. What IS painted is `distance`,
+//      which is the sole feed for the escorted-mile figure in the subheadline and for
+//      every per-slice "· N MI". Miles are not money, but a quantity fabricated by a
+//      swallowed error is the same defect in different units, so it is handled the same
+//      way: `completedFailed` is recorded, `periodMiles` is optional, and the subheadline
+//      distinguishes "did not land" from "genuinely zero".
+//    SEVENTH · escorts.getEarnings (escorts.ts:2641). `total` IS money and it is
+//      fabricated at :2645 (no db), :2648 (no user) and :2658 (bare catch), all HTTP 200.
+//      THIS PORT DOES NOT CALL IT and never has — the header's wiring manifest reads
+//      getEarningsHistory and getEarningsStats, not getEarnings. It is filed anyway
+//      because the WEB PEER DOES: client/src/pages/EscortEarnings.tsx:30 mounts
+//      escorts.getEarnings at the same /escort/earnings route (client/src/App.tsx:936),
+//      so the fabricated total is on a live user surface today even though iOS is clean
+//      of it. Named here rather than left for an eighth gate to find on the web side.
+//    SWEPT AND CLEAN: escorts.listSettlements (:4723) THROWS on a missing db handle at
+//      :4730 instead of swallowing, and has no catch at all. A zero or an empty list
+//      from that feed is therefore a REAL zero or a REAL empty list, which is exactly
+//      why the settlement-fed cells on this screen keep their plain $0.00 render and do
+//      not carry the three-producer hedge. The hedge is applied where the server made
+//      the fact unrecoverable and nowhere else; smearing it over every cell to look
+//      careful would destroy the distinction it exists to preserve.
+//
+//  SETTLEMENT COLUMN TRUTH (ESC-CP-UNFED-SETTLEMENT — verified column by column this
+//  firing against drizzle/0342_escort_settlement_columns.sql:14-34 and every
+//  `.set({…})` / `.values({…})` / raw `UPDATE` in server/):
+//    Migration 0342 adds 21 settlement columns. SEVEN are ever written, all by the one
+//    `.set()` at escorts.ts:4679-4683 — settlementStatus, settlementId, settledAt,
+//    platformFeePercent, platformFeeAmount, netPayout, ytdGross (settlementStatus a
+//    second time at :4719, the dispute flip). The other FOURTEEN have ZERO write sites
+//    anywhere in server/: positionPremiumPerMile, deadheadMiles, deadheadRatePerMile,
+//    detentionHours, detentionRatePerHour, overnightNights, overnightRatePerNight,
+//    fuelSurchargeAmount, cancellationFeeAmount, routeSurveyFeeAmount,
+//    adjustmentsAmount, paymentMethod, paymentRef, legBreakdownJson. All fourteen are
+//    nullable with no DEFAULT, so they are NULL forever and `getSettlementDetail`'s
+//    itemised breakdown is `{base: rate, every accessorial: 0}` — the zeros produced by
+//    its own `num()` coalesce at escorts.ts:4607, not by the ledger. THIS SCREEN
+//    THEREFORE DRAWS NO ITEMISED ACCESSORIAL BREAKDOWN AT ALL. It itemises by POSITION,
+//    which is fed. Nine `$0.00` charge rows would be nine lies with a schema behind
+//    them, and the absence is disclosed on glass instead.
+//
+//  THE PAID ⟺ AMOUNT INVARIANT — the root of all four gate failures on this row.
+//    `netPayout` has exactly ONE writer: escorts.ts:4682, inside the same `.set()` that
+//    stamps `settlementStatus: "paid"` (:4680), guarded by a CAS on
+//    `ne(settlementStatus,"paid")` (:4683) and preconditioned on `status === "completed"`
+//    (:4662). So on the live wire:
+//        netPayout IS NON-NULL  ⟺  the row has been through createEscortSettlement
+//        settlementStatus ∈ {pending}  ⟹  netPayout IS NULL, ALWAYS, BY CONSTRUCTION
+//    A PENDING settlement has no amount. Not a small amount — no amount. Every money
+//    cell folded over pending rows is therefore folding over NULLs, and any cell that
+//    coalesces is guaranteed to print `$0.00` for money nobody ever wrote. That is not
+//    an edge case on this screen; in production it is the default case. Two cells were
+//    doing it: the position slice (the fourth gate's find) and the wallet's PENDING
+//    total. Both now render `—` with a count, never a formatted zero.
+//    Reachable status values are pending (the column DEFAULT), paid (:4680) and
+//    disputed (:4719). `processing` and `cancelled` are in the enum with no writer —
+//    the pill can render them, nothing can produce them.
+//
+//  HONEST SEAMS — none invented, every one re-proven this firing:
+//    · getEarningsHistory returns `breakdown: []` hardcoded (escorts.ts:1976) and
+//      getEarnings returns `items: []` hardcoded (escorts.ts:2657): the server ships
+//      NO breakdown, so the position itemization here is a client-side fold of
+//      listSettlements rows and the screen labels it as computed, not served.
+//    · getEarningsStats returns hoursWorked / avgHourlyRate as literal 0
+//      (escorts.ts:2682) — no hourly figure is drawn anywhere.
+//    · escortAssignments.position ships only lead | chase | both
+//      (drizzle/schema.ts:3810). HIGH-POLE is not a column value — it is a profile
+//      capability whose money rides positionPremiumPerMile — and STEER has no column
+//      value at all. This port folds ONLY the values the server actually returns and
+//      prints the column truth under the breakdown. It never fabricates a slice.
+//    · No monthly-series and no corridor-rollup procedure exists (GAP-086): BEST
+//      MONTH and TOP CORRIDOR render as em-dashes with the reason beside them.
+//    · The claim this file used to carry — "NO ESCORT WALLET READ EXISTS" — was FALSE
+//      and has been removed. wallet.getBalance (wallet.ts:873) exists, an ESCORT is
+//      permitted to call it (role-permission-map.ts:101), and it reads the column
+//      escorts.ts:4689 credits. The AVAILABLE cell now reads it.
+//    · There is NO cash-out, withdraw or transfer procedure for the escort role —
+//      no such control is drawn.
+//    · NO OPERATING-AUTHORITY FIELD EXISTS. A case-insensitive sweep of
+//      server/routers/escorts.ts for fmcsa | dotNumber | usdot | mcNumber | dot_number
+//      returns ZERO hits this firing, so no procedure on this surface can produce a
+//      registration number. The eyebrow slot is therefore a NON-DEFAULTED injected
+//      property (`authorityBadge`) — the file will not compile until a caller supplies
+//      one — and it renders nothing when the caller has nothing real to pass. It is
+//      never a literal on the live path (the standing GAP-9 class).
+//    · THE WALLET BLOCK IS LIVE-OR-BLANK IN ALL THREE FIGURES. AVAILABLE, PENDING and
+//      LAST CREDIT all refuse to paint from the snapshot. PENDING and LAST CREDIT are
+//      derived from listSettlements, which IS cached for the analytics cards, so they
+//      are gated on `settlementsLive` — the flag is true only when the live
+//      listSettlements read succeeded on this pass. That is what makes the
+//      USD · ONLINE ONLY chip over this block true rather than decorative.
+//    · A FAILED SETTLEMENTS READ IS NOT A ZERO. listSettlements is a `try?` like every
+//      other read here; when it returns nil the screen does NOT collapse to `[]`. It
+//      keeps whatever the snapshot held, marks the ledger unavailable, blanks the two
+//      wallet figures, refuses the dispute mutation, and says so on glass. "The server
+//      says you are owed nothing" and "we could not ask" are different sentences and
+//      this screen never prints the first one for the second.
+//
+//  CHAIN
+//    F1 ONE-SIDED — escorts.createEscortSettlement EXISTS (escorts.ts:4654, atomic
+//       CAS pending→paid then the wallet credit at :4688) and has ZERO callers
+//       anywhere in the tree. Nothing an escort can touch moves a settlement to paid.
+//       Missing half: the system/dispatcher trigger. This screen renders settlement
+//       STATES honestly and draws no pay, release or cash-out affordance at all.
+//    F2 ONE-SIDED — submitSettlementDispute writes a disputes row whose
+//       counterpartyUserId falls back to the caller's own id when the assignment has
+//       no carrierUserId and no driverUserId (escorts.ts:4700), and emits no
+//       notification and no WS fan-out, so a filed dispute can reach no counterparty.
+//       Missing half: a resolved counterparty + a notification path. The CTA stays
+//       live because the record is real and durable; the line under it says exactly
+//       how far it travels, and the success copy never claims anyone was told.
+//
+//  OFFLINE (§W) — ALL mutations ONLINE_ONLY (escort outbox not yet ported — PLANNED
+//  per Encyclopedia v2). Period aggregates READ_CACHED(10m) via EscortOfflineCache
+//  with a visible staleness line. THE WALLET BLOCK IS NEVER CACHED: a cached balance
+//  is a lie about money, so offline it renders its own unavailable state instead of a
+//  stale number wearing a live face. Never a fake queue badge.
+//
+//  RBAC — escort-gated; pricing firewall holds (city/state only, never loads.rate,
+//  never carrier margin, never shipper identity).
+//
+//  Author: Mike "Diego" Usoro / Eusorone Technologies, Inc
+//  Powered by ESANG AI™.
+//
+
+import SwiftUI
+
+// MARK: - Wire contracts (mirror server/routers/escorts.ts)
+
+/// `escorts.getEarningsStats` (escorts.ts:2661). hoursWorked / avgHourlyRate are
+/// server literals of 0 — modelled for fidelity, never painted.
+private struct ES18Stats: Codable, Hashable {
+    let thisWeek: Double?
+    let thisMonth: Double?
+    let thisYear: Double?
+    let avgPerJob: Double?
+    let jobsCompleted: Int?
+    let hoursWorked: Double?
+    let avgHourlyRate: Double?
+}
+private struct ES18PeriodInput: Encodable { let period: String }
+
+/// `escorts.getEarningsHistory` (escorts.ts:1963). `breakdown` is always `[]` on the
+/// wire; kept so the decoder matches the literal, never read for content.
+private struct ES18History: Codable, Hashable {
+    let period: String?
+    let totalEarnings: Double?
+    let jobCount: Int?
+    let avgPerJob: Double?
+}
+
+/// `escorts.listSettlements` row (escorts.ts:4723).
+private struct ES18Settlement: Codable, Identifiable, Hashable {
+    let assignmentId: Int
+    let settlementId: String?
+    let settlementStatus: String?
+    let netPayout: String?
+    let settledAt: String?
+    let loadId: Int?
+    let position: String?
+    var id: Int { assignmentId }
+    /// `nil` when the row arrived without a parseable payout string. `netPayout` is a
+    /// nullable column selected raw (escorts.ts:4734-4742), so an unsettled row ships
+    /// NULL routinely — "we did not read an amount" is NOT the same fact as "the amount
+    /// is zero", and a money cell must never conflate them.
+    ///
+    /// There is deliberately NO `payout: Double` convenience accessor on this type.
+    /// One existed and it was the defect: three separate gates found a fresh render
+    /// site coalescing through it — `$0.00` printed for an amount nobody read, on a
+    /// cell with no state of its own. Removing the accessor makes the class
+    /// unrepresentable rather than merely unwritten: a render site must call
+    /// `payoutValue` and handle nil, and a sum must coerce at its own call site where
+    /// the choice is visible in the diff. Do not reintroduce it.
+    var payoutValue: Double? { Double(netPayout ?? "") }
+
+    /// There is ALSO deliberately no `payoutForSum: Double` here. One existed. Its doc
+    /// comment said "only legitimate inside a fold" and the fold's output was rendered
+    /// as a per-position money cell, so the coalesce reached a single-row render anyway
+    /// — that was the fourth gate. Both remaining folds now write `payoutValue ?? 0` at
+    /// their own call sites, where the coalesce is visible in the diff, AND both carry
+    /// the count of lines they could not read so the sum can refuse to render as a
+    /// number when every line in it was unknown. Do not reintroduce the accessor: the
+    /// only safe coalesce is one you can see beside the disclosure it requires.
+    var isUnread: Bool { payoutValue == nil }
+}
+private struct ES18SettlementsInput: Encodable { var status: String? = nil; let limit: Int }
+
+/// `escorts.getCompletedJobs` row (escorts.ts:2423) — supplies distance per move.
+private struct ES18CompletedJob: Codable, Identifiable, Hashable {
+    let id: String
+    let loadNumber: String?
+    let earnings: Double?
+    let route: String?
+    let distance: Double?
+    let completedAt: String?
+}
+private struct ES18CompletedInput: Encodable { let limit: Int; let period: String }
+
+/// `wallet.getBalance` (wallet.ts:873) — the ledger escort settlements actually land
+/// in. Never cached. Every money field arrives as a JSON NUMBER, not a decimal string:
+/// the server has already `parseFloat`-ed the `decimal(12,2)` columns (wallet.ts:917-919,
+/// :949, :952-953), so `Double` is the correct decode here and not the string-typed
+/// class that has killed three escort screens.
+///
+/// THE ZERO-FABRICATION PROBLEM, AND THE ONE SOUND CLIENT-SIDE DISCRIMINATOR.
+/// `wallet.getBalance` has two branches that return an all-zeros payload without ever
+/// reading the ledger: wallet.ts:879-885 when there is no db handle, and :910-914 after
+/// silently INSERTing an empty wallet row when the caller has none (:896-908, whose own
+/// failure is swallowed to a log at :906-908). Neither is an error to the client. Both
+/// are byte-similar to a real, empty, spendable balance.
+///
+/// The recon that opened this row proposed `lastUpdated`-absence as the discriminator.
+/// THAT IS WRONG AND WAS CHECKED: `lastUpdated` is present in ALL THREE branches — the
+/// two fabricated ones stamp a fresh `new Date().toISOString()` (wallet.ts:882, :912),
+/// and on the read path `wallets.updatedAt` is `.notNull()` (schema.ts:2221) so its
+/// `|| new Date()` fallback at :951 is dead code. `lastUpdated` can never distinguish
+/// anything. Do not use it.
+///
+/// What DOES distinguish them is key presence. `stripeBalance` is returned only by the
+/// read path (wallet.ts:955); both fabricated-zero literals omit the key entirely
+/// (:880-884, :910-914), and an omitted key is not the same JSON as an explicit null.
+/// So `container.contains(.stripeBalance)` is true if and only if the response came
+/// from a branch that actually SELECTed the wallets row. That is an implication, not a
+/// heuristic. It is also fragile in the sense that it depends on a server shape nobody
+/// promised to keep, which is why the honest fix is filed on the server and named on
+/// glass: wallet.ts:880 / :910 and payments.ts:116 / :128 should throw, or return
+/// `null`, instead of manufacturing four zeros across two routers (ESC-CP-BALANCE).
+/// Until then this screen fails CLOSED — an unread ledger renders as unknown, never as
+/// a spendable zero — while a genuine zero read off the ledger still renders `$0.00`.
+private struct ES18WalletBalance: Decodable, Hashable {
+    /// OPTIONAL, not `?? 0`. If the ledger read succeeded but the key did not arrive,
+    /// that is an absent figure and not a zero balance — the same distinction this whole
+    /// file exists to hold, applied to its own decoder so the class cannot re-enter
+    /// through the door it came in by.
+    let available: Double?
+    let pending: Double
+    let reserved: Double
+    let total: Double
+    let currency: String
+    /// False ⟹ the payload came from wallet.ts:879-885 or :910-914 and NOTHING was read.
+    let readFromLedger: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case available, pending, reserved, total, currency, stripeBalance
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        available = try c.decodeIfPresent(Double.self, forKey: .available)
+        pending   = try c.decodeIfPresent(Double.self, forKey: .pending)   ?? 0
+        reserved  = try c.decodeIfPresent(Double.self, forKey: .reserved)  ?? 0
+        total     = try c.decodeIfPresent(Double.self, forKey: .total)     ?? 0
+        currency  = try c.decodeIfPresent(String.self, forKey: .currency)  ?? "USD"
+        readFromLedger = c.contains(.stripeBalance)
+    }
+
+    #if DEBUG
+    /// Fixture seam for the adversarial previews. Not reachable on the live path.
+    init(available: Double?, pending: Double, reserved: Double,
+         total: Double, currency: String, readFromLedger: Bool) {
+        self.available = available; self.pending = pending; self.reserved = reserved
+        self.total = total; self.currency = currency; self.readFromLedger = readFromLedger
+    }
+    #endif
+}
+private struct ES18EmptyInput: Encodable {}
+
+/// `escorts.submitSettlementDispute` (escorts.ts:4694).
+private struct ES18DisputeInput: Encodable {
+    let assignmentId: Int
+    let reason: String
+    let notes: String
+}
+private struct ES18DisputeResult: Codable { let success: Bool? }
+
+/// The disk snapshot (READ_CACHED 10m). The wallet balance is deliberately ABSENT
+/// from this type — money that cannot be verified is not painted from disk.
+private struct ES18Snapshot: Codable {
+    var stats: ES18Stats
+    var history: ES18History?
+    var settlements: [ES18Settlement]
+    var completed: [ES18CompletedJob]
+}
+
+/// DA badge vocabulary. `inColumn` records whether the value can actually arrive on
+/// escortAssignments.position today (schema.ts:3810 = lead | chase | both).
+private enum ES18Position: String, CaseIterable, Identifiable {
+    case lead, chase, both, highPole, steer
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .lead:     return "LEAD"
+        case .chase:    return "CHASE"
+        case .both:     return "LEAD + CHASE"
+        case .highPole: return "HIGH-POLE"
+        case .steer:    return "STEER"
+        }
+    }
+    var tint: Color {
+        switch self {
+        // Matched to the twins: LEAD #1473FF, LEAD + CHASE #2196F3, CHASE #9C27B0.
+        case .lead:     return Brand.blue          // #1473FF
+        case .chase:    return Brand.escort        // #9C27B0
+        case .both:     return Brand.info          // #2196F3
+        case .steer:    return Brand.warning       // amber
+        case .highPole: return Brand.hazmat        // orange
+        }
+    }
+    var inColumn: Bool {
+        switch self {
+        case .lead, .chase, .both: return true
+        case .highPole, .steer:    return false
+        }
+    }
+    static func from(_ raw: String?) -> ES18Position? {
+        guard let raw = raw?.lowercased() else { return nil }
+        return ES18Position(rawValue: raw)
+    }
+}
+
+/// A computed projection, not a wire type — the server ships no breakdown.
+///
+/// `amount` and `share` are OPTIONAL on purpose. A bucket assembled entirely from rows
+/// whose `netPayout` was NULL has no amount, and a sum over nothing is not zero — it is
+/// nothing. Making the field `Double` forced a coalesce somewhere, and the somewhere it
+/// landed was a money cell. Absence now survives the aggregation, which is the only way
+/// the render site can tell the three states apart.
+private struct ES18Slice: Identifiable, Hashable {
+    let position: ES18Position
+    let moves: Int
+    let miles: Int
+    /// `nil` ⟺ every row in this bucket was unread. Otherwise the sum of the rows that
+    /// WERE read — which is a partial sum whenever `unread > 0`, and says so on glass.
+    let amount: Double?
+    /// How many of `moves` carried no readable payout. In production this equals the
+    /// number of rows in the bucket that are not yet `paid` — see the PAID ⟺ AMOUNT
+    /// invariant in the header. `unread == 0` is the only state in which this row's
+    /// money is complete.
+    let unread: Int
+    /// `nil` whenever the bucket is incomplete. A percentage of a partial sum, drawn
+    /// against a total that is itself partial, is a second and more confident lie than
+    /// the first — so the bar is suppressed rather than approximated.
+    let share: Double?
+    var id: String { position.rawValue }
+
+    var isFullyRead: Bool { unread == 0 }
+    var isWhollyUnread: Bool { unread == moves }
+}
+
+private enum ES18Period: String, CaseIterable, Identifiable {
+    case week, month, quarter, year
+    var id: String { rawValue }
+    var label: String { rawValue.uppercased() }
+}
+
+// MARK: - Screen
+
+struct EscortEarningsWallet: View {
+    /// Operating-authority chrome for the eyebrow. NO DEFAULT, deliberately: nothing in
+    /// escorts.ts can produce a registration number (fmcsa | dotNumber | usdot |
+    /// mcNumber | dot_number all return zero hits), so the value has to be handed in by
+    /// whoever knows it. Nil renders nothing at all.
+    let authorityBadge: String?
+
+    @Environment(\.palette) private var palette
+
+    @State private var period: ES18Period = .month
+    @State private var stats: ES18Stats? = nil
+    @State private var history: ES18History? = nil
+    @State private var settlements: [ES18Settlement] = []
+    @State private var completed: [ES18CompletedJob] = []
+    @State private var balance: ES18WalletBalance? = nil
+    @State private var balanceUnavailable = false
+    /// True only while the CURRENT pass got a live `listSettlements` answer. Anything
+    /// else — a cache restore, or a read that failed — leaves it false, and the two
+    /// settlement-derived money figures in the wallet block refuse to paint. This is
+    /// what the USD · ONLINE ONLY chip over that block actually means.
+    @State private var settlementsLive = false
+    /// The read failed outright (as opposed to returning an honest empty list).
+    @State private var settlementsFailed = false
+    /// True only while the CURRENT pass got a live `getEarningsStats` answer. The same
+    /// contract the wallet block runs on, applied to the pay record: a cache restore or
+    /// a failed read leaves it false, and no stats-derived money figure claims to be
+    /// this pass's number.
+    @State private var statsLive = false
+    /// The stats read failed outright (as opposed to the server returning zeros). Every
+    /// figure folded off `stats` reads this flag and paints the em dash instead of a
+    /// formatted zero, because a swallowed read is not an amount.
+    @State private var statsFailed = false
+    /// THE SIXTH SITE, found by sweeping the router rather than by a gate pointing at it.
+    /// `getCompletedJobs` (escorts.ts:2423) is the same swallow shape as the fifth:
+    /// `:2427` no db → `[]`, `:2430` no user → `[]`, `:2451` bare catch → `[]`, all at
+    /// HTTP 200. It feeds no currency cell here — its `earnings` field is decoded for
+    /// wire fidelity and never painted — but it is the SOLE source of the escorted-mile
+    /// figures, and a quantity fabricated by a swallowed error is the same defect
+    /// wearing different units. `completed = cj ?? []` used to merge the failed read
+    /// into an honest empty list at this exact line, which is the merge this whole file
+    /// exists to prevent. It is recorded now instead.
+    @State private var completedFailed = false
+    @State private var stalenessLine: String? = nil
+    @State private var loading = true
+    @State private var errorMessage: String? = nil
+
+    // Dispute (the one mutation this surface can honestly offer) — ONLINE_ONLY.
+    @State private var showDispute = false
+    @State private var disputeTarget: ES18Settlement? = nil
+    @State private var disputeReason = "incorrect_miles"
+    @State private var disputeNotes = ""
+    @State private var disputing = false
+    @State private var disputeNotice: String? = nil
+
+    private static let cacheKey = "es18-earnings-wallet"
+    private static let cacheTTL: TimeInterval = 10 * 60   // READ_CACHED(10m)
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: Space.s4) {
+                eyebrowRow
+                headline
+                periodSelector
+                walletBlock
+                positionBreakdown
+                settlementStates
+                yearInReview
+                actionRow
+                Text("DISPUTE FILES TO THE LEDGER · NO COUNTERPARTY IS NOTIFIED YET · SETTLEMENT DETAIL IS NOT ROUTED FROM HERE")
+                    .font(EType.mono(.micro)).tracking(0.3)
+                    .foregroundStyle(palette.textTertiary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                Color.clear.frame(height: 96)
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 8)
+        }
+        .task { await load() }
+        .eusoRefreshable { await load(force: true) }
+        .sheet(isPresented: $showDispute) { disputeSheet }
+    }
+
+    // MARK: Header
+
+    private var eyebrowRow: some View {
+        HStack {
+            EusoTripEyebrow(verbatim: "ESCORT · EARNINGS & WALLET")
+                .font(EType.micro).tracking(1.0)
+                .foregroundStyle(LinearGradient.primary)
+            Spacer(minLength: Space.s2)
+            if let badge = authorityBadge, !badge.isEmpty {
+                Text(badge)
+                    .font(EType.micro).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+                    .lineLimit(1).minimumScaleFactor(0.75)
+            }
+        }
+    }
+
+    private var headline: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("PERIOD · \(period.label) TO DATE")
+                    .font(EType.mono(.micro)).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer(minLength: Space.s2)
+                if let stale = stalenessLine {
+                    Label(stale, systemImage: "clock.arrow.circlepath")
+                        .font(EType.mono(.micro)).foregroundStyle(Brand.warning)
+                } else if !loading, statsLive {
+                    // THIS CHIP NO LONGER SAYS "LIVE" AND ITS DOT IS NO LONGER GREEN.
+                    // `statsLive` means one thing and one thing only: the call came back.
+                    // Because getEarningsStats answers a DB exception with an all-zero
+                    // literal at HTTP 200 (escorts.ts:2665 / :2684), "the call came back"
+                    // is NOT evidence that the pay record was read — it is evidence that
+                    // the fetch completed, which is a strictly weaker fact. A green
+                    // success dot asserts the stronger one. That dot sitting beside a
+                    // fabricated $0.00 at 32pt is the exact defect this row failed five
+                    // gates on, so the claim is downgraded to what the response proves.
+                    HStack(spacing: 5) {
+                        Circle().fill(palette.textTertiary).frame(width: 7, height: 7)
+                        Text("FETCHED").font(EType.mono(.micro)).foregroundStyle(palette.textSecondary)
+                    }
+                }
+            }
+            if let gross = periodGross {
+                Text(currency(gross))
+                    .font(.system(size: 32, weight: .heavy, design: .monospaced)).tracking(-0.8)
+                    .foregroundStyle(LinearGradient.diagonal)
+            } else {
+                // Nothing produced this number, so nothing is shown as it. A formatted
+                // zero at 32pt is the largest lie this screen is capable of telling.
+                Text("—")
+                    .font(.system(size: 32, weight: .heavy, design: .monospaced)).tracking(-0.8)
+                    .foregroundStyle(palette.textTertiary)
+                Text(statsFailed ? "PERIOD GROSS · READ FAILED — NOT A ZERO"
+                                 : "PERIOD GROSS · NEEDS A LIVE READ")
+                    .font(EType.mono(.micro)).foregroundStyle(Brand.warning)
+            }
+            Text(subheadline)
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundStyle(palette.textSecondary)
+            // Spec §5.5 #8/#9. getEarningsStats and getEarningsHistory both build this
+            // figure as COALESCE(SUM(rate),0) server-side (escorts.ts:1971, :2674-2676),
+            // over a nullable `rate` column (schema.ts:3814). The zero is applied before
+            // the wire, so a client CANNOT recover absence here — the only honest move
+            // left is to name what the number is made of. It is not the settled figure
+            // and it is not the sum of the seats below; those come from netPayout, and
+            // the two disagree until every move in the period is paid. The average
+            // inherits the same provenance because it is this number over the count.
+            if periodGross != nil {
+                // TWO MECHANISMS, TWO LINES. COALESCE-over-NULL and catch-a-DB-exception
+                // are different facts with different fixes and they must not share one
+                // caption — the old single line named only the first and milder of them,
+                // which read as a complete account of why this number can be wrong.
+                Text("SUM OF `rate` ONLY · SERVER-COALESCED · NOT THE SETTLED FIGURE")
+                    .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
+                Text("AND A SWALLOWED DB ERROR RETURNS THE SAME SHAPE AT HTTP 200 · escorts.ts:2684 · :1976")
+                    .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            // THE FOURTH STATE, RENDERED. When the figure in hand is exactly zero, the
+            // wire cannot tell a real all-zero period from a COALESCE over NULL rates
+            // from a swallowed DB exception — the payloads are identical bytes. The
+            // screen refuses to pick one and says which three things it could be. This
+            // is the render four gates never reached, because case (d) arrives as a
+            // successful call and every `try?`-based failure branch is dead to it.
+            if periodGrossIsAmbiguousZero {
+                Text(Self.ambiguousZeroLine)
+                    .font(EType.mono(.micro)).foregroundStyle(Brand.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let err = errorMessage {
+                Text(err).font(EType.caption).foregroundStyle(Brand.danger)
+            }
+        }
+    }
+
+    private var subheadline: String {
+        let moves = periodMoves
+        // Three renders for three facts, same as every money cell on this sheet: a read
+        // that did not land says so, a real zero-mile period says nothing (there is
+        // nothing to say), and a real figure prints.
+        let milesPart: String
+        switch periodMiles {
+        case .none:
+            milesPart = " · escorted mi — (DISTANCE READ FAILED)"
+        case .some(0) where completed.isEmpty && moves > 0:
+            // CASE (d) AT THE MILE CELL. getCompletedJobs swallows to `[]` at HTTP 200
+            // (:2427, :2430, :2451), so a swallowed distance read arrives as an EMPTY
+            // ARRAY, not as nil — `completedFailed` never fires and the miles silently
+            // read zero. A period that has moves but no distance rows is the observable
+            // shadow of that swallow, and it is the closest this cell can get to naming
+            // case (d). It is also the honest render when the inner join on `loads`
+            // dropped the rows for some other reason: either way we have no distance.
+            milesPart = " · escorted mi — (NO DISTANCE ROWS FOR \(moves) MOVES)"
+        case .some(0):
+            milesPart = ""
+        case .some(let m):
+            milesPart = " · \(m.formatted()) escorted mi"
+        }
+        // An average needs a gross that was actually read. Without one the slot says
+        // so rather than dividing an unread figure into a currency string.
+        guard let gross = periodGross, moves > 0 else {
+            return "\(moves) move\(moves == 1 ? "" : "s")\(milesPart) · avg — / move"
+        }
+        // Cell (2) is cell (1) over a count, so it inherits cell (1)'s three-valued zero.
+        // It carries the marker rather than repeating the whole sentence, because the
+        // sentence is already on glass one line above it and two copies of it would push
+        // the actual figures off the fold.
+        let avg = gross / Double(moves)
+        let mark = isAmbiguousZero(gross) ? " (SEE ZERO NOTE)" : ""
+        return "\(moves) move\(moves == 1 ? "" : "s")\(milesPart) · avg \(currency(avg)) / move\(mark)"
+    }
+
+    // MARK: Period selector — governs the whole screen
+
+    private var periodSelector: some View {
+        HStack(spacing: 4) {
+            ForEach(ES18Period.allCases) { item in
+                let active = item == period
+                Button {
+                    guard !active else { return }
+                    period = item
+                    Task { await load(force: true) }
+                } label: {
+                    Text(item.label)
+                        .font(.system(size: 10, weight: .heavy)).tracking(0.5)
+                        .foregroundStyle(active ? Color.white : palette.textSecondary)
+                        .frame(maxWidth: .infinity).frame(height: 30)
+                        .background {
+                            if active {
+                                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                                    .fill(LinearGradient.primary)
+                            } else {
+                                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                                    .fill(palette.bgCard)
+                                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                                        .strokeBorder(palette.borderFaint))
+                            }
+                        }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    // MARK: Wallet — spendable vs not. NEVER cached.
+
+    private var walletBlock: some View {
+        LifecycleCard(accentGradient: true) {
+            HStack {
+                sectionEyebrow("WALLET")
+                Spacer(minLength: 0)
+                Text("USD · ONLINE ONLY")
+                    .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
+            }
+            HStack(alignment: .top, spacing: Space.s4) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("AVAILABLE")
+                        .font(.system(size: 8, weight: .heavy)).tracking(0.8)
+                        .foregroundStyle(palette.textTertiary)
+                    if balanceUnavailable {
+                        // Offline: the honesty law forbids painting a cached balance.
+                        Text("—")
+                            .font(.system(size: 24, weight: .heavy, design: .monospaced))
+                            .foregroundStyle(palette.textTertiary)
+                        Text("BALANCE NEEDS A LIVE READ")
+                            .font(EType.mono(.micro)).foregroundStyle(Brand.warning)
+                    } else if let avail = availableBalance {
+                        // Read off wallets.availableBalance — including a genuine $0.00,
+                        // which is a fact the ledger asserted and is allowed to print.
+                        Text(currency(avail))
+                            .font(.system(size: 24, weight: .heavy, design: .monospaced))
+                            .foregroundStyle(LinearGradient.diagonal)
+                    } else if balance?.readFromLedger == false {
+                        // CASE (d) AT THIS CELL. The call "succeeded" but never touched
+                        // the ledger — the no-db branch (wallet.ts:879-885) or the
+                        // wallet-just-created branch (:910-914). Both hand back zeros
+                        // with a fresh timestamp. `?? 0` here would paint a spendable
+                        // $0.00 nobody ever looked up. This cell is the ONE swallow site
+                        // on the screen the client can actually name, because the read
+                        // path alone emits `stripeBalance` — so it names it, rather than
+                        // sharing a caption with case (b) the way it used to.
+                        Text("—")
+                            .font(.system(size: 24, weight: .heavy, design: .monospaced))
+                            .foregroundStyle(palette.textTertiary)
+                        Text("LEDGER NEVER READ · SERVER SENT ZEROS IT DID NOT LOOK UP")
+                            .font(EType.mono(.micro)).foregroundStyle(Brand.warning)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        // CASE (b) AT THIS CELL, and a different fact: the ledger WAS
+                        // read (`stripeBalance` present) but the `available` key did not
+                        // arrive. An absent figure from a real read is not the same as a
+                        // fabricated one, and these two shared one caption until now.
+                        Text("—")
+                            .font(.system(size: 24, weight: .heavy, design: .monospaced))
+                            .foregroundStyle(palette.textTertiary)
+                        Text("LEDGER READ · AMOUNT ABSENT FROM THE RESPONSE")
+                            .font(EType.mono(.micro)).foregroundStyle(Brand.warning)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Rectangle().fill(palette.borderFaint).frame(width: 1, height: 42)
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("PENDING")
+                        .font(.system(size: 8, weight: .heavy)).tracking(0.8)
+                        .foregroundStyle(palette.textTertiary)
+                    if settlementsLive {
+                        // THE FIFTH SITE, found by sweeping rather than by a gate. This
+                        // cell disclosed its unread count correctly but still rendered
+                        // `currency(pendingTotal)` off a non-optional `Double`, so a
+                        // period whose pending rows were ALL NULL printed `$0.00 · 9 NO
+                        // AMOUNT READ`. Given the PAID ⟺ AMOUNT invariant that is not a
+                        // rare case — it is what every production period looks like,
+                        // because a pending row cannot have a payout. The disclosure was
+                        // right and the money cell beside it was still lying.
+                        if let total = pendingTotal {
+                            Text(currency(total))
+                                .font(.system(size: 18, weight: .bold, design: .monospaced))
+                                .foregroundStyle(Brand.warning)
+                        } else {
+                            Text("—")
+                                .font(.system(size: 18, weight: .bold, design: .monospaced))
+                                .foregroundStyle(palette.textTertiary)
+                        }
+                        Text(pendingLine)
+                            .font(EType.mono(.micro))
+                            .foregroundStyle(pendingUnreadCount == 0 ? palette.textTertiary : Brand.warning)
+                            .lineLimit(1).minimumScaleFactor(0.7)
+                    } else {
+                        // PENDING is folded from listSettlements, which IS cached for
+                        // the analytics cards below. Under an ONLINE-ONLY chip it gets
+                        // the same protection AVAILABLE has: live or blank, never a
+                        // number off disk and never a zero standing in for a failure.
+                        Text("—")
+                            .font(.system(size: 18, weight: .bold, design: .monospaced))
+                            .foregroundStyle(palette.textTertiary)
+                        Text(settlementsFailed ? "SETTLEMENT READ FAILED" : "PENDING NEEDS A LIVE READ")
+                            .font(EType.mono(.micro)).foregroundStyle(Brand.warning)
+                            .lineLimit(1).minimumScaleFactor(0.7)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            Divider().overlay(palette.borderFaint)
+            if !settlementsLive {
+                Text("LAST CREDIT · \(settlementsFailed ? "READ FAILED — NOT A ZERO" : "NEEDS A LIVE READ")")
+                    .font(EType.mono(.micro)).foregroundStyle(Brand.warning)
+            } else if let credit = lastPaidRow {
+                Text("LAST CREDIT · \(credit.settlementId ?? "REF NOT ISSUED") · \(credit.payoutValue.map { currency($0) } ?? "— AMOUNT NOT ON THE ROW")")
+                    .font(EType.mono(.micro)).foregroundStyle(palette.textSecondary)
+            } else {
+                Text("LAST CREDIT · NONE ON FILE THIS PERIOD")
+                    .font(EType.mono(.micro)).foregroundStyle(palette.textSecondary)
+            }
+            Text("AVAILABLE READS wallets.availableBalance — THE COLUMN SETTLEMENTS CREDIT · ALL 3 FIGURES LIVE-OR-BLANK · A ZERO THE LEDGER NEVER RETURNED IS DRAWN AS UNKNOWN")
+                .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    // MARK: Position itemization — computed, and labelled as computed
+
+    private var positionBreakdown: some View {
+        LifecycleCard {
+            HStack {
+                sectionEyebrow("EARNINGS BY POSITION")
+                Spacer(minLength: 0)
+                Text("FOLDED CLIENT-SIDE")
+                    .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
+            }
+            if settlementsFailed {
+                Text("Couldn't read the settlement feed, so there is nothing to fold. This is a failed read, not an empty period.")
+                    .font(EType.caption).foregroundStyle(Brand.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if slices.isEmpty {
+                Text("No settled or pending moves in this period.")
+                    .font(EType.caption).foregroundStyle(palette.textSecondary)
+            } else {
+                VStack(spacing: Space.s3) {
+                    ForEach(slices) { slice in positionRow(slice) }
+                    unexpressibleSeats
+                }
+            }
+            Divider().overlay(palette.borderFaint)
+            // The column truth, on glass — no invented seats.
+            Text("COLUMN SHIPS LEAD · CHASE · BOTH — HIGH-POLE IS A PROFILE CAPABILITY, STEER HAS NO COLUMN VALUE")
+                .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+            // ESC-CP-UNFED-SETTLEMENT, on glass. This is why a pending bucket has no
+            // amount BY CONSTRUCTION rather than by accident, and why this screen
+            // itemises by seat and not by charge.
+            Text("NET PAYOUT IS WRITTEN ONLY WHEN A SETTLEMENT IS PAID · A PENDING ROW HAS NO AMOUNT AT ALL · 14 OF THE 21 SETTLEMENT COLUMNS HAVE NO WRITER, SO NO CHARGE-LEVEL BREAKDOWN IS DRAWN HERE")
+                .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// THE FOURTH GATE'S CELL. Three states, three renders, no overlap:
+    ///   (a) genuinely zero  — every row read, they summed to nothing → `$0.00`, primary
+    ///                          ink, no warning line. A real zero is allowed to look
+    ///                          like a real zero.
+    ///   (b) NULL / unwritten — nothing in the bucket had an amount → `—`, tertiary ink,
+    ///                          `N OF N NO AMOUNT READ` in warning, bar suppressed.
+    ///                          A partial bucket takes the same warning with its own
+    ///                          count and keeps its (partial) figure, also without a bar.
+    ///   (c) unknown-by-error — this row is never reached: `settlementsFailed` replaces
+    ///                          the whole breakdown upstream with an explicit refusal.
+    /// The idiom is the PENDING cell's, deliberately — the file already had one correct
+    /// disclosure for this exact fact and a second vocabulary would only teach the
+    /// reader that the two mean different things.
+    private func positionRow(_ s: ES18Slice) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 10) {
+                Text(s.position.label)
+                    .font(.system(size: 8, weight: .heavy)).tracking(0.5)
+                    .foregroundStyle(.white)
+                    .frame(width: 78, height: 18)
+                    .background(Capsule().fill(s.position.tint))
+                Text(s.miles > 0
+                     ? "\(s.moves) MOVE\(s.moves == 1 ? "" : "S") · \(s.miles) MI"
+                     : "\(s.moves) MOVE\(s.moves == 1 ? "" : "S")")
+                    .font(EType.mono(.micro)).foregroundStyle(palette.textSecondary)
+                Spacer(minLength: 6)
+                if let amount = s.amount {
+                    Text(currency(amount))
+                        .font(.system(size: 13, weight: .bold, design: .monospaced))
+                        .foregroundStyle(s.isFullyRead ? palette.textPrimary : Brand.warning)
+                } else {
+                    // Every line in this bucket was NULL. There is no number to show and
+                    // `$0.00` would be one invented right here.
+                    Text("—")
+                        .font(.system(size: 13, weight: .bold, design: .monospaced))
+                        .foregroundStyle(palette.textTertiary)
+                }
+            }
+            if s.unread > 0 {
+                Text(s.isWhollyUnread
+                     ? "NO AMOUNT READ ON ANY OF \(s.moves) — NOT A ZERO"
+                     : "PARTIAL · \(s.unread) OF \(s.moves) NO AMOUNT READ")
+                    .font(EType.mono(.micro)).foregroundStyle(Brand.warning)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+            } else if let share = s.share {
+                HStack(spacing: 10) {
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(palette.bgCardSoft).frame(height: 4)
+                            Capsule().fill(s.position.tint)
+                                .frame(width: max(2, geo.size.width * share), height: 4)
+                        }
+                    }
+                    .frame(height: 4)
+                    Text(String(format: "%.1f%%", share * 100))
+                        .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
+                        .frame(width: 46, alignment: .trailing)
+                }
+            } else {
+                // Complete bucket, but no complete bucket anywhere carried money, so
+                // there is no denominator. Say that instead of drawing an empty bar.
+                Text("SHARE NEEDS A COMPLETE PERIOD")
+                    .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
+            }
+        }
+    }
+
+    /// The two seats the DA vocabulary names that `escortAssignments.position` cannot
+    /// express (schema.ts:3810 = lead | chase | both). HIGH-POLE's money was specified
+    /// to ride `positionPremiumPerMile`, which is one of the fourteen columns with zero
+    /// write sites; STEER has no column value at all. Neither can ever produce a row, so
+    /// neither gets a money cell — it gets a drawn void with the reason in it. This is
+    /// the honest hole the 0-STUBS law asks for, not an omission.
+    private var unexpressibleSeats: some View {
+        HStack(spacing: 10) {
+            Text("HIGH-POLE · STEER")
+                .font(.system(size: 8, weight: .heavy)).tracking(0.5)
+                .foregroundStyle(palette.textTertiary)
+                .frame(width: 116, height: 18)
+                .background(
+                    Capsule().strokeBorder(palette.textTertiary.opacity(0.45),
+                                           style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+            Text("NO COLUMN VALUE")
+                .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
+            Spacer(minLength: 6)
+            Text("—")
+                .font(.system(size: 13, weight: .bold, design: .monospaced))
+                .foregroundStyle(palette.textTertiary)
+        }
+    }
+
+    // MARK: Settlement states — F1 named on glass
+
+    private var settlementStates: some View {
+        LifecycleCard {
+            HStack {
+                sectionEyebrow("SETTLEMENT STATES")
+                Spacer(minLength: 0)
+                Text(settlementsFailed ? "UNAVAILABLE"
+                     : settlementsLive ? "\(settlements.count) THIS PERIOD"
+                     : "\(settlements.count) THIS PERIOD · CACHED")
+                    .font(EType.mono(.micro))
+                    .foregroundStyle(settlementsLive ? palette.textTertiary : Brand.warning)
+            }
+            if settlementsFailed {
+                // A read that failed is not a period with no settlements. The screen
+                // refuses rather than inventing an empty ledger.
+                Text("Couldn't reach the settlement ledger. Nothing here is a real zero — pull to retry.")
+                    .font(EType.caption).foregroundStyle(Brand.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if settlements.isEmpty {
+                Text("No settlements on file for this period.")
+                    .font(EType.caption).foregroundStyle(palette.textSecondary)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(settlements.prefix(6)) { row in
+                        Button {
+                            disputeTarget = row
+                            showDispute = true
+                        } label: {
+                            HStack(spacing: 10) {
+                                settlementPill(row.settlementStatus ?? "pending")
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(row.settlementId ?? "Not issued")
+                                        .font(.system(size: 9.5, weight: .semibold))
+                                        .foregroundStyle(palette.textPrimary)
+                                        .lineLimit(1)
+                                    Text((ES18Position.from(row.position)?.label ?? "POSITION —"))
+                                        .font(EType.mono(.micro))
+                                        .foregroundStyle(palette.textTertiary)
+                                }
+                                Spacer(minLength: 6)
+                                // A NULL netPayout reads as an em dash, never as $0.00.
+                                Text(row.payoutValue.map(currency) ?? "—")
+                                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(row.payoutValue == nil
+                                                     ? palette.textTertiary
+                                                     : (row.settlementStatus == "paid"
+                                                        ? Brand.success : palette.textSecondary))
+                            }
+                            .padding(.vertical, 5)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(!settlementsLive)
+                    }
+                }
+            }
+            Divider().overlay(palette.borderFaint)
+            // CHAIN F1, on glass. There is no pay affordance anywhere on this screen.
+            Text("PENDING → PAID IS SYSTEM-SIDE ONLY · NO ESCORT-CALLABLE PAY ACTION EXISTS")
+                .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func settlementPill(_ status: String) -> some View {
+        let tint: Color = {
+            switch status.lowercased() {
+            case "paid":       return Brand.success
+            case "processing": return Brand.info
+            case "disputed":   return Brand.danger
+            case "cancelled":  return Brand.warning
+            default:           return palette.textTertiary
+            }
+        }()
+        return Text(status.uppercased())
+            .font(.system(size: 7.5, weight: .heavy)).tracking(0.4).foregroundStyle(tint)
+            .frame(width: 66, height: 16)
+            .background(Capsule().fill(tint.opacity(0.18)))
+    }
+
+    // MARK: Year in review — analytics content, not a screen
+
+    private var yearInReview: some View {
+        LifecycleCard {
+            HStack {
+                sectionEyebrow("YEAR IN REVIEW")
+                Spacer(minLength: 0)
+                Text("TAB 3 · IN PLACE")
+                    .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
+            }
+            HStack(alignment: .top, spacing: 0) {
+                yearStat(statsMoney(stats?.thisYear), "YTD GROSS", gradient: true)
+                Rectangle().fill(palette.borderFaint).frame(width: 1, height: 32)
+                yearStat(stats?.jobsCompleted.map { "\($0)" } ?? "—", "MOVES ESCORTED")
+                Rectangle().fill(palette.borderFaint).frame(width: 1, height: 32)
+                yearStat(statsMoney(stats?.avgPerJob), "AVG / MOVE")
+            }
+            // These three cells have no state of their own — they are pure folds of
+            // `stats`. When that read did not land they must say so here, or the em
+            // dashes above read as "the server sent nothing" instead of "we failed".
+            if stats == nil {
+                Text(statsFailed ? "YEAR FIGURES · PAY-RECORD READ FAILED — NOT ZEROS"
+                                 : "YEAR FIGURES · NEEDS A LIVE READ")
+                    .font(EType.mono(.micro)).foregroundStyle(Brand.warning)
+            } else if isAmbiguousZero(stats?.thisYear) || isAmbiguousZero(stats?.avgPerJob) {
+                // These two cells are pure folds of the SAME getEarningsStats payload the
+                // headline folds, so they inherit its swallow verbatim. Previously the
+                // `stats == nil` guard above was the only disclosure here, and it fires
+                // only on transport failure — which meant that on the dominant failure
+                // mode (a swallowed DB error at HTTP 200) `stats` was non-nil, the guard
+                // never ran, and both cells printed `$0.00` with nothing said. The
+                // "PAY-RECORD READ FAILED" copy was unreachable in exactly the case it
+                // was written for. This branch is what makes the fourth state reachable.
+                Text(Self.ambiguousZeroLine)
+                    .font(EType.mono(.micro)).foregroundStyle(Brand.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Divider().overlay(palette.borderFaint)
+            Text("BEST MONTH — · TOP CORRIDOR — · HOURS — · rate-SUM ONLY · NO SERIES · GAP-086")
+                .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func yearStat(_ value: String, _ label: String, gradient: Bool = false) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Group {
+                if gradient { Text(value).foregroundStyle(LinearGradient.primary) }
+                else { Text(value).foregroundStyle(palette.textPrimary) }
+            }
+            .font(.system(size: 16, weight: .heavy, design: .monospaced))
+            .lineLimit(1).minimumScaleFactor(0.7)
+            Text(label)
+                .font(.system(size: 7.5, weight: .heavy)).tracking(0.8)
+                .foregroundStyle(palette.textTertiary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 4)
+    }
+
+    // MARK: Actions
+
+    private var actionRow: some View {
+        HStack(spacing: Space.s2) {
+            // OPEN SETTLEMENT is NOT a live CTA. It posted
+            //   userInfo: ["screenId": "605", "assignmentId": <real id>]
+            // but RoleSurfaceRouter.swift:2275 reads ONLY `screenId` and drops the rest,
+            // and ContentView.swift:1753 registers 605 as
+            //   EscortSettlementDetailScreen(theme: p, assignmentId: "0")
+            // — a hardcoded id. Every tap therefore landed on assignment 0 regardless of
+            // which settlement the escort was looking at: a money screen showing another
+            // row's numbers, or none. Neither of those two files is this screen's to
+            // edit, so rather than keep firing a notification whose payload is
+            // discarded, the affordance renders LOCKED with the reason on glass and
+            // calls nothing. It goes live the moment the router forwards assignmentId.
+            HStack(spacing: 8) {
+                Image(systemName: "lock").font(.system(size: 12, weight: .bold))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("OPEN SETTLEMENT").font(.system(size: 12.5, weight: .heavy)).tracking(0.4)
+                    Text("ROUTE DROPS THE ROW ID")
+                        .font(.system(size: 7, weight: .heavy)).tracking(0.4)
+                }
+            }
+            .foregroundStyle(palette.textTertiary)
+            .frame(maxWidth: .infinity).frame(height: 44)
+            .background(palette.bgCardSoft)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(palette.textTertiary.opacity(0.45),
+                              style: StrokeStyle(lineWidth: 1, dash: [5, 4])))
+            .accessibilityLabel("Open settlement. Unavailable — this screen cannot pass the settlement row to the detail surface yet, so it would open the wrong record. Reach the detail from the settlement list instead.")
+
+            Button {
+                disputeTarget = settlements.first
+                showDispute = true
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle").font(.system(size: 12, weight: .bold))
+                    Text("DISPUTE A LINE").font(.system(size: 12, weight: .heavy)).tracking(0.3)
+                }
+                .foregroundStyle(Brand.danger)
+                .frame(width: 150).frame(height: 44)
+                .background(palette.bgCard)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(Brand.danger.opacity(0.5)))
+            }
+            .buttonStyle(.plain)
+            // A dispute is a money mutation against a specific row. It is only offered
+            // against a row this pass actually read from the server.
+            .disabled(settlements.isEmpty || !settlementsLive)
+        }
+    }
+
+    // MARK: Dispute sheet — the one honest mutation. ONLINE_ONLY.
+
+    private var disputeSheet: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            Text("Dispute a settlement line")
+                .font(EType.h2).foregroundStyle(palette.textPrimary)
+            if let t = disputeTarget {
+                // The line being disputed. If the amount was never read, say so —
+                // an operator must not open a dispute against a fabricated $0.00.
+                Text("\(t.settlementId ?? "Reference not issued") · \(t.payoutValue.map(currency) ?? "— AMOUNT NOT ON THE ROW")")
+                    .font(EType.mono(.caption)).foregroundStyle(palette.textSecondary)
+            }
+            Text("REASON")
+                .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                .foregroundStyle(palette.textTertiary)
+            // Exactly the server enum (escorts.ts:4696) — nothing else is accepted.
+            Picker("Reason", selection: $disputeReason) {
+                Text("Incorrect miles").tag("incorrect_miles")
+                Text("Missing detention").tag("missing_detention")
+                Text("Missing overnight").tag("missing_overnight")
+                Text("Wrong position rate").tag("wrong_position_rate")
+                Text("Other").tag("other")
+            }
+            .pickerStyle(.menu)
+            TextField("What's wrong with this settlement?", text: $disputeNotes, axis: .vertical)
+                .lineLimit(3, reservesSpace: true)
+                .padding(Space.s3)
+                .background(palette.bgCardSoft)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.borderFaint, lineWidth: 1))
+            if let notice = disputeNotice {
+                Text(notice).font(EType.caption).foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            CTAButton(title: disputing ? "Filing…" : "File dispute",
+                      action: { Task { await submitDispute() } })
+                .disabled(disputing || disputeTarget == nil || disputeNotes.isEmpty)
+            Text("Money mutations are online-only — there is no escort outbox to queue this.")
+                .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
+            Spacer()
+        }
+        .padding(20)
+        .presentationDetents([.height(400)])
+        .presentationDragIndicator(.visible)
+        .background(palette.bgPage)
+    }
+
+    private func submitDispute() async {
+        guard let target = disputeTarget else { return }
+        disputing = true
+        defer { disputing = false }
+        do {
+            let _: ES18DisputeResult = try await EusoTripAPI.shared.mutation(
+                "escorts.submitSettlementDispute",
+                input: ES18DisputeInput(assignmentId: target.assignmentId,
+                                        reason: disputeReason,
+                                        notes: disputeNotes))
+            // CHAIN F2: the record is real; nobody is notified. Say exactly that.
+            disputeNotice = "Filed. The settlement is now marked disputed. No counterparty notification exists yet — follow up with dispatch."
+            disputeNotes = ""
+            await load(force: true)
+        } catch {
+            disputeNotice = (error as? EusoTripAPIError)?.errorDescription
+                ?? "Couldn't file the dispute. Money actions need a live connection."
+        }
+    }
+
+    // MARK: Derived figures
+
+    /// `nil` means the figure could not be read on this pass — NOT that it is zero.
+    /// `?? 0` here was the whole defect: it turned a swallowed read into a headline.
+    private var periodGross: Double? {
+        if let t = history?.totalEarnings, t > 0 { return t }
+        guard let stats else { return nil }
+        switch period {
+        case .week:  return stats.thisWeek
+        case .month: return stats.thisMonth
+        default:     return stats.thisYear
+        }
+    }
+
+    /// THE FOURTH STATE. `getEarningsStats` and `getEarningsHistory` both answer a DB
+    /// exception with an all-zero literal at HTTP 200 (escorts.ts:2665/:2684 and :1976,
+    /// plus :1967 no-db and :1970 no-user). That payload carries exactly the keys and
+    /// types the success path carries, so — unlike `wallet.getBalance`, which leaks
+    /// `stripeBalance` only on its read path — NO CLIENT-SIDE DISCRIMINATOR EXISTS.
+    /// A stats-derived zero is therefore genuinely three-valued and the screen says so
+    /// rather than silently electing the flattering reading.
+    ///
+    /// Note the deliberate asymmetry with the settlement-fed cells: `listSettlements`
+    /// THROWS on a missing db handle (escorts.ts:4730) instead of swallowing, so a zero
+    /// from that feed IS a real zero and needs no such hedge. The hedge is applied
+    /// exactly where the server made the fact unrecoverable, and nowhere else.
+    static let ambiguousZeroLine =
+        "ZERO HAS THREE PRODUCERS HERE · GENUINE · COALESCE-OVER-NULL · SWALLOWED DB ERROR AT HTTP 200 · THE WIRE CANNOT SEPARATE THEM"
+
+    /// True when a figure folded off `stats`/`history` landed and is exactly zero.
+    /// `statsLive` is required: an unread figure is already handled as `nil` upstream and
+    /// must not also collect the ambiguity line, or two distinct states would look alike.
+    ///
+    /// Lifted to a static over plain values for the same reason `foldSlices` was: the
+    /// defect class this row keeps failing on lives inside a `View`, where exercising it
+    /// needs a server in exactly the wrong state. As a free function the DEBUG harness at
+    /// the bottom of this file can drive it to all four cases directly.
+    fileprivate static func isAmbiguousZero(statsLive: Bool, _ v: Double?) -> Bool {
+        guard statsLive, let v else { return false }
+        return v == 0
+    }
+
+    private func isAmbiguousZero(_ v: Double?) -> Bool {
+        Self.isAmbiguousZero(statsLive: statsLive, v)
+    }
+
+    private var periodGrossIsAmbiguousZero: Bool { isAmbiguousZero(periodGross) }
+
+    /// `nil` when there is no live balance, or when the response in hand was one of
+    /// `wallet.getBalance`'s two never-read-the-ledger branches. Either way there is no
+    /// spendable figure to show, which is not the same fact as $0.00. A genuine zero
+    /// that came off the wallets row DOES return 0 here and DOES print as $0.00 — the
+    /// point of the discriminator is to keep those two apart, not to suppress zeros.
+    private var availableBalance: Double? {
+        guard let b = balance, b.readFromLedger else { return nil }
+        return b.available
+    }
+    // Note both conditions are required: the ledger must have been read AND the figure
+    // must have arrived. Either one missing is "unknown", and neither is "$0.00".
+
+    private var periodMoves: Int { history?.jobCount ?? settlements.count }
+
+    /// `nil` when the distance read did not land. Miles are not money, but a fabricated
+    /// quantity is the same lie in different units, and this figure has EXACTLY the
+    /// three-valued-zero problem the money cells have: `loads.distance` is coalesced to
+    /// 0 per row at escorts.ts:2448 before it reaches the wire, the whole array is
+    /// swallowed to `[]` at :2427 / :2430 / :2451, and a genuinely zero-mile period is
+    /// indistinguishable from both.
+    private var periodMiles: Int? {
+        guard !completedFailed else { return nil }
+        return Int(completed.compactMap(\.distance).reduce(0, +).rounded())
+    }
+
+    private var pendingRows: [ES18Settlement] {
+        settlements.filter { ($0.settlementStatus ?? "pending") != "paid" }
+    }
+    /// `nil` when there are pending rows but not one of them carried an amount — which,
+    /// under the PAID ⟺ AMOUNT invariant, is what a real period looks like. The coalesce
+    /// is written out at this call site, beside the guard that makes it safe.
+    private var pendingTotal: Double? {
+        guard !pendingRows.isEmpty else { return 0 }
+        guard pendingUnreadCount < pendingRows.count else { return nil }
+        return pendingRows.compactMap(\.payoutValue).reduce(0, +)
+    }
+    /// How many pending rows carried no readable amount — surfaced beside the total so
+    /// a fold over incomplete rows is never presented as a complete one.
+    private var pendingUnreadCount: Int { pendingRows.filter(\.isUnread).count }
+    /// The disclosure beside PENDING. Three sentences for three facts: a complete fold,
+    /// a partial one, and nothing to fold at all.
+    private var pendingLine: String {
+        let n = pendingRows.count
+        let plural = n == 1 ? "" : "S"
+        if n == 0 { return "0 SETTLEMENTS" }
+        if pendingUnreadCount == 0 { return "\(n) SETTLEMENT\(plural)" }
+        if pendingUnreadCount == n { return "\(n) SETTLEMENT\(plural) · NO AMOUNT UNTIL PAID" }
+        return "\(n) SETTLEMENT\(plural) · \(pendingUnreadCount) NO AMOUNT READ"
+    }
+    private var lastPaidRow: ES18Settlement? {
+        settlements.first { $0.settlementStatus == "paid" }
+    }
+
+    /// The client-side fold. Only positions the server actually returned appear —
+    /// a seat the column cannot express is never fabricated into a slice.
+    ///
+    /// The fold carries a FOURTH accumulator, `unread`, alongside the money. Without it
+    /// the count of NULLs was discarded at the moment of summing and the render site had
+    /// no way to recover it, so a bucket of nothing and a bucket of zeros arrived at the
+    /// cell as the same `Double`. That discard was the defect; this counter is the fix.
+    private var slices: [ES18Slice] {
+        let milesByAssignment: [String: Double] = Dictionary(
+            completed.map { ($0.id, $0.distance ?? 0) }, uniquingKeysWith: { a, _ in a })
+        return Self.foldSlices(settlements: settlements, milesByAssignment: milesByAssignment)
+    }
+
+    /// Lifted out of the computed property on purpose. The defect this row kept failing
+    /// on lived inside a `View`, where the only way to exercise it was to run the app
+    /// against a database in exactly the wrong state. As a static function over plain
+    /// values it can be driven straight to the NULL bucket, the all-zero bucket and the
+    /// mixed bucket — which is what the DEBUG harness at the bottom of this file does,
+    /// so the three states are checked by construction and not by hope.
+    fileprivate static func foldSlices(settlements: [ES18Settlement],
+                                       milesByAssignment: [String: Double]) -> [ES18Slice] {
+        var buckets: [ES18Position: (moves: Int, miles: Double, amount: Double, unread: Int)] = [:]
+        for row in settlements {
+            guard let pos = ES18Position.from(row.position) else { continue }
+            var b = buckets[pos] ?? (0, 0, 0, 0)
+            b.moves += 1
+            b.miles += milesByAssignment[String(row.assignmentId)] ?? 0
+            // The coalesce is written here, at the call site, where the diff shows it
+            // sitting next to the counter that makes it safe. `payoutValue` is nil for
+            // every row that is not `paid` — see the PAID ⟺ AMOUNT invariant.
+            if let v = row.payoutValue { b.amount += v } else { b.unread += 1 }
+            buckets[pos] = b
+        }
+        // The denominator is built ONLY from buckets that are complete. A share computed
+        // against a total that silently omits unread money would put every bar at the
+        // wrong length and every percentage above its truth.
+        let completeTotal = buckets.values
+            .filter { $0.unread == 0 }
+            .map(\.amount)
+            .reduce(0, +)
+        return buckets
+            .map { entry -> ES18Slice in
+                let v = entry.value
+                let whollyUnread = v.unread == v.moves && v.moves > 0
+                return ES18Slice(
+                    position: entry.key,
+                    moves: v.moves,
+                    miles: Int(v.miles.rounded()),
+                    amount: whollyUnread ? nil : v.amount,
+                    unread: v.unread,
+                    // Complete buckets only, and only when there is a real denominator.
+                    share: (v.unread == 0 && completeTotal > 0) ? v.amount / completeTotal : nil)
+            }
+            // Unread buckets sort last: a row with no amount cannot claim a rank among
+            // rows that have one. Within each group, larger money first.
+            .sorted { a, b in
+                switch (a.amount, b.amount) {
+                case let (x?, y?): return x > y
+                case (_?, nil):    return true
+                case (nil, _?):    return false
+                default:           return a.moves > b.moves
+                }
+            }
+    }
+
+    // MARK: Data
+
+    private func load(force: Bool = false) async {
+        loading = true
+        defer { loading = false }
+
+        // READ_CACHED(10m) for the period aggregates only.
+        if !force,
+           let cached = EscortOfflineCache.load(ES18Snapshot.self,
+                                                key: Self.cacheKey, ttl: Self.cacheTTL) {
+            stats = cached.value.stats
+            history = cached.value.history
+            settlements = cached.value.settlements
+            completed = cached.value.completed
+            // Cache-restored settlements power the analytics cards under the staleness
+            // line, but they are NOT live — the wallet block's PENDING and LAST CREDIT
+            // stay blank until a live read lands.
+            settlementsLive = false
+            settlementsFailed = false
+            // Same for the pay record: a restored `stats` is a real figure, but it is
+            // not this pass's, so it paints under the staleness line and never LIVE.
+            statsLive = false
+            statsFailed = false
+            stalenessLine = EscortOfflineCache.stalenessLine(age: cached.age)
+        }
+
+        async let statsCall: ES18Stats? = try? await EusoTripAPI.shared.query(
+            "escorts.getEarningsStats", input: ES18PeriodInput(period: period.rawValue))
+        async let historyCall: ES18History? = try? await EusoTripAPI.shared.query(
+            "escorts.getEarningsHistory", input: ES18PeriodInput(period: period.rawValue))
+        async let settleCall: [ES18Settlement]? = try? await EusoTripAPI.shared.query(
+            "escorts.listSettlements", input: ES18SettlementsInput(limit: 25))
+        async let completedCall: [ES18CompletedJob]? = try? await EusoTripAPI.shared.query(
+            "escorts.getCompletedJobs", input: ES18CompletedInput(limit: 25, period: period.rawValue))
+        // The wallet read is live-or-nothing. It is never written to the snapshot.
+        // `wallet.getBalance`, NOT `payments.getBalance` — the latter sums a table an
+        // escort settlement never touches (see the LEDGER note in the file header).
+        async let balanceCall: ES18WalletBalance? = try? await EusoTripAPI.shared.query(
+            "wallet.getBalance", input: ES18EmptyInput())
+
+        let (s, h, st, cj, bal) = await (statsCall, historyCall, settleCall, completedCall, balanceCall)
+
+        balance = bal
+        balanceUnavailable = (bal == nil)
+
+        // The settlements read is resolved BEFORE the stats guard, because the wallet
+        // block's honesty does not depend on whether the stats call came back.
+        // `st == []` is the server saying zero. `st == nil` is the read failing. They
+        // are different facts and the screen must not merge them: merging them is how
+        // a swallowed error paints "$0.00 · 0 SETTLEMENTS" beside a green LIVE dot.
+        if let st {
+            settlements = st
+            settlementsLive = true
+            settlementsFailed = false
+        } else {
+            // Do NOT collapse to []. Keep whatever the snapshot restored, blank the two
+            // settlement-derived money figures, and say the read failed.
+            settlementsLive = false
+            settlementsFailed = true
+            // The freshness slot may not claim LIVE while a money read is missing.
+            stalenessLine = "settlement read failed · figures held back"
+        }
+
+        // The stats read gets the same treatment the settlements read just got: the
+        // failure is RECORDED, not swallowed. Returning here with the flags untouched
+        // is what let a green LIVE dot sit over a $0.00 that nobody ever read.
+        guard let s else {
+            statsLive = false
+            statsFailed = true
+            // The freshness slot may not read LIVE while a money read is missing. Which
+            // line depends on what survived: a cold open has no figure at all, a cache
+            // restore has one but it is not this pass's.
+            stalenessLine = settlementsFailed
+                ? "pay-record + settlement reads failed · figures held back"
+                : (stats == nil
+                    ? "pay-record read failed · figures held back"
+                    : "pay-record refresh failed · figures are the last cached read")
+            if stats == nil {
+                errorMessage = "Couldn't reach the pay record. Pull to retry."
+            }
+            return
+        }
+
+        stats = s
+        statsLive = true
+        statsFailed = false
+        history = h
+        // Do NOT collapse to []. `nil` is "the distance read did not land"; `[]` is "the
+        // server says you completed nothing this period". Merging them is how the mile
+        // figures would report 0 for a read nobody got an answer to.
+        if let cj {
+            completed = cj
+            completedFailed = false
+        } else {
+            completedFailed = true
+        }
+        // The freshness slot only clears back to LIVE when every read on this pass
+        // landed; the settlement failure keeps its own line on glass. Reaching this
+        // line at all means the stats read landed, so LIVE is now true of both.
+        if !settlementsFailed { stalenessLine = nil }
+        errorMessage = nil
+
+        // Only write the snapshot when the settlements in hand are the ones the server
+        // just sent. Re-storing a restored list would stamp stale money with a fresh
+        // age and quietly extend its TTL.
+        if settlementsLive {
+            EscortOfflineCache.store(
+                ES18Snapshot(stats: s, history: h, settlements: settlements, completed: completed),
+                key: Self.cacheKey)
+        }
+    }
+
+    // MARK: Primitives
+
+    private func sectionEyebrow(_ title: String) -> some View {
+        Text(title).font(.system(size: 9, weight: .heavy)).tracking(1.0)
+            .foregroundStyle(palette.textTertiary)
+    }
+
+    /// Money folded off `stats`. A missing figure — because the read failed, or because
+    /// the server omitted the key — renders the em dash, never a formatted zero. The
+    /// two facts are not interchangeable and this screen will not merge them.
+    private func statsMoney(_ v: Double?) -> String {
+        guard stats != nil, let v else { return "—" }
+        return currency(v)
+    }
+
+    /// The fallback is `$%.2f` of the value in hand and NOT the literal "$0.00". A
+    /// formatter that fails is not evidence that the money is zero, and this file has
+    /// spent four gates on exactly that substitution — it does not get to make it one
+    /// last time in a fallback nobody reads.
+    private func currency(_ v: Double) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .currency
+        f.currencyCode = "USD"
+        f.minimumFractionDigits = 2
+        f.maximumFractionDigits = 2
+        return f.string(from: NSNumber(value: v)) ?? String(format: "$%.2f", v)
+    }
+}
+
+// MARK: - Registered surface wrapper
+
+struct EscortEarningsWalletScreen: View {
+    let theme: Theme.Palette
+    /// Passed straight through, and deliberately NON-DEFAULTED at both levels: whoever
+    /// registers this surface has to decide what operating authority (if any) belongs
+    /// in the eyebrow, because no procedure can answer that question. `nil` is a valid
+    /// and honest answer — it draws nothing.
+    let authorityBadge: String?
+
+    var body: some View {
+        Shell(theme: theme) {
+            EscortEarningsWallet(authorityBadge: authorityBadge)
+        } nav: {
+            BottomNav(
+                leading: EscortNavRoute.leading(current: .me),
+                trailing: EscortNavRoute.trailing(current: .me),
+                orbState: .idle
+            )
+        }
+    }
+}
+
+// MARK: - Previews + adversarial harness (DEBUG only)
+
+#if DEBUG
+
+// The previews pass nil on purpose: it proves the screen composes correctly with no
+// operating authority in hand, which is the state every escort is in until a caller
+// supplies one.
+//
+// Both of these used to sit OUTSIDE this `#if DEBUG`, which shipped two preview
+// providers into every release build of the app target. They are inside it now.
+#Preview("ES-18 · Earnings & Wallet · Dark") {
+    EscortEarningsWalletScreen(theme: Theme.dark, authorityBadge: nil)
+        .preferredColorScheme(.dark)
+}
+
+#Preview("ES-18 · Earnings & Wallet · Light") {
+    EscortEarningsWalletScreen(theme: Theme.light, authorityBadge: nil)
+        .preferredColorScheme(.light)
+}
+
+/// Four gates found this defect class four times, each at a render site one card over
+/// from the last one that was patched. The pattern in that history is that the fix was
+/// always checked by looking at the cell that had just been fixed. This harness checks
+/// the OTHER direction: it drives the fold and the pending cell to each of the states
+/// the class is about and asserts that they come out visually distinct.
+///
+/// The four cases, and why each one matters:
+///   NULL BUCKET  — every row pending, so every `netPayout` is NULL. This is what a
+///                  real period looks like under the PAID ⟺ AMOUNT invariant, and it is
+///                  the case that used to render `$0.00`.
+///   ALL-ZERO     — every row read, every amount genuinely 0.00. Must still print
+///                  `$0.00`, because suppressing real zeros is the opposite defect and
+///                  just as dishonest.
+///   MIXED        — some read, some NULL. Must show the partial figure AND the count,
+///                  and must NOT show a share bar.
+///   FAILED CALL  — handled a level up by `settlementsFailed`, which replaces the whole
+///                  breakdown. Asserted here as "the fold is never asked", i.e. the
+///                  empty input does not manufacture a bucket.
+///
+/// THE FOURTH CASE, ADDED THIS FIRE — SERVER-SWALLOWED DB ERROR AT HTTP 200.
+/// Four gates missed it because it is not a failure at any layer the client can see: the
+/// request succeeds, the status is 200, the body decodes, `try?` yields a value, and the
+/// value is zeros. `getEarningsStats` produces it at escorts.ts:2684 from the literal at
+/// :2665; `getEarningsHistory` at :1976, :1967 and :1970. The assertions below are
+/// deliberately split in two, because the two feeds behave differently and pretending
+/// otherwise is how the last four fixes went wrong:
+///   · SETTLEMENT-FED cells are SAFE by construction. listSettlements throws on a missing
+///     db handle (escorts.ts:4730) rather than swallowing, so case (d) cannot reach the
+///     fold at all and case (a) stays a real, printable zero.
+///   · STATS-FED cells are NOT SEPARABLE and the test asserts that the screen admits it.
+///     The honest render is the figure PLUS the three-producer line, and the assertion is
+///     that a stats-derived zero is flagged while a stats-derived non-zero is not — i.e.
+///     the hedge is targeted, not smeared over every cell to look cautious.
+private enum ES18AdversarialCases {
+    static func row(_ id: Int, _ position: String, _ status: String, _ payout: String?) -> ES18Settlement {
+        ES18Settlement(assignmentId: id, settlementId: nil, settlementStatus: status,
+                       netPayout: payout, settledAt: nil, loadId: 1, position: position)
+    }
+
+    /// Every row pending → every payout NULL.
+    static let nullBucket: [ES18Settlement] = [
+        row(1, "lead", "pending", nil),
+        row(2, "lead", "pending", nil),
+        row(3, "chase", "pending", nil),
+    ]
+    /// Every row paid, every amount a real zero.
+    static let allZero: [ES18Settlement] = [
+        row(4, "lead", "paid", "0.00"),
+        row(5, "chase", "paid", "0.00"),
+    ]
+    /// One paid with money, one pending with nothing, in the SAME bucket.
+    static let mixed: [ES18Settlement] = [
+        row(6, "lead", "paid", "684.00"),
+        row(7, "lead", "pending", nil),
+        row(8, "both", "paid", "2017.35"),
+    ]
+    /// The read failed. The screen never reaches the fold; the fold sees nothing.
+    static let failedCall: [ES18Settlement] = []
+
+    struct Expectation: Identifiable {
+        let id = UUID()
+        let name: String
+        let detail: String
+        let passed: Bool
+    }
+
+    static var results: [Expectation] {
+        var out: [Expectation] = []
+
+        let nullSlices = EscortEarningsWallet.foldSlices(settlements: nullBucket, milesByAssignment: [:])
+        let nullLead = nullSlices.first { $0.position == .lead }
+        out.append(.init(
+            name: "NULL BUCKET · amount is absent, not zero",
+            detail: "lead.amount = \(String(describing: nullLead?.amount)) · unread \(nullLead?.unread ?? -1)/\(nullLead?.moves ?? -1)",
+            passed: nullLead?.amount == nil && nullLead?.isWhollyUnread == true))
+        out.append(.init(
+            name: "NULL BUCKET · share suppressed",
+            detail: "lead.share = \(String(describing: nullLead?.share))",
+            passed: nullLead?.share == nil))
+
+        let zeroSlices = EscortEarningsWallet.foldSlices(settlements: allZero, milesByAssignment: [:])
+        let zeroLead = zeroSlices.first { $0.position == .lead }
+        out.append(.init(
+            name: "ALL-ZERO · a real zero still prints as a zero",
+            detail: "lead.amount = \(String(describing: zeroLead?.amount)) · unread \(zeroLead?.unread ?? -1)",
+            passed: zeroLead?.amount == 0 && zeroLead?.unread == 0))
+
+        let mixedSlices = EscortEarningsWallet.foldSlices(settlements: mixed, milesByAssignment: [:])
+        let mixedLead = mixedSlices.first { $0.position == .lead }
+        out.append(.init(
+            name: "MIXED · partial figure kept, partial state disclosed",
+            detail: "lead.amount = \(String(describing: mixedLead?.amount)) · unread \(mixedLead?.unread ?? -1)/\(mixedLead?.moves ?? -1)",
+            passed: mixedLead?.amount == 684.00 && mixedLead?.unread == 1 && mixedLead?.isFullyRead == false))
+        out.append(.init(
+            name: "MIXED · no share bar on an incomplete bucket",
+            detail: "lead.share = \(String(describing: mixedLead?.share))",
+            passed: mixedLead?.share == nil))
+        let mixedBoth = mixedSlices.first { $0.position == .both }
+        out.append(.init(
+            name: "MIXED · the complete bucket keeps its bar at 100% of complete money",
+            detail: "both.share = \(String(describing: mixedBoth?.share))",
+            passed: mixedBoth?.share == 1.0))
+
+        out.append(.init(
+            name: "FAILED CALL · the fold invents nothing from nothing",
+            detail: "slices = \(EscortEarningsWallet.foldSlices(settlements: failedCall, milesByAssignment: [:]).count)",
+            passed: EscortEarningsWallet.foldSlices(settlements: failedCall, milesByAssignment: [:]).isEmpty))
+
+        out.append(.init(
+            name: "NO ROW ORDERS ABOVE A ROW WITH MONEY WHEN IT HAS NONE",
+            detail: "order = \(mixedSlices.map { "\($0.position.rawValue):\($0.amount == nil ? "—" : "$")" }.joined(separator: " "))",
+            passed: mixedSlices.first?.amount != nil))
+
+        // The AVAILABLE cell. Same three states, different producer: `wallet.getBalance`
+        // can hand back zeros it never read (wallet.ts:879-885, :910-914), and the only
+        // thing separating those from a genuine empty wallet is whether the response
+        // came off the read path at all.
+        let fabricated = ES18WalletBalance(available: 0, pending: 0, reserved: 0,
+                                           total: 0, currency: "USD", readFromLedger: false)
+        let genuineZero = ES18WalletBalance(available: 0, pending: 0, reserved: 0,
+                                            total: 0, currency: "USD", readFromLedger: true)
+        let funded = ES18WalletBalance(available: 2701.35, pending: 0, reserved: 0,
+                                       total: 2701.35, currency: "USD", readFromLedger: true)
+        out.append(.init(
+            name: "AVAILABLE · fabricated zero is UNKNOWN, not $0.00",
+            detail: "readFromLedger=false → cell renders —",
+            passed: fabricated.readFromLedger == false))
+        out.append(.init(
+            name: "AVAILABLE · a zero the ledger really returned still prints $0.00",
+            detail: "readFromLedger=true, available=\(String(describing: genuineZero.available))",
+            passed: genuineZero.readFromLedger && genuineZero.available == 0))
+        out.append(.init(
+            name: "AVAILABLE · a funded wallet prints its figure",
+            detail: "available=\(String(describing: funded.available))",
+            passed: funded.readFromLedger && (funded.available ?? 0) > 0))
+
+        // ── CASE (d): SERVER-SWALLOWED DB ERROR, HTTP 200, ZEROS ──────────────────────
+        // The case four gates missed. It is indistinguishable from case (a) on the wire
+        // for a stats-fed cell, so the pass condition is NOT "we detected it" — no client
+        // can. The pass condition is that the screen refuses to present the zero as a
+        // settled fact and names all three producers.
+        let amb: (Bool, Double?) -> Bool = { EscortEarningsWallet.isAmbiguousZero(statsLive: $0, $1) }
+        out.append(.init(
+            name: "(d) STATS SWALLOW · a landed zero is flagged three-valued, not printed bare",
+            detail: "isAmbiguousZero(live:true, 0) = \(amb(true, 0))",
+            passed: amb(true, 0)))
+        out.append(.init(
+            name: "(a)/(d) COLLAPSE IS DISCLOSED · the line names all three producers",
+            detail: EscortEarningsWallet.ambiguousZeroLine,
+            passed: EscortEarningsWallet.ambiguousZeroLine.contains("GENUINE")
+                 && EscortEarningsWallet.ambiguousZeroLine.contains("COALESCE")
+                 && EscortEarningsWallet.ambiguousZeroLine.contains("SWALLOWED")
+                 && EscortEarningsWallet.ambiguousZeroLine.contains("HTTP 200")))
+        out.append(.init(
+            name: "(d) HEDGE IS TARGETED · a real figure is NOT flagged",
+            detail: "isAmbiguousZero(live:true, 4141.80) = \(amb(true, 4141.80))",
+            passed: !amb(true, 4141.80)))
+        out.append(.init(
+            name: "(c) TRANSPORT FAILURE stays its own state · nil is not the zero hedge",
+            detail: "isAmbiguousZero(live:false, nil) = \(amb(false, nil)) — cell renders — + READ FAILED",
+            passed: !amb(false, nil)))
+        out.append(.init(
+            name: "(c) A CACHED/UNLANDED READ is not flagged as an ambiguous zero either",
+            detail: "isAmbiguousZero(live:false, 0) = \(amb(false, 0))",
+            passed: !amb(false, 0)))
+        // The asymmetry that makes the hedge honest rather than defensive: the settlement
+        // feed THROWS instead of swallowing (escorts.ts:4730), so a zero off it is real.
+        out.append(.init(
+            name: "(a) vs (d) SEPARATE on the settlement feed · a real zero still prints $0.00",
+            detail: "listSettlements throws at escorts.ts:4730 — no swallow to hedge against",
+            passed: zeroLead?.amount == 0))
+
+        return out
+    }
+}
+
+#Preview("ES-18 · MONEY-CELL ADVERSARIAL CASES") {
+    let results = ES18AdversarialCases.results
+    return ScrollView {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(results.allSatisfy(\.passed)
+                 ? "ALL \(results.count) CASES DISTINCT"
+                 : "FAILING: \(results.filter { !$0.passed }.count) OF \(results.count)")
+                .font(.system(size: 14, weight: .heavy, design: .monospaced))
+                .foregroundStyle(results.allSatisfy(\.passed) ? Brand.success : Brand.danger)
+            ForEach(results) { r in
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(r.passed ? "PASS" : "FAIL")  \(r.name)")
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundStyle(r.passed ? Brand.success : Brand.danger)
+                    Text(r.detail)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(20)
+    }
+}
+#endif

@@ -15,7 +15,10 @@
 //                                                                   delivery
 //                                                                   markers
 //    • `markers` (one pin per load at pickup)                     → markers
-//    • `route` (decoded HERE truck route)                         → route
+//    • `route` (legacy decoded client route)                      → ignored;
+//                                                                   operational
+//                                                                   geometry must
+//                                                                   use route.plan
 //    • `yardLayoutPolygons` ([MKPolygon] dock lanes / staging)    → .adZones
 //                                                                   polygons
 //  Camera center is derived from the data (or the supplied
@@ -47,7 +50,10 @@ struct HereMapView: View {
     /// the native renderer follows `@Environment(\.colorScheme)`.
     var style: HereTileStyle? = nil
 
-    /// A decoded HERE route to render as a route polyline.
+    /// Legacy decoded client route, retained only for source compatibility.
+    /// This wrapper intentionally refuses to render it: operational geometry
+    /// must arrive through the checksum-bound `route.plan` renderer contract
+    /// and `.eusoRoute` on `HereLiveMapView`.
     var route: HereRoute? = nil
 
     /// Legacy stop list (flat pins). First = Pickup, last = Delivery.
@@ -134,6 +140,7 @@ struct HereMapView: View {
             interactive: true,
             tilt: 0,
             layers: buildLayers(),
+            mapModeContext: .unknown,
             onSelectMarker: onSelectMarker
         )
     }
@@ -150,24 +157,12 @@ struct HereMapView: View {
             layers.append(.adZones(zonePolys))
         }
 
-        // Full HERE route → route polyline.
-        // Gate out null-island (0,0) vertices so an un-geocoded endpoint isn't
-        // plotted in the Atlantic (same guard the `stops` branch applies).
-        if let route {
-            let coords = HereRoutingClient.polyline(for: route)
-                .filter { !Self.isNullIsland($0.latitude, $0.longitude) }
-            if coords.count >= 2 {
-                layers.append(.route(polyline: coords.map { HereLatLng($0) },
-                                     colorHex: "#1473FF"))
-            }
-        }
-
         // Public load-board markers: one pin per load at pickup.
-        // Drop pins at (0,0) — an un-geocoded pickup must not render a
-        // real-looking pin on null island.
+        // Drop malformed provider pins while preserving every valid WGS-84
+        // point, including points on either zero axis.
         if !markers.isEmpty {
             let pins = markers
-                .filter { !Self.isNullIsland($0.coordinate.latitude, $0.coordinate.longitude) }
+                .filter { !Self.isInvalidCoordinate($0.coordinate.latitude, $0.coordinate.longitude) }
                 .map { m in
                     HereMarker(at: HereLatLng(m.coordinate),
                                kind: .pickup,
@@ -183,11 +178,11 @@ struct HereMapView: View {
             // geometry. A real decoded provider route is rendered above.
             // (Mirrors the legacy guard: lanes are only drawn when the public
             //  board `markers` surface isn't in use.)
-            // Skip any lane with an un-geocoded (0,0) pickup or delivery so a
-            // fabricated endpoint doesn't draw a line/pin across the Atlantic.
+            // Skip only malformed endpoints. Unknown coordinates stay nil at
+            // the model boundary instead of being represented by a sentinel.
             for lane in lanes {
-                let pickupOK   = !Self.isNullIsland(lane.pickup.latitude, lane.pickup.longitude)
-                let deliveryOK = !Self.isNullIsland(lane.delivery.latitude, lane.delivery.longitude)
+                let pickupOK   = !Self.isInvalidCoordinate(lane.pickup.latitude, lane.pickup.longitude)
+                let deliveryOK = !Self.isInvalidCoordinate(lane.delivery.latitude, lane.delivery.longitude)
                 var pins: [HereMarker] = []
                 if pickupOK {
                     pins.append(HereMarker(at: HereLatLng(lane.pickup),
@@ -207,7 +202,8 @@ struct HereMapView: View {
         // last = delivery, middle = generic stops.
         if !stops.isEmpty {
             let pins: [HereMarker] = stops.enumerated().compactMap { i, stop in
-                guard !Self.isNullIsland(stop.lat, stop.lng) else { return nil }
+                guard let lat = stop.lat, let lng = stop.lng,
+                      !Self.isInvalidCoordinate(lat, lng) else { return nil }
                 let kind: HereMarker.Kind
                 let label: String
                 if i == 0 {
@@ -217,7 +213,7 @@ struct HereMapView: View {
                 } else {
                     kind = .stop; label = "Stop \(i)"
                 }
-                return HereMarker(at: HereLatLng(stop.lat, stop.lng), kind: kind, label: label)
+                return HereMarker(at: HereLatLng(lat, lng), kind: kind, label: label)
             }
             if !pins.isEmpty {
                 layers.append(.markers(pins))
@@ -229,23 +225,18 @@ struct HereMapView: View {
 
     /// Camera center: explicit `initialRegion` wins; otherwise the centroid
     /// of whatever data we're rendering; otherwise a continental-US default
-    /// so the canvas never opens on null island.
+    /// so the canvas still opens on useful labeled cartography.
     private var derivedCenter: HereLatLng {
         if let region = initialRegion {
             return HereLatLng(region.center)
         }
         var lats: [Double] = []
         var lngs: [Double] = []
-        // Accumulate only real, geocoded coordinates — drop any null-island
-        // (0,0)/NaN endpoint so one un-geocoded point can't drag the camera.
+        // Accumulate only finite in-range coordinates so malformed provider
+        // geometry cannot drag the camera.
         func accumulate(_ lat: Double, _ lng: Double) {
-            guard !Self.isNullIsland(lat, lng) else { return }
+            guard !Self.isInvalidCoordinate(lat, lng) else { return }
             lats.append(lat); lngs.append(lng)
-        }
-        if let route {
-            for c in HereRoutingClient.polyline(for: route) {
-                accumulate(c.latitude, c.longitude)
-            }
         }
         for lane in lanes {
             accumulate(lane.pickup.latitude,   lane.pickup.longitude)
@@ -255,7 +246,9 @@ struct HereMapView: View {
             accumulate(m.coordinate.latitude, m.coordinate.longitude)
         }
         for s in stops {
-            accumulate(s.lat, s.lng)
+            if let lat = s.lat, let lng = s.lng {
+                accumulate(lat, lng)
+            }
         }
         for poly in yardLayoutPolygons {
             for c in Self.coordinates(of: poly) {
@@ -289,15 +282,10 @@ struct HereMapView: View {
 
     // MARK: - Coordinate validation
 
-    /// A coordinate is unusable if it's null island (0,0) — the classic
-    /// un-geocoded / fabricated sentinel — or non-finite (NaN/∞), or outside
-    /// valid WGS-84 bounds. Such a point is dropped rather than plotted or
-    /// averaged into the camera center.
-    private static func isNullIsland(_ lat: Double, _ lng: Double) -> Bool {
-        if (lat == 0 && lng == 0) { return true }
-        if !lat.isFinite || !lng.isFinite { return true }
-        if lat < -90 || lat > 90 || lng < -180 || lng > 180 { return true }
-        return false
+    /// Non-finite or out-of-range points are dropped rather than plotted or
+    /// averaged into the camera center. `(0,0)` is a valid WGS-84 point.
+    private static func isInvalidCoordinate(_ lat: Double, _ lng: Double) -> Bool {
+        LatLongParser.validatedCoordinate(latitude: lat, longitude: lng) == nil
     }
 
     // MARK: - MKPolygon → HerePolygon

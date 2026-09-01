@@ -103,26 +103,50 @@ struct LoadDetailSheet: View {
     /// card. `error` = inline error + retry. Server endpoint:
     /// `loadBidding.submit` at the posted rate (one-tap accept).
     @State private var bookState: BookState = .idle
+    @State private var bookRequestKey: String?
     /// Message-thread open state. The CTA resolves a persisted load-scoped
     /// conversation through `messages.getOrCreateLoadConversation`; failures
     /// render inline so the button never degrades into a silent no-op.
     @State private var messageOpenState: MessageOpenState = .idle
 
-    /// Decoded HERE Routing v8 corridor for the route preview map — the
-    /// REAL curved road geometry (pickup→delivery via the actual highway
-    /// network), not the straight 2-point segment that used to render.
-    /// `[]` until `refreshRoutePolyline()` resolves, on any HERE error, or
-    /// on a non-truck leg — in which cases the map remains marker-only. Mirrors the
-    /// LifecycleScaffold `refreshRoutePolyline` pattern. Because this is a
-    /// SHARED component, every surface that presents `LoadDetailSheet` now
-    /// gets road-following polylines.
-    @State private var routePolyline: [HereLatLng] = []
+    /// Exact server-owned mode-native plan. Every independent GeoJSON line
+    /// remains independent; the shared sheet never authors or repairs geometry.
+    @State private var canonicalRouteLines: [[HereLatLng]] = []
+    @State private var canonicalRouteStatus: String?
+    @State private var canonicalRouteVersion: Int?
+    @State private var canonicalRouteDistanceMeters: Int?
+    @State private var canonicalRouteDurationSeconds: Int?
     /// Full `loads.getById` projection used when this sheet opens from a
     /// summary row with missing/sentinel geometry. This stays nil unless the
     /// backend supplies a better real route basis.
     @State private var hydratedRouteLoad: AvailableLoad?
+    /// Authoritative load projection used for commercial decisions. Summary
+    /// board rows do not carry signed truck detention terms, so booking and
+    /// bidding wait for this server row instead of inventing client defaults.
+    @State private var authoritativeLoadDetail: LoadsAPI.LoadDetail?
+    @State private var authoritativeLoadError: String?
 
     private var routeDetailLoad: AvailableLoad { hydratedRouteLoad ?? load }
+    private var authoritativeTransportMode: String? {
+        authoritativeLoadDetail?.transportMode ?? load.transportMode
+    }
+    private var isTruckLoad: Bool {
+        authoritativeTransportMode?.lowercased() == "truck"
+    }
+    private var inheritedTruckDetentionTerms: TruckDetentionNegotiatedTerms? {
+        authoritativeLoadDetail?.truckDetentionTerms
+    }
+    private var authoritativeCurrency: String? {
+        inheritedTruckDetentionTerms?.currency.rawValue ?? authoritativeLoadDetail?.currency
+    }
+    private var commercialAuthorityReady: Bool {
+        if let summaryMode = load.transportMode?.lowercased(), summaryMode != "truck" {
+            return true
+        }
+        guard let detail = authoritativeLoadDetail else { return false }
+        guard detail.transportMode?.lowercased() == "truck" else { return true }
+        return detail.truckDetentionTerms != nil
+    }
 
     enum BookState: Equatable {
         case idle
@@ -170,6 +194,9 @@ struct LoadDetailSheet: View {
                 header
                 routeCard
                 rateRow
+                if isTruckLoad || load.transportMode?.lowercased() == "truck" {
+                    truckDetentionAuthorityCard
+                }
                 if let agreement = commercial?.agreement {
                     agreementRow(agreement)
                 }
@@ -313,11 +340,13 @@ struct LoadDetailSheet: View {
                 escortCapabilityError = error.eusoUserCopy
             }
         }
-        .task(id: load.id) {
-            // Adaptive fee preview — `adaptiveFee.estimate` is cheap
-            // (no DB write, no audit log) so we call it on every
-            // sheet open. Maps the load's hazmat flag + equipment
-            // string + miles into the playbook's enum domain.
+        .task(id: canonicalRouteDistanceMeters) {
+            // Distance-sensitive fee math must wait for the exact released
+            // route.plan distance; summary/legacy estimates never enter money.
+            guard let distanceMiles = canonicalDistanceMiles else {
+                feePreview = nil
+                return
+            }
             let isHaz = load.hazmat
             let equip = mapEquipmentForFee(load.equipment)
             let vert  = isHaz ? "hazmat" : mapVerticalForFee(load.equipment)
@@ -327,14 +356,14 @@ struct LoadDetailSheet: View {
                     vertical: vert,
                     equipmentType: equip,
                     hazmatClass: isHaz ? "class_3" : "none",
-                    distanceMiles: Double(load.miles),
+                    distanceMiles: distanceMiles,
                     loadType: commercial?.agreement?.contractDuration ?? "spot"
                 )
             } catch {
                 feePreview = nil
             }
         }
-        .task(id: load.id) {
+        .task(id: canonicalRouteDistanceMeters) {
             // Lane benchmark from `rates.compareLaneRate` — drives the
             // ABOVE_MARKET / AT_MARKET / BELOW_MARKET pill above the
             // book/bid buttons. Skip the call when the AvailableLoad
@@ -342,7 +371,7 @@ struct LoadDetailSheet: View {
             // mostly preview rows) so we don't send a malformed query.
             guard let oSt = load.originState,
                   let dSt = load.destState,
-                  load.miles > 0 else {
+                  let distanceMiles = canonicalDistanceMiles else {
                 comparison = nil
                 return
             }
@@ -351,7 +380,7 @@ struct LoadDetailSheet: View {
                     originState: oSt,
                     destState: dSt,
                     rate: load.rate,
-                    distance: Double(load.miles),
+                    distance: distanceMiles,
                     cargoType: load.equipment.lowercased(),
                     lookbackDays: 90
                 )
@@ -362,95 +391,162 @@ struct LoadDetailSheet: View {
             }
         }
         .task(id: load.id) {
-            // Real route geometry for the ROUTE preview map. Resolves the
-            // pickup→delivery corridor via HERE Routing v8 and decodes its
-            // section polyline so the map follows the actual roads instead
-            // of drawing a straight 2-point line. On any failure (or a
-            // water leg) `routePolyline` stays `[]` and the map honestly
-            // falls back to the straight base line — never a fabricated
-            // path. Same pattern as LifecycleScaffold.refreshRoutePolyline.
+            // Resolve only through the canonical server plan authority.
             await hydrateRouteLoadIfNeeded()
-            await refreshRoutePolyline()
+            await refreshCanonicalRoute()
         }
     }
 
-    /// Summary board rows can carry display labels plus no usable geometry
-    /// (0,0 or the CONUS-centroid miss sentinel). Before giving up on the
-    /// map, hydrate the full load row by numeric id and use its stored
+    /// Summary board rows can carry display labels without geometry. Before
+    /// giving up on the map, hydrate the full load row by numeric id and use its stored
     /// pickup/delivery JSON and distance. This never guesses coordinates:
     /// if the backend record still lacks real geometry, the route card keeps
     /// its honest unavailable state.
     @MainActor
     private func hydrateRouteLoadIfNeeded() async {
-        guard hydratedRouteLoad == nil,
+        guard authoritativeLoadDetail == nil,
               let backendId = load.backendLoadId else { return }
-        let pickup = CLLocationCoordinate2D(latitude: load.originLat, longitude: load.originLng)
-        let delivery = CLLocationCoordinate2D(latitude: load.destLat, longitude: load.destLng)
-        guard load.miles <= 0 || !routeCoordinatesAreReal(pickup: pickup, delivery: delivery) else {
-            return
-        }
         do {
-            let full = try await EusoTripAPI.shared.loads.getById(backendId)
-            let candidate = AvailableLoad.from(full)
-            let candidatePickup = CLLocationCoordinate2D(
-                latitude: candidate.originLat,
-                longitude: candidate.originLng
-            )
-            let candidateDelivery = CLLocationCoordinate2D(
-                latitude: candidate.destLat,
-                longitude: candidate.destLng
-            )
+            guard let full = try await EusoTripAPI.shared.loads.getDetail(id: String(backendId)) else {
+                authoritativeLoadError = "This load is no longer available. Refresh the board before bidding."
+                return
+            }
+            authoritativeLoadDetail = full
+            authoritativeLoadError = nil
+
+            guard hydratedRouteLoad == nil,
+                  load.miles <= 0 || routeCoordinates(for: load) == nil else {
+                return
+            }
+            let candidate = routeHydratedCopy(from: full)
             guard candidate.miles > 0 ||
-                  routeCoordinatesAreReal(pickup: candidatePickup, delivery: candidateDelivery) else {
+                  routeCoordinates(for: candidate) != nil else {
                 return
             }
             hydratedRouteLoad = candidate
         } catch {
-            hydratedRouteLoad = nil
+            authoritativeLoadDetail = nil
+            authoritativeLoadError = "Signed load terms could not be loaded. Refresh this load before bidding."
         }
     }
 
-    /// Resolves the pickup→delivery corridor via HERE Routing v8 and decodes
-    /// its section polyline into `routePolyline` — the real curved road
-    /// geometry, not a straight 2-point segment. Truck-aware via the default
-    /// `.standardUSSemiLoaded` profile. Skipped for water legs (vessel /
-    /// barge) — an ocean / river leg is a great circle, not a road route —
-    /// and gated behind the same `routeCoordinatesAreReal` honesty check the
-    /// map uses, so a centroid-miss lane never fires a malformed request. On
-    /// any failure the polyline stays empty and the map remains marker-only.
+    private func routeHydratedCopy(from detail: LoadsAPI.LoadDetail) -> AvailableLoad {
+        let authoritativeOrigin = LatLongParser.validatedCoordinate(
+            latitude: detail.pickupLocation?.lat,
+            longitude: detail.pickupLocation?.lng
+        )
+        let authoritativeDestination = LatLongParser.validatedCoordinate(
+            latitude: detail.deliveryLocation?.lat,
+            longitude: detail.deliveryLocation?.lng
+        )
+        let existingOrigin = load.originCoordinate
+        let existingDestination = load.destinationCoordinate
+        let originLabel = detail.pickupLocation?.cityState.trimmingCharacters(in: .whitespacesAndNewlines)
+        let destinationLabel = detail.deliveryLocation?.cityState.trimmingCharacters(in: .whitespacesAndNewlines)
+        return AvailableLoad(
+            id: load.id,
+            origin: originLabel?.isEmpty == false ? originLabel! : load.origin,
+            destination: destinationLabel?.isEmpty == false ? destinationLabel! : load.destination,
+            miles: 0,
+            equipment: load.equipment,
+            rate: load.rate,
+            rpm: 0,
+            pickupWindow: load.pickupWindow,
+            broker: load.broker,
+            hazmat: load.hazmat,
+            weight: load.weight,
+            hotScore: load.hotScore,
+            originLat: authoritativeOrigin?.latitude ?? existingOrigin?.latitude,
+            originLng: authoritativeOrigin?.longitude ?? existingOrigin?.longitude,
+            destLat: authoritativeDestination?.latitude ?? existingDestination?.latitude,
+            destLng: authoritativeDestination?.longitude ?? existingDestination?.longitude,
+            backendLoadId: Int(detail.id) ?? load.backendLoadId,
+            originState: detail.origin?.state ?? detail.pickupLocation?.state ?? load.originState,
+            destState: detail.destination?.state ?? detail.deliveryLocation?.state ?? load.destState,
+            transportMode: detail.transportMode ?? load.transportMode,
+            equipmentRaw: detail.equipmentType ?? detail.cargoType ?? load.equipmentRaw
+        )
+    }
+
+    private var canonicalRoutePurpose: CanonicalRoutePlanClient.Purpose {
+        let status = authoritativeLoadDetail?.status.lowercased() ?? ""
+        let activeStates = [
+            "assigned", "dispatched", "en_route", "enroute",
+            "in_transit", "at_pickup", "loaded", "at_delivery", "delivered"
+        ]
+        if activeStates.contains(where: status.contains) { return .activeJob }
+        if status.contains("accepted") || status.contains("awarded") { return .planning }
+        return .posting
+    }
+
+    /// The shared sheet sends only subject identity and purpose. The server
+    /// resolves mode, waypoints, requirement/asset profile, graph, evidence,
+    /// constraints, and geometry.
     @MainActor
-    private func refreshRoutePolyline() async {
-        let detail = routeDetailLoad
-        let routeMode = TransportMode(rawValue: detail.transportMode ?? "truck") ?? .truck
-        // Rail and water legs require their own routing providers; never
-        // disguise truck geometry as a rail or marine route.
-        guard routeMode == .truck else {
-            routePolyline = []
+    private func refreshCanonicalRoute() async {
+        canonicalRouteLines = []
+        canonicalRouteStatus = nil
+        canonicalRouteVersion = nil
+        canonicalRouteDistanceMeters = nil
+        canonicalRouteDurationSeconds = nil
+        guard let loadId = authoritativeLoadDetail.flatMap({ Int($0.id) })
+                ?? load.backendLoadId else {
+            canonicalRouteStatus = "Canonical route pending a persisted load identity"
             return
         }
-        let pickup   = CLLocationCoordinate2D(latitude: detail.originLat,
-                                              longitude: detail.originLng)
-        let delivery = CLLocationCoordinate2D(latitude: detail.destLat,
-                                              longitude: detail.destLng)
-        // Only fetch when both endpoints are honest, distinct coordinates —
-        // a centroid-miss / null-island lane has no real route to draw.
-        guard routeCoordinatesAreReal(pickup: pickup, delivery: delivery) else {
-            routePolyline = []
-            return
-        }
-        let stops = HereStops(origin: pickup, destination: delivery)
         do {
-            let resp = try await HereRoutingClient.shared.route(
-                stops: stops, profile: .standardUSSemiLoaded)
-            guard let section = resp.routes.first?.sections.first else {
-                routePolyline = []
-                return
+            let result = try await CanonicalRoutePlanClient.shared.planLoad(
+                id: loadId,
+                purpose: canonicalRoutePurpose
+            )
+            switch result {
+            case .persisted(let persisted):
+                applyCanonicalRoute(persisted.route)
+            case .pending(let pending):
+                canonicalRouteStatus = pending.blockers.first?.message
+                    ?? "Canonical mode-native route pending verified authority"
+                await readExistingCanonicalRoute(loadId: loadId)
             }
-            let decoded = HereRoutingClient.polyline(for: section)
-            routePolyline = decoded.count >= 2 ? decoded.map { HereLatLng($0) } : []
         } catch {
-            routePolyline = []
+            canonicalRouteStatus = error.eusoUserCopy
+            await readExistingCanonicalRoute(loadId: loadId)
         }
+    }
+
+    @MainActor
+    private func readExistingCanonicalRoute(loadId: Int) async {
+        do {
+            applyCanonicalRoute(
+                try await CanonicalRoutePlanClient.shared.getBoundLoad(id: loadId)
+            )
+        } catch {
+            if canonicalRouteStatus == nil { canonicalRouteStatus = error.eusoUserCopy }
+        }
+    }
+
+    @MainActor
+    private func applyCanonicalRoute(_ route: CanonicalRoutePlanClient.BoundRoutePlan) {
+        guard route.plan.purpose == canonicalRoutePurpose,
+              let payload = route.rendererPayload else {
+            canonicalRouteLines = []
+            canonicalRouteStatus = "Canonical route exists but is not released for rendering"
+            return
+        }
+        canonicalRouteLines = payload.lines
+        canonicalRouteVersion = payload.identity.version
+        canonicalRouteDistanceMeters = route.plan.distanceMeters
+        canonicalRouteDurationSeconds = route.plan.durationSeconds
+        canonicalRouteStatus = nil
+    }
+
+    private var canonicalDistanceMiles: Double? {
+        guard let meters = canonicalRouteDistanceMeters, meters > 0 else { return nil }
+        return Double(meters) / 1_609.344
+    }
+
+    private var canonicalRatePerMile: Double? {
+        guard let miles = canonicalDistanceMiles, miles > 0 else { return nil }
+        return load.rate / miles
     }
 
     /// Map iOS load.equipment string → server `equipmentEnum`. The
@@ -608,7 +704,7 @@ struct LoadDetailSheet: View {
             }
             .lineLimit(2)
 
-            Text("\(detail.miles) mi · \(detail.equipment.uppercased()) · \(detail.weight.uppercased())")
+            Text(headerRouteFacts(detail))
                 .font(EType.caption).tracking(0.4)
                 .foregroundStyle(palette.textSecondary)
         }
@@ -618,39 +714,44 @@ struct LoadDetailSheet: View {
 
     private var routeCard: some View {
         let detail = routeDetailLoad
-        let lane = HereMapView.Lane(
-            id: detail.id,
-            originTitle: detail.origin,
-            destinationTitle: detail.destination,
-            pickup:   CLLocationCoordinate2D(latitude: detail.originLat,
-                                             longitude: detail.originLng),
-            delivery: CLLocationCoordinate2D(latitude: detail.destLat,
-                                             longitude: detail.destLng)
-        )
-        // Distance/ETA are only honest when the adapter computed a real
-        // mileage (miles == 0 is the centroid-miss sentinel). Show an
-        // em-dash rather than a fabricated "0 mi · estimated 0h 0m".
-        let routeSubtitle = detail.miles > 0
-            ? "\(detail.miles) mi · estimated \(estimatedDriveTime)"
-            : "Distance pending"
+        let coordinates = routeCoordinates(for: detail)
+        let routeSubtitle: String = {
+            guard let meters = canonicalRouteDistanceMeters, meters > 0 else {
+                return "Canonical distance pending"
+            }
+            let miles = Double(meters) / 1_609.344
+            if let seconds = canonicalRouteDurationSeconds, seconds >= 0 {
+                let hours = seconds / 3_600
+                let minutes = (seconds % 3_600) / 60
+                return String(format: "%.1f mi · %dh %02dm planned", miles, hours, minutes)
+            }
+            return String(format: "%.1f mi planned", miles)
+        }()
         return sectionCard(title: "ROUTE", subtitle: routeSubtitle) {
-            // Only draw the map when BOTH endpoints are real, distinct,
-            // in-range coordinates. Loads adapted from a centroid miss carry
-            // the US-geographic-center sentinel (39.8283, -98.5795) on both
-            // ends, which would collapse the polyline to a near-zero segment
-            // and center the camera on a fake midpoint. Gate it out and show
-            // a placeholder instead of a confident-but-fake route.
-            if routeCoordinatesAreReal(pickup: lane.pickup, delivery: lane.delivery) {
-                let routeMode = TransportMode(rawValue: detail.transportMode ?? "truck") ?? .truck
-                let line: [HereLatLng] = routeMode == .truck && routePolyline.count >= 2
-                    ? routePolyline : []
-                let markerLayer = HereMapLayer.markers([
-                    .init(at: .init(lane.pickup), kind: .pickup, label: lane.originTitle),
-                    .init(at: .init(lane.delivery), kind: .delivery, label: lane.destinationTitle)
-                ])
-                let mapLayers: [HereMapLayer] = line.count >= 2
-                    ? [.route(polyline: line, colorHex: "#1473FF"), markerLayer]
-                    : [markerLayer]
+            // Exact canonical geometry can render without endpoint markers.
+            // Markers appear only when the hydrated load carries complete real
+            // coordinates; summary centroids are never substituted.
+            if let center = canonicalRouteLines.lazy.compactMap(\.first).first
+                ?? coordinates.map({ HereLatLng($0.pickup) }) {
+                let mapTransportMode = EusoTripMapTransportMode(
+                    canonicalValue: detail.transportMode
+                )
+                let routeLayers: [HereMapLayer] = canonicalRouteLines.enumerated().map { index, line in
+                    .eusoRoute(
+                        polyline: line,
+                        state: canonicalRoutePurpose == .activeJob ? .active : .planned,
+                        label: index == 0
+                            ? "Eusorone \(mapTransportMode.rawValue) route plan version \(canonicalRouteVersion ?? 0)"
+                            : nil
+                        )
+                }
+                let markerLayers: [HereMapLayer] = coordinates.map { endpoints in
+                    [.markers([
+                        .init(at: .init(endpoints.pickup), kind: .pickup, label: detail.origin),
+                        .init(at: .init(endpoints.delivery), kind: .delivery, label: detail.destination)
+                    ])]
+                } ?? []
+                let mapLayers = routeLayers + markerLayers
                 ZStack(alignment: .bottomLeading) {
                     // 2026-05-22: migrated off the legacy raster HereMapView onto
                     // the OMV vector renderer + live add-on layer (HereLiveMapView),
@@ -658,14 +759,14 @@ struct LoadDetailSheet: View {
                     // pins + route connector on the vector basemap; shipper
                     // situational add-ons (weather + traffic + sponsored ad-zones).
                     HereLiveMapView(
-                        center: .init(
-                            (lane.pickup.latitude + lane.delivery.latitude) / 2,
-                            (lane.pickup.longitude + lane.delivery.longitude) / 2
-                        ),
+                        center: center,
                         zoom: 6,
-                        route: line,
+                        route: [],
                         baseLayers: mapLayers,
-                        addOns: routeMode == .truck ? .shipperTracking : .weather
+                        addOns: mapTransportMode == .truck ? .shipperTracking : .weather,
+                        activeJob: canonicalRoutePurpose == .activeJob,
+                        mapModeContext: .unconfirmed(mapTransportMode),
+                        endpointLabelToggle: true
                     )
                         .frame(height: 200)
                         .clipShape(RoundedRectangle(cornerRadius: Radius.md,
@@ -675,8 +776,20 @@ struct LoadDetailSheet: View {
                                              style: .continuous)
                                 .strokeBorder(palette.borderFaint)
                         )
-                    pickupDeliveryStops
-                        .padding(10)
+                    VStack(alignment: .leading, spacing: 6) {
+                        pickupDeliveryStops
+                        if let canonicalRouteStatus {
+                            Text(canonicalRouteStatus)
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(palette.textSecondary)
+                                .padding(.horizontal, 10).padding(.vertical, 6)
+                                .background(palette.bgCard.opacity(0.92))
+                                .overlay(Capsule().strokeBorder(Brand.warning.opacity(0.45)))
+                                .clipShape(Capsule())
+                                .accessibilityLabel(canonicalRouteStatus)
+                        }
+                    }
+                    .padding(10)
                 }
             } else {
                 routeUnavailablePlaceholder
@@ -684,30 +797,28 @@ struct LoadDetailSheet: View {
         }
     }
 
-    /// True only when pickup and delivery are real, distinct, in-range
-    /// coordinates that are not the null-island (0,0) or the
-    /// US-geographic-center centroid-miss sentinel. The sentinel lands on
-    /// BOTH endpoints when a city missed the centroid table, so an
-    /// endpoint sitting on it (or both endpoints coinciding) means we have
-    /// no honest geometry to plot.
+    /// True only when pickup and delivery are complete, distinct, in-range
+    /// coordinates. Unknown geometry remains nil before this function.
     private func routeCoordinatesAreReal(pickup: CLLocationCoordinate2D,
                                          delivery: CLLocationCoordinate2D) -> Bool {
         func isPlottable(_ c: CLLocationCoordinate2D) -> Bool {
-            guard CLLocationCoordinate2DIsValid(c) else { return false }
-            // Null island — fabricated/empty coordinate.
-            if c.latitude == 0 && c.longitude == 0 { return false }
-            // US-geographic-center sentinel emitted on a centroid miss.
-            if abs(c.latitude - 39.8283) < 0.0001 &&
-               abs(c.longitude - (-98.5795)) < 0.0001 { return false }
-            // Range sanity (lat ±90, lng ±180).
-            if abs(c.latitude) > 90 || abs(c.longitude) > 180 { return false }
-            return true
+            LatLongParser.isValid(c)
         }
         guard isPlottable(pickup), isPlottable(delivery) else { return false }
         // Endpoints must be distinct — a zero-length lane is not a route.
         if abs(pickup.latitude - delivery.latitude) < 0.0001 &&
            abs(pickup.longitude - delivery.longitude) < 0.0001 { return false }
         return true
+    }
+
+    private func routeCoordinates(for load: AvailableLoad) ->
+        (pickup: CLLocationCoordinate2D, delivery: CLLocationCoordinate2D)? {
+        guard let pickup = load.originCoordinate,
+              let delivery = load.destinationCoordinate,
+              routeCoordinatesAreReal(pickup: pickup, delivery: delivery) else {
+            return nil
+        }
+        return (pickup, delivery)
     }
 
     /// Shown in place of the route map when the lane has no honest
@@ -765,7 +876,7 @@ struct LoadDetailSheet: View {
                         )
                     )
                     .frame(width: 8, height: 8)
-                Text("DELIVERY · ETA \(estimatedDeliveryDay)")
+                Text("DELIVERY · \(deliveryTimingLabel)")
                     .font(EType.micro).tracking(0.6)
                     .foregroundStyle(.white)
             }
@@ -774,38 +885,85 @@ struct LoadDetailSheet: View {
         .background(Capsule(style: .continuous).fill(.black.opacity(0.55)))
     }
 
-    private var estimatedDriveTime: String {
-        // miles == 0 is the honest centroid-miss value, not a real
-        // zero-mile lane — don't fabricate a "0h 0m" ETA from it.
-        let miles = routeDetailLoad.miles
-        guard miles > 0 else { return "—" }
-        // Rough heuristic: highway avg 52 mph.
-        let hours = Double(miles) / 52.0
-        let h = Int(hours)
-        let m = Int((hours - Double(h)) * 60)
-        return "\(h)h \(m)m"
+    private func headerRouteFacts(_ detail: AvailableLoad) -> String {
+        let distance = canonicalDistanceMiles
+            .map { String(format: "%.1f mi", $0) }
+            ?? "Distance pending"
+        return "\(distance) · \(detail.equipment.uppercased()) · \(detail.weight.uppercased())"
     }
 
-    private var estimatedDeliveryDay: String {
-        let f = DateFormatter()
-        f.dateFormat = "EEE · HH:mm 'CT'"
-        return f.string(from: Date().addingTimeInterval(Double(routeDetailLoad.miles) * 70))
+    private var deliveryTimingLabel: String {
+        let raw = authoritativeLoadDetail?.actualDeliveryDate
+            ?? authoritativeLoadDetail?.estimatedDeliveryDate
+            ?? authoritativeLoadDetail?.deliveryDate
+        guard let raw, !raw.isEmpty else { return "SCHEDULE PENDING" }
+        let parser = ISO8601DateFormatter()
+        parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        guard let date = parser.date(from: raw) ?? ISO8601DateFormatter().date(from: raw) else {
+            return raw
+        }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEE · HH:mm z"
+        return formatter.string(from: date).uppercased()
     }
 
     // MARK: Rate row
 
     private var rateRow: some View {
         let detail = routeDetailLoad
+        let perMile = canonicalRatePerMile
+            .map { String(format: "$%.2f", $0) }
+            ?? "-"
+        let distance = canonicalDistanceMiles
+            .map { String(format: "%.1f mi", $0) }
+            ?? "-"
         return HStack(spacing: Space.s3) {
-            ratePill(value: "$\(Int(detail.rate))",
+            ratePill(value: authoritativeMoney(detail.rate),
                      label: "TOTAL",
                      gradient: true)
-            ratePill(value: String(format: "$%.2f", detail.rpm),
+            ratePill(value: perMile,
                      label: "PER MILE",
                      gradient: false)
-            ratePill(value: "\(detail.miles) mi",
+            ratePill(value: distance,
                      label: "DISTANCE",
                      gradient: false)
+        }
+    }
+
+    private func authoritativeMoney(_ amount: Double, fractionDigits: Int = 0) -> String {
+        let number = amount.formatted(.number.precision(.fractionLength(fractionDigits)))
+        return authoritativeCurrency.map { "\($0) \(number)" } ?? number
+    }
+
+    @ViewBuilder
+    private var truckDetentionAuthorityCard: some View {
+        sectionCard(
+            title: "TRUCK DETENTION",
+            subtitle: "Signed load terms inherited by a bid unless you propose a change"
+        ) {
+            if let terms = inheritedTruckDetentionTerms {
+                TruckDetentionTermsSummary(terms: terms, context: "INHERITED SIGNED TERMS")
+            } else if authoritativeLoadDetail == nil && authoritativeLoadError == nil {
+                HStack(spacing: Space.s2) {
+                    ProgressView()
+                    Text("Loading signed commercial authority…")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+                .frame(minHeight: 44)
+            } else {
+                Label(
+                    authoritativeLoadError ?? "No signed truck detention terms are attached to this load.",
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                .font(EType.caption)
+                .foregroundStyle(Brand.warning)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityLabel(
+                    "Truck detention terms unavailable. " +
+                    (authoritativeLoadError ?? "No signed terms are attached to this load.")
+                )
+            }
         }
     }
 
@@ -1640,8 +1798,11 @@ struct LoadDetailSheet: View {
                 loadId: load.id,
                 backendLoadId: load.backendLoadId,
                 postedRate: load.rate,
-                miles: load.miles,
+                miles: canonicalDistanceMiles.map { Int($0.rounded()) } ?? 0,
                 marketAvgRPM: comparison?.marketAvgRPM,
+                currency: authoritativeLoadDetail?.currency,
+                transportMode: authoritativeTransportMode,
+                inheritedTruckDetentionTerms: inheritedTruckDetentionTerms,
                 onSubmitted: { showCounterOffer = false }
             )
             .eusoSheet()
@@ -1654,7 +1815,7 @@ struct LoadDetailSheet: View {
         Button {
             Task { await book() }
         } label: {
-            Text("Book now · $\(Int(load.rate))")
+            Text("Book now · \(authoritativeMoney(load.rate))")
                 .font(EType.bodyStrong)
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
@@ -1665,6 +1826,8 @@ struct LoadDetailSheet: View {
                 )
         }
         .buttonStyle(PressableCardStyle())
+        .disabled(!commercialAuthorityReady)
+        .opacity(commercialAuthorityReady ? 1 : 0.55)
     }
 
     private var bidButton: some View {
@@ -1687,6 +1850,8 @@ struct LoadDetailSheet: View {
                 )
         }
         .buttonStyle(PressableCardStyle())
+        .disabled(!commercialAuthorityReady)
+        .opacity(commercialAuthorityReady ? 1 : 0.55)
     }
 
     private var submittingButton: some View {
@@ -1899,6 +2064,15 @@ struct LoadDetailSheet: View {
             bookState = .error("Load id is missing. Refresh the load board and try again.")
             return
         }
+        if isTruckLoad && inheritedTruckDetentionTerms == nil {
+            bookState = .error(
+                authoritativeLoadError ??
+                "Signed truck detention terms are unavailable. Refresh the load before bidding."
+            )
+            return
+        }
+        let requestKey = bookRequestKey ?? UUID().uuidString.lowercased()
+        bookRequestKey = requestKey
         bookState = .submitting
         do {
             let ack = try await EusoTripAPI.shared.loadBidding.submit(
@@ -1906,9 +2080,16 @@ struct LoadDetailSheet: View {
                 bidAmount: load.rate,
                 rateType: "flat",
                 equipmentType: load.equipment.lowercased() == "any" ? nil : load.equipment.lowercased(),
-                expiresInHours: 24
+                truckDetentionTerms: nil,
+                expiresInHours: 24,
+                requestKey: requestKey
             )
-            bookState = .booked(bidId: ack.id, status: ack.status)
+            guard let confirmedStatus = ack.confirmedStatus else {
+                bookState = .error("The bid was not confirmed. The load remains available and no award was recorded.")
+                return
+            }
+            bookRequestKey = nil
+            bookState = .booked(bidId: ack.id, status: confirmedStatus)
             // Notify the marketplace store so the load card reflects the
             // new "bid placed" state without waiting for the next refresh.
             NotificationCenter.default.post(
@@ -2112,17 +2293,24 @@ struct CounterOfferSheet: View {
     /// market average too — driver sees both "vs posted" AND "vs
     /// market" so they can negotiate at the right magnitude.
     let marketAvgRPM: Double?
+    /// Currency comes from the authoritative load row. Nil remains unlabeled;
+    /// this sheet never converts an unknown currency into USD.
+    let currency: String?
+    let transportMode: String?
+    let inheritedTruckDetentionTerms: TruckDetentionNegotiatedTerms?
     var onSubmitted: () -> Void = {}
 
     @State private var amount: Double
     @State private var conditions: String = ""
+    @State private var overrideDetentionTerms: Bool
+    @State private var detentionTermsDraft: TruckDetentionTermsDraft
     @State private var isSubmitting: Bool = false
     @State private var lastError: String?
     @State private var ack: SubmitOutcome?
+    @State private var requestKey: String?
 
     enum SubmitOutcome: Equatable {
         case bidding(id: Int?, status: String)   // loadBidding.submit
-        case legacy(status: String)              // drivers.counterOffer
     }
 
     init(loadId: String,
@@ -2130,16 +2318,51 @@ struct CounterOfferSheet: View {
          postedRate: Double,
          miles: Int,
          marketAvgRPM: Double? = nil,
+         currency: String? = nil,
+         transportMode: String? = nil,
+         inheritedTruckDetentionTerms: TruckDetentionNegotiatedTerms? = nil,
          onSubmitted: @escaping () -> Void = {}) {
         self.loadId = loadId
         self.backendLoadId = backendLoadId
         self.postedRate = postedRate
         self.miles = miles
         self.marketAvgRPM = marketAvgRPM
+        self.currency = currency
+        self.transportMode = transportMode
+        self.inheritedTruckDetentionTerms = inheritedTruckDetentionTerms
         self.onSubmitted = onSubmitted
-        // Seed with posted rate + 5% — the typical driver counter
-        // when the broker's posted rate is just-below-market.
-        _amount = State(initialValue: round(postedRate * 1.05))
+        // Begin from the signed posted amount. Any premium is an explicit
+        // user action through the percentage controls below.
+        _amount = State(initialValue: postedRate)
+        _overrideDetentionTerms = State(
+            initialValue: transportMode?.lowercased() == "truck" && inheritedTruckDetentionTerms == nil
+        )
+        _detentionTermsDraft = State(
+            initialValue: inheritedTruckDetentionTerms.map(TruckDetentionTermsDraft.init(terms:)) ??
+                TruckDetentionTermsDraft()
+        )
+    }
+
+    private var isTruckLoad: Bool { transportMode?.lowercased() == "truck" }
+
+    private var selectedCurrency: String? {
+        if overrideDetentionTerms, let selected = detentionTermsDraft.currency?.rawValue {
+            return selected
+        }
+        return inheritedTruckDetentionTerms?.currency.rawValue ?? currency
+    }
+
+    private var detentionTermsReady: Bool {
+        guard isTruckLoad else { return true }
+        if overrideDetentionTerms { return detentionTermsDraft.negotiatedTerms != nil }
+        return inheritedTruckDetentionTerms != nil
+    }
+
+    private func money(_ amount: Double, fractionDigits: Int = 0) -> String {
+        let number = amount.formatted(
+            .number.precision(.fractionLength(fractionDigits))
+        )
+        return selectedCurrency.map { "\($0) \(number)" } ?? number
     }
 
     private var deltaPerMile: Double {
@@ -2184,7 +2407,7 @@ struct CounterOfferSheet: View {
                     Task { await submit() }
                 }
                 .opacity(isSubmitting ? 0.6 : 1)
-                .disabled(isSubmitting || amount <= 0)
+                .disabled(isSubmitting || amount <= 0 || !detentionTermsReady)
                 .padding(.horizontal, Space.s4)
                 .padding(.bottom, Space.s5)
             }
@@ -2199,11 +2422,11 @@ struct CounterOfferSheet: View {
                 Text("POSTED RATE")
                     .font(EType.micro).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
-                Text(String(format: "$%.0f", postedRate))
+                Text(money(postedRate))
                     .font(.system(size: 28, weight: .bold).monospacedDigit())
                     .foregroundStyle(palette.textPrimary)
                 if miles > 0 {
-                    Text(String(format: "%d mi · $%.2f/mi posted", miles, postedRate / Double(miles)))
+                    Text("\(miles) mi · \(money(postedRate / Double(miles), fractionDigits: 2))/mi posted")
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
                 }
@@ -2215,26 +2438,28 @@ struct CounterOfferSheet: View {
                     .font(EType.micro).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 HStack {
-                    Text("$")
-                        .font(.system(size: 28, weight: .bold))
-                        .foregroundStyle(palette.textSecondary)
+                    if let selectedCurrency {
+                        Text(selectedCurrency)
+                            .font(EType.caption.weight(.bold))
+                            .foregroundStyle(palette.textSecondary)
+                    }
                     TextField("Counter amount", value: $amount, format: .number)
                         .keyboardType(.decimalPad)
                         .font(.system(size: 28, weight: .bold).monospacedDigit())
                         .foregroundStyle(LinearGradient.diagonal)
                 }
                 if miles > 0 {
-                    Text(String(format: "$%.2f/mi · %@$%.2f/mi vs posted",
-                                amount / Double(miles),
-                                deltaPerMile >= 0 ? "+" : "",
-                                deltaPerMile))
+                    Text(
+                        "\(money(amount / Double(miles), fractionDigits: 2))/mi · " +
+                        "\(deltaPerMile >= 0 ? "+" : "")\(money(deltaPerMile, fractionDigits: 2))/mi vs posted"
+                    )
                         .font(EType.caption.monospacedDigit())
                         .foregroundStyle(deltaPerMile >= 0 ? Brand.success : Brand.danger)
                 }
                 if let dvsm = deltaVsMarketPerMile {
-                    Text(String(format: "%@$%.2f/mi vs market avg",
-                                dvsm >= 0 ? "+" : "",
-                                dvsm))
+                    Text(
+                        "\(dvsm >= 0 ? "+" : "")\(money(dvsm, fractionDigits: 2))/mi vs market avg"
+                    )
                         .font(EType.caption.monospacedDigit())
                         .foregroundStyle(dvsm >= 0 ? Brand.success : Brand.warning)
                 }
@@ -2245,12 +2470,47 @@ struct CounterOfferSheet: View {
                 }
             }
         }
+        if isTruckLoad {
+            ActiveCard {
+                VStack(alignment: .leading, spacing: Space.s3) {
+                    Text("TRUCK DETENTION")
+                        .font(EType.micro).tracking(0.8)
+                        .foregroundStyle(palette.textTertiary)
+
+                    if let inheritedTruckDetentionTerms {
+                        TruckDetentionTermsSummary(
+                            terms: inheritedTruckDetentionTerms,
+                            context: "INHERITED FROM SIGNED LOAD"
+                        )
+                        Toggle("Propose different detention terms", isOn: $overrideDetentionTerms)
+                            .tint(Brand.blue)
+                            .frame(minHeight: 44)
+                    } else {
+                        Label(
+                            "No signed detention terms were returned for this truck load. Enter a complete proposal before bidding.",
+                            systemImage: "exclamationmark.triangle.fill"
+                        )
+                        .font(EType.caption)
+                        .foregroundStyle(Brand.warning)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    if overrideDetentionTerms {
+                        TruckDetentionTermsEditor(draft: $detentionTermsDraft)
+                    } else {
+                        Text("This bid inherits the signed load terms without changing them.")
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textSecondary)
+                    }
+                }
+            }
+        }
         ActiveCard {
             VStack(alignment: .leading, spacing: Space.s2) {
                 Text("CONDITIONS (optional)")
                     .font(EType.micro).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
-                TextField("e.g. \"+ $200 detention waiver\", \"pickup before 14:00\"",
+                TextField("e.g. \"pickup before 14:00\"",
                           text: $conditions, axis: .vertical)
                     .lineLimit(2...4)
                     .textFieldStyle(.roundedBorder)
@@ -2268,7 +2528,6 @@ struct CounterOfferSheet: View {
         let statusLabel: String = {
             switch ack {
             case .bidding(_, let s): return s.capitalized
-            case .legacy(let s):     return s.capitalized
             case .none:              return "Pending"
             }
         }()
@@ -2285,7 +2544,7 @@ struct CounterOfferSheet: View {
                         .font(EType.h2)
                         .foregroundStyle(palette.textPrimary)
                 }
-                Text(String(format: "$%.0f · %@", amount, statusLabel))
+                Text("\(money(amount)) · \(statusLabel)")
                     .font(EType.body)
                     .foregroundStyle(palette.textSecondary)
                 Text(isAutoAccepted
@@ -2316,22 +2575,44 @@ struct CounterOfferSheet: View {
 
     private func submit() async {
         guard !isSubmitting else { return }
-        // Counter-offers use the driver-scoped mutation. It inserts the
-        // bid-chain row for a custom rate and avoids the generic submit
-        // path's posted-rate/duplicate-bid semantics.
         guard let backendId = backendLoadId else {
             lastError = "Load id is missing. Refresh the load board and try again."
             return
         }
+        let detentionTerms: TruckDetentionNegotiatedTerms?
+        if isTruckLoad && overrideDetentionTerms {
+            guard let terms = detentionTermsDraft.negotiatedTerms else {
+                lastError = detentionTermsDraft.validationMessage ?? "Complete the proposed detention terms."
+                return
+            }
+            detentionTerms = terms
+        } else if isTruckLoad && inheritedTruckDetentionTerms == nil {
+            lastError = "Signed truck detention terms are unavailable. Enter a complete proposal before bidding."
+            return
+        } else {
+            // Nil is the server contract's explicit inheritance instruction.
+            detentionTerms = nil
+        }
+        let idempotencyKey = requestKey ?? UUID().uuidString.lowercased()
+        requestKey = idempotencyKey
         isSubmitting = true
         defer { isSubmitting = false }
         do {
-            let resp = try await EusoTripAPI.shared.drivers.counterOffer(
-                loadId: String(backendId),
-                amount: amount,
-                conditions: conditions.isEmpty ? nil : conditions
+            let resp = try await EusoTripAPI.shared.loadBidding.submit(
+                loadId: backendId,
+                bidAmount: amount,
+                rateType: "flat",
+                conditions: conditions.isEmpty ? nil : conditions,
+                truckDetentionTerms: detentionTerms,
+                expiresInHours: 24,
+                requestKey: idempotencyKey
             )
-            ack = .legacy(status: resp.status)
+            guard let confirmedStatus = resp.confirmedStatus else {
+                lastError = "This bid was not confirmed. No counter-offer is shown as sent."
+                return
+            }
+            requestKey = nil
+            ack = .bidding(id: resp.id, status: confirmedStatus)
             lastError = nil
         } catch {
             // Honest, diagnosable message for EVERY failure class — not just

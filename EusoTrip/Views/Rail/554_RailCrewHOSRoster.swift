@@ -35,10 +35,16 @@ private struct RailCrewMember: Decodable, Identifiable {
     let remainingHours: Double?
     let dutyStatus: String?     // on_duty | off_duty | near_limit
     let endorsement: String?
+    let tracked: Bool?
+    let trackingState: HOSTrackingState?
+    let source: String?
+    let freshness: String?
+    let observationState: String?
 
     enum CodingKeys: String, CodingKey {
         case id, role, crewId, onDutyHours, remainingHours, dutyStatus, endorsement
         case hoursOnDuty
+        case tracked, trackingState, source, freshness, observationState
     }
 
     init(from decoder: Decoder) throws {
@@ -48,18 +54,29 @@ private struct RailCrewMember: Decodable, Identifiable {
         self.crewId = try c.decodeIfPresent(String.self, forKey: .crewId)
         
         // Server sends hoursOnDuty as decimal string, iOS expects Double
-        if let hoursStr = try c.decodeIfPresent(String.self, forKey: .hoursOnDuty),
+        if let hoursStr = try? c.decodeIfPresent(String.self, forKey: .hoursOnDuty),
            let hours = Double(hoursStr) {
             self.onDutyHours = hours
-        } else if let hours = try c.decodeIfPresent(Double.self, forKey: .hoursOnDuty) {
+        } else if let hours = try? c.decodeIfPresent(Double.self, forKey: .hoursOnDuty) {
             self.onDutyHours = hours
         } else {
             self.onDutyHours = nil
         }
         
-        self.remainingHours = try c.decodeIfPresent(Double.self, forKey: .remainingHours)
+        if let hours = try? c.decodeIfPresent(Double.self, forKey: .remainingHours) {
+            self.remainingHours = hours
+        } else if let hoursString = try? c.decodeIfPresent(String.self, forKey: .remainingHours) {
+            self.remainingHours = Double(hoursString)
+        } else {
+            self.remainingHours = nil
+        }
         self.dutyStatus = try c.decodeIfPresent(String.self, forKey: .dutyStatus)
         self.endorsement = try c.decodeIfPresent(String.self, forKey: .endorsement)
+        self.tracked = try c.decodeIfPresent(Bool.self, forKey: .tracked)
+        self.trackingState = try c.decodeIfPresent(HOSTrackingState.self, forKey: .trackingState)
+        self.source = try c.decodeIfPresent(String.self, forKey: .source)
+        self.freshness = try c.decodeIfPresent(String.self, forKey: .freshness)
+        self.observationState = try c.decodeIfPresent(String.self, forKey: .observationState)
     }
 }
 
@@ -123,15 +140,38 @@ private struct RailCrewHOSRosterBody: View {
     private var onDuty: Int    { crew.filter { ($0.dutyStatus ?? "") == "on_duty" }.count }
     private var offDuty: Int   { crew.filter { ($0.dutyStatus ?? "") == "off_duty" }.count }
     private var nearLimit: Int { crew.filter { ($0.dutyStatus ?? "") == "near_limit" }.count }
+    private var unverified: Int { crew.filter { !hasCompleteReportedHOS($0) }.count }
 
-    // Team-average fraction of quota consumed
-    private var teamQuotaFraction: Double {
-        guard !crew.isEmpty else { return 0 }
-        let avg = crew.map { min(($0.onDutyHours ?? 0) / hosQuota, 1.0) }.reduce(0, +) / Double(crew.count)
-        return avg
+    // A team percentage is meaningful only when every assigned crew row carries
+    // complete, finite reported counters. This endpoint does not expose an
+    // observation timestamp, so the UI labels the result as reported rather
+    // than live/current.
+    private var teamQuotaFraction: Double? {
+        guard !crew.isEmpty else { return nil }
+        let hours = crew.compactMap(\.onDutyHours)
+        guard hours.count == crew.count,
+              hours.allSatisfy({ $0.isFinite && $0 >= 0 }) else { return nil }
+        return hours.map { min($0 / hosQuota, 1.0) }.reduce(0, +) / Double(hours.count)
     }
     private var teamRingColor: Color {
-        teamQuotaFraction > 0.85 ? Brand.danger : (teamQuotaFraction > 0.70 ? Brand.warning : Brand.success)
+        guard let fraction = teamQuotaFraction else { return palette.textTertiary }
+        return fraction > 0.85 ? Brand.danger : (fraction > 0.70 ? Brand.warning : Brand.blue)
+    }
+
+    private func hasCompleteReportedHOS(_ member: RailCrewMember) -> Bool {
+        let validStatus = ["on_duty", "off_duty", "near_limit"].contains(member.dutyStatus ?? "")
+        return validStatus
+            && member.onDutyHours?.isFinite == true
+            && member.remainingHours?.isFinite == true
+            && hasCurrentObservation(member)
+    }
+
+    private func hasCurrentObservation(_ member: RailCrewMember) -> Bool {
+        member.tracked == true
+            && member.trackingState == .tracked
+            && member.observationState == "current"
+            && member.source?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            && HOSObservationClock.freshness(member.freshness).isCurrent
     }
 
     // MARK: Weather-driven §228 HOS burn note
@@ -258,9 +298,9 @@ private struct RailCrewHOSRosterBody: View {
                             Text("crew assigned")
                                 .font(.system(size: 11, weight: .semibold))
                                 .foregroundStyle(palette.textSecondary)
-                            Text(nearLimit > 0 ? "\(nearLimit) near HOS limit" : "all hours clear")
+                            Text(teamSummary)
                                 .font(EType.caption)
-                                .foregroundStyle(nearLimit > 0 ? Brand.warning : Brand.success)
+                                .foregroundStyle(nearLimit > 0 ? Brand.warning : palette.textSecondary)
                         }
                     }
                 }
@@ -277,16 +317,18 @@ private struct RailCrewHOSRosterBody: View {
             Circle()
                 .stroke(teamRingColor.opacity(0.18), lineWidth: 7)
                 .frame(width: 68, height: 68)
-            Circle()
-                .trim(from: 0, to: teamQuotaFraction)
-                .stroke(teamRingColor, style: StrokeStyle(lineWidth: 7, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-                .frame(width: 68, height: 68)
+            if let fraction = teamQuotaFraction {
+                Circle()
+                    .trim(from: 0, to: fraction)
+                    .stroke(teamRingColor, style: StrokeStyle(lineWidth: 7, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    .frame(width: 68, height: 68)
+            }
             VStack(spacing: 1) {
-                Text("\(Int(teamQuotaFraction * 100))%")
+                Text(teamQuotaFraction.map { "\(Int($0 * 100))%" } ?? "—")
                     .font(.system(size: 14, weight: .heavy)).monospacedDigit()
                     .foregroundStyle(teamRingColor)
-                Text("USED")
+                Text(teamQuotaFraction == nil ? "UNAVAILABLE" : "REPORTED")
                     .font(.system(size: 7, weight: .heavy)).kerning(0.5)
                     .foregroundStyle(palette.textTertiary)
             }
@@ -346,14 +388,19 @@ private struct RailCrewHOSRosterBody: View {
         HStack(spacing: Space.s2) {
             LifecycleStatTile(label: "ON DUTY",    value: "\(onDuty)",    icon: "checkmark.circle")
             LifecycleStatTile(label: "OFF DUTY",   value: "\(offDuty)",   icon: "moon.fill")
-            LifecycleStatTile(label: "NEAR LIMIT", value: "\(nearLimit)", icon: "exclamationmark.circle", danger: nearLimit > 0)
+            LifecycleStatTile(
+                label: unverified > 0 ? "UNVERIFIED" : "NEAR LIMIT",
+                value: "\(unverified > 0 ? unverified : nearLimit)",
+                icon: unverified > 0 ? "questionmark.circle" : "exclamationmark.circle",
+                danger: nearLimit > 0
+            )
         }
     }
 
     // MARK: Crew list
 
     private var crewHeader: some View {
-        Text("ASSIGNED CREW · live HOS")
+        Text("ASSIGNED CREW · REPORTED HOS · FRESHNESS UNAVAILABLE")
             .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
     }
 
@@ -366,27 +413,29 @@ private struct RailCrewHOSRosterBody: View {
     private func crewRow(_ m: RailCrewMember) -> some View {
         let (statusLabel, statusColor): (String, Color) = {
             switch (m.dutyStatus ?? "") {
-            case "on_duty":    return ("ON DUTY",    Brand.success)
+            case "on_duty":    return ("ON DUTY · REPORTED", Brand.blue)
             case "near_limit": return ("NEAR LIMIT", Brand.warning)
-            default:           return ("OFF DUTY",   palette.textTertiary)
+            case "off_duty":   return ("OFF DUTY · REPORTED", palette.textTertiary)
+            default:           return ("STATUS UNAVAILABLE", palette.textTertiary)
             }
         }()
-        let remaining = m.remainingHours ?? hosQuota
-        let used = max(0, hosQuota - remaining)
-        let frac = min(used / hosQuota, 1.0)
-        let arcColor: Color = frac > 0.85 ? Brand.danger : (frac > 0.70 ? Brand.warning : Brand.success)
+        let remaining = m.remainingHours.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil }
+        let fraction = remaining.map { min(max(hosQuota - $0, 0) / hosQuota, 1.0) }
+        let arcColor: Color = fraction.map {
+            $0 > 0.85 ? Brand.danger : ($0 > 0.70 ? Brand.warning : Brand.blue)
+        } ?? palette.textTertiary
 
         return HStack(spacing: Space.s3) {
             roleAvatar(m)
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(m.role?.capitalized ?? "Crew") · \(m.crewId ?? "-")")
                     .font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-                Text("\(String(format: "%.1f", m.onDutyHours ?? 0))h on duty\(m.endorsement.map { " · \($0)" } ?? "")")
+                Text("\(m.onDutyHours.map { String(format: "%.1fh on duty", $0) } ?? "on-duty hours unavailable")\(m.endorsement.map { " · \($0)" } ?? "")")
                     .font(.system(size: 11)).monospaced().foregroundStyle(palette.textSecondary)
             }
             Spacer()
             // Inline HOS arc
-            hosArc(fraction: frac, color: arcColor, remaining: remaining)
+            hosArc(fraction: fraction, color: arcColor, remaining: remaining)
             Text(statusLabel)
                 .font(.system(size: 8.5, weight: .heavy)).tracking(0.5)
                 .foregroundStyle(statusColor)
@@ -419,20 +468,28 @@ private struct RailCrewHOSRosterBody: View {
         }
     }
 
-    private func hosArc(fraction: Double, color: Color, remaining: Double) -> some View {
+    private func hosArc(fraction: Double?, color: Color, remaining: Double?) -> some View {
         ZStack {
             Circle()
                 .stroke(color.opacity(0.18), lineWidth: 4)
                 .frame(width: 30, height: 30)
-            Circle()
-                .trim(from: 0, to: fraction)
-                .stroke(color, style: StrokeStyle(lineWidth: 4, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-                .frame(width: 30, height: 30)
-            Text(remaining <= 0 ? "0h" : "\(Int(remaining))h")
+            if let fraction {
+                Circle()
+                    .trim(from: 0, to: fraction)
+                    .stroke(color, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    .frame(width: 30, height: 30)
+            }
+            Text(remaining.map { $0 <= 0 ? "0h" : "\(Int($0))h" } ?? "—")
                 .font(.system(size: 7.5, weight: .heavy)).monospacedDigit()
                 .foregroundStyle(color)
         }
+    }
+
+    private var teamSummary: String {
+        if unverified > 0 { return "\(unverified) HOS row\(unverified == 1 ? "" : "s") unverified" }
+        if nearLimit > 0 { return "\(nearLimit) reported near HOS limit" }
+        return "reported values · freshness unavailable"
     }
 
     // MARK: Data

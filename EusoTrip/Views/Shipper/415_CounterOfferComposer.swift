@@ -21,14 +21,15 @@ private struct CounterOfferBody: View {
     @State private var rate: Double? = nil
     @State private var note: String = ""
     @State private var sending = false
-    @State private var sent = false
+    @State private var confirmation: String? = nil
     @State private var actionError: String? = nil
+    @State private var requestKey = UUID().uuidString.lowercased()
 
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
-                if sent { LifecycleCard(accentGradient: true) { Text("Counter sent. Carrier has 30 min to respond.").font(EType.body).foregroundStyle(palette.textPrimary).fixedSize(horizontal: false, vertical: true) } }
+                if let confirmation { LifecycleCard(accentGradient: true) { Text(confirmation).font(EType.body).foregroundStyle(palette.textPrimary).fixedSize(horizontal: false, vertical: true) } }
                 if let err = actionError { LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) } }
                 rateCard
                 noteCard
@@ -80,16 +81,34 @@ private struct CounterOfferBody: View {
             .frame(maxWidth: .infinity).padding(.vertical, 12)
             .background(LinearGradient.diagonal)
             .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-        }.buttonStyle(.plain).disabled(sending || rate == nil)
+        }.buttonStyle(.plain).disabled(sending || !(rate.map { $0 > 0 } ?? false))
     }
 
     private func send() async {
-        sending = true; actionError = nil
-        struct In: Encodable { let loadId: String; let bidId: String; let rate: Double; let note: String? }
-        struct Out: Decodable { let success: Bool }
+        guard let rate, rate > 0 else {
+            actionError = "Enter a counter rate greater than zero."
+            return
+        }
+        sending = true
+        actionError = nil
         do {
-            let _ : Out = try await EusoTripAPI.shared.mutation("shippers.counterBid", input: In(loadId: loadId, bidId: bidId, rate: rate ?? 0, note: note.isEmpty ? nil : note))
-            sent = true
+            let ack = try await EusoTripAPI.shared.loadBidding.counter(
+                parentBidId: bidId,
+                loadId: loadId,
+                counterAmount: rate,
+                conditions: note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : note,
+                expiresInHours: 24,
+                requestKey: requestKey
+            )
+            guard ack.confirmedStatus?.lowercased() == "pending",
+                  ack.opaqueID != nil,
+                  ack.opaqueLoadID == loadId else {
+                throw EusoTripAPIError.decodingFailed(
+                    "Counter reply did not match the persisted bid chain."
+                )
+            }
+            confirmation = "Counter recorded\(ack.round.map { " · round \($0)" } ?? "") · awaiting the carrier's response."
+            requestKey = UUID().uuidString.lowercased()
         } catch {
             actionError = EusoTripAPIError.bidActionMessage(for: error, noun: "counter")
         }

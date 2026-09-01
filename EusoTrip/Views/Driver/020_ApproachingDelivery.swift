@@ -55,7 +55,6 @@
 //
 
 import SwiftUI
-import CoreLocation
 
 struct ApproachingDelivery: View {
     @Environment(\.palette) private var palette
@@ -79,11 +78,6 @@ struct ApproachingDelivery: View {
     // active load, no GPS fix, no delivery coord, no appointment), the
     // field renders an honest em-dash "-".
 
-    /// Remaining distance to the receiver, in meters, from the last
-    /// HERE route between the live GPS fix and the delivery coordinate.
-    @State private var remainingMeters: Double?
-    /// ISO-8601 arrival time HERE computed for the delivery.
-    @State private var etaISO: String?
     /// The most-recent appointment row for this load (window source).
     @State private var appointment: AppointmentsAPI.ByLoadAppointment?
 
@@ -106,43 +100,33 @@ struct ApproachingDelivery: View {
         LifecycleProductContext(load: activeLoad, role: session.user?.role)
     }
 
-    private static let metersPerMile = 1609.344
+    /// Exact SI-to-statute-mile conversion retained solely for displaying the
+    /// server-owned receiver geofence radius. It is not route distance.
+    private static let metersPerMile = 1_609.344
     private let dash = "-"
 
-    // MARK: - Live derived strings (HERE leg + appointment → honest "-")
+    // MARK: - Server-projection derived strings
 
     /// Live remaining distance to the receiver, "2.0" formatted, else "-".
-    private var heroMilesText: String {
-        guard let m = remainingMeters else { return dash }
-        return String(format: "%.1f", m / Self.metersPerMile)
-    }
+    private var heroMilesText: String { dash }
 
     /// "In 2.0 mi" maneuver heading from the live HERE remaining length.
     /// HERE turn-by-turn `actions` are not decoded by the route models,
     /// so we never fabricate an exit-narration string — the honest
     /// remaining-distance heading stands in. Em-dash with no live leg.
-    private var turnHeadingText: String {
-        guard remainingMeters != nil else { return dash }
-        return "In \(heroMilesText) mi"
-    }
+    private var turnHeadingText: String { "Route projection pending" }
 
     /// Maneuver subtitle: the live delivery city/state from the load,
     /// else an honest em-dash. Never a fabricated road name.
     private var turnSubText: String {
         if let cs = activeLoad?.deliveryLocation?.cityState, !cs.isEmpty {
-            return "Keep right · \(cs)"
+            return "Destination · \(cs)"
         }
         return dash
     }
 
     /// "ETA 00:22" local clock from the live HERE arrival ISO, else "ETA -".
-    private var etaText: String {
-        guard let iso = etaISO, let date = Self.parseISO(iso) else { return "ETA \(dash)" }
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "HH:mm"
-        return "ETA \(f.string(from: date))"
-    }
+    private var etaText: String { "ETA \(dash)" }
 
     /// "Appt 23:30 EDT" from the appointment's `scheduledAt` (falling
     /// through to the load's `deliveryDate`), else "Appt -". The live
@@ -169,11 +153,7 @@ struct ApproachingDelivery: View {
     /// rather than asserting a fabricated green "ON-TIME". A 5-minute
     /// grace before we call the leg behind schedule.
     private var onTimeStatus: (text: String, color: Color)? {
-        guard let iso = etaISO, let eta = Self.parseISO(iso),
-              let apptISO = appointment?.scheduledAt, let appt = Self.parseISO(apptISO)
-        else { return nil }
-        if eta <= appt.addingTimeInterval(300) { return ("ON-TIME", Brand.success) }
-        return ("BEHIND", Brand.warning)
+        nil
     }
 
     /// "23:30 EDT" wall clock + device timezone, nil when unparseable.
@@ -510,7 +490,6 @@ struct ApproachingDelivery: View {
         appointment = try? await EusoTripAPI.shared.appointments
             .getByLoad(loadId: lifecycle.loadId)
         if let load {
-            await refreshLiveNav(for: load)
             await resolveDeliveryFence(for: load)
         }
     }
@@ -524,57 +503,12 @@ struct ApproachingDelivery: View {
     @MainActor
     private func resolveDeliveryFence(for load: Load) async {
         guard let delivery = load.deliveryLocation,
-              !(delivery.lat == 0 && delivery.lng == 0) else {
+              let coordinate = delivery.coordinatePair else {
             fenceRadiusMeters = nil
             return
         }
         fenceRadiusMeters = await EusoTripAPI.shared.trackingGeofences
-            .fence(near: delivery.lat, delivery.lng)?.radiusMeters
-    }
-
-    /// Computes the live remaining leg from the driver's current GPS
-    /// fix to the delivery coordinate via HERE Routing v8 (truck-aware),
-    /// and caches the remaining miles + arrival ISO that drive the hero
-    /// + ETA. Every value is a real measurement; on any failure (no
-    /// fix, no delivery coord, HERE error) the cached values stay nil
-    /// and the UI shows "-". Mirrors 013's `refreshLiveNav`.
-    @MainActor
-    private func refreshLiveNav(for load: Load) async {
-        guard let delivery = load.deliveryLocation,
-              !(delivery.lat == 0 && delivery.lng == 0) else {
-            remainingMeters = nil
-            etaISO = nil
-            return
-        }
-
-        // Live GPS fix. nil when denied / timed out → UI reads "-".
-        guard let fix = await DriverLocationResolver.shared.currentCoordinate() else {
-            remainingMeters = nil
-            etaISO = nil
-            return
-        }
-
-        let stops = HereStops(
-            origin: fix,
-            destination: CLLocationCoordinate2D(latitude: delivery.lat, longitude: delivery.lng)
-        )
-        let profile = TruckProfile.from(load: load)
-        do {
-            let resp = try await HereRoutingClient.shared.route(stops: stops, profile: profile)
-            guard let section = resp.routes.first?.sections.first,
-                  let summary = section.summary else {
-                remainingMeters = nil
-                etaISO = nil
-                return
-            }
-            remainingMeters = Double(summary.length)
-            etaISO = section.arrival.time
-        } catch {
-            // Honest failure: leave the numbers nil so the UI shows "-"
-            // rather than a stale or fabricated figure.
-            remainingMeters = nil
-            etaISO = nil
-        }
+            .fence(near: coordinate.lat, coordinate.lng)?.radiusMeters
     }
 
     private func markAtGate() async {

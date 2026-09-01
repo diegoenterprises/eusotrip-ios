@@ -175,16 +175,18 @@ struct SignInView: View {
             }
             .buttonStyle(.plain)
 
-            // Offline/demo entry — wires the full production flow
-            // (SignIn → ContentView → DriverTripController) without a
-            // live backend so the Figma-faithful walkthrough is
-            // demonstrable end-to-end in the simulator / TestFlight.
+            // Developer-only walkthrough. A fabricated bearer must never be
+            // available in TestFlight or App Store builds: mounting live role
+            // stores behind it produces a cascade of real 401 failures.
+            #if DEBUG
             demoEntryRow
+            #endif
         }
     }
 
     // MARK: Demo entry row
 
+    #if DEBUG
     private var demoEntryRow: some View {
         VStack(spacing: Space.s2) {
             Text("Preview mode")
@@ -214,6 +216,7 @@ struct SignInView: View {
         }
         .buttonStyle(.plain)
     }
+    #endif
 
     // MARK: 2FA form
 

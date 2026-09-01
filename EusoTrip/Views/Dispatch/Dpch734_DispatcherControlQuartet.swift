@@ -19,10 +19,8 @@ private struct ShellNav<Content: View>: View {
     var body: some View {
         Shell(theme: theme) { content() } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home",    systemImage: "house",            isCurrent: false),
-                          NavSlot(label: "Drivers", systemImage: "person.3.fill",    isCurrent: false)],
-                trailing: [NavSlot(label: "Loads", systemImage: "shippingbox.fill",  isCurrent: false),
-                           NavSlot(label: "Me",    systemImage: "person",            isCurrent: true)],
+                leading: DispatchNavRoute.leading(current: .me),
+                trailing: DispatchNavRoute.trailing(current: .me),
                 orbState: .idle
             )
         }
@@ -51,13 +49,13 @@ private struct DispatcherSettingsPayload: Decodable {
         let board: Board?
     }
 
-    struct Notifications: Codable {
+    struct Notifications: Codable, Equatable {
         let hosCriticalAlerts: Bool
         let tenderExpiringSoon: Bool
         let esangNudgeFrequency: String
     }
 
-    struct Board: Codable {
+    struct Board: Codable, Equatable {
         let visibleStages: [String]
         let cardDensity: String
     }
@@ -70,9 +68,15 @@ private struct DispatcherSettingsAck: Decodable {
 
 private enum DispatcherSettingsContractError: LocalizedError {
     case missingRolePreferences
+    case readbackMismatch
 
     var errorDescription: String? {
-        "The dispatcher settings response was incomplete."
+        switch self {
+        case .missingRolePreferences:
+            return "The dispatcher settings response was incomplete."
+        case .readbackMismatch:
+            return "The saved dispatcher settings did not match the confirmed settings. Refresh before trying again."
+        }
     }
 }
 
@@ -343,38 +347,15 @@ private struct DispatcherSettingsBody: View {
 
     @ViewBuilder
     private func settingsSection<Content: View>(id: String, icon: String, title: String, summary: String, @ViewBuilder content: () -> Content) -> some View {
-        let isOpen = expandedSection == id
-        LifecycleCard {
-            Button {
-                withAnimation(.easeOut(duration: 0.2)) {
-                    expandedSection = isOpen ? "" : id
-                }
-            } label: {
-                HStack(spacing: 12) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(LinearGradient.diagonal)
-                            .frame(width: 38, height: 38)
-                        Image(systemName: icon).font(.system(size: 15, weight: .heavy)).foregroundStyle(.white)
-                    }
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(title).font(EType.body.weight(.bold)).foregroundStyle(palette.textPrimary)
-                        Text(summary).font(EType.caption).foregroundStyle(palette.textSecondary).lineLimit(2)
-                    }
-                    Spacer(minLength: 0)
-                    if saving { ProgressView().controlSize(.small) }
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.heavy))
-                        .foregroundStyle(palette.textTertiary)
-                        .rotationEffect(.degrees(isOpen ? 90 : 0))
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            if isOpen {
-                Divider().overlay(palette.borderFaint).padding(.vertical, 6)
-                content().transition(.opacity.combined(with: .move(edge: .top)))
-            }
+        RoleDisclosureSection(
+            id: id,
+            systemImage: icon,
+            title: title,
+            summary: summary,
+            isBusy: saving,
+            expandedID: $expandedSection
+        ) {
+            content()
         }
     }
 
@@ -494,6 +475,15 @@ private struct DispatcherSettingsBody: View {
             let notifications: DispatcherSettingsPayload.Notifications
             let board: DispatcherSettingsPayload.Board
         }
+        let intendedNotifications = DispatcherSettingsPayload.Notifications(
+            hosCriticalAlerts: hosAlerts,
+            tenderExpiringSoon: tenderExpiringPush,
+            esangNudgeFrequency: esangNudges
+        )
+        let intendedBoard = DispatcherSettingsPayload.Board(
+            visibleStages: visibleStages,
+            cardDensity: cardDensity
+        )
         saving = true
         errorMessage = nil
         savedMessage = nil
@@ -502,15 +492,28 @@ private struct DispatcherSettingsBody: View {
             let ack: DispatcherSettingsAck = try await EusoTripAPI.shared.mutation(
                 "settings.updateDispatcherSettings",
                 input: In(
-                    notifications: .init(
-                        hosCriticalAlerts: hosAlerts,
-                        tenderExpiringSoon: tenderExpiringPush,
-                        esangNudgeFrequency: esangNudges
-                    ),
-                    board: .init(visibleStages: visibleStages, cardDensity: cardDensity)
+                    notifications: intendedNotifications,
+                    board: intendedBoard
                 )
             )
             guard ack.success else { throw EusoTripAPIError.empty }
+            let canonical: DispatcherSettingsPayload = try await EusoTripAPI.shared.queryNoInput(
+                "settings.getSettings"
+            )
+            guard let dispatch = canonical.rolePreferences?.dispatch,
+                  let notifications = dispatch.notifications,
+                  let board = dispatch.board else {
+                throw DispatcherSettingsContractError.missingRolePreferences
+            }
+            guard notifications == intendedNotifications,
+                  board == intendedBoard else {
+                throw DispatcherSettingsContractError.readbackMismatch
+            }
+            hosAlerts = notifications.hosCriticalAlerts
+            tenderExpiringPush = notifications.tenderExpiringSoon
+            esangNudges = notifications.esangNudgeFrequency
+            visibleStages = board.visibleStages
+            cardDensity = board.cardDensity
             savedMessage = "Settings saved"
         } catch {
             errorMessage = "Your settings weren't saved. \(error.eusoUserCopy)"
@@ -546,6 +549,12 @@ private struct DispatcherSettingsBody: View {
                 "settings.updateDisplaySettings", input: In(theme: newTheme)
             )
             guard ack.success else { throw EusoTripAPIError.empty }
+            let canonical: DispatcherSettingsPayload = try await EusoTripAPI.shared.queryNoInput(
+                "settings.getSettings"
+            )
+            guard canonical.display?.theme == newTheme else {
+                throw DispatcherSettingsContractError.readbackMismatch
+            }
             appAppearance = newTheme
             savedMessage = "Theme saved"
         } catch {

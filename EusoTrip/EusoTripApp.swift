@@ -83,6 +83,9 @@ struct EusoTripApp: App {
     /// signature pads). Privacy hardening per audit (2026-04-25).
     @Environment(\.scenePhase) private var scenePhase
     @State private var isResigning = false
+    /// Carries the fact that this scene entered background across iOS's
+    /// normal intermediate `.inactive` phase on return.
+    @State private var sessionReturnGate = EusoSessionReturnGate()
 
     var body: some Scene {
         WindowGroup {
@@ -194,6 +197,15 @@ struct EusoTripApp: App {
                     EusoRefreshCoordinator.shared.appBecameInactive()
                 }
 
+                // ScenePhase normally returns background -> inactive -> active.
+                // Keep that transition as explicit auth evidence instead of
+                // relying only on the immediately previous phase, which misses
+                // the normal intermediate inactive phase.
+                let shouldRevalidate = sessionReturnGate.consumeTransition(
+                    isBackground: newPhase == .background,
+                    isActive: newPhase == .active
+                )
+
                 if newPhase == .active && oldPhase != .active {
                     let now = Date()
                     let currentDay = Calendar.autoupdatingCurrent.startOfDay(for: now)
@@ -206,17 +218,23 @@ struct EusoTripApp: App {
                     let needsFreshData = EusoRefreshCoordinator.shared.consumeStaleActivation()
                         || crossedCalendarDay
 
-                    // Preserve the existing session self-heal on every real
-                    // background return. A long inactive interval receives the
-                    // same protection before its data refresh starts.
-                    guard oldPhase == .background || needsFreshData else { return }
+                    guard shouldRevalidate || needsFreshData else { return }
                     Task {
-                        await session.revalidate()
+                        // Auth authority always resolves before the operational
+                        // refresh. A transient renewal failure retains the last
+                        // known screen instead of fanning a wall of 401 errors
+                        // through every role store.
+                        let sessionIsLive = await session.revalidate()
+                        guard sessionIsLive, session.phase == .signedIn else { return }
                         if needsFreshData {
                             await EusoRefreshCoordinator.shared.requestRefresh(
                                 reason: .staleForeground
                             )
                         }
+                        NotificationCenter.default.post(
+                            name: .esangRefreshSurface,
+                            object: nil
+                        )
                     }
                 }
             }
@@ -246,6 +264,21 @@ struct EusoTripApp: App {
                 MockDataGuard.runSelfCheck()
                 #endif
                 await session.boot()
+                // A persisted credential can restore `session.user` before
+                // SwiftUI delivers an `onChange` edge. Activate the exact
+                // environment epoch after boot as well, otherwise the home
+                // widget has a valid scoped request while WeatherService still
+                // rejects every fetch because no active context exists.
+                if let user = session.user {
+                    WeatherService.shared.activateContext(
+                        WeatherRequestContext(
+                            identity: WeatherRequestIdentity(user: user),
+                            sessionEpoch: weatherSessionEpoch
+                        )
+                    )
+                } else {
+                    WeatherService.shared.deactivateContext()
+                }
                 // Proactively trigger the iOS "Allow EusoTrip to use
                 // your location?" prompt at app launch. WeatherService
                 // also requests it lazily on first fetch, but that
@@ -342,11 +375,6 @@ struct EusoTripApp: App {
     }
 
     private func handleDeepLink(_ url: URL) {
-        // Vendor OAuth callback — `eusotrip://oauth/callback/<vendor>?code=…&state=…`
-        // Forwarded to the HardwareCapabilitiesView observer so the
-        // form can call `capabilities.exchangeOAuthCode` immediately.
-        if VendorOAuthCallback.handle(url: url) { return }
-
         guard url.scheme == "eusotrip",
               url.host == "reset",
               let token = URLComponents(url: url, resolvingAgainstBaseURL: false)?
@@ -464,6 +492,29 @@ extension Notification.Name {
     /// COMPANY room (auto-joined). My Bids / My Loads / Home should
     /// re-poll, and the toast layer should celebrate the win.
     static let eusoBidAwarded = Notification.Name("eusoBidAwarded")
+
+    /// Fired by `RealtimeService` when the backend fans out a dispatch
+    /// board mutation — `dispatch:board_update` on the `role:dispatch`
+    /// Socket.IO room (`server/services/socketService.ts:822-825`,
+    /// wire constant `shared/websocket-events.ts:205`). Every
+    /// `emitDispatchEvent(...)` call whose `eventType` is not exactly
+    /// `dispatch:assignment` bridges through that emitter
+    /// (`server/_core/websocket.ts:906-907`), so this is the single
+    /// "something on the board moved" signal: quick-create, bulk
+    /// assign, autopilot, reassignment, tender flips, check-call
+    /// sweeps, allocation + settlement batching.
+    ///
+    /// `userInfo` carries the backend `DispatchEventPayload` verbatim
+    /// (`socketService.ts:795-804`): `loadId` (String), `loadNumber`
+    /// (String?), `driverId` (Int?), `vehicleId` (String?),
+    /// `eventType` (String), `priority` ("normal" | "high" |
+    /// "urgent"), `message` (String), `timestamp` (ISO-8601 String).
+    ///
+    /// Dispatcher board / queue / roster surfaces observe this and
+    /// re-run their loader. `RealtimeService` coalesces bursts on a
+    /// trailing edge before posting, so an autopilot run that assigns
+    /// N loads wakes each board once rather than N times.
+    static let eusoDispatchBoardUpdated = Notification.Name("eusoDispatchBoardUpdated")
 }
 
 // MARK: - Tap-outside-to-dismiss keyboard bridge

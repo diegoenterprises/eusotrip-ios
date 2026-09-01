@@ -488,6 +488,7 @@ private struct ShipperCashOutSheet: View {
     @State private var submitting: Bool = false
     @State private var errorText: String? = nil
     @State private var ack: WalletExtrasAPI.RequestPayoutAck? = nil
+    @State private var payoutRequestId = UUID()
 
     private var parsedAmount: Double? {
         // Robust, locale-aware monetary parse. The old `.decimal`
@@ -605,6 +606,9 @@ private struct ShipperCashOutSheet: View {
             .padding(.horizontal, 14).padding(.top, 24).padding(.bottom, 48)
         }
         .eusoRefreshTask { await loadMethods() }
+        .onChange(of: amountText) { _, _ in rotatePayoutRequestId() }
+        .onChange(of: selectedMethodId) { _, _ in rotatePayoutRequestId() }
+        .onChange(of: instant) { _, _ in rotatePayoutRequestId() }
     }
 
     private var isDark: Bool { palette.bgPage == Theme.dark.bgPage }
@@ -919,7 +923,8 @@ private struct ShipperCashOutSheet: View {
             let result = try await EusoTripAPI.shared.walletExtras.requestPayout(
                 amount: amt,
                 payoutMethodId: methodId,
-                instant: instant
+                instant: instant,
+                idempotencyKey: payoutRequestId
             )
             ack = result
         } catch {
@@ -929,6 +934,11 @@ private struct ShipperCashOutSheet: View {
             errorText = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
         submitting = false
+    }
+
+    private func rotatePayoutRequestId() {
+        guard !submitting, ack == nil else { return }
+        payoutRequestId = UUID()
     }
 
     /// Full-precision money for the payout ack (`usd` rounds to whole

@@ -69,10 +69,10 @@ const camelBrandAllow = new Set([
   // EusoTrip brand spellings
   "eSang", "eusoTrip",
   // electronic-document industry spellings
-  "eBOL", "eBOLs", "ePOD", "eManifest", "eAWB", "eCMR", "eRUC", "eLog",
-  "eLogs", "eDVIR",
+  "eBOL", "eBOLs", "eBL", "ePOD", "eManifest", "eAWB", "eCMR", "eRUC", "eLog",
+  "eLogs", "eDVIR", "eNOA",
   // physical units
-  "kWh", "mAh", "mpg", "mmHg", "dBm", "tCO2e", "gCO2e", "kgCO2e"
+  "kW", "kWh", "mAh", "mpg", "mmHg", "dBm", "tCO2e", "gCO2e", "kgCO2e"
 ]);
 const camelTokenPattern = /^[a-z]+(?:[A-Z][a-zA-Z0-9]*)+$/;
 
@@ -197,6 +197,8 @@ function rendersLocalizedDescriptionDirectly(code) {
   return /\b(?:title|subtitle|text|label|detail|message)\s*:/.test(head);
 }
 const localizedAssignPattern = /(?:let|var)?\s*(?:self\.)?([A-Za-z_]\w*)(?:\s*:\s*[\w?\[\]<>., ]+)?\s*=[^=][^\n]*\.localizedDescription/;
+const dynamicVisibleStubCopy = /"[^"\n]*\bSTUB\b[^"\n]*"/;
+const dynamicVisibleGapCopy = /"[^"\n]*(?:\bnamed gap\b|\bthe-oath\b|\bnot yet wired\b|\bpending backend\b)[^"\n]*"/i;
 
 const findings = [];
 for (const file of walk(root)) {
@@ -224,6 +226,15 @@ for (const file of walk(root)) {
     const key = `${rel}:${index + 1}`;
     if (allow.has(key)) return;
     const code = codePart(line);
+
+    // Ternary/helper-rendered copy such as
+    // `Text(gap ? "STUB · endpoint" : ref)` is visible but does not begin
+    // with Text("..."), so the regular literal collectors cannot see it.
+    // These implementation-state phrases are never valid product copy in any
+    // quoted Swift value, even when routed through a helper first.
+    if (dynamicVisibleStubCopy.test(code) || dynamicVisibleGapCopy.test(code)) {
+      findings.push({ rule: "dynamic-dev-copy", file: rel, line: index + 1, text: trimmed.slice(0, 160) });
+    }
 
     for (const text of visibleStrings(line)) {
       for (const [rule, pattern] of patterns) {
