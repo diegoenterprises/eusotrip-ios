@@ -29,6 +29,8 @@ const relative = {
   mapModels: "EusoTrip/Services/HereMaps/Offline/Core/OfflineMapModels.swift",
   routeModels: "EusoTrip/Services/HereMaps/Offline/Core/OfflineRouteModels.swift",
   routeStore: "EusoTrip/Services/HereMaps/Offline/Core/CanonicalRoutePackageStore.swift",
+  trustedRouteClock: "EusoTrip/Services/HereMaps/Offline/Core/CanonicalRouteTrustedClock.swift",
+  coverageResolver: "EusoTrip/Services/HereMaps/Offline/Core/SignedInstalledCoverageResolver.swift",
   navigation: "EusoTrip/Services/HereMaps/Offline/SDK/HereNavigateNavigationSession.swift",
   surface: "EusoTrip/Services/HereMaps/Offline/SDK/HereNavigateOfflineMapSurface.swift",
   productionComposition: "EusoTrip/Services/HereMaps/Offline/OfflineMapProductionComposition.swift",
@@ -52,6 +54,15 @@ const relative = {
   ladderStatusTests: "scripts/release-ladder-status.test.mjs",
   ascBuildStatus: "scripts/asc-build-status.mjs",
   ascBuildStatusTests: "scripts/asc-build-status.test.mjs",
+  ascLatestBuild: "scripts/asc-latest-build.mjs",
+  ascLatestBuildTests: "scripts/asc-latest-build.test.mjs",
+  configAttestationVerifier: "scripts/verify-release-config-attestation.mjs",
+  configAttestationVerifierTests: "scripts/verify-release-config-attestation.test.mjs",
+  deviceAcceptanceVerifier: "scripts/verify-here-offline-device-acceptance.mjs",
+  deviceAcceptanceVerifierTests: "scripts/verify-here-offline-device-acceptance.test.mjs",
+  githubGovernanceVerifier: "scripts/verify-github-release-governance.mjs",
+  githubGovernanceVerifierTests: "scripts/verify-github-release-governance.test.mjs",
+  sourceContractWorkflow: ".github/workflows/here-offline-source-contract.yml",
   manifest: "EusoTrip/Services/HereMaps/Offline/HERE_SDK_SUPPLY_CHAIN.json",
   styleManifest: "EusoTrip/Services/HereMaps/Offline/HERE_NATIVE_STYLE_SUPPLY_CHAIN.json",
   credentialAttestation: "security/HERE_CREDENTIAL_REMEDIATION.json",
@@ -83,6 +94,15 @@ const releaseInputPaths = [
   relative.ladderStatusTests,
   relative.ascBuildStatus,
   relative.ascBuildStatusTests,
+  relative.ascLatestBuild,
+  relative.ascLatestBuildTests,
+  relative.configAttestationVerifier,
+  relative.configAttestationVerifierTests,
+  relative.deviceAcceptanceVerifier,
+  relative.deviceAcceptanceVerifierTests,
+  relative.githubGovernanceVerifier,
+  relative.githubGovernanceVerifierTests,
+  relative.sourceContractWorkflow,
 ];
 
 const absolute = value => path.join(root, value);
@@ -855,6 +875,8 @@ requireFiles([
   relative.mapModels,
   relative.routeModels,
   relative.routeStore,
+  relative.trustedRouteClock,
+  relative.coverageResolver,
   relative.navigation,
   relative.surface,
   relative.appEntry,
@@ -877,6 +899,15 @@ requireFiles([
   relative.ladderStatusTests,
   relative.ascBuildStatus,
   relative.ascBuildStatusTests,
+  relative.ascLatestBuild,
+  relative.ascLatestBuildTests,
+  relative.configAttestationVerifier,
+  relative.configAttestationVerifierTests,
+  relative.deviceAcceptanceVerifier,
+  relative.deviceAcceptanceVerifierTests,
+  relative.githubGovernanceVerifier,
+  relative.githubGovernanceVerifierTests,
+  relative.sourceContractWorkflow,
   relative.manifest,
   relative.styleManifest,
   relative.credentialAttestation,
@@ -900,7 +931,7 @@ for (const [file, label] of [
   }
 }
 
-for (const executable of [relative.deployScript, relative.ascBuildStatus]) {
+for (const executable of [relative.deployScript, relative.ascBuildStatus, relative.ascLatestBuild]) {
   const entry = repositoryEntryStatus(executable);
   if (entry.status === "ok" && (Number(entry.metadata.mode) & 0o111) === 0) {
     failures.push(`${executable}: release entrypoint must retain an executable POSIX mode`);
@@ -1013,6 +1044,22 @@ requireText(relative.routeStore, [
   "options: .atomic",
   "case stale",
   "CanonicalRouteStoreRootLeaseRegistry.shared.acquire",
+  "CanonicalRouteTrustedClock",
+  "trustedClock.establishAuthenticatedAnchor",
+  "trustedClock.invalidateAll",
+]);
+requireText(relative.trustedRouteClock, [
+  "ProcessInfo.processInfo.systemUptime",
+  "case monotonicUptimeRegressed",
+  "case authenticatedAnchorUnavailable",
+  "func establishAuthenticatedAnchor",
+]);
+requireText(relative.coverageResolver, [
+  "actor SignedInstalledCoverageResolver",
+  "func resolveInstalledCoverage",
+  "coordinateClassifications",
+  "payload.catalogVersion",
+  "options: .atomic",
 ]);
 const routeStoreCode = exists(relative.routeStore) ? swiftCodeOnly(read(relative.routeStore)) : "";
 if (/struct\s+CanonicalRoutePackage\s*:[^{]*\bCodable\b/.test(routeStoreCode)) {
@@ -1084,6 +1131,12 @@ if (exists(relative.manifest)) {
     assert.equal(typeof parsedManifest.archiveRelativePath, "string");
     assert.equal(typeof parsedManifest.frameworkRelativePath, "string");
     assert.equal(parsedManifest.legalNoticeResource, "EusoTrip/Resources/HERE_NOTICE");
+    assert.ok(Array.isArray(parsedManifest.vendorPrivacyManifests));
+    assert.equal(typeof parsedManifest.appPrivacyManifest, "object");
+    assert.equal(
+      parsedManifest.appPrivacyManifest?.relativePath,
+      "EusoTrip/Resources/PrivacyInfo.xcprivacy",
+    );
     manifest = parsedManifest;
   } catch (error) {
     manifest = undefined;
@@ -1147,30 +1200,32 @@ if (!projectInspector.resourceRegistered(relative.styleManifest)) {
   failures.push(`${relative.project}: runtime style manifest is not registered in the EusoTrip app resources`);
 }
 
-const releaseAutomationCandidates = [
-  relative.scheme,
-  relative.deployScript,
-  "azure-pipelines.yml",
-  "fastlane/Fastfile",
-  ...walkFiles(".github/workflows"),
-  ...walkFiles(".azure-pipelines"),
-].map(file => path.isAbsolute(file)
-  ? path.relative(root, file).split(path.sep).join("/")
-  : file)
-  .filter(file => repositoryEntryStatus(file).status === "ok");
-const releaseAutomationSources = releaseAutomationCandidates.map(file => read(file));
-const archiveGateIsWired = releaseAutomationSources.some(source =>
-  source.includes("verify-here-offline-contract.mjs") &&
-  source.includes("--release") &&
-  source.includes("--built-app=") &&
-  source.includes("HERE_OFFLINE_EXPECTED_TEAM_ID") &&
-  source.includes("HERE_OFFLINE_EXPECTED_SIGNING_AUTHORITY"));
-const regressionHarnessIsWired = releaseAutomationSources.some(source =>
-  source.includes("verify-here-offline-contract.test.mjs"));
-if (!archiveGateIsWired || !regressionHarnessIsWired) {
-  blockers.push("authoritative archive/CI automation does not enforce the HERE release gate and regression harness");
-}
 const deployScriptSource = exists(relative.deployScript) ? read(relative.deployScript) : "";
+const archiveGateIsWired =
+  deployScriptSource.includes("verify-here-offline-contract.mjs") &&
+  deployScriptSource.includes("--release") &&
+  deployScriptSource.includes("--built-app=") &&
+  deployScriptSource.includes("HERE_OFFLINE_EXPECTED_TEAM_ID") &&
+  deployScriptSource.includes("HERE_OFFLINE_EXPECTED_SIGNING_AUTHORITY");
+const regressionHarnessIsWired = deployScriptSource.includes("verify-here-offline-contract.test.mjs");
+if (!archiveGateIsWired || !regressionHarnessIsWired) {
+  blockers.push("committed local archive automation does not enforce the HERE release gate and regression harness");
+}
+const sourceWorkflowSource = exists(relative.sourceContractWorkflow)
+  ? read(relative.sourceContractWorkflow)
+  : "";
+const sourceCIIsWired =
+  sourceWorkflowSource.includes("name: HERE Offline Source Contract") &&
+  sourceWorkflowSource.includes("verify-here-offline-contract.test.mjs") &&
+  sourceWorkflowSource.includes("verify-here-offline-contract.mjs") &&
+  sourceWorkflowSource.includes("build-for-testing") &&
+  sourceWorkflowSource.includes("generic/platform=iOS Simulator") &&
+  sourceWorkflowSource.includes("refs/pull/*/head:refs/remotes/pull/*") &&
+  sourceWorkflowSource.includes("Incident build-log paths remain reachable") &&
+  !sourceWorkflowSource.includes("upload-artifact");
+if (!sourceCIIsWired) {
+  blockers.push("committed source-only HERE CI does not compile tests and inspect every public incident-relevant ref");
+}
 const deployExecutableSource = deployScriptSource
   .split("\n")
   .filter(line => !line.trimStart().startsWith("#"))
@@ -1210,8 +1265,15 @@ const finalExportedProductIsGated =
   deployExecutableSource.includes("select-available-ios-simulator.test.mjs") &&
   deployExecutableSource.includes("release-ladder-status.test.mjs") &&
   deployExecutableSource.includes("asc-build-status.test.mjs") &&
+  deployExecutableSource.includes("verify-release-config-attestation.test.mjs") &&
+  deployExecutableSource.includes("verify-here-offline-device-acceptance.test.mjs") &&
+  deployExecutableSource.includes("verify-github-release-governance.mjs") &&
+  deployExecutableSource.includes("verify-github-release-governance.test.mjs") &&
   deployExecutableSource.includes("here-production-gate.mjs") &&
   deployExecutableSource.includes("EUSOTRIP_APPROVED_RELEASE_COMMIT") &&
+  deployExecutableSource.includes("EUSOTRIP_RELEASE_XCCONFIG_PATH") &&
+  deployExecutableSource.includes("assert_release_config_unchanged") &&
+  deployExecutableSource.includes("schemaVersion: 3") &&
   deployExecutableSource.includes("-only-testing:EusoTripOfflineTests") &&
   deployExecutableSource.includes("-parallel-testing-enabled NO") &&
   deployExecutableSource.includes('LADDER_TESTED="pass"') &&
@@ -1284,9 +1346,10 @@ if (!/\.coverageChanged\s*\(/.test(approvedProductionComposition) ||
 if (!/\bHereNavigationVoicePolicy\s*\(/.test(approvedProductionComposition)) {
   blockers.push("device-local offline voice policy has no approved target-bound caller");
 }
-blockers.push("trusted signed installed-region coverage and boundary resolver is not integrated");
-blockers.push("bounded HERE callback watchdogs and interruption recovery are not device-proven");
-blockers.push("trusted canonical-route time across device clock rollback and reboot is not integrated");
+if (!/\bSignedInstalledCoverageResolver\s*\(/.test(approvedProductionComposition) ||
+    !/\.resolveInstalledCoverage\s*\(/.test(approvedProductionComposition)) {
+  blockers.push("signed installed-region coverage resolver has no approved production adapter/caller");
+}
 
 try {
   const trackedBuildLogs = execFileSync(
@@ -1531,6 +1594,7 @@ if (manifest) {
     ["archiveRelativePath", manifest.archiveRelativePath],
     ["frameworkRelativePath", manifest.frameworkRelativePath],
     ["legalNoticeResource", manifest.legalNoticeResource],
+    ["appPrivacyManifest.relativePath", manifest.appPrivacyManifest?.relativePath],
   ]) {
     if (!safeRepositoryRelativePath(value)) {
       manifestPathsAreSafe = false;
@@ -1542,13 +1606,23 @@ if (manifest) {
   const archivePath = manifestPathsAreSafe ? absolute(manifest.archiveRelativePath) : "";
   const frameworkPath = manifestPathsAreSafe ? absolute(manifest.frameworkRelativePath) : "";
   const legalNoticePath = manifestPathsAreSafe ? absolute(manifest.legalNoticeResource) : "";
+  const appPrivacyManifestPath = manifestPathsAreSafe
+    ? absolute(manifest.appPrivacyManifest.relativePath)
+    : "";
   const archiveExists = manifestPathsAreSafe && fs.existsSync(archivePath);
   const frameworkExists = manifestPathsAreSafe && fs.existsSync(frameworkPath);
   const legalNoticeExists = manifestPathsAreSafe && fs.existsSync(legalNoticePath);
+  const appPrivacyManifestExists = manifestPathsAreSafe && fs.existsSync(appPrivacyManifestPath);
   const archiveIsFile = archiveExists && fs.lstatSync(archivePath).isFile() && fs.statSync(archivePath).size > 0;
   const frameworkIsDirectory = frameworkExists && fs.lstatSync(frameworkPath).isDirectory();
   const legalNoticeIsFile = legalNoticeExists && fs.lstatSync(legalNoticePath).isFile() &&
     fs.statSync(legalNoticePath).size > 0;
+  const appPrivacyManifestIsFile = appPrivacyManifestExists &&
+    repositoryEntryStatus(
+      manifest.appPrivacyManifest.relativePath,
+      "file",
+      "approved app privacy manifest",
+    ).status === "ok";
   if (!frameworkExists) {
     blockers.push(`licensed HERE framework absent at ${manifest.frameworkRelativePath}`);
   } else if (!frameworkIsDirectory) {
@@ -1563,6 +1637,11 @@ if (manifest) {
     blockers.push(`vendor HERE_NOTICE absent at ${manifest.legalNoticeResource}`);
   } else if (!legalNoticeIsFile) {
     failures.push(`${manifest.legalNoticeResource}: vendor HERE_NOTICE must be a non-empty regular file`);
+  }
+  if (!appPrivacyManifestExists) {
+    blockers.push(`approved app PrivacyInfo.xcprivacy absent at ${manifest.appPrivacyManifest.relativePath}`);
+  } else if (!appPrivacyManifestIsFile) {
+    failures.push(`${manifest.appPrivacyManifest.relativePath}: app privacy manifest must be a real in-repository file`);
   }
   if (manifest.status !== "approved") {
     blockers.push("HERE SDK supply-chain manifest is not approved");
@@ -1599,6 +1678,9 @@ if (manifest) {
   if (!projectInspector.resourceRegistered(manifest.legalNoticeResource)) {
     blockers.push("HERE_NOTICE is not registered in Copy Bundle Resources");
   }
+  if (!projectInspector.resourceRegistered(manifest.appPrivacyManifest.relativePath)) {
+    blockers.push("approved app PrivacyInfo.xcprivacy is not registered in Copy Bundle Resources");
+  }
   if (!/^[a-f0-9]{64}$/i.test(manifest.archiveSHA256 ?? "")) {
     blockers.push("vendor archive SHA-256 has not been approved");
   } else if (archiveIsFile) {
@@ -1626,6 +1708,77 @@ if (manifest) {
   } else if (legalNoticeIsFile) {
     if (sha256(legalNoticePath).toLowerCase() !== manifest.legalNoticeSHA256.toLowerCase()) {
       failures.push(`${manifest.legalNoticeResource}: SHA-256 does not match the approved vendor notice`);
+    }
+  }
+
+  const appPrivacy = manifest.appPrivacyManifest ?? {};
+  const privacyReviewedAt = Date.parse(appPrivacy.reviewedAt ?? "");
+  const privacyLabelReviewedAt = Date.parse(appPrivacy.appStorePrivacyLabelReviewedAt ?? "");
+  const privacyApprovedAt = Date.parse(appPrivacy.approvedAt ?? "");
+  const privacyTimeline = [privacyReviewedAt, privacyLabelReviewedAt, privacyApprovedAt]
+    .every(value => Number.isFinite(value) && value <= Date.now() + 5 * 60 * 1_000) &&
+    privacyLabelReviewedAt >= privacyReviewedAt &&
+    privacyApprovedAt >= privacyLabelReviewedAt;
+  if (appPrivacy.status !== "approved" ||
+      typeof appPrivacy.reviewedBy !== "string" || !appPrivacy.reviewedBy.trim() ||
+      typeof appPrivacy.approvedBy !== "string" || !appPrivacy.approvedBy.trim() ||
+      appPrivacy.reviewedBy === appPrivacy.approvedBy ||
+      !privacyTimeline) {
+    blockers.push("HERE/app privacy manifest and App Store privacy-label review are incomplete or not independently approved");
+  }
+  if (!/^[a-f0-9]{64}$/i.test(appPrivacy.sha256 ?? "")) {
+    blockers.push("app PrivacyInfo.xcprivacy SHA-256 has not been approved");
+  } else if (appPrivacyManifestIsFile) {
+    const actualPrivacyHash = sha256RepositoryFile(
+      appPrivacy.relativePath,
+      "approved app privacy manifest",
+    );
+    if (!actualPrivacyHash || actualPrivacyHash.toLowerCase() !== appPrivacy.sha256.toLowerCase()) {
+      failures.push(`${appPrivacy.relativePath}: SHA-256 does not match the approved privacy manifest`);
+    }
+    if (!gitPathIsTrackedAndUnchanged(appPrivacy.relativePath)) {
+      blockers.push("approved app PrivacyInfo.xcprivacy is not committed unchanged in HEAD");
+    }
+    try {
+      const privacyPlist = parseRepositoryPlist(appPrivacy.relativePath);
+      if (typeof privacyPlist.NSPrivacyTracking !== "boolean" ||
+          !Array.isArray(privacyPlist.NSPrivacyCollectedDataTypes) ||
+          !Array.isArray(privacyPlist.NSPrivacyAccessedAPITypes)) {
+        failures.push(`${appPrivacy.relativePath}: required privacy-manifest declarations are structurally incomplete`);
+      }
+    } catch {
+      failures.push(`${appPrivacy.relativePath}: privacy manifest could not be parsed safely`);
+    }
+  }
+
+  if (!Array.isArray(manifest.vendorPrivacyManifests) || manifest.vendorPrivacyManifests.length === 0) {
+    blockers.push("licensed HERE SDK vendor privacy manifest inventory is absent");
+  } else {
+    const seenVendorPrivacyPaths = new Set();
+    for (const entry of manifest.vendorPrivacyManifests) {
+      const validPath = safeRepositoryRelativePath(entry?.relativePath) &&
+        entry.relativePath.startsWith(`${manifest.frameworkRelativePath}/`) &&
+        path.basename(entry.relativePath) === "PrivacyInfo.xcprivacy";
+      if (!validPath || seenVendorPrivacyPaths.has(entry.relativePath)) {
+        failures.push(`${relative.manifest}: vendor privacy manifest inventory contains an unsafe or duplicate path`);
+        continue;
+      }
+      seenVendorPrivacyPaths.add(entry.relativePath);
+      const vendorPrivacyEntry = repositoryEntryStatus(
+        entry.relativePath,
+        "file",
+        "vendor HERE privacy manifest",
+      );
+      if (vendorPrivacyEntry.status !== "ok") {
+        blockers.push(`vendor HERE PrivacyInfo.xcprivacy absent at ${entry.relativePath}`);
+      } else if (!/^[a-f0-9]{64}$/i.test(entry.sha256 ?? "")) {
+        blockers.push(`vendor HERE PrivacyInfo.xcprivacy SHA-256 is not approved for ${entry.relativePath}`);
+      } else {
+        const actual = sha256RepositoryFile(entry.relativePath, "vendor HERE privacy manifest");
+        if (!actual || actual.toLowerCase() !== entry.sha256.toLowerCase()) {
+          failures.push(`${entry.relativePath}: SHA-256 does not match the approved vendor privacy manifest`);
+        }
+      }
     }
   }
 
@@ -1859,6 +2012,16 @@ if (!builtAppPath || !fs.existsSync(builtAppPath) ||
   } else if (/^[a-f0-9]{64}$/i.test(manifest.legalNoticeSHA256 ?? "") &&
              sha256(notices[0]).toLowerCase() !== manifest.legalNoticeSHA256.toLowerCase()) {
     failures.push("built HERE_NOTICE differs from the approved vendor notice");
+  }
+  const expectedAppPrivacyManifest = path.join(builtAppPath, "PrivacyInfo.xcprivacy");
+  if (!fs.existsSync(expectedAppPrivacyManifest) ||
+      !fs.lstatSync(expectedAppPrivacyManifest).isFile() ||
+      fs.lstatSync(expectedAppPrivacyManifest).isSymbolicLink()) {
+    failures.push("built EusoTrip.app does not contain the approved root PrivacyInfo.xcprivacy");
+  } else if (/^[a-f0-9]{64}$/i.test(manifest.appPrivacyManifest?.sha256 ?? "") &&
+             sha256(expectedAppPrivacyManifest).toLowerCase() !==
+               manifest.appPrivacyManifest.sha256.toLowerCase()) {
+    failures.push("built root PrivacyInfo.xcprivacy differs from the approved app privacy manifest");
   }
   for (const forbidden of ["README.md", "HERE_SDK_SUPPLY_CHAIN.json"]) {
     if (productFiles.some(file => path.basename(file) === forbidden)) {

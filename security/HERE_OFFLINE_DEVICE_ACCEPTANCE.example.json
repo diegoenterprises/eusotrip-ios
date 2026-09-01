@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "status": "pending",
+  "sourceCommit": null,
+  "sourceTree": null,
+  "version": null,
+  "build": null,
+  "bundleId": "com.app.eusotrip",
+  "exportedIPASha256": null,
+  "exportedAppTreeSha256": null,
+  "hereSDK": {
+    "version": "4.27.2.0",
+    "archiveSHA256": null,
+    "frameworkTreeSHA256": null,
+    "legalNoticeSHA256": null,
+    "styleManifestSHA256": null
+  },
+  "device": {
+    "modelIdentifier": null,
+    "osVersion": null
+  },
+  "region": {
+    "regionID": null,
+    "catalogVersion": null,
+    "installedBytes": null
+  },
+  "runStartedAt": null,
+  "runEndedAt": null,
+  "checks": {
+    "regionInstalledOnline": false,
+    "forceQuit": false,
+    "airplaneModeEnabled": false,
+    "rebootedAfterAirplaneMode": false,
+    "coldLaunchSucceeded": false,
+    "nativeVectorPanZoom": false,
+    "offlinePlaceAddressCategorySearch": false,
+    "dimensionedTruckRoute": false,
+    "visualGuidance": false,
+    "installedTTSVoice": false,
+    "gpsProgression": false,
+    "deviationDetected": false,
+    "localReroute": false,
+    "approachingBoundary": false,
+    "outsideCoverage": false,
+    "pauseResumeCancel": false,
+    "interruptedInstallRecovery": false,
+    "catalogUpdate": false,
+    "corruptionRepair": false,
+    "deleteRedownload": false,
+    "accountSwitchPurge": false,
+    "staleCanonicalRouteRejected": false,
+    "crossRebootRouteCacheFailsClosed": false,
+    "audioInterruptionRecovery": false
+  },
+  "network": {
+    "captureSHA256": null,
+    "summarySHA256": null,
+    "hereSDKRequestCount": null,
+    "captureStartedAt": null,
+    "captureEndedAt": null
+  },
+  "performedBy": null,
+  "approvedBy": null,
+  "approvedAt": null
+}

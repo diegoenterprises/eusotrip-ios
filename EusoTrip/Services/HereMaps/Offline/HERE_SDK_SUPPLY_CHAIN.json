@@ -3,6 +3,17 @@
   "archiveSHA256": null,
   "frameworkTreeSHA256": null,
   "legalNoticeSHA256": null,
+  "vendorPrivacyManifests": [],
+  "appPrivacyManifest": {
+    "relativePath": "EusoTrip/Resources/PrivacyInfo.xcprivacy",
+    "sha256": null,
+    "status": "awaiting_vendor_and_privacy_review",
+    "reviewedBy": null,
+    "reviewedAt": null,
+    "appStorePrivacyLabelReviewedAt": null,
+    "approvedBy": null,
+    "approvedAt": null
+  },
   "archiveRelativePath": "Vendor/HERE/heresdk-4.27.2.0-ios.zip",
   "frameworkRelativePath": "Vendor/HERE/heresdk.xcframework",
   "legalNoticeResource": "EusoTrip/Resources/HERE_NOTICE",

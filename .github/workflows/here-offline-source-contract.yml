@@ -1,0 +1,105 @@
+name: HERE Offline Source Contract
+
+on:
+  pull_request:
+    paths:
+      - "EusoTrip/Services/HereMaps/Offline/**"
+      - "EusoTrip/Views/Maps/Offline/**"
+      - "EusoTripOfflineTests/**"
+      - "EusoTrip.xcodeproj/project.pbxproj"
+      - "EusoTrip.xcodeproj/xcshareddata/xcschemes/EusoTrip.xcscheme"
+      - "scripts/*here-offline*"
+      - "scripts/*release*"
+      - "scripts/asc-*.mjs"
+      - "scripts/preflight-exported-ipa*"
+      - "scripts/hash-release-artifact*"
+      - "scripts/select-available-ios-simulator*"
+      - "security/HERE_*.json"
+      - ".github/workflows/here-offline-source-contract.yml"
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: here-offline-source-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-contract:
+    name: HERE Offline Source Contract
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - name: Checkout complete source history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Fetch and prove every public incident-relevant ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --force --prune origin \
+            '+refs/heads/*:refs/remotes/origin/*' \
+            '+refs/tags/*:refs/tags/*' \
+            '+refs/pull/*/head:refs/remotes/pull/*'
+          remote_inventory="$RUNNER_TEMP/eusotrip-remote-ref-inventory"
+          git ls-remote origin \
+            'refs/heads/*' 'refs/tags/*' 'refs/pull/*/head' > "$remote_inventory"
+          while read -r object_id ref_name; do
+            if ! git cat-file -e "${object_id}^{commit}" 2>/dev/null; then
+              echo "Remote ref inventory is not fully materialized; refusing a partial history verdict." >&2
+              exit 1
+            fi
+          done < "$remote_inventory"
+          if [[ -n "$(git log --all --format= --name-only -- .build_copy.log .build_copy2.log)" ]]; then
+            echo "Incident build-log paths remain reachable from fetched Git refs." >&2
+            exit 1
+          fi
+
+      - name: Validate release-control syntax and fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/deploy-testflight.sh
+          plutil -lint scripts/exportOptions.testflight.plist
+          node --test scripts/asc-latest-build.test.mjs
+          node scripts/asc-build-status.test.mjs
+          node scripts/hash-release-artifact.test.mjs
+          node scripts/preflight-exported-ipa.test.mjs
+          node scripts/release-ladder-status.test.mjs
+          node scripts/select-available-ios-simulator.test.mjs
+          node scripts/verify-release-config-attestation.test.mjs
+          node scripts/verify-here-offline-device-acceptance.test.mjs
+          node scripts/verify-github-release-governance.test.mjs
+          node scripts/verify-here-offline-contract.test.mjs
+          node scripts/here-production-gate.mjs
+          node scripts/verify-here-offline-contract.mjs
+
+      - name: Compile the offline test bundle without launching Simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild build-for-testing \
+            -project EusoTrip.xcodeproj \
+            -scheme EusoTrip \
+            -configuration Debug \
+            -destination "generic/platform=iOS Simulator" \
+            -derivedDataPath "$RUNNER_TEMP/EusoTripOfflineContractDerivedData" \
+            -xcconfig EusoTrip.xcconfig.sample \
+            -only-testing:EusoTripOfflineTests \
+            -parallelizeTargets NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      # Never upload the proprietary HERE SDK, signing inputs, release
+      # configuration, raw device captures, or extracted app products from
+      # this public-repository workflow.
