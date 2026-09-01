@@ -173,6 +173,8 @@ function createBaselineFixture() {
     exportOptionsRelativePath,
     "scripts/preflight-exported-ipa.mjs",
     "scripts/preflight-exported-ipa.test.mjs",
+    "scripts/verify-exported-ipa-app-binding.mjs",
+    "scripts/verify-exported-ipa-app-binding.test.mjs",
     "scripts/select-available-ios-simulator.mjs",
     "scripts/select-available-ios-simulator.test.mjs",
     "scripts/here-production-gate.mjs",
@@ -190,6 +192,8 @@ function createBaselineFixture() {
     "scripts/verify-here-offline-device-acceptance.test.mjs",
     "scripts/verify-github-release-governance.mjs",
     "scripts/verify-github-release-governance.test.mjs",
+    "scripts/verify-reachable-here-credential-history.mjs",
+    "scripts/verify-reachable-here-credential-history.test.mjs",
     ".github/workflows/here-offline-source-contract.yml",
   ]) {
     copyRepositoryEntry(relativePath, fixture);
@@ -395,12 +399,20 @@ function writeAppInfoPlist(
   {
     accessKeyID = "fixture-access-key-id",
     accessKeySecret = "fixture-access-key-secret",
+    routePlanIssuer = "eusotrip-route-authority",
+    routePlanAudience = "eusotrip-ios",
+    routePlanKeyID = "route-key-2026-09",
+    routePlanPublicKey = Buffer.alloc(32, 7).toString("base64"),
     additionalHEREValues = {},
   } = {},
 ) {
   const credentialEntries = [
     ["HERESDKAccessKeyID", accessKeyID],
     ["HERESDKAccessKeySecret", accessKeySecret],
+    ["EusoRoutePlanIssuer", routePlanIssuer],
+    ["EusoRoutePlanAudience", routePlanAudience],
+    ["EusoRoutePlanKeyID", routePlanKeyID],
+    ["EusoRoutePlanPublicKey", routePlanPublicKey],
     ...Object.entries(additionalHEREValues),
   ].filter(([, value]) => typeof value === "string");
   const credentialXML = credentialEntries
@@ -1283,6 +1295,15 @@ const cases = [
       writeJSON(path.join(appPath, "Bundled", "configuration.json"), {
         unrelatedField: "fixture-access-key-secret",
       });
+      this.arguments = [`--built-app=${appPath}`];
+    },
+  },
+  {
+    name: "built app route trust requires an Ed25519 public key",
+    expected: "built EusoTrip.app has invalid or unresolved signed route-plan trust configuration",
+    mutate(fixture) {
+      const { appPath } = prepareBuiltAppStyles(fixture);
+      writeAppInfoPlist(appPath, { routePlanPublicKey: "not-an-ed25519-key" });
       this.arguments = [`--built-app=${appPath}`];
     },
   },

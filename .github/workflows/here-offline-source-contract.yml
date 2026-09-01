@@ -9,16 +9,24 @@ on:
       - "EusoTrip.xcodeproj/project.pbxproj"
       - "EusoTrip.xcodeproj/xcshareddata/xcschemes/EusoTrip.xcscheme"
       - "scripts/*here-offline*"
+      - "scripts/verify-reachable-here-credential-history*"
       - "scripts/*release*"
       - "scripts/asc-*.mjs"
       - "scripts/preflight-exported-ipa*"
+      - "scripts/verify-exported-ipa-app-binding*"
       - "scripts/hash-release-artifact*"
       - "scripts/select-available-ios-simulator*"
       - "security/HERE_*.json"
       - ".github/workflows/here-offline-source-contract.yml"
   push:
     branches: [main]
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      release_approval:
+        description: "Request the protected HERE offline release-environment approval receipt"
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -51,10 +59,11 @@ jobs:
           git fetch --force --prune origin \
             '+refs/heads/*:refs/remotes/origin/*' \
             '+refs/tags/*:refs/tags/*' \
-            '+refs/pull/*/head:refs/remotes/pull/*'
+            '+refs/pull/*/head:refs/remotes/pull/*/head' \
+            '+refs/pull/*/merge:refs/remotes/pull/*/merge'
           remote_inventory="$RUNNER_TEMP/eusotrip-remote-ref-inventory"
           git ls-remote origin \
-            'refs/heads/*' 'refs/tags/*' 'refs/pull/*/head' > "$remote_inventory"
+            'refs/heads/*' 'refs/tags/*' 'refs/pull/*/head' 'refs/pull/*/merge' > "$remote_inventory"
           while read -r object_id ref_name; do
             if ! git cat-file -e "${object_id}^{commit}" 2>/dev/null; then
               echo "Remote ref inventory is not fully materialized; refusing a partial history verdict." >&2
@@ -65,6 +74,8 @@ jobs:
             echo "Incident build-log paths remain reachable from fetched Git refs." >&2
             exit 1
           fi
+          node scripts/verify-reachable-here-credential-history.mjs \
+            --repository="$GITHUB_WORKSPACE"
 
       - name: Validate release-control syntax and fixtures
         shell: bash
@@ -76,11 +87,13 @@ jobs:
           node scripts/asc-build-status.test.mjs
           node scripts/hash-release-artifact.test.mjs
           node scripts/preflight-exported-ipa.test.mjs
+          node scripts/verify-exported-ipa-app-binding.test.mjs
           node scripts/release-ladder-status.test.mjs
           node scripts/select-available-ios-simulator.test.mjs
           node scripts/verify-release-config-attestation.test.mjs
           node scripts/verify-here-offline-device-acceptance.test.mjs
           node scripts/verify-github-release-governance.test.mjs
+          node --test scripts/verify-reachable-here-credential-history.test.mjs
           node scripts/verify-here-offline-contract.test.mjs
           node scripts/here-production-gate.mjs
           node scripts/verify-here-offline-contract.mjs
@@ -103,3 +116,22 @@ jobs:
       # Never upload the proprietary HERE SDK, signing inputs, release
       # configuration, raw device captures, or extracted app products from
       # this public-repository workflow.
+
+  release-approval:
+    name: HERE Offline Release Approval
+    if: github.event_name == 'workflow_dispatch' && inputs.release_approval
+    needs: source-contract
+    runs-on: macos-15
+    timeout-minutes: 5
+    environment:
+      name: here-offline-release
+    steps:
+      - name: Bind approval to the checked main commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != "refs/heads/main" || ! "$GITHUB_SHA" =~ ^[a-f0-9]{40}$ ]]; then
+            echo "Release approval must target one exact main commit." >&2
+            exit 1
+          fi
+          echo "Protected HERE offline release approval recorded for ${GITHUB_SHA}."

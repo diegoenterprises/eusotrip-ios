@@ -45,6 +45,8 @@ const relative = {
   exportOptions: "scripts/exportOptions.testflight.plist",
   ipaPreflight: "scripts/preflight-exported-ipa.mjs",
   ipaPreflightTests: "scripts/preflight-exported-ipa.test.mjs",
+  ipaAppBinding: "scripts/verify-exported-ipa-app-binding.mjs",
+  ipaAppBindingTests: "scripts/verify-exported-ipa-app-binding.test.mjs",
   simulatorSelector: "scripts/select-available-ios-simulator.mjs",
   simulatorSelectorTests: "scripts/select-available-ios-simulator.test.mjs",
   productionGate: "scripts/here-production-gate.mjs",
@@ -62,6 +64,8 @@ const relative = {
   deviceAcceptanceVerifierTests: "scripts/verify-here-offline-device-acceptance.test.mjs",
   githubGovernanceVerifier: "scripts/verify-github-release-governance.mjs",
   githubGovernanceVerifierTests: "scripts/verify-github-release-governance.test.mjs",
+  reachableCredentialHistoryVerifier: "scripts/verify-reachable-here-credential-history.mjs",
+  reachableCredentialHistoryVerifierTests: "scripts/verify-reachable-here-credential-history.test.mjs",
   sourceContractWorkflow: ".github/workflows/here-offline-source-contract.yml",
   manifest: "EusoTrip/Services/HereMaps/Offline/HERE_SDK_SUPPLY_CHAIN.json",
   styleManifest: "EusoTrip/Services/HereMaps/Offline/HERE_NATIVE_STYLE_SUPPLY_CHAIN.json",
@@ -85,6 +89,8 @@ const releaseInputPaths = [
   relative.exportOptions,
   relative.ipaPreflight,
   relative.ipaPreflightTests,
+  relative.ipaAppBinding,
+  relative.ipaAppBindingTests,
   relative.simulatorSelector,
   relative.simulatorSelectorTests,
   relative.productionGate,
@@ -102,6 +108,8 @@ const releaseInputPaths = [
   relative.deviceAcceptanceVerifierTests,
   relative.githubGovernanceVerifier,
   relative.githubGovernanceVerifierTests,
+  relative.reachableCredentialHistoryVerifier,
+  relative.reachableCredentialHistoryVerifierTests,
   relative.sourceContractWorkflow,
 ];
 
@@ -960,10 +968,22 @@ requireText(relative.info, [
   "$(HERE_SDK_ACCESS_KEY_ID)",
   "<key>HERESDKAccessKeySecret</key>",
   "$(HERE_SDK_ACCESS_KEY_SECRET)",
+  "<key>EusoRoutePlanIssuer</key>",
+  "$(EUSOTRIP_ROUTE_PLAN_ISSUER)",
+  "<key>EusoRoutePlanAudience</key>",
+  "$(EUSOTRIP_ROUTE_PLAN_AUDIENCE)",
+  "<key>EusoRoutePlanKeyID</key>",
+  "$(EUSOTRIP_ROUTE_PLAN_KEY_ID)",
+  "<key>EusoRoutePlanPublicKey</key>",
+  "$(EUSOTRIP_ROUTE_PLAN_PUBLIC_KEY_BASE64)",
 ]);
 requireText(relative.sampleConfig, [
   "HERE_SDK_ACCESS_KEY_ID",
   "HERE_SDK_ACCESS_KEY_SECRET",
+  "EUSOTRIP_ROUTE_PLAN_ISSUER",
+  "EUSOTRIP_ROUTE_PLAN_AUDIENCE",
+  "EUSOTRIP_ROUTE_PLAN_KEY_ID",
+  "EUSOTRIP_ROUTE_PLAN_PUBLIC_KEY_BASE64",
 ]);
 requireText(relative.legacyCredentialTest, [
   "fixture-secret_with-unreserved-characters",
@@ -1203,6 +1223,8 @@ if (!projectInspector.resourceRegistered(relative.styleManifest)) {
 const deployScriptSource = exists(relative.deployScript) ? read(relative.deployScript) : "";
 const archiveGateIsWired =
   deployScriptSource.includes("verify-here-offline-contract.mjs") &&
+  deployScriptSource.includes("verify-reachable-here-credential-history.mjs") &&
+  deployScriptSource.includes("verify-reachable-here-credential-history.test.mjs") &&
   deployScriptSource.includes("--release") &&
   deployScriptSource.includes("--built-app=") &&
   deployScriptSource.includes("HERE_OFFLINE_EXPECTED_TEAM_ID") &&
@@ -1218,9 +1240,14 @@ const sourceCIIsWired =
   sourceWorkflowSource.includes("name: HERE Offline Source Contract") &&
   sourceWorkflowSource.includes("verify-here-offline-contract.test.mjs") &&
   sourceWorkflowSource.includes("verify-here-offline-contract.mjs") &&
+  sourceWorkflowSource.includes("verify-reachable-here-credential-history.test.mjs") &&
+  sourceWorkflowSource.includes("verify-reachable-here-credential-history.mjs") &&
   sourceWorkflowSource.includes("build-for-testing") &&
   sourceWorkflowSource.includes("generic/platform=iOS Simulator") &&
-  sourceWorkflowSource.includes("refs/pull/*/head:refs/remotes/pull/*") &&
+  sourceWorkflowSource.includes("refs/pull/*/head:refs/remotes/pull/*/head") &&
+  sourceWorkflowSource.includes("refs/pull/*/merge:refs/remotes/pull/*/merge") &&
+  sourceWorkflowSource.includes("name: HERE Offline Release Approval") &&
+  sourceWorkflowSource.includes("name: here-offline-release") &&
   sourceWorkflowSource.includes("Incident build-log paths remain reachable") &&
   !sourceWorkflowSource.includes("upload-artifact");
 if (!sourceCIIsWired) {
@@ -1261,17 +1288,24 @@ const releaseOrderIsSafe =
 const finalExportedProductIsGated =
   deployExecutableSource.includes("EXPORTED_APP_PATH=") &&
   deployExecutableSource.includes("preflight-exported-ipa.test.mjs") &&
+  deployExecutableSource.includes("verify-exported-ipa-app-binding.test.mjs") &&
+  deployExecutableSource.includes("verify-exported-ipa-app-binding.mjs") &&
   deployExecutableSource.includes("hash-release-artifact.test.mjs") &&
   deployExecutableSource.includes("select-available-ios-simulator.test.mjs") &&
   deployExecutableSource.includes("release-ladder-status.test.mjs") &&
   deployExecutableSource.includes("asc-build-status.test.mjs") &&
+  deployExecutableSource.includes("asc-latest-build.test.mjs") &&
   deployExecutableSource.includes("verify-release-config-attestation.test.mjs") &&
   deployExecutableSource.includes("verify-here-offline-device-acceptance.test.mjs") &&
   deployExecutableSource.includes("verify-github-release-governance.mjs") &&
   deployExecutableSource.includes("verify-github-release-governance.test.mjs") &&
+  deployExecutableSource.includes("GITHUB_ENVIRONMENT_DEPLOYMENT_ID") &&
+  deployExecutableSource.includes("GITHUB_ENVIRONMENT_DEPLOYMENT_STATUS_ID") &&
   deployExecutableSource.includes("here-production-gate.mjs") &&
   deployExecutableSource.includes("EUSOTRIP_APPROVED_RELEASE_COMMIT") &&
   deployExecutableSource.includes("EUSOTRIP_RELEASE_XCCONFIG_PATH") &&
+  deployExecutableSource.includes('--xcconfig="$RELEASE_XCCONFIG_PATH"') &&
+  deployExecutableSource.includes("assert_source_unchanged") &&
   deployExecutableSource.includes("assert_release_config_unchanged") &&
   deployExecutableSource.includes("schemaVersion: 3") &&
   deployExecutableSource.includes("-only-testing:EusoTripOfflineTests") &&
@@ -1375,6 +1409,28 @@ try {
   }
 } catch {
   failures.push("git history inspection failed while checking historical build-log exposure");
+}
+
+if (!exists(relative.reachableCredentialHistoryVerifier)) {
+  failures.push("reachable Git-history HERE credential scanner is absent");
+} else {
+  const historyCredentialScan = spawnSync(
+    process.execPath,
+    [
+      absolute(relative.reachableCredentialHistoryVerifier),
+      `--repository=${root}`,
+    ],
+    {
+      cwd: root,
+      stdio: "ignore",
+      timeout: 20 * 60 * 1_000,
+    },
+  );
+  if (historyCredentialScan.status === 1) {
+    blockers.push("production-shaped HERE credentials remain in reachable Git history");
+  } else if (historyCredentialScan.status !== 0) {
+    failures.push("reachable Git-history HERE credential scanner failed closed");
+  }
 }
 
 if (!exists(relative.credentialAttestation)) {
@@ -1899,11 +1955,29 @@ if (!builtAppPath || !fs.existsSync(builtAppPath) ||
     };
     const accessKeyID = appInfo.HERESDKAccessKeyID;
     const accessKeySecret = appInfo.HERESDKAccessKeySecret;
+    const routePlanIssuer = appInfo.EusoRoutePlanIssuer;
+    const routePlanAudience = appInfo.EusoRoutePlanAudience;
+    const routePlanKeyID = appInfo.EusoRoutePlanKeyID;
+    const routePlanPublicKeyBase64 = appInfo.EusoRoutePlanPublicKey;
+    let routePlanPublicKey = null;
+    if (credentialValueIsUsable(routePlanPublicKeyBase64)) {
+      routePlanPublicKey = Buffer.from(routePlanPublicKeyBase64, "base64");
+    }
+    if (!credentialValueIsUsable(routePlanIssuer) ||
+        !credentialValueIsUsable(routePlanAudience) ||
+        !credentialValueIsUsable(routePlanKeyID) ||
+        !/^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$/.test(routePlanIssuer ?? "") ||
+        !/^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$/.test(routePlanAudience ?? "") ||
+        !/^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$/.test(routePlanKeyID ?? "") ||
+        routePlanPublicKey?.length !== 32 ||
+        routePlanPublicKey.toString("base64") !== routePlanPublicKeyBase64) {
+      failures.push("built EusoTrip.app has invalid or unresolved signed route-plan trust configuration");
+    }
     if (!credentialValueIsUsable(accessKeyID) || !credentialValueIsUsable(accessKeySecret)) {
       failures.push("built EusoTrip.app has missing, unresolved, or placeholder HERE Navigate credentials");
     } else {
       const otherInfoValues = Object.fromEntries(Object.entries(appInfo).filter(([key]) =>
-        key !== "HERESDKAccessKeyID" && key !== "HERESDKAccessKeySecret"));
+        !["HERESDKAccessKeyID", "HERESDKAccessKeySecret", "EusoRoutePlanPublicKey"].includes(key)));
       if (accessKeyID === accessKeySecret ||
           valueContainsAnyCredential(otherInfoValues, [accessKeyID, accessKeySecret])) {
         failures.push("built EusoTrip.app reuses a HERE Navigate credential in a disallowed online/backend field");
