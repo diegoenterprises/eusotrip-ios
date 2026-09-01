@@ -611,9 +611,25 @@ final class WeatherService: NSObject, ObservableObject {
                 return server
             }
             guard !Task.isCancelled, !isAppRadioSilenceSuspended else { return nil }
-            // Do not display real weather for an unapproved provider as if it
-            // were the user's authoritative ambient source. HomeWeatherWidget
-            // retains last-good provider data and retries on its short backoff.
+            // NWS is the final explicit US ambient authority. Its `/points`
+            // endpoint rejects unsupported geography, so non-US locations
+            // remain honestly unavailable rather than receiving a fabricated
+            // global fallback. The snapshot identifies itself as NWS.
+            do {
+                var nws = try await fetchNWS(location: location, placemark: placemark)
+                guard !Task.isCancelled, !isAppRadioSilenceSuspended else { return nil }
+                if includeLaneImpact {
+                    nws.laneImpact = await fetchLaneImpact()
+                    guard !Task.isCancelled, !isAppRadioSilenceSuspended else { return nil }
+                }
+                return nws
+            } catch {
+                guard !Task.isCancelled,
+                      !isAppRadioSilenceSuspended,
+                      !EusoTripAPI.shared.isAppRadioSilenceEnforced else { return nil }
+            }
+            // HomeWeatherWidget retains last-good attributed data and retries
+            // on its short backoff when every approved authority is unavailable.
             return nil
         }
     }
