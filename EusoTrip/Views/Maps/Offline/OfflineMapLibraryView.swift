@@ -501,7 +501,8 @@ struct OfflineMapManagementView: View {
                         mode: selectedMapMode,
                         family: selectedMapFamily,
                         theme: colorScheme == .dark ? .dark : .light
-                    )
+                    ),
+                    acquiresAppRadioSilenceLease: true
                 )
             } else {
                 offlineNativeMapUnavailable(
@@ -1881,12 +1882,15 @@ private enum OfflineMapLibraryFormat {
 }
 
 @MainActor
-private struct OfflineNativeCoverageMapSurfaceHost: View {
+struct OfflineNativeCoverageMapSurfaceHost: View {
     @Environment(\.palette) private var palette
     @ObservedObject var composition: OfflineMapProductionComposition
     let offlineSnapshot: OfflineMapSnapshot
     let identity: HereOfflineNativeStyleIdentity
+    let journeyProjection: HereOfflineMapJourneyProjection
+    let acquiresAppRadioSilenceLease: Bool
     @State private var retryGeneration: UInt64 = 0
+    @State private var appRadioSilenceLease: AppRadioSilenceLease?
 
     #if canImport(UIKit)
     @StateObject private var mountModel: OfflineNativeCoverageMapMountModel
@@ -1895,11 +1899,15 @@ private struct OfflineNativeCoverageMapSurfaceHost: View {
     init(
         composition: OfflineMapProductionComposition,
         offlineSnapshot: OfflineMapSnapshot,
-        identity: HereOfflineNativeStyleIdentity
+        identity: HereOfflineNativeStyleIdentity,
+        journeyProjection: HereOfflineMapJourneyProjection = .empty,
+        acquiresAppRadioSilenceLease: Bool = false
     ) {
         self.composition = composition
         self.offlineSnapshot = offlineSnapshot
         self.identity = identity
+        self.journeyProjection = journeyProjection
+        self.acquiresAppRadioSilenceLease = acquiresAppRadioSilenceLease
         #if canImport(UIKit)
         _mountModel = StateObject(
             wrappedValue: OfflineNativeCoverageMapMountModel(
@@ -1946,11 +1954,16 @@ private struct OfflineNativeCoverageMapSurfaceHost: View {
                 identity: identity,
                 blockingReason: blockingReason,
                 surfaceSnapshot: composition.mapSurfaceSnapshot,
+                journeyProjection: journeyProjection,
                 retryGeneration: retryGeneration
             )
         }
+        .task(id: appRadioSilenceEligibility) {
+            reconcileAppRadioSilenceLease()
+        }
         .onDisappear {
             mountModel.unmount()
+            releaseAppRadioSilenceLease()
         }
         #else
         opaqueUnavailableState(
@@ -1965,6 +1978,9 @@ private struct OfflineNativeCoverageMapSurfaceHost: View {
         guard offlineSnapshot.connectivityPolicy == .radioSilent,
               offlineSnapshot.radioSilenceState == .enforced else {
             return "Enable Radio Silent and complete its device check before opening the native offline preview."
+        }
+        guard AppRadioSilenceCoordinator.shared.isEnforced else {
+            return "Durably verifying app-wide Radio Silent enforcement before native offline rendering."
         }
         guard composition.installedCoverageTrustAvailable else {
             return composition.installedCoverageFailure == nil
@@ -1983,6 +1999,29 @@ private struct OfflineNativeCoverageMapSurfaceHost: View {
         return nil
     }
 
+    private var appRadioSilenceEligibility: Bool {
+        acquiresAppRadioSilenceLease
+            && offlineSnapshot.connectivityPolicy == .radioSilent
+            && offlineSnapshot.radioSilenceState == .enforced
+    }
+
+    private func reconcileAppRadioSilenceLease() {
+        if appRadioSilenceEligibility {
+            guard appRadioSilenceLease == nil else { return }
+            appRadioSilenceLease = AppRadioSilenceCoordinator.shared.acquire(
+                reason: .offlineMapLibrary
+            )
+        } else {
+            releaseAppRadioSilenceLease()
+        }
+    }
+
+    private func releaseAppRadioSilenceLease() {
+        guard let lease = appRadioSilenceLease else { return }
+        AppRadioSilenceCoordinator.shared.release(lease)
+        appRadioSilenceLease = nil
+    }
+
     #if canImport(UIKit)
     private var mountRequest: OfflineNativeCoverageMountRequest {
         .init(
@@ -1990,6 +2029,7 @@ private struct OfflineNativeCoverageMapSurfaceHost: View {
             blockingReason: blockingReason,
             surfaceRevision: composition.mapSurfaceSnapshotRevision,
             leaseRevision: composition.mapSurfaceLeaseRevision,
+            journeyProjection: journeyProjection,
             retryGeneration: retryGeneration
         )
     }
@@ -2040,6 +2080,7 @@ private struct OfflineNativeCoverageMountRequest: Hashable {
     let blockingReason: String?
     let surfaceRevision: UInt64
     let leaseRevision: UInt64
+    let journeyProjection: HereOfflineMapJourneyProjection
     let retryGeneration: UInt64
 }
 
@@ -2068,6 +2109,7 @@ private final class OfflineNativeCoverageMapMountModel: ObservableObject {
         identity: HereOfflineNativeStyleIdentity,
         blockingReason: String?,
         surfaceSnapshot: HereOfflineMapSurfaceSnapshot,
+        journeyProjection: HereOfflineMapJourneyProjection,
         retryGeneration: UInt64
     ) {
         if let blockingReason {
@@ -2096,6 +2138,7 @@ private final class OfflineNativeCoverageMapMountModel: ObservableObject {
 
         if ownsSurface, leaseStatus == .ownedByCaller {
             if mountedIdentity == identity, nativeView != nil {
+                composition.setMapJourneyProjection(journeyProjection)
                 consume(surfaceSnapshot)
                 return
             }
@@ -2154,6 +2197,7 @@ private final class OfflineNativeCoverageMapMountModel: ObservableObject {
         ownsSurface = true
         mountedIdentity = identity
         nativeView = view
+        composition.setMapJourneyProjection(journeyProjection)
         lastFailedIdentity = nil
         lastFailedRetryGeneration = nil
         consume(composition.mapSurfaceSnapshot)
@@ -2229,8 +2273,10 @@ private final class OfflineNativeCoverageMapMountModel: ObservableObject {
              .styleManifestUnapproved, .styleManifestEntryUnavailable,
              .styleAssetOutsideBundle:
             return "The approved local map appearance could not be verified in this build."
-        case .nativeStyleLoadFailed:
+        case .nativeStyleLoadFailed, .nativeStyleLoadTimedOut:
             return "The native offline map could not open the approved local appearance."
+        case .routeProjectionInvalid, .routeProjectionUnavailable:
+            return "The verified local journey could not be projected on the native offline map."
         }
     }
 }

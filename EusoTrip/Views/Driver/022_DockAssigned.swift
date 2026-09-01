@@ -1299,6 +1299,8 @@ struct MediaStreamSheet: View {
 private struct WebRTCViewerBridge: UIViewRepresentable {
     let url: URL
 
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
     func makeUIView(context: Context) -> WKWebView {
         let cfg = WKWebViewConfiguration()
         cfg.allowsInlineMediaPlayback = true
@@ -1307,12 +1309,43 @@ private struct WebRTCViewerBridge: UIViewRepresentable {
         wv.scrollView.isScrollEnabled = false
         wv.backgroundColor = .black
         wv.isOpaque = false
-        wv.load(URLRequest(url: url))
+        context.coordinator.transportRegistration =
+            AppRadioSilenceDirectTransportController.shared.register(
+                webView: wv,
+                resume: { [weak wv] in
+                    guard let wv else { return }
+                    AppRadioSilenceDirectTransportController.shared.loadRemote(
+                        URLRequest(url: url),
+                        into: wv
+                    )
+                }
+            )
+        AppRadioSilenceDirectTransportController.shared.loadRemote(
+            URLRequest(url: url),
+            into: wv
+        )
         return wv
     }
 
     func updateUIView(_ wv: WKWebView, context: Context) {
-        if wv.url != url { wv.load(URLRequest(url: url)) }
+        if wv.url != url {
+            AppRadioSilenceDirectTransportController.shared.loadRemote(
+                URLRequest(url: url),
+                into: wv
+            )
+        }
+    }
+
+    static func dismantleUIView(_ wv: WKWebView, coordinator: Coordinator) {
+        wv.stopLoading()
+        AppRadioSilenceDirectTransportController.shared.unregister(
+            coordinator.transportRegistration
+        )
+        coordinator.transportRegistration = nil
+    }
+
+    final class Coordinator {
+        var transportRegistration: AppRadioSilenceDirectTransportController.Registration?
     }
 }
 
@@ -1323,21 +1356,58 @@ private struct WebRTCViewerBridge: UIViewRepresentable {
 private struct HLSPlayerView: UIViewControllerRepresentable {
     let url: URL
 
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
     func makeUIViewController(context: Context) -> AVPlayerViewController {
-        let player = AVPlayer(url: url)
         let vc = AVPlayerViewController()
-        vc.player = player
         vc.allowsPictureInPicturePlayback = false
         vc.showsPlaybackControls = true
-        player.play()
+        context.coordinator.transportRegistration =
+            AppRadioSilenceDirectTransportController.shared.register(
+                playerController: vc,
+                resume: { [weak vc] in
+                    guard let vc,
+                          AppRadioSilenceDirectTransportController.shared.transportAllowed else {
+                        return
+                    }
+                    vc.player = AVPlayer(url: url)
+                    vc.player?.play()
+                }
+            )
+        if AppRadioSilenceDirectTransportController.shared.transportAllowed {
+            let player = AVPlayer(url: url)
+            vc.player = player
+            player.play()
+        }
         return vc
     }
 
     func updateUIViewController(_ vc: AVPlayerViewController, context: Context) {
+        guard AppRadioSilenceDirectTransportController.shared.transportAllowed else {
+            vc.player?.pause()
+            vc.player?.replaceCurrentItem(with: nil)
+            return
+        }
         if (vc.player?.currentItem?.asset as? AVURLAsset)?.url != url {
             vc.player = AVPlayer(url: url)
             vc.player?.play()
         }
+    }
+
+    static func dismantleUIViewController(
+        _ vc: AVPlayerViewController,
+        coordinator: Coordinator
+    ) {
+        vc.player?.pause()
+        vc.player?.replaceCurrentItem(with: nil)
+        AppRadioSilenceDirectTransportController.shared.unregister(
+            coordinator.transportRegistration
+        )
+        coordinator.transportRegistration = nil
+    }
+
+    final class Coordinator {
+        var transportRegistration: AppRadioSilenceDirectTransportController.Registration?
     }
 }
 

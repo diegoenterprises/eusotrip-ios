@@ -434,6 +434,7 @@
 		D1A11111111111111111ECM1 /* 602_EscortCorridorMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111ECM2 /* 602_EscortCorridorMap.swift */; };
 		D1A11111111111111111EH01 /* 600_EscortHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111EH02 /* 600_EscortHome.swift */; };
 		D1A11111111111111111EISAF01 /* EusoInAppSafari.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111EISAF02 /* EusoInAppSafari.swift */; };
+		A9F001202609010000000001 /* AppRadioSilenceAsyncImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F001202609010000000002 /* AppRadioSilenceAsyncImage.swift */; };
 		D1A11111111111111111ENC1 /* EscortNavController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111ENC2 /* EscortNavController.swift */; };
 		D1A11111111111111111EV01 /* HereEVStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111EV02 /* HereEVStrip.swift */; };
 		D1A11111111111111111HG01 /* DriverHomeGlances.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111HG02 /* DriverHomeGlances.swift */; };
@@ -1738,6 +1739,7 @@
 		D1A11111111111111111ECM2 /* 602_EscortCorridorMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 602_EscortCorridorMap.swift; path = EusoTrip/Views/Escort/602_EscortCorridorMap.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111EH02 /* 600_EscortHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 600_EscortHome.swift; path = EusoTrip/Views/Escort/600_EscortHome.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111EISAF02 /* EusoInAppSafari.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EusoInAppSafari.swift; path = EusoTrip/Views/Components/EusoInAppSafari.swift; sourceTree = SOURCE_ROOT; };
+		A9F001202609010000000002 /* AppRadioSilenceAsyncImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppRadioSilenceAsyncImage.swift; path = EusoTrip/Views/Components/AppRadioSilenceAsyncImage.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111ENC2 /* EscortNavController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EscortNavController.swift; path = EusoTrip/Views/Escort/EscortNavController.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111EV02 /* HereEVStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereEVStrip.swift; sourceTree = "<group>"; };
 		D1A11111111111111111HG02 /* DriverHomeGlances.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriverHomeGlances.swift; sourceTree = "<group>"; };
@@ -2990,6 +2992,7 @@
 				D1A11111111111111111SC02 /* 204_ShipperPostLoad.swift */,
 				D1A11111111111111111DCRD02 /* 204_DocumentClassifierSheet.swift */,
 				D1A11111111111111111EISAF02 /* EusoInAppSafari.swift */,
+				A9F001202609010000000002 /* AppRadioSilenceAsyncImage.swift */,
 				D1A11111111111111111SD02 /* 205_ShipperLoadDetail.swift */,
 				D1A11111111111111111CCC2 /* ShipperLoadCycleView.swift */,
 				D2120000000000000021CU /* 212_ShipperControlTower.swift */,
@@ -5154,6 +5157,7 @@
 				D1A11111111111111111SC01 /* 204_ShipperPostLoad.swift in Sources */,
 				D1A11111111111111111DCRD01 /* 204_DocumentClassifierSheet.swift in Sources */,
 				D1A11111111111111111EISAF01 /* EusoInAppSafari.swift in Sources */,
+				A9F001202609010000000001 /* AppRadioSilenceAsyncImage.swift in Sources */,
 				D1A11111111111111111SD01 /* 205_ShipperLoadDetail.swift in Sources */,
 				D1A11111111111111111CCC1 /* ShipperLoadCycleView.swift in Sources */,
 				FD97CECD2FC1D7C70016DF5F /* 551_RailShipments.swift in Sources */,

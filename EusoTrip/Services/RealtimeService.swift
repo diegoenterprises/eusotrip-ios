@@ -75,11 +75,13 @@ final class RealtimeService: ObservableObject {
 
     func connect() {
         wantsConnection = true
-        guard !isRadioSilenceSuspended else { return }
+        guard !isRadioSilenceSuspended,
+              !EusoTripAPI.shared.isAppRadioSilenceEnforced else { return }
         beginConnectionIfNeeded()
     }
 
     private func beginConnectionIfNeeded() {
+        guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else { return }
         guard connectTask == nil else { return }
         connectTask = Task { [weak self] in
             await self?.runConnectionLoop()
@@ -100,7 +102,19 @@ final class RealtimeService: ObservableObject {
     func resumeAfterAppRadioSilence() {
         guard isRadioSilenceSuspended else { return }
         isRadioSilenceSuspended = false
-        guard wantsConnection else { return }
+        guard wantsConnection,
+              !EusoTripAPI.shared.isAppRadioSilenceEnforced else { return }
+        beginConnectionIfNeeded()
+    }
+
+    /// A background-only cold launch may record connection intent while the
+    /// app-group marker is still ENFORCED. The first real foreground release
+    /// calls this boundary so that intent can start only after RELEASE is
+    /// durable; no background wake clears the policy itself.
+    func resumeAfterFirstForegroundRadioSilenceRelease() {
+        guard !isRadioSilenceSuspended,
+              !EusoTripAPI.shared.isAppRadioSilenceEnforced,
+              wantsConnection else { return }
         beginConnectionIfNeeded()
     }
 
@@ -115,7 +129,9 @@ final class RealtimeService: ObservableObject {
     // MARK: Connection loop — reconnects with exponential backoff.
 
     private func runConnectionLoop() async {
-        while !Task.isCancelled, !isRadioSilenceSuspended {
+        while !Task.isCancelled,
+              !isRadioSilenceSuspended,
+              !EusoTripAPI.shared.isAppRadioSilenceEnforced {
             do {
                 try await openOnce()
                 try await readLoop()
@@ -136,7 +152,8 @@ final class RealtimeService: ObservableObject {
     }
 
     private func openOnce() async throws {
-        guard !isRadioSilenceSuspended else {
+        guard !isRadioSilenceSuspended,
+              !EusoTripAPI.shared.isAppRadioSilenceEnforced else {
             throw AppRadioSilenceTransportError.enforced
         }
         phase = .connecting
@@ -167,16 +184,27 @@ final class RealtimeService: ObservableObject {
         }
         let ws = session.webSocketTask(with: req)
         task = ws
+        guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else {
+            task = nil
+            ws.cancel(with: .goingAway, reason: nil)
+            throw AppRadioSilenceTransportError.enforced
+        }
         ws.resume()
 
         // Socket.IO v4 handshake: the server sends "0{sid,...}" first,
         // then we emit "40" to register with the default namespace.
         _ = try await ws.receive() // consume engine.io OPEN frame
-        guard !Task.isCancelled, !isRadioSilenceSuspended else {
+        guard !Task.isCancelled,
+              !isRadioSilenceSuspended,
+              !EusoTripAPI.shared.isAppRadioSilenceEnforced else {
             ws.cancel(with: .goingAway, reason: nil)
             throw CancellationError()
         }
         try await ws.send(.string("40"))
+        guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else {
+            ws.cancel(with: .goingAway, reason: nil)
+            throw AppRadioSilenceTransportError.enforced
+        }
         phase = .connected
         retryAttempt = 0
         #if DEBUG
@@ -192,8 +220,13 @@ final class RealtimeService: ObservableObject {
 
     private func readLoop() async throws {
         guard let ws = task else { return }
-        while !Task.isCancelled {
+        while !Task.isCancelled,
+              !EusoTripAPI.shared.isAppRadioSilenceEnforced {
             let message = try await ws.receive()
+            guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else {
+                ws.cancel(with: .goingAway, reason: nil)
+                throw AppRadioSilenceTransportError.enforced
+            }
             switch message {
             case .string(let s):
                 handleFrame(s)
@@ -208,6 +241,10 @@ final class RealtimeService: ObservableObject {
     // MARK: Frame parsing
 
     private func handleFrame(_ raw: String) {
+        guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else {
+            tearDownConnection(reason: "radio silence")
+            return
+        }
         // Engine.IO ping → reply with "3".
         if raw == "2" {
             sendFrame("3")
@@ -648,12 +685,15 @@ final class RealtimeService: ObservableObject {
     }
 
     private func sendFrame(_ frame: String) {
-        guard !isRadioSilenceSuspended, let task else { return }
+        guard !isRadioSilenceSuspended,
+              !EusoTripAPI.shared.isAppRadioSilenceEnforced,
+              let task else { return }
         Task { [weak self, weak task] in
             guard let self,
                   let task,
                   !Task.isCancelled,
-                  !self.isRadioSilenceSuspended else { return }
+                  !self.isRadioSilenceSuspended,
+                  !EusoTripAPI.shared.isAppRadioSilenceEnforced else { return }
             try? await task.send(.string(frame))
         }
     }

@@ -13,6 +13,10 @@ import Foundation
 import CryptoKit
 #endif
 
+#if canImport(UIKit)
+import UIKit
+#endif
+
 enum HereOfflineMapSurfaceMode: String, Codable, Hashable, Sendable, CaseIterable {
     case truck
     case rail
@@ -103,6 +107,8 @@ enum HereOfflineMapSurfaceFailureCode: String, Codable, Hashable, Sendable {
     case hashingUnavailable
     case nativeStyleLoadFailed
     case nativeStyleLoadTimedOut
+    case routeProjectionInvalid
+    case routeProjectionUnavailable
     case styleManifestMissing
     case styleManifestInvalid
     case styleManifestUnapproved
@@ -127,6 +133,112 @@ struct HereOfflineMapSurfaceSnapshot: Equatable, Sendable {
     let status: HereOfflineMapSurfaceRenderStatus
     let accessibilityText: String
     let changedAt: Date
+}
+
+struct HereOfflineMapJourneyPosition: Hashable, Sendable {
+    let coordinate: OfflineGeoCoordinate
+    let timestamp: Date
+    let horizontalAccuracyMeters: Double
+    let speedMetersPerSecond: Double?
+    let bearingDegrees: Double?
+
+    init(
+        coordinate: OfflineGeoCoordinate,
+        timestamp: Date,
+        horizontalAccuracyMeters: Double,
+        speedMetersPerSecond: Double? = nil,
+        bearingDegrees: Double? = nil
+    ) throws {
+        guard timestamp.timeIntervalSinceReferenceDate.isFinite,
+              horizontalAccuracyMeters.isFinite,
+              horizontalAccuracyMeters >= 0,
+              speedMetersPerSecond.map({ $0.isFinite && $0 >= 0 }) ?? true,
+              bearingDegrees.map({ $0.isFinite && (0..<360).contains($0) }) ?? true else {
+            throw HereOfflineMapSurfaceFailure(
+                code: .routeProjectionInvalid,
+                message: "The live device position is invalid for native offline rendering.",
+                recovery: "Wait for a fresh verified GNSS fix."
+            )
+        }
+        self.coordinate = coordinate
+        self.timestamp = timestamp
+        self.horizontalAccuracyMeters = horizontalAccuracyMeters
+        self.speedMetersPerSecond = speedMetersPerSecond
+        self.bearingDegrees = bearingDegrees
+    }
+}
+
+struct HereOfflineMapJourneyProjection: Hashable, Sendable {
+    let route: OfflineLocalRoute?
+    let canonicalRoute: CanonicalRoutePackage?
+    let position: HereOfflineMapJourneyPosition?
+    let followsPosition: Bool
+
+    static let empty = Self(
+        route: nil,
+        canonicalRoute: nil,
+        position: nil,
+        followsPosition: false
+    )
+
+    init(
+        route: OfflineLocalRoute?,
+        canonicalRoute: CanonicalRoutePackage? = nil,
+        position: HereOfflineMapJourneyPosition?,
+        followsPosition: Bool
+    ) {
+        self.route = route
+        self.canonicalRoute = canonicalRoute
+        self.position = position
+        self.followsPosition = followsPosition
+    }
+
+    static func serverCanonical(
+        _ package: CanonicalRoutePackage
+    ) -> HereOfflineMapJourneyProjection {
+        .init(
+            route: nil,
+            canonicalRoute: package,
+            position: nil,
+            followsPosition: false
+        )
+    }
+}
+
+/// Exact geometry identity for the native route layer. HERE reroutes preserve
+/// the logical route ID, so ID-only comparison would leave the old line on the
+/// map after native guidance had already switched to replacement geometry.
+struct HereOfflineMapProjectedRouteSignature: Hashable, Sendable {
+    enum Authority: Hashable, Sendable {
+        case hereOfflineLocal(routeID: String)
+        case serverCanonical(routeID: String, serverRevision: String)
+    }
+
+    let authority: Authority
+    let mode: OfflineRouteMode
+    let coordinateComponents: [[OfflineGeoCoordinate]]
+    let distanceMeters: Int64
+
+    static func local(_ route: OfflineLocalRoute) -> Self {
+        .init(
+            authority: .hereOfflineLocal(routeID: route.id),
+            mode: route.mode,
+            coordinateComponents: route.sections.map(\.coordinates),
+            distanceMeters: route.summary.distanceMeters
+        )
+    }
+
+    static func canonical(_ route: CanonicalRoutePackage) -> Self {
+        .init(
+            authority: .serverCanonical(
+                routeID: route.routeID,
+                serverRevision: route.serverRevision
+            ),
+            mode: route.mode,
+            coordinateComponents: route.segments.map(\.coordinates),
+            distanceMeters: route.summary.distanceMeters
+        )
+    }
 }
 
 private struct HereOfflineNativeStyleManifest: Decodable {
@@ -381,11 +493,17 @@ final class HereNavigateOfflineMapSurface {
         didSet { onSnapshotChange?(snapshot) }
     }
 
+    private(set) var journeyProjection: HereOfflineMapJourneyProjection = .empty
+    private var latestJourneyPositionTimestamp: Date?
+
     #if canImport(heresdk)
     private var nativeMapView: AnyObject?
     private var nativeSceneLoadTask: Task<Void, Never>?
     private var loadGeneration = UUID()
     private var runtimeRenderingLeaseID: UUID?
+    private var nativeRoutePolylines: [MapPolyline] = []
+    private var nativeLocationIndicator: LocationIndicator?
+    private var projectedRouteSignature: HereOfflineMapProjectedRouteSignature?
     #endif
 
     init() {
@@ -450,6 +568,8 @@ final class HereNavigateOfflineMapSurface {
     }
 
     func clear() {
+        journeyProjection = .empty
+        latestJourneyPositionTimestamp = nil
         let failure = HereOfflineMapSurfaceFailure(
             code: .notPrepared,
             message: "Offline map rendering is not active.",
@@ -461,10 +581,130 @@ final class HereNavigateOfflineMapSurface {
         replaceWithOpaqueFailure(failure)
     }
 
+    /// Projects only verified app-owned route geometry and device position onto
+    /// the already approved local scene. Calls made while the style is loading
+    /// are retained and applied atomically before the scene is revealed.
+    func setJourneyProjection(_ projection: HereOfflineMapJourneyProjection) {
+        journeyProjection = projection
+        if let timestamp = projection.position?.timestamp,
+           latestJourneyPositionTimestamp.map({ timestamp > $0 }) ?? true {
+            latestJourneyPositionTimestamp = timestamp
+        }
+        #if canImport(heresdk)
+        guard case .rendered = snapshot.status else { return }
+        do {
+            try applyJourneyProjection(projection)
+        } catch let failure as HereOfflineMapSurfaceFailure {
+            journeyProjection = .empty
+            replaceWithOpaqueFailure(failure)
+        } catch {
+            journeyProjection = .empty
+            replaceWithOpaqueFailure(
+                .init(
+                    code: .routeProjectionUnavailable,
+                    message: "HERE could not render the verified local journey.",
+                    recovery: "Close the map and recalculate the covered local route."
+                )
+            )
+        }
+        #else
+        _ = projection
+        #endif
+    }
+
+    /// Reconciles declarative host inputs without allowing a delayed SwiftUI
+    /// render pass to move the native indicator behind a position already
+    /// accepted by the navigation feed. Route authority remains host-owned;
+    /// the composition is the single owner of advancing/clearing live GNSS.
+    func reconcileHostJourneyProjection(
+        _ projection: HereOfflineMapJourneyProjection
+    ) {
+        let resolvedPosition: HereOfflineMapJourneyPosition?
+        let resolvedFollowsPosition: Bool
+        if let candidate = projection.position {
+            let latestTimestamp = latestJourneyPositionTimestamp
+            let advancesEvidence = latestTimestamp.map {
+                candidate.timestamp > $0
+            } ?? true
+            let repeatsCurrentEvidence = latestTimestamp == candidate.timestamp
+                && journeyProjection.position == candidate
+            if advancesEvidence || repeatsCurrentEvidence {
+                resolvedPosition = candidate
+                resolvedFollowsPosition = projection.followsPosition
+            } else {
+                resolvedPosition = journeyProjection.position
+                resolvedFollowsPosition = journeyProjection.followsPosition
+            }
+        } else if latestJourneyPositionTimestamp == nil {
+            resolvedPosition = nil
+            resolvedFollowsPosition = false
+        } else {
+            resolvedPosition = journeyProjection.position
+            resolvedFollowsPosition = journeyProjection.followsPosition
+        }
+
+        setJourneyProjection(
+            .init(
+                route: projection.route,
+                canonicalRoute: projection.canonicalRoute,
+                position: resolvedPosition,
+                followsPosition: resolvedFollowsPosition
+            )
+        )
+    }
+
+    func setJourneyRoute(_ route: OfflineLocalRoute?) {
+        setJourneyProjection(
+            .init(
+                route: route,
+                canonicalRoute: nil,
+                position: journeyProjection.position,
+                followsPosition: journeyProjection.followsPosition
+            )
+        )
+    }
+
+    func setCanonicalJourneyRoute(_ route: CanonicalRoutePackage?) {
+        setJourneyProjection(
+            .init(
+                route: nil,
+                canonicalRoute: route,
+                position: journeyProjection.position,
+                followsPosition: journeyProjection.followsPosition
+            )
+        )
+    }
+
+    func updateLivePosition(
+        _ position: HereOfflineMapJourneyPosition,
+        followsPosition: Bool
+    ) {
+        setJourneyProjection(
+            .init(
+                route: journeyProjection.route,
+                canonicalRoute: journeyProjection.canonicalRoute,
+                position: position,
+                followsPosition: followsPosition
+            )
+        )
+    }
+
+    func clearLivePosition() {
+        setJourneyProjection(
+            .init(
+                route: journeyProjection.route,
+                canonicalRoute: journeyProjection.canonicalRoute,
+                position: nil,
+                followsPosition: false
+            )
+        )
+    }
+
     private func replaceWithOpaqueFailure(_ failure: HereOfflineMapSurfaceFailure) {
         #if canImport(heresdk)
         nativeSceneLoadTask?.cancel()
         nativeSceneLoadTask = nil
+        removeNativeJourneyProjection()
         releaseRuntimeRenderingLease()
         (nativeMapView as? MapView)?.isHidden = true
         nativeMapView = nil
@@ -495,6 +735,7 @@ private extension HereNavigateOfflineMapSurface {
         // can never leave an old layer visible as if it matched the new state.
         nativeSceneLoadTask?.cancel()
         nativeSceneLoadTask = nil
+        removeNativeJourneyProjection()
         releaseRuntimeRenderingLease()
         (nativeMapView as? MapView)?.isHidden = true
         nativeMapView = nil
@@ -580,6 +821,7 @@ private extension HereNavigateOfflineMapSurface {
                       let mapView,
                       self.loadGeneration == generation else { return }
                 self.nativeSceneLoadTask = nil
+                try self.applyJourneyProjection(self.journeyProjection)
                 mapView.isHidden = false
                 self.snapshot = HereOfflineMapSurfaceSnapshot(
                     status: .rendered(configuration: configuration),
@@ -708,6 +950,189 @@ private extension HereNavigateOfflineMapSurface {
         #endif
 
         return url.path
+    }
+
+    func applyJourneyProjection(
+        _ projection: HereOfflineMapJourneyProjection
+    ) throws {
+        guard let mapView = nativeMapView as? MapView else {
+            throw HereOfflineMapSurfaceFailure(
+                code: .routeProjectionUnavailable,
+                message: "The approved native map is unavailable for journey rendering.",
+                recovery: "Prepare the radio-silent native map and retry."
+            )
+        }
+
+        guard projection.route == nil || projection.canonicalRoute == nil else {
+            throw HereOfflineMapSurfaceFailure(
+                code: .routeProjectionInvalid,
+                message: "A native map cannot mix local and server-canonical route authority.",
+                recovery: "Close the map and reopen the single verified journey."
+            )
+        }
+        let selectedRoute: (
+            signature: HereOfflineMapProjectedRouteSignature,
+            mode: OfflineRouteMode,
+            coordinateComponents: [[OfflineGeoCoordinate]],
+            distanceMeters: Int64
+        )?
+        if let route = projection.route {
+            guard route.provenance == .hereOfflineLocal,
+                  route.mode.supportsHEREOfflineCalculation else {
+                throw HereOfflineMapSurfaceFailure(
+                    code: .routeProjectionInvalid,
+                    message: "The route is not a verified HERE offline-local road journey.",
+                    recovery: "Recalculate the route from signed installed coverage."
+                )
+            }
+            let signature = HereOfflineMapProjectedRouteSignature.local(route)
+            selectedRoute = (
+                signature,
+                route.mode,
+                signature.coordinateComponents,
+                route.summary.distanceMeters
+            )
+        } else if let route = projection.canonicalRoute {
+            guard route.provenance == .serverCanonical,
+                  route.mode == .rail || route.mode == .vessel,
+                  route.segments.allSatisfy({ $0.mode == route.mode }) else {
+                throw HereOfflineMapSurfaceFailure(
+                    code: .routeProjectionInvalid,
+                    message: "The route is not a verified server-canonical Rail or Vessel journey.",
+                    recovery: "Reload the signed account- and load-scoped route package."
+                )
+            }
+            let signature = HereOfflineMapProjectedRouteSignature.canonical(route)
+            selectedRoute = (
+                signature,
+                route.mode,
+                signature.coordinateComponents,
+                route.summary.distanceMeters
+            )
+        } else {
+            selectedRoute = nil
+        }
+
+        if selectedRoute?.signature != projectedRouteSignature {
+            for polyline in nativeRoutePolylines {
+                mapView.mapScene.removeMapPolyline(polyline)
+            }
+            nativeRoutePolylines = []
+            projectedRouteSignature = nil
+
+            if let route = selectedRoute {
+                let coordinateComponents = route.coordinateComponents
+                guard !coordinateComponents.isEmpty,
+                      coordinateComponents.allSatisfy({ $0.count >= 2 }) else {
+                    throw HereOfflineMapSurfaceFailure(
+                        code: .routeProjectionInvalid,
+                        message: "The verified route has a component with no renderable geometry.",
+                        recovery: "Recalculate or reload every verified route component."
+                    )
+                }
+                let nativeCoordinateComponents = coordinateComponents.map { coordinates in
+                    coordinates.map {
+                        GeoCoordinates(
+                            latitude: $0.latitude,
+                            longitude: $0.longitude
+                        )
+                    }
+                }
+                let routeColor: UIColor
+                switch route.mode {
+                case .road, .truck:
+                    routeColor = UIColor(red: 0.02, green: 0.72, blue: 0.66, alpha: 0.92)
+                case .rail:
+                    routeColor = UIColor(red: 0.48, green: 0.36, blue: 0.94, alpha: 0.92)
+                case .vessel:
+                    routeColor = UIColor(red: 0.08, green: 0.53, blue: 0.95, alpha: 0.92)
+                }
+                let representation = MapPolyline.SolidRepresentation(
+                    lineWidth: MapMeasureDependentRenderSize(
+                        sizeUnit: .pixels,
+                        size: 14
+                    ),
+                    color: routeColor,
+                    capShape: .round
+                )
+                let polylines = try nativeCoordinateComponents.map { coordinates in
+                    try MapPolyline(
+                        geometry: GeoPolyline(vertices: coordinates),
+                        representation: representation
+                    )
+                }
+                for polyline in polylines {
+                    mapView.mapScene.addMapPolyline(polyline)
+                }
+                nativeRoutePolylines = polylines
+                projectedRouteSignature = route.signature
+
+                let nativeCoordinates = nativeCoordinateComponents.flatMap { $0 }
+                let routeCenter = nativeCoordinates[nativeCoordinates.count / 2]
+                let maximumDistance: Double
+                switch route.mode {
+                case .road, .truck: maximumDistance = 500_000
+                case .rail: maximumDistance = 5_000_000
+                case .vessel: maximumDistance = 20_000_000
+                }
+                let routeDistance = min(
+                    max(Double(route.distanceMeters) * 1.25, 1_000),
+                    maximumDistance
+                )
+                mapView.camera.lookAt(
+                    point: routeCenter,
+                    zoom: MapMeasure(
+                        kind: .distanceInMeters,
+                        value: routeDistance
+                    )
+                )
+            }
+        }
+
+        guard let position = projection.position else {
+            nativeLocationIndicator?.disable()
+            nativeLocationIndicator = nil
+            return
+        }
+        let nativeCoordinate = GeoCoordinates(
+            latitude: position.coordinate.latitude,
+            longitude: position.coordinate.longitude
+        )
+        let indicator: LocationIndicator
+        if let nativeLocationIndicator {
+            indicator = nativeLocationIndicator
+        } else {
+            indicator = LocationIndicator()
+            indicator.locationIndicatorStyle = .navigation
+            indicator.isAccuracyVisualized = true
+            indicator.enable(for: mapView)
+            nativeLocationIndicator = indicator
+        }
+        var location = Location(coordinates: nativeCoordinate)
+        location.time = position.timestamp
+        location.horizontalAccuracyInMeters = position.horizontalAccuracyMeters
+        location.speedInMetersPerSecond = position.speedMetersPerSecond
+        location.bearingInDegrees = position.bearingDegrees
+        indicator.updateLocation(location)
+
+        if projection.followsPosition {
+            mapView.camera.lookAt(
+                point: nativeCoordinate,
+                zoom: MapMeasure(kind: .distanceInMeters, value: 700)
+            )
+        }
+    }
+
+    func removeNativeJourneyProjection() {
+        if let mapView = nativeMapView as? MapView {
+            for polyline in nativeRoutePolylines {
+                mapView.mapScene.removeMapPolyline(polyline)
+            }
+        }
+        nativeRoutePolylines = []
+        projectedRouteSignature = nil
+        nativeLocationIndicator?.disable()
+        nativeLocationIndicator = nil
     }
 
     func renderedAccessibilityText(

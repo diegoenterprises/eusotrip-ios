@@ -117,6 +117,7 @@ final class OfflineMapProductionComposition: ObservableObject {
 
     @Published private(set) var navigationState: OfflineNavigationSessionState = .idle
     @Published private(set) var navigationCoverage: OfflineNavigationCoverage = .unknown
+    @Published private(set) var navigationRoute: OfflineLocalRoute?
     @Published private(set) var currentNavigationManeuver: OfflineNavigationManeuverEvent?
     @Published private(set) var lastNavigationDeviation: OfflineNavigationDeviation?
     @Published private(set) var lastNavigationFailure: OfflineNavigationFailure?
@@ -143,6 +144,9 @@ final class OfflineMapProductionComposition: ObservableObject {
     private let navigationEventSequencer = OfflineNavigationEventSequencer()
     private let principalTransitionSerializer = OfflineMapPrincipalTransitionSerializer()
     private var mapSurfaceLeaseState = OfflineMapSurfaceLeaseState()
+    private var navigationRouteProjectionAuthority =
+        OfflineNavigationRouteProjectionAuthority()
+    private var projectionHandoffRejectedRouteID: String?
     private let installedCoverageResolver: SignedInstalledCoverageResolver?
     private let installedCoverageInstallation: HereNavigateInstalledCoverageInstallation?
     private let initialSignedCoverageManifest: OfflineCoverageSignedEnvelope?
@@ -503,6 +507,7 @@ final class OfflineMapProductionComposition: ObservableObject {
         let snapshot = owner.snapshot
         guard snapshot.connectivityPolicy == .radioSilent,
               snapshot.radioSilenceState == .enforced,
+              appRadioSilenceIsProven,
               installedCoverageTrustAvailable,
               snapshot.installedRegionsState.isCurrent,
               snapshot.installedRegions.contains(where: { $0.state.isUsableCoverage }),
@@ -535,11 +540,44 @@ final class OfflineMapProductionComposition: ObservableObject {
         mapSurfaceLeaseState.status(for: ownerToken)
     }
 
+    func setMapJourneyProjection(
+        _ projection: HereOfflineMapJourneyProjection
+    ) {
+        if projection.route?.id == projectionHandoffRejectedRouteID {
+            mapSurface.reconcileHostJourneyProjection(
+                .init(
+                    route: nil,
+                    canonicalRoute: nil,
+                    position: projection.position,
+                    followsPosition: false
+                )
+            )
+            return
+        }
+        let navigationOwnsRoute = acceptsDeviceLocations
+            && navigationRouteProjectionAuthority.route != nil
+        let route = navigationRouteProjectionAuthority.resolveHostRoute(
+            projection.route,
+            navigationIsActive: navigationOwnsRoute
+        )
+        mapSurface.reconcileHostJourneyProjection(
+            .init(
+                route: route,
+                canonicalRoute: navigationOwnsRoute
+                    ? nil
+                    : projection.canonicalRoute,
+                position: projection.position,
+                followsPosition: projection.followsPosition
+            )
+        )
+    }
+
     func searchOffline(
         text: String,
         center: OfflineGeoCoordinate,
         maximumResultCount: Int = 20
     ) async throws -> OfflineSearchResponse {
+        try requireAppRadioSilence()
         try await withStablePrincipal { [searchOperation] in
             try await searchOperation(text, center, maximumResultCount)
         }
@@ -551,6 +589,7 @@ final class OfflineMapProductionComposition: ObservableObject {
         truckConstraints: OfflineTruckConstraints? = nil,
         departureTime: Date? = nil
     ) async throws -> OfflineRouteResponse {
+        try requireAppRadioSilence()
         try await withStablePrincipal { [routeOperation] in
             try await routeOperation(
                 waypoints,
@@ -565,7 +604,9 @@ final class OfflineMapProductionComposition: ObservableObject {
         currentNavigationManeuver = nil
         lastNavigationDeviation = nil
         lastNavigationFailure = nil
+        projectionHandoffRejectedRouteID = nil
         do {
+            try requireAppRadioSilence()
             try await withStablePrincipal { [weak self] in
                 guard let self else {
                     throw OfflineMapProductionError.principalTransitionInProgress
@@ -578,6 +619,9 @@ final class OfflineMapProductionComposition: ObservableObject {
                         self?.drainNavigationEvents()
                     }
                 }
+                self.navigationRouteProjectionAuthority.begin(route)
+                self.navigationRoute = route
+                self.mapSurface.setJourneyRoute(route)
                 self.drainNavigationEvents()
                 do {
                     try self.locationSource.start(
@@ -821,8 +865,34 @@ final class OfflineMapProductionComposition: ObservableObject {
 
     private func acceptDeviceLocation(_ fix: OfflineProductionLocationFix) async {
         guard acceptsDeviceLocations else { return }
+        guard appRadioSilenceIsProven else {
+            let failure = OfflineNavigationFailure(
+                code: .nativeGuidanceUnavailable,
+                message: "App-wide Radio Silent enforcement was lost during offline guidance.",
+                recovery: "Stop safely and reopen the offline journey after durable Radio Silent verification succeeds.",
+                isRecoverable: true
+            )
+            lastNavigationFailure = failure
+            await stopNavigationAndLocationSource()
+            return
+        }
         do {
+            let coordinate = try OfflineGeoCoordinate(
+                latitude: fix.latitude,
+                longitude: fix.longitude
+            )
+            let projectedPosition = try HereOfflineMapJourneyPosition(
+                coordinate: coordinate,
+                timestamp: fix.timestamp,
+                horizontalAccuracyMeters: fix.horizontalAccuracyMeters,
+                speedMetersPerSecond: fix.speedMetersPerSecond,
+                bearingDegrees: fix.courseDegrees
+            )
             try await feedLocationOperation(fix)
+            mapSurface.updateLivePosition(
+                projectedPosition,
+                followsPosition: true
+            )
         } catch let failure as OfflineNavigationFailure {
             lastNavigationFailure = failure
         } catch {
@@ -851,6 +921,10 @@ final class OfflineMapProductionComposition: ObservableObject {
     private func acceptNavigationEvent(_ event: OfflineNavigationEvent) {
         switch event {
         case .stateChanged(let state):
+            if case .navigating(let routeID, _) = state,
+               projectionHandoffRejectedRouteID == routeID {
+                return
+            }
             navigationState = state
             if case .navigating(_, let coverage) = state {
                 navigationCoverage = coverage
@@ -869,6 +943,34 @@ final class OfflineMapProductionComposition: ObservableObject {
             currentNavigationManeuver = maneuver
         case .coverageChanged(let coverage):
             navigationCoverage = coverage
+        case .routeReplaced(let replacement):
+            guard navigationRouteProjectionAuthority.accept(replacement) else {
+                let failure = OfflineNavigationFailure(
+                    code: .offlineRerouteFailed,
+                    message: "The replacement route could not take ownership of the active offline map.",
+                    recovery: "Stop safely and restart guidance from the last verified route.",
+                    isRecoverable: true
+                )
+                projectionHandoffRejectedRouteID = replacement.replacingRouteID
+                lastNavigationFailure = failure
+                navigationRouteProjectionAuthority.clear()
+                navigationRoute = nil
+                navigationState = .failed(
+                    routeID: replacement.replacingRouteID,
+                    failure: failure
+                )
+                locationSource.stop()
+                mapSurface.setJourneyRoute(nil)
+                Task { @MainActor [weak self] in
+                    await self?.stopNavigationAndLocationSource()
+                }
+                return
+            }
+            projectionHandoffRejectedRouteID = nil
+            navigationRoute = replacement.route
+            // Event sequencing guarantees this synchronous projection update
+            // happens before the following `.navigating` state is published.
+            mapSurface.setJourneyRoute(replacement.route)
         case .inputRejected(let failure), .rerouteFailed(let failure):
             lastNavigationFailure = failure
         case .deviationDetected(let deviation):
@@ -882,6 +984,7 @@ final class OfflineMapProductionComposition: ObservableObject {
     private func stopNavigationAndLocationSource() async {
         locationSource.stop()
         await stopNavigationOperation()
+        mapSurface.clearLivePosition()
         drainNavigationEvents()
         currentNavigationManeuver = nil
         lastNavigationDeviation = nil
@@ -889,10 +992,30 @@ final class OfflineMapProductionComposition: ObservableObject {
 
     private func releaseRuntimeConsumers() async {
         await stopNavigationAndLocationSource()
+        navigationRouteProjectionAuthority.clear()
+        navigationRoute = nil
+        projectionHandoffRejectedRouteID = nil
         if mapSurfaceLeaseState.forceRelease() {
             publishMapSurfaceLeaseRevision()
         }
         mapSurface.clear()
+    }
+
+    private var appRadioSilenceIsProven: Bool {
+        AppRadioSilenceCoordinator.shared.isEnforced
+            && AppRadioSilenceSharedState.isEnforced
+    }
+
+    private func requireAppRadioSilence() throws {
+        guard appRadioSilenceIsProven else {
+            throw OfflineMapCoreError.notReady([
+                OfflineMapReadinessBlocker(
+                    code: .radioSilenceNotEnforced,
+                    message: "App-wide Radio Silent enforcement is not durably proven.",
+                    recovery: "Close and reopen the offline journey after the app-group enforcement marker is available."
+                ),
+            ])
+        }
     }
 
     private func receiveMapSurfaceSnapshot(

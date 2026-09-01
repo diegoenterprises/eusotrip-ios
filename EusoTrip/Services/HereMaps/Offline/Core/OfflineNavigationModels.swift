@@ -140,10 +140,85 @@ struct OfflineNavigationManeuverEvent: Equatable, Sendable {
     }
 }
 
+/// A HERE reroute may replace native guidance geometry without changing the
+/// app-owned route identifier. This value can be constructed only when the
+/// replacement preserves that identifier and mode and carries the exact
+/// signed installed-region evidence admitted for the new corridor.
+struct OfflineNavigationRouteReplacement: Equatable, Sendable {
+    let replacingRouteID: String
+    let replacingMode: OfflineRouteMode
+    let route: OfflineLocalRoute
+
+    init(
+        route: OfflineLocalRoute,
+        replacingRouteID: String,
+        expectedMode: OfflineRouteMode,
+        admittedCoverage: OfflineInstalledCoverageEvidence
+    ) throws {
+        let routeID = replacingRouteID.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        guard !routeID.isEmpty,
+              route.id == routeID,
+              expectedMode.supportsHEREOfflineCalculation,
+              route.mode == expectedMode,
+              route.provenance == .hereOfflineLocal,
+              route.coverage == admittedCoverage else {
+            throw OfflineMapCoreError.invalidInput(
+                "A navigation reroute must preserve route identity and mode with newly admitted signed coverage."
+            )
+        }
+        self.replacingRouteID = routeID
+        replacingMode = expectedMode
+        self.route = route
+    }
+}
+
+/// Composition-owned route authority. Declarative hosts may continue to hold
+/// the pre-reroute DTO, so an accepted native replacement remains authoritative
+/// for the same route ID and for every active navigation state.
+struct OfflineNavigationRouteProjectionAuthority: Equatable, Sendable {
+    private(set) var route: OfflineLocalRoute?
+
+    mutating func begin(_ route: OfflineLocalRoute) {
+        self.route = route
+    }
+
+    @discardableResult
+    mutating func accept(_ replacement: OfflineNavigationRouteReplacement) -> Bool {
+        guard let current = route,
+              current.id == replacement.replacingRouteID,
+              current.mode == replacement.replacingMode else {
+            return false
+        }
+        route = replacement.route
+        return true
+    }
+
+    func resolveHostRoute(
+        _ proposedRoute: OfflineLocalRoute?,
+        navigationIsActive: Bool
+    ) -> OfflineLocalRoute? {
+        guard let route else { return proposedRoute }
+        if proposedRoute?.id == route.id || navigationIsActive {
+            return route
+        }
+        return proposedRoute
+    }
+
+    mutating func clear() {
+        route = nil
+    }
+}
+
 enum OfflineNavigationEvent: Equatable, Sendable {
     case stateChanged(OfflineNavigationSessionState)
     case maneuver(OfflineNavigationManeuverEvent)
     case coverageChanged(OfflineNavigationCoverage)
+    /// Emitted only after HERE's replacement geometry has passed signed
+    /// installed-corridor admission and the SDK route has been mapped back to
+    /// the same typed local-route authority.
+    case routeReplaced(OfflineNavigationRouteReplacement)
     /// Typed rejection for asynchronous native evidence that cannot throw back
     /// to the location producer. Messages are fixed product copy and never
     /// interpolate provider payloads or timestamps.

@@ -68,19 +68,23 @@ enum EusoWalletPassResult {
 final class EusoWalletPassService {
 
     static let shared = EusoWalletPassService()
+    private var activeAddPassController: PKAddPassesViewController?
+    private var transportRegistration: AppRadioSilenceDirectTransportController.Registration?
     private init() {}
 
-    /// Coerce whatever id a caller hands us into the numeric form the
-    /// server's `createPickupCredential` expects (it `parseInt`s the
-    /// value). "LD-1039" → "1039", "load_1039" → "1039", "1039" →
-    /// "1039". If the string carries no digits we pass it through
-    /// untouched so the server can return its own validation error
-    /// rather than us silently swallowing it.
+    /// Normalize only the display-id formats the app owns. Arbitrary digit
+    /// extraction is unsafe: `LD-10-39` must fail validation, not become the
+    /// unrelated database id `1039`.
     static func numericLoadId(from raw: String) -> String {
         let trimmed = raw.trimmingCharacters(in: .whitespaces)
-        if Int(trimmed) != nil { return trimmed }   // already clean numeric
-        let digits = trimmed.filter(\.isNumber)
-        return digits.isEmpty ? trimmed : digits
+        if !trimmed.isEmpty, trimmed.allSatisfy(\.isNumber) { return trimmed }
+
+        let lowercased = trimmed.lowercased()
+        for prefix in ["ld-", "load_", "load-"] where lowercased.hasPrefix(prefix) {
+            let suffix = String(trimmed.dropFirst(prefix.count))
+            if !suffix.isEmpty, suffix.allSatisfy(\.isNumber) { return suffix }
+        }
+        return trimmed
     }
 
     /// Server-side credential payload, decoded from
@@ -103,14 +107,12 @@ final class EusoWalletPassService {
     /// the caller. Returns a `EusoWalletPassResult` so the call site
     /// can render the right UX (toast, inline fallback, error banner).
     func addPass(forLoadId loadId: String) async -> EusoWalletPassResult {
-        // 0. Normalize the load id. The server keys on a NUMERIC load id
-        //    and does `parseInt(loadId)` — so a display id like
-        //    "LD-1039" or "load_1039" becomes NaN and the mint throws
-        //    "Invalid loadId". Every PassKit caller (wallet hero, pass
-        //    rows, EusoTicket renderers, PDF viewer) funnels through
-        //    here, so normalizing centrally hardens the whole system
-        //    against the display-vs-numeric id mismatch regardless of
-        //    which surface called us.
+        guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else {
+            return .failure(message: "Apple Wallet is paused while the offline journey is active.")
+        }
+        // 0. Normalize the app's known display ids. Unknown or malformed
+        //    forms remain untouched and fail the server's strict numeric-id
+        //    contract instead of being lossy-converted to another load.
         let resolvedLoadId = Self.numericLoadId(from: loadId)
 
         // 1. Mint the credential server-side. The server signs the QR
@@ -144,6 +146,9 @@ final class EusoWalletPassService {
             } else { msg = error.localizedDescription }
             return .failure(message: msg)
         }
+        guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else {
+            return .failure(message: "Apple Wallet is paused while the offline journey is active.")
+        }
 
         // 2. If the server didn't ship a .pkpass bundle (signing
         //    pipeline offline, free-tier dev account, etc.), short-
@@ -159,23 +164,20 @@ final class EusoWalletPassService {
             )
         }
 
-        // 3. Pull the .pkpass bytes. We use a fresh `URLSession` here
-        //    rather than `EusoTripAPI.session` because the bundle URL
-        //    is presigned (Azure Blob) and shouldn't carry our auth
-        //    cookies — those would just bloat the request and pin us
-        //    to a CORS-unfriendly path.
+        // 3. Pull through the bounded, redirect-free transport. It adds the
+        //    bearer only for the exact EusoTrip origin and leaves Azure SAS
+        //    URLs cookie-free.
         let data: Data
         do {
-            var req = URLRequest(url: url)
-            req.timeoutInterval = 15  // app-wide no-lingering-load bound
-            let (bytes, resp) = try await URLSession.shared.data(for: req)
-            guard let http = resp as? HTTPURLResponse,
-                  (200..<300).contains(http.statusCode) else {
-                return .failure(message: "Wallet pass could not be downloaded.")
-            }
-            data = bytes
+            data = try await EusoTripAPI.shared.fetchBoundedWalletPassData(url)
         } catch {
+            if EusoTripAPI.shared.isAppRadioSilenceEnforced {
+                return .failure(message: "Apple Wallet is paused while the offline journey is active.")
+            }
             return .failure(message: "Couldn't download the wallet pass.")
+        }
+        guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else {
+            return .failure(message: "Apple Wallet is paused while the offline journey is active.")
         }
 
         // 4. Parse with PassKit. `PKPass(data:)` validates the bundle
@@ -195,13 +197,31 @@ final class EusoWalletPassService {
         guard let presenter = topPresenter() else {
             return .failure(message: "Couldn't find a screen to add the pass to.")
         }
+        guard activeAddPassController == nil,
+              !EusoTripAPI.shared.isAppRadioSilenceEnforced else {
+            return .failure(message: "Apple Wallet is unavailable while another protected flow is active.")
+        }
         guard let addVC = PKAddPassesViewController(pass: pkpass) else {
             return .failure(message: "PassKit declined the pass — likely a duplicate or wrong device.")
         }
+        addVC.delegate = self
+        activeAddPassController = addVC
+        transportRegistration = AppRadioSilenceDirectTransportController.shared.register(
+            stop: { [weak self, weak addVC] in
+                addVC?.dismiss(animated: false)
+                self?.finishAddPassController(addVC)
+            }
+        )
         presenter.present(addVC, animated: true)
         return .presented
     }
 
+    private func finishAddPassController(_ controller: PKAddPassesViewController?) {
+        if let controller, activeAddPassController !== controller { return }
+        AppRadioSilenceDirectTransportController.shared.unregister(transportRegistration)
+        transportRegistration = nil
+        activeAddPassController = nil
+    }
     /// Resolves the currently-active topmost UIViewController so we
     /// can present PassKit's modal over it. SwiftUI surfaces don't
     /// expose their hosting view controller directly, so we walk the
@@ -217,5 +237,15 @@ final class EusoWalletPassService {
             top = presented
         }
         return top
+    }
+}
+
+extension EusoWalletPassService: PKAddPassesViewControllerDelegate {
+    nonisolated func addPassesViewControllerDidFinish(_ controller: PKAddPassesViewController) {
+        controller.dismiss(animated: true) {
+            Task { @MainActor in
+                self.finishAddPassController(controller)
+            }
+        }
     }
 }

@@ -713,11 +713,17 @@ private struct ArticleWebView: UIViewRepresentable {
         webView.scrollView.showsVerticalScrollIndicator = true
         webView.scrollView.contentInsetAdjustmentBehavior = .automatic
 
-        context.coordinator.observeProgress(on: webView)
+        let coordinator = context.coordinator
+        coordinator.observeProgress(on: webView)
         goBackHandler = { [weak webView] in webView?.goBack() }
         goForwardHandler = { [weak webView] in webView?.goForward() }
-        loadURLHandler = { [weak webView] newURL in
-            webView?.load(URLRequest(url: newURL))
+        loadURLHandler = { [weak webView, weak coordinator] newURL in
+            guard let webView else { return }
+            coordinator?.resumeURL = newURL
+            AppRadioSilenceDirectTransportController.shared.loadRemote(
+                URLRequest(url: newURL),
+                into: webView
+            )
         }
         extractTextHandler = { [weak webView] completion in
             guard let webView = webView else { completion(""); return }
@@ -765,7 +771,22 @@ private struct ArticleWebView: UIViewRepresentable {
             return webView
         }
 
-        webView.load(URLRequest(url: url))
+        coordinator.resumeURL = url
+        coordinator.transportRegistration =
+            AppRadioSilenceDirectTransportController.shared.register(
+                webView: webView,
+                resume: { [weak webView, weak coordinator] in
+                    guard let webView, let resumeURL = coordinator?.resumeURL else { return }
+                    AppRadioSilenceDirectTransportController.shared.loadRemote(
+                        URLRequest(url: resumeURL),
+                        into: webView
+                    )
+                }
+            )
+        AppRadioSilenceDirectTransportController.shared.loadRemote(
+            URLRequest(url: url),
+            into: webView
+        )
         return webView
     }
 
@@ -778,6 +799,11 @@ private struct ArticleWebView: UIViewRepresentable {
 
     static func dismantleUIView(_ webView: WKWebView, coordinator: Coordinator) {
         coordinator.stopObserving(webView)
+        webView.stopLoading()
+        AppRadioSilenceDirectTransportController.shared.unregister(
+            coordinator.transportRegistration
+        )
+        coordinator.transportRegistration = nil
     }
 
     // MARK: Coordinator
@@ -793,6 +819,8 @@ private struct ArticleWebView: UIViewRepresentable {
         /// the driver gets Retry / Open-in-Safari instead of a stuck
         /// spinner. Reset on every fresh navigation start.
         private var loadTimeoutTask: Task<Void, Never>?
+        var transportRegistration: AppRadioSilenceDirectTransportController.Registration?
+        var resumeURL: URL?
 
         init(_ parent: ArticleWebView) {
             self.parent = parent
@@ -845,6 +873,10 @@ private struct ArticleWebView: UIViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+            if let currentURL = webView.url,
+               currentURL.scheme == "http" || currentURL.scheme == "https" {
+                resumeURL = currentURL
+            }
             armLoadTimeout()
             Task { @MainActor in
                 parent.isLoading = true
@@ -1549,9 +1581,13 @@ private struct NewsInAppSafari: UIViewControllerRepresentable {
         let cfg = SFSafariViewController.Configuration()
         cfg.entersReaderIfAvailable = true
         cfg.barCollapsingEnabled = true
-        let vc = SFSafariViewController(url: url, configuration: cfg)
+        let vc = SFSafariViewController(
+            url: AppRadioSilenceDirectTransportController.shared.gatedRemoteURL(url),
+            configuration: cfg
+        )
         vc.dismissButtonStyle = .done
         vc.preferredControlTintColor = UIColor(Brand.magenta)
+        AppRadioSilenceDirectTransportController.shared.track(safariController: vc)
         return vc
     }
     func updateUIViewController(_ uiViewController: SFSafariViewController, context: Context) {}

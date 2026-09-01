@@ -21,6 +21,7 @@ import AppKit
 @MainActor
 struct OfflineRoadJourneyView: View {
     @EnvironmentObject private var session: EusoTripSession
+    @Environment(\.colorScheme) private var colorScheme
     @ObservedObject private var composition: OfflineMapProductionComposition
     @ObservedObject private var owner: OfflineMapCompositionOwner
     @StateObject private var model: OfflineRoadJourneyViewModel
@@ -39,6 +40,7 @@ struct OfflineRoadJourneyView: View {
             VStack(alignment: .leading, spacing: 18) {
                 orientation
                 readiness
+                nativeJourneyMap
                 currentLocation
                 destinationSearch
                 routeProfile
@@ -221,6 +223,47 @@ struct OfflineRoadJourneyView: View {
             .buttonStyle(.bordered)
             .disabled(model.isBusy || model.isPreparingPrincipal || !model.hasBoundPrincipal)
         }
+    }
+
+    private var nativeJourneyMap: some View {
+        journeySection(title: "Verified journey map", systemImage: "map.fill") {
+            OfflineNativeCoverageMapSurfaceHost(
+                composition: composition,
+                offlineSnapshot: owner.snapshot,
+                identity: .init(
+                    mode: .truck,
+                    family: .navigation,
+                    theme: colorScheme == .dark ? .dark : .light
+                ),
+                journeyProjection: journeyProjection
+            )
+            .frame(minHeight: 280)
+
+            Text("The line is projected only from the selected HERE offline-local route. During guidance, the native location indicator follows accepted device GNSS fixes; no web tiles or alternate provider are available as a fallback.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var journeyProjection: HereOfflineMapJourneyProjection {
+        let position = model.locationFix.flatMap { fix in
+            try? HereOfflineMapJourneyPosition(
+                coordinate: fix.coordinate,
+                timestamp: fix.timestamp,
+                horizontalAccuracyMeters: fix.horizontalAccuracyMeters
+            )
+        }
+        let route = composition.navigationRoute.flatMap { navigationRoute in
+            model.selectedRoute?.id == navigationRoute.id
+                ? navigationRoute
+                : nil
+        } ?? model.selectedRoute
+        return .init(
+            route: route,
+            position: position,
+            followsPosition: model.navigationIsActive
+        )
     }
 
     private var destinationSearch: some View {
@@ -1443,13 +1486,16 @@ private enum OfflineRoadJourneyReadiness {
             values.append("A signed-in tenant and user must be bound before local route data can be used.")
         }
         if !AppRadioSilenceCoordinator.shared.isEnforced {
-            values.append("App-wide network transports are not suspended for this offline journey.")
+            values.append("App-wide Radio Silent enforcement is not durably proven for this offline journey.")
         }
         if !composition.installedCoverageTrustAvailable {
             values.append(
                 composition.installedCoverageFailure
                     ?? "Signed installed-region coverage authority is unavailable."
             )
+        }
+        if !HereOfflineNativeStyleBundleCatalog.hasCompleteValidatedCatalog() {
+            values.append("The complete approved 18-style native map catalog is unavailable in this build.")
         }
         switch snapshot.readiness {
         case .unchecked:
@@ -1482,7 +1528,8 @@ private enum OfflineRoadJourneyReadiness {
         var required: OfflineMapCapabilities = [
             .offlineSearch,
             mode == .truck ? .offlineTruckRouting : .offlineRoadRouting,
-            .radioSilence
+            .radioSilence,
+            .detailedRendering
         ]
         if requireGuidance {
             required.formUnion([.offlineGuidance, .offlineVoiceGuidance])

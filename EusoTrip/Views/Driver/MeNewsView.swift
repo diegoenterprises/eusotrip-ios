@@ -577,7 +577,7 @@ struct NewsImageView: View {
         GeometryReader { geo in
             ZStack {
                 if let eff = effectiveURL {
-                    AsyncImage(url: eff) { phase in
+                    AppRadioSilenceAsyncImage(url: eff) { phase in
                         switch phase {
                         case .success(let image):
                             image
@@ -592,7 +592,7 @@ struct NewsImageView: View {
                             if url != nil,
                                let fallback = fallbackURL,
                                fallback != url {
-                                AsyncImage(url: fallback) { f in
+                                AppRadioSilenceAsyncImage(url: fallback) { f in
                                     if let img = f.image {
                                         img.resizable().scaledToFill()
                                             .frame(width: geo.size.width, height: geo.size.height)

@@ -26,6 +26,18 @@
 
 import Foundation
 
+private final class WalletPassNoRedirectDelegate: NSObject,
+                                                   URLSessionTaskDelegate,
+                                                   @unchecked Sendable {
+    func urlSession(_ session: URLSession,
+                    task: URLSessionTask,
+                    willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest,
+                    completionHandler: @escaping (URLRequest?) -> Void) {
+        completionHandler(nil)
+    }
+}
+
 extension EusoTripAPI {
 
     /// `{ themeId }` — current choice (getWalletTheme). `resolveTheme()` on the
@@ -101,5 +113,115 @@ extension EusoTripAPI {
         struct In: Encodable { let loadId: String; let expiresInHours: Int }
         return try await mutation("eusoWallet.createPickupCredential",
                                   input: In(loadId: loadId, expiresInHours: expiresInHours))
+    }
+
+    /// Fetch a signed `.pkpass` under a hard streaming byte ceiling. The
+    /// generic API transport materializes `Data` before it can inspect size;
+    /// Wallet bundles use this path so a chunked or dishonest response cannot
+    /// consume unbounded memory. Redirects are rejected, and the bearer is
+    /// attached only to the exact configured EusoTrip origin.
+    func fetchBoundedWalletPassData(_ url: URL,
+                                    maxBytes: Int = 12 * 1_024 * 1_024) async throws -> Data {
+        try requireAppRadioSilenceTransportAllowed()
+        guard maxBytes > 0,
+              url.scheme?.lowercased() == "https",
+              url.user == nil,
+              url.password == nil,
+              url.fragment == nil,
+              let requestedHost = url.host?.lowercased() else {
+            throw EusoTripAPIError.badURL
+        }
+
+        let isFirstParty: Bool
+        if let baseURL,
+           let baseScheme = baseURL.scheme?.lowercased(),
+           let baseHost = baseURL.host?.lowercased() {
+            let basePort = baseURL.port ?? (baseScheme == "https" ? 443 : 80)
+            let requestPort = url.port ?? 443
+            isFirstParty = baseScheme == "https"
+                && baseHost == requestedHost
+                && basePort == requestPort
+        } else {
+            isFirstParty = false
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.httpShouldHandleCookies = false
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        request.setValue("application/vnd.apple.pkpass", forHTTPHeaderField: "Accept")
+        request.setValue("no-store, no-cache", forHTTPHeaderField: "Cache-Control")
+        if isFirstParty, let authToken {
+            request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+        }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        configuration.urlCache = nil
+        configuration.httpCookieStorage = nil
+        configuration.httpShouldSetCookies = false
+        configuration.timeoutIntervalForRequest = 22
+        configuration.timeoutIntervalForResource = 60
+        configuration.waitsForConnectivity = false
+        let session = URLSession(
+            configuration: configuration,
+            delegate: WalletPassNoRedirectDelegate(),
+            delegateQueue: nil
+        )
+        let registration = try registerAppRadioSilenceAuxiliarySession(session)
+        defer {
+            unregisterAppRadioSilenceAuxiliarySession(registration)
+            session.invalidateAndCancel()
+        }
+
+        let stream: URLSession.AsyncBytes
+        let response: URLResponse
+        do {
+            (stream, response) = try await session.bytes(for: request)
+        } catch {
+            if isAppRadioSilenceEnforced {
+                throw AppRadioSilenceTransportError.enforced
+            }
+            throw error
+        }
+        try requireAppRadioSilenceTransportAllowed()
+        guard let http = response as? HTTPURLResponse else {
+            throw EusoTripAPIError.httpStatus(0, "No HTTP response")
+        }
+        guard let finalURL = http.url,
+              finalURL.scheme?.lowercased() == "https",
+              finalURL.host?.lowercased() == requestedHost else {
+            throw EusoTripAPIError.badURL
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            throw EusoTripAPIError.httpStatus(http.statusCode, "Wallet pass download failed")
+        }
+        guard http.mimeType?.lowercased() == "application/vnd.apple.pkpass" else {
+            throw EusoTripAPIError.httpStatus(
+                http.statusCode,
+                "Unexpected Wallet pass content type"
+            )
+        }
+        if http.expectedContentLength > Int64(maxBytes) {
+            throw EusoTripAPIError.httpStatus(http.statusCode, "Wallet pass size is invalid")
+        }
+
+        var data = Data()
+        if http.expectedContentLength > 0 {
+            data.reserveCapacity(min(Int(http.expectedContentLength), maxBytes))
+        }
+        for try await byte in stream {
+            try Task.checkCancellation()
+            try requireAppRadioSilenceTransportAllowed()
+            guard data.count < maxBytes else {
+                throw EusoTripAPIError.httpStatus(http.statusCode, "Wallet pass size is invalid")
+            }
+            data.append(byte)
+        }
+        guard !data.isEmpty else {
+            throw EusoTripAPIError.httpStatus(http.statusCode, "Wallet pass size is invalid")
+        }
+        try requireAppRadioSilenceTransportAllowed()
+        return data
     }
 }

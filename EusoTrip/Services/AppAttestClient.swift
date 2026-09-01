@@ -100,7 +100,7 @@ enum AppAttestClient {
     ///   The server's challenge nonce is folded in automatically, so the
     ///   assertion is anti-replay even if `context` repeats.
     static func attestation(for context: Data) async -> AttestEnvelope? {
-        guard isSupported else { return nil }
+        guard !AppRadioSilenceSharedState.isEnforced, isSupported else { return nil }
 
         // Bound the whole best-effort flow. If anything stalls past the
         // budget we abandon attestation and return nil — the high-trust
@@ -136,7 +136,8 @@ enum AppAttestClient {
 
     private static func buildAttestation(for context: Data) async -> AttestEnvelope? {
         #if canImport(DeviceCheck)
-        guard #available(iOS 14.0, *) else { return nil }
+        guard !AppRadioSilenceSharedState.isEnforced,
+              #available(iOS 14.0, *) else { return nil }
         let service = DCAppAttestService.shared
         guard service.isSupported else { return nil }
 
@@ -144,9 +145,11 @@ enum AppAttestClient {
             // 1) Ensure we have a registered (attested) keyId. Generated +
             //    attested once, then reused for every subsequent assertion.
             let keyId = try await ensureAttestedKey(service: service)
+            guard !AppRadioSilenceSharedState.isEnforced else { return nil }
 
             // 2) Fetch a fresh one-time challenge from the server.
             let challengeB64 = try await fetchChallenge()
+            guard !AppRadioSilenceSharedState.isEnforced else { return nil }
             guard let challengeData = Data(base64Encoded: challengeB64) else { return nil }
 
             // 3) clientDataHash = SHA256(challenge ‖ context). Binding the
@@ -163,12 +166,17 @@ enum AppAttestClient {
             //    once, then retry the assertion. Still fail-soft on failure.
             let assertion: Data
             do {
+                guard !AppRadioSilenceSharedState.isEnforced else { return nil }
                 assertion = try await service.generateAssertion(keyId, clientDataHash: clientDataHash)
+                guard !AppRadioSilenceSharedState.isEnforced else { return nil }
             } catch {
                 // One self-heal attempt: clear + re-attest, then retry.
+                guard !AppRadioSilenceSharedState.isEnforced else { return nil }
                 clearKeyId()
                 let freshKeyId = try await ensureAttestedKey(service: service)
+                guard !AppRadioSilenceSharedState.isEnforced else { return nil }
                 let retried = try await service.generateAssertion(freshKeyId, clientDataHash: clientDataHash)
+                guard !AppRadioSilenceSharedState.isEnforced else { return nil }
                 return AttestEnvelope(
                     keyId: freshKeyId,
                     challenge: challengeB64,
@@ -200,19 +208,31 @@ enum AppAttestClient {
     /// caller swallows it → fail-soft).
     @available(iOS 14.0, *)
     private static func ensureAttestedKey(service: DCAppAttestService) async throws -> String {
+        guard !AppRadioSilenceSharedState.isEnforced else {
+            throw AttestError.radioSilence
+        }
         if let existing = loadKeyId() { return existing }
 
         // 1) Fresh hardware key (private key never leaves the Secure Enclave).
         let keyId = try await service.generateKey()
+        guard !AppRadioSilenceSharedState.isEnforced else {
+            throw AttestError.radioSilence
+        }
 
         // 2) One-time attestation: bind keyId to app+device over a server
         //    challenge. Apple's CBOR attestation object goes to the server.
         let challengeB64 = try await fetchChallenge()
+        guard !AppRadioSilenceSharedState.isEnforced else {
+            throw AttestError.radioSilence
+        }
         guard let challengeData = Data(base64Encoded: challengeB64) else {
             throw AttestError.badChallenge
         }
         let attestHash = Data(SHA256.hash(data: challengeData))
         let attestationObject = try await service.attestKey(keyId, clientDataHash: attestHash)
+        guard !AppRadioSilenceSharedState.isEnforced else {
+            throw AttestError.radioSilence
+        }
 
         // 3) Server-side register: verifies the attestation, stores the
         //    public key bound to keyId. Throws if the server rejects it.
@@ -306,7 +326,7 @@ enum AppAttestClient {
 
     // MARK: - Errors + timeout helper
 
-    private enum AttestError: Error { case badChallenge }
+    private enum AttestError: Error { case badChallenge, radioSilence }
 
     /// Runs `work` with a hard timeout. Returns `nil` if the budget elapses
     /// first — the attestation is abandoned and the high-trust call proceeds

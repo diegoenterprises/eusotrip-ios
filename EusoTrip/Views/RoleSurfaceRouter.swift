@@ -5604,9 +5604,13 @@ private struct SafariContinuationView: UIViewControllerRepresentable {
         let cfg = SFSafariViewController.Configuration()
         cfg.entersReaderIfAvailable = false
         cfg.barCollapsingEnabled = true
-        let vc = SFSafariViewController(url: url, configuration: cfg)
+        let vc = SFSafariViewController(
+            url: AppRadioSilenceDirectTransportController.shared.gatedRemoteURL(url),
+            configuration: cfg
+        )
         vc.dismissButtonStyle = .done
         vc.preferredControlTintColor = UIColor(red: 0.745, green: 0.004, blue: 1.0, alpha: 1)
+        AppRadioSilenceDirectTransportController.shared.track(safariController: vc)
         return vc
     }
     func updateUIViewController(_ vc: SFSafariViewController, context: Context) {}
@@ -6468,8 +6472,11 @@ struct OAuthSafariSheet: UIViewControllerRepresentable {
     let url: URL
 
     func makeUIViewController(context: Context) -> SFSafariViewController {
-        let vc = SFSafariViewController(url: url)
+        let vc = SFSafariViewController(
+            url: AppRadioSilenceDirectTransportController.shared.gatedRemoteURL(url)
+        )
         vc.dismissButtonStyle = .close
+        AppRadioSilenceDirectTransportController.shared.track(safariController: vc)
         return vc
     }
 

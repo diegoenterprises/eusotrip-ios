@@ -37,6 +37,76 @@ import SwiftUI
 import UIKit
 #endif
 
+private struct AppleWeatherAttributionAsset: Sendable {
+    let lightMarkData: Data?
+    let darkMarkData: Data?
+    let legalURL: URL
+}
+
+private actor AppleWeatherAttributionLoader {
+    static let shared = AppleWeatherAttributionLoader()
+    private var cache: [String: AppleWeatherAttributionAsset] = [:]
+
+    private struct Payload: Decodable {
+        let light: String?
+        let dark: String?
+
+        enum CodingKeys: String, CodingKey {
+            case light = "logoLight@2x"
+            case dark = "logoDark@2x"
+        }
+    }
+
+    func load(languageTag: String) async -> AppleWeatherAttributionAsset? {
+        let candidate = languageTag
+            .components(separatedBy: "@").first?
+            .replacingOccurrences(of: "_", with: "-") ?? "en-US"
+        let safeTag = candidate.allSatisfy { $0.isLetter || $0 == "-" } ? candidate : "en-US"
+        if let cached = cache[safeTag] { return cached }
+        guard let endpoint = URL(string: "https://weatherkit.apple.com/attribution/\(safeTag)") else {
+            return nil
+        }
+        do {
+            let request = URLRequest(url: endpoint)
+            let (data, response) = try await EusoTripAPI.shared
+                .appRadioSilenceGatedData(for: request)
+            guard let http = response as? HTTPURLResponse,
+                  (200..<300).contains(http.statusCode) else { return nil }
+            let payload = try JSONDecoder().decode(Payload.self, from: data)
+            let base = URL(string: "https://weatherkit.apple.com")!
+            let lightURL = payload.light.flatMap { URL(string: $0, relativeTo: base)?.absoluteURL }
+            let darkURL = payload.dark.flatMap { URL(string: $0, relativeTo: base)?.absoluteURL }
+            async let lightMarkData = Self.loadMark(lightURL)
+            async let darkMarkData = Self.loadMark(darkURL)
+            let asset = AppleWeatherAttributionAsset(
+                lightMarkData: await lightMarkData,
+                darkMarkData: await darkMarkData,
+                legalURL: URL(string: "https://weatherkit.apple.com/legal-attribution.html")!
+            )
+            guard !Task.isCancelled else { return nil }
+            cache[safeTag] = asset
+            return asset
+        } catch {
+            return nil
+        }
+    }
+
+    private static func loadMark(_ url: URL?) async -> Data? {
+        guard let url else { return nil }
+        do {
+            let (data, response) = try await EusoTripAPI.shared
+                .appRadioSilenceGatedData(for: URLRequest(url: url))
+            guard !Task.isCancelled,
+                  data.count <= 512 * 1_024,
+                  let http = response as? HTTPURLResponse,
+                  (200..<300).contains(http.statusCode),
+                  http.mimeType?.hasPrefix("image/") == true else { return nil }
+            return data
+        } catch {
+            return nil
+        }
+    }
+}
 struct WeatherCard: View {
     let snapshot: WeatherSnapshot
     /// Route-aware lane weather for the active load. Nil → the lane
@@ -61,6 +131,7 @@ struct WeatherCard: View {
     /// flip-card (the 6-day forecast now lives inline in the expanded
     /// view as the v2 7-day chip row).
     @State private var expanded: Bool
+    @State private var appleWeatherAttribution: AppleWeatherAttributionAsset?
 
     init(snapshot: WeatherSnapshot,
          lane: LaneWeather? = nil,
@@ -89,9 +160,20 @@ struct WeatherCard: View {
     }
 
     var body: some View {
-        switch style {
-        case .compact: compactBody
-        case .full:    fullBody
+        Group {
+            switch style {
+            case .compact: compactBody
+            case .full:    fullBody
+            }
+        }
+        .task(id: "\(snapshot.dataSource.rawValue):\(Locale.current.identifier)") {
+            guard snapshot.dataSource == .weatherKit || snapshot.dataSource == .appleWeather else {
+                appleWeatherAttribution = nil
+                return
+            }
+            appleWeatherAttribution = await AppleWeatherAttributionLoader.shared.load(
+                languageTag: Locale.current.identifier
+            )
         }
     }
 
@@ -949,15 +1031,29 @@ struct WeatherCard: View {
         // white-on-light was invisible in light mode. Palette tertiary
         // contrasts in both schemes.
         Group {
-            if snapshot.dataSource == .weatherKit {
-                // Apple WeatherKit legal terms REQUIRE a visible "Apple Weather"
-                // mark (already in attributionLine) PLUS a tappable link to the
-                // attribution page on any surface showing WeatherKit data —
-                // omitting it is an App Review rejection. Only rendered when
-                // WeatherKit actually produced the data (honest attribution).
+            if snapshot.dataSource == .weatherKit || snapshot.dataSource == .appleWeather {
+                // Apple provides the current localized marks from its
+                // attribution endpoint. The gated loader retains only bounded
+                // in-memory bytes; copied brand artwork is not bundled.
                 HStack(spacing: 4) {
+                    #if canImport(UIKit)
+                    if let asset = appleWeatherAttribution,
+                       let markData = (scheme == .dark ? asset.darkMarkData : asset.lightMarkData),
+                       let mark = UIImage(data: markData) {
+                        Link(destination: asset.legalURL) {
+                            Image(uiImage: mark)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(height: 12)
+                        }
+                    }
+                    #endif
                     Text(snapshot.attributionLine)
-                    Link("Legal", destination: URL(string: "https://weatherkit.apple.com/legal-attribution.html")!)
+                    Link(
+                        "Legal",
+                        destination: appleWeatherAttribution?.legalURL
+                            ?? URL(string: "https://weatherkit.apple.com/legal-attribution.html")!
+                    )
                         .underline()
                 }
                 .font(.system(size: 11))

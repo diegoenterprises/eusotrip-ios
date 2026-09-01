@@ -1480,14 +1480,63 @@ actor HereNavigateNavigationSession: OfflineNavigationSessionProviding {
             activeRerouteWatchdog = nil
         }
 
-        let admittedResult: Result<(Route, OfflineNavigationCoverage), OfflineNavigationFailure>
+        let admittedResult: Result<(
+            nativeRoute: Route,
+            replacement: OfflineNavigationRouteReplacement,
+            coverage: OfflineNavigationCoverage
+        ), OfflineNavigationFailure>
         switch result {
         case .success(let route):
             do {
                 let coverage = try await resolveRouteCoverage(
                     coordinates: routeCoordinates(route)
                 )
-                admittedResult = .success((route, coverage))
+                guard let evidence = coverageEvidence(from: coverage) else {
+                    throw OfflineNavigationFailure(
+                        code: .mapCoverageMissing,
+                        message: "HERE's return-to-route corridor has no signed installed-region evidence.",
+                        recovery: "Remain stopped at the last covered road and install the missing native region.",
+                        isRecoverable: true
+                    )
+                }
+                let mappedRoute: OfflineLocalRoute
+                do {
+                    // returnToRoute retains the original native RouteOptions,
+                    // including the truck profile. Mapping must preserve the
+                    // app route ID/mode and newly admitted coverage exactly.
+                    mappedRoute = try HereNativeRouteMapper.map(
+                        route,
+                        routeID: routeID,
+                        mode: mode,
+                        coverage: evidence
+                    )
+                } catch {
+                    throw OfflineNavigationFailure(
+                        code: .offlineRerouteFailed,
+                        message: "HERE's replacement route could not be proven as the active offline freight route.",
+                        recovery: "Remain stopped on the last verified route and retry from a safe location.",
+                        isRecoverable: true
+                    )
+                }
+                let replacement: OfflineNavigationRouteReplacement
+                do {
+                    replacement = try OfflineNavigationRouteReplacement(
+                        route: mappedRoute,
+                        replacingRouteID: routeID,
+                        expectedMode: mode,
+                        admittedCoverage: evidence
+                    )
+                } catch {
+                    throw OfflineNavigationFailure(
+                        code: .offlineRerouteFailed,
+                        message: "HERE's replacement route changed protected route authority.",
+                        recovery: "Remain stopped on the last verified route and retry from a safe location.",
+                        isRecoverable: true
+                    )
+                }
+                admittedResult = .success((route, replacement, coverage))
+            } catch let failure as OfflineNavigationFailure {
+                admittedResult = .failure(failure)
             } catch {
                 admittedResult = .failure(
                     OfflineNavigationFailure(
@@ -1517,7 +1566,7 @@ actor HereNavigateNavigationSession: OfflineNavigationSessionProviding {
         }
         switch admittedResult {
         case .success(let value):
-            let (newRoute, coverage) = value
+            let (newRoute, replacement, coverage) = value
             await routeStore.replace(
                 HereNativeRouteBox(route: newRoute, mode: mode),
                 id: routeID
@@ -1540,6 +1589,10 @@ actor HereNavigateNavigationSession: OfflineNavigationSessionProviding {
             deviationSamples = 0
             currentCoverage = coverage
             lastCoveredEvidence = coverageEvidence(from: coverage)
+            // The typed route event is enqueued before navigating so the
+            // production composition replaces map geometry first. A host that
+            // still owns the pre-reroute DTO cannot race it back into view.
+            eventHandler?(.routeReplaced(replacement))
             transition(.navigating(routeID: routeID, coverage: coverage))
             eventHandler?(.coverageChanged(coverage))
         case .failure(let failure):

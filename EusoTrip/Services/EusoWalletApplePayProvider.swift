@@ -90,6 +90,8 @@ public final class EusoWalletApplePayProvider: NSObject {
     private var setupIntentClientSecret: String?
     private var publishableKey: String?
     private var continuation: CheckedContinuation<EusoWalletApplePayOutcome, Never>?
+    private var paymentController: PKPaymentAuthorizationController?
+    private var transportRegistration: AppRadioSilenceDirectTransportController.Registration?
 
     private override init() { super.init() }
 
@@ -98,6 +100,12 @@ public final class EusoWalletApplePayProvider: NSObject {
     /// because cancellation is a normal flow.
     public func addCard(verificationAmountUSD: Decimal = 0.01,
                         merchantDisplayName: String = "EusoWallet") async -> EusoWalletApplePayOutcome {
+        guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else {
+            return .failed(error: "Apple Pay is paused while the offline journey is active.")
+        }
+        guard continuation == nil else {
+            return .failed(error: "An Apple Pay sheet is already open.")
+        }
         guard canMakePayments else {
             return .failed(error: "Apple Pay isn't available on this device.")
         }
@@ -111,6 +119,9 @@ public final class EusoWalletApplePayProvider: NSObject {
             intent = try await EusoTripAPI.shared.wallet.createStripeSetupIntent()
         } catch {
             return .failed(error: "Couldn't reach EusoWallet. \(error.localizedDescription)")
+        }
+        guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else {
+            return .failed(error: "Apple Pay is paused while the offline journey is active.")
         }
         self.setupIntentClientSecret = intent.clientSecret
         self.publishableKey = intent.publishableKey
@@ -138,11 +149,23 @@ public final class EusoWalletApplePayProvider: NSObject {
             self.continuation = cont
             let controller = PKPaymentAuthorizationController(paymentRequest: request)
             controller.delegate = self
+            self.paymentController = controller
+            self.transportRegistration = AppRadioSilenceDirectTransportController.shared.register(
+                stop: { [weak self, weak controller] in
+                    controller?.dismiss {}
+                    guard let self else { return }
+                    self.finishController(controller)
+                    self.resume(.failed(
+                        error: "Apple Pay was closed because the offline journey started."
+                    ))
+                }
+            )
             controller.present { presented in
                 // controller.present completion is nonisolated; hop back
                 // to the main actor before touching `resume(_:)`.
                 if !presented {
                     Task { @MainActor in
+                        self.finishController(controller)
                         self.resume(.failed(error: "Apple Pay sheet refused to present."))
                     }
                 }
@@ -154,6 +177,13 @@ public final class EusoWalletApplePayProvider: NSObject {
         let cont = continuation
         continuation = nil
         cont?.resume(returning: outcome)
+    }
+
+    fileprivate func finishController(_ controller: PKPaymentAuthorizationController?) {
+        guard controller == nil || paymentController === controller else { return }
+        AppRadioSilenceDirectTransportController.shared.unregister(transportRegistration)
+        transportRegistration = nil
+        paymentController = nil
     }
 }
 
@@ -173,6 +203,7 @@ extension EusoWalletApplePayProvider: PKPaymentAuthorizationControllerDelegate {
             // failure), this is a no-op. Cancellation lands here
             // when the user dismissed without authorizing.
             Task { @MainActor in
+                self.finishController(controller)
                 self.resume(.cancelled)
             }
         }
@@ -185,6 +216,14 @@ extension EusoWalletApplePayProvider: PKPaymentAuthorizationControllerDelegate {
     ) {
         Task { @MainActor [weak self] in
             guard let self else { return }
+            guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else {
+                completion(.init(status: .failure, errors: nil))
+                self.finishController(controller)
+                self.resume(.failed(
+                    error: "Apple Pay was closed because the offline journey started."
+                ))
+                return
+            }
             guard let publishable = self.publishableKey else {
                 completion(.init(status: .failure, errors: nil))
                 self.resume(.failed(error: "EusoWallet returned no publishable key."))
@@ -198,6 +237,14 @@ extension EusoWalletApplePayProvider: PKPaymentAuthorizationControllerDelegate {
                 let attached = try await EusoTripAPI.shared.wallet.attachStripePaymentMethod(
                     paymentMethodId: pm.id
                 )
+                guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else {
+                    completion(.init(status: .failure, errors: nil))
+                    self.finishController(controller)
+                    self.resume(.failed(
+                        error: "Apple Pay was closed because the offline journey started."
+                    ))
+                    return
+                }
                 completion(.init(status: .success, errors: nil))
                 self.resume(.added(
                     paymentMethodId: pm.id,
@@ -256,7 +303,8 @@ private extension EusoWalletApplePayProvider {
         let tokenBody = "card[apple_pay]=true&\(stripeAppleData)"
         tokenReq.httpBody = tokenBody.data(using: .utf8)
 
-        let (tokenData, tokenResp) = try await URLSession.shared.data(for: tokenReq)
+        let (tokenData, tokenResp) = try await EusoTripAPI.shared
+            .appRadioSilenceGatedData(for: tokenReq)
         try Self.throwIfStripeError(data: tokenData, response: tokenResp)
         let token = try JSONDecoder().decode(StripeToken.self, from: tokenData)
 
@@ -269,7 +317,8 @@ private extension EusoWalletApplePayProvider {
         pmReq.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         pmReq.httpBody = "type=card&card[token]=\(token.id)".data(using: .utf8)
 
-        let (pmData, pmResp) = try await URLSession.shared.data(for: pmReq)
+        let (pmData, pmResp) = try await EusoTripAPI.shared
+            .appRadioSilenceGatedData(for: pmReq)
         try Self.throwIfStripeError(data: pmData, response: pmResp)
         return try JSONDecoder().decode(StripePaymentMethod.self, from: pmData)
     }

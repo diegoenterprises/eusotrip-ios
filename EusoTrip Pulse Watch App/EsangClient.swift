@@ -135,7 +135,7 @@ struct EsangClient {
         ]
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (data, response) = try await URLSession.shared.data(for: req)
+        let (data, response) = try await AppRadioSilenceWatchPolicy.shared.data(for: req)
         try throwIfBadStatus(response, data: data)
 
         struct Envelope: Decodable {
@@ -203,7 +203,7 @@ struct EsangClient {
         let body: [String: Any] = ["json": input]
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (data, response) = try await URLSession.shared.data(for: req)
+        let (data, response) = try await AppRadioSilenceWatchPolicy.shared.data(for: req)
         try throwIfBadStatus(response, data: data)
 
         struct Envelope: Decodable {
@@ -266,6 +266,13 @@ struct EsangClient {
         do {
             return try await queryJSONDirect(router: router, inputJSONString: inputJSONString)
         } catch {
+            // Policy refusal and structured cancellation are terminal. Do not
+            // turn a blocked direct request into a WCSession relay that would
+            // ask the paired phone to create replacement transport work.
+            if error is AppRadioSilenceWatchTransportError
+                || error is CancellationError {
+                throw error
+            }
             // Path 2 — phone relay. Only attempt when the phone link
             // is live; otherwise the sendMessage will bounce and we'd
             // just re-surface an EsangError.notConnected that masks
@@ -297,7 +304,7 @@ struct EsangClient {
         var req = authed(URLRequest(url: components.url!, timeoutInterval: 12))
         req.httpMethod = "GET"
 
-        let (data, response) = try await URLSession.shared.data(for: req)
+        let (data, response) = try await AppRadioSilenceWatchPolicy.shared.data(for: req)
         try throwIfBadStatus(response, data: data)
         return data
     }
@@ -309,7 +316,7 @@ struct EsangClient {
         let body: [String: Any] = ["json": input]
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (data, response) = try await URLSession.shared.data(for: req)
+        let (data, response) = try await AppRadioSilenceWatchPolicy.shared.data(for: req)
         try throwIfBadStatus(response, data: data)
         return data
     }

@@ -34,6 +34,66 @@ final class AppRadioSilenceLeaseStateTests: XCTestCase {
         XCTAssertEqual(state.release(owned), .unknownLease)
         XCTAssertEqual(state.activeLeaseCount, 0)
     }
+
+    func testPhoneRestartPublishesStrictlyNewerSharedMarkerState() throws {
+        for previousEnforced in [false, true] {
+            for sharedStateIsEnforced in [false, true] {
+                let previous = AppRadioSilencePhoneMirrorState(
+                    isEnforced: previousEnforced,
+                    revision: 7,
+                    epoch: "phone-install"
+                )
+                let data = try AppRadioSilencePhoneMirrorPersistence.encode(previous)
+
+                let restarted = AppRadioSilencePhoneMirrorPersistence
+                    .restoreForProcessRestart(
+                        snapshotData: data,
+                        sharedStateIsEnforced: sharedStateIsEnforced,
+                        makeEpoch: { "unexpected-new-epoch" }
+                    )
+
+                XCTAssertEqual(restarted.isEnforced, sharedStateIsEnforced)
+                XCTAssertEqual(restarted.revision, 8)
+                XCTAssertEqual(restarted.epoch, "phone-install")
+            }
+        }
+    }
+
+    func testCorruptPhoneSnapshotStartsFreshFailClosedEpoch() {
+        let restarted = AppRadioSilencePhoneMirrorPersistence
+            .restoreForProcessRestart(
+                snapshotData: Data("corrupt".utf8),
+                legacy: .init(
+                    isEnforced: true,
+                    revision: 99,
+                    epoch: "partial-writes"
+                ),
+                sharedStateIsEnforced: true,
+                makeEpoch: { "replacement-epoch" }
+            )
+
+        XCTAssertTrue(restarted.isEnforced)
+        XCTAssertEqual(restarted.revision, 0)
+        XCTAssertEqual(restarted.epoch, "replacement-epoch")
+    }
+
+    func testCompletePhoneLegacyTupleMigratesThenAdvances() {
+        let restarted = AppRadioSilencePhoneMirrorPersistence
+            .restoreForProcessRestart(
+                snapshotData: nil,
+                legacy: .init(
+                    isEnforced: true,
+                    revision: 5,
+                    epoch: "legacy-phone"
+                ),
+                sharedStateIsEnforced: false,
+                makeEpoch: { "unexpected-new-epoch" }
+            )
+
+        XCTAssertFalse(restarted.isEnforced)
+        XCTAssertEqual(restarted.revision, 6)
+        XCTAssertEqual(restarted.epoch, "legacy-phone")
+    }
 }
 #endif
 
@@ -58,6 +118,37 @@ enum AppRadioSilenceLeaseStateSourceVerification {
         precondition(state.release(first.lease) == .unknownLease)
         precondition(state.release(nested.lease) == .finalLeaseReleased)
         precondition(!state.isEnforced)
+
+        let priorPhoneState = AppRadioSilencePhoneMirrorState(
+            isEnforced: false,
+            revision: 7,
+            epoch: "phone-install"
+        )
+        let phoneData = try! AppRadioSilencePhoneMirrorPersistence.encode(priorPhoneState)
+        let restartedPhoneState = AppRadioSilencePhoneMirrorPersistence
+            .restoreForProcessRestart(
+                snapshotData: phoneData,
+                sharedStateIsEnforced: false,
+                makeEpoch: { "unexpected-new-epoch" }
+            )
+        precondition(!restartedPhoneState.isEnforced)
+        precondition(restartedPhoneState.revision == 8)
+        precondition(restartedPhoneState.epoch == "phone-install")
+
+        let recoveredPhoneState = AppRadioSilencePhoneMirrorPersistence
+            .restoreForProcessRestart(
+                snapshotData: Data("corrupt".utf8),
+                legacy: .init(
+                    isEnforced: true,
+                    revision: 99,
+                    epoch: "partial-writes"
+                ),
+                sharedStateIsEnforced: true,
+                makeEpoch: { "replacement-epoch" }
+            )
+        precondition(recoveredPhoneState.isEnforced)
+        precondition(recoveredPhoneState.revision == 0)
+        precondition(recoveredPhoneState.epoch == "replacement-epoch")
     }
 }
 #endif

@@ -221,6 +221,102 @@ final class HereNativeRouteBox: @unchecked Sendable {
     }
 }
 
+/// Single HERE Route -> app DTO boundary shared by initial calculation and
+/// return-to-route. Rerouting must not invent a second, weaker mapper.
+enum HereNativeRouteMapper {
+    static func map(
+        _ route: Route,
+        routeID: String,
+        mode: OfflineRouteMode,
+        coverage: OfflineInstalledCoverageEvidence
+    ) throws -> OfflineLocalRoute {
+        var sequence = 0
+        var sections: [OfflineRouteSection] = []
+        var notices: [String] = []
+        for section in route.sections {
+            let coordinates = try section.geometry.vertices.map {
+                try OfflineGeoCoordinate(
+                    latitude: $0.latitude,
+                    longitude: $0.longitude
+                )
+            }
+            var maneuvers: [OfflineRouteManeuver] = []
+            for maneuver in section.maneuvers {
+                let instruction = maneuver.text.trimmingCharacters(
+                    in: .whitespacesAndNewlines
+                )
+                guard !instruction.isEmpty else { continue }
+                maneuvers.append(
+                    try OfflineRouteManeuver(
+                        sequence: sequence,
+                        instruction: instruction,
+                        coordinate: OfflineGeoCoordinate(
+                            latitude: maneuver.coordinates.latitude,
+                            longitude: maneuver.coordinates.longitude
+                        ),
+                        distanceFromStartMeters: nil
+                    )
+                )
+                sequence += 1
+            }
+            notices.append(
+                contentsOf: section.sectionNotices.map { _ in
+                    "HERE reported a local route restriction or preference notice."
+                }
+            )
+            sections.append(
+                try OfflineRouteSection(
+                    coordinates: coordinates,
+                    maneuvers: maneuvers,
+                    summary: OfflineRouteSummary(
+                        distanceMeters: try checkedRouteDistance(
+                            section.lengthInMeters
+                        ),
+                        durationSeconds: try checkedDuration(section.duration)
+                    )
+                )
+            )
+        }
+        return try OfflineLocalRoute(
+            id: routeID,
+            mode: mode,
+            sections: sections,
+            summary: OfflineRouteSummary(
+                distanceMeters: try checkedRouteDistance(route.lengthInMeters),
+                durationSeconds: try checkedDuration(route.duration)
+            ),
+            notices: notices,
+            coverage: coverage
+        )
+    }
+
+    private static func checkedDuration(_ duration: Double) throws -> Int64 {
+        guard duration.isFinite,
+              duration >= 0,
+              duration <= Double(Int64.max) else {
+            throw HereNavigateOfflineAdapterError.operation(
+                .invalidSDKData,
+                "HERE returned an invalid local route duration.",
+                recovery: "Repair installed map data and retry the route."
+            )
+        }
+        return Int64(duration.rounded())
+    }
+
+    private static func checkedRouteDistance<T: BinaryInteger>(
+        _ value: T
+    ) throws -> Int64 {
+        guard let result = Int64(exactly: value), result >= 0 else {
+            throw HereNavigateOfflineAdapterError.operation(
+                .invalidSDKData,
+                "HERE returned an invalid local route distance.",
+                recovery: "Repair installed map data and retry the route."
+            )
+        }
+        return result
+    }
+}
+
 private struct HerePersistedRegionNameCatalog: Codable {
     let formatVersion: Int
     let namesByRegionID: [String: String]
@@ -1577,7 +1673,7 @@ actor HereNavigateOfflineEngine: OfflineMapEngine, HEREInstalledRegionInventoryP
             let routeID = "\(request.id.uuidString.lowercased())-\(index)"
             admitted.append(
                 (
-                    model: try mapRoute(
+                    model: try HereNativeRouteMapper.map(
                         nativeRoute,
                         routeID: routeID,
                         mode: request.mode,
@@ -1991,67 +2087,6 @@ actor HereNavigateOfflineEngine: OfflineMapEngine, HEREInstalledRegionInventoryP
         return result
     }
 
-    private func mapRoute(
-        _ route: Route,
-        routeID: String,
-        mode: OfflineRouteMode,
-        coverage: OfflineInstalledCoverageEvidence
-    ) throws -> OfflineLocalRoute {
-        var sequence = 0
-        var sections: [OfflineRouteSection] = []
-        var notices: [String] = []
-        for section in route.sections {
-            let coordinates = try section.geometry.vertices.map {
-                try OfflineGeoCoordinate(latitude: $0.latitude, longitude: $0.longitude)
-            }
-            var maneuvers: [OfflineRouteManeuver] = []
-            for maneuver in section.maneuvers {
-                let instruction = maneuver.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !instruction.isEmpty else { continue }
-                maneuvers.append(
-                    try OfflineRouteManeuver(
-                        sequence: sequence,
-                        instruction: instruction,
-                        coordinate: OfflineGeoCoordinate(
-                            latitude: maneuver.coordinates.latitude,
-                            longitude: maneuver.coordinates.longitude
-                        ),
-                        distanceFromStartMeters: nil
-                    )
-                )
-                sequence += 1
-            }
-            notices.append(
-                contentsOf: section.sectionNotices.map { _ in
-                    "HERE reported a local route restriction or preference notice."
-                }
-            )
-            sections.append(
-                try OfflineRouteSection(
-                    coordinates: coordinates,
-                    maneuvers: maneuvers,
-                    summary: OfflineRouteSummary(
-                        distanceMeters: try checkedRouteDistance(
-                            section.lengthInMeters
-                        ),
-                        durationSeconds: checkedDuration(section.duration)
-                    )
-                )
-            )
-        }
-        return try OfflineLocalRoute(
-            id: routeID,
-            mode: mode,
-            sections: sections,
-            summary: OfflineRouteSummary(
-                distanceMeters: try checkedRouteDistance(route.lengthInMeters),
-                durationSeconds: checkedDuration(route.duration)
-            ),
-            notices: notices,
-            coverage: coverage
-        )
-    }
-
     private func routeCoordinates(
         _ route: Route
     ) throws -> [OfflineGeoCoordinate] {
@@ -2084,28 +2119,6 @@ actor HereNavigateOfflineEngine: OfflineMapEngine, HEREInstalledRegionInventoryP
 
     private func nativeCoordinate(_ coordinate: OfflineGeoCoordinate) -> GeoCoordinates {
         GeoCoordinates(latitude: coordinate.latitude, longitude: coordinate.longitude)
-    }
-
-    private func checkedDuration(_ duration: Double) throws -> Int64 {
-        guard duration.isFinite, duration >= 0, duration <= Double(Int64.max) else {
-            throw HereNavigateOfflineAdapterError.operation(
-                .invalidSDKData,
-                "HERE returned an invalid local route duration.",
-                recovery: "Repair installed map data and retry the route."
-            )
-        }
-        return Int64(duration.rounded())
-    }
-
-    private func checkedRouteDistance<T: BinaryInteger>(_ value: T) throws -> Int64 {
-        guard let result = Int64(exactly: value), result >= 0 else {
-            throw HereNavigateOfflineAdapterError.operation(
-                .invalidSDKData,
-                "HERE returned an invalid local route distance.",
-                recovery: "Repair installed map data and retry the route."
-            )
-        }
-        return result
     }
 
     private func checkedInt64<T: BinaryInteger>(_ value: T) throws -> Int64 {

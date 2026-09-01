@@ -49,6 +49,14 @@ final class WeatherService: NSObject, ObservableObject {
 
     private let weatherService = WeatherKit.WeatherService.shared
 
+    private final class CancellableGeocoder: @unchecked Sendable {
+        let geocoder = CLGeocoder()
+
+        func cancel() {
+            geocoder.cancelGeocode()
+        }
+    }
+    private var isAppRadioSilenceSuspended = false
     private var pendingLocation: CheckedContinuation<CLLocation?, Never>?
     private var pendingLocationID: UUID?
     /// True once the current one-shot already burned its single retry —
@@ -150,8 +158,29 @@ final class WeatherService: NSObject, ObservableObject {
     /// last-good cache (memory + disk). Returns nil on failure; the caller
     /// keeps showing the cache / an honest empty state rather than a
     /// blank/stuck card.
+    func suspendForAppRadioSilence() {
+        guard !isAppRadioSilenceSuspended else { return }
+        isAppRadioSilenceSuspended = true
+        finishPendingLocation(nil)
+    }
+
+    /// Resume lazily. Mounted weather surfaces decide when to refresh;
+    /// ending the offline journey does not create network work by itself.
+    func resumeAfterAppRadioSilence() {
+        isAppRadioSilenceSuspended = false
+    }
+
     func fetchCurrent() async -> WeatherSnapshot? {
+        guard !isAppRadioSilenceSuspended else { return nil }
+        do {
+            try EusoTripAPI.shared.requireAppRadioSilenceTransportAllowed()
+        } catch {
+            return nil
+        }
         let snap = await fetchCurrentUncached()
+        guard !Task.isCancelled,
+              !isAppRadioSilenceSuspended,
+              !EusoTripAPI.shared.isAppRadioSilenceEnforced else { return nil }
         if let snap { Self.storeLastSnapshot(snap) }
         return snap
     }
@@ -236,6 +265,7 @@ final class WeatherService: NSObject, ObservableObject {
     }
 
     private func fetchCurrentUncached() async -> WeatherSnapshot? {
+        guard !isAppRadioSilenceSuspended else { return nil }
         guard let location = await requestLocationIfNeeded() else {
             return nil
         }
@@ -259,17 +289,25 @@ final class WeatherService: NSObject, ObservableObject {
         // FALLBACK 2/3: NWS (US ground stations) → Open-Meteo (keyless,
         // global). NEVER a fabricated reading at any step.
         let placemark = try? await reverseGeocode(location)
+        guard !Task.isCancelled, !isAppRadioSilenceSuspended else { return nil }
         do {
+            try EusoTripAPI.shared.requireAppRadioSilenceTransportAllowed()
             let weather = try await weatherService.weather(for: location)
             var snap = Self.compose(weather: weather, placemark: placemark)
+            try EusoTripAPI.shared.requireAppRadioSilenceTransportAllowed()
+            guard !Task.isCancelled, !isAppRadioSilenceSuspended else { return nil }
             // Lane Impact rides EVERY provider path (adversarial-verify
             // 2026-07-09): it's an independent proc (weather.laneImpactActive),
             // best-effort, nil on failure — previously it was only fetched on
             // the server-fallback path, so the panel was dead whenever
             // on-device WeatherKit succeeded (the normal case).
             snap.laneImpact = await fetchLaneImpact()
+            guard !Task.isCancelled, !isAppRadioSilenceSuspended else { return nil }
             return snap
         } catch {
+            guard !Task.isCancelled,
+                  !isAppRadioSilenceSuspended,
+                  !EusoTripAPI.shared.isAppRadioSilenceEnforced else { return nil }
             // Surface the FULL error in every build (not just DEBUG) so a
             // misconfigured signing / entitlement / portal-capability
             // failure is visible in production crash logs / Xcode
@@ -286,6 +324,7 @@ final class WeatherService: NSObject, ObservableObject {
             // Server (WeatherKit/Apple WeatherKit-backed) reliably carries the daily
             // strip; then US ground truth, then keyless last resort.
             if let server = await fetchServerWeather(location: location, placemark: placemark) {
+                guard !Task.isCancelled, !isAppRadioSilenceSuspended else { return nil }
                 return server
             }
             // For US locations, prefer NWS (api.weather.gov). NWS pulls
@@ -304,6 +343,7 @@ final class WeatherService: NSObject, ObservableObject {
             if isUS {
                 if var nws = try? await fetchNWS(location: location, placemark: placemark) {
                     nws.laneImpact = await fetchLaneImpact()
+                    guard !Task.isCancelled, !isAppRadioSilenceSuspended else { return nil }
                     return nws
                 }
             }
@@ -313,6 +353,7 @@ final class WeatherService: NSObject, ObservableObject {
                 return nil
             }
             om.laneImpact = await fetchLaneImpact()
+            guard !Task.isCancelled, !isAppRadioSilenceSuspended else { return nil }
             return om
         }
     }
@@ -1038,7 +1079,8 @@ final class WeatherService: NSObject, ObservableObject {
             var req = URLRequest(url: url)
             req.timeoutInterval = 6
             for (k, v) in headers { req.setValue(v, forHTTPHeaderField: k) }
-            let (data, resp) = try await URLSession.shared.data(for: req)
+            let (data, resp) = try await EusoTripAPI.shared
+                .appRadioSilenceGatedData(for: req)
             guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
                 throw URLError(.badServerResponse)
             }
@@ -1205,7 +1247,8 @@ final class WeatherService: NSObject, ObservableObject {
         req.timeoutInterval = 6
         for (k, v) in headers { req.setValue(v, forHTTPHeaderField: k) }
         guard
-            let (data, resp) = try? await URLSession.shared.data(for: req),
+            let (data, resp) = try? await EusoTripAPI.shared
+                .appRadioSilenceGatedData(for: req),
             let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode),
             let payload = try? JSONDecoder().decode(HourlyResp.self, from: data)
         else { return [] }
@@ -1268,7 +1311,8 @@ final class WeatherService: NSObject, ObservableObject {
         req.timeoutInterval = 6
         for (k, v) in headers { req.setValue(v, forHTTPHeaderField: k) }
         guard
-            let (data, resp) = try? await URLSession.shared.data(for: req),
+            let (data, resp) = try? await EusoTripAPI.shared
+                .appRadioSilenceGatedData(for: req),
             let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode),
             let payload = try? JSONDecoder().decode(AlertsResp.self, from: data)
         else { return [] }
@@ -1322,7 +1366,8 @@ final class WeatherService: NSObject, ObservableObject {
         for (k, v) in headers { req.setValue(v, forHTTPHeaderField: k) }
         let payload: ForecastResp
         do {
-            let (data, resp) = try await URLSession.shared.data(for: req)
+            let (data, resp) = try await EusoTripAPI.shared
+                .appRadioSilenceGatedData(for: req)
             guard let http = resp as? HTTPURLResponse,
                   (200..<300).contains(http.statusCode) else { return [] }
             payload = try JSONDecoder().decode(ForecastResp.self, from: data)
@@ -1449,7 +1494,8 @@ final class WeatherService: NSObject, ObservableObject {
         }
         var req = URLRequest(url: url)
         req.timeoutInterval = 6
-        let (data, response) = try await URLSession.shared.data(for: req)
+        let (data, response) = try await EusoTripAPI.shared
+            .appRadioSilenceGatedData(for: req)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw URLError(.badServerResponse)
         }
@@ -2039,13 +2085,19 @@ final class WeatherService: NSObject, ObservableObject {
     // MARK: - Location (one-shot)
 
     private func requestLocationIfNeeded() async -> CLLocation? {
+        guard !isAppRadioSilenceSuspended else { return nil }
         switch locationManager.authorizationStatus {
         case .notDetermined:
             locationManager.requestWhenInUseAuthorization()
             // Wait for the permission prompt to resolve (user action can
             // take any amount of time — poll for up to 8 seconds).
             for _ in 0..<16 {
-                try? await Task.sleep(nanoseconds: 500_000_000)
+                do {
+                    try await Task.sleep(nanoseconds: 500_000_000)
+                } catch {
+                    return nil
+                }
+                guard !Task.isCancelled, !isAppRadioSilenceSuspended else { return nil }
                 if locationManager.authorizationStatus != .notDetermined { break }
             }
             if locationManager.authorizationStatus == .authorizedWhenInUse
@@ -2065,14 +2117,26 @@ final class WeatherService: NSObject, ObservableObject {
     /// One-shot location read with a 4-second hard timeout so the
     /// simulator (which often has no GPS fix at all) can't stall us.
     private func requestLocationOneShot() async -> CLLocation? {
-        await withCheckedContinuation { (cont: CheckedContinuation<CLLocation?, Never>) in
-            let requestID = UUID()
-            pendingLocation?.resume(returning: nil)
-            pendingLocation = cont
-            pendingLocationID = requestID
-            pendingLocationDidRetry = false
-            locationManager.requestLocation()
-            armLocationTimeout(for: requestID)
+        guard !isAppRadioSilenceSuspended else { return nil }
+        let requestID = UUID()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: CheckedContinuation<CLLocation?, Never>) in
+                guard !Task.isCancelled, !isAppRadioSilenceSuspended else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                finishPendingLocation(nil)
+                pendingLocation = continuation
+                pendingLocationID = requestID
+                pendingLocationDidRetry = false
+                locationManager.requestLocation()
+                armLocationTimeout(for: requestID)
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                guard self?.pendingLocationID == requestID else { return }
+                self?.finishPendingLocation(nil)
+            }
         }
     }
 
@@ -2092,7 +2156,28 @@ final class WeatherService: NSObject, ObservableObject {
     // MARK: - Reverse geocode
 
     private func reverseGeocode(_ location: CLLocation) async throws -> CLPlacemark? {
-        try await CLGeocoder().reverseGeocodeLocation(location).first
+        guard !isAppRadioSilenceSuspended else {
+            throw AppRadioSilenceTransportError.enforced
+        }
+        try EusoTripAPI.shared.requireAppRadioSilenceTransportAllowed()
+        let request = CancellableGeocoder()
+        return try await withTaskCancellationHandler {
+            let placemarks = try await request.geocoder.reverseGeocodeLocation(location)
+            try Task.checkCancellation()
+            try EusoTripAPI.shared.requireAppRadioSilenceTransportAllowed()
+            guard !isAppRadioSilenceSuspended else {
+                throw AppRadioSilenceTransportError.enforced
+            }
+            return placemarks.first
+        } onCancel: {
+            request.cancel()
+        }
+    }
+
+    private func finishPendingLocation(_ location: CLLocation?) {
+        pendingLocation?.resume(returning: location)
+        pendingLocation = nil
+        pendingLocationID = nil
     }
 }
 
@@ -2112,6 +2197,10 @@ extension WeatherService: CLLocationManagerDelegate {
         // delegate stays nonisolated.
         let snapshot = locations.last
         Task { @MainActor in
+            guard !self.isAppRadioSilenceSuspended else {
+                self.finishPendingLocation(nil)
+                return
+            }
             let now = Date()
             let acceptable: CLLocation? = {
                 guard let s = snapshot else { return nil }

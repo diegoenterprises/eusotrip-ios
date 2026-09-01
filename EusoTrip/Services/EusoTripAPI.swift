@@ -362,7 +362,17 @@ final class EusoTripAPI: ObservableObject {
     /// `AppRadioSilenceCoordinator`. This is set synchronously before any
     /// producer is canceled, so a re-entrant task cannot start a fresh request
     /// during the transition into a protected offline journey.
-    private(set) var isAppRadioSilenceEnforced = false
+    private var isAppRadioSilenceEnforcedInProcess = false
+
+    /// The in-process coordinator is authoritative for cancellation. The
+    /// atomic app-group marker extends the same preflight to App Intents and
+    /// any other app-owned process that constructs this client independently.
+    /// Missing/corrupt shared state decodes as enforced.
+    var isAppRadioSilenceEnforced: Bool {
+        isAppRadioSilenceEnforcedInProcess
+            || AppRadioSilenceSharedState.isEnforced
+    }
+    private var appRadioSilenceAuxiliarySessions: [UUID: URLSession] = [:]
 
     /// Single-flight wrapper around `sessionRefreshHandler`. All 401-driven
     /// callers funnel through here so only one refresh runs at a time.
@@ -425,6 +435,21 @@ final class EusoTripAPI: ObservableObject {
         return URLSession(configuration: config)
     }
 
+    /// Cookie-free session for third-party and compatibility transports that
+    /// cannot use the authenticated API session. Every instance is registered
+    /// below before it starts so the first radio-silence lease can cancel it.
+    nonisolated private static func makeAuxiliarySession() -> URLSession {
+        let config = URLSessionConfiguration.ephemeral
+        config.httpCookieStorage = nil
+        config.httpShouldSetCookies = false
+        config.urlCache = nil
+        config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        config.timeoutIntervalForRequest = 22
+        config.timeoutIntervalForResource = 60
+        config.waitsForConnectivity = false
+        return URLSession(configuration: config)
+    }
+
     lazy var session: URLSession = Self.makeSession()
 
     private let encoder: JSONEncoder = {
@@ -451,8 +476,8 @@ final class EusoTripAPI: ObservableObject {
     /// cacheless session is installed immediately but cannot be used until the
     /// gate is reopened. No request URL, token, or response detail is logged.
     func setAppRadioSilenceEnforced(_ enforced: Bool) {
-        guard isAppRadioSilenceEnforced != enforced else { return }
-        isAppRadioSilenceEnforced = enforced
+        guard isAppRadioSilenceEnforcedInProcess != enforced else { return }
+        isAppRadioSilenceEnforcedInProcess = enforced
         guard enforced else { return }
 
         inFlightRefresh?.cancel()
@@ -460,6 +485,72 @@ final class EusoTripAPI: ObservableObject {
         isRefreshing = false
         session.invalidateAndCancel()
         session = Self.makeSession()
+
+        let auxiliary = Array(appRadioSilenceAuxiliarySessions.values)
+        appRadioSilenceAuxiliarySessions.removeAll()
+        for session in auxiliary {
+            session.invalidateAndCancel()
+        }
+    }
+
+    /// Synchronous main-actor preflight for non-URLSession providers such as
+    /// WeatherKit and for custom streaming transports.
+    func requireAppRadioSilenceTransportAllowed() throws {
+        guard !isAppRadioSilenceEnforced else {
+            throw AppRadioSilenceTransportError.enforced
+        }
+    }
+
+    /// Register a custom session before its first task starts. Used by the
+    /// no-redirect Wallet pass stream; acquire() invalidates every registered
+    /// session after closing the gate.
+    @discardableResult
+    func registerAppRadioSilenceAuxiliarySession(_ auxiliarySession: URLSession) throws -> UUID {
+        try requireAppRadioSilenceTransportAllowed()
+        let id = UUID()
+        appRadioSilenceAuxiliarySessions[id] = auxiliarySession
+        return id
+    }
+
+    func unregisterAppRadioSilenceAuxiliarySession(_ id: UUID) {
+        appRadioSilenceAuxiliarySessions[id] = nil
+    }
+
+    /// Cancellation-aware entry point for every app transport that must not
+    /// share authenticated cookies (NWS, Stripe, article metadata, wrist
+    /// relays). It creates and registers a private session synchronously before
+    /// starting, then performs a postflight gate check before returning bytes.
+    func appRadioSilenceGatedData(
+        for original: URLRequest
+    ) async throws -> (Data, URLResponse) {
+        try Task.checkCancellation()
+        try requireAppRadioSilenceTransportAllowed()
+
+        var request = original
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        request.setValue("no-store, no-cache", forHTTPHeaderField: "Cache-Control")
+        request.setValue("no-cache", forHTTPHeaderField: "Pragma")
+
+        let auxiliarySession = Self.makeAuxiliarySession()
+        let registration = try registerAppRadioSilenceAuxiliarySession(auxiliarySession)
+        defer {
+            unregisterAppRadioSilenceAuxiliarySession(registration)
+            auxiliarySession.invalidateAndCancel()
+        }
+
+        let response: (Data, URLResponse)
+        do {
+            response = try await auxiliarySession.data(for: request)
+        } catch {
+            if isAppRadioSilenceEnforced {
+                throw AppRadioSilenceTransportError.enforced
+            }
+            throw error
+        }
+
+        try Task.checkCancellation()
+        try requireAppRadioSilenceTransportAllowed()
+        return response
     }
 
     /// Hard-reset all stored cookies for the backend host.  Used on logout.
@@ -4789,6 +4880,8 @@ struct PODAPI {
         let receiverName: String?
         let photoBase64: String?
         let signatureBase64: String?
+        let photoUrl: String?
+        let signatureUrl: String?
         let notes: String?
         let submittedAt: String?
         let status: String?

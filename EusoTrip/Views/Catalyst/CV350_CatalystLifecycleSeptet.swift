@@ -100,10 +100,50 @@ private struct CL350Pod: Decodable {
     let receiverName: String?
     let photoBase64: String?
     let signatureBase64: String?
+    let photoUrl: String?
+    let signatureUrl: String?
     let notes: String?
     let status: String?
     let rejectionReason: String?
     let submittedAt: String?
+
+    var hasPhotoEvidence: Bool {
+        photoBase64?.cl350NilIfEmpty != nil || photoUrl?.cl350NilIfEmpty != nil
+    }
+
+    var hasSignatureEvidence: Bool {
+        signatureBase64?.cl350NilIfEmpty != nil || signatureUrl?.cl350NilIfEmpty != nil
+    }
+}
+
+private struct CL350EvidenceImage: View {
+    let base64: String?
+    let urlString: String?
+
+    var body: some View {
+        if let base64,
+           let data = Data(base64Encoded: base64),
+           let image = UIImage(data: data) {
+            Image(uiImage: image).resizable().scaledToFit()
+        } else if let urlString,
+                  let url = URL(string: urlString),
+                  url.scheme == "https" {
+            AppRadioSilenceAsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let image):
+                    image.resizable().scaledToFit()
+                case .failure:
+                    Label("Evidence unavailable", systemImage: "exclamationmark.triangle")
+                        .font(EType.caption)
+                        .foregroundStyle(Brand.danger)
+                case .empty:
+                    ProgressView()
+                @unknown default:
+                    ProgressView()
+                }
+            }
+        }
+    }
 }
 
 /// `loads.getCloseoutSummary` — every field honestly nullable on the wire.
@@ -1416,8 +1456,8 @@ private struct CatalystAtDeliveryBody354: View {
             ? ("IN PROGRESS", Brand.warning)
             : (rejected ? ("EXCEPTION", Brand.danger) : ("PASS", Brand.success))
         let rows: [(String, Bool)] = [
-            ("Receiver signature \(pod?.receiverName?.cl350NilIfEmpty ?? "")", pod?.signatureBase64?.cl350NilIfEmpty != nil || pod != nil),
-            ("Delivery photo on file", pod?.photoBase64?.cl350NilIfEmpty != nil),
+            ("Receiver signature \(pod?.receiverName?.cl350NilIfEmpty ?? "")", pod?.hasSignatureEvidence == true),
+            ("Delivery photo on file", pod?.hasPhotoEvidence == true),
             ("Receiving notes \(pod?.notes?.cl350NilIfEmpty ?? "")", pod?.notes?.cl350NilIfEmpty != nil),
         ]
         return VStack(alignment: .leading, spacing: 6) {
@@ -1525,16 +1565,17 @@ private struct CL350PodSheet: View {
                 Text("Delivery proof")
                     .font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
                 if let pod = store.pod {
-                    if let b64 = pod.photoBase64, let data = Data(base64Encoded: b64), let img = UIImage(data: data) {
-                        Image(uiImage: img).resizable().scaledToFit()
+                    if pod.hasPhotoEvidence {
+                        CL350EvidenceImage(base64: pod.photoBase64, urlString: pod.photoUrl)
                             .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
                     }
-                    if let b64 = pod.signatureBase64, let data = Data(base64Encoded: b64), let img = UIImage(data: data) {
+                    if pod.hasSignatureEvidence {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("RECEIVER SIGNATURE")
                                 .font(.system(size: 9, weight: .heavy)).kerning(0.8)
                                 .foregroundStyle(palette.textTertiary)
-                            Image(uiImage: img).resizable().scaledToFit().frame(maxHeight: 90)
+                            CL350EvidenceImage(base64: pod.signatureBase64, urlString: pod.signatureUrl)
+                                .frame(maxHeight: 90)
                         }
                         .padding(12)
                         .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCard))
@@ -1645,8 +1686,12 @@ private struct CatalystPodReceiptBody355: View {
                 if issued {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("RECEIVER SIGN").font(.system(size: 8, weight: .heavy)).foregroundStyle(palette.textSecondary)
-                        if let b64 = store.pod?.signatureBase64, let data = Data(base64Encoded: b64), let img = UIImage(data: data) {
-                            Image(uiImage: img).resizable().scaledToFit().frame(width: 110, height: 26)
+                        if store.pod?.hasSignatureEvidence == true {
+                            CL350EvidenceImage(
+                                base64: store.pod?.signatureBase64,
+                                urlString: store.pod?.signatureUrl
+                            )
+                            .frame(width: 110, height: 26)
                         } else {
                             Text("on record").font(.system(size: 10, weight: .semibold)).foregroundStyle(palette.textSecondary)
                         }
@@ -1708,8 +1753,8 @@ private struct CatalystPodReceiptBody355: View {
     private var docTiles: some View {
         let tiles: [(badge: String, title: String, sub: String, present: Bool, style: AnyShapeStyle)] = [
             ("POD", "Delivery photo",
-             store.pod?.photoBase64?.cl350NilIfEmpty != nil ? "on file" : "not attached",
-             store.pod?.photoBase64?.cl350NilIfEmpty != nil,
+             store.pod?.hasPhotoEvidence == true ? "on file" : "not attached",
+             store.pod?.hasPhotoEvidence == true,
              AnyShapeStyle(Brand.success)),
             ("BOL", "Bill of lading",
              store.closeout?.bolNumber?.cl350NilIfEmpty ?? "not filed",

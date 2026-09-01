@@ -68,6 +68,7 @@ final class DriverGPSPushService: NSObject, ObservableObject,
     private var locationPushTask: Task<Void, Never>?
     private var crumbFlushTask: Task<Void, Never>?
     private var needsFinalCrumbFlush = false
+    private var pendingFinalCrumbLoadId: Int?
 
     // MARK: - Breadcrumb trail (L13-6)
     //
@@ -80,9 +81,10 @@ final class DriverGPSPushService: NSObject, ObservableObject,
     // untouched. Gated by the `breadcrumbsEnabled` flag (default on;
     // kill-switch — the buffer simply never flushes when off).
 
-    /// Raw buffered fix; converted to the wire shape at flush time so each
-    /// consumer (locationBatch = mph, Haul coverage = kph) gets its own unit.
+    /// Raw buffered fix, converted to the persisted telemetry wire shape at
+    /// flush time. Server-side projections own mileage and territory awards.
     private struct Crumb {
+        let loadId: Int?
         let lat: Double, lng: Double
         let timestamp: String
         let speedMps: Double?      // raw m/s (nil when CoreLocation reports <0)
@@ -154,9 +156,11 @@ final class DriverGPSPushService: NSObject, ObservableObject,
     }
 
     func stop() {
-        if !crumbBuffer.isEmpty,
-           crumbFlushTask != nil || isRadioSilenceSuspended {
-            needsFinalCrumbFlush = true
+        if !crumbBuffer.isEmpty || crumbFlushTask != nil {
+            pendingFinalCrumbLoadId = activeLoadId
+            if crumbFlushTask != nil || isRadioSilenceSuspended {
+                needsFinalCrumbFlush = true
+            }
         }
         flushCrumbs()                 // persist whatever's buffered before teardown
         manager.stopUpdatingLocation()
@@ -254,7 +258,12 @@ final class DriverGPSPushService: NSObject, ObservableObject,
 
     @MainActor
     private func maybePush(fix: CLLocation) {
-        guard !isRadioSilenceSuspended, locationPushTask == nil else { return }
+        // A CoreLocation delegate callback may already be queued on MainActor
+        // when stop() clears the load. Never let that delayed callback create a
+        // new upload after the load lifecycle has ended.
+        guard activeLoadId != nil,
+              !isRadioSilenceSuspended,
+              locationPushTask == nil else { return }
         let now = Date()
         if now.timeIntervalSince(lastPushedAt) < minPushInterval { return }
         // Skip if the driver hasn't moved meaningfully since the last
@@ -314,13 +323,18 @@ final class DriverGPSPushService: NSObject, ObservableObject,
     /// stale-fix guard). Flushes when 20 are buffered or 60 s have elapsed.
     @MainActor
     private func bufferCrumb(_ fix: CLLocation) {
-        guard breadcrumbsEnabled, !isRadioSilenceSuspended else { return }
+        // Match the live-push boundary above: a delayed callback after stop()
+        // has no load authority and must not enter the durable breadcrumb trail.
+        guard activeLoadId != nil,
+              breadcrumbsEnabled,
+              !isRadioSilenceSuspended else { return }
         let battery = UIDevice.current.isBatteryMonitoringEnabled && UIDevice.current.batteryLevel >= 0
             ? Double(UIDevice.current.batteryLevel * 100) : nil
         let charging: Bool? = UIDevice.current.isBatteryMonitoringEnabled
             ? (UIDevice.current.batteryState == .charging || UIDevice.current.batteryState == .full)
             : nil
         crumbBuffer.append(Crumb(
+            loadId: activeLoadId,
             lat: fix.coordinate.latitude,
             lng: fix.coordinate.longitude,
             timestamp: crumbIso.string(from: fix.timestamp),
@@ -354,10 +368,18 @@ final class DriverGPSPushService: NSObject, ObservableObject,
               !isRadioSilenceSuspended,
               crumbFlushTask == nil,
               !crumbBuffer.isEmpty else { return }
-        let batch = Array(crumbBuffer.prefix(200))
-        crumbBuffer.removeFirst(min(200, crumbBuffer.count))
+        guard let firstCrumb = crumbBuffer.first else { return }
+        let batch = Array(
+            crumbBuffer
+                .prefix(200)
+                .prefix { $0.loadId == firstCrumb.loadId }
+        )
+        crumbBuffer.removeFirst(batch.count)
         lastCrumbFlushAt = Date()
-        let loadId = activeLoadId
+        // Load authority is captured with every crumb. A stopped load's delayed
+        // evidence therefore cannot fall through to a newer `activeLoadId`, and
+        // mixed-load buffers drain as separate ordered requests.
+        let loadId = firstCrumb.loadId
 
         let points = batch.map { c in
             EusoTripAPI.LocationBatchPoint(
@@ -380,6 +402,13 @@ final class DriverGPSPushService: NSObject, ObservableObject,
             }
             do {
                 _ = try await EusoTripAPI.shared.locationBatch(locations: points, loadId: loadId)
+                guard !Task.isCancelled, !self.isRadioSilenceSuspended else {
+                    throw CancellationError()
+                }
+                if let pendingLoadId = self.pendingFinalCrumbLoadId,
+                   pendingLoadId == loadId {
+                    self.pendingFinalCrumbLoadId = nil
+                }
             } catch {
                 // Re-buffer for retry; cap at 200. The trim drops the OLDEST
                 // crumbs (front of the array) so the persisted trail always
