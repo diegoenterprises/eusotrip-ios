@@ -13,6 +13,7 @@ const repository = path.join(temporaryRoot, "repository");
 const evidence = path.join(temporaryRoot, "evidence");
 fs.mkdirSync(path.join(repository, "scripts"), { recursive: true });
 fs.mkdirSync(evidence, { recursive: true });
+fs.chmodSync(evidence, 0o700);
 
 function run(command, arguments_, options = {}) {
   return spawnSync(command, arguments_, { encoding: "utf8", ...options });
@@ -30,7 +31,12 @@ function writeLadder(file, value, mode = 0o600) {
 }
 
 try {
-  for (const name of ["release-ladder-status.mjs", "hash-release-artifact.mjs"]) {
+  for (const name of [
+    "release-ladder-status.mjs",
+    "hash-release-artifact.mjs",
+    "preflight-exported-ipa.mjs",
+    "verify-exported-ipa-app-binding.mjs",
+  ]) {
     fs.copyFileSync(path.join(sourceRoot, "scripts", name), path.join(repository, "scripts", name));
   }
   requireSuccess("/usr/bin/git", ["init", "-q"], { cwd: repository });
@@ -52,7 +58,11 @@ try {
   fs.mkdirSync(exportedApp, { recursive: true });
   fs.writeFileSync(path.join(archiveApp, "Info.plist"), "archive");
   fs.writeFileSync(path.join(exportedApp, "Info.plist"), "exported");
-  fs.writeFileSync(ipa, "ipa bytes");
+  requireSuccess(
+    "/usr/bin/ditto",
+    ["-c", "-k", "--norsrc", "--keepParent", path.dirname(exportedApp), ipa],
+  );
+  const originalIPABytes = fs.readFileSync(ipa);
   fs.writeFileSync(releaseConfigAttestation, "approved release config identity\n", { mode: 0o600 });
   fs.chmodSync(releaseConfigAttestation, 0o600);
   for (const [file, contents] of [
@@ -73,12 +83,15 @@ try {
     sourceTree: tree,
     releaseConfigAttestationPath: releaseConfigAttestation,
     releaseConfigAttestationSha256: hashReleaseArtifact(releaseConfigAttestation),
+    releaseXcconfigSha256: "f".repeat(64),
     releaseStartedAt: "2026-09-01T00:00:00Z",
     githubRepository: "diegoenterprises/eusotrip-ios",
     githubBranch: "main",
     githubRequiredCheck: "HERE Offline Source Contract",
     githubReleaseEnvironment: "here-offline-release",
     githubGovernanceVerifiedAt: "2026-09-01T00:00:00Z",
+    githubEnvironmentDeploymentId: 4242,
+    githubEnvironmentDeploymentStatusId: 4343,
     archiveAppPath: archiveApp,
     archiveAppTreeSha256: hashReleaseArtifact(archiveApp),
     exportedIPAPath: ipa,
@@ -104,6 +117,9 @@ try {
     uploaded: "pass",
     processing: "pass",
     availableInTestFlight: "pass",
+    appStoreConnectAppId: "123456789",
+    appStoreConnectBuildId: "asc-build-901",
+    betaGroups: [{ id: "group-1", name: "Internal" }],
   };
   const ladder = path.join(evidence, "release-ladder.json");
   const statusScript = path.join(repository, "scripts", "release-ladder-status.mjs");
@@ -130,7 +146,26 @@ try {
   assert.equal(result.status, 1);
   assert.match(result.stderr, /exported IPA no longer matches/);
   console.log("ok - artifact mutation invalidates availability");
-  fs.writeFileSync(ipa, "ipa bytes");
+  fs.writeFileSync(ipa, originalIPABytes);
+
+  const substitutePayload = path.join(evidence, "substitute", "Payload");
+  const substituteApp = path.join(substitutePayload, "EusoTrip.app");
+  const substituteIPA = path.join(evidence, "Substitute.ipa");
+  fs.mkdirSync(substituteApp, { recursive: true });
+  fs.writeFileSync(path.join(substituteApp, "Info.plist"), "different exported app");
+  requireSuccess(
+    "/usr/bin/ditto",
+    ["-c", "-k", "--norsrc", "--keepParent", substitutePayload, substituteIPA],
+  );
+  writeLadder(ladder, {
+    ...baseline,
+    exportedIPAPath: substituteIPA,
+    exportedIPASha256: hashReleaseArtifact(substituteIPA),
+  });
+  result = run(process.execPath, [statusScript, `--file=${ladder}`], { cwd: repository });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /derive from the recorded IPA/);
+  console.log("ok - independently substituted IPA and app paths are rejected");
 
   writeLadder(ladder, baseline);
   fs.appendFileSync(networkCapture, "tamper");
@@ -166,4 +201,4 @@ try {
   fs.rmSync(temporaryRoot, { recursive: true, force: true });
 }
 
-console.log("Release ladder status regression harness passed: 9 cases.");
+console.log("Release ladder status regression harness passed: 10 cases.");

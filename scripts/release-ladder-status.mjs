@@ -8,6 +8,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { hashReleaseArtifact } from "./hash-release-artifact.mjs";
+import { verifyExportedIPAAppBinding } from "./verify-exported-ipa-app-binding.mjs";
 
 const fileArgument = process.argv.find(argument => argument.startsWith("--file="));
 if (!fileArgument) {
@@ -39,11 +40,15 @@ if (!fs.existsSync(file)) {
 }
 const ladderMetadata = fs.lstatSync(file);
 const currentUserID = typeof process.getuid === "function" ? process.getuid() : null;
+const ladderDirectoryMetadata = fs.lstatSync(path.dirname(file), { throwIfNoEntry: false });
 if (!ladderMetadata.isFile() || ladderMetadata.isSymbolicLink() ||
     (ladderMetadata.mode & 0o077) !== 0 ||
     (currentUserID != null && ladderMetadata.uid !== currentUserID) ||
+    !ladderDirectoryMetadata?.isDirectory() || ladderDirectoryMetadata.isSymbolicLink() ||
+    (ladderDirectoryMetadata.mode & 0o077) !== 0 ||
+    (currentUserID != null && ladderDirectoryMetadata.uid !== currentUserID) ||
     ladderMetadata.size > 1024 * 1024) {
-  console.error("Release ladder must be one owner-private regular file.");
+  console.error("Release ladder and its directory must be release-user-owned and owner-private.");
   process.exit(2);
 }
 
@@ -84,7 +89,8 @@ if (!gitObjectPattern.test(String(data.sourceTree ?? ""))) errors.push("invalid 
 if (
   typeof data.releaseConfigAttestationPath !== "string" ||
   !path.isAbsolute(data.releaseConfigAttestationPath) ||
-  !sha256Pattern.test(String(data.releaseConfigAttestationSha256 ?? ""))
+  !sha256Pattern.test(String(data.releaseConfigAttestationSha256 ?? "")) ||
+  !sha256Pattern.test(String(data.releaseXcconfigSha256 ?? ""))
 ) {
   errors.push("invalid release config attestation identity");
 }
@@ -97,6 +103,10 @@ if (data.githubRepository !== "diegoenterprises/eusotrip-ios" ||
     data.githubBranch !== "main" ||
     data.githubRequiredCheck !== "HERE Offline Source Contract" ||
     data.githubReleaseEnvironment !== "here-offline-release" ||
+    !Number.isSafeInteger(data.githubEnvironmentDeploymentId) ||
+    data.githubEnvironmentDeploymentId <= 0 ||
+    !Number.isSafeInteger(data.githubEnvironmentDeploymentStatusId) ||
+    data.githubEnvironmentDeploymentStatusId <= 0 ||
     !Number.isFinite(githubGovernanceVerifiedAt)) {
   errors.push("invalid GitHub release-governance identity");
 }
@@ -108,6 +118,13 @@ if (Number.isFinite(releaseStartedAt) && Number.isFinite(githubGovernanceVerifie
 for (const key of requiredRungs) {
   if (!(key in data)) errors.push(`missing key ${key}`);
   else if (!allowed.has(String(data[key]))) errors.push(`invalid ${key}: ${data[key]}`);
+}
+if (data.processing === "pass" || data.availableInTestFlight === "pass") {
+  if (!/^[1-9][0-9]*$/.test(String(data.appStoreConnectAppId ?? "")) ||
+      !/^[A-Za-z0-9._:-]{3,128}$/.test(String(data.appStoreConnectBuildId ?? "")) ||
+      !Array.isArray(data.betaGroups) || data.betaGroups.length < 1) {
+    errors.push("App Store Connect processed-build receipt is incomplete");
+  }
 }
 
 for (const [argumentName, field] of [
@@ -187,6 +204,15 @@ if (data.archived === "pass" || data.hereOfflineContract === "pass") {
 if (data.exported === "pass" || data.hereOfflineContract === "pass") {
   verifyArtifact("exportedIPAPath", "exportedIPASha256", "exported IPA");
   verifyArtifact("exportedAppPath", "exportedAppTreeSha256", "exported app");
+  try {
+    verifyExportedIPAAppBinding({
+      ipaFile: data.exportedIPAPath,
+      expectedIPASha256: data.exportedIPASha256,
+      expectedAppTreeSha256: data.exportedAppTreeSha256,
+    });
+  } catch {
+    errors.push("exported app tree cannot be proven to derive from the recorded IPA");
+  }
 }
 if (typeof data.releaseConfigAttestationPath === "string" &&
     sha256Pattern.test(String(data.releaseConfigAttestationSha256 ?? ""))) {

@@ -179,8 +179,13 @@ function validateLadder(ladder) {
     ladder.githubBranch !== "main" ||
     ladder.githubRequiredCheck !== "HERE Offline Source Contract" ||
     ladder.githubReleaseEnvironment !== "here-offline-release" ||
+    !Number.isSafeInteger(ladder.githubEnvironmentDeploymentId) ||
+    ladder.githubEnvironmentDeploymentId <= 0 ||
+    !Number.isSafeInteger(ladder.githubEnvironmentDeploymentStatusId) ||
+    ladder.githubEnvironmentDeploymentStatusId <= 0 ||
     !gitObjectPattern.test(String(ladder.sourceCommit ?? "")) ||
     !gitObjectPattern.test(String(ladder.sourceTree ?? "")) ||
+    !sha256Pattern.test(String(ladder.releaseXcconfigSha256 ?? "")) ||
     ladder.compiled !== "pass" ||
     ladder.archived !== "pass" ||
     ladder.tested !== "pass" ||
@@ -188,6 +193,10 @@ function validateLadder(ladder) {
     ladder.exported !== "pass" ||
     ladder.uploaded !== "pass" ||
     ladder.processing !== "pass" ||
+    typeof ladder.appStoreConnectAppId !== "string" ||
+    !/^[1-9][0-9]*$/.test(ladder.appStoreConnectAppId) ||
+    typeof ladder.appStoreConnectBuildId !== "string" ||
+    !/^[A-Za-z0-9._:-]{3,128}$/.test(ladder.appStoreConnectBuildId) ||
     !["pending", "pass"].includes(ladder.deviceAcceptance)
   ) {
     throw new Error("Release ladder is not an exact processed schema-3 HERE release");
@@ -312,6 +321,10 @@ export function verifyAndRecordDeviceAcceptance({
     evidence.version !== ladder.version ||
     evidence.build !== ladder.build ||
     evidence.bundleId !== ladder.bundleId ||
+    evidence.appStoreConnectAppId !== ladder.appStoreConnectAppId ||
+    evidence.appStoreConnectBuildId !== ladder.appStoreConnectBuildId ||
+    evidence.githubEnvironmentDeploymentId !== ladder.githubEnvironmentDeploymentId ||
+    evidence.githubEnvironmentDeploymentStatusId !== ladder.githubEnvironmentDeploymentStatusId ||
     evidence.exportedIPASha256 !== ladder.exportedIPASha256 ||
     evidence.exportedAppTreeSha256 !== ladder.exportedAppTreeSha256 ||
     evidence.hereSDK?.version !== sdk.approvedVersion ||

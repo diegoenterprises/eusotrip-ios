@@ -41,6 +41,7 @@ try {
       "globalThis.fetch = async url => {",
       "  const value = String(url);",
       "  if (value.includes('/v1/apps/')) return response({ data: { attributes: { bundleId: process.env.FIXTURE_BUNDLE_ID || 'com.app.eusotrip' } } });",
+      "  if (value.includes('/v1/builds?') && process.env.FIXTURE_PAGINATE === '1' && !value.includes('cursor=second')) return response({ data: [], included: [], links: { next: 'https://api.appstoreconnect.apple.com/v1/builds?cursor=second' } });",
       "  if (value.includes('/v1/builds?')) return response({",
       "    data: [{ id: 'build-901', attributes: { version: '901', uploadedDate: '2026-09-01T00:00:00Z', processingState: 'VALID', expired: false }, relationships: { preReleaseVersion: { data: { id: 'train-910' } } } }],",
       "    included: [{ id: 'train-910', attributes: { version: process.env.FIXTURE_VERSION || '9.1.0' } }],",
@@ -104,6 +105,25 @@ try {
   assert.match(result.stderr, /does not match the ladder bundle identifier/);
   console.log("ok - App Store app identity is bundle-bound");
 
+  writeLadder(baseline);
+  result = run([], { FIXTURE_PAGINATE: "1" });
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  updated = JSON.parse(fs.readFileSync(ladderPath, "utf8"));
+  assert.equal(updated.appStoreConnectBuildId, "build-901");
+  console.log("ok - exact build search follows all App Store Connect pages");
+
+  writeLadder(baseline);
+  result = run(["--timeout-seconds=not-a-number"]);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /timeout-seconds/);
+  console.log("ok - invalid polling timeout is rejected");
+
+  writeLadder(baseline);
+  result = run(["--interval-seconds=0"]);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /interval-seconds/);
+  console.log("ok - zero polling interval is rejected");
+
   fs.chmodSync(keyPath, 0o644);
   writeLadder(baseline);
   result = run();
@@ -140,4 +160,4 @@ try {
   fs.rmSync(temporaryRoot, { recursive: true, force: true });
 }
 
-console.log("ASC build status regression harness passed: 6 cases.");
+console.log("ASC build status regression harness passed: 9 cases.");

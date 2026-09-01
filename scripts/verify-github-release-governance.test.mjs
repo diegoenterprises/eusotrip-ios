@@ -34,7 +34,7 @@ function fixture(overrides = {}) {
         status: "completed",
         conclusion: "success",
         head_sha: commit,
-        app: { slug: "github-actions" },
+        app: { slug: "github-actions", id: 15368 },
       }],
     },
     environment: {
@@ -42,12 +42,27 @@ function fixture(overrides = {}) {
       protection_rules: [{ type: "required_reviewers", reviewers: [{ type: "User", reviewer: { id: 1 } }] }],
       deployment_branch_policy: { protected_branches: true, custom_branch_policies: false },
     },
+    deployments: [{
+      id: 4242,
+      sha: commit,
+      ref: "main",
+      environment,
+      transient_environment: false,
+      created_at: "2026-09-01T01:00:00Z",
+    }],
+    deploymentStatuses: [{
+      id: 4343,
+      state: "success",
+      environment,
+    }],
     ...overrides,
   };
   return async input => {
     const url = new URL(input);
     let value;
-    if (url.pathname.endsWith(`/environments/${environment}`)) value = values.environment;
+    if (url.pathname.endsWith("/deployments/4242/statuses")) value = values.deploymentStatuses;
+    else if (url.pathname.endsWith("/deployments")) value = values.deployments;
+    else if (url.pathname.endsWith(`/environments/${environment}`)) value = values.environment;
     else if (url.pathname.endsWith("/check-runs")) value = values.checks;
     else if (url.pathname.endsWith("/branches/main/protection")) value = values.protection;
     else if (url.pathname.endsWith("/branches/main")) value = values.branch;
@@ -95,6 +110,22 @@ console.log("ok - missing exact-commit required check is rejected");
 
 await assert.rejects(
   verify(fixture({
+    checks: {
+      check_runs: [{
+        name: requiredCheck,
+        status: "completed",
+        conclusion: "success",
+        head_sha: commit,
+        app: { slug: "github-actions", id: 99999 },
+      }],
+    },
+  })),
+  /one successful required HERE check/,
+);
+console.log("ok - successful check app must match the protected app binding");
+
+await assert.rejects(
+  verify(fixture({
     environment: {
       name: environment,
       protection_rules: [],
@@ -104,6 +135,20 @@ await assert.rejects(
   /independent reviewers/,
 );
 console.log("ok - unreviewed release environment is rejected");
+
+await assert.rejects(
+  verify(fixture({ deployments: [] })),
+  /reviewed GitHub release-environment deployment/,
+);
+console.log("ok - configured environment without a reviewed deployment is rejected");
+
+await assert.rejects(
+  verify(fixture({
+    deploymentStatuses: [{ id: 4343, state: "pending", environment }],
+  })),
+  /deployment is not successful/,
+);
+console.log("ok - pending reviewed deployment is rejected");
 
 function fixtureValues() {
   return {
@@ -121,4 +166,4 @@ function fixtureValues() {
   };
 }
 
-console.log("GitHub release governance regression harness passed: 5 cases.");
+console.log("GitHub release governance regression harness passed: 8 cases.");

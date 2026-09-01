@@ -30,8 +30,16 @@ const ladderArgument = arg("ladder");
 const ladderPath = ladderArgument ? path.resolve(ladderArgument) : null;
 const wait = process.argv.includes("--wait");
 const requireGroup = process.argv.includes("--require-group");
-const timeoutMs = Number(arg("timeout-seconds", "1800")) * 1000;
-const intervalMs = Number(arg("interval-seconds", "20")) * 1000;
+const boundedSeconds = (name, fallback, minimum, maximum) => {
+  const seconds = Number(arg(name, fallback));
+  if (!Number.isFinite(seconds) || seconds < minimum || seconds > maximum) {
+    throw new Error(`--${name} must be between ${minimum} and ${maximum} seconds`);
+  }
+  return seconds * 1000;
+};
+const timeoutMs = boundedSeconds("timeout-seconds", "1800", 1, 86_400);
+const intervalMs = boundedSeconds("interval-seconds", "20", 1, 300);
+if (intervalMs > timeoutMs) throw new Error("Polling interval cannot exceed the timeout");
 
 if (!appId) throw new Error("Missing --app-id or ASC_APP_ID");
 if (!/^[1-9][0-9]*$/.test(appId)) {
@@ -65,7 +73,26 @@ function readBoundLadder() {
     throw new Error("The release ladder must be one owner-private regular file");
   }
   assertOwnerPrivate(metadata, "The release ladder");
-  const ladder = JSON.parse(fs.readFileSync(ladderPath, "utf8"));
+  if (metadata.size > 1024 * 1024) throw new Error("The release ladder exceeds 1 MiB");
+  const descriptor = fs.openSync(
+    ladderPath,
+    fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW,
+  );
+  let bytes;
+  try {
+    const opened = fs.fstatSync(descriptor);
+    if (!opened.isFile() || opened.dev !== metadata.dev || opened.ino !== metadata.ino) {
+      throw new Error("The release ladder changed while it was opened");
+    }
+    bytes = fs.readFileSync(descriptor);
+    const final = fs.fstatSync(descriptor);
+    if (final.size !== opened.size || final.mtimeMs !== opened.mtimeMs || final.ctimeMs !== opened.ctimeMs) {
+      throw new Error("The release ladder changed while it was read");
+    }
+  } finally {
+    fs.closeSync(descriptor);
+  }
+  const ladder = JSON.parse(bytes.toString("utf8"));
   if (
     ladder.schemaVersion !== 3 ||
     typeof ladder.build !== "string" ||
@@ -108,19 +135,29 @@ async function currentStatus() {
   const query = new URLSearchParams({
     "filter[app]": appId,
     sort: "-uploadedDate",
-    limit: "50",
+    limit: "200",
     include: "preReleaseVersion",
   });
-  const response = await api(`/v1/builds?${query}`);
+  const buildRows = [];
+  const includedRows = [];
+  let nextBuildPage = `/v1/builds?${query}`;
+  let buildPageCount = 0;
+  while (nextBuildPage) {
+    if (++buildPageCount > 1_000) throw new Error("App Store Connect build pagination exceeded 1,000 pages");
+    const page = await api(nextBuildPage);
+    buildRows.push(...(page.data ?? []));
+    includedRows.push(...(page.included ?? []));
+    nextBuildPage = page.links?.next ?? null;
+  }
   const build = targetBuild
-    ? response.data.find(item => {
+    ? buildRows.find(item => {
         if (String(item.attributes?.version) !== String(targetBuild)) return false;
         if (!targetVersion) return true;
         const preReleaseId = item.relationships?.preReleaseVersion?.data?.id;
-        const preRelease = response.included?.find(candidate => candidate.id === preReleaseId);
+        const preRelease = includedRows.find(candidate => candidate.id === preReleaseId);
         return preRelease?.attributes?.version === targetVersion;
       })
-    : response.data[0];
+    : buildRows[0];
   if (!build) {
     return { appId, build: targetBuild, found: false, processingState: "PENDING", betaGroups: [] };
   }
@@ -128,9 +165,17 @@ async function currentStatus() {
     "filter[builds]": build.id,
     limit: "50",
   });
-  const groups = await api(`/v1/betaGroups?${groupQuery}`);
+  const groupRows = [];
+  let nextGroupPage = `/v1/betaGroups?${groupQuery}`;
+  let groupPageCount = 0;
+  while (nextGroupPage) {
+    if (++groupPageCount > 1_000) throw new Error("App Store Connect group pagination exceeded 1,000 pages");
+    const page = await api(nextGroupPage);
+    groupRows.push(...(page.data ?? []));
+    nextGroupPage = page.links?.next ?? null;
+  }
   const preReleaseId = build.relationships?.preReleaseVersion?.data?.id;
-  const preRelease = response.included?.find((item) => item.id === preReleaseId);
+  const preRelease = includedRows.find((item) => item.id === preReleaseId);
   const status = {
     appId,
     id: build.id,
@@ -139,7 +184,7 @@ async function currentStatus() {
     uploadedDate: build.attributes?.uploadedDate ?? null,
     processingState: build.attributes?.processingState ?? "UNKNOWN",
     expired: Boolean(build.attributes?.expired),
-    betaGroups: (groups.data || []).map((group) => ({ id: group.id, name: group.attributes?.name ?? null })),
+    betaGroups: groupRows.map((group) => ({ id: group.id, name: group.attributes?.name ?? null })),
     found: true,
   };
   if (

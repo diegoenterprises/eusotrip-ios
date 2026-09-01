@@ -6,6 +6,10 @@
   "version": null,
   "build": null,
   "bundleId": "com.app.eusotrip",
+  "appStoreConnectAppId": null,
+  "appStoreConnectBuildId": null,
+  "githubEnvironmentDeploymentId": null,
+  "githubEnvironmentDeploymentStatusId": null,
   "exportedIPASha256": null,
   "exportedAppTreeSha256": null,
   "hereSDK": {
