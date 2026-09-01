@@ -589,7 +589,7 @@ enum CanonicalRouteStalenessReason: Equatable, Sendable {
     case serverObservationTooOld(age: TimeInterval, maximumAge: TimeInterval)
     case routeValidityExpired(Date)
     case observationTimestampInFuture(Date)
-    case observationClockRegressed(evidenceTime: Date)
+    case trustedTimeUnavailable(CanonicalRouteTrustedTimeFailure)
 }
 
 enum CanonicalRouteObservationStatus: Equatable, Sendable {
@@ -619,6 +619,7 @@ enum CanonicalRouteStoreError: Error, Equatable, Sendable {
     case invalidSignature
     case signedClaimMismatch
     case staleSignedRouteReplay
+    case trustedTimeUnavailable
 }
 
 extension CanonicalRouteStoreError: LocalizedError {
@@ -642,6 +643,8 @@ extension CanonicalRouteStoreError: LocalizedError {
             return "The signed canonical route claims do not match this tenant, user, or load."
         case .staleSignedRouteReplay:
             return "An older or conflicting signed canonical route response cannot replace the cached route."
+        case .trustedTimeUnavailable:
+            return "Canonical route time could not be anchored to authenticated server evidence."
         }
     }
 }
@@ -720,8 +723,10 @@ actor CanonicalRoutePackageStore {
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
     private let verifier: CanonicalRoutePlanVerifier
+    private let trustedClock: CanonicalRouteTrustedClock
     private let maximumFutureTimestampSkew: TimeInterval
     private let maximumRouteValidityHorizon: TimeInterval
+    /// Diagnostic wall time only. Route age and expiry never use this clock.
     private let currentTime: @Sendable () -> Date
 
     init(
@@ -730,6 +735,7 @@ actor CanonicalRoutePackageStore {
         fileManager: FileManager = .default,
         maximumFutureTimestampSkew: TimeInterval = 300,
         maximumRouteValidityHorizon: TimeInterval = 7 * 24 * 60 * 60,
+        trustedClock: CanonicalRouteTrustedClock = CanonicalRouteTrustedClock(),
         currentTime: @escaping @Sendable () -> Date = { Date() }
     ) throws {
         guard maximumFutureTimestampSkew.isFinite,
@@ -751,6 +757,7 @@ actor CanonicalRoutePackageStore {
         self.rootDirectory = canonicalRootDirectory
         self.fileManager = fileManager
         self.verifier = verifier
+        self.trustedClock = trustedClock
         self.maximumFutureTimestampSkew = maximumFutureTimestampSkew
         self.maximumRouteValidityHorizon = maximumRouteValidityHorizon
         self.currentTime = currentTime
@@ -769,25 +776,14 @@ actor CanonicalRoutePackageStore {
         storedAt: Date = Date()
     ) throws -> CanonicalRoutePackage {
         let package = try verifier.verify(signedEnvelope, expectedScope: expectedScope)
-        let verificationNow = currentTime()
-        try validateTimestamp(receivedAt, relativeTo: verificationNow, field: "server response receipt")
-        try validateTimestamp(storedAt, relativeTo: verificationNow, field: "store")
-        try validateTimestamp(
-            package.issuedAt,
-            relativeTo: verificationNow,
-            field: "signed server issuance"
-        )
-        try validateTimestamp(
-            package.generatedAt,
-            relativeTo: verificationNow,
-            field: "signed route generation"
-        )
-        try validateTimeline(
-            package: package,
-            receivedAt: receivedAt,
-            storedAt: storedAt
-        )
-        if let existing = try readEnvelope(for: expectedScope) {
+        try validateLocalDiagnosticTimestamp(receivedAt, field: "server response receipt")
+        try validateLocalDiagnosticTimestamp(storedAt, field: "store")
+        try validateTimeline(package: package)
+
+        let principal = CanonicalRoutePrincipal(scope: package.scope)
+        let existing = try readEnvelope(for: expectedScope)
+        let isNewSignedResponse: Bool
+        if let existing {
             guard package.issuedAt >= existing.serverIssuedAt,
                   package.generatedAt >= existing.package.generatedAt else {
                 throw CanonicalRouteStoreError.staleSignedRouteReplay
@@ -796,6 +792,44 @@ actor CanonicalRoutePackageStore {
                package.signedEnvelope != existing.package.signedEnvelope {
                 throw CanonicalRouteStoreError.staleSignedRouteReplay
             }
+            isNewSignedResponse = package.issuedAt > existing.serverIssuedAt
+        } else {
+            isNewSignedResponse = true
+        }
+        let readingBeforeReceipt = trustedClock.reading(for: principal)
+        if case .trusted(let trustedNow) = readingBeforeReceipt,
+           package.issuedAt > trustedNow.addingTimeInterval(maximumFutureTimestampSkew) {
+            throw CanonicalRouteStoreError.invalidPackage(
+                "The canonical route signed server issuance timestamp is implausibly far in the future."
+            )
+        }
+
+        if isNewSignedResponse {
+            do {
+                try trustedClock.establishAuthenticatedAnchor(
+                    for: principal,
+                    signedServerTime: package.issuedAt
+                )
+            } catch {
+                throw CanonicalRouteStoreError.trustedTimeUnavailable
+            }
+        } else if case .unavailable = readingBeforeReceipt {
+            // Persisted signed bytes are not new time evidence. In particular,
+            // replaying them after a process restart or reboot must not revive
+            // freshness. Keep the already-verified envelope unchanged.
+            guard let existing else {
+                throw CanonicalRouteStoreError.trustedTimeUnavailable
+            }
+            return existing.package
+        }
+
+        guard case .trusted(let trustedReceiptTime) = trustedClock.reading(for: principal) else {
+            throw CanonicalRouteStoreError.trustedTimeUnavailable
+        }
+        guard package.issuedAt <= trustedReceiptTime.addingTimeInterval(maximumFutureTimestampSkew) else {
+            throw CanonicalRouteStoreError.invalidPackage(
+                "The canonical route signed server issuance timestamp is implausibly far in the future."
+            )
         }
         let envelope = VerifiedEnvelope(
             package: package,
@@ -821,6 +855,7 @@ actor CanonicalRoutePackageStore {
     }
 
     func purgeAllCachedRoutes() throws {
+        trustedClock.invalidateAll()
         let directory = canonicalRoutesDirectory
         guard fileManager.fileExists(atPath: directory.path) else { return }
         do {
@@ -836,8 +871,8 @@ actor CanonicalRoutePackageStore {
         scope: CanonicalRouteScope,
         policy: CanonicalRouteFreshnessPolicy
     ) throws -> CanonicalRouteObservation {
-        let observedAt = currentTime()
-        guard observedAt.timeIntervalSince1970.isFinite else {
+        let diagnosticWallTime = currentTime()
+        guard diagnosticWallTime.timeIntervalSince1970.isFinite else {
             throw CanonicalRouteStoreError.invalidPackage(
                 "The canonical route observation time is invalid."
             )
@@ -849,7 +884,7 @@ actor CanonicalRoutePackageStore {
                 status: .missing,
                 lastServerObservedAt: nil,
                 storedAt: nil,
-                observedAt: observedAt
+                observedAt: diagnosticWallTime
             )
         }
         guard envelope.package.scope == scope else {
@@ -857,26 +892,30 @@ actor CanonicalRoutePackageStore {
         }
 
         var reasons: [CanonicalRouteStalenessReason] = []
-        let latestLocalEvidence = max(envelope.receivedAt, envelope.storedAt)
-        if observedAt < latestLocalEvidence.addingTimeInterval(-policy.allowedClockSkew) {
-            reasons.append(.observationClockRegressed(evidenceTime: latestLocalEvidence))
-        }
-        let futureLimit = observedAt.addingTimeInterval(policy.allowedClockSkew)
-        if envelope.serverIssuedAt > futureLimit {
-            reasons.append(.observationTimestampInFuture(envelope.serverIssuedAt))
-        } else {
-            let age = max(0, observedAt.timeIntervalSince(envelope.serverIssuedAt))
-            if age > policy.maximumServerObservationAge {
-                reasons.append(
-                    .serverObservationTooOld(
-                        age: age,
-                        maximumAge: policy.maximumServerObservationAge
+        let observedAt: Date
+        switch trustedClock.reading(for: CanonicalRoutePrincipal(scope: scope)) {
+        case .unavailable(let failure):
+            observedAt = diagnosticWallTime
+            reasons.append(.trustedTimeUnavailable(failure))
+        case .trusted(let trustedTime):
+            observedAt = trustedTime
+            let futureLimit = trustedTime.addingTimeInterval(policy.allowedClockSkew)
+            if envelope.serverIssuedAt > futureLimit {
+                reasons.append(.observationTimestampInFuture(envelope.serverIssuedAt))
+            } else {
+                let age = max(0, trustedTime.timeIntervalSince(envelope.serverIssuedAt))
+                if age > policy.maximumServerObservationAge {
+                    reasons.append(
+                        .serverObservationTooOld(
+                            age: age,
+                            maximumAge: policy.maximumServerObservationAge
+                        )
                     )
-                )
+                }
             }
-        }
-        if let validUntil = envelope.package.validUntil, observedAt > validUntil {
-            reasons.append(.routeValidityExpired(validUntil))
+            if let validUntil = envelope.package.validUntil, trustedTime > validUntil {
+                reasons.append(.routeValidityExpired(validUntil))
+            }
         }
 
         return CanonicalRouteObservation(
@@ -903,28 +942,12 @@ actor CanonicalRoutePackageStore {
                 from: Data(contentsOf: url, options: .mappedIfSafe)
             )
             let package = try verifier.verify(storedEnvelope.signedEnvelope, expectedScope: scope)
-            let verificationNow = currentTime()
-            try validateTimestamp(
+            try validateLocalDiagnosticTimestamp(
                 storedEnvelope.receivedAt,
-                relativeTo: verificationNow,
                 field: "cached server response receipt"
             )
-            try validateTimestamp(storedEnvelope.storedAt, relativeTo: verificationNow, field: "cached store")
-            try validateTimestamp(
-                package.issuedAt,
-                relativeTo: verificationNow,
-                field: "cached signed server issuance"
-            )
-            try validateTimestamp(
-                package.generatedAt,
-                relativeTo: verificationNow,
-                field: "cached signed route generation"
-            )
-            try validateTimeline(
-                package: package,
-                receivedAt: storedEnvelope.receivedAt,
-                storedAt: storedEnvelope.storedAt
-            )
+            try validateLocalDiagnosticTimestamp(storedEnvelope.storedAt, field: "cached store")
+            try validateTimeline(package: package)
             return VerifiedEnvelope(
                 package: package,
                 receivedAt: storedEnvelope.receivedAt,
@@ -1017,30 +1040,19 @@ actor CanonicalRoutePackageStore {
             .replacingOccurrences(of: "=", with: "")
     }
 
-    private func validateTimestamp(
-        _ value: Date,
-        relativeTo reference: Date,
-        field: String
-    ) throws {
-        guard value.timeIntervalSince1970.isFinite,
-              value <= reference.addingTimeInterval(maximumFutureTimestampSkew) else {
+    private func validateLocalDiagnosticTimestamp(_ value: Date, field: String) throws {
+        guard value.timeIntervalSince1970.isFinite else {
             throw CanonicalRouteStoreError.invalidPackage(
-                "The canonical route \(field) timestamp is implausibly far in the future."
+                "The canonical route \(field) timestamp is invalid."
             )
         }
     }
 
-    private func validateTimeline(
-        package: CanonicalRoutePackage,
-        receivedAt: Date,
-        storedAt: Date
-    ) throws {
+    private func validateTimeline(package: CanonicalRoutePackage) throws {
         let skew = maximumFutureTimestampSkew
-        guard package.generatedAt <= package.issuedAt.addingTimeInterval(skew),
-              package.issuedAt <= receivedAt.addingTimeInterval(skew),
-              receivedAt <= storedAt.addingTimeInterval(skew) else {
+        guard package.generatedAt <= package.issuedAt.addingTimeInterval(skew) else {
             throw CanonicalRouteStoreError.invalidPackage(
-                "Canonical route generation, server observation, and storage timestamps are inconsistent."
+                "Canonical route generation and signed server issuance timestamps are inconsistent."
             )
         }
         if let validUntil = package.validUntil {

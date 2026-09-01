@@ -6,9 +6,11 @@ import XCTest
 private final class LockedCanonicalRouteTestClock: @unchecked Sendable {
     private let lock = NSLock()
     private var value: Date
+    private var uptimeValue: TimeInterval
 
-    init(_ value: Date) {
+    init(_ value: Date, uptime: TimeInterval = 10_000) {
         self.value = value
+        uptimeValue = uptime
     }
 
     func now() -> Date {
@@ -22,6 +24,24 @@ private final class LockedCanonicalRouteTestClock: @unchecked Sendable {
         self.value = value
         lock.unlock()
     }
+
+    func uptime() -> TimeInterval {
+        lock.lock()
+        defer { lock.unlock() }
+        return uptimeValue
+    }
+
+    func setUptime(_ value: TimeInterval) {
+        lock.lock()
+        uptimeValue = value
+        lock.unlock()
+    }
+
+    func advanceUptime(by interval: TimeInterval) {
+        lock.lock()
+        uptimeValue += interval
+        lock.unlock()
+    }
 }
 
 final class CanonicalRoutePackageStoreTests: XCTestCase {
@@ -33,7 +53,14 @@ final class CanonicalRoutePackageStoreTests: XCTestCase {
         let root = temporaryStoreRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         let signing = try makeSigningFixture()
-        let store = try CanonicalRoutePackageStore(rootDirectory: root, verifier: signing.verifier)
+        let clock = LockedCanonicalRouteTestClock(currentWholeSecond(), uptime: 100)
+        let trustedClock = CanonicalRouteTrustedClock(monotonicUptime: { clock.uptime() })
+        let store = try CanonicalRoutePackageStore(
+            rootDirectory: root,
+            verifier: signing.verifier,
+            trustedClock: trustedClock,
+            currentTime: { clock.now() }
+        )
         let scopes = [
             try CanonicalRouteScope(tenantID: "tenant-a", userID: "user-a", loadID: "load-a"),
             try CanonicalRouteScope(tenantID: "tenant-b", userID: "user-a", loadID: "load-a"),
@@ -82,9 +109,11 @@ final class CanonicalRoutePackageStoreTests: XCTestCase {
         let signing = try makeSigningFixture()
         let now = currentWholeSecond()
         let clock = LockedCanonicalRouteTestClock(now)
+        let trustedClock = CanonicalRouteTrustedClock(monotonicUptime: { clock.uptime() })
         let store = try CanonicalRoutePackageStore(
             rootDirectory: root,
             verifier: signing.verifier,
+            trustedClock: trustedClock,
             currentTime: { clock.now() }
         )
         let scope = try CanonicalRouteScope(
@@ -109,6 +138,7 @@ final class CanonicalRoutePackageStoreTests: XCTestCase {
             receivedAt: observedAt.addingTimeInterval(-120),
             storedAt: observedAt.addingTimeInterval(-100)
         )
+        clock.advanceUptime(by: 120)
         let policy = try CanonicalRouteFreshnessPolicy(
             maximumServerObservationAge: 60,
             allowedClockSkew: 5
@@ -129,15 +159,17 @@ final class CanonicalRoutePackageStoreTests: XCTestCase {
         XCTAssertEqual(observation.package?.provenance, .serverCanonical)
     }
 
-    func testPreReceiptClockRollbackCannotRelabelExpiredRouteFresh() async throws {
+    func testWallClockRollbackCannotRelabelExpiredRouteFresh() async throws {
         let root = temporaryStoreRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         let signing = try makeSigningFixture()
         let now = currentWholeSecond()
         let clock = LockedCanonicalRouteTestClock(now)
+        let trustedClock = CanonicalRouteTrustedClock(monotonicUptime: { clock.uptime() })
         let store = try CanonicalRoutePackageStore(
             rootDirectory: root,
             verifier: signing.verifier,
+            trustedClock: trustedClock,
             currentTime: { clock.now() }
         )
         let scope = try CanonicalRouteScope(
@@ -159,23 +191,279 @@ final class CanonicalRoutePackageStoreTests: XCTestCase {
             receivedAt: now.addingTimeInterval(-30),
             storedAt: now.addingTimeInterval(-20)
         )
+        clock.advanceUptime(by: 120)
         clock.set(now.addingTimeInterval(-100))
 
         let rolledBackObservation = try await store.observe(
             scope: scope,
             policy: try CanonicalRouteFreshnessPolicy(
-                maximumServerObservationAge: 300,
+                maximumServerObservationAge: 60,
                 allowedClockSkew: 5
             )
         )
 
         guard case .stale(let reasons) = rolledBackObservation.status else {
-            XCTFail("A clock earlier than persisted receipt evidence must not mark the route fresh.")
+            XCTFail("Wall-clock rollback must not mark an elapsed signed route fresh.")
             return
         }
-        XCTAssertTrue(reasons.contains(
-            .observationClockRegressed(evidenceTime: now.addingTimeInterval(-20))
+        XCTAssertTrue(reasons.contains { reason in
+            guard case .serverObservationTooOld(let age, let maximumAge) = reason else { return false }
+            return abs(age - 120) < 0.001 && maximumAge == 60
+        })
+        XCTAssertTrue(reasons.contains(.routeValidityExpired(now.addingTimeInterval(-10))))
+        XCTAssertEqual(rolledBackObservation.observedAt, now)
+    }
+
+    func testWallClockForwardJumpDoesNotPrematurelyExpireRoute() async throws {
+        let root = temporaryStoreRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let signing = try makeSigningFixture()
+        let now = currentWholeSecond()
+        let clock = LockedCanonicalRouteTestClock(now, uptime: 500)
+        let trustedClock = CanonicalRouteTrustedClock(monotonicUptime: { clock.uptime() })
+        let store = try CanonicalRoutePackageStore(
+            rootDirectory: root,
+            verifier: signing.verifier,
+            trustedClock: trustedClock,
+            currentTime: { clock.now() }
+        )
+        let scope = try CanonicalRouteScope(
+            tenantID: "tenant-forward-jump",
+            userID: "user-forward-jump",
+            loadID: "load-forward-jump"
+        )
+        let envelope = try makeSignedEnvelope(
+            signingKey: signing.privateKey,
+            scope: scope,
+            routeID: "forward-jump-route",
+            generatedAt: now.addingTimeInterval(-30),
+            issuedAt: now,
+            validUntil: now.addingTimeInterval(60)
+        )
+        _ = try await store.store(
+            signedEnvelope: envelope,
+            expectedScope: scope,
+            receivedAt: now,
+            storedAt: now
+        )
+
+        clock.set(now.addingTimeInterval(365 * 24 * 60 * 60))
+        clock.advanceUptime(by: 30)
+
+        let observation = try await store.observe(
+            scope: scope,
+            policy: try CanonicalRouteFreshnessPolicy(
+                maximumServerObservationAge: 60,
+                allowedClockSkew: 0
+            )
+        )
+        XCTAssertEqual(observation.status, .fresh)
+        XCTAssertEqual(observation.observedAt, now.addingTimeInterval(30))
+    }
+
+    func testUptimeRegressionFailsFreshnessClosedAndCannotSelfRecover() async throws {
+        let root = temporaryStoreRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let signing = try makeSigningFixture()
+        let now = currentWholeSecond()
+        let clock = LockedCanonicalRouteTestClock(now, uptime: 1_000)
+        let trustedClock = CanonicalRouteTrustedClock(monotonicUptime: { clock.uptime() })
+        let store = try CanonicalRoutePackageStore(
+            rootDirectory: root,
+            verifier: signing.verifier,
+            trustedClock: trustedClock,
+            currentTime: { clock.now() }
+        )
+        let scope = try CanonicalRouteScope(
+            tenantID: "tenant-reboot",
+            userID: "user-reboot",
+            loadID: "load-reboot"
+        )
+        let envelope = try makeSignedEnvelope(
+            signingKey: signing.privateKey,
+            scope: scope,
+            routeID: "pre-reboot-route",
+            generatedAt: now.addingTimeInterval(-30),
+            issuedAt: now,
+            validUntil: now.addingTimeInterval(3_600)
+        )
+        _ = try await store.store(
+            signedEnvelope: envelope,
+            expectedScope: scope,
+            receivedAt: now,
+            storedAt: now
+        )
+        let policy = try CanonicalRouteFreshnessPolicy(maximumServerObservationAge: 300)
+
+        clock.advanceUptime(by: 10)
+        let beforeRegression = try await store.observe(scope: scope, policy: policy)
+        XCTAssertEqual(beforeRegression.status, .fresh)
+
+        clock.setUptime(5)
+        let afterRegression = try await store.observe(scope: scope, policy: policy)
+        guard case .stale(let regressionReasons) = afterRegression.status else {
+            XCTFail("Uptime regression must invalidate route freshness.")
+            return
+        }
+        XCTAssertTrue(regressionReasons.contains(
+            .trustedTimeUnavailable(
+                .monotonicUptimeRegressed(previousUptime: 1_010, observedUptime: 5)
+            )
         ))
+
+        _ = try await store.store(
+            signedEnvelope: envelope,
+            expectedScope: scope,
+            receivedAt: now,
+            storedAt: now
+        )
+        let afterSignedByteReplay = try await store.observe(scope: scope, policy: policy)
+        XCTAssertEqual(afterSignedByteReplay.status, afterRegression.status)
+
+        // Once reset evidence is seen, merely surpassing the old uptime later
+        // cannot revive the anchor. Only a newer signed response may do that.
+        clock.setUptime(2_000)
+        let afterSurpassingOldUptime = try await store.observe(scope: scope, policy: policy)
+        XCTAssertEqual(afterSurpassingOldUptime.status, afterRegression.status)
+    }
+
+    func testNewerSignedResponseReanchorsAfterUptimeRegression() async throws {
+        let root = temporaryStoreRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let signing = try makeSigningFixture()
+        let now = currentWholeSecond()
+        let clock = LockedCanonicalRouteTestClock(now, uptime: 1_000)
+        let trustedClock = CanonicalRouteTrustedClock(monotonicUptime: { clock.uptime() })
+        let store = try CanonicalRoutePackageStore(
+            rootDirectory: root,
+            verifier: signing.verifier,
+            trustedClock: trustedClock,
+            currentTime: { clock.now() }
+        )
+        let scope = try CanonicalRouteScope(
+            tenantID: "tenant-reanchor",
+            userID: "user-reanchor",
+            loadID: "load-reanchor"
+        )
+        let original = try makeSignedEnvelope(
+            signingKey: signing.privateKey,
+            scope: scope,
+            routeID: "original-route",
+            generatedAt: now.addingTimeInterval(-30),
+            issuedAt: now,
+            validUntil: now.addingTimeInterval(3_600)
+        )
+        _ = try await store.store(
+            signedEnvelope: original,
+            expectedScope: scope,
+            receivedAt: now,
+            storedAt: now
+        )
+        clock.setUptime(2)
+        let policy = try CanonicalRouteFreshnessPolicy(maximumServerObservationAge: 300)
+        let afterRegression = try await store.observe(scope: scope, policy: policy)
+        guard case .stale = afterRegression.status else {
+            XCTFail("The reboot simulation must invalidate the original anchor.")
+            return
+        }
+
+        let refreshed = try makeSignedEnvelope(
+            signingKey: signing.privateKey,
+            scope: scope,
+            routeID: "reanchored-route",
+            generatedAt: now.addingTimeInterval(10),
+            issuedAt: now.addingTimeInterval(20),
+            validUntil: now.addingTimeInterval(3_600)
+        )
+        _ = try await store.store(
+            signedEnvelope: refreshed,
+            expectedScope: scope,
+            receivedAt: now.addingTimeInterval(-10_000),
+            storedAt: now.addingTimeInterval(10_000)
+        )
+
+        let reanchored = try await store.observe(scope: scope, policy: policy)
+        XCTAssertEqual(reanchored.status, .fresh)
+        XCTAssertEqual(reanchored.package?.routeID, "reanchored-route")
+        XCTAssertEqual(reanchored.observedAt, now.addingTimeInterval(20))
+    }
+
+    func testSignedValidityExpiresAtMonotonicBoundary() async throws {
+        let root = temporaryStoreRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let signing = try makeSigningFixture()
+        let now = currentWholeSecond()
+        let clock = LockedCanonicalRouteTestClock(now, uptime: 100)
+        let trustedClock = CanonicalRouteTrustedClock(monotonicUptime: { clock.uptime() })
+        let store = try CanonicalRoutePackageStore(
+            rootDirectory: root,
+            verifier: signing.verifier,
+            trustedClock: trustedClock,
+            currentTime: { clock.now() }
+        )
+        let scope = try CanonicalRouteScope(
+            tenantID: "tenant-expiry",
+            userID: "user-expiry",
+            loadID: "load-expiry"
+        )
+        let validUntil = now.addingTimeInterval(30)
+        let envelope = try makeSignedEnvelope(
+            signingKey: signing.privateKey,
+            scope: scope,
+            routeID: "expiry-boundary-route",
+            generatedAt: now.addingTimeInterval(-10),
+            issuedAt: now,
+            validUntil: validUntil
+        )
+        _ = try await store.store(
+            signedEnvelope: envelope,
+            expectedScope: scope,
+            receivedAt: now,
+            storedAt: now
+        )
+        let policy = try CanonicalRouteFreshnessPolicy(maximumServerObservationAge: 300)
+
+        clock.advanceUptime(by: 30)
+        let atValidityBoundary = try await store.observe(scope: scope, policy: policy)
+        XCTAssertEqual(atValidityBoundary.status, .fresh)
+
+        clock.advanceUptime(by: 0.001)
+        let expired = try await store.observe(scope: scope, policy: policy)
+        guard case .stale(let reasons) = expired.status else {
+            XCTFail("Signed validity must expire once monotonic time crosses the boundary.")
+            return
+        }
+        XCTAssertTrue(reasons.contains(.routeValidityExpired(validUntil)))
+    }
+
+    func testTrustedAnchorIsNotUnsafelyRestoredIntoNewProcessSession() throws {
+        let scope = try CanonicalRouteScope(
+            tenantID: "tenant-session",
+            userID: "user-session",
+            loadID: "load-session"
+        )
+        let principal = CanonicalRoutePrincipal(scope: scope)
+        let firstSessionUptime = LockedCanonicalRouteTestClock(Date(), uptime: 100)
+        let firstSession = CanonicalRouteTrustedClock(
+            monotonicUptime: { firstSessionUptime.uptime() }
+        )
+        _ = try firstSession.establishAuthenticatedAnchor(
+            for: principal,
+            signedServerTime: currentWholeSecond()
+        )
+        guard case .trusted = firstSession.reading(for: principal) else {
+            XCTFail("Authenticated receipt must establish current-session trust.")
+            return
+        }
+
+        let laterSessionUptime = LockedCanonicalRouteTestClock(Date(), uptime: 10_000)
+        let laterSession = CanonicalRouteTrustedClock(
+            monotonicUptime: { laterSessionUptime.uptime() }
+        )
+        XCTAssertEqual(
+            laterSession.reading(for: principal),
+            .unavailable(.authenticatedAnchorUnavailable)
+        )
     }
 
     func testInvalidSignatureAndSignedScopeMismatchAreRejectedBeforePersistence() async throws {
@@ -288,11 +576,15 @@ final class CanonicalRoutePackageStoreTests: XCTestCase {
         let root = temporaryStoreRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         let signing = try makeSigningFixture()
+        let clock = LockedCanonicalRouteTestClock(currentWholeSecond())
+        let trustedClock = CanonicalRouteTrustedClock(monotonicUptime: { clock.uptime() })
         let store = try CanonicalRoutePackageStore(
             rootDirectory: root,
             verifier: signing.verifier,
             maximumFutureTimestampSkew: 30,
-            maximumRouteValidityHorizon: 3_600
+            maximumRouteValidityHorizon: 3_600,
+            trustedClock: trustedClock,
+            currentTime: { clock.now() }
         )
         let scope = try CanonicalRouteScope(
             tenantID: "tenant-time",
@@ -300,6 +592,21 @@ final class CanonicalRoutePackageStoreTests: XCTestCase {
             loadID: "load-time"
         )
         let now = currentWholeSecond()
+        clock.set(now)
+        let baselineEnvelope = try makeSignedEnvelope(
+            signingKey: signing.privateKey,
+            scope: scope,
+            routeID: "baseline-time-route",
+            generatedAt: now.addingTimeInterval(-30),
+            issuedAt: now,
+            validUntil: now.addingTimeInterval(300)
+        )
+        _ = try await store.store(
+            signedEnvelope: baselineEnvelope,
+            expectedScope: scope,
+            receivedAt: now,
+            storedAt: now
+        )
         let futureGeneratedEnvelope = try makeSignedEnvelope(
             signingKey: signing.privateKey,
             scope: scope,
@@ -322,9 +629,14 @@ final class CanonicalRoutePackageStoreTests: XCTestCase {
             XCTFail("Expected timeline validation, received \(error).")
         }
 
+        let validityScope = try CanonicalRouteScope(
+            tenantID: "tenant-time",
+            userID: "user-time",
+            loadID: "load-validity-horizon"
+        )
         let excessiveValidityEnvelope = try makeSignedEnvelope(
             signingKey: signing.privateKey,
-            scope: scope,
+            scope: validityScope,
             routeID: "long-validity-route",
             generatedAt: now.addingTimeInterval(-60),
             validUntil: now.addingTimeInterval(7_200)
@@ -332,7 +644,7 @@ final class CanonicalRoutePackageStoreTests: XCTestCase {
         do {
             _ = try await store.store(
                 signedEnvelope: excessiveValidityEnvelope,
-                expectedScope: scope,
+                expectedScope: validityScope,
                 receivedAt: now,
                 storedAt: now
             )
@@ -348,16 +660,36 @@ final class CanonicalRoutePackageStoreTests: XCTestCase {
         let root = temporaryStoreRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         let signing = try makeSigningFixture()
+        let clock = LockedCanonicalRouteTestClock(Date(), uptime: 100)
+        let trustedClock = CanonicalRouteTrustedClock(monotonicUptime: { clock.uptime() })
         let store = try CanonicalRoutePackageStore(
             rootDirectory: root,
             verifier: signing.verifier,
-            maximumFutureTimestampSkew: 10
+            maximumFutureTimestampSkew: 10,
+            trustedClock: trustedClock,
+            currentTime: { clock.now() }
         )
         let now = Date()
+        clock.set(now)
         let stackedScope = try CanonicalRouteScope(
             tenantID: "tenant-stacked-skew",
             userID: "user-stacked-skew",
             loadID: "load-stacked-skew"
+        )
+        let stackedBaseline = try makeSignedEnvelope(
+            signingKey: signing.privateKey,
+            scope: stackedScope,
+            routeID: "stacked-baseline-route",
+            generatedAt: now.addingTimeInterval(-10),
+            issuedAt: now,
+            validUntil: now.addingTimeInterval(300),
+            preservesFractionalSeconds: true
+        )
+        _ = try await store.store(
+            signedEnvelope: stackedBaseline,
+            expectedScope: stackedScope,
+            receivedAt: now,
+            storedAt: now
         )
         let stackedEnvelope = try makeSignedEnvelope(
             signingKey: signing.privateKey,
@@ -387,6 +719,21 @@ final class CanonicalRoutePackageStoreTests: XCTestCase {
             tenantID: "tenant-upper-skew",
             userID: "user-upper-skew",
             loadID: "load-upper-skew"
+        )
+        let upperBoundBaseline = try makeSignedEnvelope(
+            signingKey: signing.privateKey,
+            scope: upperBoundScope,
+            routeID: "upper-baseline-route",
+            generatedAt: now.addingTimeInterval(-10),
+            issuedAt: now,
+            validUntil: now.addingTimeInterval(300),
+            preservesFractionalSeconds: true
+        )
+        _ = try await store.store(
+            signedEnvelope: upperBoundBaseline,
+            expectedScope: upperBoundScope,
+            receivedAt: now,
+            storedAt: now
         )
         let upperBoundEnvelope = try makeSignedEnvelope(
             signingKey: signing.privateKey,
@@ -522,7 +869,14 @@ final class CanonicalRoutePackageStoreTests: XCTestCase {
         let root = temporaryStoreRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         let signing = try makeSigningFixture()
-        let store = try CanonicalRoutePackageStore(rootDirectory: root, verifier: signing.verifier)
+        let clock = LockedCanonicalRouteTestClock(currentWholeSecond(), uptime: 100)
+        let trustedClock = CanonicalRouteTrustedClock(monotonicUptime: { clock.uptime() })
+        let store = try CanonicalRoutePackageStore(
+            rootDirectory: root,
+            verifier: signing.verifier,
+            trustedClock: trustedClock,
+            currentTime: { clock.now() }
+        )
         let scope = try CanonicalRouteScope(
             tenantID: "tenant-replay",
             userID: "user-replay",
@@ -543,6 +897,7 @@ final class CanonicalRoutePackageStoreTests: XCTestCase {
             receivedAt: now.addingTimeInterval(-60),
             storedAt: now.addingTimeInterval(-50)
         )
+        clock.advanceUptime(by: 120)
 
         // Receiving the same signed bytes again is idempotent, but the local
         // receipt must not make its old signed issuance appear current.
@@ -617,7 +972,14 @@ final class CanonicalRoutePackageStoreTests: XCTestCase {
         let root = temporaryStoreRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         let signing = try makeSigningFixture()
-        let store = try CanonicalRoutePackageStore(rootDirectory: root, verifier: signing.verifier)
+        let clock = LockedCanonicalRouteTestClock(currentWholeSecond(), uptime: 100)
+        let trustedClock = CanonicalRouteTrustedClock(monotonicUptime: { clock.uptime() })
+        let store = try CanonicalRoutePackageStore(
+            rootDirectory: root,
+            verifier: signing.verifier,
+            trustedClock: trustedClock,
+            currentTime: { clock.now() }
+        )
         let firstScope = try CanonicalRouteScope(
             tenantID: "tenant-purge",
             userID: "user-a",
@@ -657,6 +1019,14 @@ final class CanonicalRoutePackageStoreTests: XCTestCase {
 
         let purgedSecond = try await store.observe(scope: secondScope, policy: policy)
         XCTAssertEqual(purgedSecond.status, .missing)
+        XCTAssertEqual(
+            trustedClock.reading(for: CanonicalRoutePrincipal(scope: firstScope)),
+            .unavailable(.authenticatedAnchorUnavailable)
+        )
+        XCTAssertEqual(
+            trustedClock.reading(for: CanonicalRoutePrincipal(scope: secondScope)),
+            .unavailable(.authenticatedAnchorUnavailable)
+        )
     }
 
     func testOversizePayloadGeometryAndStringInputsAreRejectedAtTheirBoundaries() throws {
