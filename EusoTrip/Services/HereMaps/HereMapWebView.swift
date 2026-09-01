@@ -163,6 +163,7 @@ public enum HereMapLayer: Hashable {
 /// ```
 public struct HereVectorMapView: View {
     @Environment(\.colorScheme) private var colorScheme
+    @State private var appRadioSilenceRevision: UInt64 = 0
 
     let center: HereLatLng
     let zoom: Int
@@ -206,6 +207,21 @@ public struct HereVectorMapView: View {
             layers: layers,
             onSelectMarker: onSelectMarker
         )
+        // Recreate the renderer on both policy edges. The engage notification
+        // first stops and blanks the live WebView synchronously; its new
+        // identity can only build an empty local document while the lease is
+        // active. The final-release edge creates a fresh, fully wired renderer.
+        .id(appRadioSilenceRevision)
+        .onReceive(
+            NotificationCenter.default.publisher(for: .eusoAppRadioSilenceWillEngage)
+        ) { _ in
+            appRadioSilenceRevision &+= 1
+        }
+        .onReceive(
+            NotificationCenter.default.publisher(for: .eusoAppRadioSilenceDidRelease)
+        ) { _ in
+            appRadioSilenceRevision &+= 1
+        }
         #else
         // SwiftUI previews on hosts without UIKit retain the deterministic
         // native renderer; production iOS never takes this branch.
@@ -294,12 +310,22 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
             zoom: zoom,
             tilt: tilt
         )
-        // THE FIX: origin = a HERE-portal trusted domain (not js.api.here.com).
-        webView.loadHTMLString(html, baseURL: URL(string: HereMapsConfig.jsTrustedReferrerOrigin))
+        if AppRadioSilenceCoordinator.shared.isEnforced {
+            // A view rebuilt during an active offline lease must never create
+            // a remote HERE JS navigation, even transiently.
+            webView.loadHTMLString("", baseURL: nil)
+        } else {
+            // THE FIX: origin = a HERE-portal trusted domain (not js.api.here.com).
+            webView.loadHTMLString(html, baseURL: URL(string: HereMapsConfig.jsTrustedReferrerOrigin))
+        }
         return webView
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
+        guard !AppRadioSilenceCoordinator.shared.isEnforced else {
+            context.coordinator.disposeForAppRadioSilence()
+            return
+        }
         context.coordinator.onSelectMarker = onSelectMarker
         // Re-style if the color scheme flipped.
         if context.coordinator.lastIsDark != isDark {
@@ -324,7 +350,14 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
     }
 
     static func dismantleUIView(_ webView: WKWebView, coordinator: Coordinator) {
+        webView.stopLoading()
         webView.configuration.userContentController.removeAllScriptMessageHandlers()
+        webView.navigationDelegate = nil
+        webView.uiDelegate = nil
+        coordinator.webView = nil
+        coordinator.mapReady = false
+        coordinator.pendingCameraJS = nil
+        coordinator.pendingLayerJSON = "{}"
     }
 
     // MARK: Coordinator
@@ -337,6 +370,35 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
         var pendingCameraJS: String?
         var pendingLayerJSON = "{}"
         var onSelectMarker: ((String) -> Void)?
+
+        override init() {
+            super.init()
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(appRadioSilenceWillEngage),
+                name: .eusoAppRadioSilenceWillEngage,
+                object: nil
+            )
+        }
+
+        deinit {
+            NotificationCenter.default.removeObserver(self)
+        }
+
+        @objc private func appRadioSilenceWillEngage() {
+            disposeForAppRadioSilence()
+        }
+
+        func disposeForAppRadioSilence() {
+            guard let webView else { return }
+            webView.stopLoading()
+            webView.configuration.userContentController.removeAllScriptMessageHandlers()
+            webView.loadHTMLString("", baseURL: nil)
+            mapReady = false
+            pendingCameraJS = nil
+            pendingLayerJSON = "{}"
+            onSelectMarker = nil
+        }
 
         func userContentController(_ uc: WKUserContentController, didReceive message: WKScriptMessage) {
             switch message.name {

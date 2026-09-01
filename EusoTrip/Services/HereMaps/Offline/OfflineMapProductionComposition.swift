@@ -11,6 +11,47 @@ import CoreLocation
 import CryptoKit
 import Foundation
 
+enum OfflineMapSurfaceLeaseStatus: Equatable, Sendable {
+    case available
+    case ownedByCaller
+    case ownedByAnotherSurface
+}
+
+struct OfflineMapSurfaceLeaseState: Equatable, Sendable {
+    private(set) var ownerToken: UUID?
+    private(set) var revision: UInt64 = 0
+
+    mutating func reserve(for token: UUID) -> Bool {
+        guard ownerToken == nil || ownerToken == token else { return false }
+        if ownerToken != token {
+            ownerToken = token
+            revision = revision &+ 1
+        }
+        return true
+    }
+
+    @discardableResult
+    mutating func release(for token: UUID) -> Bool {
+        guard ownerToken == token else { return false }
+        ownerToken = nil
+        revision = revision &+ 1
+        return true
+    }
+
+    @discardableResult
+    mutating func forceRelease() -> Bool {
+        guard ownerToken != nil else { return false }
+        ownerToken = nil
+        revision = revision &+ 1
+        return true
+    }
+
+    func status(for token: UUID) -> OfflineMapSurfaceLeaseStatus {
+        guard let ownerToken else { return .available }
+        return ownerToken == token ? .ownedByCaller : .ownedByAnotherSurface
+    }
+}
+
 @MainActor
 final class OfflineMapProductionComposition: ObservableObject {
     typealias SearchOperation = (
@@ -57,11 +98,16 @@ final class OfflineMapProductionComposition: ObservableObject {
 
     @Published private(set) var navigationState: OfflineNavigationSessionState = .idle
     @Published private(set) var navigationCoverage: OfflineNavigationCoverage = .unknown
+    @Published private(set) var currentNavigationManeuver: OfflineNavigationManeuverEvent?
+    @Published private(set) var lastNavigationDeviation: OfflineNavigationDeviation?
     @Published private(set) var lastNavigationFailure: OfflineNavigationFailure?
     @Published private(set) var canonicalRouteTrustAvailable: Bool
     @Published private(set) var canonicalRouteFailure: String?
     @Published private(set) var installedCoverageTrustAvailable: Bool
     @Published private(set) var installedCoverageFailure: String?
+    @Published private(set) var mapSurfaceSnapshot: HereOfflineMapSurfaceSnapshot
+    @Published private(set) var mapSurfaceLeaseRevision: UInt64 = 0
+    @Published private(set) var mapSurfaceSnapshotRevision: UInt64 = 0
 
     private let searchOperation: SearchOperation
     private let routeOperation: RouteOperation
@@ -76,7 +122,7 @@ final class OfflineMapProductionComposition: ObservableObject {
     private let locationSource: HereNavigationLocationSource
     private let navigationEventSequencer = OfflineNavigationEventSequencer()
     private let principalTransitionSerializer = OfflineMapPrincipalTransitionSerializer()
-    private var mapSurfaceOwnerToken: UUID?
+    private var mapSurfaceLeaseState = OfflineMapSurfaceLeaseState()
     private let installedCoverageResolver: SignedInstalledCoverageResolver?
     private let installedCoverageInstallation: HereNavigateInstalledCoverageInstallation?
     private let initialSignedCoverageManifest: OfflineCoverageSignedEnvelope?
@@ -106,6 +152,7 @@ final class OfflineMapProductionComposition: ObservableObject {
     ) {
         self.owner = owner
         self.mapSurface = mapSurface
+        mapSurfaceSnapshot = mapSurface.snapshot
         self.searchOperation = searchOperation
         self.routeOperation = routeOperation
         self.startNavigationOperation = startNavigationOperation
@@ -124,6 +171,9 @@ final class OfflineMapProductionComposition: ObservableObject {
         installedCoverageTrustAvailable = false
         self.locationSource = locationSource
         self.principalDefaults = principalDefaults
+        mapSurface.onSnapshotChange = { [weak self] snapshot in
+            self?.receiveMapSurfaceSnapshot(snapshot)
+        }
     }
 
     /// Installs exactly one process-wide owner before any route or Settings
@@ -365,26 +415,39 @@ final class OfflineMapProductionComposition: ObservableObject {
         ownerToken: UUID,
         bundle: Bundle = .main
     ) -> AnyObject? {
-        guard mapSurfaceOwnerToken == nil || mapSurfaceOwnerToken == ownerToken else {
+        let snapshot = owner.snapshot
+        guard snapshot.connectivityPolicy == .radioSilent,
+              snapshot.radioSilenceState == .enforced,
+              installedCoverageTrustAvailable,
+              snapshot.installedRegionsState.isCurrent,
+              snapshot.installedRegions.contains(where: { $0.state.isUsableCoverage }),
+              snapshot.availableCapabilities.contains(.detailedRendering) else {
             return nil
         }
+        guard mapSurfaceLeaseState.reserve(for: ownerToken) else { return nil }
+        publishMapSurfaceLeaseRevision()
         guard let nativeView = mapSurface.prepare(
             identity: identity,
             bundle: bundle
         ) else {
-            if mapSurfaceOwnerToken == ownerToken {
-                mapSurfaceOwnerToken = nil
+            if mapSurfaceLeaseState.release(for: ownerToken) {
+                publishMapSurfaceLeaseRevision()
             }
             return nil
         }
-        mapSurfaceOwnerToken = ownerToken
         return nativeView
     }
 
     func clearMapSurface(ownerToken: UUID) {
-        guard mapSurfaceOwnerToken == ownerToken else { return }
-        mapSurfaceOwnerToken = nil
+        guard mapSurfaceLeaseState.release(for: ownerToken) else { return }
+        publishMapSurfaceLeaseRevision()
         mapSurface.clear()
+    }
+
+    func mapSurfaceLeaseStatus(
+        for ownerToken: UUID
+    ) -> OfflineMapSurfaceLeaseStatus {
+        mapSurfaceLeaseState.status(for: ownerToken)
     }
 
     func searchOffline(
@@ -414,6 +477,8 @@ final class OfflineMapProductionComposition: ObservableObject {
     }
 
     func startNavigation(route: OfflineLocalRoute) async throws {
+        currentNavigationManeuver = nil
+        lastNavigationDeviation = nil
         lastNavigationFailure = nil
         do {
             try await withStablePrincipal { [weak self] in
@@ -653,17 +718,24 @@ final class OfflineMapProductionComposition: ObservableObject {
             switch state {
             case .arrived, .stopped, .failed:
                 locationSource.stop()
-            case .idle, .starting, .navigating, .paused, .offRoute, .rerouting:
+                currentNavigationManeuver = nil
+                lastNavigationDeviation = nil
+            case .navigating:
+                lastNavigationDeviation = nil
+            case .idle, .starting, .paused, .offRoute, .rerouting:
                 break
             }
+        case .maneuver(let maneuver):
+            currentNavigationManeuver = maneuver
         case .coverageChanged(let coverage):
             navigationCoverage = coverage
         case .inputRejected(let failure), .rerouteFailed(let failure):
             lastNavigationFailure = failure
+        case .deviationDetected(let deviation):
+            lastNavigationDeviation = deviation
         case .arrived:
             locationSource.stop()
-        case .maneuver, .deviationDetected:
-            break
+            currentNavigationManeuver = nil
         }
     }
 
@@ -671,12 +743,31 @@ final class OfflineMapProductionComposition: ObservableObject {
         locationSource.stop()
         await stopNavigationOperation()
         drainNavigationEvents()
+        currentNavigationManeuver = nil
+        lastNavigationDeviation = nil
     }
 
     private func releaseRuntimeConsumers() async {
         await stopNavigationAndLocationSource()
-        mapSurfaceOwnerToken = nil
+        if mapSurfaceLeaseState.forceRelease() {
+            publishMapSurfaceLeaseRevision()
+        }
         mapSurface.clear()
+    }
+
+    private func receiveMapSurfaceSnapshot(
+        _ snapshot: HereOfflineMapSurfaceSnapshot
+    ) {
+        mapSurfaceSnapshot = snapshot
+        mapSurfaceSnapshotRevision = mapSurfaceSnapshotRevision &+ 1
+        if case .opaqueUnavailable = snapshot.status,
+           mapSurfaceLeaseState.forceRelease() {
+            publishMapSurfaceLeaseRevision()
+        }
+    }
+
+    private func publishMapSurfaceLeaseRevision() {
+        mapSurfaceLeaseRevision = mapSurfaceLeaseState.revision
     }
 
     private static func canonicalRouteRoot(

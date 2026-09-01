@@ -66,18 +66,32 @@ artifacts beyond the signed application's required mobile configuration.
   now verifies pinned Ed25519 issuer/audience/key/SDK/rightsholder claims,
   catalog identity, installed native inventory, polygon/multipolygon holes and
   dateline geometry, complete corridors, freshness, replay, and rollback. The
-  native production adapter and licensed signed boundary dataset are still
-  required before search, road/truck routing, guidance, or voice is authorized.
+  production composition now supplies the native installed-region inventory to
+  that resolver and rejects search, road/truck routing, departure, rerouting,
+  or guidance unless the requested point or complete corridor is admitted by
+  current signed coverage. The independently licensed and approved signed
+  boundary dataset, its pinned public key, and the matching SDK inventory are
+  still release inputs; their absence keeps those operations unavailable.
+- Installed-coverage time persists the exact signed-envelope digest, the
+  authenticated `payload.issuedAt` lower bound, receipt uptime, and kernel boot
+  session in device-only Keychain storage. Same-boot relaunch advances only by
+  monotonic uptime; reboot, uptime regression, anchor/envelope tamper, or
+  missing/corrupt persistence fails closed. `issuedAt` is a conservative signed
+  lower bound, not exact server receipt time or trusted current time; a newer
+  signed manifest must re-anchor coverage after reboot.
 - Rail and Vessel routes are never calculated with HERE road routing. The cache
   accepts only Ed25519-signed `route.plan` bytes whose pinned issuer, audience,
-  tenant, user, load, mode, and lifetime claims verify. Production decoder,
-  logout purge, and route-surface callers are still required before this cache
-  becomes app behavior. One app-scoped store owns each cache root; a competing
-  store instance is rejected before it can create an out-of-order writer.
+  tenant, user, load, mode, and lifetime claims verify. The authenticated
+  production client, decoder, offline reader, logout/principal purge, Rail and
+  Vessel callers, and verified route renderer are wired. One app-scoped store
+  owns each cache root; a competing store instance is rejected before it can
+  create an out-of-order writer.
 - Canonical-route observations anchor authenticated signed server time to
-  monotonic system uptime per principal. Wall-clock rollback and forward jumps
-  cannot change freshness. A process relaunch, reboot, or uptime regression
-  deliberately invalidates the anchor; cached Rail/Vessel freshness remains
+  monotonic system uptime per principal and persist the anchor in app-scoped,
+  device-only Keychain storage. Wall-clock rollback and forward jumps cannot
+  change freshness. A same-boot process relaunch can restore the monotonic
+  anchor; a reboot, boot-session mismatch, uptime regression, or tamper event
+  deliberately invalidates it. Cached Rail/Vessel freshness then remains
   unavailable until a strictly newer signed response re-anchors it. This is a
   fail-closed safety boundary, not a claim of a secure cross-reboot clock.
 - Native-engine readiness proves only inspected engine health and capability
@@ -88,18 +102,36 @@ artifacts beyond the signed application's required mobile configuration.
   unavailable or timestamped stale while offline.
 - The renderer boundary may show an approved EusoTrip family/mode/theme style
   or an opaque unavailable state. Stock HERE or Apple cartography is not a
-  visual fallback. This branch does not yet mount that native surface in a
-  production screen.
+  visual fallback. Settings mounts a lease-controlled native preview only when
+  radio-silent policy, SDK readiness, trusted installed coverage, and a usable
+  region are all present. It immediately obscures and removes accessibility
+  exposure when eligibility is lost. The production road-journey screen uses
+  the same app-owned composition for local search, road/truck alternatives,
+  maneuvers, guidance, and coverage state; it requires a fresh precise
+  nonsimulated device fix and never fabricates truck constraints.
 
 ## Current integration blockers
 
 The source boundary is intentionally not labeled full parity or release ready.
-The licensed framework/archive/notices/vendor privacy material, Navigate
-credentials, 18 approved native styles, signed licensed coverage dataset and
-native inventory adapter, production settings/map/search/route/navigation
-callers, principal-transition purge wiring, and iOS signed `route.plan` client
-are absent. The server-side signed-package procedure exists on its isolated web
-branch, but it is not app behavior until the client and composition consume it.
+The app-owned composition, native inventory adapter, Settings preview,
+radio-silent road/truck journey caller, signed Rail/Vessel package client and
+callers, principal-transition purge, and verified route surfaces are now in
+source. The matching authenticated server procedure lives on its separately
+verified web branch and must be integrated with this exact iOS branch before a
+release claim.
+
+The remaining release inputs are not safe to fabricate: the licensed HERE SDK
+4.27.2.0 framework/archive, archive and extracted-tree hashes, `HERE_NOTICE`,
+vendor privacy material, dedicated rotated Navigate credentials, all 18
+approved native style exports and hashes, and a rightsholder-approved signed
+coverage catalog/public key/manifest matching real installed SDK inventory.
+The current active Rail/Vessel movement map still uses the online JavaScript
+surface; replacing it without losing route geometry, endpoints, live position,
+camera/follow state, or failure truth requires a typed native scene-projection
+API and signed-geometry adapter. Until that is implemented and device-proven,
+the Settings preview and road-journey screen are the native offline surfaces,
+not a universal replacement for every map in the app.
+
 `verify-here-offline-contract.mjs` is a source/artifact gate only; it cannot
 prove physical-device behavior or radio silence.
 The authoritative TestFlight deployment script now runs the production gate,
@@ -134,11 +166,14 @@ Simulator and cache-only checks are insufficient. On a real iPhone:
 
 1. Install one small region online and verify its bytes, layers, and catalog
    version.
-2. Force-quit, enable airplane mode, reboot, and cold-launch.
-3. Verify native vector pan/zoom. Only after the signed coverage resolver is
-   integrated, verify local place/address/category search, dimensioned truck
-   routing, visual guidance, installed TTS voice, GPS progression, deviation,
-   local rerouting, and approaching/outside-coverage transitions.
+2. Force-quit and cold-launch in airplane mode to prove same-boot restoration.
+   Then reboot and confirm the trusted-time boundary fails closed until a newer
+   signed response re-anchors it; do not treat that deliberate denial as
+   cross-reboot offline parity.
+3. Verify native vector pan/zoom, local place/address/category search,
+   dimensioned truck routing, visual guidance, installed TTS voice, GPS
+   progression, deviation, local rerouting, and approaching/outside-coverage
+   transitions.
 4. Cross an uncovered boundary and verify the named missing-coverage state from
    independent installed-region evidence rather than an empty attribution.
 5. Exercise pause/resume/cancel, low storage, interrupted install, update,

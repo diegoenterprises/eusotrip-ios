@@ -24,6 +24,7 @@ struct OfflineRoadJourneyView: View {
     @ObservedObject private var composition: OfflineMapProductionComposition
     @ObservedObject private var owner: OfflineMapCompositionOwner
     @StateObject private var model: OfflineRoadJourneyViewModel
+    @State private var appRadioSilenceLease: AppRadioSilenceLease?
 
     init(composition: OfflineMapProductionComposition) {
         self.composition = composition
@@ -48,12 +49,30 @@ struct OfflineRoadJourneyView: View {
         }
         .background(pageBackground.ignoresSafeArea())
         .offlineRoadJourneyNavigationTitle()
+        .onAppear {
+            ensureAppRadioSilenceLease()
+        }
         .task(id: sessionScope) {
+            ensureAppRadioSilenceLease()
             await model.bindPrincipal(sessionScope)
         }
         .onDisappear {
             model.cancelPendingOperation()
+            releaseAppRadioSilenceLease()
         }
+    }
+
+    private func ensureAppRadioSilenceLease() {
+        guard appRadioSilenceLease == nil else { return }
+        appRadioSilenceLease = AppRadioSilenceCoordinator.shared.acquire(
+            reason: .offlineRoadJourney
+        )
+    }
+
+    private func releaseAppRadioSilenceLease() {
+        guard let lease = appRadioSilenceLease else { return }
+        AppRadioSilenceCoordinator.shared.release(lease)
+        appRadioSilenceLease = nil
     }
 
     private var pageBackground: Color {
@@ -524,6 +543,35 @@ struct OfflineRoadJourneyView: View {
                     .foregroundStyle(.secondary)
             }
             .accessibilityElement(children: .combine)
+
+            if let maneuver = composition.currentNavigationManeuver {
+                VStack(alignment: .leading, spacing: 5) {
+                    Label("Current instruction", systemImage: "arrow.turn.up.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.teal)
+                    Text(maneuver.instruction)
+                        .font(.title3.bold())
+                    Text("In \(OfflineRoadJourneyFormat.distance(maneuver.distanceMeters))")
+                        .font(.callout.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.teal.opacity(0.10))
+                )
+                .accessibilityElement(children: .combine)
+            }
+
+            if let deviation = composition.lastNavigationDeviation {
+                Label(
+                    "Route deviation \(OfflineRoadJourneyFormat.meters(deviation.crossTrackMeters)) · \(deviation.consecutiveSamples) consecutive fixes",
+                    systemImage: "arrow.triangle.branch"
+                )
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(.orange)
+            }
 
             if let failure = composition.lastNavigationFailure {
                 VStack(alignment: .leading, spacing: 5) {
@@ -1393,6 +1441,9 @@ private enum OfflineRoadJourneyReadiness {
         var values: [String] = []
         if !hasBoundPrincipal {
             values.append("A signed-in tenant and user must be bound before local route data can be used.")
+        }
+        if !AppRadioSilenceCoordinator.shared.isEnforced {
+            values.append("App-wide network transports are not suspended for this offline journey.")
         }
         if !composition.installedCoverageTrustAvailable {
             values.append(
