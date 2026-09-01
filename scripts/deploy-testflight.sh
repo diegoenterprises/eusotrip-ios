@@ -19,6 +19,8 @@ require_env() {
 require_env ASC_API_KEY_ID
 require_env ASC_API_KEY_ISSUER
 require_env ASC_API_KEY_PATH
+require_env HERE_OFFLINE_EXPECTED_TEAM_ID
+require_env HERE_OFFLINE_EXPECTED_SIGNING_AUTHORITY
 
 EXPECTED_KEY_NAME="AuthKey_${ASC_API_KEY_ID}.p8"
 if [[ "$(basename "$ASC_API_KEY_PATH")" != "$EXPECTED_KEY_NAME" ]]; then
@@ -75,6 +77,7 @@ LADDER_COMPILED="not_run"
 LADDER_ARCHIVED="not_run"
 LADDER_EXPORTED="not_run"
 LADDER_UPLOADED="not_run"
+LADDER_HERE_OFFLINE_CONTRACT="not_run"
 LADDER_PROCESSING="pending"
 LADDER_AVAILABLE="pending"
 
@@ -90,6 +93,7 @@ write_ladder() {
   "archivePath": "${ARCHIVE_PATH}",
   "compiled": "${LADDER_COMPILED}",
   "archived": "${LADDER_ARCHIVED}",
+  "hereOfflineContract": "${LADDER_HERE_OFFLINE_CONTRACT}",
   "exported": "${LADDER_EXPORTED}",
   "uploaded": "${LADDER_UPLOADED}",
   "processing": "${LADDER_PROCESSING}",
@@ -107,6 +111,9 @@ mark_failed_step() {
     export)
       LADDER_EXPORTED="fail"
       ;;
+    offline_contract)
+      LADDER_HERE_OFFLINE_CONTRACT="fail"
+      ;;
     upload)
       LADDER_UPLOADED="fail"
       ;;
@@ -117,6 +124,11 @@ mark_failed_step() {
 write_ladder
 echo "Release ${VERSION} (${BUILD_NUMBER}); project=${PROJECT_BUILD_NUMBER}, ASC latest=${ASC_LATEST_BUILD}"
 echo "Release workspace: ${RELEASE_ROOT}"
+
+# This harness proves the release verifier itself still rejects malformed or
+# substituted HERE artifacts before we spend an archive or App Store upload.
+node "${PROJECT_ROOT}/scripts/verify-here-offline-contract.test.mjs"
+node "${PROJECT_ROOT}/scripts/verify-here-offline-contract.mjs"
 
 trap 'mark_failed_step archive' ERR
 xcodebuild \
@@ -144,6 +156,24 @@ if [[ "$ARCHIVED_BUILD" != "$BUILD_NUMBER" || "$ARCHIVED_VERSION" != "$VERSION" 
   echo "ERROR: Archive contains ${ARCHIVED_VERSION} (${ARCHIVED_BUILD}), expected ${VERSION} (${BUILD_NUMBER})." >&2
   exit 1
 fi
+write_ladder
+
+ARCHIVED_APP_PATH="${ARCHIVE_PATH}/Products/Applications/EusoTrip.app"
+if [[ ! -d "$ARCHIVED_APP_PATH" ]]; then
+  mark_failed_step offline_contract
+  echo "ERROR: Archived EusoTrip.app is missing." >&2
+  exit 1
+fi
+
+# The release verifier inspects the signed archive product itself. It binds
+# HERE Navigate, HERE_NOTICE, all 18 approved native styles, credentials, and
+# signing identity to the committed supply-chain attestations before export.
+trap 'mark_failed_step offline_contract' ERR
+node "${PROJECT_ROOT}/scripts/verify-here-offline-contract.mjs" \
+  --release \
+  --built-app="${ARCHIVED_APP_PATH}"
+trap - ERR
+LADDER_HERE_OFFLINE_CONTRACT="pass"
 write_ladder
 
 trap 'mark_failed_step export' ERR

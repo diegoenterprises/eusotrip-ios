@@ -856,6 +856,7 @@ if (!projectInspector.resourceRegistered(relative.styleManifest)) {
 
 const releaseAutomationCandidates = [
   absolute(relative.scheme),
+  absolute("scripts/deploy-testflight.sh"),
   absolute("azure-pipelines.yml"),
   absolute("fastlane/Fastfile"),
   ...walkFiles(".github/workflows"),
