@@ -160,5 +160,13 @@
 	<string>$(HERE_SDK_ACCESS_KEY_ID)</string>
 	<key>HERESDKAccessKeySecret</key>
 	<string>$(HERE_SDK_ACCESS_KEY_SECRET)</string>
+	<key>EusoRoutePlanIssuer</key>
+	<string>$(EUSOTRIP_ROUTE_PLAN_ISSUER)</string>
+	<key>EusoRoutePlanAudience</key>
+	<string>$(EUSOTRIP_ROUTE_PLAN_AUDIENCE)</string>
+	<key>EusoRoutePlanKeyID</key>
+	<string>$(EUSOTRIP_ROUTE_PLAN_KEY_ID)</string>
+	<key>EusoRoutePlanPublicKey</key>
+	<string>$(EUSOTRIP_ROUTE_PLAN_PUBLIC_KEY_BASE64)</string>
 </dict>
 </plist>

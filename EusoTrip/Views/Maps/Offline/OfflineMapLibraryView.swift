@@ -24,6 +24,14 @@ struct OfflineMapManagementView: View {
         _model = StateObject(wrappedValue: OfflineMapLibraryViewModel(owner: owner))
     }
 
+    init(productionComposition: OfflineMapProductionComposition) {
+        _model = StateObject(
+            wrappedValue: OfflineMapLibraryViewModel(
+                productionComposition: productionComposition
+            )
+        )
+    }
+
     /// Composition-ready entry for navigation surfaces. The caller must pass
     /// the app's explicit storage policy; this view never invents a reserve or
     /// update-staging multiplier for the device.

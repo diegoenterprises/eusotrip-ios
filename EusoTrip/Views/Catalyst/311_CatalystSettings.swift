@@ -160,6 +160,8 @@ private struct SettingsBody: View {
     @State private var presetInstructions: String = ""
     @State private var securityDestination: CatalystSecurityDestination?
     @State private var presentingLegal: LegalDoc?
+    @State private var showOfflineMaps = false
+    @State private var offlineMapStartupError: String?
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -168,6 +170,7 @@ private struct SettingsBody: View {
                     header
                     notificationsSection
                     dispatchPresetsSection
+                    offlineMapsSection
                     securitySection
                     aboutSection
                     Color.clear.frame(height: 96)
@@ -181,6 +184,9 @@ private struct SettingsBody: View {
         .sheet(isPresented: $showNewPreset) { newPresetSheet }
         .sheet(item: $presentingLegal) { document in
             LegalDocSheet(doc: document)
+        }
+        .fullScreenCover(isPresented: $showOfflineMaps) {
+            offlineMapManagementDestination
         }
         .fullScreenCover(item: $securityDestination) { destination in
             securityDestinationView(destination)
@@ -431,6 +437,78 @@ private struct SettingsBody: View {
                 anchor: "security-password"
             ) { securityDestination = .password }
         }
+    }
+
+    private var offlineMapsSection: some View {
+        settingsHub(
+            id: "offline-maps",
+            icon: "map.fill",
+            title: "Offline maps",
+            summary: "Coverage · storage · radio silence",
+            rowCount: 2
+        ) {
+            if let offlineMapStartupError {
+                inlineFailure(offlineMapStartupError) {
+                    OfflineMapProductionComposition.install()
+                    openOfflineMaps()
+                }
+                Divider().overlay(palette.borderFaint)
+            }
+            settingsActionRow(
+                title: "On-device map library",
+                subtitle: "Install regions, inspect storage, and verify departure readiness",
+                anchor: "offline-maps-library"
+            ) {
+                openOfflineMaps()
+            }
+            Divider().overlay(palette.borderFaint)
+            settingsValueRow(
+                title: "Mode authority",
+                subtitle: "Road and truck use verified HERE coverage. Rail and vessel stay on signed route.plan geometry."
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var offlineMapManagementDestination: some View {
+        if let composition = OfflineMapProductionComposition.shared {
+            NavigationStack {
+                OfflineMapManagementView(productionComposition: composition)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Done") { showOfflineMaps = false }
+                        }
+                    }
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 14) {
+                Image(systemName: "map.fill")
+                    .font(.system(size: 28, weight: .bold))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("Offline maps unavailable")
+                    .font(.system(size: 22, weight: .heavy))
+                    .foregroundStyle(palette.textPrimary)
+                Text(OfflineMapProductionComposition.installationFailure
+                     ?? "The app-owned offline map policy did not install.")
+                    .font(EType.body)
+                    .foregroundStyle(palette.textSecondary)
+                Button("Close") { showOfflineMaps = false }
+                    .buttonStyle(.borderedProminent)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(24)
+            .background(palette.bgPage.ignoresSafeArea())
+        }
+    }
+
+    private func openOfflineMaps() {
+        guard OfflineMapProductionComposition.shared != nil else {
+            offlineMapStartupError = OfflineMapProductionComposition.installationFailure
+                ?? "Offline maps could not install the release-approved device policy."
+            return
+        }
+        offlineMapStartupError = nil
+        showOfflineMaps = true
     }
 
     private var aboutSection: some View {

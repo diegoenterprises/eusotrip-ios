@@ -277,6 +277,21 @@ enum HereNavigationVoicePolicy: Equatable, Sendable {
     case disabled
 
     static let requiredEnglishUS = Self.required(localeIdentifier: "en-US")
+
+    /// Production composition accepts only the exact locale that both HERE's
+    /// maneuver text and the device-local voice boundary currently prove.
+    /// Additional locales require their own installed-voice acceptance run.
+    init(requiredLocaleIdentifier: String) throws {
+        let locale = requiredLocaleIdentifier.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        guard locale.caseInsensitiveCompare("en-US") == .orderedSame else {
+            throw OfflineMapCoreError.invalidInput(
+                "Offline voice guidance currently requires the release-approved en-US locale."
+            )
+        }
+        self = .required(localeIdentifier: "en-US")
+    }
 }
 
 #if canImport(heresdk)

@@ -18,5 +18,13 @@ HERE_JS_API_KEY         = REPLACE_WITH_HERE_JS_API_KEY
 HERE_SDK_ACCESS_KEY_ID      = REPLACE_WITH_NAVIGATE_ACCESS_KEY_ID
 HERE_SDK_ACCESS_KEY_SECRET  = REPLACE_WITH_NAVIGATE_ACCESS_KEY_SECRET
 
+// ---- Signed server-canonical Rail/Vessel route.plan trust -------------
+// The public key is not secret, but it is release-pinned. Its key ID, issuer,
+// and audience must exactly match the authenticated route.plan envelope.
+EUSOTRIP_ROUTE_PLAN_ISSUER             = REPLACE_WITH_ROUTE_PLAN_ISSUER
+EUSOTRIP_ROUTE_PLAN_AUDIENCE           = REPLACE_WITH_ROUTE_PLAN_AUDIENCE
+EUSOTRIP_ROUTE_PLAN_KEY_ID             = REPLACE_WITH_ROUTE_PLAN_KEY_ID
+EUSOTRIP_ROUTE_PLAN_PUBLIC_KEY_BASE64  = REPLACE_WITH_ED25519_PUBLIC_KEY_BASE64
+
 // Custom map archives remain fail-closed until artifact hash, runtime,
 // multi-zoom, theme, and accessibility review gates all pass.
