@@ -25,18 +25,63 @@ const relative = {
   offlineUIRoot: "EusoTrip/Views/Maps/Offline",
   runtime: "EusoTrip/Services/HereMaps/Offline/SDK/HereSDKRuntime.swift",
   engine: "EusoTrip/Services/HereMaps/Offline/Core/OfflineMapEngine.swift",
+  navigateEngine: "EusoTrip/Services/HereMaps/Offline/SDK/HereNavigateOfflineEngine.swift",
   coordinator: "EusoTrip/Services/HereMaps/Offline/Core/OfflineMapCoordinator.swift",
   mapModels: "EusoTrip/Services/HereMaps/Offline/Core/OfflineMapModels.swift",
   routeModels: "EusoTrip/Services/HereMaps/Offline/Core/OfflineRouteModels.swift",
+  navigationModels: "EusoTrip/Services/HereMaps/Offline/Core/OfflineNavigationModels.swift",
   routeStore: "EusoTrip/Services/HereMaps/Offline/Core/CanonicalRoutePackageStore.swift",
+  routeClient: "EusoTrip/Services/HereMaps/Offline/Core/CanonicalRoutePlanClient.swift",
+  routeReader: "EusoTrip/Services/HereMaps/Offline/Core/CanonicalRouteOfflineReader.swift",
   trustedRouteClock: "EusoTrip/Services/HereMaps/Offline/Core/CanonicalRouteTrustedClock.swift",
+  appRadioSilenceLeaseState: "EusoTrip/Services/HereMaps/Offline/Core/AppRadioSilenceLeaseState.swift",
+  appRadioSilenceCoordinator: "EusoTrip/Services/HereMaps/Offline/Core/AppRadioSilenceCoordinator.swift",
+  appRadioSilenceSharedState: "EusoTrip/Services/HereMaps/Offline/Core/AppRadioSilenceSharedState.swift",
+  appRadioSilenceDirectTransport: "EusoTrip/Services/HereMaps/Offline/Core/AppRadioSilenceDirectTransportController.swift",
+  appRadioSilenceAsyncImage: "EusoTrip/Views/Components/AppRadioSilenceAsyncImage.swift",
   coverageResolver: "EusoTrip/Services/HereMaps/Offline/Core/SignedInstalledCoverageResolver.swift",
+  coverageAdapter: "EusoTrip/Services/HereMaps/Offline/SDK/HereNavigateInstalledCoverageAdapter.swift",
+  finiteCallbackWatchdog: "EusoTrip/Services/HereMaps/Offline/SDK/HereFiniteCallbackWatchdog.swift",
+  locationSource: "EusoTrip/Services/HereMaps/Offline/SDK/HereNavigationLocationSource.swift",
   navigation: "EusoTrip/Services/HereMaps/Offline/SDK/HereNavigateNavigationSession.swift",
   surface: "EusoTrip/Services/HereMaps/Offline/SDK/HereNavigateOfflineMapSurface.swift",
+  onlineMapWebView: "EusoTrip/Services/HereMaps/HereMapWebView.swift",
   productionComposition: "EusoTrip/Services/HereMaps/Offline/OfflineMapProductionComposition.swift",
+  mapLibraryView: "EusoTrip/Views/Maps/Offline/OfflineMapLibraryView.swift",
+  roadJourneyView: "EusoTrip/Views/Maps/Offline/OfflineRoadJourneyView.swift",
+  driverEnRouteView: "EusoTrip/Views/Driver/035_EnRouteDrive.swift",
+  canonicalItineraryView: "EusoTrip/Views/Maps/Offline/CanonicalOfflineRouteItineraryView.swift",
+  railRouteCaller: "EusoTrip/Views/Rail/697_RailInterlineRoutePlan.swift",
+  vesselRouteCaller: "EusoTrip/Views/Vessel/002_VesselBookingDetail.swift",
   appEntry: "EusoTrip/EusoTripApp.swift",
+  pushService: "EusoTrip/Services/PushService.swift",
   settingsHost: "EusoTrip/Views/Catalyst/311_CatalystSettings.swift",
-  mapHost: "EusoTrip/Services/HereMaps/HereMapWebView.swift",
+  api: "EusoTrip/Services/EusoTripAPI.swift",
+  walletAPI: "EusoTrip/Features/Wallet/EusoTripAPI+Wallet.swift",
+  realtimeService: "EusoTrip/Services/RealtimeService.swift",
+  driverGPSPushService: "EusoTrip/Services/DriverGPSPushService.swift",
+  hosClockService: "EusoTrip/Services/HOSClockService.swift",
+  reminderSyncService: "EusoTrip/Services/ReminderSyncService.swift",
+  offlineQueue: "EusoTrip/Services/OfflineQueue.swift",
+  geofenceService: "EusoTrip/Services/GeofenceService.swift",
+  weatherService: "EusoTrip/Services/WeatherService.swift",
+  newsImageCache: "EusoTrip/Services/NewsOGImageCache.swift",
+  ptChannelManager: "EusoTrip/Services/PTChannelManager.swift",
+  watchAuthBridge: "EusoTrip/Services/WatchAuthBridge.swift",
+  phoneWatchBridge: "EusoTrip/Services/EusoTripApp+WatchBridge.swift",
+  appAttestClient: "EusoTrip/Services/AppAttestClient.swift",
+  appleAuthProvider: "EusoTrip/Services/AppleAuthProvider.swift",
+  walletApplePayProvider: "EusoTrip/Services/EusoWalletApplePayProvider.swift",
+  walletPassService: "EusoTrip/Services/EusoWalletPassService.swift",
+  shipperAppIntents: "EusoTrip/Services/ShipperAppIntents.swift",
+  dockAssignedView: "EusoTrip/Views/Driver/022_DockAssigned.swift",
+  watchRadioSilenceState: "EusoTrip Pulse Watch App/Services/AppRadioSilenceWatchState.swift",
+  watchRadioSilencePolicy: "EusoTrip Pulse Watch App/Services/AppRadioSilenceWatchPolicy.swift",
+  watchConnectivityManager: "EusoTrip Pulse Watch App/WatchConnectivityManager.swift",
+  watchAppEntry: "EusoTrip Pulse Watch App/EusoTripWatchApp.swift",
+  watchEsangClient: "EusoTrip Pulse Watch App/EsangClient.swift",
+  watchOfflineQueue: "EusoTrip Pulse Watch App/Services/OfflineQueue.swift",
+  watchAudioRecorder: "EusoTrip Pulse Watch App/WatchAudioRecorder.swift",
   info: "EusoTrip/Info.plist",
   sampleConfig: "EusoTrip.xcconfig.sample",
   project: "EusoTrip.xcodeproj/project.pbxproj",
@@ -69,6 +114,14 @@ const relative = {
   sourceContractWorkflow: ".github/workflows/here-offline-source-contract.yml",
   manifest: "EusoTrip/Services/HereMaps/Offline/HERE_SDK_SUPPLY_CHAIN.json",
   styleManifest: "EusoTrip/Services/HereMaps/Offline/HERE_NATIVE_STYLE_SUPPLY_CHAIN.json",
+  coverageTrust: "EusoTrip/Services/HereMaps/Offline/HERE_INSTALLED_COVERAGE_TRUST.json",
+  trustedClockVerifier: "scripts/verify-canonical-route-trusted-clock.swift",
+  coverageResolverTests: "EusoTripOfflineTests/SignedInstalledCoverageResolverTests.swift",
+  appRadioSilenceLeaseTests: "EusoTripOfflineTests/AppRadioSilenceLeaseStateTests.swift",
+  watchRadioSilenceTests: "EusoTrip Pulse Watch AppTests/AppRadioSilenceWatchStateTests.swift",
+  finiteCallbackWatchdogTests: "EusoTripOfflineTests/HereFiniteCallbackWatchdogTests.swift",
+  navigationInterruptionTests: "EusoTripOfflineTests/HereNavigationInterruptionBoundaryTests.swift",
+  surfaceLeaseTests: "EusoTripOfflineTests/OfflineMapSurfaceLeaseStateTests.swift",
   credentialAttestation: "security/HERE_CREDENTIAL_REMEDIATION.json",
   legacyCredentialTest: "EusoTripTests/HereMaps/HEREAuthServiceTests.swift",
   integrationCredentialInventory: "mapping_audit/here_integration_plan.md",
@@ -110,6 +163,56 @@ const releaseInputPaths = [
   relative.githubGovernanceVerifierTests,
   relative.reachableCredentialHistoryVerifier,
   relative.reachableCredentialHistoryVerifierTests,
+  relative.trustedClockVerifier,
+  relative.coverageResolverTests,
+  relative.appRadioSilenceLeaseState,
+  relative.appRadioSilenceCoordinator,
+  relative.appRadioSilenceSharedState,
+  relative.appRadioSilenceDirectTransport,
+  relative.appRadioSilenceAsyncImage,
+  relative.appRadioSilenceLeaseTests,
+  relative.watchRadioSilenceState,
+  relative.watchRadioSilencePolicy,
+  relative.watchRadioSilenceTests,
+  relative.finiteCallbackWatchdog,
+  relative.finiteCallbackWatchdogTests,
+  relative.navigationInterruptionTests,
+  relative.navigateEngine,
+  relative.navigationModels,
+  relative.navigation,
+  relative.surface,
+  relative.productionComposition,
+  relative.mapLibraryView,
+  relative.roadJourneyView,
+  relative.canonicalItineraryView,
+  relative.api,
+  relative.walletAPI,
+  relative.realtimeService,
+  relative.driverGPSPushService,
+  relative.hosClockService,
+  relative.reminderSyncService,
+  relative.offlineQueue,
+  relative.geofenceService,
+  relative.weatherService,
+  relative.newsImageCache,
+  relative.ptChannelManager,
+  relative.watchAuthBridge,
+  relative.phoneWatchBridge,
+  relative.appAttestClient,
+  relative.appleAuthProvider,
+  relative.walletApplePayProvider,
+  relative.walletPassService,
+  relative.shipperAppIntents,
+  relative.pushService,
+  relative.watchConnectivityManager,
+  relative.watchAppEntry,
+  relative.watchEsangClient,
+  relative.watchOfflineQueue,
+  relative.watchAudioRecorder,
+  relative.dockAssignedView,
+  relative.surfaceLeaseTests,
+  relative.driverEnRouteView,
+  relative.onlineMapWebView,
   relative.sourceContractWorkflow,
 ];
 
@@ -540,8 +643,27 @@ function compiledSwiftCodeOnly(source) {
   const output = [];
   const releaseCondition = condition => {
     const compact = condition.replace(/\s+/g, "");
-    if (compact === "true" || compact === "!DEBUG") return true;
-    if (compact === "false" || compact === "DEBUG") return false;
+    if ([
+      "true",
+      "!DEBUG",
+      "canImport(UIKit)",
+      "canImport(CoreLocation)",
+      "canImport(Security)",
+      "canImport(AVFoundation)",
+      "canImport(heresdk)",
+      "os(iOS)&&canImport(AVFoundation)",
+      "os(iOS)",
+    ].includes(compact)) return true;
+    if ([
+      "false",
+      "DEBUG",
+      "canImport(AppKit)",
+      "os(macOS)",
+      "os(tvOS)",
+      "os(watchOS)",
+      "targetEnvironment(simulator)",
+      "targetEnvironment(macCatalyst)",
+    ].includes(compact)) return false;
     return null;
   };
   for (const line of lines) {
@@ -605,11 +727,321 @@ function swiftDeclarationBody(source, declarationPattern, startIndex = 0) {
   return "";
 }
 
+function swiftDeclarationOriginalBody(source, declarationPattern, startIndex = 0) {
+  const code = swiftCodeOnly(source);
+  const tail = code.slice(startIndex);
+  const match = tail.match(declarationPattern);
+  if (!match || match.index === undefined) return "";
+  const declarationStart = startIndex + match.index;
+  const openingBrace = code.indexOf("{", declarationStart + match[0].length - 1);
+  if (openingBrace < 0) return "";
+  let depth = 0;
+  for (let index = openingBrace; index < code.length; index += 1) {
+    if (code[index] === "{") depth += 1;
+    else if (code[index] === "}") {
+      depth -= 1;
+      if (depth === 0) return source.slice(openingBrace + 1, index);
+    }
+  }
+  return "";
+}
+
+function containsInOrder(source, snippets) {
+  let cursor = 0;
+  for (const snippet of snippets) {
+    const index = source.indexOf(snippet, cursor);
+    if (index < 0) return false;
+    cursor = index + snippet.length;
+  }
+  return true;
+}
+
+function canonicalBase64(value, expectedBytes = null, maximumBytes = null) {
+  if (typeof value !== "string" || value.length === 0 || value.length % 4 !== 0 ||
+      !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)) {
+    return null;
+  }
+  const decoded = Buffer.from(value, "base64");
+  if (decoded.toString("base64") !== value ||
+      (expectedBytes !== null && decoded.length !== expectedBytes) ||
+      (maximumBytes !== null && decoded.length > maximumBytes)) {
+    return null;
+  }
+  return decoded;
+}
+
+function normalizedCoverageIdentifier(value, maximumBytes = 256) {
+  assert.equal(typeof value, "string");
+  const normalized = value.trim();
+  assert.ok(normalized.length > 0);
+  assert.ok(Buffer.byteLength(normalized, "utf8") <= maximumBytes);
+  return normalized;
+}
+
+function normalizedCoverageCatalogVersion(value) {
+  const normalized = normalizedCoverageIdentifier(value, 128);
+  assert.ok(!/[\u0000-\u001f\u007f-\u009f]/u.test(normalized));
+  return normalized;
+}
+
+function coverageDate(value) {
+  assert.equal(typeof value, "string");
+  assert.match(value, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/);
+  const milliseconds = Date.parse(value);
+  assert.ok(Number.isFinite(milliseconds));
+  return milliseconds;
+}
+
+function normalizedLongitudeDelta(value) {
+  let result = value % 360;
+  if (result > 180) result -= 360;
+  if (result < -180) result += 360;
+  return result;
+}
+
+function unwrapCoverageCoordinates(coordinates) {
+  const result = [{ x: coordinates[0].longitude, y: coordinates[0].latitude }];
+  let priorLongitude = coordinates[0].longitude;
+  for (const coordinate of coordinates.slice(1)) {
+    const longitude = priorLongitude +
+      normalizedLongitudeDelta(coordinate.longitude - priorLongitude);
+    result.push({ x: longitude, y: coordinate.latitude });
+    priorLongitude = longitude;
+  }
+  return result;
+}
+
+const coverageGeometryEpsilon = 1e-10;
+
+function coverageOrientation(a, b, c) {
+  return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+}
+
+function coveragePointOnSegment(point, start, end) {
+  if (Math.abs(coverageOrientation(start, end, point)) > coverageGeometryEpsilon) return false;
+  return point.x >= Math.min(start.x, end.x) - coverageGeometryEpsilon &&
+    point.x <= Math.max(start.x, end.x) + coverageGeometryEpsilon &&
+    point.y >= Math.min(start.y, end.y) - coverageGeometryEpsilon &&
+    point.y <= Math.max(start.y, end.y) + coverageGeometryEpsilon;
+}
+
+function coverageSegmentsIntersect(a, b, c, d) {
+  const first = coverageOrientation(a, b, c);
+  const second = coverageOrientation(a, b, d);
+  const third = coverageOrientation(c, d, a);
+  const fourth = coverageOrientation(c, d, b);
+  if (((first > 0 && second < 0) || (first < 0 && second > 0)) &&
+      ((third > 0 && fourth < 0) || (third < 0 && fourth > 0))) {
+    return true;
+  }
+  return (Math.abs(first) <= coverageGeometryEpsilon && coveragePointOnSegment(c, a, b)) ||
+    (Math.abs(second) <= coverageGeometryEpsilon && coveragePointOnSegment(d, a, b)) ||
+    (Math.abs(third) <= coverageGeometryEpsilon && coveragePointOnSegment(a, c, d)) ||
+    (Math.abs(fourth) <= coverageGeometryEpsilon && coveragePointOnSegment(b, c, d));
+}
+
+function coverageCoordinatesEqual(left, right) {
+  return left.latitude === right.latitude && left.longitude === right.longitude;
+}
+
+function validateCoverageCoordinate(value) {
+  assert.ok(value && typeof value === "object" && !Array.isArray(value));
+  assert.ok(Number.isFinite(value.latitude) && value.latitude >= -90 && value.latitude <= 90);
+  assert.ok(Number.isFinite(value.longitude) && value.longitude >= -180 && value.longitude <= 180);
+  return { latitude: value.latitude, longitude: value.longitude };
+}
+
+function validateCoverageRing(value) {
+  assert.ok(value && typeof value === "object" && !Array.isArray(value));
+  assert.ok(Array.isArray(value.coordinates));
+  assert.ok(value.coordinates.length >= 4 && value.coordinates.length <= 100_000);
+  const coordinates = value.coordinates.map(validateCoverageCoordinate);
+  assert.ok(coverageCoordinatesEqual(coordinates[0], coordinates.at(-1)));
+  for (let index = 0; index < coordinates.length - 1; index += 1) {
+    assert.ok(!coverageCoordinatesEqual(coordinates[index], coordinates[index + 1]));
+  }
+  const points = unwrapCoverageCoordinates(coordinates);
+  let twiceArea = 0;
+  for (let index = 0; index < points.length - 1; index += 1) {
+    twiceArea += points[index].x * points[index + 1].y -
+      points[index + 1].x * points[index].y;
+  }
+  assert.ok(Math.abs(twiceArea) / 2 > coverageGeometryEpsilon);
+  const edgeCount = points.length - 1;
+  for (let firstIndex = 0; firstIndex < edgeCount; firstIndex += 1) {
+    for (let secondIndex = firstIndex + 1; secondIndex < edgeCount; secondIndex += 1) {
+      const adjacent = secondIndex === firstIndex + 1 ||
+        (firstIndex === 0 && secondIndex === edgeCount - 1);
+      if (!adjacent) {
+        assert.ok(!coverageSegmentsIntersect(
+          points[firstIndex], points[firstIndex + 1],
+          points[secondIndex], points[secondIndex + 1],
+        ));
+      }
+    }
+  }
+  return coordinates;
+}
+
+function coveragePointDisposition(coordinate, ring) {
+  const points = unwrapCoverageCoordinates(ring);
+  const averageLongitude = points.reduce((sum, point) => sum + point.x, 0) / points.length;
+  const query = {
+    x: coordinate.longitude + 360 * Math.round((averageLongitude - coordinate.longitude) / 360),
+    y: coordinate.latitude,
+  };
+  let inside = false;
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const start = points[index];
+    const end = points[index + 1];
+    if (coveragePointOnSegment(query, start, end)) return "boundary";
+    const crosses = (start.y > query.y) !== (end.y > query.y);
+    if (crosses) {
+      const crossingX = start.x +
+        (query.y - start.y) * (end.x - start.x) / (end.y - start.y);
+      if (crossingX > query.x) inside = !inside;
+    }
+  }
+  return inside ? "inside" : "outside";
+}
+
+function coverageGeographicSegmentsIntersect(a, b, c, d) {
+  const firstStart = { x: a.longitude, y: a.latitude };
+  const firstEnd = {
+    x: a.longitude + normalizedLongitudeDelta(b.longitude - a.longitude),
+    y: b.latitude,
+  };
+  const secondStartLongitude = a.longitude + normalizedLongitudeDelta(c.longitude - a.longitude);
+  const secondStart = { x: secondStartLongitude, y: c.latitude };
+  const secondEnd = {
+    x: secondStartLongitude + normalizedLongitudeDelta(d.longitude - c.longitude),
+    y: d.latitude,
+  };
+  return coverageSegmentsIntersect(firstStart, firstEnd, secondStart, secondEnd);
+}
+
+function coverageRingsIntersect(first, second) {
+  for (let firstIndex = 0; firstIndex < first.length - 1; firstIndex += 1) {
+    for (let secondIndex = 0; secondIndex < second.length - 1; secondIndex += 1) {
+      if (coverageGeographicSegmentsIntersect(
+        first[firstIndex], first[firstIndex + 1],
+        second[secondIndex], second[secondIndex + 1],
+      )) return true;
+    }
+  }
+  return false;
+}
+
+function validateCoverageBoundary(value) {
+  assert.ok(value && typeof value === "object" && !Array.isArray(value));
+  assert.ok(Array.isArray(value.polygons));
+  assert.ok(value.polygons.length > 0 && value.polygons.length <= 4_096);
+  let coordinateCount = 0;
+  for (const polygon of value.polygons) {
+    assert.ok(polygon && typeof polygon === "object" && !Array.isArray(polygon));
+    const exterior = validateCoverageRing(polygon.exterior);
+    assert.ok(Array.isArray(polygon.holes) && polygon.holes.length <= 1_024);
+    const holes = polygon.holes.map(validateCoverageRing);
+    coordinateCount += exterior.length + holes.reduce((sum, ring) => sum + ring.length, 0);
+    for (const hole of holes) {
+      assert.equal(coveragePointDisposition(hole[0], exterior), "inside");
+      assert.ok(!coverageRingsIntersect(exterior, hole));
+    }
+    for (let firstIndex = 0; firstIndex < holes.length; firstIndex += 1) {
+      for (let secondIndex = firstIndex + 1; secondIndex < holes.length; secondIndex += 1) {
+        assert.ok(!coverageRingsIntersect(holes[firstIndex], holes[secondIndex]));
+        assert.equal(coveragePointDisposition(holes[firstIndex][0], holes[secondIndex]), "outside");
+        assert.equal(coveragePointDisposition(holes[secondIndex][0], holes[firstIndex]), "outside");
+      }
+    }
+  }
+  return coordinateCount;
+}
+
+function verifyApprovedCoverageEnvelope(envelopeBytes, trust, now = Date.now()) {
+  assert.ok(Buffer.isBuffer(envelopeBytes));
+  assert.ok(envelopeBytes.length > 0 && envelopeBytes.length <= 24 * 1_024 * 1_024);
+  const envelope = JSON.parse(envelopeBytes.toString("utf8"));
+  assert.ok(envelope && typeof envelope === "object" && !Array.isArray(envelope));
+  assert.equal(normalizedCoverageIdentifier(envelope.keyID), trust.verificationKeyID.trim());
+  assert.equal(envelope.algorithm, "ed25519");
+  const payloadBytes = canonicalBase64(envelope.payload, null, 16 * 1_024 * 1_024);
+  const signature = canonicalBase64(envelope.signature, 64);
+  const rawPublicKey = canonicalBase64(trust.ed25519PublicKeyBase64, 32);
+  assert.ok(payloadBytes && payloadBytes.length > 0 && signature && rawPublicKey);
+  const publicKey = crypto.createPublicKey({
+    key: Buffer.concat([
+      Buffer.from("302a300506032b6570032100", "hex"),
+      rawPublicKey,
+    ]),
+    format: "der",
+    type: "spki",
+  });
+  assert.ok(crypto.verify(null, payloadBytes, publicKey, signature));
+
+  const payload = JSON.parse(payloadBytes.toString("utf8"));
+  assert.ok(payload && typeof payload === "object" && !Array.isArray(payload));
+  assert.equal(payload.schemaVersion, 1);
+  assert.equal(normalizedCoverageIdentifier(payload.issuer), trust.issuer.trim());
+  assert.equal(normalizedCoverageIdentifier(payload.audience), trust.audience.trim());
+  normalizedCoverageIdentifier(payload.manifestID);
+  assert.ok(Number.isSafeInteger(payload.sequence) && payload.sequence > 0);
+  const issuedAt = coverageDate(payload.issuedAt);
+  const validFrom = coverageDate(payload.validFrom);
+  const validUntil = coverageDate(payload.validUntil);
+  assert.ok(validUntil > validFrom && issuedAt <= validUntil);
+  const catalogVersion = normalizedCoverageCatalogVersion(payload.catalogVersion);
+
+  const source = payload.source;
+  assert.ok(source && typeof source === "object" && !Array.isArray(source));
+  assert.equal(source.vendor, "HERE");
+  assert.equal(source.product, "HERE_SDK_NAVIGATE_IOS");
+  assert.equal(normalizedCoverageIdentifier(source.sdkVersion), trust.expectedSDKVersion.trim());
+  const rightsID = normalizedCoverageIdentifier(source.rightsID);
+  assert.equal(
+    normalizedCoverageIdentifier(source.rightsHolder),
+    trust.expectedRightsHolder.trim(),
+  );
+  const rightsValidFrom = coverageDate(source.rightsValidFrom);
+  const rightsValidUntil = coverageDate(source.rightsValidUntil);
+  assert.ok(rightsValidUntil > rightsValidFrom);
+
+  assert.ok(Array.isArray(payload.regions));
+  assert.ok(payload.regions.length > 0 && payload.regions.length <= 4_096);
+  const regionIDs = new Set();
+  let coordinateCount = 0;
+  for (const region of payload.regions) {
+    assert.ok(region && typeof region === "object" && !Array.isArray(region));
+    const regionID = normalizedCoverageIdentifier(region.regionID, 16 * 1_024 * 1_024);
+    assert.ok(!regionIDs.has(regionID));
+    regionIDs.add(regionID);
+    assert.equal(normalizedCoverageCatalogVersion(region.catalogVersion), catalogVersion);
+    assert.ok(["active", "revoked"].includes(region.status));
+    const regionValidFrom = coverageDate(region.validFrom);
+    const regionValidUntil = coverageDate(region.validUntil);
+    assert.ok(regionValidUntil > regionValidFrom);
+    assert.equal(normalizedCoverageIdentifier(region.rightsID), rightsID);
+    assert.ok(regionValidFrom >= validFrom && regionValidUntil <= validUntil);
+    assert.ok(regionValidFrom >= rightsValidFrom && regionValidUntil <= rightsValidUntil);
+    coordinateCount += validateCoverageBoundary(region.boundary);
+    assert.ok(coordinateCount <= 2_000_000);
+  }
+
+  const allowedClockSkew = 300_000;
+  assert.ok(issuedAt <= now + allowedClockSkew);
+  assert.ok(validFrom <= now + allowedClockSkew);
+  assert.ok(rightsValidFrom <= now + allowedClockSkew);
+  assert.ok(validUntil >= now - allowedClockSkew);
+  assert.ok(rightsValidUntil >= now - allowedClockSkew);
+  assert.ok(now - issuedAt <= 35 * 24 * 60 * 60 * 1_000 + allowedClockSkew);
+  return payload;
+}
+
 function parsePBXObjects(source) {
   const lines = source.split(/\r?\n/);
   const objects = new Map();
   for (let index = 0; index < lines.length; index += 1) {
-    const start = lines[index].match(/^\s*([A-Za-z0-9]{24})(?: \/\*.*\*\/)? = \{.*$/);
+    const start = lines[index].match(/^\s*([A-Za-z0-9]{12,32})(?: \/\*.*\*\/)? = \{.*$/);
     if (!start) continue;
     const body = [lines[index]];
     let cursor = index + 1;
@@ -635,7 +1067,7 @@ function parsePBXObjects(source) {
 
 function listObjectIDs(object, property) {
   const match = object?.text.match(new RegExp(`\\b${property} = \\(([\\s\\S]*?)\\);`));
-  return match ? [...match[1].matchAll(/\b([A-Za-z0-9]{24})\b/g)].map(item => item[1]) : [];
+  return match ? [...match[1].matchAll(/\b([A-Za-z0-9]{12,32})\b/g)].map(item => item[1]) : [];
 }
 
 function pbxPath(object) {
@@ -649,9 +1081,10 @@ function pbxPath(object) {
 
 function makeProjectInspector(source, targetName) {
   const objects = parsePBXObjects(source);
+  const escapedTargetName = targetName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const target = [...objects.values()].find(object =>
     object.isa === "PBXNativeTarget" &&
-    new RegExp(`\\bname = ${targetName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")};`).test(object.text));
+    new RegExp(`\\bname\\s*=\\s*(?:"${escapedTargetName}"|${escapedTargetName});`).test(object.text));
   const buildPhaseIDs = listObjectIDs(target, "buildPhases");
   const sources = buildPhaseIDs.map(id => objects.get(id)).find(object => object?.isa === "PBXSourcesBuildPhase");
   const resources = buildPhaseIDs.map(id => objects.get(id)).find(object => object?.isa === "PBXResourcesBuildPhase");
@@ -879,17 +1312,62 @@ requireFiles([
   relative.verifier,
   relative.runtime,
   relative.engine,
+  relative.navigateEngine,
   relative.coordinator,
   relative.mapModels,
   relative.routeModels,
+  relative.navigationModels,
   relative.routeStore,
+  relative.routeClient,
+  relative.routeReader,
   relative.trustedRouteClock,
+  relative.appRadioSilenceLeaseState,
+  relative.appRadioSilenceCoordinator,
+  relative.appRadioSilenceSharedState,
+  relative.appRadioSilenceDirectTransport,
+  relative.appRadioSilenceAsyncImage,
   relative.coverageResolver,
+  relative.coverageAdapter,
+  relative.locationSource,
   relative.navigation,
   relative.surface,
+  relative.onlineMapWebView,
+  relative.productionComposition,
+  relative.mapLibraryView,
+  relative.roadJourneyView,
+  relative.driverEnRouteView,
+  relative.canonicalItineraryView,
+  relative.railRouteCaller,
+  relative.vesselRouteCaller,
   relative.appEntry,
+  relative.pushService,
   relative.settingsHost,
-  relative.mapHost,
+  relative.api,
+  relative.walletAPI,
+  relative.realtimeService,
+  relative.driverGPSPushService,
+  relative.hosClockService,
+  relative.reminderSyncService,
+  relative.offlineQueue,
+  relative.geofenceService,
+  relative.weatherService,
+  relative.newsImageCache,
+  relative.ptChannelManager,
+  relative.watchAuthBridge,
+  relative.phoneWatchBridge,
+  relative.appAttestClient,
+  relative.appleAuthProvider,
+  relative.walletApplePayProvider,
+  relative.walletPassService,
+  relative.shipperAppIntents,
+  relative.watchRadioSilenceState,
+  relative.watchRadioSilencePolicy,
+  relative.watchConnectivityManager,
+  relative.watchAppEntry,
+  relative.watchEsangClient,
+  relative.watchOfflineQueue,
+  relative.watchAudioRecorder,
+  relative.dockAssignedView,
   relative.info,
   relative.sampleConfig,
   relative.project,
@@ -918,6 +1396,15 @@ requireFiles([
   relative.sourceContractWorkflow,
   relative.manifest,
   relative.styleManifest,
+  relative.coverageTrust,
+  relative.trustedClockVerifier,
+  relative.coverageResolverTests,
+  relative.appRadioSilenceLeaseTests,
+  relative.watchRadioSilenceTests,
+  relative.finiteCallbackWatchdog,
+  relative.finiteCallbackWatchdogTests,
+  relative.navigationInterruptionTests,
+  relative.surfaceLeaseTests,
   relative.credentialAttestation,
   relative.legacyCredentialTest,
   relative.integrationCredentialInventory,
@@ -930,6 +1417,7 @@ for (const [file, label] of [
   [relative.verifier, "HERE offline release verifier"],
   [relative.manifest, "HERE SDK supply-chain manifest"],
   [relative.styleManifest, "HERE native-style supply-chain manifest"],
+  [relative.coverageTrust, "HERE signed installed-coverage trust document"],
   [relative.credentialAttestation, "HERE credential-remediation attestation"],
   ...releaseInputPaths.map(file => [file, `release input ${file}`]),
   ...retainedCredentialExposurePaths.map(file => [file, `sanitized credential-incident file ${file}`]),
@@ -1068,18 +1556,685 @@ requireText(relative.routeStore, [
   "trustedClock.establishAuthenticatedAnchor",
   "trustedClock.invalidateAll",
 ]);
+requireText(relative.routeClient, [
+  "route.getOfflinePackage",
+  "enum CanonicalRouteFreightSubject",
+  "CanonicalRouteAuthenticatedPrincipal",
+  "authenticatedUser: AuthUser",
+  "signedScopeMismatch",
+  "signedModeMismatch",
+]);
+requireText(relative.routeReader, [
+  "maximumServerObservationAge: TimeInterval = 24 * 60 * 60",
+  "composition.observeCanonicalRoute",
+  "package.scope == scope",
+  "package.mode == subject.expectedRouteMode",
+]);
 requireText(relative.trustedRouteClock, [
+  "import Security",
+  "kSecClassGenericPassword",
   "ProcessInfo.processInfo.systemUptime",
+  "kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly",
+  "kern.bootsessionuuid",
+  "KeychainCanonicalRouteTrustedAnchorPersistence()",
   "case monotonicUptimeRegressed",
+  "case bootSessionChanged",
+  "case persistedAnchorInvalid",
   "case authenticatedAnchorUnavailable",
   "func establishAuthenticatedAnchor",
+  "func invalidateAll() throws",
 ]);
+requireText(relative.trustedClockVerifier, [
+  "Canonical route trusted-clock verification passed: 5 cases",
+  "verifySameBootRelaunch",
+  "verifyRebootFailsClosed",
+  "verifyUptimeRollbackFailsClosed",
+]);
+const trustedClockVerifierSource = exists(relative.trustedClockVerifier)
+  ? read(relative.trustedClockVerifier)
+  : "";
+const trustedClockHarnessStart = swiftCodeOnly(trustedClockVerifierSource).indexOf("@main");
+const trustedClockHarnessMain = trustedClockHarnessStart >= 0
+  ? swiftDeclarationOriginalBody(
+      trustedClockVerifierSource,
+      /\bstatic\s+func\s+main\s*\(\s*\)\s*throws\s*\{/,
+      trustedClockHarnessStart,
+    )
+  : "";
+if (!containsInOrder(trustedClockHarnessMain, [
+  "try verifySameBootRelaunch()",
+  "try verifyRebootFailsClosed()",
+  "try verifyUptimeRollbackFailsClosed()",
+  "try verifyMalformedPersistenceFailsClosed()",
+  "try verifyInvalidationPreventsReuse()",
+  'print("Canonical route trusted-clock verification passed: 5 cases")',
+])) {
+  failures.push("canonical route trusted-clock source harness main no longer executes all five cases before reporting success");
+}
+requireText(relative.appRadioSilenceLeaseState, [
+  "enum AppRadioSilenceTransportError",
+  "struct AppRadioSilenceLease",
+  "struct AppRadioSilenceLeaseState",
+  "case firstLease",
+  "case nestedLease",
+  "case unknownLease",
+  "case stillEnforced",
+  "case finalLeaseReleased",
+  "private var leases: Set<AppRadioSilenceLease>",
+  "struct AppRadioSilencePhoneMirrorState",
+  "enum AppRadioSilencePhoneMirrorPersistence",
+  "restoreForProcessRestart",
+]);
+requireText(relative.appRadioSilenceCoordinator, [
+  "final class AppRadioSilenceCoordinator",
+  "static let shared = AppRadioSilenceCoordinator()",
+  "case offlineRoadJourney",
+  "case offlineMapLibrary",
+  "This policy does",
+  "not and cannot disable OS-managed radios or APNs delivery",
+  "static let eusoAppRadioSilenceWillEngage",
+  "static let eusoAppRadioSilenceDidRelease",
+]);
+requireText(relative.appRadioSilenceSharedState, [
+  "group.com.app.eusotrip",
+  "EUSOTRIP_APP_RADIO_SILENCE_V1:ENFORCED",
+  "EUSOTRIP_APP_RADIO_SILENCE_V1:RELEASED",
+  "static var isEnforced: Bool",
+  "static func prepareMainAppLaunch() -> Bool",
+  "static func setEnforced(_ enforced: Bool) -> Bool",
+  "options: .atomic",
+]);
+requireText(relative.appRadioSilenceLeaseTests, [
+  "APP_RADIO_SILENCE_SOURCE_VERIFICATION",
+  "testFirstAndNestedLeasesRequireFinalRelease",
+  "testDuplicateAndForeignReleaseAreIdempotent",
+  "AppRadioSilenceLeaseStateSourceVerification",
+]);
+const appRadioSilenceLeaseTestSource = exists(relative.appRadioSilenceLeaseTests)
+  ? read(relative.appRadioSilenceLeaseTests)
+  : "";
+const appRadioSilenceHarnessStart = swiftCodeOnly(appRadioSilenceLeaseTestSource).indexOf("@main");
+const appRadioSilenceHarnessMain = appRadioSilenceHarnessStart >= 0
+  ? swiftDeclarationOriginalBody(
+      appRadioSilenceLeaseTestSource,
+      /\bstatic\s+func\s+main\s*\(\s*\)\s*\{/,
+      appRadioSilenceHarnessStart,
+    )
+  : "";
+const compactAppRadioSilenceHarnessMain = appRadioSilenceHarnessMain.replace(/\s+/g, "");
+if (!containsInOrder(compactAppRadioSilenceHarnessMain, [
+  "AppRadioSilenceLeaseState()",
+  "precondition(!state.isEnforced)",
+  "letfirst=state.acquire()",
+  "precondition(first.transition==.firstLease)",
+  "letnested=state.acquire()",
+  "precondition(nested.transition==.nestedLease)",
+  "precondition(first.lease!=nested.lease)",
+  "precondition(state.activeLeaseCount==2)",
+  "precondition(state.release(AppRadioSilenceLease())==.unknownLease)",
+  "precondition(state.release(first.lease)==.stillEnforced)",
+  "precondition(state.release(first.lease)==.unknownLease)",
+  "precondition(state.release(nested.lease)==.finalLeaseReleased)",
+  "precondition(!state.isEnforced)",
+  "AppRadioSilencePhoneMirrorState(",
+  "AppRadioSilencePhoneMirrorPersistence.encode(priorPhoneState)",
+  "restoreForProcessRestart(",
+  "sharedStateIsEnforced:false",
+  "precondition(!restartedPhoneState.isEnforced)",
+  "precondition(restartedPhoneState.revision==8)",
+  "precondition(restartedPhoneState.epoch==\"phone-install\")",
+  "snapshotData:Data(\"corrupt\".utf8)",
+  "sharedStateIsEnforced:true",
+  "precondition(recoveredPhoneState.isEnforced)",
+  "precondition(recoveredPhoneState.revision==0)",
+  "precondition(recoveredPhoneState.epoch==\"replacement-epoch\")",
+])) {
+  failures.push("app radio-silence source harness main no longer exercises lease ownership and atomic phone-mirror restart/corruption semantics before completion");
+}
+const appRadioSilenceLeaseTestCode = swiftCodeOnly(appRadioSilenceLeaseTestSource);
+const compactAppRadioSilenceLeaseTestBody = testName => swiftDeclarationOriginalBody(
+  appRadioSilenceLeaseTestSource,
+  new RegExp(`\\bfunc\\s+${testName}\\s*\\(\\s*\\)(?:\\s+throws)?\\s*\\{`),
+).replace(/\s+/g, "");
+if (!containsInOrder(
+  compactAppRadioSilenceLeaseTestBody("testFirstAndNestedLeasesRequireFinalRelease"),
+  [
+    "letfirst=state.acquire()",
+    "XCTAssertEqual(first.transition,.firstLease)",
+    "letnested=state.acquire()",
+    "XCTAssertEqual(nested.transition,.nestedLease)",
+    "XCTAssertEqual(state.release(first.lease),.stillEnforced)",
+    "XCTAssertEqual(state.release(nested.lease),.finalLeaseReleased)",
+    "XCTAssertFalse(state.isEnforced)",
+  ],
+) || !containsInOrder(
+  compactAppRadioSilenceLeaseTestBody("testDuplicateAndForeignReleaseAreIdempotent"),
+  [
+    "letowned=state.acquire().lease",
+    "XCTAssertEqual(state.release(AppRadioSilenceLease()),.unknownLease)",
+    "XCTAssertEqual(state.release(owned),.finalLeaseReleased)",
+    "XCTAssertEqual(state.release(owned),.unknownLease)",
+    "XCTAssertEqual(state.activeLeaseCount,0)",
+  ],
+)) {
+  failures.push(`${relative.appRadioSilenceLeaseTests}: XCTest bodies no longer assert reference-counted and idempotent lease ownership`);
+}
+for (const [testName, requiredOperations] of [
+  [
+    "testPhoneRestartPublishesStrictlyNewerSharedMarkerState",
+    [
+      "forpreviousEnforcedin[false,true]",
+      "forsharedStateIsEnforcedin[false,true]",
+      "AppRadioSilencePhoneMirrorPersistence.encode(previous)",
+      "restoreForProcessRestart(",
+      "XCTAssertEqual(restarted.isEnforced,sharedStateIsEnforced)",
+      "XCTAssertEqual(restarted.revision,8)",
+      "XCTAssertEqual(restarted.epoch,\"phone-install\")",
+    ],
+  ],
+  [
+    "testCorruptPhoneSnapshotStartsFreshFailClosedEpoch",
+    [
+      "snapshotData:Data(\"corrupt\".utf8)",
+      "legacy:.init(",
+      "sharedStateIsEnforced:true",
+      "XCTAssertTrue(restarted.isEnforced)",
+      "XCTAssertEqual(restarted.revision,0)",
+      "XCTAssertEqual(restarted.epoch,\"replacement-epoch\")",
+    ],
+  ],
+  [
+    "testCompletePhoneLegacyTupleMigratesThenAdvances",
+    [
+      "snapshotData:nil",
+      "legacy:.init(",
+      "sharedStateIsEnforced:false",
+      "XCTAssertFalse(restarted.isEnforced)",
+      "XCTAssertEqual(restarted.revision,6)",
+      "XCTAssertEqual(restarted.epoch,\"legacy-phone\")",
+    ],
+  ],
+]) {
+  if (!containsInOrder(compactAppRadioSilenceLeaseTestBody(testName), requiredOperations)) {
+    failures.push(`${relative.appRadioSilenceLeaseTests}: ${testName} no longer proves atomic phone-mirror restart authority`);
+  }
+}
+const appRadioSilenceCoordinatorCode = exists(relative.appRadioSilenceCoordinator)
+  ? compiledSwiftCodeOnly(read(relative.appRadioSilenceCoordinator))
+  : "";
+const appRadioSilenceSharedStateCode = exists(relative.appRadioSilenceSharedState)
+  ? compiledSwiftCodeOnly(read(relative.appRadioSilenceSharedState))
+  : "";
+const appRadioSilenceAcquireCode = swiftDeclarationBody(
+  appRadioSilenceCoordinatorCode,
+  /\bfunc\s+acquire\s*\(\s*reason:\s*Reason\s*\)\s*->\s*AppRadioSilenceLease\s*\{/,
+);
+const appRadioSilenceReleaseCode = swiftDeclarationBody(
+  appRadioSilenceCoordinatorCode,
+  /\bfunc\s+release\s*\(\s*_\s+lease:\s*AppRadioSilenceLease\s*\)\s*\{/,
+);
+const appRadioSilenceRecoveryCode = swiftDeclarationBody(
+  appRadioSilenceCoordinatorCode,
+  /\bfunc\s+recoverSharedStateOnFirstForegroundActivation\s*\(\s*\)\s*->\s*Bool\s*\{/,
+);
+const sharedRadioSilenceReadCode = swiftDeclarationBody(
+  appRadioSilenceSharedStateCode,
+  /\bstatic\s+var\s+isEnforced\s*:\s*Bool\s*\{/,
+);
+const sharedRadioSilenceWriteCode = swiftDeclarationBody(
+  appRadioSilenceSharedStateCode,
+  /\bstatic\s+func\s+setEnforced\s*\(\s*_\s+enforced:\s*Bool\s*\)\s*->\s*Bool\s*\{/,
+);
+if (!containsInOrder(sharedRadioSilenceReadCode, [
+  "guard let url = stateFileURL",
+  "let payload = try? Data(contentsOf: url)",
+  "return true",
+  "if payload == releasedPayload { return false }",
+  "return true",
+]) || !containsInOrder(sharedRadioSilenceWriteCode, [
+  "guard let url = stateFileURL else { return false }",
+  "let payload = enforced ? enforcedPayload : releasedPayload",
+  "try payload.write(to: url, options: .atomic)",
+  "if enforced",
+  "try? FileManager.default.removeItem(at: url)",
+  "return isEnforced == enforced",
+])) {
+  failures.push("app-group radio-silence marker no longer persists atomic fixed envelopes and fails closed when missing, corrupt, or unwritable");
+}
+if (!containsInOrder(appRadioSilenceAcquireCode, [
+  "state.acquire()",
+  "AppRadioSilenceSharedState.setEnforced(true)",
+  "if !sharedEnforcementSucceeded",
+  "AppRadioSilenceSharedState.setEnforced(true)",
+  "if result.transition != .firstLease",
+  "isEnforced = sharedEnforcementSucceeded",
+  "return result.lease",
+  "isEnforced = sharedEnforcementSucceeded",
+  "EusoTripAPI.shared.setAppRadioSilenceEnforced(true)",
+  "WatchAuthBridge.shared.setAppRadioSilenceEnforced(true)",
+  "OfflineQueue.shared.suspendForAppRadioSilence()",
+  "RealtimeService.shared.suspendForAppRadioSilence()",
+  "DriverGPSPushService.shared.suspendForAppRadioSilence()",
+  "HOSClockService.shared.suspendForAppRadioSilence()",
+  "ReminderSyncService.shared.suspendForAppRadioSilence()",
+  "GeofenceService.shared.suspendForAppRadioSilence()",
+  "WeatherService.shared.suspendForAppRadioSilence()",
+  "NewsOGImageCache.shared.suspendForAppRadioSilence()",
+  "PTChannelManager.shared.suspendForAppRadioSilence()",
+  "AppRadioSilenceDirectTransportController.shared.suspendAll()",
+  "NotificationCenter.default.post(name: .eusoAppRadioSilenceWillEngage, object: nil)",
+  "return result.lease",
+])) {
+  failures.push("app radio-silence acquisition no longer retries durable ENFORCED propagation on every lease, withholds readiness on failure, and closes all in-process transports on the first lease");
+}
+if (!containsInOrder(appRadioSilenceReleaseCode, [
+  "state.release(lease) == .finalLeaseReleased",
+  "guard AppRadioSilenceSharedState.setEnforced(false) else",
+  "isEnforced = true",
+  "EusoTripAPI.shared.setAppRadioSilenceEnforced(true)",
+  "WatchAuthBridge.shared.setAppRadioSilenceEnforced(true)",
+  "return",
+  "isEnforced = false",
+  "EusoTripAPI.shared.setAppRadioSilenceEnforced(false)",
+  "WatchAuthBridge.shared.setAppRadioSilenceEnforced(false)",
+  "GeofenceService.shared.resumeAfterAppRadioSilence()",
+  "DriverGPSPushService.shared.resumeAfterAppRadioSilence()",
+  "RealtimeService.shared.resumeAfterAppRadioSilence()",
+  "HOSClockService.shared.resumeAfterAppRadioSilence()",
+  "ReminderSyncService.shared.resumeAfterAppRadioSilence()",
+  "OfflineQueue.shared.resumeAfterAppRadioSilence()",
+  "WeatherService.shared.resumeAfterAppRadioSilence()",
+  "NewsOGImageCache.shared.resumeAfterAppRadioSilence()",
+  "PTChannelManager.shared.resumeAfterAppRadioSilence()",
+  "AppRadioSilenceDirectTransportController.shared.resumeAll()",
+  "NotificationCenter.default.post(name: .eusoAppRadioSilenceDidRelease, object: nil)",
+])) {
+  failures.push("app radio-silence release no longer waits for a durable RELEASE marker before reopening every transport after the final valid lease");
+}
+if (!containsInOrder(appRadioSilenceRecoveryCode, [
+  "guard state.activeLeaseCount == 0 else { return false }",
+  "guard AppRadioSilenceSharedState.prepareMainAppLaunch() else",
+  "isEnforced = true",
+  "EusoTripAPI.shared.setAppRadioSilenceEnforced(true)",
+  "AppRadioSilenceDirectTransportController.shared.suspendAll()",
+  "return false",
+  "isEnforced = false",
+  "EusoTripAPI.shared.setAppRadioSilenceEnforced(false)",
+  "RealtimeService.shared.resumeAfterFirstForegroundRadioSilenceRelease()",
+  "AppRadioSilenceDirectTransportController.shared.resumeAll()",
+  "return true",
+])) {
+  failures.push("cold-process radio-silence recovery no longer preserves ENFORCED on failure and releases only after a lease-free durable foreground transition");
+}
+
+requireText(relative.watchRadioSilenceState, [
+  "struct AppRadioSilenceWatchState",
+  "struct AppRadioSilenceWatchLegacyState",
+  "enum AppRadioSilenceWatchPersistence",
+  "retiredEpochs",
+  "case stale",
+  "case engaged",
+  "case released",
+]);
+requireText(relative.watchRadioSilenceTests, [
+  "APP_RADIO_SILENCE_WATCH_SOURCE_VERIFICATION",
+  "AppRadioSilenceWatchStateSourceVerification",
+  "testAtomicSnapshotRoundTripsTrustedState",
+  "testCorruptSnapshotFailsClosedWithoutLegacyFallback",
+]);
+const watchRadioSilenceStateCode = exists(relative.watchRadioSilenceState)
+  ? compiledSwiftCodeOnly(read(relative.watchRadioSilenceState))
+  : "";
+const watchRadioSilenceApplyCode = swiftDeclarationBody(
+  watchRadioSilenceStateCode,
+  /\bmutating\s+func\s+apply[\s\S]*?\)\s*->\s*Transition\s*\{/,
+);
+const watchRadioSilenceRestoreCode = swiftDeclarationBody(
+  watchRadioSilenceStateCode,
+  /\bstatic\s+func\s+restore[\s\S]*?\)\s*->\s*AppRadioSilenceWatchState\s*\{/,
+);
+if (!containsInOrder(watchRadioSilenceApplyCode, [
+  "guard !nextEpoch.isEmpty, nextRevision >= 0 else { return .stale }",
+  "if nextEpoch != epoch",
+  "guard !retiredEpochs.contains(nextEpoch) else { return .stale }",
+  "if let epoch { retiredEpochs.insert(epoch) }",
+  "epoch = nextEpoch",
+  "revision = nextRevision",
+  "guard enforced != isEnforced else { return .unchanged }",
+  "isEnforced = enforced",
+  "guard nextRevision >= revision else { return .stale }",
+  "return enforced == isEnforced ? .unchanged : .stale",
+  "revision = nextRevision",
+  "isEnforced = enforced",
+]) || !containsInOrder(watchRadioSilenceRestoreCode, [
+  "if let snapshotData",
+  "JSONDecoder().decode(",
+  "snapshot.version == currentVersion",
+  "return AppRadioSilenceWatchState()",
+  "guard legacy.hasAnyValue else { return AppRadioSilenceWatchState() }",
+  "guard let isEnforced = legacy.isEnforced",
+  "return AppRadioSilenceWatchState()",
+])) {
+  failures.push("watch radio-silence envelope no longer rejects stale/retired epochs and restores missing, corrupt, or partial persisted state fail closed");
+}
+const watchRadioSilenceTestSource = exists(relative.watchRadioSilenceTests)
+  ? read(relative.watchRadioSilenceTests)
+  : "";
+const watchRadioSilenceHarnessStart = swiftCodeOnly(watchRadioSilenceTestSource).indexOf("@main");
+const watchRadioSilenceHarnessMain = watchRadioSilenceHarnessStart >= 0
+  ? swiftDeclarationOriginalBody(
+      watchRadioSilenceTestSource,
+      /\bstatic\s+func\s+main\s*\(\s*\)\s*\{/,
+      watchRadioSilenceHarnessStart,
+    )
+  : "";
+const compactWatchRadioSilenceHarnessMain = watchRadioSilenceHarnessMain.replace(/\s+/g, "");
+if (!containsInOrder(compactWatchRadioSilenceHarnessMain, [
+  "AppRadioSilenceWatchState()",
+  "precondition(state.isEnforced)",
+  "revision:0,epoch:\"install-a\")==.released",
+  "revision:1,epoch:\"install-a\")==.engaged",
+  "revision:0,epoch:\"install-a\")==.stale",
+  "revision:1,epoch:\"install-a\")==.stale",
+  "revision:2,epoch:\"install-a\")==.released",
+  "revision:1,epoch:\"install-b\")==.engaged",
+  "revision:99,epoch:\"install-a\")==.stale",
+  "AppRadioSilenceWatchPersistence.encode(state)",
+  "restore(snapshotData:encoded)==state",
+  "snapshotData:Data(\"corrupt\".utf8)",
+  "precondition(corrupt.isEnforced)",
+  "snapshotData:nil",
+  "precondition(partial.isEnforced)",
+])) {
+  failures.push("watch radio-silence source harness main no longer exercises ordering, retired epochs, atomic round-trip, corrupt-state, and partial-legacy fail-closed behavior");
+}
+const compactWatchRadioSilenceTestBody = testName => swiftDeclarationOriginalBody(
+  watchRadioSilenceTestSource,
+  new RegExp(`\\bfunc\\s+${testName}\\s*\\(\\s*\\)(?:\\s+throws)?\\s*\\{`),
+).replace(/\s+/g, "");
+for (const [testName, requiredOperations] of [
+  ["testNewerEdgesEngageAndRelease", ["state.apply(", "XCTAssertFalse(state.isEnforced)", "XCTAssertTrue(state.isEnforced)"]],
+  ["testStaleOrConflictingEdgesCannotReopenPolicy", ["revision:7", ".stale", "revision:8", "XCTAssertTrue(state.isEnforced)"]],
+  ["testNewInstallEpochReplacesOldButRetiredEpochCannotReturn", ["epoch:\"install-b\"", ".released", "epoch:\"install-a\"", ".stale"]],
+  ["testAtomicSnapshotRoundTripsTrustedState", ["AppRadioSilenceWatchPersistence.encode(state)", "AppRadioSilenceWatchPersistence.restore(snapshotData:data)", "state"]],
+  ["testCorruptSnapshotFailsClosedWithoutLegacyFallback", ["Data(\"corrupt\".utf8)", "legacy:legacy", "XCTAssertTrue(restored.isEnforced)", "XCTAssertNil(restored.epoch)"]],
+  ["testPartialLegacyStateFailsClosed", ["snapshotData:nil", "revision:nil", "XCTAssertTrue(restored.isEnforced)"]],
+  ["testCompleteLegacyStateMigrates", ["snapshotData:nil", "revision:8", "XCTAssertFalse(restored.isEnforced)", "Set([\"retired\"])"]],
+]) {
+  if (!containsInOrder(compactWatchRadioSilenceTestBody(testName), requiredOperations)) {
+    failures.push(`${relative.watchRadioSilenceTests}: ${testName} no longer contains meaningful watch-envelope operations and assertions`);
+  }
+}
+
+const finiteCallbackWatchdogSource = exists(relative.finiteCallbackWatchdog)
+  ? read(relative.finiteCallbackWatchdog)
+  : "";
+const finiteCallbackWatchdogCode = swiftCodeOnly(finiteCallbackWatchdogSource);
+const finiteCallbackWaitCode = swiftDeclarationBody(
+  finiteCallbackWatchdogCode,
+  /\bfunc\s+wait[\s\S]*?\)\s*async\s+throws\s*->\s*Value\s*\{/,
+);
+const finiteCallbackInstallCode = swiftDeclarationBody(
+  finiteCallbackWatchdogCode,
+  /\bprivate\s+func\s+install[\s\S]*?\)\s*\{/,
+);
+const finiteCallbackHeartbeatCode = swiftDeclarationBody(
+  finiteCallbackWatchdogCode,
+  /\bfunc\s+heartbeat\s*\(\s*\)\s*\{/,
+);
+const finiteCallbackSuspendCode = swiftDeclarationBody(
+  finiteCallbackWatchdogCode,
+  /\bfunc\s+suspendTimeout\s*\(\s*\)\s*\{/,
+);
+const finiteCallbackResumeCode = swiftDeclarationBody(
+  finiteCallbackWatchdogCode,
+  /\bfunc\s+resumeTimeout\s*\(\s*\)\s*\{/,
+);
+const finiteCallbackArmCode = swiftDeclarationBody(
+  finiteCallbackWatchdogCode,
+  /\bprivate\s+func\s+armTimeoutLocked\s*\(\s*\)\s*\{/,
+);
+const finiteCallbackFinishCode = swiftDeclarationBody(
+  finiteCallbackWatchdogCode,
+  /\bprivate\s+func\s+finish[\s\S]*?\)\s*->\s*Bool\s*\{/,
+);
+if (!containsInOrder(finiteCallbackWaitCode, [
+  "if !timeoutIsValid",
+  "finish(",
+  "interruptNativeOperation: true",
+  "withTaskCancellationHandler",
+  "withCheckedThrowingContinuation",
+  "install(",
+  "taskAlreadyCancelled: Task.isCancelled",
+  "onCancel:",
+  "self?.interrupt()",
+]) || !containsInOrder(finiteCallbackInstallCode, [
+  "lock.lock()",
+  "guard !waiterInstalled else",
+  "continuation.resume(",
+  "HereFiniteCallbackWatchdogMisuse.waiterAlreadyInstalled",
+  "waiterInstalled = true",
+  "if let terminalResult",
+  "lock.unlock()",
+  "action?()",
+  "continuation.resume(with: terminalResult)",
+  "self.continuation = continuation",
+  "self.interruptionAction = interruptionAction",
+  "armTimeoutLocked()",
+  "lock.unlock()",
+  "if taskAlreadyCancelled",
+  "interrupt()",
+]) || !containsInOrder(finiteCallbackArmCode, [
+  "timeoutWorkItem?.cancel()",
+  "let generation = UUID()",
+  "self?.expire(generation: generation)",
+  "timeoutGeneration = generation",
+  "timeoutQueue.asyncAfter(",
+]) || !containsInOrder(finiteCallbackFinishCode, [
+  "lock.lock()",
+  "if let expectedTimeoutGeneration",
+  "timeoutGeneration != expectedTimeoutGeneration",
+  "return false",
+  "guard terminalResult == nil else",
+  "return false",
+  "terminalResult = result",
+  "let continuation = continuation",
+  "self.continuation = nil",
+  "let workItem = timeoutWorkItem",
+  "timeoutWorkItem = nil",
+  "timeoutGeneration = nil",
+  "interruptionAction = nil",
+  "lock.unlock()",
+  "workItem?.cancel()",
+  "action?()",
+  "continuation?.resume(with: result)",
+  "return true",
+])) {
+  failures.push("HERE finite callback watchdog no longer guarantees a bounded, cancellation-aware, exactly-once terminal result with harmless late callbacks");
+}
+if (!containsInOrder(finiteCallbackHeartbeatCode, [
+  "lock.lock()",
+  "guard waiterInstalled",
+  "terminalResult == nil",
+  "!timeoutSuspended else",
+  "armTimeoutLocked()",
+  "lock.unlock()",
+]) || !containsInOrder(finiteCallbackSuspendCode, [
+  "lock.lock()",
+  "timeoutSuspended = true",
+  "let workItem = timeoutWorkItem",
+  "timeoutWorkItem = nil",
+  "timeoutGeneration = nil",
+  "lock.unlock()",
+  "workItem?.cancel()",
+]) || !containsInOrder(finiteCallbackResumeCode, [
+  "lock.lock()",
+  "guard timeoutSuspended else",
+  "timeoutSuspended = false",
+  "if waiterInstalled, terminalResult == nil",
+  "armTimeoutLocked()",
+  "lock.unlock()",
+])) {
+  failures.push("HERE finite callback watchdog no longer extends transfer inactivity on progress or suspends and safely rearms timeouts across intentional pauses");
+}
+
+const finiteCallbackWatchdogTestSource = exists(relative.finiteCallbackWatchdogTests)
+  ? swiftCodeOnly(read(relative.finiteCallbackWatchdogTests))
+  : "";
+const compactCallbackTestBody = testName => swiftDeclarationBody(
+  finiteCallbackWatchdogTestSource,
+  new RegExp(`\\bfunc\\s+${testName}\\s*\\(\\s*\\)[^{]*\\{`),
+).replace(/\s+/g, "");
+const callbackTestContracts = [
+  ["testFirstNativeResultWinsAndLateResultIsIgnored", [
+    "XCTAssertTrue(watchdog.succeed(41))",
+    "XCTAssertFalse(watchdog.succeed(99))",
+    "tryawaitwatchdog.wait()",
+    "XCTAssertEqual(value,41)",
+  ]],
+  ["testTimeoutInterruptsNativeOperationAndRejectsLateCallback", [
+    "tryawaitwatchdog.wait",
+    "interrupted.fulfill()",
+    "XCTAssertEqual(erroras?TimeoutFailure,TimeoutFailure())",
+    "awaitfulfillment(of:[interrupted],timeout:1)",
+    "XCTAssertFalse(watchdog.succeed(7))",
+  ]],
+  ["testTaskCancellationInterruptsNativeOperationExactlyOnce", [
+    "tryawaitwatchdog.wait",
+    "task.cancel()",
+    "XCTAssertTrue(errorisCancellationError)",
+    "awaitfulfillment(of:[interrupted],timeout:1)",
+    "XCTAssertFalse(watchdog.fail(TimeoutFailure()))",
+  ]],
+  ["testInterruptionBeforeWaitStillCancelsNativeOperationExactlyOnce", [
+    "XCTAssertTrue(watchdog.interrupt())",
+    "tryawaitwatchdog.wait",
+    "XCTAssertTrue(errorisCancellationError)",
+    "XCTAssertFalse(watchdog.interrupt())",
+  ]],
+  ["testSuspendedTimeoutDoesNotExpireUntilResumed", [
+    "watchdog.suspendTimeout()",
+    "Task.sleep",
+    "watchdog.resumeTimeout()",
+    "XCTAssertTrue(watchdog.succeed(12))",
+    "XCTAssertEqual(value,12)",
+  ]],
+  ["testHeartbeatExtendsInactivityDeadline", [
+    "Task.sleep",
+    "watchdog.heartbeat()",
+    "Task.sleep",
+    "XCTAssertTrue(watchdog.succeed(23))",
+    "XCTAssertEqual(value,23)",
+  ]],
+];
+for (const [testName, steps] of callbackTestContracts) {
+  if (!containsInOrder(compactCallbackTestBody(testName), steps)) {
+    failures.push(`${relative.finiteCallbackWatchdogTests}: ${testName} no longer proves its finite callback boundary with meaningful operations and assertions`);
+  }
+}
+
+const navigationInterruptionTestSource = exists(relative.navigationInterruptionTests)
+  ? swiftCodeOnly(read(relative.navigationInterruptionTests))
+  : "";
+const compactInterruptionTestBody = testName => swiftDeclarationBody(
+  navigationInterruptionTestSource,
+  new RegExp(`\\bfunc\\s+${testName}\\s*\\(\\s*\\)[^{]*\\{`),
+).replace(/\s+/g, "");
+const interruptionTestContracts = [
+  ["testInterruptionMutesOnceAndRequiresSystemResumePlusFreshLocation", [
+    "boundary.receive(.began,sessionIsActive:true)",
+    ".pauseAndMute",
+    "XCTAssertTrue(boundary.blocksNativeCallbacks)",
+    "boundary.receive(.ended(shouldResume:true)",
+    ".prepareAudioAndAwaitFreshLocation",
+    "XCTAssertFalse(boundary.acceptFreshLocation(",
+    "XCTAssertTrue(boundary.acceptFreshLocation(observedAt:restoredAt))",
+    "XCTAssertFalse(boundary.blocksNativeCallbacks)",
+  ]],
+  ["testSystemDeniedResumeRemainsPaused", [
+    "boundary.receive(.began,sessionIsActive:true)",
+    "boundary.receive(.ended(shouldResume:false),sessionIsActive:true)",
+    ".remainPaused",
+    "XCTAssertTrue(boundary.blocksNativeCallbacks)",
+    "XCTAssertFalse(boundary.acceptFreshLocation(observedAt:Date()))",
+  ]],
+  ["testFailedAudioPreparationCannotBeClearedByLocation", [
+    "boundary.receive(.ended(shouldResume:true),sessionIsActive:true)",
+    "boundary.rejectResume()",
+    "XCTAssertTrue(boundary.blocksNativeCallbacks)",
+    "XCTAssertFalse(boundary.acceptFreshLocation(observedAt:Date()))",
+  ]],
+  ["testInactiveSessionClearsStaleInterruptionState", [
+    "boundary.receive(.began,sessionIsActive:true)",
+    "boundary.receive(.ended(shouldResume:true),sessionIsActive:false)",
+    ".none",
+    "XCTAssertFalse(boundary.blocksNativeCallbacks)",
+  ]],
+];
+for (const [testName, steps] of interruptionTestContracts) {
+  if (!containsInOrder(compactInterruptionTestBody(testName), steps)) {
+    failures.push(`${relative.navigationInterruptionTests}: ${testName} no longer proves the audio interruption boundary with meaningful operations and assertions`);
+  }
+}
 requireText(relative.coverageResolver, [
+  "import Security",
   "actor SignedInstalledCoverageResolver",
+  "kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly",
+  "kern.bootsessionuuid",
+  "SignedCoverageTrustedAnchorPersistence",
+  "case bootSessionChanged",
+  "case monotonicUptimeRegressed",
+  "signedServerTime: verified.payload.issuedAt",
   "func resolveInstalledCoverage",
   "coordinateClassifications",
   "payload.catalogVersion",
   "options: .atomic",
+]);
+requireText(relative.coverageResolverTests, [
+  "SIGNED_COVERAGE_SOURCE_VERIFICATION",
+  "Signed installed-coverage trusted-time verification passed: 5 cases",
+  "verifySameBootRelaunch",
+  "verifyRebootFailsClosed",
+  "verifyUptimeRollbackFailsClosed",
+  "verifyAnchorTamperFailsClosed",
+  "verifyExpiryCannotBeRevivedByWallClockRollback",
+]);
+const coverageResolverTestSource = exists(relative.coverageResolverTests)
+  ? read(relative.coverageResolverTests)
+  : "";
+const coverageClockHarnessStart = swiftCodeOnly(coverageResolverTestSource).indexOf("@main");
+const coverageClockHarnessMain = coverageClockHarnessStart >= 0
+  ? swiftDeclarationOriginalBody(
+      coverageResolverTestSource,
+      /\bstatic\s+func\s+main\s*\(\s*\)\s*async\s+throws\s*\{/,
+      coverageClockHarnessStart,
+    )
+  : "";
+if (!containsInOrder(coverageClockHarnessMain, [
+  "try await verifySameBootRelaunch()",
+  "try await verifyRebootFailsClosed()",
+  "try await verifyUptimeRollbackFailsClosed()",
+  "try await verifyAnchorTamperFailsClosed()",
+  "try await verifyExpiryCannotBeRevivedByWallClockRollback()",
+  'print("Signed installed-coverage trusted-time verification passed: 5 cases")',
+])) {
+  failures.push("signed installed-coverage trusted-time source harness main no longer executes all five cases before reporting success");
+}
+requireText(relative.coverageAdapter, [
+  "releaseApprovedSDKVersion = \"4.27.2.0\"",
+  "HereNavigateInstalledCoverageAuthority",
+  "requireCompleteEvidence",
+  "initialSignedManifest",
+]);
+denyText(relative.coverageAdapter, [
+  "expectedSDKVersion = \"latest\"",
+]);
+requireText(relative.locationSource, [
+  "kCLLocationAccuracyBestForNavigation",
+  "kCLDistanceFilterNone",
+  "accuracyAuthorization == .fullAccuracy",
+  "startUpdatingLocation()",
+  "stopUpdatingLocation()",
 ]);
 const routeStoreCode = exists(relative.routeStore) ? swiftCodeOnly(read(relative.routeStore)) : "";
 if (/struct\s+CanonicalRoutePackage\s*:[^{]*\bCodable\b/.test(routeStoreCode)) {
@@ -1089,6 +2244,30 @@ requireText(relative.navigation, [
   "AVSpeechSynthesizer",
   "HereNavigationLocationAcceptancePolicy",
   ".simulated",
+]);
+requireText(relative.finiteCallbackWatchdog, [
+  "final class HereFiniteCallbackWatchdog",
+  "withTaskCancellationHandler",
+  "withCheckedThrowingContinuation",
+  "func heartbeat()",
+  "func suspendTimeout()",
+  "func resumeTimeout()",
+  "case waiterAlreadyInstalled",
+]);
+requireText(relative.finiteCallbackWatchdogTests, [
+  "testFirstNativeResultWinsAndLateResultIsIgnored",
+  "testTimeoutInterruptsNativeOperationAndRejectsLateCallback",
+  "testTaskCancellationInterruptsNativeOperationExactlyOnce",
+  "testInterruptionBeforeWaitStillCancelsNativeOperationExactlyOnce",
+  "testInvalidTimeoutFailsClosedAndInterruptsNativeOperation",
+  "testSuspendedTimeoutDoesNotExpireUntilResumed",
+  "testHeartbeatExtendsInactivityDeadline",
+]);
+requireText(relative.navigationInterruptionTests, [
+  "testInterruptionMutesOnceAndRequiresSystemResumePlusFreshLocation",
+  "testSystemDeniedResumeRemainsPaused",
+  "testFailedAudioPreparationCannotBeClearedByLocation",
+  "testInactiveSessionClearsStaleInterruptionState",
 ]);
 requireText(relative.surface, [
   "case truck",
@@ -1102,6 +2281,177 @@ requireText(relative.surface, [
   "expectedSHA256",
   "nativeStyleLoadFailed",
   "opaqueUnavailable",
+  "HereOfflineMapJourneyProjection",
+  "CanonicalRoutePackage",
+  "serverCanonical",
+  "MapPolyline",
+  "LocationIndicator",
+]);
+requireText(relative.onlineMapWebView, [
+  "static func dismantleUIView",
+  "webView.stopLoading()",
+  "removeAllScriptMessageHandlers()",
+  "coordinator.webView = nil",
+]);
+requireText(relative.productionComposition, [
+  "struct OfflineMapSurfaceLeaseState",
+  "mapSurfaceLeaseState.reserve(for: ownerToken)",
+  "mapSurfaceSnapshotRevision",
+  "mapSurfaceLeaseState.forceRelease()",
+  "publishMapSurfaceLeaseRevision()",
+  "currentNavigationManeuver = maneuver",
+  "lastNavigationDeviation = deviation",
+  "snapshot.radioSilenceState == .enforced",
+  "snapshot.installedRegions.contains(where: { $0.state.isUsableCoverage })",
+  "snapshot.availableCapabilities.contains(.detailedRendering)",
+  "mapSurface.setJourneyRoute(route)",
+  "mapSurface.updateLivePosition(",
+]);
+requireText(relative.mapLibraryView, [
+  "OfflineNativeCoverageMapSurfaceHost",
+  "OfflineRoadJourneyView(composition: productionComposition)",
+  "ForEach(HereOfflineMapSurfaceMode.allCases",
+  "ForEach(HereOfflineMapSurfaceFamily.allCases",
+  "composition.installedCoverageTrustAvailable",
+  "offlineSnapshot.radioSilenceState == .enforced",
+  "offlineSnapshot.availableCapabilities.contains(.detailedRendering)",
+  "composition.prepareMapSurface(",
+  "ownerToken: ownerToken",
+  "composition.clearMapSurface(ownerToken: ownerToken)",
+  "journeyProjection: HereOfflineMapJourneyProjection",
+  "composition.setMapJourneyProjection(journeyProjection)",
+  "AppRadioSilenceCoordinator.shared.acquire(",
+  "reason: .offlineMapLibrary",
+  "AppRadioSilenceCoordinator.shared.release(lease)",
+]);
+requireText(relative.canonicalItineraryView, [
+  "package.mode == .rail || package.mode == .vessel",
+  "OfflineNativeCoverageMapSurfaceHost(",
+  "mode: package.mode == .rail ? .rail : .vessel",
+  "family: .operational",
+  "journeyProjection: .serverCanonical(package)",
+]);
+denyText(relative.canonicalItineraryView, [
+  "AppRadioSilenceCoordinator",
+  "AppRadioSilenceLease",
+]);
+requireText(relative.roadJourneyView, [
+  "composition.searchOffline(",
+  "composition.calculateOfflineRoute(",
+  "composition.startNavigation(route:",
+  "composition.stopNavigation()",
+  "kCLLocationAccuracyBestForNavigation",
+  "accuracyAuthorization == .fullAccuracy",
+  "maximumAgeSeconds: TimeInterval = 15",
+  "maximumHorizontalAccuracyMeters: CLLocationAccuracy = 65",
+  "isSimulatedBySoftware == true",
+  "truckDraft.constraints()",
+  "OfflineTruckConstraints(",
+  "route.sections",
+  "route.notices",
+  "composition.currentNavigationManeuver",
+  "composition.lastNavigationDeviation",
+  "OfflineNativeCoverageMapSurfaceHost(",
+  "journeyProjection: journeyProjection",
+]);
+denyText(relative.roadJourneyView, [
+  "URLSession",
+  "EusoTripAPI.shared",
+  "HereRoutingClient",
+  "HereGeocodingClient",
+  "MapKit",
+  "MKMapView",
+  "MKDirections",
+  "MKLocalSearch",
+  "CLGeocoder",
+  "WKWebView",
+  "HereVectorMapView",
+  "HereMapWebView",
+  "openURL",
+]);
+requireText(relative.driverEnRouteView, [
+  "presentsOfflineRoadDesk = true",
+  "if presentsOfflineRoadDesk",
+  ".fullScreenCover(",
+  "isPresented: $presentsOfflineRoadDesk",
+  "OfflineRoadJourneyView(composition: composition)",
+  "await OfflineMapProductionComposition.shared?",
+  ".stopNavigation()",
+  ".interactiveDismissDisabled()",
+  "OfflineDriverTurnBanner(composition: composition)",
+  "composition.currentNavigationManeuver",
+  "composition.lastNavigationDeviation",
+]);
+requireText(relative.surfaceLeaseTests, [
+  "testSecondWindowCannotEnterWhileFirstOwnsSurface",
+  "testSameOwnerReservationIsIdempotentDuringLoading",
+  "testReleaseHandsSurfaceToWaitingWindow",
+  "testOpaqueFailureForceReleaseWakesWaiters",
+]);
+const surfaceLeaseTestCode = exists(relative.surfaceLeaseTests)
+  ? swiftCodeOnly(read(relative.surfaceLeaseTests))
+  : "";
+const compactLeaseTestBody = testName => swiftDeclarationBody(
+  surfaceLeaseTestCode,
+  new RegExp(`\\bfunc\\s+${testName}\\s*\\(\\s*\\)\\s*\\{`),
+).replace(/\s+/g, "");
+const leaseTestExpectations = new Map([
+  ["testSecondWindowCannotEnterWhileFirstOwnsSurface", [
+    "OfflineMapSurfaceLeaseState()",
+    "XCTAssertTrue(lease.reserve(for:first))",
+    "XCTAssertEqual(lease.status(for:first),.ownedByCaller)",
+    "XCTAssertEqual(lease.status(for:second),.ownedByAnotherSurface)",
+    "XCTAssertFalse(lease.reserve(for:second))",
+    "XCTAssertEqual(lease.revision,1)",
+  ]],
+  ["testSameOwnerReservationIsIdempotentDuringLoading", [
+    "OfflineMapSurfaceLeaseState()",
+    "XCTAssertTrue(lease.reserve(for:owner))",
+    "XCTAssertTrue(lease.reserve(for:owner))",
+    "XCTAssertEqual(lease.status(for:owner),.ownedByCaller)",
+    "XCTAssertEqual(lease.revision,1)",
+  ]],
+  ["testReleaseHandsSurfaceToWaitingWindow", [
+    "OfflineMapSurfaceLeaseState()",
+    "XCTAssertTrue(lease.reserve(for:first))",
+    "XCTAssertFalse(lease.release(for:second))",
+    "XCTAssertTrue(lease.release(for:first))",
+    "XCTAssertEqual(lease.status(for:second),.available)",
+    "XCTAssertTrue(lease.reserve(for:second))",
+    "XCTAssertEqual(lease.status(for:second),.ownedByCaller)",
+    "XCTAssertEqual(lease.revision,3)",
+  ]],
+  ["testOpaqueFailureForceReleaseWakesWaiters", [
+    "OfflineMapSurfaceLeaseState()",
+    "XCTAssertTrue(lease.reserve(for:first))",
+    "XCTAssertTrue(lease.forceRelease())",
+    "XCTAssertEqual(lease.status(for:second),.available)",
+    "XCTAssertEqual(lease.revision,2)",
+    "XCTAssertFalse(lease.forceRelease())",
+  ]],
+]);
+for (const [testName, expectations] of leaseTestExpectations) {
+  if (!containsInOrder(compactLeaseTestBody(testName), expectations)) {
+    failures.push(`${relative.surfaceLeaseTests}: ${testName} no longer exercises the lease transition with meaningful assertions`);
+  }
+}
+requireText(relative.canonicalItineraryView, [
+  "CanonicalRoutePackage",
+  "Verified offline",
+]);
+requireText(relative.railRouteCaller, [
+  "CanonicalRoutePlanClient().download",
+  "subject: .railShipment",
+  "composition.ingestCanonicalRoutePlan",
+  "CanonicalRouteOfflineReader",
+  "CanonicalOfflineRouteItineraryView",
+]);
+requireText(relative.vesselRouteCaller, [
+  "CanonicalRoutePlanClient().download",
+  "subject: .vesselShipment",
+  "composition.ingestCanonicalRoutePlan",
+  "CanonicalRouteOfflineReader",
+  "CanonicalOfflineRouteItineraryView",
 ]);
 
 for (const file of [
@@ -1177,9 +2527,90 @@ if (exists(relative.styleManifest)) {
   }
 }
 
+let coverageTrust;
+if (exists(relative.coverageTrust)) {
+  try {
+    const parsedCoverageTrust = JSON.parse(read(relative.coverageTrust));
+    assert.equal(parsedCoverageTrust.schemaVersion, 1);
+    assert.ok(["awaiting_signed_catalog", "approved"].includes(parsedCoverageTrust.status));
+    assert.equal(parsedCoverageTrust.expectedSDKVersion, "4.27.2.0");
+    assert.equal(typeof parsedCoverageTrust.initialSignedManifestResource, "string");
+    assert.equal(
+      parsedCoverageTrust.initialSignedManifestResource,
+      path.basename(parsedCoverageTrust.initialSignedManifestResource),
+    );
+    assert.match(parsedCoverageTrust.initialSignedManifestResource, /^[A-Za-z0-9._-]+\.json$/);
+    assert.ok(
+      Number.isFinite(parsedCoverageTrust.routeCorridorHalfWidthMeters) &&
+      parsedCoverageTrust.routeCorridorHalfWidthMeters > 0 &&
+      parsedCoverageTrust.routeCorridorHalfWidthMeters <= 5_000,
+    );
+    coverageTrust = parsedCoverageTrust;
+  } catch (error) {
+    coverageTrust = undefined;
+    failures.push(`${relative.coverageTrust}: invalid installed-coverage trust document (${error.name})`);
+  }
+}
+
+let approvedCoverageManifestRelative = null;
+let approvedCoveragePayload = null;
+if (coverageTrust?.status !== "approved") {
+  blockers.push("signed installed-region coverage trust and catalog are not release-approved");
+} else {
+  const coveragePublicKey = canonicalBase64(coverageTrust.ed25519PublicKeyBase64, 32);
+  const coverageApprovedAt = Date.parse(coverageTrust.approvedAt ?? "");
+  const coverageApprovalIsComplete =
+    typeof coverageTrust.issuer === "string" && coverageTrust.issuer.trim() !== "" &&
+    typeof coverageTrust.audience === "string" && coverageTrust.audience.trim() !== "" &&
+    typeof coverageTrust.expectedRightsHolder === "string" &&
+      coverageTrust.expectedRightsHolder.trim() !== "" &&
+    typeof coverageTrust.verificationKeyID === "string" &&
+      coverageTrust.verificationKeyID.trim() !== "" &&
+    Buffer.byteLength(coverageTrust.verificationKeyID.trim(), "utf8") <= 128 &&
+    Buffer.isBuffer(coveragePublicKey) && coveragePublicKey.length === 32 &&
+    typeof coverageTrust.approvedBy === "string" && coverageTrust.approvedBy.trim() !== "" &&
+    Number.isFinite(coverageApprovedAt) && coverageApprovedAt <= Date.now() + 300_000;
+  if (!coverageApprovalIsComplete) {
+    blockers.push("signed installed-region coverage trust approval is incomplete or invalid");
+  }
+  approvedCoverageManifestRelative =
+    `${relative.offlineRoot}/${coverageTrust.initialSignedManifestResource}`;
+  const coverageManifestEntry = repositoryEntryStatus(
+    approvedCoverageManifestRelative,
+    "file",
+    "approved signed installed-region coverage manifest",
+  );
+  if (coverageManifestEntry.status === "missing") {
+    blockers.push("approved signed installed-region coverage manifest is absent");
+  } else if (coverageManifestEntry.status === "ok") {
+    if (!gitPathIsTrackedAndUnchanged(approvedCoverageManifestRelative)) {
+      blockers.push("approved signed installed-region coverage manifest is not committed unchanged in HEAD");
+    }
+    try {
+      const envelopeBytes = readRepositoryBytes(
+        approvedCoverageManifestRelative,
+        "approved signed installed-region coverage manifest",
+      );
+      assert.ok(envelopeBytes);
+      approvedCoveragePayload = verifyApprovedCoverageEnvelope(envelopeBytes, coverageTrust);
+    } catch {
+      failures.push("approved signed installed-region coverage manifest failed Ed25519, pinned-claim, validity, or geometry verification");
+    }
+  }
+}
+if (coverageTrust && manifest &&
+    coverageTrust.expectedSDKVersion !== manifest.approvedVersion) {
+  failures.push("installed-coverage trust SDK version differs from the approved HERE SDK supply chain");
+}
+
 const projectSource = exists(relative.project) ? read(relative.project) : "";
 const projectInspector = makeProjectInspector(projectSource, "EusoTrip");
 const testProjectInspector = makeProjectInspector(projectSource, "EusoTripOfflineTests");
+const watchProjectInspector = makeProjectInspector(projectSource, "EusoTrip Pulse Watch App");
+const watchTestProjectInspector = makeProjectInspector(
+  projectSource,
+  "EusoTrip Pulse Watch AppTests",
+);
 if (!projectInspector.targetExists) {
   failures.push(`${relative.project}: EusoTrip application target could not be structurally resolved`);
 } else {
@@ -1210,6 +2641,70 @@ if (!testProjectInspector.targetExists) {
     failures.push(`${relative.scheme}: test action does not reference the exact EusoTripOfflineTests target`);
   }
 }
+for (const sourceFile of [
+  relative.appRadioSilenceLeaseState,
+  relative.appRadioSilenceCoordinator,
+  relative.appRadioSilenceSharedState,
+  relative.appRadioSilenceDirectTransport,
+  relative.appRadioSilenceAsyncImage,
+  relative.api,
+  relative.walletAPI,
+  relative.realtimeService,
+  relative.driverGPSPushService,
+  relative.hosClockService,
+  relative.reminderSyncService,
+  relative.offlineQueue,
+  relative.geofenceService,
+  relative.onlineMapWebView,
+  relative.driverEnRouteView,
+  relative.roadJourneyView,
+  relative.pushService,
+  relative.weatherService,
+  relative.newsImageCache,
+  relative.ptChannelManager,
+  relative.watchAuthBridge,
+  relative.phoneWatchBridge,
+  relative.appAttestClient,
+  relative.appleAuthProvider,
+  relative.walletApplePayProvider,
+  relative.walletPassService,
+  relative.shipperAppIntents,
+  relative.dockAssignedView,
+]) {
+  if (!projectInspector.sourceRegistered(sourceFile)) {
+    failures.push(`${sourceFile}: app radio-silence source is not registered in the EusoTrip application target`);
+  }
+}
+if (!watchProjectInspector.targetExists) {
+  failures.push(`${relative.project}: EusoTrip Pulse Watch App target could not be structurally resolved`);
+} else {
+  for (const watchSourceFile of [
+    relative.watchRadioSilenceState,
+    relative.watchRadioSilencePolicy,
+    relative.watchConnectivityManager,
+    relative.watchAppEntry,
+    relative.watchEsangClient,
+    relative.watchOfflineQueue,
+    relative.watchAudioRecorder,
+  ]) {
+    if (!watchProjectInspector.sourceRegistered(watchSourceFile)) {
+      failures.push(`${watchSourceFile}: watch radio-silence source is not registered in the EusoTrip Pulse Watch App target`);
+    }
+  }
+}
+if (!watchTestProjectInspector.targetExists ||
+    !watchTestProjectInspector.sourceRegistered(relative.watchRadioSilenceTests)) {
+  failures.push(`${relative.watchRadioSilenceTests}: not registered in the EusoTrip Pulse Watch AppTests target`);
+}
+for (const testFile of [
+  relative.appRadioSilenceLeaseTests,
+  relative.finiteCallbackWatchdogTests,
+  relative.navigationInterruptionTests,
+]) {
+  if (!testProjectInspector.sourceRegistered(testFile)) {
+    failures.push(`${testFile}: not registered in the EusoTripOfflineTests target`);
+  }
+}
 if (projectInspector.resourceRegistered(`${relative.offlineRoot}/README.md`)) {
   failures.push(`${relative.project}: offline README.md must not be copied into the app product`);
 }
@@ -1218,6 +2713,15 @@ if (projectInspector.resourceRegistered(relative.manifest)) {
 }
 if (!projectInspector.resourceRegistered(relative.styleManifest)) {
   failures.push(`${relative.project}: runtime style manifest is not registered in the EusoTrip app resources`);
+}
+if (!projectInspector.resourceRegistered(relative.coverageTrust)) {
+  failures.push(`${relative.project}: installed-coverage trust document is not registered in the EusoTrip app resources`);
+}
+if (coverageTrust?.status === "approved") {
+  if (approvedCoverageManifestRelative && exists(approvedCoverageManifestRelative) &&
+      !projectInspector.resourceRegistered(approvedCoverageManifestRelative)) {
+    blockers.push("approved signed installed-region coverage manifest is not registered in app resources");
+  }
 }
 
 const deployScriptSource = exists(relative.deployScript) ? read(relative.deployScript) : "";
@@ -1236,12 +2740,49 @@ if (!archiveGateIsWired || !regressionHarnessIsWired) {
 const sourceWorkflowSource = exists(relative.sourceContractWorkflow)
   ? read(relative.sourceContractWorkflow)
   : "";
+const sourceWorkflowExecutable = sourceWorkflowSource
+  .split("\n")
+  .filter(line => !line.trimStart().startsWith("#"))
+  .join("\n");
+const sourceWorkflowRunsTrustedClockBinary = containsInOrder(sourceWorkflowExecutable, [
+  '-o "$trusted_clock_binary"',
+  '"$trusted_clock_binary"',
+]);
+const sourceWorkflowRunsCoverageClockBinary = containsInOrder(sourceWorkflowExecutable, [
+  '-o "$coverage_clock_binary"',
+  '"$coverage_clock_binary"',
+]);
+const sourceWorkflowRunsAppRadioSilenceBinary = containsInOrder(sourceWorkflowExecutable, [
+  '-o "$app_radio_silence_binary"',
+  '"$app_radio_silence_binary"',
+]);
+const sourceWorkflowRunsWatchRadioSilenceBinary = containsInOrder(sourceWorkflowExecutable, [
+  "swiftc -DAPP_RADIO_SILENCE_WATCH_SOURCE_VERIFICATION",
+  '"EusoTrip Pulse Watch App/Services/AppRadioSilenceWatchState.swift"',
+  '"EusoTrip Pulse Watch AppTests/AppRadioSilenceWatchStateTests.swift"',
+  '-o "$watch_radio_silence_binary"',
+  '"$watch_radio_silence_binary"',
+]);
 const sourceCIIsWired =
   sourceWorkflowSource.includes("name: HERE Offline Source Contract") &&
   sourceWorkflowSource.includes("verify-here-offline-contract.test.mjs") &&
   sourceWorkflowSource.includes("verify-here-offline-contract.mjs") &&
   sourceWorkflowSource.includes("verify-reachable-here-credential-history.test.mjs") &&
   sourceWorkflowSource.includes("verify-reachable-here-credential-history.mjs") &&
+  sourceWorkflowSource.includes("verify-canonical-route-trusted-clock.swift") &&
+  sourceWorkflowSource.includes("swiftc -swift-version 5 -parse-as-library") &&
+  sourceWorkflowSource.includes("SIGNED_COVERAGE_SOURCE_VERIFICATION") &&
+  sourceWorkflowSource.includes("SignedInstalledCoverageResolverTests.swift") &&
+  sourceWorkflowSource.includes("APP_RADIO_SILENCE_SOURCE_VERIFICATION") &&
+  sourceWorkflowSource.includes("AppRadioSilenceLeaseState.swift") &&
+  sourceWorkflowSource.includes("AppRadioSilenceLeaseStateTests.swift") &&
+  sourceWorkflowSource.includes("APP_RADIO_SILENCE_WATCH_SOURCE_VERIFICATION") &&
+  sourceWorkflowSource.includes("AppRadioSilenceWatchState.swift") &&
+  sourceWorkflowSource.includes("AppRadioSilenceWatchStateTests.swift") &&
+  sourceWorkflowRunsTrustedClockBinary &&
+  sourceWorkflowRunsCoverageClockBinary &&
+  sourceWorkflowRunsAppRadioSilenceBinary &&
+  sourceWorkflowRunsWatchRadioSilenceBinary &&
   sourceWorkflowSource.includes("build-for-testing") &&
   sourceWorkflowSource.includes("generic/platform=iOS Simulator") &&
   sourceWorkflowSource.includes("refs/pull/*/head:refs/remotes/pull/*/head") &&
@@ -1257,6 +2798,25 @@ const deployExecutableSource = deployScriptSource
   .split("\n")
   .filter(line => !line.trimStart().startsWith("#"))
   .join("\n");
+const deployRunsTrustedClockBinary = containsInOrder(deployExecutableSource, [
+  '-o "$TRUSTED_CLOCK_VERIFY_BINARY"',
+  '"$TRUSTED_CLOCK_VERIFY_BINARY"',
+]);
+const deployRunsCoverageClockBinary = containsInOrder(deployExecutableSource, [
+  '-o "$COVERAGE_CLOCK_VERIFY_BINARY"',
+  '"$COVERAGE_CLOCK_VERIFY_BINARY"',
+]);
+const deployRunsAppRadioSilenceBinary = containsInOrder(deployExecutableSource, [
+  '-o "$APP_RADIO_SILENCE_VERIFY_BINARY"',
+  '"$APP_RADIO_SILENCE_VERIFY_BINARY"',
+]);
+const deployRunsWatchRadioSilenceBinary = containsInOrder(deployExecutableSource, [
+  "swiftc -DAPP_RADIO_SILENCE_WATCH_SOURCE_VERIFICATION",
+  '"${PROJECT_ROOT}/EusoTrip Pulse Watch App/Services/AppRadioSilenceWatchState.swift"',
+  '"${PROJECT_ROOT}/EusoTrip Pulse Watch AppTests/AppRadioSilenceWatchStateTests.swift"',
+  '-o "$WATCH_RADIO_SILENCE_VERIFY_BINARY"',
+  '"$WATCH_RADIO_SILENCE_VERIFY_BINARY"',
+]);
 let exportOptions = {};
 if (exists(relative.exportOptions)) {
   try {
@@ -1297,6 +2857,20 @@ const finalExportedProductIsGated =
   deployExecutableSource.includes("asc-latest-build.test.mjs") &&
   deployExecutableSource.includes("verify-release-config-attestation.test.mjs") &&
   deployExecutableSource.includes("verify-here-offline-device-acceptance.test.mjs") &&
+  deployExecutableSource.includes("verify-canonical-route-trusted-clock.swift") &&
+  deployExecutableSource.includes("swiftc -swift-version 5 -parse-as-library") &&
+  deployExecutableSource.includes("SIGNED_COVERAGE_SOURCE_VERIFICATION") &&
+  deployExecutableSource.includes("SignedInstalledCoverageResolverTests.swift") &&
+  deployExecutableSource.includes("APP_RADIO_SILENCE_SOURCE_VERIFICATION") &&
+  deployExecutableSource.includes("AppRadioSilenceLeaseState.swift") &&
+  deployExecutableSource.includes("AppRadioSilenceLeaseStateTests.swift") &&
+  deployExecutableSource.includes("APP_RADIO_SILENCE_WATCH_SOURCE_VERIFICATION") &&
+  deployExecutableSource.includes("AppRadioSilenceWatchState.swift") &&
+  deployExecutableSource.includes("AppRadioSilenceWatchStateTests.swift") &&
+  deployRunsTrustedClockBinary &&
+  deployRunsCoverageClockBinary &&
+  deployRunsAppRadioSilenceBinary &&
+  deployRunsWatchRadioSilenceBinary &&
   deployExecutableSource.includes("verify-github-release-governance.mjs") &&
   deployExecutableSource.includes("verify-github-release-governance.test.mjs") &&
   deployExecutableSource.includes("GITHUB_ENVIRONMENT_DEPLOYMENT_ID") &&
@@ -1320,9 +2894,126 @@ if (!finalExportedProductIsGated) {
 
 const appEntryCode = exists(relative.appEntry) ? compiledSwiftCodeOnly(read(relative.appEntry)) : "";
 const settingsHostCode = exists(relative.settingsHost) ? compiledSwiftCodeOnly(read(relative.settingsHost)) : "";
-const mapHostCode = exists(relative.mapHost) ? compiledSwiftCodeOnly(read(relative.mapHost)) : "";
+const mapLibraryCode = exists(relative.mapLibraryView)
+  ? compiledSwiftCodeOnly(read(relative.mapLibraryView))
+  : "";
+const roadJourneyCode = exists(relative.roadJourneyView)
+  ? compiledSwiftCodeOnly(read(relative.roadJourneyView))
+  : "";
+const driverEnRouteCode = exists(relative.driverEnRouteView)
+  ? compiledSwiftCodeOnly(read(relative.driverEnRouteView))
+  : "";
+const routeClientCode = exists(relative.routeClient)
+  ? compiledSwiftCodeOnly(read(relative.routeClient))
+  : "";
+const routeReaderCode = exists(relative.routeReader)
+  ? compiledSwiftCodeOnly(read(relative.routeReader))
+  : "";
+const railRouteCallerCode = exists(relative.railRouteCaller)
+  ? compiledSwiftCodeOnly(read(relative.railRouteCaller))
+  : "";
+const vesselRouteCallerCode = exists(relative.vesselRouteCaller)
+  ? compiledSwiftCodeOnly(read(relative.vesselRouteCaller))
+  : "";
+const canonicalItineraryCode = exists(relative.canonicalItineraryView)
+  ? compiledSwiftCodeOnly(read(relative.canonicalItineraryView))
+  : "";
 const productionCompositionCode = exists(relative.productionComposition)
   ? compiledSwiftCodeOnly(read(relative.productionComposition))
+  : "";
+const navigateEngineCode = exists(relative.navigateEngine)
+  ? compiledSwiftCodeOnly(read(relative.navigateEngine))
+  : "";
+const navigationCode = exists(relative.navigation)
+  ? compiledSwiftCodeOnly(read(relative.navigation))
+  : "";
+const nativeMapSurfaceCode = exists(relative.surface)
+  ? compiledSwiftCodeOnly(read(relative.surface))
+  : "";
+const onlineMapWebViewCode = exists(relative.onlineMapWebView)
+  ? compiledSwiftCodeOnly(read(relative.onlineMapWebView))
+  : "";
+const apiCode = exists(relative.api) ? compiledSwiftCodeOnly(read(relative.api)) : "";
+const realtimeServiceCode = exists(relative.realtimeService)
+  ? compiledSwiftCodeOnly(read(relative.realtimeService))
+  : "";
+const driverGPSPushServiceCode = exists(relative.driverGPSPushService)
+  ? compiledSwiftCodeOnly(read(relative.driverGPSPushService))
+  : "";
+const hosClockServiceCode = exists(relative.hosClockService)
+  ? compiledSwiftCodeOnly(read(relative.hosClockService))
+  : "";
+const reminderSyncServiceCode = exists(relative.reminderSyncService)
+  ? compiledSwiftCodeOnly(read(relative.reminderSyncService))
+  : "";
+const offlineQueueCode = exists(relative.offlineQueue)
+  ? compiledSwiftCodeOnly(read(relative.offlineQueue))
+  : "";
+const geofenceServiceCode = exists(relative.geofenceService)
+  ? compiledSwiftCodeOnly(read(relative.geofenceService))
+  : "";
+const appRadioSilenceDirectTransportCode = exists(relative.appRadioSilenceDirectTransport)
+  ? swiftCodeOnly(read(relative.appRadioSilenceDirectTransport))
+  : "";
+const appRadioSilenceAsyncImageCode = exists(relative.appRadioSilenceAsyncImage)
+  ? swiftCodeOnly(read(relative.appRadioSilenceAsyncImage))
+  : "";
+const pushServiceCode = exists(relative.pushService)
+  ? compiledSwiftCodeOnly(read(relative.pushService))
+  : "";
+const weatherServiceCode = exists(relative.weatherService)
+  ? swiftCodeOnly(read(relative.weatherService))
+  : "";
+const newsImageCacheCode = exists(relative.newsImageCache)
+  ? swiftCodeOnly(read(relative.newsImageCache))
+  : "";
+const ptChannelManagerCode = exists(relative.ptChannelManager)
+  ? swiftCodeOnly(read(relative.ptChannelManager))
+  : "";
+const watchAuthBridgeCode = exists(relative.watchAuthBridge)
+  ? swiftCodeOnly(read(relative.watchAuthBridge))
+  : "";
+const phoneWatchBridgeCode = exists(relative.phoneWatchBridge)
+  ? swiftCodeOnly(read(relative.phoneWatchBridge))
+  : "";
+const appAttestClientCode = exists(relative.appAttestClient)
+  ? swiftCodeOnly(read(relative.appAttestClient))
+  : "";
+const appleAuthProviderCode = exists(relative.appleAuthProvider)
+  ? swiftCodeOnly(read(relative.appleAuthProvider))
+  : "";
+const walletApplePayProviderCode = exists(relative.walletApplePayProvider)
+  ? swiftCodeOnly(read(relative.walletApplePayProvider))
+  : "";
+const walletPassServiceCode = exists(relative.walletPassService)
+  ? swiftCodeOnly(read(relative.walletPassService))
+  : "";
+const shipperAppIntentsCode = exists(relative.shipperAppIntents)
+  ? swiftCodeOnly(read(relative.shipperAppIntents))
+  : "";
+const dockAssignedViewCode = exists(relative.dockAssignedView)
+  ? swiftCodeOnly(read(relative.dockAssignedView))
+  : "";
+const watchRadioSilencePolicyCode = exists(relative.watchRadioSilencePolicy)
+  ? swiftCodeOnly(read(relative.watchRadioSilencePolicy))
+  : "";
+const watchConnectivityCode = exists(relative.watchConnectivityManager)
+  ? swiftCodeOnly(read(relative.watchConnectivityManager))
+  : "";
+const watchAppEntryCode = exists(relative.watchAppEntry)
+  ? swiftCodeOnly(read(relative.watchAppEntry))
+  : "";
+const watchEsangClientCode = exists(relative.watchEsangClient)
+  ? swiftCodeOnly(read(relative.watchEsangClient))
+  : "";
+const watchOfflineQueueCode = exists(relative.watchOfflineQueue)
+  ? swiftCodeOnly(read(relative.watchOfflineQueue))
+  : "";
+const watchAudioRecorderCode = exists(relative.watchAudioRecorder)
+  ? swiftCodeOnly(read(relative.watchAudioRecorder))
+  : "";
+const navigationModelsCode = exists(relative.navigationModels)
+  ? compiledSwiftCodeOnly(read(relative.navigationModels))
   : "";
 const appTypeStart = appEntryCode.search(/@main\s+struct\s+EusoTripApp\b/);
 const appLifecycleCode = appTypeStart >= 0
@@ -1332,6 +3023,1515 @@ const productionInstallCode = swiftDeclarationBody(
   productionCompositionCode,
   /\bstatic\s+func\s+install\s*\([^)]*\)\s*(?:async\s*)?(?:throws\s*)?\{/,
 );
+const mapSurfacePrepareCode = swiftDeclarationBody(
+  productionCompositionCode,
+  /\bfunc\s+prepareMapSurface\s*\([^)]*\)\s*->\s*AnyObject\?\s*\{/,
+);
+const canonicalDownloadCode = swiftDeclarationBody(
+  routeClientCode,
+  /\bfunc\s+download\s*\(\s*subject:\s*CanonicalRouteFreightSubject,\s*principal:\s*CanonicalRouteAuthenticatedPrincipal\s*\)\s*async\s*throws\s*->\s*CanonicalRoutePlanDelivery\s*\{/,
+);
+const canonicalReadCode = swiftDeclarationBody(
+  routeReaderCode,
+  /\bfunc\s+freshPackage\s*\([^)]*\)\s*async\s*throws\s*->\s*CanonicalRoutePackage\s*\{/,
+);
+const railSecureCode = swiftDeclarationBody(
+  railRouteCallerCode,
+  /\bprivate\s+func\s+secureOfflineCanonicalRoute\s*\([^)]*\)\s*async\s*\{/,
+);
+const railRestoreCode = swiftDeclarationBody(
+  railRouteCallerCode,
+  /\bprivate\s+func\s+restoreOfflineCanonicalRoute\s*\([^)]*\)\s*async\s*->\s*Bool\s*\{/,
+);
+const vesselSecureCode = swiftDeclarationBody(
+  vesselRouteCallerCode,
+  /\bprivate\s+func\s+secureOfflineRoute\s*\([^)]*\)\s*async\s*\{/,
+);
+const vesselRestoreCode = swiftDeclarationBody(
+  vesselRouteCallerCode,
+  /\bprivate\s+func\s+restoreOfflineRoute\s*\([^)]*\)\s*async\s*->\s*Bool\s*\{/,
+);
+const roadBindPrincipalCode = swiftDeclarationBody(
+  roadJourneyCode,
+  /\bfunc\s+bindPrincipal\s*\([^)]*\)\s*async\s*\{/,
+);
+const roadSearchCode = swiftDeclarationBody(
+  roadJourneyCode,
+  /\bfunc\s+search\s*\(\s*\)\s*\{/,
+);
+const roadCalculateCode = swiftDeclarationBody(
+  roadJourneyCode,
+  /\bfunc\s+calculateRoute\s*\(\s*\)\s*\{/,
+);
+const roadStartGuidanceCode = swiftDeclarationBody(
+  roadJourneyCode,
+  /\bfunc\s+startGuidance\s*\(\s*\)\s*\{/,
+);
+const driverPresentOfflineRoadDeskCode = swiftDeclarationBody(
+  driverEnRouteCode,
+  /\bprivate\s+func\s+presentOfflineRoadDesk\s*\(\s*\)\s*\{/,
+);
+const driverReleaseAppRadioSilenceCode = swiftDeclarationBody(
+  driverEnRouteCode,
+  /\bprivate\s+func\s+releaseAppRadioSilenceLease\s*\(\s*\)\s*\{/,
+);
+const driverBodyCode = swiftDeclarationBody(
+  driverEnRouteCode,
+  /\bvar\s+body\s*:\s*some\s+View\s*\{/,
+);
+const roadEnsureAppRadioSilenceCode = swiftDeclarationBody(
+  roadJourneyCode,
+  /\bprivate\s+func\s+ensureAppRadioSilenceLease\s*\(\s*\)\s*\{/,
+);
+const roadReleaseAppRadioSilenceCode = swiftDeclarationBody(
+  roadJourneyCode,
+  /\bprivate\s+func\s+releaseAppRadioSilenceLease\s*\(\s*\)\s*\{/,
+);
+const roadBodyCode = swiftDeclarationBody(
+  roadJourneyCode,
+  /\bvar\s+body\s*:\s*some\s+View\s*\{/,
+);
+const roadReadinessBlockersCode = swiftDeclarationBody(
+  roadJourneyCode,
+  /\bstatic\s+func\s+blockers\s*\([^)]*\)\s*->\s*\[String\]\s*\{/,
+);
+const nativeSearchCode = swiftDeclarationBody(
+  navigateEngineCode,
+  /\bfunc\s+searchOffline\s*\([^)]*\)\s*async\s+throws\s*->\s*OfflineSearchResponse\s*\{/,
+);
+const nativeRouteCalculationCode = swiftDeclarationBody(
+  navigateEngineCode,
+  /\bfunc\s+calculateOfflineRoute\s*\([^)]*\)\s*async\s+throws\s*->\s*OfflineRouteResponse\s*\{/,
+);
+const nativeDownloadRegionsCode = swiftDeclarationBody(
+  navigateEngineCode,
+  /\bfunc\s+downloadRegions[\s\S]*?\)\s*async\s+throws\s*\{/,
+);
+const nativeUpdatePersistentMapCode = swiftDeclarationBody(
+  navigateEngineCode,
+  /\bfunc\s+updatePersistentMap[\s\S]*?\)\s*async\s+throws\s*\{/,
+);
+const nativePauseTransferCode = swiftDeclarationBody(
+  navigateEngineCode,
+  /\bfunc\s+pauseActiveTransfer\s*\(\s*\)\s*async\s+throws\s*\{/,
+);
+const nativeResumeTransferCode = swiftDeclarationBody(
+  navigateEngineCode,
+  /\bfunc\s+resumeActiveTransfer\s*\(\s*\)\s*async\s+throws\s*\{/,
+);
+const nativeCancelTransferCode = swiftDeclarationBody(
+  navigateEngineCode,
+  /\bfunc\s+cancelActiveTransfer\s*\(\s*\)\s*async\s+throws\s*\{/,
+);
+const downloadBridgeCode = swiftDeclarationBody(
+  navigateEngineCode,
+  /\bprivate\s+final\s+class\s+HereDownloadProgressBridge\b[^\{]*\{/,
+);
+const catalogUpdateBridgeStart = navigateEngineCode.indexOf(
+  "private final class HereCatalogUpdateProgressBridge",
+);
+const catalogUpdateBridgeCode = catalogUpdateBridgeStart >= 0
+  ? swiftDeclarationBody(
+      navigateEngineCode,
+      /\bprivate\s+final\s+class\s+HereCatalogUpdateProgressBridge\b[^\{]*\{/,
+      catalogUpdateBridgeStart,
+    )
+  : "";
+const bridgeFunctionBody = (bridgeCode, name) => swiftDeclarationBody(
+  bridgeCode,
+  new RegExp(`\\bfunc\\s+${name}[\\s\\S]*?\\)\\s*(?:async\\s*)?(?:throws\\s*)?(?:->\\s*[^\\{]+)?\\{`),
+);
+const navigationInterruptionReceiveCode = swiftDeclarationBody(
+  navigationCode,
+  /\bmutating\s+func\s+receive[\s\S]*?\)\s*->\s*HereNavigationInterruptionAction\s*\{/,
+);
+const navigationAcceptFreshLocationCode = swiftDeclarationBody(
+  navigationCode,
+  /\bmutating\s+func\s+acceptFreshLocation\s*\([^)]*\)\s*->\s*Bool\s*\{/,
+);
+const navigationFeedCode = swiftDeclarationBody(
+  navigationCode,
+  /\bfunc\s+feed\s*\(\s*location:\s*OfflineDeviceLocationSample\s*\)\s*async\s+throws\s*\{/,
+);
+const navigationAudioInterruptionCode = swiftDeclarationBody(
+  navigationCode,
+  /\bfunc\s+handleAudioInterruption[\s\S]*?\)\s*async\s*\{/,
+);
+const navigationPermitsCallbackCode = swiftDeclarationBody(
+  navigationCode,
+  /\bprivate\s+func\s+permitsNativeCallback[\s\S]*?\)\s*->\s*Bool\s*\{/,
+);
+const navigationRerouteCode = swiftDeclarationBody(
+  navigationCode,
+  /\bprivate\s+func\s+returnToRoute[\s\S]*?\)\s*async\s*\{/,
+);
+const nativeMapPrepareCode = swiftDeclarationBody(
+  nativeMapSurfaceCode,
+  /\bfunc\s+prepareNative[\s\S]*?\)\s*->\s*AnyObject\?\s*\{/,
+);
+const nativeMapSetProjectionCode = swiftDeclarationBody(
+  nativeMapSurfaceCode,
+  /\bfunc\s+setJourneyProjection\s*\([^)]*\)\s*\{/,
+);
+const nativeMapApplyProjectionCode = swiftDeclarationBody(
+  nativeMapSurfaceCode,
+  /\bfunc\s+applyJourneyProjection[\s\S]*?\)\s*throws\s*\{/,
+);
+const nativeMapRemoveProjectionCode = swiftDeclarationBody(
+  nativeMapSurfaceCode,
+  /\bfunc\s+removeNativeJourneyProjection\s*\(\s*\)\s*\{/,
+);
+const nativeMapOpaqueFailureCode = swiftDeclarationBody(
+  nativeMapSurfaceCode,
+  /\bprivate\s+func\s+replaceWithOpaqueFailure\s*\([^)]*\)\s*\{/,
+);
+const nativeMapClearCode = swiftDeclarationBody(
+  nativeMapSurfaceCode,
+  /\bfunc\s+clear\s*\(\s*\)\s*\{/,
+);
+const productionStartNavigationCode = swiftDeclarationBody(
+  productionCompositionCode,
+  /\bfunc\s+startNavigation\s*\([^)]*\)\s*async\s+throws\s*\{/,
+);
+const productionAcceptDeviceLocationCode = swiftDeclarationBody(
+  productionCompositionCode,
+  /\bprivate\s+func\s+acceptDeviceLocation\s*\([^)]*\)\s*async\s*\{/,
+);
+const productionStopNavigationCode = swiftDeclarationBody(
+  productionCompositionCode,
+  /\bprivate\s+func\s+stopNavigationAndLocationSource\s*\(\s*\)\s*async\s*\{/,
+);
+const productionApplicationPhaseCode = swiftDeclarationBody(
+  productionCompositionCode,
+  /\bfunc\s+handleApplicationPhase\s*\([^)]*\)\s*async\s*\{/,
+);
+const roadNativeJourneyMapCode = swiftDeclarationBody(
+  roadJourneyCode,
+  /\bprivate\s+var\s+nativeJourneyMap\s*:\s*some\s+View\s*\{/,
+);
+const roadJourneyProjectionCode = swiftDeclarationBody(
+  roadJourneyCode,
+  /\bprivate\s+var\s+journeyProjection\s*:\s*HereOfflineMapJourneyProjection\s*\{/,
+);
+const nativeSurfaceHostStart = mapLibraryCode.indexOf(
+  "struct OfflineNativeCoverageMapSurfaceHost",
+);
+const nativeSurfaceHostCode = nativeSurfaceHostStart >= 0
+  ? swiftDeclarationBody(
+      mapLibraryCode,
+      /\bstruct\s+OfflineNativeCoverageMapSurfaceHost\b[^\{]*\{/,
+      nativeSurfaceHostStart,
+    )
+  : "";
+const nativeSurfaceHostBodyCode = swiftDeclarationBody(
+  nativeSurfaceHostCode,
+  /\bvar\s+body\s*:\s*some\s+View\s*\{/,
+);
+const nativeSurfaceHostBlockingCode = swiftDeclarationBody(
+  nativeSurfaceHostCode,
+  /\bprivate\s+var\s+blockingReason\s*:\s*String\?\s*\{/,
+);
+const nativeSurfaceHostLeaseEligibilityCode = swiftDeclarationBody(
+  nativeSurfaceHostCode,
+  /\bprivate\s+var\s+appRadioSilenceEligibility\s*:\s*Bool\s*\{/,
+);
+const nativeSurfaceHostReconcileLeaseCode = swiftDeclarationBody(
+  nativeSurfaceHostCode,
+  /\bprivate\s+func\s+reconcileAppRadioSilenceLease\s*\(\s*\)\s*\{/,
+);
+const nativeSurfaceHostReleaseLeaseCode = swiftDeclarationBody(
+  nativeSurfaceHostCode,
+  /\bprivate\s+func\s+releaseAppRadioSilenceLease\s*\(\s*\)\s*\{/,
+);
+const canonicalItineraryBodyCode = swiftDeclarationBody(
+  canonicalItineraryCode,
+  /\bvar\s+body\s*:\s*some\s+View\s*\{/,
+);
+const nativeMapHostStart = mapLibraryCode.indexOf(
+  "private final class OfflineNativeCoverageMapMountModel",
+);
+const nativeMapHostCode = nativeMapHostStart >= 0
+  ? swiftDeclarationBody(
+      mapLibraryCode,
+      /\bprivate\s+final\s+class\s+OfflineNativeCoverageMapMountModel\b[^\{]*\{/,
+      nativeMapHostStart,
+    )
+  : "";
+const nativeMapHostReconcileCode = swiftDeclarationBody(
+  nativeMapHostCode,
+  /\bfunc\s+reconcile[\s\S]*?\)\s*\{/,
+);
+const apiRadioSilenceGateCode = swiftDeclarationBody(
+  apiCode,
+  /\bfunc\s+setAppRadioSilenceEnforced\s*\(\s*_\s+enforced:\s*Bool\s*\)\s*\{/,
+);
+const apiCombinedRadioSilenceGateCode = swiftDeclarationBody(
+  apiCode,
+  /\bvar\s+isAppRadioSilenceEnforced\s*:\s*Bool\s*\{/,
+);
+const apiGatedDataCode = swiftDeclarationBody(
+  apiCode,
+  /\bfunc\s+appRadioSilenceGatedData[\s\S]*?\)\s*async\s+throws\s*->\s*\(Data,\s*URLResponse\)\s*\{/,
+);
+const apiTransportDataCode = swiftDeclarationBody(
+  apiCode,
+  /\bprivate\s+func\s+transportData\s*\(\s*for\s+original:\s*URLRequest\s*\)\s*async\s+throws\s*->\s*\(Data,\s*URLResponse\)\s*\{/,
+);
+const serviceFunctionBody = (source, name) => swiftDeclarationBody(
+  source,
+  new RegExp(`\\bfunc\\s+${name}\\s*\\(\\s*\\)\\s*\\{`),
+);
+const realtimeSuspendCode = serviceFunctionBody(realtimeServiceCode, "suspendForAppRadioSilence");
+const realtimeResumeCode = serviceFunctionBody(realtimeServiceCode, "resumeAfterAppRadioSilence");
+const driverGPSSuspendCode = serviceFunctionBody(driverGPSPushServiceCode, "suspendForAppRadioSilence");
+const driverGPSResumeCode = serviceFunctionBody(driverGPSPushServiceCode, "resumeAfterAppRadioSilence");
+const hosSuspendCode = serviceFunctionBody(hosClockServiceCode, "suspendForAppRadioSilence");
+const hosResumeCode = serviceFunctionBody(hosClockServiceCode, "resumeAfterAppRadioSilence");
+const reminderSuspendCode = serviceFunctionBody(reminderSyncServiceCode, "suspendForAppRadioSilence");
+const reminderResumeCode = serviceFunctionBody(reminderSyncServiceCode, "resumeAfterAppRadioSilence");
+const queueSuspendCode = serviceFunctionBody(offlineQueueCode, "suspendForAppRadioSilence");
+const queueResumeCode = serviceFunctionBody(offlineQueueCode, "resumeAfterAppRadioSilence");
+const geofenceSuspendCode = serviceFunctionBody(geofenceServiceCode, "suspendForAppRadioSilence");
+const geofenceResumeCode = serviceFunctionBody(geofenceServiceCode, "resumeAfterAppRadioSilence");
+const firstForegroundRecoveryCode = swiftDeclarationBody(
+  pushServiceCode,
+  /\bfunc\s+applicationDidBecomeActive\s*\(\s*_\s+application:\s*UIApplication\s*\)\s*\{/,
+);
+const weatherSuspendCode = serviceFunctionBody(weatherServiceCode, "suspendForAppRadioSilence");
+const weatherResumeCode = serviceFunctionBody(weatherServiceCode, "resumeAfterAppRadioSilence");
+const newsSuspendCode = serviceFunctionBody(newsImageCacheCode, "suspendForAppRadioSilence");
+const newsResumeCode = serviceFunctionBody(newsImageCacheCode, "resumeAfterAppRadioSilence");
+const ptSuspendCode = serviceFunctionBody(ptChannelManagerCode, "suspendForAppRadioSilence");
+const ptResumeCode = serviceFunctionBody(ptChannelManagerCode, "resumeAfterAppRadioSilence");
+const watchPolicyApplyCode = swiftDeclarationBody(
+  watchRadioSilencePolicyCode,
+  /\bfunc\s+apply\s*\(\s*enforced:\s*Bool,\s*revision:\s*Int,\s*epoch:\s*String\s*\)\s*\{/,
+);
+const watchPolicyBootstrapCode = serviceFunctionBody(watchRadioSilencePolicyCode, "bootstrap");
+const watchPolicyDataCode = swiftDeclarationBody(
+  watchRadioSilencePolicyCode,
+  /\bfunc\s+data\s*\(\s*for\s+original:\s*URLRequest\s*\)\s*async\s+throws\s*->\s*\(Data,\s*URLResponse\)\s*\{/,
+);
+const hosPollOnceCode = swiftDeclarationBody(
+  hosClockServiceCode,
+  /\bprivate\s+func\s+pollOnce\s*\(\s*\)\s*async\s*\{/,
+);
+const reminderSyncCode = swiftDeclarationBody(
+  reminderSyncServiceCode,
+  /\bfunc\s+sync\s*\([^)]*\)\s*async\s*\{/,
+);
+const queueFlushCode = swiftDeclarationBody(
+  offlineQueueCode,
+  /\bfunc\s+flush\s*\(\s*\)\s*async\s*\{/,
+);
+const geofencePostCode = swiftDeclarationBody(
+  geofenceServiceCode,
+  /\bprivate\s+func\s+postServerFence\s*\([^)]*\)\s*\{/,
+);
+const onlineMapBodyCode = swiftDeclarationBody(
+  onlineMapWebViewCode,
+  /\bpublic\s+var\s+body\s*:\s*some\s+View\s*\{/,
+);
+const onlineMapMakeCode = swiftDeclarationBody(
+  onlineMapWebViewCode,
+  /\bfunc\s+makeUIView\s*\(\s*context:\s*Context\s*\)\s*->\s*WKWebView\s*\{/,
+);
+const onlineMapUpdateCode = swiftDeclarationBody(
+  onlineMapWebViewCode,
+  /\bfunc\s+updateUIView\s*\(\s*_\s+webView:\s*WKWebView,\s*context:\s*Context\s*\)\s*\{/,
+);
+const onlineMapDismantleCode = swiftDeclarationBody(
+  onlineMapWebViewCode,
+  /\bstatic\s+func\s+dismantleUIView\s*\([^)]*\)\s*\{/,
+);
+const onlineMapDisposeCode = swiftDeclarationBody(
+  onlineMapWebViewCode,
+  /\bfunc\s+disposeForAppRadioSilence\s*\(\s*\)\s*\{/,
+);
+const onlineMapNotificationCode = swiftDeclarationBody(
+  onlineMapWebViewCode,
+  /\bprivate\s+func\s+appRadioSilenceWillEngage\s*\(\s*\)\s*\{/,
+);
+const driverGPSStopCode = swiftDeclarationBody(
+  driverGPSPushServiceCode,
+  /\bfunc\s+stop\s*\(\s*\)\s*\{/,
+);
+const driverGPSFlushCode = swiftDeclarationBody(
+  driverGPSPushServiceCode,
+  /\bprivate\s+func\s+flushCrumbs\s*\(\s*\)\s*\{/,
+);
+const navigationReplacementInitCode = swiftDeclarationBody(
+  navigationModelsCode,
+  /\binit\s*\(\s*route:\s*OfflineLocalRoute,[\s\S]*?admittedCoverage:\s*OfflineInstalledCoverageEvidence\s*\)\s*throws\s*\{/,
+);
+const navigationProjectionAcceptCode = swiftDeclarationBody(
+  navigationModelsCode,
+  /\bmutating\s+func\s+accept\s*\(\s*_\s+replacement:\s*OfflineNavigationRouteReplacement\s*\)\s*->\s*Bool\s*\{/,
+);
+const navigationProjectionResolveCode = swiftDeclarationBody(
+  navigationModelsCode,
+  /\bfunc\s+resolveHostRoute[\s\S]*?\)\s*->\s*OfflineLocalRoute\?\s*\{/,
+);
+const nativeRouteMapperCode = swiftDeclarationBody(
+  navigateEngineCode,
+  /\benum\s+HereNativeRouteMapper\s*\{/,
+);
+const productionAcceptNavigationEventCode = swiftDeclarationBody(
+  productionCompositionCode,
+  /\bprivate\s+func\s+acceptNavigationEvent\s*\(\s*_\s+event:\s*OfflineNavigationEvent\s*\)\s*\{/,
+);
+const productionSetMapProjectionCode = swiftDeclarationBody(
+  productionCompositionCode,
+  /\bfunc\s+setMapJourneyProjection\s*\([^)]*\)\s*\{/,
+);
+if (!containsInOrder(apiRadioSilenceGateCode, [
+  "guard isAppRadioSilenceEnforcedInProcess != enforced else { return }",
+  "isAppRadioSilenceEnforcedInProcess = enforced",
+  "guard enforced else { return }",
+  "inFlightRefresh?.cancel()",
+  "inFlightRefresh = nil",
+  "isRefreshing = false",
+  "session.invalidateAndCancel()",
+  "session = Self.makeSession()",
+  "let auxiliary = Array(appRadioSilenceAuxiliarySessions.values)",
+  "appRadioSilenceAuxiliarySessions.removeAll()",
+  "for session in auxiliary",
+  "session.invalidateAndCancel()",
+]) || !containsInOrder(apiCombinedRadioSilenceGateCode, [
+  "isAppRadioSilenceEnforcedInProcess",
+  "|| AppRadioSilenceSharedState.isEnforced",
+]) || !containsInOrder(apiGatedDataCode, [
+  "try Task.checkCancellation()",
+  "try requireAppRadioSilenceTransportAllowed()",
+  "let auxiliarySession = Self.makeAuxiliarySession()",
+  "let registration = try registerAppRadioSilenceAuxiliarySession(auxiliarySession)",
+  "defer",
+  "unregisterAppRadioSilenceAuxiliarySession(registration)",
+  "auxiliarySession.invalidateAndCancel()",
+  "response = try await auxiliarySession.data(for: request)",
+  "if isAppRadioSilenceEnforced",
+  "try Task.checkCancellation()",
+  "try requireAppRadioSilenceTransportAllowed()",
+  "return response",
+])) {
+  failures.push("EusoTripAPI radio-silence boundary no longer combines the in-process/app-group gate or invalidates and pre/post-gates every main and auxiliary URLSession transport");
+}
+const apiSessionDataCallCount = (apiCode.match(/\bsession\.data\s*\(\s*for:/g) ?? []).length;
+if (apiSessionDataCallCount !== 1 || !containsInOrder(apiTransportDataCode, [
+  "try Task.checkCancellation()",
+  "guard !isAppRadioSilenceEnforced else",
+  "response = try await session.data(for: request)",
+  "if isAppRadioSilenceEnforced",
+  "try Task.checkCancellation()",
+  "guard !isAppRadioSilenceEnforced else",
+  "return response",
+])) {
+  failures.push("EusoTripAPI transport no longer routes its sole URLSession data call through cancellation-aware preflight and postflight radio-silence gates");
+}
+const requiredServiceLifecycleChecks = [
+  {
+    name: "RealtimeService",
+    suspend: realtimeSuspendCode,
+    suspendSteps: [
+      "guard !isRadioSilenceSuspended else { return }",
+      "isRadioSilenceSuspended = true",
+      "tearDownConnection(reason:",
+    ],
+    resume: realtimeResumeCode,
+    resumeSteps: [
+      "guard isRadioSilenceSuspended else { return }",
+      "isRadioSilenceSuspended = false",
+      "guard wantsConnection",
+      "!EusoTripAPI.shared.isAppRadioSilenceEnforced else { return }",
+      "beginConnectionIfNeeded()",
+    ],
+  },
+  {
+    name: "DriverGPSPushService",
+    suspend: driverGPSSuspendCode,
+    suspendSteps: [
+      "guard !isRadioSilenceSuspended else { return }",
+      "isRadioSilenceSuspended = true",
+      "manager.stopUpdatingLocation()",
+      "isStreaming = false",
+      "locationPushTask?.cancel()",
+      "crumbFlushTask?.cancel()",
+    ],
+    resume: driverGPSResumeCode,
+    resumeSteps: [
+      "guard isRadioSilenceSuspended else { return }",
+      "isRadioSilenceSuspended = false",
+      "guard activeLoadId != nil else { return }",
+      "manager.startUpdatingLocation()",
+      "isStreaming = true",
+    ],
+  },
+  {
+    name: "HOSClockService",
+    suspend: hosSuspendCode,
+    suspendSteps: [
+      "guard !isRadioSilenceSuspended else { return }",
+      "isRadioSilenceSuspended = true",
+      "cancelPolling()",
+    ],
+    resume: hosResumeCode,
+    resumeSteps: [
+      "guard isRadioSilenceSuspended else { return }",
+      "isRadioSilenceSuspended = false",
+      "guard wantsPolling else { return }",
+      "beginPollingIfNeeded()",
+    ],
+  },
+  {
+    name: "ReminderSyncService",
+    suspend: reminderSuspendCode,
+    suspendSteps: [
+      "guard !isRadioSilenceSuspended else { return }",
+      "isRadioSilenceSuspended = true",
+      "cancelNetworkWork()",
+    ],
+    resume: reminderResumeCode,
+    resumeSteps: [
+      "guard isRadioSilenceSuspended else { return }",
+      "isRadioSilenceSuspended = false",
+      "guard isActive else { return }",
+      "scheduleSync(",
+      "startPollingIfNeeded()",
+    ],
+  },
+  {
+    name: "OfflineQueue",
+    suspend: queueSuspendCode,
+    suspendSteps: [
+      "guard !isRadioSilenceSuspended else { return }",
+      "isRadioSilenceSuspended = true",
+      "scheduledRetry?.cancel()",
+      "scheduledRetry = nil",
+    ],
+    resume: queueResumeCode,
+    resumeSteps: [
+      "guard isRadioSilenceSuspended else { return }",
+      "isRadioSilenceSuspended = false",
+      "guard !pending.isEmpty",
+      "scheduleReplay(after: 1)",
+    ],
+  },
+  {
+    name: "GeofenceService",
+    suspend: geofenceSuspendCode,
+    suspendSteps: [
+      "guard !isRadioSilenceSuspended else { return }",
+      "isRadioSilenceSuspended = true",
+      "serverFenceResolutionTask?.cancel()",
+      "serverFenceResolutionTask = nil",
+      "serverFenceEventTasks.removeAll()",
+      "for task in tasks { task.cancel() }",
+    ],
+    resume: geofenceResumeCode,
+    resumeSteps: [
+      "guard isRadioSilenceSuspended else { return }",
+      "isRadioSilenceSuspended = false",
+      "if let load = monitoredLoad",
+      "scheduleServerFenceResolution(for: load)",
+    ],
+  },
+];
+for (const service of requiredServiceLifecycleChecks) {
+  if (!containsInOrder(service.suspend, service.suspendSteps) ||
+      !containsInOrder(service.resume, service.resumeSteps)) {
+    failures.push(`${service.name} no longer has a stateful app radio-silence suspend/resume lifecycle`);
+  }
+}
+if (!containsInOrder(hosPollOnceCode, [
+  "guard !isRadioSilenceSuspended, !Task.isCancelled else { return }",
+  "EusoTripAPI.shared.hos.getStatus()",
+  "guard !isRadioSilenceSuspended, !Task.isCancelled else { return }",
+  "self.status = fresh",
+  "pushToWatch(fresh)",
+])) {
+  failures.push("HOSClockService no longer gates both sides of its API poll before publishing or sending watch context during app radio silence");
+}
+if (!containsInOrder(reminderSyncCode, [
+  "guard isActive, !isRadioSilenceSuspended, !Task.isCancelled else { return }",
+  "EusoTripAPI.shared.upcomingReminderDeadlines(",
+  "guard generation == syncGeneration",
+  "!isRadioSilenceSuspended",
+  "!Task.isCancelled else { return }",
+  "apply(plan)",
+])) {
+  failures.push("ReminderSyncService no longer gates server reconciliation before and after suspension-sensitive awaits");
+}
+if (!containsInOrder(queueFlushCode, [
+  "guard !isRadioSilenceSuspended, !Task.isCancelled else { return }",
+  "try await replay(action)",
+  "guard !isRadioSilenceSuspended, !Task.isCancelled else { break }",
+  "remove(key: action.key)",
+])) {
+  failures.push("OfflineQueue replay no longer checks app radio silence before transport and before removing durable actions");
+}
+if (!containsInOrder(geofencePostCode, [
+  "guard !isRadioSilenceSuspended else",
+  "enqueueLocally()",
+  "return",
+  "serverFenceEventTasks[taskId] = Task",
+  "postGeofenceEvent(",
+  "catch is AppRadioSilenceTransportError",
+  "enqueueLocally()",
+])) {
+  failures.push("GeofenceService no longer preserves local fence events when app radio silence prevents transport");
+}
+if (!containsInOrder(driverPresentOfflineRoadDeskCode, [
+  "if appRadioSilenceLease == nil",
+  "AppRadioSilenceCoordinator.shared.acquire(",
+  "reason: .offlineRoadJourney",
+  "presentsOfflineRoadDesk = true",
+]) || !containsInOrder(driverReleaseAppRadioSilenceCode, [
+  "guard let lease = appRadioSilenceLease else { return }",
+  "AppRadioSilenceCoordinator.shared.release(lease)",
+  "appRadioSilenceLease = nil",
+]) || !containsInOrder(driverBodyCode, [
+  ".fullScreenCover(",
+  "onDismiss: releaseAppRadioSilenceLease",
+  "OfflineRoadJourneyView(composition: composition)",
+  "await OfflineMapProductionComposition.shared?",
+  ".stopNavigation()",
+  "releaseAppRadioSilenceLease()",
+  "presentsOfflineRoadDesk = false",
+  ".interactiveDismissDisabled()",
+])) {
+  failures.push("Driver offline journey no longer acquires before presentation and releases its app radio-silence lease on every controlled dismissal path");
+}
+if (!containsInOrder(roadEnsureAppRadioSilenceCode, [
+  "guard appRadioSilenceLease == nil else { return }",
+  "AppRadioSilenceCoordinator.shared.acquire(",
+  "reason: .offlineRoadJourney",
+]) || !containsInOrder(roadReleaseAppRadioSilenceCode, [
+  "guard let lease = appRadioSilenceLease else { return }",
+  "AppRadioSilenceCoordinator.shared.release(lease)",
+  "appRadioSilenceLease = nil",
+]) || !containsInOrder(roadBodyCode, [
+  ".onAppear",
+  "ensureAppRadioSilenceLease()",
+  ".task(id: sessionScope)",
+  "ensureAppRadioSilenceLease()",
+  ".onDisappear",
+  "model.cancelPendingOperation()",
+  "releaseAppRadioSilenceLease()",
+])) {
+  failures.push("OfflineRoadJourneyView no longer owns an idempotent app radio-silence lease across appearance, task startup, cancellation, and disappearance");
+}
+if (!containsInOrder(roadReadinessBlockersCode, [
+  "if !hasBoundPrincipal",
+  "if !AppRadioSilenceCoordinator.shared.isEnforced",
+  "if !composition.installedCoverageTrustAvailable",
+  "snapshot.connectivityPolicy != .radioSilent",
+  "snapshot.radioSilenceState != .enforced",
+])) {
+  failures.push("offline road journey readiness no longer requires both app-wide transport suspension and native HERE Radio Silent enforcement");
+}
+if (!containsInOrder(onlineMapBodyCode, [
+  ".id(appRadioSilenceRevision)",
+  ".eusoAppRadioSilenceWillEngage",
+  "appRadioSilenceRevision &+= 1",
+  ".eusoAppRadioSilenceDidRelease",
+  "appRadioSilenceRevision &+= 1",
+]) || !containsInOrder(onlineMapMakeCode, [
+  "if EusoTripAPI.shared.isAppRadioSilenceEnforced",
+  "webView.loadHTMLString(",
+  "baseURL: nil",
+  "else",
+  "webView.loadHTMLString(html",
+  "HereMapsConfig.jsTrustedReferrerOrigin",
+]) || !containsInOrder(onlineMapUpdateCode, [
+  "guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else",
+  "context.coordinator.disposeForAppRadioSilence()",
+  "return",
+  "context.coordinator.onSelectMarker = onSelectMarker",
+]) || !containsInOrder(onlineMapDismantleCode, [
+  "webView.stopLoading()",
+  "removeAllScriptMessageHandlers()",
+  "webView.navigationDelegate = nil",
+  "webView.uiDelegate = nil",
+  "coordinator.webView = nil",
+]) || !containsInOrder(onlineMapNotificationCode, [
+  "disposeForAppRadioSilence()",
+]) || !containsInOrder(onlineMapDisposeCode, [
+  "webView.stopLoading()",
+  "removeAllScriptMessageHandlers()",
+  "webView.loadHTMLString(",
+  "baseURL: nil",
+  "mapReady = false",
+  "pendingCameraJS = nil",
+  "pendingLayerJSON =",
+  "onSelectMarker = nil",
+]) || !containsInOrder(onlineMapWebViewCode, [
+  "selector: #selector(appRadioSilenceWillEngage)",
+  "name: .eusoAppRadioSilenceWillEngage",
+])) {
+  failures.push("HereMapWebView no longer synchronously stops and blanks active JS maps, guards make/update while enforced, and rebuilds on both policy edges");
+}
+
+const allAppSwiftSources = walkFiles("EusoTrip", ".swift").map(file => ({
+  file,
+  relativePath: path.relative(root, file).split(path.sep).join("/"),
+  code: swiftCodeOnly(readWalkedRepositoryFile(file)),
+}));
+const builtInAsyncImageSources = allAppSwiftSources.filter(({ code }) =>
+  /\bAsyncImage\s*\(/.test(code));
+if (builtInAsyncImageSources.length !== 0 || !containsInOrder(appRadioSilenceAsyncImageCode, [
+  "switch url.scheme?.lowercased()",
+  "var request = URLRequest(url: url)",
+  "appRadioSilenceGatedData(for: request)",
+  "try Task.checkCancellation()",
+  "guard revision == policyRevision else { return }",
+])) {
+  failures.push("remote image loading no longer has zero built-in AsyncImage sinks and one cancellation-aware EusoTripAPI radio-silence loader");
+}
+
+const directProviderSinkFiles = new Set();
+for (const source of allAppSwiftSources) {
+  const webViewConstructorCount = (source.code.match(/\bWKWebView\s*\(/g) ?? []).length;
+  if (webViewConstructorCount > 0) {
+    directProviderSinkFiles.add(source.relativePath);
+    if (source.relativePath !== relative.onlineMapWebView) {
+      const registrations = (source.code.match(/\.register\s*\(\s*webView:/g) ?? []).length;
+      const gatedLoads = (source.code.match(/\.loadRemote(?:HTML)?\s*\(/g) ?? []).length;
+      if (registrations < webViewConstructorCount || gatedLoads < webViewConstructorCount) {
+        failures.push(`${source.relativePath}: direct WebKit construction is not registered and loaded through the app radio-silence controller`);
+      }
+    }
+  }
+  const safariConstructorCount = (source.code.match(/\bSFSafariViewController\s*\(/g) ?? []).length;
+  if (safariConstructorCount > 0) {
+    directProviderSinkFiles.add(source.relativePath);
+    const gatedURLs = (source.code.match(/\.gatedRemoteURL\s*\(/g) ?? []).length;
+    const trackedControllers = (source.code.match(/\.track\s*\(\s*safariController:/g) ?? []).length;
+    if (gatedURLs < safariConstructorCount || trackedControllers < safariConstructorCount) {
+      failures.push(`${source.relativePath}: Safari construction is not fail-closed and tracked from construction time`);
+    }
+  }
+  if (/\bAVPlayer\s*\(\s*url:/.test(source.code)) {
+    directProviderSinkFiles.add(source.relativePath);
+  }
+}
+for (const sinkFile of directProviderSinkFiles) {
+  if (!projectInspector.sourceRegistered(sinkFile)) {
+    failures.push(`${sinkFile}: direct provider sink is not registered in the EusoTrip application target`);
+  }
+}
+const directTransportRawSource = exists(relative.appRadioSilenceDirectTransport)
+  ? read(relative.appRadioSilenceDirectTransport)
+  : "";
+if (!containsInOrder(appRadioSilenceDirectTransportCode, [
+  "var transportAllowed: Bool",
+  "!EusoTripAPI.shared.isAppRadioSilenceEnforced",
+  "transports[registration] = RegisteredTransport(stop: stop, resume: resume)",
+  "if isSuspended || EusoTripAPI.shared.isAppRadioSilenceEnforced",
+  "stop()",
+  "webView.stopLoading()",
+  "webView.loadHTMLString(",
+  "guard transportAllowed else",
+  "webView.stopLoading()",
+  "webView.loadHTMLString(",
+  "webView.load(request)",
+  "func track(safariController: SFSafariViewController)",
+  "guard transportAllowed, !isSuspended else",
+  "safariController.dismiss(animated: false)",
+  "playerController?.player?.pause()",
+  "playerController?.player?.replaceCurrentItem(with: nil)",
+  "func suspendAll()",
+  "for transport in registered { transport.stop() }",
+  "func resumeAll()",
+  "guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else { return }",
+  "for transport in registered { transport.resume?() }",
+]) || !directTransportRawSource.includes('URL(string: "about:blank")!') ||
+    !containsInOrder(dockAssignedViewCode, [
+      "register(",
+      "playerController: vc",
+      "AppRadioSilenceDirectTransportController.shared.transportAllowed",
+      "AVPlayer(url: url)",
+      "guard AppRadioSilenceDirectTransportController.shared.transportAllowed else",
+      "vc.player?.pause()",
+      "vc.player?.replaceCurrentItem(with: nil)",
+      "dismantleUIViewController",
+      "vc.player?.pause()",
+      "vc.player?.replaceCurrentItem(with: nil)",
+      "unregister(",
+    ])) {
+  failures.push("direct WebKit, HLS, and Safari transports no longer stop synchronously, fail closed before start/update, and resume only through retained mounted ownership");
+}
+
+const foregroundRecoveryCallCount = allAppSwiftSources.reduce(
+  (count, source) => count + (source.code.match(/\.recoverSharedStateOnFirstForegroundActivation\s*\(/g) ?? []).length,
+  0,
+);
+if (foregroundRecoveryCallCount !== 1 || !containsInOrder(firstForegroundRecoveryCode, [
+  "guard !preparedRadioSilenceForForeground else { return }",
+  "preparedRadioSilenceForForeground = true",
+  "MainActor.assumeIsolated",
+  "AppRadioSilenceCoordinator.shared",
+  ".recoverSharedStateOnFirstForegroundActivation()",
+])) {
+  failures.push("durable app-group RELEASE recovery no longer occurs exactly once at a real foreground activation while background wakes preserve ENFORCED");
+}
+
+if (!containsInOrder(weatherSuspendCode, [
+  "guard !isAppRadioSilenceSuspended else { return }",
+  "isAppRadioSilenceSuspended = true",
+  "weatherFlights.cancelAll(returning: nil)",
+  "locationFlights.cancelAll(returning: nil)",
+  "finishPendingLocation(nil)",
+]) || !weatherResumeCode.includes("isAppRadioSilenceSuspended = false") ||
+    !containsInOrder(weatherServiceCode, [
+      "try EusoTripAPI.shared.requireAppRadioSilenceTransportAllowed()",
+      "weatherService.weather(for: location)",
+      "try EusoTripAPI.shared.requireAppRadioSilenceTransportAllowed()",
+    ]) || !newsSuspendCode.includes("for task in tasks { task.cancel() }") ||
+    !newsResumeCode.includes("isRadioSilenceSuspended = false") ||
+    !newsImageCacheCode.includes("appRadioSilenceGatedData(for: req)")) {
+  failures.push("WeatherKit, geocoding, and news metadata providers no longer cancel owned work and enforce pre/post or gated transport boundaries");
+}
+if (!containsInOrder(ptSuspendCode, [
+  "suspendedMembership =",
+  "if isTransmitting",
+  "manager.stopTransmitting(channelUUID: uuid)",
+  "manager.leaveChannel(channelUUID: uuid)",
+  "activeChannelUUID = nil",
+  "joinedChainGroupId = nil",
+  "isTransmitting = false",
+]) || !containsInOrder(ptResumeCode, [
+  "guard let membership = suspendedMembership else { return }",
+  "suspendedMembership = nil",
+  "await self?.join(",
+]) || !containsInOrder(ptChannelManagerCode, [
+  "guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else { return }",
+  "PTChannelManager_Apple.channelManager(",
+  "guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else { return }",
+]) || (ptChannelManagerCode.match(/AppRadioSilenceSharedState\.isEnforced/g) ?? []).length < 2) {
+  failures.push("Push-to-Talk no longer blocks creation/transmit, leaves synchronously, and rejects Apple callbacks while shared radio silence is enforced");
+}
+if (!containsInOrder(realtimeServiceCode, [
+  "private func beginConnectionIfNeeded()",
+  "guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else { return }",
+  "while !Task.isCancelled",
+  "!isRadioSilenceSuspended",
+  "!EusoTripAPI.shared.isAppRadioSilenceEnforced",
+  "let ws = session.webSocketTask(with: req)",
+  "guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else",
+  "ws.cancel(with: .goingAway, reason: nil)",
+  "ws.resume()",
+  "let message = try await ws.receive()",
+  "guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else",
+]) || !containsInOrder(realtimeResumeCode, [
+  "guard isRadioSilenceSuspended else { return }",
+  "isRadioSilenceSuspended = false",
+  "guard wantsConnection",
+  "!EusoTripAPI.shared.isAppRadioSilenceEnforced else { return }",
+  "beginConnectionIfNeeded()",
+])) {
+  failures.push("RealtimeService no longer gates socket creation, resume, receive, and send against the combined radio-silence authority");
+}
+
+const appAttestBuildCode = swiftDeclarationBody(
+  appAttestClientCode,
+  /\bprivate\s+static\s+func\s+buildAttestation[\s\S]*?\)\s*async\s*->\s*AttestEnvelope\?\s*\{/,
+);
+const appAttestEnsureKeyCode = swiftDeclarationBody(
+  appAttestClientCode,
+  /\bprivate\s+static\s+func\s+ensureAttestedKey[\s\S]*?\)\s*async\s*throws\s*->\s*String\s*\{/,
+);
+if (!containsInOrder(appAttestBuildCode, [
+  "guard !AppRadioSilenceSharedState.isEnforced",
+  "ensureAttestedKey(service: service)",
+  "guard !AppRadioSilenceSharedState.isEnforced else { return nil }",
+  "fetchChallenge()",
+  "guard !AppRadioSilenceSharedState.isEnforced else { return nil }",
+  "service.generateAssertion(",
+  "guard !AppRadioSilenceSharedState.isEnforced else { return nil }",
+]) || !containsInOrder(appAttestEnsureKeyCode, [
+  "guard !AppRadioSilenceSharedState.isEnforced else",
+  "service.generateKey()",
+  "guard !AppRadioSilenceSharedState.isEnforced else",
+  "fetchChallenge()",
+  "guard !AppRadioSilenceSharedState.isEnforced else",
+  "service.attestKey(",
+  "guard !AppRadioSilenceSharedState.isEnforced else",
+  "registerKey(",
+  "storeKeyId(keyId)",
+])) {
+  failures.push("App Attest no longer checks the cross-process marker around key generation, challenge, attestation, assertion, and registration awaits");
+}
+
+const appleAuthorizationPerformCode = swiftDeclarationBody(
+  appleAuthProviderCode,
+  /\bprivate\s+func\s+perform[\s\S]*?\)\s*async\s*throws\s*->\s*ASAuthorization\s*\{/,
+);
+if (!containsInOrder(appleAuthorizationPerformCode, [
+  "guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else",
+  "ASAuthorizationController(authorizationRequests: requests)",
+  "activeAuthorizationController = controller",
+  "AppRadioSilenceDirectTransportController.shared.register(",
+  "controller?.cancel()",
+  "cancelForAppRadioSilence(controller)",
+  "controller.performRequests",
+]) || !containsInOrder(appleAuthProviderCode, [
+  "didCompleteWithAuthorization authorization: ASAuthorization",
+  "finishAuthorizationController(controller)",
+  "if EusoTripAPI.shared.isAppRadioSilenceEnforced",
+  "cont?.resume(throwing:",
+])) {
+  failures.push("Apple authentication/passkey controllers no longer have combined preflight, registered cancellation, and postflight rejection");
+}
+if (!containsInOrder(walletApplePayProviderCode, [
+  "guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else",
+  "createStripeSetupIntent()",
+  "guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else",
+  "PKPaymentAuthorizationController(paymentRequest: request)",
+  "AppRadioSilenceDirectTransportController.shared.register(",
+  "controller?.dismiss",
+  "controller.present",
+]) || !containsInOrder(walletApplePayProviderCode, [
+  "didAuthorizePayment payment: PKPayment",
+  "guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else",
+  "createStripePaymentMethod(",
+  "attachStripePaymentMethod(",
+  "guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else",
+]) || !containsInOrder(walletPassServiceCode, [
+  "guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else",
+  "fetchBoundedWalletPassData(url)",
+  "guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else",
+  "PKPass(data: data)",
+  "PKAddPassesViewController(pass: pkpass)",
+  "guard activeAddPassController == nil",
+  "!EusoTripAPI.shared.isAppRadioSilenceEnforced else",
+  "AppRadioSilenceDirectTransportController.shared.register(",
+  "addVC?.dismiss(animated: false)",
+  "presenter.present(addVC",
+])) {
+  failures.push("Apple Pay and Wallet no longer gate provider/network awaits and register active PassKit presentation cancellation");
+}
+
+const phoneMapSearchCode = swiftDeclarationBody(
+  phoneWatchBridgeCode,
+  /\bprivate\s+func\s+openMaps\s*\(\s*query:\s*String\s*\)\s*\{/,
+);
+if (!containsInOrder(phoneMapSearchCode, [
+  "guard AppRadioSilenceDirectTransportController.shared.transportAllowed else { return }",
+  "mapSearch?.cancel()",
+  "unregister(mapSearchRegistration)",
+  "let search = MKLocalSearch(request: request)",
+  "let registration = AppRadioSilenceDirectTransportController.shared.register",
+  "search?.cancel()",
+  "search.start",
+  "unregister(registration)",
+  "guard AppRadioSilenceDirectTransportController.shared.transportAllowed else",
+  "destination.openInMaps",
+])) {
+  failures.push("MapKit local search no longer registers cancellation before start and rechecks policy before opening Maps");
+}
+const appIntentBackgroundTransportCount = (shipperAppIntentsCode.match(/openAppWhenRun:\s*Bool\s*=\s*false/g) ?? []).length;
+if (appIntentBackgroundTransportCount < 5 ||
+    (shipperAppIntentsCode.match(/EusoTripAPI\.shared\.esang\.chat/g) ?? []).length < 5 ||
+    !containsInOrder(appEntryCode, [
+      ".environment(\\.openURL, OpenURLAction",
+      "scheme ==",
+      "EusoTripAPI.shared.isAppRadioSilenceEnforced",
+      "return .discarded",
+      "return .systemAction(url)",
+    ])) {
+  failures.push("background App Intents and app-opened HTTP URLs no longer route through the combined API gate or discard web navigation while enforced");
+}
+
+const watchAuthBridgeRawSource = exists(relative.watchAuthBridge)
+  ? read(relative.watchAuthBridge)
+  : "";
+if (!containsInOrder(watchAuthBridgeCode, [
+  "AppRadioSilencePhoneMirrorPersistence",
+  ".restoreForProcessRestart(",
+  "snapshotData: defaults.data(",
+  "sharedStateIsEnforced: AppRadioSilenceSharedState.isEnforced",
+  "persistAppRadioSilenceState()",
+]) || !containsInOrder(watchAuthBridgeRawSource, [
+  "func setAppRadioSilenceEnforced(_ enforced: Bool)",
+  "appRadioSilenceState.setEnforced(enforced)",
+  "persistAppRadioSilenceState()",
+  "republishAppRadioSilencePolicy()",
+]) || !containsInOrder(watchAuthBridgeRawSource, [
+  "AppRadioSilencePhoneMirrorPersistence.encode(",
+  "defaults.set(data, forKey: Self.radioSilenceSnapshotDefaultsKey)",
+  "\"op\": \"app.radioSilence\"",
+  "\"enforced\": appRadioSilenceState.isEnforced",
+  "\"revision\": appRadioSilenceState.revision",
+  "\"epoch\": appRadioSilenceState.epoch",
+  "publishContext(channel: \"radioSilence\"",
+])) {
+  failures.push("phone-to-watch radio-silence publication no longer restores one atomic envelope from shared authority and persists before publishing epoch/revision edges");
+}
+if (!containsInOrder(watchPolicyApplyCode, [
+  "state.apply(",
+  "guard transition != .stale else { return }",
+  "persistState()",
+  "if state.isEnforced",
+  "OfflineQueue.shared.suspendForAppRadioSilence()",
+  "sessions.removeAll()",
+  "session.invalidateAndCancel()",
+  "else",
+  "OfflineQueue.shared.resumeAfterAppRadioSilence()",
+]) || !containsInOrder(watchPolicyBootstrapCode, [
+  "guard state.isEnforced else { return }",
+  "OfflineQueue.shared.suspendForAppRadioSilence()",
+  "sessions.removeAll()",
+  "session.invalidateAndCancel()",
+]) || !containsInOrder(watchPolicyDataCode, [
+  "try Task.checkCancellation()",
+  "try requireTransportAllowed()",
+  "let session = Self.makeSession()",
+  "sessions[registration] = session",
+  "session.invalidateAndCancel()",
+  "result = try await session.data(for: request)",
+  "if state.isEnforced",
+  "try Task.checkCancellation()",
+  "try requireTransportAllowed()",
+  "return result",
+]) || !read(relative.watchConnectivityManager).includes(
+  'let channelOrder = ["radioSilence", "auth", "load", "hos", "unread", "settings"]'
+) || !containsInOrder(read(relative.watchConnectivityManager), [
+  "case \"app.radioSilence\":",
+  "AppRadioSilenceWatchPolicy.shared.apply(",
+  "enforced: enforced",
+  "revision: revision",
+  "epoch: epoch",
+]) || !containsInOrder(watchAppEntryCode, [
+  "radioSilence.bootstrap()",
+  "auth.restore()",
+  "hos.restore()",
+  "loads.restore()",
+  "offline.restore()",
+]) || !watchEsangClientCode.includes("AppRadioSilenceWatchPolicy.shared.data(for:") ||
+    !watchAudioRecorderCode.includes("AppRadioSilenceWatchPolicy.shared.data(for:") ||
+    !watchOfflineQueueCode.includes("suspendForAppRadioSilence")) {
+  failures.push("watch radio-silence policy no longer persists before cancellation/resume, restores before app data, and pre/post-gates every watch-owned HTTP path");
+}
+
+const driverGPSMaybePushCode = swiftDeclarationBody(
+  driverGPSPushServiceCode,
+  /\bprivate\s+func\s+maybePush\s*\(\s*fix:\s*CLLocation\s*\)\s*\{/,
+);
+const driverGPSBufferCrumbCode = swiftDeclarationBody(
+  driverGPSPushServiceCode,
+  /\bprivate\s+func\s+bufferCrumb\s*\(\s*_\s+fix:\s*CLLocation\s*\)\s*\{/,
+);
+if (!driverGPSPushServiceCode.includes("let loadId: Int?") ||
+    !containsInOrder(driverGPSMaybePushCode, [
+      "guard activeLoadId != nil",
+      "!isRadioSilenceSuspended",
+      "locationPushTask == nil else { return }",
+    ]) || !containsInOrder(driverGPSBufferCrumbCode, [
+      "guard activeLoadId != nil",
+      "breadcrumbsEnabled",
+      "!isRadioSilenceSuspended else { return }",
+      "crumbBuffer.append(Crumb(",
+      "loadId: activeLoadId",
+    ]) || !containsInOrder(driverGPSStopCode, [
+      "pendingFinalCrumbLoadId = activeLoadId",
+      "flushCrumbs()",
+      "activeLoadId = nil",
+    ]) || !containsInOrder(driverGPSFlushCode, [
+      "guard let firstCrumb = crumbBuffer.first else { return }",
+      ".prefix { $0.loadId == firstCrumb.loadId }",
+      "let loadId = firstCrumb.loadId",
+      "locationBatch(locations: points, loadId: loadId)",
+      "pendingLoadId == loadId",
+      "self.pendingFinalCrumbLoadId = nil",
+      "self.crumbBuffer.insert(contentsOf: batch, at: 0)",
+    ])) {
+  failures.push("DriverGPS breadcrumb upload no longer preserves per-crumb load authority, pending-final ownership, and ordered rebuffer/retry semantics");
+}
+
+if (!containsInOrder(navigationReplacementInitCode, [
+  "let routeID = replacingRouteID.trimmingCharacters",
+  "guard !routeID.isEmpty",
+  "route.id == routeID",
+  "expectedMode.supportsHEREOfflineCalculation",
+  "route.mode == expectedMode",
+  "route.provenance == .hereOfflineLocal",
+  "route.coverage == admittedCoverage else",
+  "self.replacingRouteID = routeID",
+  "replacingMode = expectedMode",
+  "self.route = route",
+]) || !containsInOrder(navigationProjectionAcceptCode, [
+  "guard let current = route",
+  "current.id == replacement.replacingRouteID",
+  "current.mode == replacement.replacingMode else",
+  "return false",
+  "route = replacement.route",
+  "return true",
+]) || !containsInOrder(navigationProjectionResolveCode, [
+  "guard let route else { return proposedRoute }",
+  "if proposedRoute?.id == route.id || navigationIsActive",
+  "return route",
+  "return proposedRoute",
+]) || !containsInOrder(nativeRouteMapperCode, [
+  "for section in route.sections",
+  "section.geometry.vertices.map",
+  "sections.append(",
+  "OfflineRouteSection(",
+  "return try OfflineLocalRoute(",
+  "id: routeID",
+  "mode: mode",
+  "sections: sections",
+  "coverage: coverage",
+]) || !containsInOrder(navigationRerouteCode, [
+  "let mappedRoute: OfflineLocalRoute",
+  "HereNativeRouteMapper.map(",
+  "routeID: routeID",
+  "mode: mode",
+  "coverage: evidence",
+  "OfflineNavigationRouteReplacement(",
+  "route: mappedRoute",
+  "replacingRouteID: routeID",
+  "expectedMode: mode",
+  "admittedCoverage: evidence",
+  "eventHandler?(.routeReplaced(replacement))",
+  "transition(.navigating(routeID: routeID, coverage: coverage))",
+]) || !containsInOrder(productionAcceptNavigationEventCode, [
+  "case .routeReplaced(let replacement):",
+  "navigationRouteProjectionAuthority.accept(replacement)",
+  "navigationRoute = replacement.route",
+  "mapSurface.setJourneyRoute(replacement.route)",
+]) || !containsInOrder(productionSetMapProjectionCode, [
+  "navigationRouteProjectionAuthority.resolveHostRoute(",
+  "projection.route",
+  "navigationIsActive: navigationOwnsRoute",
+  "mapSurface.reconcileHostJourneyProjection(",
+  "route: route",
+]) || !containsInOrder(productionCompositionCode, [
+  "events.append((nextSequence, event))",
+  "events.sorted { $0.0 < $1.0 }.map { $0.1 }",
+]) || !containsInOrder(nativeMapSurfaceCode, [
+  "struct HereOfflineMapProjectedRouteSignature",
+  "let authority: Authority",
+  "let mode: OfflineRouteMode",
+  "let coordinateComponents: [[OfflineGeoCoordinate]]",
+  "let distanceMeters: Int64",
+  "static func local(_ route: OfflineLocalRoute)",
+  "coordinateComponents: route.sections.map(\\.coordinates)",
+  "static func canonical(_ route: CanonicalRoutePackage)",
+  "coordinateComponents: route.segments.map(\\.coordinates)",
+  "if selectedRoute?.signature != projectedRouteSignature",
+  "projectedRouteSignature = route.signature",
+])) {
+  failures.push("typed HERE reroute replacement no longer preserves route authority/components or updates structural native geometry before navigating is published");
+}
+
+if (!containsInOrder(nativeSearchCode, [
+  "let watchdog = HereFiniteCallbackWatchdog<[Place]>(",
+  "timeout: 20",
+  "let searchTask = searchEngine.searchByText(",
+  "watchdog.fail(",
+  "watchdog.succeed(places)",
+  "let places = try await watchdog.wait",
+  "searchTask.cancel()",
+]) || !containsInOrder(nativeRouteCalculationCode, [
+  "let watchdog = HereFiniteCallbackWatchdog<[Route]>(",
+  "timeout: 30",
+  "let routingTask = routingEngine.calculateRoute(",
+  "watchdog.fail(",
+  "watchdog.succeed(routes)",
+  "let nativeRoutes = try await watchdog.wait",
+  "routingTask.cancel()",
+])) {
+  failures.push("HERE offline search and route calculation no longer bound native one-shot callbacks with typed timeouts, native cancellation, and late-result rejection");
+}
+if (!containsInOrder(navigationRerouteCode, [
+  "let commitBoundary = HereNavigationRerouteCommitBoundary(",
+  "let watchdog = HereFiniteCallbackWatchdog<Route>(",
+  "timeout: 30",
+  "activeRerouteWatchdog = watchdog",
+  "let rerouteTask = routingEngine.returnToRoute(",
+  "watchdog.fail(",
+  "watchdog.succeed(route)",
+  "try await watchdog.wait",
+  "rerouteTask.cancel()",
+  "if activeRerouteWatchdog === watchdog",
+  "activeRerouteWatchdog = nil",
+  "guard rerouteGeneration == generation else { return }",
+  "commitBoundary.permitsCommit(",
+])) {
+  failures.push("HERE offline rerouting no longer bounds the native callback, cancels the native task, and rejects stale commits after interruption or generation change");
+}
+if (!containsInOrder(nativeMapPrepareCode, [
+  "nativeSceneLoadTask?.cancel()",
+  "removeNativeJourneyProjection()",
+  "let watchdog = HereFiniteCallbackWatchdog<Void>(",
+  "timeout: 20",
+  "nativeSceneLoadTask = Task",
+  "try await watchdog.wait()",
+  "self.loadGeneration == generation",
+  "try self.applyJourneyProjection(self.journeyProjection)",
+  "mapView.isHidden = false",
+  "status: .rendered(configuration: configuration)",
+  "mapView.mapScene.loadScene(fromFile: validatedPath)",
+  "watchdog.fail(",
+  "watchdog.succeed(())",
+])) {
+  failures.push("HERE native map-style loading no longer has a finite callback boundary or atomically applies pending journey projection before revealing the rendered scene");
+}
+
+function transferBridgePreservesFiniteLifecycle(bridgeCode) {
+  const waitForCompletion = bridgeFunctionBody(bridgeCode, "waitForCompletion");
+  const waitForPause = bridgeFunctionBody(bridgeCode, "waitForPause");
+  const waitForResume = bridgeFunctionBody(bridgeCode, "waitForResume");
+  const onProgress = bridgeFunctionBody(bridgeCode, "onProgress");
+  const onPause = bridgeFunctionBody(bridgeCode, "onPause");
+  const onResume = bridgeFunctionBody(bridgeCode, "onResume");
+  const finish = bridgeFunctionBody(bridgeCode, "finish");
+  return bridgeCode.includes("completionInactivityTimeout: TimeInterval = 120") &&
+    bridgeCode.includes("controlCallbackTimeout: TimeInterval = 15") &&
+    containsInOrder(waitForCompletion, [
+      "completionWatchdog.wait(",
+      "interruptNativeOperation: interruptNativeOperation",
+      "catch",
+      "finish(.failure(error))",
+      "throw error",
+    ]) && containsInOrder(waitForPause, [
+      "guard pauseWatchdog == nil else",
+      "HereFiniteCallbackWatchdog<Void>(",
+      "timeout: Self.controlCallbackTimeout",
+      "pauseWatchdog = watchdog",
+      "try await watchdog.wait()",
+    ]) && containsInOrder(waitForResume, [
+      "guard resumeWatchdog == nil else",
+      "HereFiniteCallbackWatchdog<Void>(",
+      "timeout: Self.controlCallbackTimeout",
+      "resumeWatchdog = watchdog",
+      "try await watchdog.wait()",
+    ]) && containsInOrder(onProgress, [
+      "completionWatchdog.heartbeat()",
+      "progress(update)",
+    ]) && containsInOrder(onPause, [
+      "lock.lock()",
+      "let watchdog = pauseWatchdog",
+      "pauseWatchdog = nil",
+      "lock.unlock()",
+      "completionWatchdog.suspendTimeout()",
+      "watchdog?.resolve(result)",
+    ]) && containsInOrder(onResume, [
+      "lock.lock()",
+      "let watchdog = resumeWatchdog",
+      "resumeWatchdog = nil",
+      "lock.unlock()",
+      "completionWatchdog.resumeTimeout()",
+      "watchdog?.succeed(())",
+    ]) && containsInOrder(finish, [
+      "guard terminalResult == nil else",
+      "terminalResult = result",
+      "pauseWatchdog = nil",
+      "resumeWatchdog = nil",
+      "lock.unlock()",
+      "completionWatchdog.resolve(result)",
+      "pause?.resolve(result)",
+      "resume?.resolve(result)",
+    ]);
+}
+if (!transferBridgePreservesFiniteLifecycle(downloadBridgeCode) ||
+    !transferBridgePreservesFiniteLifecycle(catalogUpdateBridgeCode) ||
+    !containsInOrder(nativeDownloadRegionsCode, [
+      "let bridge = HereDownloadProgressBridge(",
+      "let task = downloader.downloadRegions(",
+      "try await bridge.waitForCompletion",
+      "task.cancel()",
+    ]) || !containsInOrder(nativeUpdatePersistentMapCode, [
+      "let bridge = HereCatalogUpdateProgressBridge(",
+      "let task = updater.updateCatalog(",
+      "try await bridge.waitForCompletion",
+      "task.cancel()",
+    ]) || !containsInOrder(nativePauseTransferCode, [
+      "task.pause()",
+      "try await bridge.waitForPause()",
+      "task.pause()",
+      "try await bridge.waitForPause()",
+    ]) || !containsInOrder(nativeResumeTransferCode, [
+      "task.resume()",
+      "try await bridge.waitForResume()",
+      "task.resume()",
+      "try await bridge.waitForResume()",
+    ]) || !containsInOrder(nativeCancelTransferCode, [
+      "task.cancel()",
+      "bridge.resolveCancellation()",
+      "task.cancel()",
+      "bridge.resolveCancellation()",
+    ])) {
+  failures.push("HERE download and catalog-update bridges no longer heartbeat finite completion waits, suspend inactivity while paused, bound control callbacks, and cancel native work exactly through the owned bridge");
+}
+
+if (!containsInOrder(navigationInterruptionReceiveCode, [
+  "guard sessionIsActive else",
+  "state = .clear",
+  "case .began:",
+  "guard state != .interrupted else { return .none }",
+  "state = .interrupted",
+  "return .pauseAndMute",
+  "case .ended(let shouldResume):",
+  "guard state == .interrupted else { return .none }",
+  "guard shouldResume else",
+  "state = .resumeDenied",
+  "return .remainPaused",
+  "state = .awaitingFreshLocation(notBefore: now)",
+  "return .prepareAudioAndAwaitFreshLocation",
+]) || !containsInOrder(navigationAcceptFreshLocationCode, [
+  "guard case .awaitingFreshLocation(let notBefore) = state",
+  "observedAt >= notBefore else { return false }",
+  "state = .clear",
+  "return true",
+]) || !containsInOrder(navigationPermitsCallbackCode, [
+  "guard !interruptionBoundary.blocksNativeCallbacks else { return false }",
+  "HereNavigationNativeCallbackBoundary.permits(",
+])) {
+  failures.push("HERE navigation interruption boundary no longer mutes native callbacks until the system authorizes resume and a not-before fresh location is accepted");
+}
+if (!containsInOrder(navigationAudioInterruptionCode, [
+  "interruptionBoundary.receive(",
+  "sessionIsActive: isActive",
+  "guard let routeID = activeRouteID else { return }",
+  "case .pauseAndMute:",
+  "activeRerouteWatchdog?.interrupt()",
+  "invalidateNativeDelegates(on: navigator)",
+  "await stopPreparedVoiceOutput()",
+  "transition(",
+  "case .prepareAudioAndAwaitFreshLocation:",
+  "let recoveryGeneration = sessionGeneration",
+  "try await prepareVoiceOutputAfterInterruption(",
+  "sessionGeneration == recoveryGeneration",
+  "activeRouteID == routeID",
+  "interruptionBoundary.isAwaitingFreshLocation",
+  "interruptionBoundary.rejectResume()",
+  "case .remainPaused:",
+])) {
+  failures.push("HERE navigation audio interruption handling no longer cancels reroute, removes delegates, mutes voice, and requires generation-bound audio recovery before awaiting a fresh fix");
+}
+if (!containsInOrder(navigationFeedCode, [
+  "timestampBoundary.acceptDeviceLocation(",
+  "resolvePointCoverage(",
+  "activeRouteID == routeID",
+  "let resumesAfterInterruption = interruptionBoundary.acceptFreshLocation(",
+  "observedAt: location.timestamp",
+  "if resumesAfterInterruption",
+  "installNativeDelegates(on: navigator)",
+  "transition(.navigating(routeID: routeID, coverage: currentCoverage))",
+  "navigator.onLocationUpdated(nativeLocation)",
+])) {
+  failures.push("HERE navigation no longer resumes after interruption only from a timestamp-valid, signed-coverage-admitted fresh device fix");
+}
+if (!containsInOrder(productionInstallCode, [
+  "AVAudioSession.interruptionNotification",
+  "AVAudioSessionInterruptionTypeKey",
+  "case .began:",
+  "interruption = .began",
+  "case .ended:",
+  "AVAudioSessionInterruptionOptionKey",
+  "shouldResume: options.contains(.shouldResume)",
+  "await composition?.handleAudioInterruption(interruption)",
+  "UIApplication.didEnterBackgroundNotification",
+  "await composition?.handleApplicationPhase(.background)",
+  "UIApplication.willEnterForegroundNotification",
+  "await composition?.handleApplicationPhase(.active)",
+])) {
+  failures.push("offline production composition no longer observes typed audio interruptions and application background/foreground edges");
+}
+if (!containsInOrder(productionApplicationPhaseCode, [
+  "applicationPhase = phase",
+  "case .background:",
+  "guard backgroundPausedTransferID == nil",
+  "let operation = owner.snapshot.activeOperation",
+  "operation.phase == .running",
+  "operation.kind == .downloadRegions",
+  "operation.kind == .updatePersistentMap",
+  "try await owner.coordinator.pauseActiveTransfer()",
+  "owner.snapshot.activeOperation?.id == operation.id",
+  "owner.snapshot.activeOperation?.phase == .paused",
+  "guard applicationPhase == .background else",
+  "try? await owner.coordinator.resumeActiveTransfer()",
+  "backgroundPausedTransferID = operation.id",
+  "case .active:",
+  "guard let operationID = backgroundPausedTransferID else { return }",
+  "backgroundPausedTransferID = nil",
+  "operation.id == operationID",
+  "operation.phase == .paused",
+  "try? await owner.coordinator.resumeActiveTransfer()",
+  "if applicationPhase == .background",
+  "await handleApplicationPhase(.background)",
+])) {
+  failures.push("offline production background handling no longer pauses only an owned running transfer and resumes only the same paused operation after a foreground edge");
+}
+
+if (!containsInOrder(nativeMapSetProjectionCode, [
+  "journeyProjection = projection",
+  "guard case .rendered = snapshot.status else { return }",
+  "try applyJourneyProjection(projection)",
+  "journeyProjection = .empty",
+  "replaceWithOpaqueFailure(failure)",
+])) {
+  failures.push("HERE native journey projection no longer retains pre-render state and fails opaque when applying that state is rejected");
+}
+if (!containsInOrder(nativeMapApplyProjectionCode, [
+  "guard projection.route == nil || projection.canonicalRoute == nil else",
+  "let selectedRoute:",
+  "if let route = projection.route",
+  "guard route.provenance == .hereOfflineLocal",
+  "route.mode.supportsHEREOfflineCalculation else",
+  "let signature = HereOfflineMapProjectedRouteSignature.local(route)",
+  "signature.coordinateComponents",
+  "else if let route = projection.canonicalRoute",
+  "guard route.provenance == .serverCanonical",
+  "route.mode == .rail || route.mode == .vessel",
+  "route.segments.allSatisfy({ $0.mode == route.mode }) else",
+  "let signature = HereOfflineMapProjectedRouteSignature.canonical(route)",
+  "signature.coordinateComponents",
+  "if selectedRoute?.signature != projectedRouteSignature",
+  "for polyline in nativeRoutePolylines",
+  "removeMapPolyline(polyline)",
+  "nativeRoutePolylines = []",
+  "if let route = selectedRoute",
+  "let coordinateComponents = route.coordinateComponents",
+  "guard !coordinateComponents.isEmpty",
+  "coordinateComponents.allSatisfy({ $0.count >= 2 }) else",
+  "let nativeCoordinateComponents = coordinateComponents.map",
+  "let polylines = try nativeCoordinateComponents.map",
+  "try MapPolyline(",
+  "geometry: GeoPolyline(vertices: coordinates)",
+  "for polyline in polylines",
+  "mapView.mapScene.addMapPolyline(polyline)",
+  "nativeRoutePolylines = polylines",
+  "projectedRouteSignature = route.signature",
+  "guard let position = projection.position else",
+  "nativeLocationIndicator?.disable()",
+  "let indicator: LocationIndicator",
+  "indicator = LocationIndicator()",
+  "indicator.locationIndicatorStyle = .navigation",
+  "indicator.isAccuracyVisualized = true",
+  "indicator.enable(for: mapView)",
+  "indicator.updateLocation(location)",
+  "if projection.followsPosition",
+  "mapView.camera.lookAt(",
+])) {
+  failures.push("HERE native journey projection no longer enforces mutually exclusive verified local-road/server-canonical Rail-or-Vessel geometry or renders route and live location with follow camera");
+}
+if (!containsInOrder(nativeMapRemoveProjectionCode, [
+  "for polyline in nativeRoutePolylines",
+  "removeMapPolyline(polyline)",
+  "nativeRoutePolylines = []",
+  "projectedRouteSignature = nil",
+  "nativeLocationIndicator?.disable()",
+  "nativeLocationIndicator = nil",
+])) {
+  failures.push("HERE native journey projection no longer removes both route polyline and location indicator artifacts");
+}
+if (!containsInOrder(nativeMapOpaqueFailureCode, [
+  "nativeSceneLoadTask?.cancel()",
+  "removeNativeJourneyProjection()",
+  "releaseRuntimeRenderingLease()",
+  "nativeMapView = nil",
+  "status: .opaqueUnavailable(failure: failure)",
+]) || !containsInOrder(nativeMapClearCode, [
+  "journeyProjection = .empty",
+  "replaceWithOpaqueFailure(failure)",
+])) {
+  failures.push("HERE native map clear and opaque failure no longer remove projection artifacts before discarding the native surface");
+}
+if (!containsInOrder(productionStartNavigationCode, [
+  "try await self.startNavigationOperation(route)",
+  "self.mapSurface.setJourneyRoute(route)",
+  "try self.locationSource.start(",
+]) || !containsInOrder(productionAcceptDeviceLocationCode, [
+  "guard acceptsDeviceLocations else { return }",
+  "let projectedPosition = try HereOfflineMapJourneyPosition(",
+  "try await feedLocationOperation(fix)",
+  "mapSurface.updateLivePosition(",
+  "projectedPosition",
+  "followsPosition: true",
+]) || !containsInOrder(productionStopNavigationCode, [
+  "locationSource.stop()",
+  "await stopNavigationOperation()",
+  "mapSurface.clearLivePosition()",
+])) {
+  failures.push("offline production composition no longer projects only a started verified route and navigation-accepted device fixes while clearing live position on stop");
+}
+if (!containsInOrder(roadNativeJourneyMapCode, [
+  "OfflineNativeCoverageMapSurfaceHost(",
+  "composition: composition",
+  "offlineSnapshot: owner.snapshot",
+  "family: .navigation",
+  "journeyProjection: journeyProjection",
+]) || !containsInOrder(roadJourneyProjectionCode, [
+  "model.locationFix.flatMap",
+  "HereOfflineMapJourneyPosition(",
+  "composition.navigationRoute.flatMap",
+  "model.selectedRoute?.id == navigationRoute.id",
+  "? navigationRoute",
+  "?? model.selectedRoute",
+  "route: route",
+  "position: position",
+  "followsPosition: model.navigationIsActive",
+]) || !containsInOrder(nativeMapHostReconcileCode, [
+  "composition.prepareMapSurface(",
+  "ownsSurface = true",
+  "mountedIdentity = identity",
+  "nativeView = view",
+  "composition.setMapJourneyProjection(journeyProjection)",
+])) {
+  failures.push("OfflineRoadJourneyView no longer mounts the reusable native host with selected route/current fix, or the host no longer queues projection immediately after owning the native surface");
+}
+if (!containsInOrder(canonicalItineraryBodyCode, [
+  "package.mode == .rail || package.mode == .vessel",
+  "OfflineNativeCoverageMapSurfaceHost(",
+  "mode: package.mode == .rail ? .rail : .vessel",
+  "family: .operational",
+  "journeyProjection: .serverCanonical(package)",
+])) {
+  failures.push("passive canonical offline itinerary no longer mounts signed Rail/Vessel geometry with the matching native style");
+}
+if (!containsInOrder(nativeSurfaceHostBodyCode, [
+  ".task(id: mountRequest)",
+  "mountModel.reconcile(",
+  "journeyProjection: journeyProjection",
+  ".task(id: appRadioSilenceEligibility)",
+  "reconcileAppRadioSilenceLease()",
+  ".onDisappear",
+  "mountModel.unmount()",
+  "releaseAppRadioSilenceLease()",
+]) || !containsInOrder(nativeSurfaceHostBlockingCode, [
+  "offlineSnapshot.connectivityPolicy == .radioSilent",
+  "offlineSnapshot.radioSilenceState == .enforced",
+  "guard AppRadioSilenceCoordinator.shared.isEnforced else",
+  "composition.installedCoverageTrustAvailable",
+  "offlineSnapshot.installedRegionsState.isCurrent",
+  "offlineSnapshot.installedRegions.contains(where: { $0.state.isUsableCoverage })",
+  "offlineSnapshot.availableCapabilities.contains(.detailedRendering)",
+]) || !containsInOrder(nativeSurfaceHostReconcileLeaseCode, [
+  "if appRadioSilenceEligibility",
+  "guard appRadioSilenceLease == nil else { return }",
+  "AppRadioSilenceCoordinator.shared.acquire(",
+  "reason: .offlineMapLibrary",
+  "else",
+  "releaseAppRadioSilenceLease()",
+]) || !containsInOrder(nativeSurfaceHostLeaseEligibilityCode, [
+  "acquiresAppRadioSilenceLease",
+  "offlineSnapshot.connectivityPolicy == .radioSilent",
+  "offlineSnapshot.radioSilenceState == .enforced",
+]) || !containsInOrder(nativeSurfaceHostReleaseLeaseCode, [
+  "guard let lease = appRadioSilenceLease else { return }",
+  "AppRadioSilenceCoordinator.shared.release(lease)",
+  "appRadioSilenceLease = nil",
+])) {
+  failures.push("reusable native map host no longer keeps lease ownership opt-in, restricts nested acquisition to an already enforced radio-silent snapshot, and blocks rendering until app/native enforcement are proven");
+}
+if (!mapLibraryCode.includes("acquiresAppRadioSilenceLease: Bool = false") ||
+    !mapLibraryCode.includes("acquiresAppRadioSilenceLease: true") ||
+    roadNativeJourneyMapCode.includes("acquiresAppRadioSilenceLease: true") ||
+    canonicalItineraryBodyCode.includes("acquiresAppRadioSilenceLease: true")) {
+  failures.push("native map lease ownership no longer remains explicit for the library preview while Road uses its parent lease and passive canonical fallback owns no lease");
+}
 const compositionTargetBound = exists(relative.productionComposition) &&
   projectInspector.sourceRegistered(relative.productionComposition) &&
   gitPathIsTrackedAndUnchanged(relative.productionComposition);
@@ -1340,14 +4540,137 @@ const compositionInstalledAtAppEntry =
 const approvedProductionComposition = compositionTargetBound && compositionInstalledAtAppEntry
   ? productionInstallCode
   : "";
+if (!containsInOrder(mapSurfacePrepareCode, [
+  "snapshot.connectivityPolicy == .radioSilent",
+  "snapshot.radioSilenceState == .enforced",
+  "installedCoverageTrustAvailable",
+  "snapshot.installedRegionsState.isCurrent",
+  "state.isUsableCoverage",
+  ".detailedRendering",
+  "mapSurfaceLeaseState.reserve",
+  "mapSurface.prepare",
+])) {
+  failures.push("native map preparation does not enforce radio silence, signed usable coverage, rendering capability, and lease ownership in one function body");
+}
+if (!containsInOrder(canonicalDownloadCode, [
+  "subject.validate()",
+  "principal.scope(for: subject)",
+  "transport.getOfflinePackage(subject: subject)",
+  "Self.validatedEnvelope(wireEnvelope)",
+  "Self.validateSignedPayload(",
+  "expectedScope: expectedScope",
+  "expectedMode: subject.expectedRouteMode",
+])) {
+  failures.push("canonical route download no longer validates the signed payload against the authenticated principal scope and freight mode");
+}
+if (!containsInOrder(canonicalReadCode, [
+  "subject.validate()",
+  "principal.scope(for: subject)",
+  "maximumServerObservationAge: Self.maximumServerObservationAge",
+  "composition.observeCanonicalRoute(",
+  "package.scope == scope",
+  "package.mode == subject.expectedRouteMode",
+])) {
+  failures.push("canonical offline route read no longer binds freshness, scope, and mode in its executable function body");
+}
+const railSecureAccountRechecks = (
+  railSecureCode.match(/session\.user\?\.id\s*==\s*authenticatedUser\.id/g) ?? []
+).length;
+const vesselSecureAccountRechecks = (
+  vesselSecureCode.match(/session\.user\?\.id\s*==\s*authenticatedUser\.id/g) ?? []
+).length;
+if (!containsInOrder(railSecureCode, [
+  "CanonicalRoutePlanClient().download(",
+  "subject: .railShipment",
+  "composition.ingestCanonicalRoutePlan(",
+]) || railSecureAccountRechecks < 2 ||
+    !containsInOrder(railRestoreCode, [
+      "CanonicalRouteOfflineReader(",
+      ".freshPackage(",
+      "subject: .railShipment",
+      "session.user?.id == authenticatedUser.id",
+    ])) {
+  failures.push("Rail offline route caller no longer preserves account rechecks around signed download, ingest, and restore");
+}
+if (!containsInOrder(vesselSecureCode, [
+  "CanonicalRoutePlanClient().download(",
+  "subject: .vesselShipment",
+  "composition.ingestCanonicalRoutePlan(",
+]) || vesselSecureAccountRechecks < 2 ||
+    !containsInOrder(vesselRestoreCode, [
+      "CanonicalRouteOfflineReader(",
+      ".freshPackage(",
+      "subject: .vesselShipment",
+      "session.user?.id == authenticatedUser.id",
+    ])) {
+  failures.push("Vessel offline route caller no longer preserves account rechecks around signed download, ingest, and restore");
+}
+if (!containsInOrder(roadBindPrincipalCode, [
+  "composition.activatePrincipal(",
+  "tenantID: scope?.tenantID",
+  "userID: scope?.userID",
+  "activePrincipal == scope",
+  "composition.prepare()",
+])) {
+  failures.push("offline road journey no longer binds preparation to the exact signed-in tenant and user");
+}
+if (!containsInOrder(roadSearchCode, [
+  "locationProvider.freshFix()",
+  "requireCurrent(generation)",
+  "composition.searchOffline(",
+  "center: fix.coordinate",
+  "requireCurrent(generation)",
+])) {
+  failures.push("offline search no longer consumes a fresh precise fix in the active principal generation");
+}
+if (!containsInOrder(roadCalculateCode, [
+  "truckDraft.constraints()",
+  "locationProvider.freshFix()",
+  "requireCurrent(generation)",
+  "composition.calculateOfflineRoute(",
+  "coordinate: fix.coordinate",
+  "coordinate: destination.coordinate",
+  "mode: requestedMode",
+  "truckConstraints: constraints",
+  "signature == self.routeSignature",
+])) {
+  failures.push("offline road/truck routing no longer binds explicit constraints, fresh origin, selected destination, and input generation");
+}
+if (!containsInOrder(roadStartGuidanceCode, [
+  "selectedRouteMatchesInputs",
+  "operationBlockReason(requireGuidance: true)",
+  "composition.startNavigation(route: route)",
+  "requireCurrent(generation)",
+])) {
+  failures.push("offline guidance no longer rechecks route inputs and readiness before native start");
+}
 if (!compositionTargetBound || !compositionInstalledAtAppEntry || !productionInstallCode) {
   blockers.push("approved offline production composition is not target-bound and installed from the app entry point");
 }
-if (!/\bOfflineMapManagementView\s*\(/.test(settingsHostCode)) {
+if (!projectInspector.sourceRegistered(relative.settingsHost) ||
+    !/\bOfflineMapManagementView\s*\(/.test(settingsHostCode)) {
   blockers.push("offline map management has no target-bound Catalyst settings caller");
 }
-if (!/\bHereNavigateOfflineMapSurface\b/.test(mapHostCode) ||
-    !/\bHereNavigateOfflineMapSurface\b/.test(approvedProductionComposition)) {
+if (!projectInspector.sourceRegistered(relative.roadJourneyView) ||
+    !projectInspector.sourceRegistered(relative.mapLibraryView) ||
+    !/\bOfflineRoadJourneyView\s*\(/.test(mapLibraryCode)) {
+  blockers.push("offline road/truck journey has no target-bound map-library entry point");
+}
+if (!projectInspector.sourceRegistered(relative.driverEnRouteView) ||
+    !/\bOfflineRoadJourneyView\s*\(/.test(driverEnRouteCode) ||
+    !/\bOfflineDriverTurnBanner\s*\(/.test(driverEnRouteCode) ||
+    !/\.fullScreenCover\s*\(/.test(driverEnRouteCode)) {
+  blockers.push("offline road/truck journey has no target-bound Driver en-route entry and live guidance surface");
+}
+if (!projectInspector.sourceRegistered(relative.railRouteCaller) ||
+    !projectInspector.sourceRegistered(relative.vesselRouteCaller)) {
+  blockers.push("signed Rail/Vessel offline callers are not both registered in the application target");
+}
+if (!/\bOfflineNativeCoverageMapSurfaceHost\b/.test(mapLibraryCode) ||
+    !/\bprepareMapSurface\s*\(/.test(mapLibraryCode) ||
+    !/\bclearMapSurface\s*\(/.test(mapLibraryCode) ||
+    !/\bHereNavigateOfflineMapSurface\b/.test(approvedProductionComposition) ||
+    !/\bownerToken:\s*UUID\b/.test(productionCompositionCode)) {
   blockers.push("approved native offline map surface has no target-bound production mount");
 }
 if (!/\bCanonicalRoutePackageStore\s*\(/.test(approvedProductionComposition)) {
@@ -1357,20 +4680,26 @@ if (!/\bpurgeAllCachedRoutes\s*\(/.test(approvedProductionComposition)) {
   blockers.push("canonical route cache purge is not wired through the approved production composition");
 }
 if (!/\bOfflineSearchRequest\s*\(/.test(approvedProductionComposition) ||
-    !/\.searchOffline\s*\(/.test(approvedProductionComposition)) {
+    !/\.searchOffline\s*\(/.test(approvedProductionComposition) ||
+    !/\bcomposition\.searchOffline\s*\(/.test(roadJourneyCode)) {
   blockers.push("offline search has no approved target-bound request/result caller");
 }
 if (!/\bOfflineRouteRequest\s*\(/.test(approvedProductionComposition) ||
-    !/\.calculateOfflineRoute\s*\(/.test(approvedProductionComposition)) {
+    !/\.calculateOfflineRoute\s*\(/.test(approvedProductionComposition) ||
+    !/\bcomposition\.calculateOfflineRoute\s*\(/.test(roadJourneyCode)) {
   blockers.push("offline road/truck routing has no approved target-bound caller");
 }
 if (!/\bmakeNavigationSession\s*\(/.test(approvedProductionComposition) ||
     !/\.start\s*\(\s*route:/.test(approvedProductionComposition) ||
-    !/\.stop\s*\(/.test(approvedProductionComposition)) {
+    !/\.stop\s*\(/.test(approvedProductionComposition) ||
+    !/\bcomposition\.startNavigation\s*\(\s*route:/.test(roadJourneyCode) ||
+    !/\bcomposition\.stopNavigation\s*\(/.test(roadJourneyCode)) {
   blockers.push("offline navigation start/stop has no approved target-bound lifecycle owner");
 }
 if (!/\bOfflineDeviceLocationSample\s*\(/.test(approvedProductionComposition) ||
-    !/\.feed\s*\(\s*location:/.test(approvedProductionComposition)) {
+    !/\.feed\s*\(\s*location:/.test(approvedProductionComposition) ||
+    !/\bkCLLocationAccuracyBestForNavigation\b/.test(roadJourneyCode) ||
+    !/\baccuracyAuthorization\s*==\s*\.fullAccuracy\b/.test(roadJourneyCode)) {
   blockers.push("device GNSS samples are not wired through the approved production composition");
 }
 if (!/\.coverageChanged\s*\(/.test(approvedProductionComposition) ||
@@ -1380,8 +4709,15 @@ if (!/\.coverageChanged\s*\(/.test(approvedProductionComposition) ||
 if (!/\bHereNavigationVoicePolicy\s*\(/.test(approvedProductionComposition)) {
   blockers.push("device-local offline voice policy has no approved target-bound caller");
 }
+const installedCoverageProductionCode = [
+  approvedProductionComposition,
+  exists(relative.coverageAdapter) ? swiftCodeOnly(read(relative.coverageAdapter)) : "",
+  exists(relative.navigateEngine) ? swiftCodeOnly(read(relative.navigateEngine)) : "",
+  exists(relative.navigation) ? swiftCodeOnly(read(relative.navigation)) : "",
+].join("\n");
 if (!/\bSignedInstalledCoverageResolver\s*\(/.test(approvedProductionComposition) ||
-    !/\.resolveInstalledCoverage\s*\(/.test(approvedProductionComposition)) {
+    !/\.resolveInstalledCoverage\s*\(/.test(installedCoverageProductionCode) ||
+    !/\bcurrentHEREInstalledRegionInventory\s*\(/.test(installedCoverageProductionCode)) {
   blockers.push("signed installed-region coverage resolver has no approved production adapter/caller");
 }
 
@@ -1929,7 +5265,7 @@ const builtNavigateCredentials = [];
 if (!builtAppPath || !fs.existsSync(builtAppPath) ||
     !fs.lstatSync(builtAppPath).isDirectory() || fs.lstatSync(builtAppPath).isSymbolicLink()) {
   blockers.push("built EusoTrip.app artifact was not supplied with --built-app=/absolute/path");
-} else if (manifest && styleManifest) {
+} else if (manifest && styleManifest && coverageTrust) {
   try {
     const appInfoPath = path.join(builtAppPath, "Info.plist");
     const appInfoMetadata = fs.lstatSync(appInfoPath);
@@ -2040,6 +5376,39 @@ if (!builtAppPath || !fs.existsSync(builtAppPath) ||
     failures.push("built EusoTrip.app must contain exactly one runtime style manifest at the bundle root");
   } else if (sha256(bundledStyleManifests[0]) !== sha256(absolute(relative.styleManifest))) {
     failures.push("built runtime style manifest differs from the approved source manifest");
+  }
+  const expectedBundledCoverageTrust = path.join(
+    builtAppPath,
+    path.basename(relative.coverageTrust),
+  );
+  const bundledCoverageTrustDocuments = productFiles.filter(file =>
+    path.basename(file) === path.basename(relative.coverageTrust));
+  if (bundledCoverageTrustDocuments.length !== 1 ||
+      path.resolve(bundledCoverageTrustDocuments[0]) !==
+        path.resolve(expectedBundledCoverageTrust)) {
+    failures.push("built EusoTrip.app must contain exactly one installed-coverage trust document at the bundle root");
+  } else if (sha256(bundledCoverageTrustDocuments[0]) !==
+             sha256(absolute(relative.coverageTrust))) {
+    failures.push("built installed-coverage trust document differs from the approved source document");
+  }
+  if (coverageTrust.status === "approved") {
+    const coverageManifestRelative =
+      `${relative.offlineRoot}/${coverageTrust.initialSignedManifestResource}`;
+    const expectedBundledCoverageManifest = path.join(
+      builtAppPath,
+      coverageTrust.initialSignedManifestResource,
+    );
+    const bundledCoverageManifests = productFiles.filter(file =>
+      path.basename(file) === coverageTrust.initialSignedManifestResource);
+    if (bundledCoverageManifests.length !== 1 ||
+        path.resolve(bundledCoverageManifests[0]) !==
+          path.resolve(expectedBundledCoverageManifest)) {
+      failures.push("built EusoTrip.app must contain exactly one approved signed installed-coverage manifest at the bundle root");
+    } else if (exists(coverageManifestRelative) &&
+               sha256(bundledCoverageManifests[0]) !==
+                 sha256(absolute(coverageManifestRelative))) {
+      failures.push("built signed installed-coverage manifest differs from the approved source manifest");
+    }
   }
   for (const entry of styleManifest.entries) {
     const basename = path.basename(entry.relativePath);
