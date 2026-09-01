@@ -79,8 +79,10 @@ RELEASE_CONFIG_ATTESTATION_PATH="$(canonical_private_file "$EUSOTRIP_RELEASE_CON
 RELEASE_CONFIG_ATTESTATION_SHA256="$(
   node "${PROJECT_ROOT}/scripts/verify-release-config-attestation.mjs" \
     --file="$RELEASE_CONFIG_ATTESTATION_PATH" \
+    --xcconfig="$RELEASE_XCCONFIG_PATH" \
     --expected-team="$HERE_OFFLINE_EXPECTED_TEAM_ID"
 )"
+RELEASE_XCCONFIG_SHA256="$(node "${PROJECT_ROOT}/scripts/hash-release-artifact.mjs" --path="$RELEASE_XCCONFIG_PATH")"
 
 private_file_snapshot() {
   local candidate="$1"
@@ -114,19 +116,46 @@ if [[ ! "$EUSOTRIP_APPROVED_RELEASE_COMMIT" =~ ^[a-f0-9]{40}$ || "$SOURCE_COMMIT
   echo "ERROR: HEAD does not match the immutable commit approved by the release authority." >&2
   exit 1
 fi
+node --test "${PROJECT_ROOT}/scripts/verify-reachable-here-credential-history.test.mjs"
+node "${PROJECT_ROOT}/scripts/verify-reachable-here-credential-history.mjs" \
+  --repository="$PROJECT_ROOT"
+assert_source_unchanged() {
+  if [[ "$(git rev-parse HEAD)" != "$SOURCE_COMMIT" ||
+        "$(git rev-parse 'HEAD^{tree}')" != "$SOURCE_TREE" ||
+        -n "$(git status --porcelain --untracked-files=normal)" ]]; then
+    echo "ERROR: Release source changed after its immutable identity was recorded." >&2
+    exit 1
+  fi
+}
 RELEASE_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 GITHUB_RELEASE_REPOSITORY="diegoenterprises/eusotrip-ios"
 GITHUB_RELEASE_BRANCH="main"
 GITHUB_RELEASE_REQUIRED_CHECK="HERE Offline Source Contract"
 GITHUB_RELEASE_ENVIRONMENT="here-offline-release"
-node "${PROJECT_ROOT}/scripts/verify-github-release-governance.mjs" \
-  --repository="$GITHUB_RELEASE_REPOSITORY" \
-  --branch="$GITHUB_RELEASE_BRANCH" \
-  --commit="$SOURCE_COMMIT" \
-  --required-check="$GITHUB_RELEASE_REQUIRED_CHECK" \
-  --environment="$GITHUB_RELEASE_ENVIRONMENT"
-GITHUB_GOVERNANCE_VERIFIED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+verify_github_governance() {
+  local receipt parsed
+  receipt="$(node "${PROJECT_ROOT}/scripts/verify-github-release-governance.mjs" \
+    --repository="$GITHUB_RELEASE_REPOSITORY" \
+    --branch="$GITHUB_RELEASE_BRANCH" \
+    --commit="$SOURCE_COMMIT" \
+    --required-check="$GITHUB_RELEASE_REQUIRED_CHECK" \
+    --environment="$GITHUB_RELEASE_ENVIRONMENT" \
+    --json)"
+  parsed="$(GITHUB_GOVERNANCE_RECEIPT_VALUE="$receipt" node --input-type=module <<'NODE'
+const receipt = JSON.parse(process.env.GITHUB_GOVERNANCE_RECEIPT_VALUE);
+if (!Number.isSafeInteger(receipt.deploymentId) || receipt.deploymentId <= 0 ||
+    !Number.isSafeInteger(receipt.deploymentStatusId) || receipt.deploymentStatusId <= 0) {
+  throw new Error("GitHub governance receipt lacks exact deployment identities");
+}
+process.stdout.write(`${receipt.deploymentId}\t${receipt.deploymentStatusId}`);
+NODE
+)"
+  IFS=$'\t' read -r GITHUB_ENVIRONMENT_DEPLOYMENT_ID GITHUB_ENVIRONMENT_DEPLOYMENT_STATUS_ID <<<"$parsed"
+  GITHUB_GOVERNANCE_VERIFIED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+verify_github_governance
 
+assert_source_unchanged
 assert_release_config_unchanged
 BUILD_SETTINGS="$(xcodebuild -project EusoTrip.xcodeproj -scheme EusoTrip -configuration Release -xcconfig "$RELEASE_XCCONFIG_PATH" -showBuildSettings)"
 assert_release_config_unchanged
@@ -223,12 +252,15 @@ write_ladder() {
   LADDER_SOURCE_TREE_VALUE="$SOURCE_TREE" \
   LADDER_CONFIG_ATTESTATION_PATH_VALUE="$RELEASE_CONFIG_ATTESTATION_PATH" \
   LADDER_CONFIG_ATTESTATION_HASH_VALUE="$RELEASE_CONFIG_ATTESTATION_SHA256" \
+  LADDER_XCCONFIG_HASH_VALUE="$RELEASE_XCCONFIG_SHA256" \
   LADDER_STARTED_AT_VALUE="$RELEASE_STARTED_AT" \
   LADDER_GITHUB_REPOSITORY_VALUE="$GITHUB_RELEASE_REPOSITORY" \
   LADDER_GITHUB_BRANCH_VALUE="$GITHUB_RELEASE_BRANCH" \
   LADDER_GITHUB_CHECK_VALUE="$GITHUB_RELEASE_REQUIRED_CHECK" \
   LADDER_GITHUB_ENVIRONMENT_VALUE="$GITHUB_RELEASE_ENVIRONMENT" \
   LADDER_GITHUB_VERIFIED_AT_VALUE="$GITHUB_GOVERNANCE_VERIFIED_AT" \
+  LADDER_GITHUB_DEPLOYMENT_ID_VALUE="$GITHUB_ENVIRONMENT_DEPLOYMENT_ID" \
+  LADDER_GITHUB_DEPLOYMENT_STATUS_ID_VALUE="$GITHUB_ENVIRONMENT_DEPLOYMENT_STATUS_ID" \
   LADDER_RELEASE_ROOT_VALUE="$RELEASE_ROOT" \
   LADDER_ARCHIVE_PATH_VALUE="$ARCHIVE_PATH" \
   LADDER_ARCHIVE_APP_PATH_VALUE="${ARCHIVED_APP_PATH:-}" \
@@ -260,12 +292,15 @@ const ladder = {
   sourceTree: process.env.LADDER_SOURCE_TREE_VALUE,
   releaseConfigAttestationPath: process.env.LADDER_CONFIG_ATTESTATION_PATH_VALUE,
   releaseConfigAttestationSha256: process.env.LADDER_CONFIG_ATTESTATION_HASH_VALUE,
+  releaseXcconfigSha256: process.env.LADDER_XCCONFIG_HASH_VALUE,
   releaseStartedAt: process.env.LADDER_STARTED_AT_VALUE,
   githubRepository: process.env.LADDER_GITHUB_REPOSITORY_VALUE,
   githubBranch: process.env.LADDER_GITHUB_BRANCH_VALUE,
   githubRequiredCheck: process.env.LADDER_GITHUB_CHECK_VALUE,
   githubReleaseEnvironment: process.env.LADDER_GITHUB_ENVIRONMENT_VALUE,
   githubGovernanceVerifiedAt: process.env.LADDER_GITHUB_VERIFIED_AT_VALUE,
+  githubEnvironmentDeploymentId: Number(process.env.LADDER_GITHUB_DEPLOYMENT_ID_VALUE),
+  githubEnvironmentDeploymentStatusId: Number(process.env.LADDER_GITHUB_DEPLOYMENT_STATUS_ID_VALUE),
   releaseRoot: process.env.LADDER_RELEASE_ROOT_VALUE,
   archivePath: process.env.LADDER_ARCHIVE_PATH_VALUE,
   archiveAppPath: optional("LADDER_ARCHIVE_APP_PATH_VALUE"),
@@ -322,8 +357,10 @@ echo "Release workspace: ${RELEASE_ROOT}"
 # substituted HERE artifacts before we spend an archive or App Store upload.
 trap 'mark_failed_step offline_contract' ERR
 node "${PROJECT_ROOT}/scripts/here-production-gate.mjs"
+node --test "${PROJECT_ROOT}/scripts/asc-latest-build.test.mjs"
 node "${PROJECT_ROOT}/scripts/preflight-exported-ipa.test.mjs"
 node "${PROJECT_ROOT}/scripts/hash-release-artifact.test.mjs"
+node "${PROJECT_ROOT}/scripts/verify-exported-ipa-app-binding.test.mjs"
 node "${PROJECT_ROOT}/scripts/select-available-ios-simulator.test.mjs"
 node "${PROJECT_ROOT}/scripts/release-ladder-status.test.mjs"
 node "${PROJECT_ROOT}/scripts/asc-build-status.test.mjs"
@@ -342,6 +379,7 @@ else
   })"
 fi
 trap 'mark_failed_step offline_tests' ERR
+assert_source_unchanged
 assert_release_config_unchanged
 xcodebuild test \
   -project EusoTrip.xcodeproj \
@@ -354,11 +392,13 @@ xcodebuild test \
   -parallel-testing-enabled NO \
   CODE_SIGNING_ALLOWED=NO
 trap - ERR
+assert_source_unchanged
 assert_release_config_unchanged
 LADDER_TESTED="pass"
 write_ladder
 
 trap 'mark_failed_step archive' ERR
+assert_source_unchanged
 assert_release_config_unchanged
 xcodebuild \
   -project EusoTrip.xcodeproj \
@@ -376,6 +416,7 @@ xcodebuild \
   MARKETING_VERSION="$VERSION" \
   archive
 trap - ERR
+assert_source_unchanged
 assert_release_config_unchanged
 LADDER_COMPILED="pass"
 LADDER_ARCHIVED="pass"
@@ -411,6 +452,7 @@ LADDER_HERE_OFFLINE_CONTRACT="pending"
 write_ladder
 
 trap 'mark_failed_step export' ERR
+assert_source_unchanged
 assert_release_config_unchanged
 xcodebuild \
   -exportArchive \
@@ -422,6 +464,7 @@ xcodebuild \
   -authenticationKeyIssuerID "$ASC_API_KEY_ISSUER" \
   -allowProvisioningUpdates
 trap - ERR
+assert_source_unchanged
 assert_release_config_unchanged
 LADDER_EXPORTED="pass"
 write_ladder
@@ -476,11 +519,25 @@ EXPORTED_IPA_SHA256="$(
 EXPORTED_APP_TREE_SHA256="$(
   node "${PROJECT_ROOT}/scripts/hash-release-artifact.mjs" --path="$EXPORTED_APP_PATH"
 )"
+node "${PROJECT_ROOT}/scripts/verify-exported-ipa-app-binding.mjs" \
+  --ipa="$EXPORTED_IPA_PATH" \
+  --ipa-sha256="$EXPORTED_IPA_SHA256" \
+  --app-tree-sha256="$EXPORTED_APP_TREE_SHA256"
 LADDER_HERE_OFFLINE_CONTRACT="pass"
 write_ladder
 
 trap 'mark_failed_step upload' ERR
+assert_source_unchanged
 assert_release_config_unchanged
+verify_github_governance
+assert_source_unchanged
+assert_release_config_unchanged
+if [[ "$(node "${PROJECT_ROOT}/scripts/hash-release-artifact.mjs" --path="$EXPORTED_IPA_PATH")" != "$EXPORTED_IPA_SHA256" ||
+      "$(node "${PROJECT_ROOT}/scripts/hash-release-artifact.mjs" --path="$EXPORTED_APP_PATH")" != "$EXPORTED_APP_TREE_SHA256" ]]; then
+  echo "ERROR: Exported release artifacts changed before upload." >&2
+  exit 1
+fi
+write_ladder
 API_PRIVATE_KEYS_DIR="$(dirname "$ASC_API_KEY_PATH")" xcrun altool \
   --upload-app \
   --type ios \
