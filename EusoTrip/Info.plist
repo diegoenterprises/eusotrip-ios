@@ -149,9 +149,16 @@
 		     EusoTripApp+WatchBridge registers a handler for it. -->
 		<string>com.eusotrip.esang.activate</string>
 	</array>
-	<!-- Referrer-restricted Maps JS key only. HERE REST credentials remain
-	     server-side and are never packaged in the application bundle. -->
+	<!-- Referrer-restricted Maps JS key. This powers the online WKWebView map
+	     only and cannot initialize HERE SDK Navigate. -->
 	<key>HEREJSApiKey</key>
 	<string>$(HERE_JS_API_KEY)</string>
+	<!-- Dedicated HERE SDK Navigate mobile credentials. Values come from the
+	     gitignored EusoTrip.xcconfig and must never be committed or logged.
+	     The runtime rejects empty and unsubstituted values. -->
+	<key>HERESDKAccessKeyID</key>
+	<string>$(HERE_SDK_ACCESS_KEY_ID)</string>
+	<key>HERESDKAccessKeySecret</key>
+	<string>$(HERE_SDK_ACCESS_KEY_SECRET)</string>
 </dict>
 </plist>

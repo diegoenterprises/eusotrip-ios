@@ -306,7 +306,7 @@ private struct ExportDeleteBody: View {
                     .textFieldStyle(.plain)
                     .padding(.horizontal, 10).padding(.vertical, 8)
                     .background(palette.bgCard.opacity(0.6))
-                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(palette.stroke, lineWidth: 1))
+                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 HStack(spacing: 8) {
                     Button { Task { await decide(row.importId, approve: true) } } label: {

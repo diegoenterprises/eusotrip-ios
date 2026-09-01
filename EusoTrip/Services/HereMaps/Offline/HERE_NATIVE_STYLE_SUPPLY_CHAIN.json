@@ -1,0 +1,31 @@
+{
+  "format": "HERE Style Editor native JSON or ZIP",
+  "status": "awaiting_native_exports",
+  "provenance": {
+    "source": "HERE Style Editor",
+    "projectID": null,
+    "exportedAt": null,
+    "approvedBy": null,
+    "approvedAt": null
+  },
+  "entries": [
+    { "mode": "truck", "family": "operational", "theme": "light", "relativePath": "EusoTrip/Resources/HEREStyles/truck-operational-light.zip", "sha256": null },
+    { "mode": "truck", "family": "operational", "theme": "dark", "relativePath": "EusoTrip/Resources/HEREStyles/truck-operational-dark.zip", "sha256": null },
+    { "mode": "truck", "family": "navigation", "theme": "light", "relativePath": "EusoTrip/Resources/HEREStyles/truck-navigation-light.zip", "sha256": null },
+    { "mode": "truck", "family": "navigation", "theme": "dark", "relativePath": "EusoTrip/Resources/HEREStyles/truck-navigation-dark.zip", "sha256": null },
+    { "mode": "truck", "family": "terrain", "theme": "light", "relativePath": "EusoTrip/Resources/HEREStyles/truck-terrain-light.zip", "sha256": null },
+    { "mode": "truck", "family": "terrain", "theme": "dark", "relativePath": "EusoTrip/Resources/HEREStyles/truck-terrain-dark.zip", "sha256": null },
+    { "mode": "rail", "family": "operational", "theme": "light", "relativePath": "EusoTrip/Resources/HEREStyles/rail-operational-light.zip", "sha256": null },
+    { "mode": "rail", "family": "operational", "theme": "dark", "relativePath": "EusoTrip/Resources/HEREStyles/rail-operational-dark.zip", "sha256": null },
+    { "mode": "rail", "family": "navigation", "theme": "light", "relativePath": "EusoTrip/Resources/HEREStyles/rail-navigation-light.zip", "sha256": null },
+    { "mode": "rail", "family": "navigation", "theme": "dark", "relativePath": "EusoTrip/Resources/HEREStyles/rail-navigation-dark.zip", "sha256": null },
+    { "mode": "rail", "family": "terrain", "theme": "light", "relativePath": "EusoTrip/Resources/HEREStyles/rail-terrain-light.zip", "sha256": null },
+    { "mode": "rail", "family": "terrain", "theme": "dark", "relativePath": "EusoTrip/Resources/HEREStyles/rail-terrain-dark.zip", "sha256": null },
+    { "mode": "vessel", "family": "operational", "theme": "light", "relativePath": "EusoTrip/Resources/HEREStyles/vessel-operational-light.zip", "sha256": null },
+    { "mode": "vessel", "family": "operational", "theme": "dark", "relativePath": "EusoTrip/Resources/HEREStyles/vessel-operational-dark.zip", "sha256": null },
+    { "mode": "vessel", "family": "navigation", "theme": "light", "relativePath": "EusoTrip/Resources/HEREStyles/vessel-navigation-light.zip", "sha256": null },
+    { "mode": "vessel", "family": "navigation", "theme": "dark", "relativePath": "EusoTrip/Resources/HEREStyles/vessel-navigation-dark.zip", "sha256": null },
+    { "mode": "vessel", "family": "terrain", "theme": "light", "relativePath": "EusoTrip/Resources/HEREStyles/vessel-terrain-light.zip", "sha256": null },
+    { "mode": "vessel", "family": "terrain", "theme": "dark", "relativePath": "EusoTrip/Resources/HEREStyles/vessel-terrain-dark.zip", "sha256": null }
+  ]
+}

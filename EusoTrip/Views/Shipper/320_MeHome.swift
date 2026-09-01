@@ -570,7 +570,7 @@ private struct MeHubBody: View {
         let sectionID = sectionAnchor(section)
         let isExpanded = expandedSection == sectionID
 
-        LifecycleCard {
+        return LifecycleCard {
             Button {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     expandedSection = isExpanded ? "" : sectionID
@@ -800,7 +800,7 @@ private struct MeSettingsHubBody: View {
         let sectionID = sectionAnchor(section)
         let isExpanded = expandedSection == sectionID
 
-        LifecycleCard {
+        return LifecycleCard {
             Button {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     expandedSection = isExpanded ? "" : sectionID

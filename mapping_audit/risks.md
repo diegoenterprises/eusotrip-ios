@@ -31,7 +31,7 @@ var platform = new H.service.Platform({ apikey: "<key>" });
 
 ## 3. **[HIGH]** Current apiKey may be leaked
 
-The live HERE apiKey `mC47DqcAl4_fs-jXWedMuPVTw8EYDcAkAwe7NG5NpaQ` appears in:
+The live HERE apiKey `[REMOVED: revoke in HERE portal]` appears in:
 
 - `EusoTrip.xcconfig:10` (should be gitignored — **verify**).
 - `EusoTrip/Services/HereMaps/HereMapsConfig.swift:10` (documentation comment — committed to source control).
@@ -85,8 +85,8 @@ The provided credential set includes `here.user.id` and `here.client.id` but nei
 ## 11. **[INFO]** HERE portal audit
 
 After the migration lands:
-1. Revoke the old apiKey `mC47DqcAl4_fs-jXWedMuPVTw8EYDcAkAwe7NG5NpaQ` at the HERE portal.
-2. Tag the new OAuth client `A8wYxsmwZBEqBIud1Jmc` with environment (prod / staging) and an owner contact.
+1. Revoke the old apiKey `[REMOVED: revoke in HERE portal]` at the HERE portal.
+2. Tag the new OAuth client `[REMOVED: rotate and reinject]` with environment (prod / staging) and an owner contact.
 3. Set per-API usage alerts (Routing and Tile are the biggest spenders in the current traffic profile).
 
 ---

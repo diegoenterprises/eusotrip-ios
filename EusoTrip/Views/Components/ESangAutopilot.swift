@@ -556,7 +556,7 @@ enum eSangRoleDispatcher {
         // Driver + the web-continuation-only roles have no push-nav
         // swap notification on iOS.
         case .driver, .safety, .factoring,
-             .railDispatch, .railConductor, .shipCaptain:
+             .railDispatch, .railConductor, .shipCaptain, .serviceProvider:
             return nil
         }
     }
@@ -575,7 +575,7 @@ enum eSangRoleDispatcher {
              .superAdmin, .dispatch, .compliance, .railEngineer, .vesselOperator:
             return .eusoRoleNavBack
         case .driver, .safety, .factoring,
-             .railDispatch, .railConductor, .shipCaptain:
+             .railDispatch, .railConductor, .shipCaptain, .serviceProvider:
             return nil
         }
     }
@@ -855,7 +855,7 @@ enum eSangRoleDispatcher {
         case .vesselOperator:
             return vesselScreen(for: surface, segs: segs)
         case .driver, .safety, .factoring,
-             .railDispatch, .railConductor, .shipCaptain:
+             .railDispatch, .railConductor, .shipCaptain, .serviceProvider:
             return nil
         }
     }

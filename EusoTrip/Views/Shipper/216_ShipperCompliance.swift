@@ -791,7 +791,7 @@ struct ShipperCompliance: View {
 
     private func creditCard(_ s: ShipperComplianceAPI.Summary) -> some View {
         let creditTracked = s.tracked?.credit == true
-        VStack(alignment: .leading, spacing: Space.s2) {
+        return VStack(alignment: .leading, spacing: Space.s2) {
             HStack(spacing: 6) {
                 Image(systemName: "creditcard.fill")
                     .font(.system(size: 12, weight: .heavy))

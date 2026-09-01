@@ -552,7 +552,7 @@ private struct DriverMeHubBody: View {
         let sectionID = sectionAnchor(section)
         let isExpanded = expandedSection == sectionID
 
-        LifecycleCard {
+        return LifecycleCard {
             Button {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     expandedSection = isExpanded ? "" : sectionID
@@ -842,7 +842,7 @@ private struct DriverMeSettingsHubBody: View {
         let sectionID = sectionAnchor(section)
         let isExpanded = expandedSection == sectionID
 
-        LifecycleCard {
+        return LifecycleCard {
             Button {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     expandedSection = isExpanded ? "" : sectionID

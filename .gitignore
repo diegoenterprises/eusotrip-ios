@@ -13,6 +13,13 @@ AuthKey_*.p8
 *.p8
 asc_feedback_latest.log
 
+# Licensed HERE Navigate package — provision from the approved vendor archive
+# and verify against the offline supply-chain manifest before each release.
+Vendor/HERE/*.zip
+Vendor/HERE/heresdk.xcframework/
+.build_copy.log
+.build_copy2.log
+
 # Local App Store Connect feedback cache
 tmp/asc/
 .asc/

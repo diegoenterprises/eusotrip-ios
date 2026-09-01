@@ -1,0 +1,16 @@
+{
+  "approvedVersion": "4.27.2.0",
+  "archiveSHA256": null,
+  "frameworkTreeSHA256": null,
+  "legalNoticeSHA256": null,
+  "archiveRelativePath": "Vendor/HERE/heresdk-4.27.2.0-ios.zip",
+  "frameworkRelativePath": "Vendor/HERE/heresdk.xcframework",
+  "legalNoticeResource": "EusoTrip/Resources/HERE_NOTICE",
+  "status": "awaiting_vendor_package",
+  "provenance": {
+    "sourceURL": null,
+    "receivedAt": null,
+    "approvedBy": null,
+    "approvedAt": null
+  }
+}

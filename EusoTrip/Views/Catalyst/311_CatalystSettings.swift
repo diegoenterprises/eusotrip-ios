@@ -666,16 +666,16 @@ private struct SettingsBody: View {
         do {
             let response: AppSettings = try await EusoTripAPI.shared.queryNoInput("settings.getSettings")
             guard let notifications = response.notifications,
-                  let tenderAwarded = notifications.tenderAwarded,
-                  let lifecycleStage = notifications.lifecycleStage,
-                  let dvirHosAlerts = notifications.dvirHosAlerts else {
+                  let serverTenderAwarded = notifications.tenderAwarded,
+                  let serverLifecycleStage = notifications.lifecycleStage,
+                  let serverDvirHosAlerts = notifications.dvirHosAlerts else {
                 throw CatalystSettingsFailure.incompleteNotificationContract
             }
             settings = response
             let snapshot = CatalystNotificationSnapshot(
-                tenderAwarded: tenderAwarded,
-                lifecycleStage: lifecycleStage,
-                dvirHosAlerts: dvirHosAlerts
+                tenderAwarded: serverTenderAwarded,
+                lifecycleStage: serverLifecycleStage,
+                dvirHosAlerts: serverDvirHosAlerts
             )
             applyingServerSettings = true
             tenderAwarded = snapshot.tenderAwarded
