@@ -153,6 +153,11 @@ enum OfflineNavigationEvent: Equatable, Sendable {
     case arrived(Date)
 }
 
+enum OfflineNavigationAudioInterruption: Equatable, Sendable {
+    case began
+    case ended(shouldResume: Bool)
+}
+
 typealias OfflineNavigationEventHandler = @Sendable (OfflineNavigationEvent) -> Void
 
 protocol OfflineNavigationSessionProviding: Sendable {
@@ -167,5 +172,6 @@ protocol OfflineNavigationSessionProviding: Sendable {
     ) async throws
 
     func feed(location: OfflineDeviceLocationSample) async throws
+    func handleAudioInterruption(_ interruption: OfflineNavigationAudioInterruption) async
     func stop() async
 }

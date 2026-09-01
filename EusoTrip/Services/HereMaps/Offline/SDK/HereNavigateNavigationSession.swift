@@ -240,6 +240,74 @@ struct HereNavigationRerouteCommitBoundary: Equatable, Sendable {
     }
 }
 
+enum HereNavigationInterruptionAction: Equatable, Sendable {
+    case none
+    case pauseAndMute
+    case prepareAudioAndAwaitFreshLocation
+    case remainPaused
+}
+
+struct HereNavigationInterruptionBoundary: Equatable, Sendable {
+    private enum State: Equatable, Sendable {
+        case clear
+        case interrupted
+        case awaitingFreshLocation(notBefore: Date)
+        case resumeDenied
+    }
+
+    private var state: State = .clear
+
+    var blocksNativeCallbacks: Bool {
+        state != .clear
+    }
+
+    var isAwaitingFreshLocation: Bool {
+        if case .awaitingFreshLocation = state { return true }
+        return false
+    }
+
+    mutating func receive(
+        _ interruption: OfflineNavigationAudioInterruption,
+        sessionIsActive: Bool,
+        now: Date = Date()
+    ) -> HereNavigationInterruptionAction {
+        guard sessionIsActive else {
+            state = .clear
+            return .none
+        }
+
+        switch interruption {
+        case .began:
+            guard state != .interrupted else { return .none }
+            state = .interrupted
+            return .pauseAndMute
+        case .ended(let shouldResume):
+            guard state == .interrupted else { return .none }
+            guard shouldResume else {
+                state = .resumeDenied
+                return .remainPaused
+            }
+            state = .awaitingFreshLocation(notBefore: now)
+            return .prepareAudioAndAwaitFreshLocation
+        }
+    }
+
+    mutating func rejectResume() {
+        state = .resumeDenied
+    }
+
+    mutating func acceptFreshLocation(observedAt: Date) -> Bool {
+        guard case .awaitingFreshLocation(let notBefore) = state,
+              observedAt >= notBefore else { return false }
+        state = .clear
+        return true
+    }
+
+    mutating func reset() {
+        state = .clear
+    }
+}
+
 enum HereNavigationNativeCallbackKind: CaseIterable, Equatable, Sendable {
     case eventText
     case progress
@@ -557,11 +625,13 @@ actor HereNavigateNavigationSession: OfflineNavigationSessionProviding {
     private var deviationSamples = 0
     private var rerouteInFlight = false
     private var rerouteGeneration: UUID?
+    private var activeRerouteWatchdog: HereFiniteCallbackWatchdog<Route>?
     private var pausedForRejectedLocation = false
     private var lastCoveredEvidence: OfflineInstalledCoverageEvidence?
     private var currentCoverage: OfflineNavigationCoverage = .unknown
     private var sessionGeneration: UUID?
     private var locationResolutionGeneration: UUID?
+    private var interruptionBoundary = HereNavigationInterruptionBoundary()
 
     init(
         routeStore: HereNativeRouteStore = .shared,
@@ -614,6 +684,7 @@ actor HereNavigateNavigationSession: OfflineNavigationSessionProviding {
         let startGeneration = UUID()
         sessionGeneration = startGeneration
         locationResolutionGeneration = nil
+        interruptionBoundary.reset()
         transition(.starting(routeID: route.id))
         guard route.mode == .road || route.mode == .truck else {
             try failAndThrow(
@@ -791,6 +862,7 @@ actor HereNavigateNavigationSession: OfflineNavigationSessionProviding {
         pausedForRejectedLocation = false
         lastCoveredEvidence = coverageEvidence(from: startingCoverage)
         currentCoverage = startingCoverage
+        interruptionBoundary.reset()
         timestampBoundary.reset()
 
         installNativeDelegates(on: navigator)
@@ -959,6 +1031,15 @@ actor HereNavigateNavigationSession: OfflineNavigationSessionProviding {
             eventHandler?(.coverageChanged(locationCoverage))
         }
 
+        let resumesAfterInterruption = interruptionBoundary.acceptFreshLocation(
+            observedAt: location.timestamp
+        )
+        if resumesAfterInterruption {
+            pausedForRejectedLocation = false
+            installNativeDelegates(on: navigator)
+            transition(.navigating(routeID: routeID, coverage: currentCoverage))
+        }
+
         var nativeLocation = Location(
             coordinates: GeoCoordinates(
                 latitude: location.coordinate.latitude,
@@ -970,9 +1051,88 @@ actor HereNavigateNavigationSession: OfflineNavigationSessionProviding {
         nativeLocation.speedInMetersPerSecond = location.speedMetersPerSecond
         nativeLocation.bearingInDegrees = location.courseDegrees
         navigator.onLocationUpdated(nativeLocation)
-        if pausedForRejectedLocation {
+        if pausedForRejectedLocation,
+           !interruptionBoundary.blocksNativeCallbacks {
             pausedForRejectedLocation = false
             transition(.navigating(routeID: routeID, coverage: currentCoverage))
+        }
+    }
+
+    func handleAudioInterruption(
+        _ interruption: OfflineNavigationAudioInterruption
+    ) async {
+        guard case .required = voicePolicy else { return }
+        let action = interruptionBoundary.receive(
+            interruption,
+            sessionIsActive: isActive
+        )
+        guard let routeID = activeRouteID else { return }
+
+        switch action {
+        case .none:
+            return
+        case .pauseAndMute:
+            activeRerouteWatchdog?.interrupt()
+            if let navigator {
+                invalidateNativeDelegates(on: navigator)
+            }
+            await stopPreparedVoiceOutput()
+            transition(
+                .paused(
+                    routeID: routeID,
+                    reason: "Audible guidance paused for a system audio interruption."
+                )
+            )
+        case .prepareAudioAndAwaitFreshLocation:
+            guard let recoveryGeneration = sessionGeneration else { return }
+            do {
+                try await prepareVoiceOutputAfterInterruption(
+                    expectedSessionGeneration: recoveryGeneration,
+                    expectedRouteID: routeID
+                )
+                guard sessionGeneration == recoveryGeneration,
+                      activeRouteID == routeID,
+                      isActive,
+                      interruptionBoundary.isAwaitingFreshLocation else {
+                    await stopPreparedVoiceOutput()
+                    return
+                }
+                transition(
+                    .paused(
+                        routeID: routeID,
+                        reason: "Audible guidance restored; waiting for a fresh verified location."
+                    )
+                )
+            } catch let failure as OfflineNavigationFailure {
+                guard sessionGeneration == recoveryGeneration,
+                      activeRouteID == routeID,
+                      isActive,
+                      interruptionBoundary.isAwaitingFreshLocation else { return }
+                interruptionBoundary.rejectResume()
+                transition(.paused(routeID: routeID, reason: failure.message))
+                eventHandler?(.inputRejected(failure))
+            } catch {
+                guard sessionGeneration == recoveryGeneration,
+                      activeRouteID == routeID,
+                      isActive,
+                      interruptionBoundary.isAwaitingFreshLocation else { return }
+                interruptionBoundary.rejectResume()
+                let failure = OfflineNavigationFailure(
+                    code: .nativeGuidanceUnavailable,
+                    message: "Offline voice guidance could not recover after the audio interruption.",
+                    recovery: "Select an audible output, then stop and restart guidance.",
+                    isRecoverable: true
+                )
+                transition(.paused(routeID: routeID, reason: failure.message))
+                eventHandler?(.inputRejected(failure))
+            }
+        case .remainPaused:
+            transition(
+                .paused(
+                    routeID: routeID,
+                    reason: "The system did not authorize automatic audio resumption."
+                )
+            )
         }
     }
 
@@ -1108,6 +1268,8 @@ actor HereNavigateNavigationSession: OfflineNavigationSessionProviding {
         sessionGeneration = nil
         locationResolutionGeneration = nil
         rerouteGeneration = nil
+        activeRerouteWatchdog?.interrupt()
+        activeRerouteWatchdog = nil
         await detachNativeGuidance()
         activeRouteID = nil
         activeMode = nil
@@ -1117,6 +1279,7 @@ actor HereNavigateNavigationSession: OfflineNavigationSessionProviding {
         pausedForRejectedLocation = false
         lastCoveredEvidence = nil
         currentCoverage = .unknown
+        interruptionBoundary.reset()
         timestampBoundary.reset()
         transition(.stopped(routeID: routeID, stoppedAt: Date()))
         eventHandler = nil
@@ -1135,6 +1298,7 @@ actor HereNavigateNavigationSession: OfflineNavigationSessionProviding {
         _ kind: HereNavigationNativeCallbackKind,
         generation: UUID
     ) -> Bool {
+        guard !interruptionBoundary.blocksNativeCallbacks else { return false }
         HereNavigationNativeCallbackBoundary.permits(
             kind,
             expectedGeneration: generation,
@@ -1262,28 +1426,58 @@ actor HereNavigateNavigationSession: OfflineNavigationSessionProviding {
         waypoint.headingInDegrees = native.deviation.currentLocation.mapMatchedLocation?.bearingInDegrees
             ?? native.deviation.currentLocation.originalLocation.bearingInDegrees
 
-        let result: Result<Route, OfflineNavigationFailure> = await withCheckedContinuation { continuation in
-            _ = routingEngine.returnToRoute(
-                native.originalRoute,
-                startingPoint: waypoint,
-                lastTraveledSectionIndex: native.deviation.lastTraveledSectionIndex,
-                traveledDistanceOnLastSectionInMeters: native.deviation.traveledDistanceOnLastSectionInMeters
-            ) { error, routes in
-                guard error == nil, let route = routes?.first else {
-                    continuation.resume(
-                        returning: .failure(
-                            OfflineNavigationFailure(
-                                code: .offlineRerouteFailed,
-                                message: "HERE could not return to the route using installed map data.",
-                                recovery: "Stop safely, install missing corridor maps, or retry from the last covered road.",
-                                isRecoverable: true
-                            )
-                        )
-                    )
-                    return
-                }
-                continuation.resume(returning: .success(route))
+        let watchdog = HereFiniteCallbackWatchdog<Route>(
+            timeout: 30,
+            timeoutFailure: {
+                OfflineNavigationFailure(
+                    code: .offlineRerouteFailed,
+                    message: "HERE offline rerouting did not return in time.",
+                    recovery: "Stop safely and retry after confirming the installed corridor.",
+                    isRecoverable: true
+                )
             }
+        )
+        activeRerouteWatchdog = watchdog
+        let rerouteTask = routingEngine.returnToRoute(
+            native.originalRoute,
+            startingPoint: waypoint,
+            lastTraveledSectionIndex: native.deviation.lastTraveledSectionIndex,
+            traveledDistanceOnLastSectionInMeters: native.deviation.traveledDistanceOnLastSectionInMeters
+        ) { error, routes in
+            guard error == nil, let route = routes?.first else {
+                watchdog.fail(
+                    OfflineNavigationFailure(
+                        code: .offlineRerouteFailed,
+                        message: "HERE could not return to the route using installed map data.",
+                        recovery: "Stop safely, install missing corridor maps, or retry from the last covered road.",
+                        isRecoverable: true
+                    )
+                )
+                return
+            }
+            watchdog.succeed(route)
+        }
+        let result: Result<Route, OfflineNavigationFailure>
+        do {
+            result = .success(
+                try await watchdog.wait {
+                    rerouteTask.cancel()
+                }
+            )
+        } catch let failure as OfflineNavigationFailure {
+            result = .failure(failure)
+        } catch {
+            result = .failure(
+                OfflineNavigationFailure(
+                    code: .offlineRerouteFailed,
+                    message: "HERE offline rerouting was interrupted.",
+                    recovery: "Stop safely and retry from a fresh covered location.",
+                    isRecoverable: true
+                )
+            )
+        }
+        if activeRerouteWatchdog === watchdog {
+            activeRerouteWatchdog = nil
         }
 
         let admittedResult: Result<(Route, OfflineNavigationCoverage), OfflineNavigationFailure>
@@ -1406,6 +1600,67 @@ actor HereNavigateNavigationSession: OfflineNavigationSessionProviding {
         #endif
     }
 
+    private func prepareVoiceOutputAfterInterruption(
+        expectedSessionGeneration: UUID,
+        expectedRouteID: String
+    ) async throws {
+        switch voicePolicy {
+        case .disabled:
+            return
+        case .required(let localeIdentifier):
+            #if canImport(AVFoundation)
+            guard localeIdentifier.caseInsensitiveCompare("en-US") == .orderedSame,
+                  let output = await MainActor.run(body: {
+                      HereAVSpeechOfflineVoiceOutput.makeIfInstalled(
+                          localeIdentifier: localeIdentifier
+                      )
+                          .map { HereOfflineVoiceOutputBox(output: $0) }
+                  }) else {
+                throw OfflineNavigationFailure(
+                    code: .nativeGuidanceUnavailable,
+                    message: "The installed en-US voice is unavailable after the audio interruption.",
+                    recovery: "Install or select an en-US system voice, then restart guidance.",
+                    isRecoverable: true
+                )
+            }
+            let sessionID = UUID()
+            do {
+                try await MainActor.run {
+                    try output.output.prepareAudibleOutput(sessionID: sessionID)
+                }
+            } catch {
+                await MainActor.run {
+                    output.output.stop(sessionID: sessionID)
+                }
+                throw OfflineNavigationFailure(
+                    code: .nativeGuidanceUnavailable,
+                    message: "Offline voice guidance could not restore an audible output.",
+                    recovery: "Select an audio route, raise the volume, then restart guidance.",
+                    isRecoverable: true
+                )
+            }
+            guard sessionGeneration == expectedSessionGeneration,
+                  activeRouteID == expectedRouteID,
+                  isActive,
+                  interruptionBoundary.isAwaitingFreshLocation else {
+                await MainActor.run {
+                    output.output.stop(sessionID: sessionID)
+                }
+                throw CancellationError()
+            }
+            voiceOutput = output
+            voiceSessionID = sessionID
+            #else
+            throw OfflineNavigationFailure(
+                code: .nativeGuidanceUnavailable,
+                message: "Offline voice guidance cannot recover in this build.",
+                recovery: "Link AVFoundation and prove the release-approved voice output.",
+                isRecoverable: false
+            )
+            #endif
+        }
+    }
+
     private func invalidateNativeDelegates(on navigator: Navigator) {
         delegateGeneration = nil
         navigator.eventTextDelegate = nil
@@ -1441,10 +1696,13 @@ actor HereNavigateNavigationSession: OfflineNavigationSessionProviding {
         rerouteGeneration = nil
         sessionGeneration = nil
         locationResolutionGeneration = nil
+        activeRerouteWatchdog?.interrupt()
+        activeRerouteWatchdog = nil
         deviationSamples = 0
         pausedForRejectedLocation = false
         lastCoveredEvidence = nil
         currentCoverage = .unknown
+        interruptionBoundary.reset()
         timestampBoundary.reset()
         throw failure
     }
@@ -1491,6 +1749,12 @@ actor HereNavigateNavigationSession: OfflineNavigationSessionProviding {
         let failure = Self.missingFrameworkFailure
         state = .failed(routeID: nil, failure: failure)
         throw failure
+    }
+
+    func handleAudioInterruption(
+        _ interruption: OfflineNavigationAudioInterruption
+    ) async {
+        _ = interruption
     }
 
     func stop() async {

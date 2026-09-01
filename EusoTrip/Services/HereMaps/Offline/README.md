@@ -148,14 +148,20 @@ remediated from all Git refs through the approved secret-response process before
 any release claim. The
 nonsecret `security/HERE_CREDENTIAL_REMEDIATION.json` attestation intentionally
 remains unapproved until rotation, history cleanup, and a clean history-wide
-secret scan are independently approved. Finite HERE callbacks still require
-licensed-binary watchdog/cancellation and interruption proof. The
-device-acceptance ledger keeps this pending rather than allowing App Store
-Connect processing alone to mean release-ready.
-The public GitHub repository currently has no protected `main` or protected
-release environment. `verify-github-release-governance.mjs` now rejects release
-unless the exact commit is the protected `main` head, the app-bound HERE source
-check is green, stale/last-push review rules and admin enforcement are enabled,
+secret scan are independently approved. Finite HERE callbacks now share an
+exactly-once watchdog for native success, failure, inactivity timeout, task
+cancellation, and late-callback rejection. Transfer timeouts suspend while
+intentionally paused, background maintenance is paused and owner-matched on
+foreground recovery, and interrupted voice guidance requires both
+system-approved audio restoration and a fresh verified GNSS fix.
+Licensed-binary device tests still must prove those callback and interruption
+paths; release verification remains blocked until that evidence exists.
+The device-acceptance ledger keeps this pending rather than allowing App Store
+Connect processing alone to mean release-ready. The public GitHub repository
+currently has no protected `main` or protected release environment.
+`verify-github-release-governance.mjs` now rejects release unless the exact
+commit is the protected `main` head, the app-bound HERE source check is green,
+stale/last-push review rules and admin enforcement are enabled,
 force-push/deletion are disabled, and `here-offline-release` has independent
 reviewers with protected-branch-only deployment. Repository administration must
 enable those controls; a local environment variable cannot self-approve them.
