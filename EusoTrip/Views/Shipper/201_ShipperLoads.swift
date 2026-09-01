@@ -1,31 +1,58 @@
 //
 //  201_ShipperLoads.swift
-//  EusoTrip — Shipper · Loads (brick 201).
+//  EusoTrip — Shipper · Movement Register (201).
 //
-//  Parity-reconciled to `02 Shipper/Code/201_ShipperLoads.swift` per
-//  _PARITY_PROMPT_FOR_CODING_TEAM_2026-04-29.md. Wireframe canon
-//  applied: TopBar with right-side counter ("50 TOTAL · 12 ACTIVE"),
-//  IridescentHairline, search capsule + SORT button, 5-chip filter
-//  row with counts derived from `loads.getShipperSummary`, single
-//  dense list card with mode glyph + 8-stage lifecycle strip + status
-//  pill (kind-aware) + amount + rate-per-mile per row.
-//
-//  Real data preserved: `ShipperMyLoadsStore` (shippers.getMyLoads)
-//  drives the row set; `ShipperLoadsSummaryStore` (loads.getShipperSummary)
-//  drives chip counts + topline counter. Tap row → 205
-//  ShipperLoadDetail (existing binding preserved).
-//
-//  Persona canon (§11): Diego Usoro · Eusorone Technologies (companyId 1)
-//                        · MATRIX-50-2026-04-26.
-//  Web peer: ShipperLoads.tsx (`/shipper/loads`).
-//
-//  BottomNav: Home / Create Load / Loads (current) / Me — out of scope
-//  per parity mandate §1, matches user-feedback bottom-nav doctrine.
-//
-//  Powered by ESANG AI™.
+//  Purpose: let a shipper scan every movement, understand its exact
+//  lifecycle and commercial state, and open the record needing attention.
+//  `shippers.getMyLoads` remains row authority; the summary endpoint owns
+//  counts. Missing mode, unit, currency, or lifecycle data stays unknown.
 //
 
 import SwiftUI
+import UIKit
+
+// MARK: - Poster identity media
+
+/// Resolves the posting party's server-projected identity media without
+/// changing the wire value. Company branding is authoritative when present;
+/// the user's profile image is the secondary source. Only HTTPS is accepted
+/// for remote media, while persisted `data:image/...;base64` values are
+/// decoded locally.
+private enum ShipperPosterImageResolver {
+    static func resolve(
+        companyLogo: String?,
+        profilePicture: String?
+    ) -> (image: UIImage?, remoteURL: URL?) {
+        for candidate in [companyLogo, profilePicture] {
+            guard let raw = candidate?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+                  !raw.isEmpty
+            else { continue }
+
+            if raw.hasPrefix("data:"),
+               let comma = raw.firstIndex(of: ","),
+               let data = Data(
+                   base64Encoded: String(raw[raw.index(after: comma)...]),
+                   options: .ignoreUnknownCharacters
+               ),
+               let image = UIImage(data: data)
+            {
+                return (image, nil)
+            }
+
+            if let data = Data(base64Encoded: raw, options: .ignoreUnknownCharacters),
+               let image = UIImage(data: data)
+            {
+                return (image, nil)
+            }
+
+            if let url = URL(string: raw), url.scheme?.lowercased() == "https" {
+                return (nil, url)
+            }
+        }
+        return (nil, nil)
+    }
+}
 
 // MARK: - Filter taxonomy (matches wireframe 5-chip row)
 
@@ -37,6 +64,16 @@ private enum ShipperLoadsFilter: String, CaseIterable, Identifiable {
     case delivered  = "Delivered"
 
     var id: String { rawValue }
+
+    var displayLabel: String {
+        switch self {
+        case .all:       return "All"
+        case .bidding:   return "Bidding"
+        case .awarded:   return "Awarded"
+        case .inTransit: return "In transit"
+        case .delivered: return "Delivered"
+        }
+    }
 
     /// Map filter → set of server-side status values it includes.
     var statusSet: Set<String> {
@@ -55,8 +92,8 @@ private enum ShipperLoadsFilter: String, CaseIterable, Identifiable {
     /// when no filter is applied. Showing `activeLoads` here was the
     /// bug behind "65 total / All 50 / no rows" — the chip looked like
     /// the page was filtered even when it wasn't.
-    func count(in s: LoadsAPI.ShipperSummary?) -> Int {
-        guard let s else { return 0 }
+    func count(in s: LoadsAPI.ShipperSummary?) -> Int? {
+        guard let s else { return nil }
         switch self {
         case .all:        return s.totalLoads
         case .bidding:    return s.pending
@@ -77,17 +114,25 @@ private struct ShipperLoadRow: Identifiable, Hashable {
     let lane: String
     let origin: String
     let destination: String
+    let productName: String
     let cargoType: String
     let weightDisplay: String
-    let unNumber: String?
+    let isHazmatDeclared: Bool
     let hazmatClass: String?
-    let metaLine: String
-    let amount: Double
-    let ratePerMile: String
+    let amount: Double?
+    let currency: String?
+    let rateUnit: String?
+    let worldscalePct: String?
     let lifecycleStage: Int  // 1...8
+    let createdAt: String?
+    let pickupDate: String
     // 2026-05-17 — multi-modal payload mirrored from MyLoad.
     let transportMode: String?
     let multiVehicleCount: Int?
+    let posterName: String?
+    let posterCompanyName: String?
+    let posterCompanyLogo: String?
+    let posterProfilePicture: String?
 
     private static func stripLoadPrefix(_ raw: String) -> String {
         raw.hasPrefix("load_") ? String(raw.dropFirst("load_".count)) : raw
@@ -103,26 +148,57 @@ private struct ShipperLoadRow: Identifiable, Hashable {
         case "delivery", "delivering": return 6
         case "paperwork":           return 7
         case "closed", "delivered", "paid", "complete", "completed": return 8
-        default:                    return 1
+        case "cancelled", "canceled", "expired", "rejected": return 0
+        default:                    return 0
         }
     }
 
+    var mode: TransportMode? {
+        guard let raw = transportMode?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased(),
+              !raw.isEmpty
+        else { return nil }
+        return TransportMode(rawValue: raw)
+    }
+
+    var modeLabel: String { mode?.displayName ?? "Mode pending" }
+
+    var currentStageLabel: String {
+        if ["cancelled", "canceled"].contains(status.lowercased()) { return "Cancelled" }
+        if status.lowercased() == "expired" { return "Expired" }
+        guard lifecycleStage > 0 else { return "Status pending" }
+        return Self.stageLabels[lifecycleStage - 1]
+    }
+
+    var nextStageLabel: String {
+        if ["cancelled", "canceled", "expired", "rejected"].contains(status.lowercased()) {
+            return "Load closed"
+        }
+        guard lifecycleStage > 0 else { return "Awaiting lifecycle state" }
+        guard lifecycleStage < Self.stageLabels.count else { return "Lifecycle complete" }
+        return "Next · \(Self.stageLabels[lifecycleStage])"
+    }
+
+    private static let stageLabels = [
+        "Posted", "Bidding", "Awarded", "Pickup",
+        "In transit", "Delivery", "Paperwork", "Closed",
+    ]
+
     static func from(_ m: ShipperAPI.MyLoad) -> ShipperLoadRow {
-        let weight = m.weight > 0 ? "\(Int(m.weight)) lbs" : ""
+        let unit = m.weightUnit?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let weight: String
+        if m.weight > 0 {
+            let value = m.weight.formatted(.number.precision(.fractionLength(0...2)))
+            weight = unit?.isEmpty == false
+                ? "\(value) \(unit!)"
+                : "\(value) · weight unit pending"
+        } else {
+            weight = ""
+        }
         let lane = "\(m.origin) → \(m.destination)"
             .replacingOccurrences(of: " → ", with: " → ")
-        // Mono meta line per wireframe canon:
-        //   `LD-260427-XXXXXXXXXX · MC-306 · 50k lb · 239 mi`
-        // Composed defensively — drop empty parts, no "-" filler.
-        let parts = [
-            m.loadNumber,
-            m.product.isEmpty ? m.equipment : m.product,
-            weight,
-        ].filter { !$0.isEmpty }
-        let meta = parts.joined(separator: " · ")
-        // Rate per mile not on wire — composed by /205 detail. Empty
-        // here until backend ships distance projection on getMyLoads.
-        let ratePerMile = ""
         return ShipperLoadRow(
             id: m.id,
             serverLoadId: stripLoadPrefix(m.id),
@@ -131,16 +207,24 @@ private struct ShipperLoadRow: Identifiable, Hashable {
             lane: lane,
             origin: m.origin,
             destination: m.destination,
+            productName: m.product,
             cargoType: m.equipment,
             weightDisplay: weight,
-            unNumber: nil,
+            isHazmatDeclared: m.hazmat,
             hazmatClass: m.hazmatClass,
-            metaLine: meta,
-            amount: m.rate ?? 0,
-            ratePerMile: ratePerMile,
+            amount: (m.rate ?? 0) > 0 ? m.rate : nil,
+            currency: m.currency,
+            rateUnit: m.rateUnit,
+            worldscalePct: m.worldscalePct,
             lifecycleStage: stage(for: m.status),
+            createdAt: m.createdAt,
+            pickupDate: m.pickupDate,
             transportMode: m.transportMode,
-            multiVehicleCount: m.multiVehicleCount
+            multiVehicleCount: m.multiVehicleCount,
+            posterName: m.poster?.userName,
+            posterCompanyName: m.poster?.companyName,
+            posterCompanyLogo: m.poster?.companyLogo,
+            posterProfilePicture: m.poster?.profilePicture
         )
     }
 }
@@ -292,24 +376,22 @@ struct ShipperLoads: View {
         _ = await (a, b)
     }
 
-    /// Sheet→push: render ShipperLoadDetail in-stack with a
-    /// BespokeBackBar instead of a pull-up sheet. `detailRow` is still
-    /// set so any future binding-driven code keeps working; the
-    /// presentation itself now flows through the shared detail layer.
-    /// The pushed detail must NOT add its own NavigationStack/back
-    /// chrome — the layer supplies BespokeBackBar.
+    /// Sheet→push: render the canonical Load Detail screen in-stack.
+    /// `ShipperLoadDetailScreen` owns the persistent role dock and its
+    /// scroll-safe bottom clearance; the shared detail layer still owns
+    /// the BespokeBackBar, so the pushed record does not add a second
+    /// navigation stack or back control. One mode-agnostic detail path
+    /// covers Truck, Rail, and Vessel rows.
     private func openDetail(_ r: ShipperLoadRow) {
         detailRow = r
         pushDetail?("Load detail") {
             AnyView(
-                ShipperLoadDetail(
+                ShipperLoadDetailScreen(
+                    theme: palette,
                     loadId: r.serverLoadId,
                     previewLoadNumber: r.loadNumber,
                     previewLane: r.lane
                 )
-                .padding(.horizontal, 14)
-                .padding(.top, Space.s4)
-                .padding(.bottom, Space.s4)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             )
         }
@@ -332,7 +414,11 @@ struct ShipperLoads: View {
                 .font(EType.display)
                 .foregroundStyle(palette.textPrimary)
                 .padding(.top, Space.s2)
-            Text(companyLine)
+            Text("Movement register")
+                .font(EType.bodyStrong)
+                .foregroundStyle(palette.textPrimary)
+                .padding(.top, 2)
+            Text(scopeLine)
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .padding(.top, 2)
@@ -344,20 +430,13 @@ struct ShipperLoads: View {
 
     private var counterLine: String {
         guard let s = summary.state.value ?? nil else {
-            return "50 TOTAL · 12 ACTIVE"
+            return "PORTFOLIO SYNCING"
         }
         return "\(s.totalLoads) TOTAL · \(s.activeLoads) ACTIVE"
     }
 
-    private var companyLine: String {
-        // Honest account context — the signed-in shipper's company/account
-        // name when present, else the platform brand. No fabricated batch
-        // tag (the old "MATRIX-50-2026-04-26" seed-cohort id never shipped
-        // as if it were a real, user-facing reference).
-        let account = session.user?.name?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let who = (account?.isEmpty == false) ? account! : "Eusorone Technologies"
-        return "\(who) · load portfolio"
+    private var scopeLine: String {
+        "Truck · Rail · Vessel · every load, handoff and commercial state"
     }
 
     // MARK: - Search row + SORT button
@@ -428,7 +507,7 @@ struct ShipperLoads: View {
                         chipLabel(f, count: count)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("\(f.rawValue) filter, \(count) loads, \(filter == f ? "active" : "inactive")")
+                    .accessibilityLabel(filterAccessibilityLabel(f, count: count))
                 }
             }
             .padding(.vertical, 2)
@@ -436,9 +515,9 @@ struct ShipperLoads: View {
     }
 
     @ViewBuilder
-    private func chipLabel(_ f: ShipperLoadsFilter, count: Int) -> some View {
+    private func chipLabel(_ f: ShipperLoadsFilter, count: Int?) -> some View {
         let on = (filter == f)
-        Text("\(f.rawValue) · \(count)")
+        Text("\(f.displayLabel) · \(count.map(String.init) ?? "—")")
             .font(EType.caption)
             .fontWeight(.semibold)
             .padding(.horizontal, 14)
@@ -462,7 +541,7 @@ struct ShipperLoads: View {
             if rows.isEmpty {
                 emptyState
             } else {
-                listCard(visibleRows(from: rows))
+                movementRegister(visibleRows(from: rows))
             }
         case .empty:
             emptyState
@@ -471,22 +550,29 @@ struct ShipperLoads: View {
         }
     }
 
-    private func listCard(_ rows: [ShipperLoadRow]) -> some View {
-        VStack(spacing: 0) {
-            if rows.isEmpty { searchEmptyState } else {
-                ForEach(Array(rows.enumerated()), id: \.element.id) { idx, r in
-                    Button { openDetail(r) } label: { rowView(r) }
+    private func movementRegister(_ rows: [ShipperLoadRow]) -> some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(alignment: .firstTextBaseline) {
+                EusoTripEyebrow(verbatim: "MOVEMENT REGISTER")
+                    .font(EType.micro)
+                    .tracking(1)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer()
+                Text(rows.isEmpty ? "NO MATCHES" : "\(rows.count) SHOWN")
+                    .font(EType.micro)
+                    .tracking(0.8)
+                    .foregroundStyle(palette.textTertiary)
+            }
+
+            if rows.isEmpty {
+                searchEmptyState
+            } else {
+                ForEach(rows) { row in
+                    Button { openDetail(row) } label: { rowView(row) }
                         .buttonStyle(.plain)
-                    if idx < rows.count - 1 {
-                        Divider().overlay(palette.borderFaint)
-                    }
                 }
             }
         }
-        .background(palette.bgCard)
-        .overlay(RoundedRectangle(cornerRadius: Radius.xl)
-                    .strokeBorder(palette.borderFaint))
-        .clipShape(RoundedRectangle(cornerRadius: Radius.xl))
     }
 
     private func visibleRows(from raw: [ShipperAPI.MyLoad]) -> [ShipperLoadRow] {
@@ -501,65 +587,174 @@ struct ShipperLoads: View {
         }
         // Apply search
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !needle.isEmpty else { return filtered }
-        return filtered.filter { r in
-            r.loadNumber.lowercased().contains(needle)
-                || r.origin.lowercased().contains(needle)
-                || r.destination.lowercased().contains(needle)
-                || r.cargoType.lowercased().contains(needle)
+        let searched: [ShipperLoadRow]
+        if needle.isEmpty {
+            searched = filtered
+        } else {
+            searched = filtered.filter { r in
+                r.loadNumber.lowercased().contains(needle)
+                    || r.origin.lowercased().contains(needle)
+                    || r.destination.lowercased().contains(needle)
+                    || r.cargoType.lowercased().contains(needle)
+                    || r.productName.lowercased().contains(needle)
+                    || r.modeLabel.lowercased().contains(needle)
+            }
         }
+        return sortedRows(searched)
+    }
+
+    private func sortedRows(_ rows: [ShipperLoadRow]) -> [ShipperLoadRow] {
+        rows.sorted { lhs, rhs in
+            switch sort {
+            case .newest:
+                return ordered(lhs.createdAt, rhs.createdAt, descending: true,
+                               lhsTie: lhs.loadNumber, rhsTie: rhs.loadNumber)
+            case .oldest:
+                return ordered(lhs.createdAt, rhs.createdAt, descending: false,
+                               lhsTie: lhs.loadNumber, rhsTie: rhs.loadNumber)
+            case .highestRate:
+                return ordered(lhs.amount, rhs.amount, descending: true,
+                               lhsTie: lhs.loadNumber, rhsTie: rhs.loadNumber)
+            case .lowestRate:
+                return ordered(lhs.amount, rhs.amount, descending: false,
+                               lhsTie: lhs.loadNumber, rhsTie: rhs.loadNumber)
+            case .pickupSoonest:
+                let left = lhs.pickupDate.trimmingCharacters(in: .whitespacesAndNewlines)
+                let right = rhs.pickupDate.trimmingCharacters(in: .whitespacesAndNewlines)
+                return ordered(left.isEmpty ? nil : left,
+                               right.isEmpty ? nil : right,
+                               descending: false,
+                               lhsTie: lhs.loadNumber,
+                               rhsTie: rhs.loadNumber)
+            }
+        }
+    }
+
+    /// Missing values always sort after recorded values. That keeps an
+    /// unknown rate or date from masquerading as zero or "earliest".
+    private func ordered<Value: Comparable>(
+        _ lhs: Value?,
+        _ rhs: Value?,
+        descending: Bool,
+        lhsTie: String,
+        rhsTie: String
+    ) -> Bool {
+        switch (lhs, rhs) {
+        case let (left?, right?):
+            if left == right { return lhsTie < rhsTie }
+            return descending ? left > right : left < right
+        case (_?, nil):
+            return true
+        case (nil, _?):
+            return false
+        case (nil, nil):
+            return lhsTie < rhsTie
+        }
+    }
+
+    private func filterAccessibilityLabel(_ filter: ShipperLoadsFilter, count: Int?) -> String {
+        let quantity = count.map { "\($0) loads" } ?? "count syncing"
+        let selection = self.filter == filter ? "selected" : "not selected"
+        return "\(filter.displayLabel), \(quantity), \(selection)"
     }
 
     // MARK: - Row
 
     private func rowView(_ r: ShipperLoadRow) -> some View {
-        HStack(alignment: .top, spacing: Space.s3) {
-            modeGlyph(for: r)
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(alignment: .top, spacing: Space.s3) {
+                movementMark(for: r)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("\(r.modeLabel.uppercased()) · \(r.loadNumber)")
+                        .font(EType.micro)
+                        .tracking(0.8)
+                        .foregroundStyle(modeTint(for: r))
+                        .lineLimit(1)
+
                     Text(r.lane)
                         .font(EType.bodyStrong)
                         .foregroundStyle(palette.textPrimary)
-                        .lineLimit(1)
-                    // 2026-05-17 — mode badge on every row. Hidden for
-                    // single-vehicle truck loads so the common case
-                    // doesn't add noise. First role surface adopting
-                    // the shared LoadModeBadge component — same badge
-                    // will land on catalyst board / broker / dispatch
-                    // / driver lists in subsequent firings.
-                    LoadModeBadge(modeRaw: r.transportMode,
-                                  multiVehicleCount: r.multiVehicleCount,
-                                  compact: true)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+
+                    Text(movementDetailLine(r))
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
                 }
-                Text(r.metaLine)
-                    .font(EType.mono(.caption)).tracking(0.4)
-                    .foregroundStyle(palette.textSecondary)
-                    .lineLimit(1)
-                lifecycleStrip(filled: r.lifecycleStage)
-                    .padding(.top, 2)
-            }
-            Spacer(minLength: Space.s2)
-            VStack(alignment: .trailing, spacing: 4) {
-                Text(r.status.uppercased())
-                    .font(EType.micro).tracking(0.6)
-                    .foregroundStyle(statusStyle(for: r.status))
-                if r.amount > 0 {
-                    Text(dollars(r.amount))
-                        .font(EType.bodyStrong).monospacedDigit()
-                        .foregroundStyle(palette.textPrimary)
-                }
-                if !r.ratePerMile.isEmpty {
-                    Text(r.ratePerMile)
-                        .font(EType.caption).monospacedDigit()
+
+                Spacer(minLength: Space.s2)
+
+                VStack(alignment: .trailing, spacing: 5) {
+                    Text((EusoDisplayText.token(r.status) ?? "Status pending").uppercased())
+                        .font(EType.micro)
+                        .tracking(0.7)
+                        .foregroundStyle(statusStyle(for: r.status))
+                        .multilineTextAlignment(.trailing)
+                        .lineLimit(2)
+
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(palette.textTertiary)
+                        .accessibilityHidden(true)
                 }
             }
+
+            Divider().overlay(palette.borderFaint)
+
+            HStack(alignment: .bottom, spacing: Space.s3) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(r.currentStageLabel.uppercased())
+                        .font(EType.micro)
+                        .tracking(0.8)
+                        .foregroundStyle(statusStyle(for: r.status))
+                    Text(r.nextStageLabel)
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: Space.s2)
+
+                VStack(alignment: .trailing, spacing: 2) {
+                    if let commercial = commercialPrimary(r) {
+                        Text(commercial)
+                            .font(EType.bodyStrong)
+                            .monospacedDigit()
+                            .foregroundStyle(palette.textPrimary)
+                        Text(commercialSecondary(r))
+                            .font(EType.micro)
+                            .tracking(0.5)
+                            .foregroundStyle(palette.textTertiary)
+                    } else {
+                        Text("TERMS PENDING")
+                            .font(EType.micro)
+                            .tracking(0.7)
+                            .foregroundStyle(Brand.warning)
+                        Text("No confirmed amount")
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textSecondary)
+                    }
+                }
+            }
+
+            lifecycleStrip(filled: r.lifecycleStage)
         }
-        .padding(.horizontal, Space.s4)
-        .padding(.vertical, Space.s3)
+        .padding(Space.s4)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .fill(palette.bgCard)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(r.lane), \(r.status), \(dollars(r.amount))")
+        .accessibilityLabel(rowAccessibilityLabel(r))
+        .accessibilityHint("Opens the load movement record")
     }
 
     private func statusStyle(for status: String) -> AnyShapeStyle {
@@ -576,98 +771,199 @@ struct ShipperLoads: View {
             return AnyShapeStyle(Brand.success)
         case let s where s.contains("late") || s.contains("delay"):
             return AnyShapeStyle(Brand.danger)
+        case let s where s.contains("cancel") || s.contains("expire") || s.contains("reject"):
+            return AnyShapeStyle(Brand.danger)
         default:
             return AnyShapeStyle(palette.textPrimary)
         }
     }
 
-    @ViewBuilder
-    private func modeGlyph(for r: ShipperLoadRow) -> some View {
-        let cargo = r.cargoType.lowercased()
-        if cargo.contains("hazmat") || cargo == "petroleum" || cargo == "chemicals"
-            || cargo == "liquid" || cargo == "gas" || cargo == "cryogenic" || (r.hazmatClass ?? "").isEmpty == false
-        {
-            ZStack {
-                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                    .fill(Brand.hazmat.opacity(0.16))
-                Rectangle()
-                    .stroke(Brand.hazmat, lineWidth: 1.6)
-                    .frame(width: 16, height: 16)
-                    .rotationEffect(.degrees(45))
-                if let c = r.hazmatClass, !c.isEmpty {
-                    Text(c)
-                        .font(.system(size: 9, weight: .heavy))
-                        .foregroundStyle(Color(hex: 0xB27300))
-                        .offset(y: 2)
-                }
-            }
-            .frame(width: 40, height: 40)
-        } else if cargo.contains("reefer") || cargo == "refrigerated" || cargo == "food_grade" {
-            ZStack {
-                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                    .fill(Brand.info.opacity(0.12))
-                RoundedRectangle(cornerRadius: 2)
-                    .stroke(Brand.info, lineWidth: 1.6)
-                    .frame(width: 22, height: 18)
-            }
-            .frame(width: 40, height: 40)
-        } else if cargo == "intermodal" || r.lane.lowercased().contains("rail") {
-            ZStack {
-                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                    .fill(Color(hex: 0x607D8B).opacity(0.16))
-                VStack(spacing: 2) {
-                    Capsule()
-                        .stroke(Color(hex: 0x607D8B), lineWidth: 1.6)
-                        .frame(width: 24, height: 12)
-                    HStack(spacing: 6) {
-                        Circle().fill(Color(hex: 0x607D8B)).frame(width: 3, height: 3)
-                        Circle().fill(Color(hex: 0x607D8B)).frame(width: 3, height: 3)
-                    }
-                }
-            }
-            .frame(width: 40, height: 40)
-        } else if cargo.contains("flatbed") || cargo == "oversized" {
-            ZStack {
-                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                    .fill(palette.bgCardSoft)
-                VStack(spacing: 2) {
-                    Rectangle().fill(palette.textPrimary).frame(width: 22, height: 1.6)
-                    HStack(spacing: 8) {
-                        Circle().fill(palette.textPrimary).frame(width: 5, height: 5)
-                        Circle().fill(palette.textPrimary).frame(width: 5, height: 5)
-                    }
-                }
-            }
-            .frame(width: 40, height: 40)
-        } else {
-            // Dry van / general default
-            ZStack {
-                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                    .fill(palette.bgCardSoft)
-                Rectangle()
-                    .stroke(palette.textPrimary, lineWidth: 1.6)
-                    .frame(width: 22, height: 14)
-                    .overlay(
-                        Rectangle()
-                            .stroke(palette.textPrimary, lineWidth: 1.6)
-                            .frame(width: 1, height: 14)
-                    )
-            }
-            .frame(width: 40, height: 40)
+    private func modeTint(for row: ShipperLoadRow) -> Color {
+        switch row.mode {
+        case .truck:  return Brand.blue
+        case .rail:   return Brand.rail
+        case .vessel: return Brand.vessel
+        case .barge:  return Brand.info
+        case nil:     return palette.textTertiary
         }
+    }
+
+    private func isHazmat(_ row: ShipperLoadRow) -> Bool {
+        if row.isHazmatDeclared { return true }
+        if row.hazmatClass?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+            return true
+        }
+        let evidence = "\(row.productName) \(row.cargoType)".lowercased()
+        return ["hazmat", "petroleum", "chemical", "cryogenic", "gasoline", "lpg", "lng"]
+            .contains { evidence.contains($0) }
+    }
+
+    private func movementDetailLine(_ row: ShipperLoadRow) -> String {
+        let product = row.productName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let equipment = row.cargoType.trimmingCharacters(in: .whitespacesAndNewlines)
+        var parts: [String] = []
+        parts.append(product.isEmpty ? "Product not recorded" : product)
+        if !equipment.isEmpty, equipment.caseInsensitiveCompare(product) != .orderedSame {
+            parts.append(equipment)
+        }
+        if !row.weightDisplay.isEmpty { parts.append(row.weightDisplay) }
+        if let count = row.multiVehicleCount, count > 1 { parts.append("\(count) units") }
+        if isHazmat(row) {
+            if let classification = row.hazmatClass?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+               !classification.isEmpty
+            {
+                parts.append("Hazmat class \(classification)")
+            } else {
+                parts.append("Hazmat")
+            }
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private func commercialPrimary(_ row: ShipperLoadRow) -> String? {
+        if let raw = row.worldscalePct?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !raw.isEmpty
+        {
+            return raw.lowercased().hasPrefix("ws") ? raw.uppercased() : "WS \(raw)"
+        }
+        return row.amount.map { money($0, currency: row.currency) }
+    }
+
+    private func commercialSecondary(_ row: ShipperLoadRow) -> String {
+        EusoDisplayText.rateBasis(
+            rateUnit: row.rateUnit,
+            currency: row.currency,
+            worldscalePct: row.worldscalePct,
+            hasAmount: row.amount != nil
+        )
+    }
+
+    private func rowAccessibilityLabel(_ row: ShipperLoadRow) -> String {
+        var parts = [
+            row.modeLabel,
+            row.loadNumber,
+            row.lane,
+            movementDetailLine(row),
+            row.currentStageLabel,
+            row.nextStageLabel,
+        ]
+        if let commercial = commercialPrimary(row) {
+            parts.append("Commercial terms \(commercial), \(commercialSecondary(row))")
+        } else {
+            parts.append("Commercial terms pending")
+        }
+        return parts.joined(separator: ", ")
+    }
+
+    private func lifecycleStyle(index: Int, filled: Int) -> AnyShapeStyle {
+        if filled == 0 { return AnyShapeStyle(palette.textTertiary.opacity(0.24)) }
+        if index < filled { return AnyShapeStyle(LinearGradient.primary) }
+        return AnyShapeStyle(palette.textTertiary.opacity(0.24))
+    }
+
+    private func movementMark(for r: ShipperLoadRow) -> some View {
+        let source = ShipperPosterImageResolver.resolve(
+            companyLogo: r.posterCompanyLogo,
+            profilePicture: r.posterProfilePicture
+        )
+        return ZStack(alignment: .bottomTrailing) {
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .fill(Color(red: 0.035, green: 0.043, blue: 0.058))
+
+            if let image = source.image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .padding(5)
+            } else if let remoteURL = source.remoteURL {
+                AppRadioSilenceAsyncImage(url: remoteURL) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFit()
+                            .padding(5)
+                    case .empty:
+                        ProgressView()
+                            .controlSize(.mini)
+                            .tint(.white.opacity(0.72))
+                    case .failure:
+                        posterFallback(for: r)
+                    @unknown default:
+                        posterFallback(for: r)
+                    }
+                }
+            } else {
+                posterFallback(for: r)
+            }
+
+            if isHazmat(r) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(Brand.hazmat)
+                    .padding(4)
+                    .background(Circle().fill(palette.bgCard))
+                    .offset(x: 3, y: 3)
+                    .accessibilityHidden(true)
+            }
+        }
+        .frame(width: 44, height: 44)
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(posterAccessibilityLabel(for: r))
+    }
+
+    private func posterFallback(for row: ShipperLoadRow) -> some View {
+        let initials = posterInitials(for: row)
+        return Group {
+            if initials.isEmpty {
+                Image(systemName: "person.crop.square")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(Color.white.opacity(0.72))
+            } else {
+                Text(initials)
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .tracking(0.4)
+                    .foregroundStyle(Color.white.opacity(0.9))
+            }
+        }
+    }
+
+    private func posterInitials(for row: ShipperLoadRow) -> String {
+        let name = [row.posterCompanyName, row.posterName]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty } ?? ""
+        return name
+            .split(whereSeparator: { $0.isWhitespace })
+            .prefix(2)
+            .compactMap(\.first)
+            .map(String.init)
+            .joined()
+            .uppercased()
+    }
+
+    private func posterAccessibilityLabel(for row: ShipperLoadRow) -> String {
+        let identity = [row.posterCompanyName, row.posterName]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty }
+        return identity.map { "Posted by \($0)" } ?? "Poster identity not provided"
     }
 
     /// Canonical 8-stage lifecycle strip — Posted → Bidding → Awarded
     /// → Pickup → In transit → Delivery → Paperwork → Closed.
     private func lifecycleStrip(filled: Int) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 4) {
             ForEach(0..<8, id: \.self) { i in
-                Circle()
-                    .frame(width: i == filled - 1 ? 6 : 5,
-                           height: i == filled - 1 ? 6 : 5)
-                    .foregroundStyle(i < filled
-                                     ? AnyShapeStyle(LinearGradient.primary)
-                                     : AnyShapeStyle(palette.textTertiary.opacity(0.32)))
+                Capsule()
+                    .frame(maxWidth: .infinity)
+                    .frame(height: i == filled - 1 ? 6 : 4)
+                    .foregroundStyle(lifecycleStyle(index: i, filled: filled))
             }
         }
         .accessibilityHidden(true)
@@ -676,18 +972,59 @@ struct ShipperLoads: View {
     // MARK: - Empty / error / skeleton
 
     private var listSkeleton: some View {
-        VStack(spacing: 0) {
-            ForEach(0..<3, id: \.self) { i in
-                Rectangle()
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack {
+                RoundedRectangle(cornerRadius: 3)
                     .fill(palette.bgCardSoft)
-                    .frame(height: 76)
-                if i < 2 { Divider().overlay(palette.borderFaint) }
+                    .frame(width: 132, height: 10)
+                Spacer()
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(palette.bgCardSoft)
+                    .frame(width: 52, height: 10)
+            }
+
+            ForEach(0..<3, id: \.self) { _ in
+                VStack(alignment: .leading, spacing: Space.s3) {
+                    HStack(alignment: .top, spacing: Space.s3) {
+                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                            .fill(palette.bgCardSoft)
+                            .frame(width: 44, height: 44)
+                        VStack(alignment: .leading, spacing: 7) {
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(palette.bgCardSoft)
+                                .frame(width: 122, height: 9)
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(palette.bgCardSoft)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 17)
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(palette.bgCardSoft)
+                                .frame(width: 190, height: 9)
+                        }
+                    }
+                    Divider().overlay(palette.borderFaint)
+                    HStack(spacing: 4) {
+                        ForEach(0..<8, id: \.self) { _ in
+                            Capsule()
+                                .fill(palette.bgCardSoft)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 4)
+                        }
+                    }
+                }
+                .padding(Space.s4)
+                .background(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .fill(palette.bgCard)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.borderFaint)
+                )
             }
         }
-        .background(palette.bgCard)
-        .overlay(RoundedRectangle(cornerRadius: Radius.xl)
-                    .strokeBorder(palette.borderFaint))
-        .clipShape(RoundedRectangle(cornerRadius: Radius.xl))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Loading movement register")
     }
 
     @ViewBuilder
@@ -695,7 +1032,7 @@ struct ShipperLoads: View {
         EusoEmptyState(
             systemImage: "shippingbox",
             title: "No loads yet",
-            subtitle: "Post a load and it'll show up here the moment it lands."
+            subtitle: "Post Truck, Rail, or Vessel freight and it will appear here."
         )
     }
 
@@ -714,7 +1051,7 @@ struct ShipperLoads: View {
             HStack(spacing: 8) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(Brand.danger)
-                Text("Couldn't load shipment fabric")
+                Text("Couldn't load the movement register")
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
             }
@@ -747,12 +1084,19 @@ struct ShipperLoads: View {
 
     // MARK: - Helpers
 
-    private func dollars(_ value: Double) -> String {
+    private func money(_ value: Double, currency: String?) -> String {
+        let code = currency?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .uppercased()
         let f = NumberFormatter()
-        f.numberStyle = .currency
-        f.currencyCode = "USD"
-        f.maximumFractionDigits = 0
-        return f.string(from: NSNumber(value: value)) ?? "$0"
+        f.numberStyle = code?.isEmpty == false ? .currency : .decimal
+        if let code, !code.isEmpty { f.currencyCode = code }
+        f.maximumFractionDigits = value.rounded() == value ? 0 : 2
+        if let formatted = f.string(from: NSNumber(value: value)) {
+            return formatted
+        }
+        let fallback = value.formatted(.number.precision(.fractionLength(0...2)))
+        return code?.isEmpty == false ? "\(code!) \(fallback)" : fallback
     }
 }
 
