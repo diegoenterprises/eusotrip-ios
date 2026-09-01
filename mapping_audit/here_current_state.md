@@ -11,7 +11,7 @@ The key is read from `Bundle.main.object(forInfoDictionaryKey: "HEREApiKey")`, w
 
 - xcconfig secret (git-ignored): `/Users/diegousoro/Desktop/EusoTrip by Eusorone Technologies, Inc/EusoTrip.xcconfig` line 10
   ```
-  HERE_API_KEY = mC47DqcAl4_fs-jXWedMuPVTw8EYDcAkAwe7NG5NpaQ
+  HERE_API_KEY = [REMOVED: revoke in HERE portal]
   ```
 - Sample template: `/Users/diegousoro/Desktop/EusoTrip by Eusorone Technologies, Inc/EusoTrip.xcconfig.sample` line 11 (placeholder `REPLACE_WITH_HERE_PLATFORM_API_KEY`)
 - Pipeline into Info.plist: `EusoTrip.xcodeproj/project.pbxproj` lines 1045 and 1079:
@@ -66,7 +66,7 @@ Task #37 ("Fix Hot Zones decode + rebuild heatmap with HERE") and #51 ("Add USA 
 
 ## 6. Leaked / placeholder / risky keys
 
-- **`mC47DqcAl4_fs-jXWedMuPVTw8EYDcAkAwe7NG5NpaQ`** is the current live HERE Platform apiKey. It appears in:
+- **`[REMOVED: revoke in HERE portal]`** is the current live HERE Platform apiKey. It appears in:
   - `EusoTrip.xcconfig:10` (source of truth, but this file is supposed to be gitignored — verify `.gitignore` actually excludes it; if it was ever committed, the key is leaked and should be revoked at the HERE portal).
   - `EusoTrip/Services/HereMaps/HereMapsConfig.swift:10` (in a doc comment — a documentation leak; strip before any PR).
 - The `.sample` file uses `REPLACE_WITH_HERE_PLATFORM_API_KEY` as placeholder; that is correct.

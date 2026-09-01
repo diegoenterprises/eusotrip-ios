@@ -149,24 +149,28 @@
 		     EusoTripApp+WatchBridge registers a handler for it. -->
 		<string>com.eusotrip.esang.activate</string>
 	</array>
-	<!-- HERE Maps OAuth + JS credentials. Inlined here because the
-	     project sets GENERATE_INFOPLIST_FILE=NO + INFOPLIST_PREPROCESS=NO,
-	     which means xcconfig $(VAR) substitution does NOT flow into a
-	     literal Info.plist. The xcconfig + INFOPLIST_KEY_* settings are
-	     kept in sync for fallback build paths but the runtime path
-	     reads from this plist. Rotate credentials by updating both
-	     files together. -->
+	<!-- Online HERE REST credentials resolve from the gitignored local
+	     configuration. No credential value is tracked in this plist. -->
 	<key>HEREAccessKeyId</key>
-	<string>aFi-kDtCV1dbeQjNR0SKWw</string>
+	<string>$(HERE_ACCESS_KEY_ID)</string>
 	<key>HEREAccessKeySecret</key>
-	<string>tu2LygcYLwnqBsPV0sgZ_PfFbZBquNoBrcwcKbaxJuGZIK48APnmLycnYKULfdLVcvBvz9tOpAbWoqIWcxtlNA</string>
+	<string>$(HERE_ACCESS_KEY_SECRET)</string>
 	<key>HEREClientId</key>
-	<string>A8wYxsmwZBEqBIud1Jmc</string>
+	<string>$(HERE_CLIENT_ID)</string>
 	<key>HEREUserId</key>
-	<string>HERE-7239406a-1b48-45b5-9964-fb81d7a73a7a</string>
+	<string>$(HERE_USER_ID)</string>
 	<key>HERETokenEndpointURL</key>
 	<string>https://account.api.here.com/oauth2/token</string>
+	<!-- Referrer-restricted Maps JS key. This powers the online WKWebView map
+	     only and cannot initialize HERE SDK Navigate. -->
 	<key>HEREJSApiKey</key>
-	<string>9IdICMe90C28r5DOmEoXpRfnFRHnaXf8O8oP57bozkA</string>
+	<string>$(HERE_JS_API_KEY)</string>
+	<!-- Dedicated HERE SDK Navigate mobile credentials. Values come from the
+	     gitignored EusoTrip.xcconfig and must never be committed or logged.
+	     The runtime rejects empty and unsubstituted values. -->
+	<key>HERESDKAccessKeyID</key>
+	<string>$(HERE_SDK_ACCESS_KEY_ID)</string>
+	<key>HERESDKAccessKeySecret</key>
+	<string>$(HERE_SDK_ACCESS_KEY_SECRET)</string>
 </dict>
 </plist>

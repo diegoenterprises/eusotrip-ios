@@ -16,12 +16,12 @@ iOS speaks to HERE through **two completely different credential sets**; conflat
 
 | xcconfig var | Info.plist key | Purpose |
 |---|---|---|
-| `HERE_USER_ID` | `HEREUserId` | Informational HERE user id (not used in signing). `HERE-7239406a-1b48-45b5-9964-fb81d7a73a7a`. |
-| `HERE_CLIENT_ID` | `HEREClientId` | Informational HERE app identifier (not used in signing). `A8wYxsmwZBEqBIud1Jmc`. |
+| `HERE_USER_ID` | `HEREUserId` | Informational HERE user id (not used in signing). Identifier removed; rotate and inject through untracked configuration. |
+| `HERE_CLIENT_ID` | `HEREClientId` | Informational HERE app identifier (not used in signing). Identifier removed; rotate and inject through untracked configuration. |
 | `HERE_ACCESS_KEY_ID` | `HEREAccessKeyId` | OAuth1.0a consumer key — signs token-exchange requests. |
 | `HERE_ACCESS_KEY_SECRET` | `HEREAccessKeySecret` | OAuth1.0a consumer secret — HMAC-SHA256 signing-key material. |
 | `HERE_TOKEN_ENDPOINT_URL` | `HERETokenEndpointURL` | `https://account.api.here.com/oauth2/token` |
-| `HERE_JS_API_KEY` | `HEREJSApiKey` | HERE Maps JS 3.1 apiKey — used ONLY by Hot Zones heatmap WebView. JS SDK does not accept OAuth Bearer. Minted 2026-04-23 (slot 2 of 2; slot 1 is leaked-pending-revoke NpaQ key). |
+| `HERE_JS_API_KEY` | `HEREJSApiKey` | HERE Maps JS 3.1 apiKey — used ONLY by Hot Zones heatmap WebView. JS SDK does not accept OAuth Bearer. Minted 2026-04-23 (credential inventory must be verified in the HERE portal). |
 
 Every REST API (Routing v8, Matrix v8, Geocoding & Search v7, Isoline v8, Traffic v7, Maps Tile v3) uses `Authorization: Bearer <token>`. JS bundle rendering Hot Zones WebView uses apiKey — HERE's JS SDK has never supported OAuth.
 

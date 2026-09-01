@@ -8,10 +8,10 @@ Audit date: 2026-04-22. Awaiting green-light before any code lands.
 
 | Field | Value |
 |---|---|
-| `here.user.id` | `HERE-7239406a-1b48-45b5-9964-fb81d7a73a7a` |
-| `here.client.id` | `A8wYxsmwZBEqBIud1Jmc` |
-| `here.access.key.id` | `aFi-kDtCV1dbeQjNR0SKWw` |
-| `here.access.key.secret` | `tu2LygcYLwnqBsPV0sgZ_PfFbZBquNoBrcwcKbaxJuGZIK48APnmLycnYKULfdLVcvBvz9tOpAbWoqIWcxtlNA` |
+| `here.user.id` | `[REMOVED: revoke and inject via untracked configuration]` |
+| `here.client.id` | `[REMOVED: revoke and inject via untracked configuration]` |
+| `here.access.key.id` | `[REMOVED: revoke and inject via untracked configuration]` |
+| `here.access.key.secret` | `[REMOVED: revoke and inject via untracked configuration]` |
 | `here.token.endpoint.url` | `https://account.api.here.com/oauth2/token` |
 
 Only `access.key.id` and `access.key.secret` actually participate in the signature. `user.id` and `client.id` are informational.

@@ -6,20 +6,25 @@
 //         to this file for both Debug and Release.
 //
 
-// ---- OAuth2 client-credentials (HERE app credentials) --------------------
-// Provisioned from the HERE developer portal → Apps → "App credentials".
-// The access.key.id + access.key.secret pair is what signs the
-// OAuth1.0a request to `/oauth2/token`; user.id + client.id are
-// informational (shown in HERE dashboards, not used in the signature).
-HERE_USER_ID            = REPLACE_WITH_HERE_USER_ID
-HERE_CLIENT_ID          = REPLACE_WITH_HERE_CLIENT_ID
-HERE_ACCESS_KEY_ID      = REPLACE_WITH_HERE_ACCESS_KEY_ID
-HERE_ACCESS_KEY_SECRET  = REPLACE_WITH_HERE_ACCESS_KEY_SECRET
-HERE_TOKEN_ENDPOINT_URL = https://account.api.here.com/oauth2/token
-
-// ---- HERE Maps JS 3.1 apiKey --------------------------------------------
-// REST APIs use OAuth above. The Maps JS bundle (Hot Zones heatmap
-// WebView) does NOT accept Bearer tokens — it needs a plain apiKey
-// issued from the HERE portal. Leave empty to disable the JS heatmap
-// in dev builds.
+// ---- Online HERE Maps JavaScript key -------------------------------------
+// Referrer-restricted to the trusted EusoTrip web origin. This key cannot
+// initialize HERE SDK Navigate and provides no persistent offline maps.
 HERE_JS_API_KEY         = REPLACE_WITH_HERE_JS_API_KEY
+
+// ---- Existing online HERE REST client ----------------------------------
+// These values remain local while the online routing/geocoding clients are
+// migrated behind the EusoTrip server. Never commit or print real values.
+HERE_ACCESS_KEY_ID      = REPLACE_WITH_HERE_OAUTH_ACCESS_KEY_ID
+HERE_ACCESS_KEY_SECRET  = REPLACE_WITH_HERE_OAUTH_ACCESS_KEY_SECRET
+HERE_CLIENT_ID          = REPLACE_WITH_HERE_CLIENT_ID
+HERE_USER_ID            = REPLACE_WITH_HERE_USER_ID
+
+// ---- HERE SDK Navigate mobile credentials -------------------------------
+// Provision these only after the registered application has Navigate access.
+// They are intentionally separate from backend OAuth and Maps JS credentials.
+// EusoTrip.xcconfig is gitignored; never commit or print real values.
+HERE_SDK_ACCESS_KEY_ID      = REPLACE_WITH_NAVIGATE_ACCESS_KEY_ID
+HERE_SDK_ACCESS_KEY_SECRET  = REPLACE_WITH_NAVIGATE_ACCESS_KEY_SECRET
+
+// Custom map archives remain fail-closed until artifact hash, runtime,
+// multi-zoom, theme, and accessibility review gates all pass.
