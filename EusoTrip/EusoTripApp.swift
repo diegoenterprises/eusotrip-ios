@@ -30,6 +30,9 @@ struct EusoTripApp: App {
     /// Guarded with `#if canImport(UIKit)` so the same struct still
     /// compiles for the watchOS target (which doesn't ship UIKit).
     init() {
+        // Install the single process-wide HERE owner before any role surface,
+        // route workflow, or Settings sheet can request offline state.
+        OfflineMapProductionComposition.install()
         #if canImport(UIKit)
         UIScrollView.appearance().keyboardDismissMode = .interactive
         // Tap-anywhere-outside-the-keyboard dismissal (founder bug
@@ -145,6 +148,14 @@ struct EusoTripApp: App {
                     .transition(.opacity)
                 }
             }
+            .onChange(of: session.user) { _, user in
+                Task {
+                    await OfflineMapProductionComposition.shared?.activatePrincipal(
+                        tenantID: user?.companyId,
+                        userID: user?.id
+                    )
+                }
+            }
             .onChange(of: scenePhase) { oldPhase, newPhase in
                 AppCrashDiagnosticsReporter.shared.recordSurface("scene.\(newPhase)")
                 // Show the brand veil before iOS snapshots us.
@@ -212,6 +223,10 @@ struct EusoTripApp: App {
                 MockDataGuard.runSelfCheck()
                 #endif
                 await session.boot()
+                await OfflineMapProductionComposition.shared?.activatePrincipal(
+                    tenantID: session.user?.companyId,
+                    userID: session.user?.id
+                )
                 // Proactively trigger the iOS "Allow EusoTrip to use
                 // your location?" prompt at app launch. WeatherService
                 // also requests it lazily on first fetch, but that

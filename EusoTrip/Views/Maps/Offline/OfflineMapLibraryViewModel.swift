@@ -93,6 +93,9 @@ final class OfflineMapLibraryViewModel: ObservableObject {
     private let coordinator: OfflineMapCoordinator
     private var cancellables = Set<AnyCancellable>()
     private var coordinatorObservationID: UUID?
+    private var productionPrepare: (() async -> Void)?
+    private var productionConnectivityTransition: ((OfflineMapConnectivityPolicy) async throws -> Void)?
+    private var productionRepair: (() async throws -> Void)?
 
     init(owner: OfflineMapCompositionOwner) {
         coordinator = owner.coordinator
@@ -104,6 +107,29 @@ final class OfflineMapLibraryViewModel: ObservableObject {
                 self?.reconcileSelections()
             }
             .store(in: &cancellables)
+    }
+
+    convenience init(productionComposition: OfflineMapProductionComposition) {
+        self.init(owner: productionComposition.owner)
+        productionPrepare = { [weak productionComposition] in
+            await productionComposition?.prepare()
+        }
+        productionConnectivityTransition = { [weak productionComposition] policy in
+            guard let productionComposition else {
+                throw OfflineMapCoreError.coordinatorBusy(
+                    "the app-owned offline map composition is unavailable"
+                )
+            }
+            try await productionComposition.setConnectivityPolicy(policy)
+        }
+        productionRepair = { [weak productionComposition] in
+            guard let productionComposition else {
+                throw OfflineMapCoreError.coordinatorBusy(
+                    "the app-owned offline map composition is unavailable"
+                )
+            }
+            try await productionComposition.repairPersistentMap()
+        }
     }
 
     /// Isolated injection seam for focused tests. Production composition must
@@ -300,7 +326,7 @@ final class OfflineMapLibraryViewModel: ObservableObject {
     func prepare() async {
         guard !isSubmitting else { return }
         isSubmitting = true
-        await coordinator.prepare()
+        await prepareCoordinator()
         isSubmitting = false
     }
 
@@ -312,7 +338,7 @@ final class OfflineMapLibraryViewModel: ObservableObject {
         switch snapshot.readiness {
         case .unchecked, .blocked:
             isSubmitting = true
-            await coordinator.prepare()
+            await prepareCoordinator()
             isSubmitting = false
             feedback = checkResultFeedback(
                 successTitle: "Library checked",
@@ -355,7 +381,7 @@ final class OfflineMapLibraryViewModel: ObservableObject {
         guard !isSubmitting else { return }
         isSubmitting = true
         do {
-            try await coordinator.setConnectivityPolicy(policy)
+            try await applyConnectivityPolicy(policy)
             feedback = checkResultFeedback(
                 successTitle: "Connectivity policy applied",
                 successMessage: description
@@ -498,7 +524,7 @@ final class OfflineMapLibraryViewModel: ObservableObject {
             }
         case .repair:
             await execute(successTitle: "Persistent map repaired", successMessage: "HERE persistent map health was repaired and rechecked.") {
-                try await coordinator.repairPersistentMap()
+                try await repairPersistentMap()
             }
         }
     }
@@ -546,6 +572,32 @@ final class OfflineMapLibraryViewModel: ObservableObject {
             return "The native HERE engine did not prove this offline capability."
         case .limited, .ready:
             return "This offline capability is not available."
+        }
+    }
+
+    private func prepareCoordinator() async {
+        if let productionPrepare {
+            await productionPrepare()
+        } else {
+            await coordinator.prepare()
+        }
+    }
+
+    private func applyConnectivityPolicy(
+        _ policy: OfflineMapConnectivityPolicy
+    ) async throws {
+        if let productionConnectivityTransition {
+            try await productionConnectivityTransition(policy)
+        } else {
+            try await coordinator.setConnectivityPolicy(policy)
+        }
+    }
+
+    private func repairPersistentMap() async throws {
+        if let productionRepair {
+            try await productionRepair()
+        } else {
+            try await coordinator.repairPersistentMap()
         }
     }
 
