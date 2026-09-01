@@ -10,6 +10,11 @@
 
 import CryptoKit
 import Foundation
+import Security
+
+#if canImport(Darwin)
+import Darwin
+#endif
 
 private enum OfflineCoverageLimits {
     static let signedPayloadBytes = 16 * 1_024 * 1_024
@@ -23,6 +28,88 @@ private enum OfflineCoverageLimits {
     static let maximumRequestCoordinates = 250_000
     static let earthRadiusMeters = 6_371_008.8
     static let geometricEpsilon = 1e-10
+}
+
+protocol SignedCoverageTrustedAnchorPersistence: Sendable {
+    func load() throws -> Data?
+    func save(_ data: Data) throws
+    func remove() throws
+}
+
+private enum SignedCoverageTrustedAnchorPersistenceError: Error {
+    case keychain(OSStatus)
+    case malformedKeychainResult
+}
+
+/// Keeps the monotonic coverage-time anchor outside the mutable map-data
+/// directory. `ThisDeviceOnly` prevents migration or backup restoration from
+/// pairing a trusted-time record with another device's uptime/boot identity.
+private final class KeychainSignedCoverageTrustedAnchorPersistence:
+    SignedCoverageTrustedAnchorPersistence,
+    @unchecked Sendable
+{
+    private let service = "com.eusorone.EusoTrip.offline-coverage-trusted-clock.v1"
+    private let account: String
+
+    init(rootDirectory: URL) {
+        let rootIdentity = rootDirectory.standardizedFileURL
+            .resolvingSymlinksInPath()
+            .path
+        account = SHA256.hash(data: Data(rootIdentity.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
+    }
+
+    func load() throws -> Data? {
+        var query = baseQuery
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecItemNotFound { return nil }
+        guard status == errSecSuccess else {
+            throw SignedCoverageTrustedAnchorPersistenceError.keychain(status)
+        }
+        guard let data = result as? Data else {
+            throw SignedCoverageTrustedAnchorPersistenceError.malformedKeychainResult
+        }
+        return data
+    }
+
+    func save(_ data: Data) throws {
+        let attributes = [kSecValueData as String: data]
+        let updateStatus = SecItemUpdate(
+            baseQuery as CFDictionary,
+            attributes as CFDictionary
+        )
+        if updateStatus == errSecSuccess { return }
+        guard updateStatus == errSecItemNotFound else {
+            throw SignedCoverageTrustedAnchorPersistenceError.keychain(updateStatus)
+        }
+
+        var item = baseQuery
+        item[kSecValueData as String] = data
+        item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        let addStatus = SecItemAdd(item as CFDictionary, nil)
+        guard addStatus == errSecSuccess else {
+            throw SignedCoverageTrustedAnchorPersistenceError.keychain(addStatus)
+        }
+    }
+
+    func remove() throws {
+        let status = SecItemDelete(baseQuery as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw SignedCoverageTrustedAnchorPersistenceError.keychain(status)
+        }
+    }
+
+    private var baseQuery: [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+    }
 }
 
 enum OfflineCoverageSignatureAlgorithm: String, Codable, Sendable {
@@ -910,7 +997,9 @@ enum SignedInstalledCoverageError: Error, Equatable, Sendable {
     case inventoryTooOld
     case manifestMissing
     case replayRejected
-    case clockRollbackDetected
+    case bootSessionUnavailable
+    case bootSessionChanged
+    case monotonicUptimeRegressed
     case trustedTimeUnavailable
     case persistenceCorrupt
     case persistenceFailed(String)
@@ -950,8 +1039,12 @@ extension SignedInstalledCoverageError: LocalizedError {
             return "No signed installed-region coverage manifest is available."
         case .replayRejected:
             return "An older or conflicting installed-coverage manifest was rejected."
-        case .clockRollbackDetected:
-            return "The device clock moved behind the accepted coverage evidence."
+        case .bootSessionUnavailable:
+            return "The current device boot session cannot be verified for installed coverage."
+        case .bootSessionChanged:
+            return "Installed coverage requires newer signed evidence after a device reboot."
+        case .monotonicUptimeRegressed:
+            return "The monotonic coverage clock moved backwards and was invalidated."
         case .trustedTimeUnavailable:
             return "Trusted time is unavailable for installed-coverage validation."
         }
@@ -993,19 +1086,17 @@ private final class SignedCoverageRootLease: @unchecked Sendable {
 
 actor SignedInstalledCoverageResolver: OfflineInstalledCoverageResolving {
     private struct StoredManifest: Codable {
-        static let currentSchemaVersion = 1
+        static let currentSchemaVersion = 2
 
         let schemaVersion: Int
         let envelope: OfflineCoverageSignedEnvelope
-        let acceptedAt: Date
 
-        init(envelope: OfflineCoverageSignedEnvelope, acceptedAt: Date) {
+        init(envelope: OfflineCoverageSignedEnvelope) {
             schemaVersion = Self.currentSchemaVersion
             self.envelope = envelope
-            self.acceptedAt = acceptedAt
         }
 
-        private enum CodingKeys: String, CodingKey { case schemaVersion, envelope, acceptedAt }
+        private enum CodingKeys: String, CodingKey { case schemaVersion, envelope }
 
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -1018,14 +1109,34 @@ actor SignedInstalledCoverageResolver: OfflineInstalledCoverageResolving {
                 )
             }
             envelope = try container.decode(OfflineCoverageSignedEnvelope.self, forKey: .envelope)
-            acceptedAt = try container.decode(Date.self, forKey: .acceptedAt)
-            guard acceptedAt.timeIntervalSince1970.isFinite else {
-                throw DecodingError.dataCorruptedError(
-                    forKey: .acceptedAt,
-                    in: container,
-                    debugDescription: "Stored coverage acceptance time is invalid."
-                )
-            }
+        }
+    }
+
+    /// Integrity-bound by Keychain storage and matched to the exact persisted
+    /// signed envelope. The authenticated `issuedAt` claim is a conservative
+    /// signed lower bound, not proof of current server receipt time. Every
+    /// later reading advances it only by elapsed system uptime in the same
+    /// kernel boot session; mutable wall time is never persisted or consulted.
+    private struct TrustedTimeAnchor: Codable {
+        static let currentSchemaVersion = 1
+
+        let schemaVersion: Int
+        let envelopeSHA256: String
+        let signedServerTimeEpochSeconds: TimeInterval
+        let receiptUptime: TimeInterval
+        let bootSessionID: String
+
+        init(
+            envelopeSHA256: String,
+            signedServerTime: Date,
+            receiptUptime: TimeInterval,
+            bootSessionID: String
+        ) {
+            schemaVersion = Self.currentSchemaVersion
+            self.envelopeSHA256 = envelopeSHA256
+            signedServerTimeEpochSeconds = signedServerTime.timeIntervalSince1970
+            self.receiptUptime = receiptUptime
+            self.bootSessionID = bootSessionID
         }
     }
 
@@ -1038,8 +1149,13 @@ actor SignedInstalledCoverageResolver: OfflineInstalledCoverageResolving {
     private let maximumInventoryAge: TimeInterval
     private let allowedClockSkew: TimeInterval
     private let currentTime: @Sendable () -> Date
+    private let monotonicUptime: @Sendable () -> TimeInterval
+    private let bootSessionIdentifier: @Sendable () -> String?
+    private let trustedAnchorPersistence: any SignedCoverageTrustedAnchorPersistence
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
+    private var latestObservedAnchorSHA256: String?
+    private var latestObservedUptime: TimeInterval?
 
     init(
         rootDirectory: URL,
@@ -1049,7 +1165,14 @@ actor SignedInstalledCoverageResolver: OfflineInstalledCoverageResolving {
         maximumInventoryAge: TimeInterval = 15 * 60,
         allowedClockSkew: TimeInterval = 300,
         fileManager: FileManager = .default,
-        currentTime: @escaping @Sendable () -> Date = { Date() }
+        currentTime: @escaping @Sendable () -> Date = { Date() },
+        monotonicUptime: @escaping @Sendable () -> TimeInterval = {
+            ProcessInfo.processInfo.systemUptime
+        },
+        bootSessionIdentifier: @escaping @Sendable () -> String? = {
+            SignedInstalledCoverageResolver.currentBootSessionIdentifier()
+        },
+        trustedAnchorPersistence: (any SignedCoverageTrustedAnchorPersistence)? = nil
     ) throws {
         guard boundaryWarningMeters.isFinite, boundaryWarningMeters >= 0,
               maximumInventoryAge.isFinite, maximumInventoryAge > 0,
@@ -1068,6 +1191,10 @@ actor SignedInstalledCoverageResolver: OfflineInstalledCoverageResolving {
         self.allowedClockSkew = allowedClockSkew
         self.fileManager = fileManager
         self.currentTime = currentTime
+        self.monotonicUptime = monotonicUptime
+        self.bootSessionIdentifier = bootSessionIdentifier
+        self.trustedAnchorPersistence = trustedAnchorPersistence
+            ?? KeychainSignedCoverageTrustedAnchorPersistence(rootDirectory: root)
         encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
@@ -1080,9 +1207,9 @@ actor SignedInstalledCoverageResolver: OfflineInstalledCoverageResolving {
         _ envelope: OfflineCoverageSignedEnvelope,
         acceptedAt: Date? = nil
     ) throws -> HEREOfflineVerifiedCoverageManifest {
-        let now = try trustworthyNow(acceptedAt ?? currentTime())
-        let candidate = try verifier.verify(envelope, at: now)
-        if let existing = try readStoredManifest(at: now, requireCurrentValidity: false) {
+        let receiptTime = try trustworthyWallTime(acceptedAt ?? currentTime())
+        let candidate = try verifier.verify(envelope, at: receiptTime)
+        if let existing = try readStoredManifestForReplay() {
             if candidate.payload.sequence < existing.verified.payload.sequence ||
                 candidate.payload.issuedAt < existing.verified.payload.issuedAt {
                 throw SignedInstalledCoverageError.replayRejected
@@ -1091,20 +1218,35 @@ actor SignedInstalledCoverageResolver: OfflineInstalledCoverageResolving {
                 guard candidate.signedEnvelope == existing.verified.signedEnvelope else {
                     throw SignedInstalledCoverageError.replayRejected
                 }
-                return existing.verified
+                let trustedNow = try trustedTime(
+                    for: existing.stored,
+                    verified: existing.verified
+                )
+                return try verifier.verify(existing.stored.envelope, at: trustedNow)
             }
         }
-        try write(StoredManifest(envelope: envelope, acceptedAt: now))
+        let stored = StoredManifest(envelope: envelope)
+        let anchor = try makeTrustedTimeAnchor(
+            for: stored,
+            verified: candidate
+        )
+        try write(stored, anchor: anchor)
+        latestObservedAnchorSHA256 = anchor.envelopeSHA256
+        latestObservedUptime = anchor.receiptUptime
         return candidate
     }
 
     func removeSignedManifest() throws {
-        guard fileManager.fileExists(atPath: manifestURL.path) else { return }
         do {
-            try fileManager.removeItem(at: manifestURL)
+            if fileManager.fileExists(atPath: manifestURL.path) {
+                try fileManager.removeItem(at: manifestURL)
+            }
+            try trustedAnchorPersistence.remove()
+            latestObservedAnchorSHA256 = nil
+            latestObservedUptime = nil
         } catch {
             throw SignedInstalledCoverageError.persistenceFailed(
-                "The signed installed-coverage manifest could not be removed."
+                "The signed installed-coverage manifest and trusted-time anchor could not be removed."
             )
         }
     }
@@ -1112,13 +1254,10 @@ actor SignedInstalledCoverageResolver: OfflineInstalledCoverageResolving {
     func resolveInstalledCoverage(
         for geometry: OfflineCoverageRequestGeometry
     ) async throws -> OfflineInstalledCoverageResolution {
-        let now = try trustworthyNow(currentTime())
-        guard let stored = try readStoredManifest(at: now, requireCurrentValidity: true) else {
+        guard let stored = try readStoredManifestRequiringCurrentValidity() else {
             throw SignedInstalledCoverageError.manifestMissing
         }
-        guard now.addingTimeInterval(allowedClockSkew) >= stored.stored.acceptedAt else {
-            throw SignedInstalledCoverageError.clockRollbackDetected
-        }
+        let now = stored.trustedTime
 
         let inventory: HEREInstalledRegionInventory
         do {
@@ -1240,26 +1379,53 @@ actor SignedInstalledCoverageResolver: OfflineInstalledCoverageResolving {
         let verified: HEREOfflineVerifiedCoverageManifest
     }
 
-    private func readStoredManifest(
-        at now: Date,
-        requireCurrentValidity: Bool
-    ) throws -> StoredVerifiedManifest? {
+    private struct StoredCurrentVerifiedManifest {
+        let stored: StoredManifest
+        let verified: HEREOfflineVerifiedCoverageManifest
+        let trustedTime: Date
+    }
+
+    private func readStoredManifestForReplay() throws -> StoredVerifiedManifest? {
+        guard let stored = try loadStoredManifest() else { return nil }
+        return StoredVerifiedManifest(
+            stored: stored,
+            verified: try verifier.verifyPersistedForReplay(stored.envelope)
+        )
+    }
+
+    private func readStoredManifestRequiringCurrentValidity()
+        throws -> StoredCurrentVerifiedManifest?
+    {
+        guard let replay = try readStoredManifestForReplay() else { return nil }
+        let now = try trustedTime(for: replay.stored, verified: replay.verified)
+        return StoredCurrentVerifiedManifest(
+            stored: replay.stored,
+            verified: try verifier.verify(replay.stored.envelope, at: now),
+            trustedTime: now
+        )
+    }
+
+    private func loadStoredManifest() throws -> StoredManifest? {
         guard fileManager.fileExists(atPath: manifestURL.path) else { return nil }
         do {
-            let attributes = try fileManager.attributesOfItem(atPath: manifestURL.path)
-            guard let size = attributes[.size] as? NSNumber,
-                  size.intValue <= OfflineCoverageLimits.persistedEnvelopeBytes else {
+            let values = try manifestURL.resourceValues(forKeys: [
+                .isRegularFileKey,
+                .isSymbolicLinkKey,
+                .fileSizeKey,
+            ])
+            guard values.isRegularFile == true,
+                  values.isSymbolicLink != true,
+                  let size = values.fileSize,
+                  size > 0,
+                  size <= OfflineCoverageLimits.persistedEnvelopeBytes else {
                 throw SignedInstalledCoverageError.persistenceCorrupt
             }
             let data = try Data(contentsOf: manifestURL, options: .mappedIfSafe)
-            let stored = try decoder.decode(StoredManifest.self, from: data)
-            guard now.addingTimeInterval(allowedClockSkew) >= stored.acceptedAt else {
-                throw SignedInstalledCoverageError.clockRollbackDetected
+            guard !data.isEmpty,
+                  data.count <= OfflineCoverageLimits.persistedEnvelopeBytes else {
+                throw SignedInstalledCoverageError.persistenceCorrupt
             }
-            let verified = try requireCurrentValidity
-                ? verifier.verify(stored.envelope, at: now)
-                : verifier.verifyPersistedForReplay(stored.envelope)
-            return StoredVerifiedManifest(stored: stored, verified: verified)
+            return try decoder.decode(StoredManifest.self, from: data)
         } catch let error as SignedInstalledCoverageError {
             throw error
         } catch {
@@ -1267,7 +1433,111 @@ actor SignedInstalledCoverageResolver: OfflineInstalledCoverageResolving {
         }
     }
 
-    private func write(_ stored: StoredManifest) throws {
+    private func makeTrustedTimeAnchor(
+        for stored: StoredManifest,
+        verified: HEREOfflineVerifiedCoverageManifest
+    ) throws -> TrustedTimeAnchor {
+        let uptime = monotonicUptime()
+        guard Self.isValid(uptime: uptime) else {
+            throw SignedInstalledCoverageError.trustedTimeUnavailable
+        }
+        guard let bootSessionID = bootSessionIdentifier(),
+              Self.isValid(bootSessionIdentifier: bootSessionID) else {
+            throw SignedInstalledCoverageError.bootSessionUnavailable
+        }
+        return TrustedTimeAnchor(
+            envelopeSHA256: try envelopeSHA256(stored.envelope),
+            signedServerTime: verified.payload.issuedAt,
+            receiptUptime: uptime,
+            bootSessionID: bootSessionID
+        )
+    }
+
+    private func trustedTime(
+        for stored: StoredManifest,
+        verified: HEREOfflineVerifiedCoverageManifest
+    ) throws -> Date {
+        let anchorData: Data
+        do {
+            guard let persisted = try trustedAnchorPersistence.load() else {
+                throw SignedInstalledCoverageError.trustedTimeUnavailable
+            }
+            guard !persisted.isEmpty, persisted.count <= 16 * 1_024 else {
+                throw SignedInstalledCoverageError.persistenceCorrupt
+            }
+            anchorData = persisted
+        } catch let error as SignedInstalledCoverageError {
+            throw error
+        } catch {
+            throw SignedInstalledCoverageError.persistenceFailed(
+                "The installed-coverage trusted-time anchor could not be read."
+            )
+        }
+
+        let anchor: TrustedTimeAnchor
+        do {
+            anchor = try decoder.decode(TrustedTimeAnchor.self, from: anchorData)
+        } catch {
+            throw SignedInstalledCoverageError.persistenceCorrupt
+        }
+        let expectedEnvelopeSHA256 = try envelopeSHA256(stored.envelope)
+        let signedServerTime = verified.payload.issuedAt.timeIntervalSince1970
+        guard anchor.schemaVersion == TrustedTimeAnchor.currentSchemaVersion,
+              anchor.envelopeSHA256 == expectedEnvelopeSHA256,
+              anchor.envelopeSHA256.count == 64,
+              anchor.envelopeSHA256.unicodeScalars.allSatisfy(
+                  CharacterSet(charactersIn: "0123456789abcdef").contains
+              ),
+              anchor.signedServerTimeEpochSeconds.isFinite,
+              anchor.signedServerTimeEpochSeconds == signedServerTime,
+              Self.isValid(uptime: anchor.receiptUptime),
+              Self.isValid(bootSessionIdentifier: anchor.bootSessionID) else {
+            throw SignedInstalledCoverageError.persistenceCorrupt
+        }
+
+        guard let currentBootSessionID = bootSessionIdentifier(),
+              Self.isValid(bootSessionIdentifier: currentBootSessionID) else {
+            throw SignedInstalledCoverageError.bootSessionUnavailable
+        }
+        guard currentBootSessionID == anchor.bootSessionID else {
+            throw SignedInstalledCoverageError.bootSessionChanged
+        }
+        let uptime = monotonicUptime()
+        guard Self.isValid(uptime: uptime) else {
+            throw SignedInstalledCoverageError.trustedTimeUnavailable
+        }
+        let latestForAnchor = latestObservedAnchorSHA256 == anchor.envelopeSHA256
+            ? latestObservedUptime
+            : nil
+        let previousUptime = max(anchor.receiptUptime, latestForAnchor ?? anchor.receiptUptime)
+        guard uptime >= previousUptime else {
+            throw SignedInstalledCoverageError.monotonicUptimeRegressed
+        }
+        let value = Date(
+            timeIntervalSince1970: anchor.signedServerTimeEpochSeconds
+                + uptime - anchor.receiptUptime
+        )
+        guard value.timeIntervalSince1970.isFinite else {
+            throw SignedInstalledCoverageError.trustedTimeUnavailable
+        }
+        latestObservedAnchorSHA256 = anchor.envelopeSHA256
+        latestObservedUptime = uptime
+        return value
+    }
+
+    private func envelopeSHA256(_ envelope: OfflineCoverageSignedEnvelope) throws -> String {
+        let data: Data
+        do {
+            data = try encoder.encode(envelope)
+        } catch {
+            throw SignedInstalledCoverageError.persistenceCorrupt
+        }
+        return SHA256.hash(data: data)
+            .map { String(format: "%02x", $0) }
+            .joined()
+    }
+
+    private func write(_ stored: StoredManifest, anchor: TrustedTimeAnchor) throws {
         do {
             try fileManager.createDirectory(at: coverageDirectory, withIntermediateDirectories: true)
             var values = URLResourceValues()
@@ -1280,19 +1550,38 @@ actor SignedInstalledCoverageResolver: OfflineInstalledCoverageResolving {
                 ofItemAtPath: coverageDirectory.path
             )
 #endif
-            let data = try encoder.encode(stored)
-            guard data.count <= OfflineCoverageLimits.persistedEnvelopeBytes else {
+            let manifestData = try encoder.encode(stored)
+            let anchorData = try encoder.encode(anchor)
+            guard manifestData.count <= OfflineCoverageLimits.persistedEnvelopeBytes,
+                  !anchorData.isEmpty,
+                  anchorData.count <= 16 * 1_024 else {
                 throw SignedInstalledCoverageError.invalidEnvelope(
-                    "The persisted coverage envelope exceeds the safe byte limit."
+                    "The persisted coverage envelope or trusted-time anchor exceeds the safe byte limit."
                 )
             }
-            try data.write(to: manifestURL, options: .atomic)
+            let previousManifestData = try? Data(
+                contentsOf: manifestURL,
+                options: .mappedIfSafe
+            )
+            try manifestData.write(to: manifestURL, options: .atomic)
 #if os(iOS) || os(tvOS) || os(watchOS)
             try fileManager.setAttributes(
                 [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
                 ofItemAtPath: manifestURL.path
             )
 #endif
+            do {
+                try trustedAnchorPersistence.save(anchorData)
+            } catch {
+                if let previousManifestData {
+                    try? previousManifestData.write(to: manifestURL, options: .atomic)
+                } else {
+                    try? fileManager.removeItem(at: manifestURL)
+                }
+                throw SignedInstalledCoverageError.persistenceFailed(
+                    "The installed-coverage trusted-time anchor could not be persisted."
+                )
+            }
         } catch let error as SignedInstalledCoverageError {
             throw error
         } catch {
@@ -1302,11 +1591,57 @@ actor SignedInstalledCoverageResolver: OfflineInstalledCoverageResolving {
         }
     }
 
-    private func trustworthyNow(_ value: Date) throws -> Date {
+    private func trustworthyWallTime(_ value: Date) throws -> Date {
         guard value.timeIntervalSince1970.isFinite else {
             throw SignedInstalledCoverageError.trustedTimeUnavailable
         }
         return value
+    }
+
+    private nonisolated static func isValid(uptime: TimeInterval) -> Bool {
+        uptime.isFinite && uptime >= 0
+    }
+
+    private nonisolated static func isValid(bootSessionIdentifier value: String) -> Bool {
+        !value.isEmpty &&
+            value == value.trimmingCharacters(in: .whitespacesAndNewlines) &&
+            value.utf8.count <= 128 &&
+            value.unicodeScalars.allSatisfy { scalar in
+                scalar.value >= 0x20 && scalar.value != 0x7f
+            }
+    }
+
+    private nonisolated static func currentBootSessionIdentifier() -> String? {
+        #if canImport(Darwin)
+        var requiredSize: size_t = 0
+        guard sysctlbyname(
+            "kern.bootsessionuuid",
+            nil,
+            &requiredSize,
+            nil,
+            0
+        ) == 0,
+        requiredSize > 1,
+        requiredSize <= 256 else {
+            return nil
+        }
+
+        var bytes = [CChar](repeating: 0, count: requiredSize)
+        let status = bytes.withUnsafeMutableBytes { buffer in
+            sysctlbyname(
+                "kern.bootsessionuuid",
+                buffer.baseAddress,
+                &requiredSize,
+                nil,
+                0
+            )
+        }
+        guard status == 0, bytes.last == 0 else { return nil }
+        let value = String(cString: bytes)
+        return isValid(bootSessionIdentifier: value) ? value : nil
+        #else
+        return nil
+        #endif
     }
 
     private var coverageDirectory: URL {
