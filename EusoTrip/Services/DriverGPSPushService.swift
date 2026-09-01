@@ -64,6 +64,10 @@ final class DriverGPSPushService: NSObject, ObservableObject,
     private let manager = CLLocationManager()
     private var activeLoadId: Int?
     var currentLoadId: Int? { activeLoadId }
+    private var isRadioSilenceSuspended = false
+    private var locationPushTask: Task<Void, Never>?
+    private var crumbFlushTask: Task<Void, Never>?
+    private var needsFinalCrumbFlush = false
 
     // MARK: - Breadcrumb trail (L13-6)
     //
@@ -122,6 +126,10 @@ final class DriverGPSPushService: NSObject, ObservableObject,
     func start(loadId: Int) {
         guard activeLoadId != loadId else { return }
         activeLoadId = loadId
+        guard !isRadioSilenceSuspended else {
+            isStreaming = false
+            return
+        }
 
         switch manager.authorizationStatus {
         case .notDetermined:
@@ -146,10 +154,53 @@ final class DriverGPSPushService: NSObject, ObservableObject,
     }
 
     func stop() {
+        if !crumbBuffer.isEmpty,
+           crumbFlushTask != nil || isRadioSilenceSuspended {
+            needsFinalCrumbFlush = true
+        }
         flushCrumbs()                 // persist whatever's buffered before teardown
         manager.stopUpdatingLocation()
+        locationPushTask?.cancel()
         activeLoadId = nil
         isStreaming = false
+    }
+
+    /// Preserve the desired active load and buffered breadcrumbs while
+    /// synchronously stopping every app-owned location upload path.
+    func suspendForAppRadioSilence() {
+        guard !isRadioSilenceSuspended else { return }
+        isRadioSilenceSuspended = true
+        manager.stopUpdatingLocation()
+        isStreaming = false
+        locationPushTask?.cancel()
+        crumbFlushTask?.cancel()
+    }
+
+    /// Resume only when `start(loadId:)` still has a desired load. Buffered
+    /// crumbs remain local during the lease and flush after the transport gate
+    /// has reopened.
+    func resumeAfterAppRadioSilence() {
+        guard isRadioSilenceSuspended else { return }
+        isRadioSilenceSuspended = false
+        if needsFinalCrumbFlush {
+            needsFinalCrumbFlush = false
+            flushCrumbs()
+        }
+        guard activeLoadId != nil else { return }
+
+        switch manager.authorizationStatus {
+        case .authorizedWhenInUse, .authorizedAlways:
+            manager.startUpdatingLocation()
+            isStreaming = true
+            lastError = nil
+            flushCrumbs()
+        case .notDetermined:
+            manager.requestWhenInUseAuthorization()
+        case .denied, .restricted:
+            isStreaming = false
+        @unknown default:
+            isStreaming = false
+        }
     }
 
     // MARK: - CLLocationManagerDelegate
@@ -185,7 +236,7 @@ final class DriverGPSPushService: NSObject, ObservableObject,
             guard let self else { return }
             switch manager.authorizationStatus {
             case .authorizedWhenInUse, .authorizedAlways:
-                if self.activeLoadId != nil {
+                if self.activeLoadId != nil, !self.isRadioSilenceSuspended {
                     manager.startUpdatingLocation()
                     self.isStreaming = true
                     self.lastError = nil
@@ -203,6 +254,7 @@ final class DriverGPSPushService: NSObject, ObservableObject,
 
     @MainActor
     private func maybePush(fix: CLLocation) {
+        guard !isRadioSilenceSuspended, locationPushTask == nil else { return }
         let now = Date()
         if now.timeIntervalSince(lastPushedAt) < minPushInterval { return }
         // Skip if the driver hasn't moved meaningfully since the last
@@ -226,7 +278,9 @@ final class DriverGPSPushService: NSObject, ObservableObject,
         let heading: Double? = fix.course >= 0 ? fix.course : nil
         let speedMph: Double? = fix.speed >= 0 ? fix.speed * 2.236_94 : nil
 
-        Task {
+        locationPushTask = Task { @MainActor [weak self] in
+            guard let self, !Task.isCancelled, !self.isRadioSilenceSuspended else { return }
+            defer { self.locationPushTask = nil }
             do {
                 struct UpdateLocationInput: Encodable {
                     let lat: Double
@@ -242,11 +296,14 @@ final class DriverGPSPushService: NSObject, ObservableObject,
                     input: UpdateLocationInput(lat: lat, lng: lng, city: nil, state: nil,
                                                heading: heading, speed: speedMph)
                 )
-                await MainActor.run { self.lastPushAt = Date() }
+                guard !Task.isCancelled, !self.isRadioSilenceSuspended else { return }
+                self.lastPushAt = Date()
+            } catch is CancellationError {
+                return
+            } catch is AppRadioSilenceTransportError {
+                return
             } catch {
-                await MainActor.run {
-                    self.lastError = "GPS push failed: \(error.localizedDescription)"
-                }
+                self.lastError = "GPS push failed: \(error.localizedDescription)"
             }
         }
     }
@@ -257,7 +314,7 @@ final class DriverGPSPushService: NSObject, ObservableObject,
     /// stale-fix guard). Flushes when 20 are buffered or 60 s have elapsed.
     @MainActor
     private func bufferCrumb(_ fix: CLLocation) {
-        guard breadcrumbsEnabled else { return }
+        guard breadcrumbsEnabled, !isRadioSilenceSuspended else { return }
         let battery = UIDevice.current.isBatteryMonitoringEnabled && UIDevice.current.batteryLevel >= 0
             ? Double(UIDevice.current.batteryLevel * 100) : nil
         let charging: Bool? = UIDevice.current.isBatteryMonitoringEnabled
@@ -293,7 +350,10 @@ final class DriverGPSPushService: NSObject, ObservableObject,
     /// long offline stretch never grows unbounded).
     @MainActor
     private func flushCrumbs() {
-        guard breadcrumbsEnabled, !crumbBuffer.isEmpty else { return }
+        guard breadcrumbsEnabled,
+              !isRadioSilenceSuspended,
+              crumbFlushTask == nil,
+              !crumbBuffer.isEmpty else { return }
         let batch = Array(crumbBuffer.prefix(200))
         crumbBuffer.removeFirst(min(200, crumbBuffer.count))
         lastCrumbFlushAt = Date()
@@ -306,8 +366,18 @@ final class DriverGPSPushService: NSObject, ObservableObject,
                 heading: c.heading, accuracy: c.accuracy, altitude: c.altitude,
                 batteryLevel: c.batteryPct, isCharging: c.isCharging)
         }
-        Task { @MainActor [weak self] in
+        crumbFlushTask = Task { @MainActor [weak self] in
             guard let self else { return }
+            var retryAfterPolicyCancellation = false
+            defer {
+                self.crumbFlushTask = nil
+                if self.needsFinalCrumbFlush, !self.isRadioSilenceSuspended {
+                    self.needsFinalCrumbFlush = false
+                    self.flushCrumbs()
+                } else if retryAfterPolicyCancellation, !self.isRadioSilenceSuspended {
+                    self.flushCrumbs()
+                }
+            }
             do {
                 _ = try await EusoTripAPI.shared.locationBatch(locations: points, loadId: loadId)
             } catch {
@@ -319,7 +389,11 @@ final class DriverGPSPushService: NSObject, ObservableObject,
                 if self.crumbBuffer.count > 200 {
                     self.crumbBuffer.removeFirst(self.crumbBuffer.count - 200)
                 }
-                self.lastError = "locationBatch: \(error.localizedDescription)"
+                if !(error is CancellationError), !(error is AppRadioSilenceTransportError) {
+                    self.lastError = "locationBatch: \(error.localizedDescription)"
+                } else {
+                    retryAfterPolicyCancellation = true
+                }
             }
         }
     }

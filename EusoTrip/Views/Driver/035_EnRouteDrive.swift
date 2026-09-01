@@ -75,6 +75,7 @@
 
 import SwiftUI
 import CoreLocation
+import Foundation
 
 // MARK: - Screen
 
@@ -87,6 +88,8 @@ struct EnRouteDrive: View {
     @StateObject private var lifecycle = TripLifecycleStore()
     @StateObject private var hos = HOSLiveStore()
     @State private var activeLoad: Load?
+    @State private var presentsOfflineRoadDesk = false
+    @State private var appRadioSilenceLease: AppRadioSilenceLease?
 
     /// §3 per-load weather for the ACTIVE haul — the canonical
     /// `weather.forLoad` store (origin/dest realtime + LaneImpact peakLeg/
@@ -263,92 +266,150 @@ struct EnRouteDrive: View {
     }
 
     var body: some View {
-        ZStack(alignment: .top) {
-            // Map canvas — fills the whole screen behind every overlay
-            mapBackground
-                .frame(height: 760)
-                .clipped()
+        Group {
+            if presentsOfflineRoadDesk {
+                palette.bgPage
+                    .ignoresSafeArea()
+                    .accessibilityHidden(true)
+            } else {
+                ZStack(alignment: .top) {
+                    // Map canvas — fills the whole screen behind every overlay
+                    mapBackground
+                        .frame(height: 760)
+                        .clipped()
 
-            // Floating top: turn banner + THEN preview pill + hazmat band + road intel
-            VStack(spacing: 10) {
-                turnBanner
-                    .padding(.horizontal, 14)
-                thenPreviewPill
-                    .padding(.leading, 22)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                if !hazmatReroute.isEmpty {
-                    hazmatBand
-                        .padding(.horizontal, 14)
-                }
-                // §3 route-cell weather band — a translucent hazard band over
-                // the active load's peak leg + an ice/wet-pavement warning
-                // chip when the §3 drivers indicate it. Renders ONLY on a real
-                // actionable lane risk (weatherRiskTier != nil); hidden when
-                // the card is enterprise-gated / clear (honest absence).
-                if let tier = weatherRiskTier {
-                    weatherRouteBand(tier: tier)
-                        .padding(.horizontal, 14)
-                }
-                // HERE Dynamic Map Content — live Real-Time Traffic,
-                // Road Alerts (incidents), and Safety Cameras. Chips
-                // hide per-layer when HERE returns nothing. The active
-                // load id also feeds the §3 "WEATHER AHEAD" 4th chip
-                // (hidden when the lane is clear / enterprise-gated).
-                EnRouteRoadIntelStrip(loadId: activeLoad.map { String($0.id) })
-                    .padding(.horizontal, 14)
-                Spacer()
-            }
-            .padding(.top, 8)
+                    // Floating top: turn banner + THEN preview pill + hazmat band + road intel
+                    VStack(spacing: 10) {
+                        turnBanner
+                            .padding(.horizontal, 14)
+                        thenPreviewPill
+                            .padding(.leading, 22)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        if !hazmatReroute.isEmpty {
+                            hazmatBand
+                                .padding(.horizontal, 14)
+                        }
+                        // §3 route-cell weather band — a translucent hazard band over
+                        // the active load's peak leg + an ice/wet-pavement warning
+                        // chip when the §3 drivers indicate it. Renders ONLY on a real
+                        // actionable lane risk (weatherRiskTier != nil); hidden when
+                        // the card is enterprise-gated / clear (honest absence).
+                        if let tier = weatherRiskTier {
+                            weatherRouteBand(tier: tier)
+                                .padding(.horizontal, 14)
+                        }
+                        // HERE Dynamic Map Content — live Real-Time Traffic,
+                        // Road Alerts (incidents), and Safety Cameras. Chips
+                        // hide per-layer when HERE returns nothing. The active
+                        // load id also feeds the §3 "WEATHER AHEAD" 4th chip
+                        // (hidden when the lane is clear / enterprise-gated).
+                        EnRouteRoadIntelStrip(loadId: activeLoad.map { String($0.id) })
+                            .padding(.horizontal, 14)
+                        Spacer()
+                    }
+                    .padding(.top, 8)
 
-            // Right rail of map control discs
-            VStack {
-                Spacer().frame(height: 260)
-                HStack {
-                    Spacer()
-                    mapControlRail
-                        .padding(.trailing, 14)
-                }
-                Spacer()
-            }
+                    // Right rail of map control discs
+                    VStack {
+                        Spacer().frame(height: 260)
+                        HStack {
+                            Spacer()
+                            mapControlRail
+                                .padding(.trailing, 14)
+                        }
+                        Spacer()
+                    }
 
-            // Speed limit + speedometer (bottom-left over the map)
-            VStack {
-                Spacer()
-                HStack(alignment: .bottom) {
-                    speedCluster
-                        .padding(.leading, 14)
-                        .padding(.bottom, 6)
-                    Spacer()
-                }
-                .padding(.bottom, 160)
-            }
+                    // Speed limit + speedometer (bottom-left over the map)
+                    VStack {
+                        Spacer()
+                        HStack(alignment: .bottom) {
+                            speedCluster
+                                .padding(.leading, 14)
+                                .padding(.bottom, 6)
+                            Spacer()
+                        }
+                        .padding(.bottom, 160)
+                    }
 
-            // Bottom summary card (ETA + mute + Exit + HOS/Shield chips)
-            VStack(spacing: 6) {
-                Spacer()
-                // HERE reverse-geocode chip — surfaces the live cross-
-                // street + city under the summary so the driver sees
-                // where ESANG actually thinks they are. Hides cleanly
-                // when location is denied or HERE returns empty.
-                HereCurrentLocationChip()
-                    .padding(.horizontal, 14)
-                // HERE Traffic Analytics — typical speed for the live
-                // viewport, anchoring the driver's self-pacing against
-                // the corridor's historical pattern.
-                HereTypicalSpeedChip()
-                    .padding(.horizontal, 14)
-                bottomSummaryCard
-                    .padding(.horizontal, 14)
-                    .padding(.bottom, 8) // nav clearance handled by Shell
+                    // Bottom summary card (ETA + mute + Exit + HOS/Shield chips)
+                    VStack(spacing: 6) {
+                        Spacer()
+                        // HERE reverse-geocode chip — surfaces the live cross-
+                        // street + city under the summary so the driver sees
+                        // where ESANG actually thinks they are. Hides cleanly
+                        // when location is denied or HERE returns empty.
+                        HereCurrentLocationChip()
+                            .padding(.horizontal, 14)
+                        // HERE Traffic Analytics — typical speed for the live
+                        // viewport, anchoring the driver's self-pacing against
+                        // the corridor's historical pattern.
+                        HereTypicalSpeedChip()
+                            .padding(.horizontal, 14)
+                        bottomSummaryCard
+                            .padding(.horizontal, 14)
+                            .padding(.bottom, 8) // nav clearance handled by Shell
+                    }
+                }
+                .eusoRefreshTask { await hydrateLiveTrip() }
+                // The online subtree owns this poll. Replacing the subtree with
+                // the radio-silent desk cancels its refresh task, unmounts every
+                // online HERE child, and unregisters foreground refreshes.
+                .onDisappear { wx.stop() }
             }
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("En route drive")
         // Uniform cafe-door entrance.
         .screenTileRoot()
-        .task { await hydrateLiveTrip() }
-        // §3 weather store stops with the screen (cancels the 30s active poll).
-        .onDisappear { wx.stop() }
+        .fullScreenCover(
+            isPresented: $presentsOfflineRoadDesk,
+            onDismiss: releaseAppRadioSilenceLease
+        ) {
+            NavigationStack {
+                Group {
+                    if let composition = OfflineMapProductionComposition.shared {
+                        OfflineRoadJourneyView(composition: composition)
+                    } else {
+                        EusoEmptyState(
+                            systemImage: "map.fill",
+                            title: "Offline navigation unavailable",
+                            subtitle: "This app version could not install the approved native offline composition. No online substitute was opened."
+                        )
+                        .padding(24)
+                        .navigationTitle("Offline journey")
+                    }
+                }
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Return to live map") {
+                            Task { @MainActor in
+                                await OfflineMapProductionComposition.shared?
+                                    .stopNavigation()
+                                releaseAppRadioSilenceLease()
+                                presentsOfflineRoadDesk = false
+                            }
+                        }
+                    }
+                }
+            }
+            .interactiveDismissDisabled()
+        }
+    }
+
+    private func presentOfflineRoadDesk() {
+        if appRadioSilenceLease == nil {
+            appRadioSilenceLease = AppRadioSilenceCoordinator.shared.acquire(
+                reason: .offlineRoadJourney
+            )
+        }
+        presentsOfflineRoadDesk = true
+    }
+
+    private func releaseAppRadioSilenceLease() {
+        guard let lease = appRadioSilenceLease else { return }
+        AppRadioSilenceCoordinator.shared.release(lease)
+        appRadioSilenceLease = nil
     }
 
     private func hydrateLiveTrip() async {
@@ -357,13 +418,18 @@ struct EnRouteDrive: View {
         // lands. Both are idempotent — safe to call on every appearance.
         async let hosBoot: () = hos.bootstrap()
         await lifecycle.hydrateActiveLoad()
+        guard !Task.isCancelled else { return }
         await lifecycle.refresh()
+        guard !Task.isCancelled else { return }
         if !lifecycle.loadId.isEmpty, let n = Int(lifecycle.loadId) {
             activeLoad = try? await EusoTripAPI.shared.loads.getById(n)
+            guard !Task.isCancelled else { return }
         }
         if let load = activeLoad {
             await refreshRoutePolyline(for: load)
+            guard !Task.isCancelled else { return }
             await resolveReceiverFence(for: load)
+            guard !Task.isCancelled else { return }
             // §3 weather for the active haul — in-progress refresh (~30s).
             // Idempotent: startAutoRefresh stops any prior poll first.
             wx.startAutoRefresh(loadId: String(load.id), inProgress: true)
@@ -425,7 +491,18 @@ struct EnRouteDrive: View {
 
     // MARK: Turn-by-turn banner
 
+    @ViewBuilder
     private var turnBanner: some View {
+        if let composition = OfflineMapProductionComposition.shared {
+            OfflineDriverTurnBanner(composition: composition) {
+                legacyTurnBanner
+            }
+        } else {
+            legacyTurnBanner
+        }
+    }
+
+    private var legacyTurnBanner: some View {
         HStack(alignment: .top, spacing: 12) {
             // Big right-turn arrow
             Image(systemName: "arrow.turn.up.right")
@@ -710,17 +787,30 @@ struct EnRouteDrive: View {
 
     private var mapControlRail: some View {
         VStack(spacing: 10) {
-            glassDisc("magnifyingglass", label: "Search along route")
-            glassDisc("speaker.wave.2.fill", label: "Toggle voice coaching")
-            glassDisc("location.north.circle.fill", label: "Re-center map")
-            glassDisc("exclamationmark.triangle.fill",
-                      label: "ESANG alerts",
-                      tinted: true)
+            Button {
+                presentOfflineRoadDesk()
+            } label: {
+                glassDisc("location.north.fill", tinted: true)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Open radio-silent offline journey")
+            .accessibilityHint("Opens installed-data search, covered truck routing, and native offline guidance.")
+
+            Button {
+                toggleVoiceMute?()
+            } label: {
+                glassDisc("speaker.wave.2.fill")
+            }
+            .buttonStyle(.plain)
+            .disabled(toggleVoiceMute == nil)
+            .accessibilityLabel("Toggle voice coaching")
         }
     }
 
-    @ViewBuilder
-    private func glassDisc(_ systemName: String, label: String, tinted: Bool = false) -> some View {
+    private func glassDisc(
+        _ systemName: String,
+        tinted: Bool = false
+    ) -> some View {
         ZStack {
             Circle()
                 .fill(.ultraThinMaterial)
@@ -737,7 +827,6 @@ struct EnRouteDrive: View {
             }
         }
         .frame(width: 40, height: 40)
-        .accessibilityLabel(label)
     }
 
     // MARK: Speed limit + speedometer
@@ -1088,6 +1177,142 @@ struct EnRouteDrive: View {
             .font(EType.mono(.micro)).tracking(0.3)
             .foregroundStyle(palette.textTertiary)
             .position(point)
+    }
+}
+
+@MainActor
+private struct OfflineDriverTurnBanner<Fallback: View>: View {
+    @ObservedObject var composition: OfflineMapProductionComposition
+    private let fallback: () -> Fallback
+
+    init(
+        composition: OfflineMapProductionComposition,
+        @ViewBuilder fallback: @escaping () -> Fallback
+    ) {
+        self.composition = composition
+        self.fallback = fallback
+    }
+
+    var body: some View {
+        if isActive {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: stateSymbol)
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(Color.white)
+                    .frame(width: 40, height: 40)
+                    .background(Color.white.opacity(0.14))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.sm))
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("RADIO-SILENT GUIDANCE")
+                        .font(EType.mono(.micro))
+                        .tracking(0.7)
+                        .foregroundStyle(Color.white.opacity(0.76))
+                    if let maneuver = composition.currentNavigationManeuver {
+                        Text(maneuver.instruction)
+                            .font(EType.body.weight(.semibold))
+                            .foregroundStyle(Color.white)
+                            .lineLimit(2)
+                        Text("In \(distance(maneuver.distanceMeters))")
+                            .font(EType.mono(.caption))
+                            .foregroundStyle(Color.white.opacity(0.88))
+                    } else {
+                        Text(stateTitle)
+                            .font(EType.body.weight(.semibold))
+                            .foregroundStyle(Color.white)
+                    }
+                    if let deviation = composition.lastNavigationDeviation {
+                        Text("Off route · \(Int(deviation.crossTrackMeters.rounded())) m · \(deviation.consecutiveSamples) fixes")
+                            .font(EType.mono(.micro))
+                            .foregroundStyle(Color.white.opacity(0.82))
+                    } else {
+                        Text(coverageTitle)
+                            .font(EType.mono(.micro))
+                            .foregroundStyle(Color.white.opacity(0.72))
+                            .lineLimit(1)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Image(systemName: "antenna.radiowaves.left.and.right.slash")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(Color.white)
+                    .frame(width: 36, height: 36)
+                    .background(Color.white.opacity(0.14))
+                    .clipShape(Circle())
+            }
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: Radius.lg)
+                    .fill(LinearGradient.diagonal)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.lg)
+                    .strokeBorder(Color.white.opacity(0.14), lineWidth: 1)
+            )
+            .shadow(color: Brand.blue.opacity(0.32), radius: 16, x: -2, y: 6)
+            .shadow(color: Brand.magenta.opacity(0.32), radius: 16, x: 2, y: 6)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(accessibilityText)
+        } else {
+            fallback()
+        }
+    }
+
+    private var isActive: Bool {
+        switch composition.navigationState {
+        case .starting, .navigating, .paused, .offRoute, .rerouting:
+            return true
+        case .idle, .arrived, .stopped, .failed:
+            return false
+        }
+    }
+
+    private var stateSymbol: String {
+        switch composition.navigationState {
+        case .offRoute, .rerouting: return "arrow.triangle.branch"
+        case .paused: return "pause.fill"
+        case .starting: return "hourglass"
+        case .navigating: return "location.north.fill"
+        case .idle, .arrived, .stopped, .failed: return "location.slash"
+        }
+    }
+
+    private var stateTitle: String {
+        switch composition.navigationState {
+        case .starting: return "Starting native offline guidance"
+        case .navigating: return "Waiting for the next verified maneuver"
+        case .paused(_, let reason): return "Guidance paused · \(reason)"
+        case .offRoute(_, let deviation):
+            return "Off route · \(Int(deviation.crossTrackMeters.rounded())) m"
+        case .rerouting: return "Calculating an offline reroute"
+        case .idle, .arrived, .stopped, .failed: return "Offline guidance inactive"
+        }
+    }
+
+    private var coverageTitle: String {
+        switch composition.navigationCoverage {
+        case .verified(let evidence):
+            return "Coverage verified · \(evidence.regionIDs.map(\.rawValue).joined(separator: ", "))"
+        case .approachingBoundary(_, let distanceMeters):
+            return distanceMeters.map { "Coverage boundary in \(distance($0))" }
+                ?? "Approaching the installed-coverage boundary"
+        case .outsideInstalledCoverage:
+            return "Outside verified installed coverage"
+        case .unknown:
+            return "Coverage state is being verified"
+        }
+    }
+
+    private var accessibilityText: String {
+        let instruction = composition.currentNavigationManeuver?.instruction ?? stateTitle
+        return "Radio-silent guidance. \(instruction). \(coverageTitle)."
+    }
+
+    private func distance(_ meters: Int64) -> String {
+        meters < 1_000
+            ? "\(meters) m"
+            : String(format: "%.1f km", Double(meters) / 1_000)
     }
 }
 

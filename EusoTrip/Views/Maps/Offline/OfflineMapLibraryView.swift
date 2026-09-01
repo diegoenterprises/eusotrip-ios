@@ -4,24 +4,35 @@
 //
 //  OPERATIONS BOARD archetype. This surface helps an operator verify and
 //  maintain the HERE regions required for a journey before connectivity loss.
-//  The region register is the accessibility-equivalent source of truth while
-//  the native coverage-map renderer is not yet mounted in this surface.
+//  The region register remains the accessibility-equivalent source of truth;
+//  the native renderer mounts only from the app-owned, radio-silent HERE
+//  composition with signed installed-coverage authority.
 //
 
 import SwiftUI
+
+#if canImport(UIKit)
+import UIKit
+#endif
 
 @MainActor
 struct OfflineMapManagementView: View {
     @Environment(\.palette) private var palette
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
     @StateObject private var model: OfflineMapLibraryViewModel
+    @State private var selectedMapMode: HereOfflineMapSurfaceMode = .truck
+    @State private var selectedMapFamily: HereOfflineMapSurfaceFamily = .operational
+    private let productionComposition: OfflineMapProductionComposition?
 
     init(viewModel: OfflineMapLibraryViewModel) {
         _model = StateObject(wrappedValue: viewModel)
+        productionComposition = nil
     }
 
     init(owner: OfflineMapCompositionOwner) {
         _model = StateObject(wrappedValue: OfflineMapLibraryViewModel(owner: owner))
+        productionComposition = nil
     }
 
     init(productionComposition: OfflineMapProductionComposition) {
@@ -30,6 +41,7 @@ struct OfflineMapManagementView: View {
                 productionComposition: productionComposition
             )
         )
+        self.productionComposition = productionComposition
     }
 
     /// Composition-ready entry for navigation surfaces. The caller must pass
@@ -46,6 +58,7 @@ struct OfflineMapManagementView: View {
             requiredCapabilities: requiredCapabilities
         )
         _model = StateObject(wrappedValue: OfflineMapLibraryViewModel(owner: owner))
+        productionComposition = nil
     }
 
     var body: some View {
@@ -61,6 +74,7 @@ struct OfflineMapManagementView: View {
                 readinessRegister
                 decisionRail
                 coverageInstrumentWell
+                offlineJourneyLauncher
                 inventoryScopeRail
                 inventoryRegister
                 operationRegister
@@ -446,40 +460,167 @@ struct OfflineMapManagementView: View {
         VStack(alignment: .leading, spacing: Space.s3) {
             registerHeading(
                 title: "COVERAGE INSTRUMENT",
-                detail: "verified text register · native map pending",
+                detail: "\(nativeMapModeTitle(selectedMapMode)) · \(nativeMapFamilyTitle(selectedMapFamily)) · native offline preview",
                 systemImage: "scope",
                 color: Brand.magenta
             )
 
-            ZStack {
-                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                    .fill(palette.bgSecondary)
-                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                    .strokeBorder(palette.borderStrong)
-
-                VStack(spacing: Space.s3) {
-                    ZStack {
-                        Image(systemName: "map.fill")
-                            .font(.system(size: 42, weight: .regular))
-                            .foregroundStyle(LinearGradient.diagonal)
-                        Image(systemName: "slash.circle.fill")
-                            .font(.system(size: 22, weight: .bold))
-                            .foregroundStyle(Brand.warning)
-                            .offset(x: 24, y: 18)
+            VStack(alignment: .leading, spacing: Space.s2) {
+                instrumentAxisLabel("FREIGHT MODE")
+                Picker("Freight mode", selection: $selectedMapMode) {
+                    ForEach(HereOfflineMapSurfaceMode.allCases, id: \.self) { mode in
+                        Label(
+                            nativeMapModeTitle(mode),
+                            systemImage: nativeMapModeSymbol(mode)
+                        )
+                        .tag(mode)
                     }
-                    Text("Native coverage map unavailable")
-                        .font(EType.title)
-                        .foregroundStyle(palette.textPrimary)
-                    Text("A native coverage preview is unavailable in this build. The verified region register below remains the source of truth; no stock or substitute map is shown.")
-                        .font(EType.caption)
-                        .foregroundStyle(palette.textSecondary)
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.horizontal, Space.s5)
                 }
+                .pickerStyle(.segmented)
+                .frame(minHeight: 44)
+                .accessibilityHint("Select Truck, Rail, or Vessel native cartography.")
+
+                instrumentAxisLabel("MAP FAMILY")
+                    .padding(.top, Space.s1)
+                Picker("Map family", selection: $selectedMapFamily) {
+                    ForEach(HereOfflineMapSurfaceFamily.allCases, id: \.self) { family in
+                        Text(nativeMapFamilyTitle(family))
+                            .tag(family)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(minHeight: 44)
+                .accessibilityHint("Select Operational, Navigation, or Terrain.")
             }
-            .frame(minHeight: 180)
-            .accessibilityElement(children: .combine)
+
+            if let productionComposition {
+                OfflineNativeCoverageMapSurfaceHost(
+                    composition: productionComposition,
+                    offlineSnapshot: model.snapshot,
+                    identity: .init(
+                        mode: selectedMapMode,
+                        family: selectedMapFamily,
+                        theme: colorScheme == .dark ? .dark : .light
+                    )
+                )
+            } else {
+                offlineNativeMapUnavailable(
+                    detail: "This app version cannot open the native offline preview here. The verified region register remains available; no stock or substitute map is shown."
+                )
+            }
+        }
+    }
+
+    private func instrumentAxisLabel(_ title: String) -> some View {
+        Text(title)
+            .font(EType.micro)
+            .tracking(0.7)
+            .foregroundStyle(palette.textTertiary)
+    }
+
+    private func nativeMapModeTitle(_ mode: HereOfflineMapSurfaceMode) -> String {
+        switch mode {
+        case .truck: return "Truck"
+        case .rail: return "Rail"
+        case .vessel: return "Vessel"
+        }
+    }
+
+    private func nativeMapModeSymbol(_ mode: HereOfflineMapSurfaceMode) -> String {
+        switch mode {
+        case .truck: return "truck.box.fill"
+        case .rail: return "tram.fill"
+        case .vessel: return "ferry.fill"
+        }
+    }
+
+    private func nativeMapFamilyTitle(
+        _ family: HereOfflineMapSurfaceFamily
+    ) -> String {
+        switch family {
+        case .operational: return "Operational"
+        case .navigation: return "Navigation"
+        case .terrain: return "Terrain"
+        }
+    }
+
+    private func offlineNativeMapUnavailable(detail: String) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .fill(palette.bgSecondary)
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(palette.borderStrong)
+
+            VStack(spacing: Space.s3) {
+                ZStack {
+                    Image(systemName: "map.fill")
+                        .font(.system(size: 42, weight: .regular))
+                        .foregroundStyle(LinearGradient.diagonal)
+                    Image(systemName: "slash.circle.fill")
+                        .font(.system(size: 22, weight: .bold))
+                        .foregroundStyle(Brand.warning)
+                        .offset(x: 24, y: 18)
+                }
+                Text("Native offline map unavailable")
+                    .font(EType.title)
+                    .foregroundStyle(palette.textPrimary)
+                Text(detail)
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, Space.s5)
+            }
+        }
+        .frame(minHeight: 180)
+        .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder
+    private var offlineJourneyLauncher: some View {
+        if let productionComposition {
+            NavigationLink {
+                OfflineRoadJourneyView(composition: productionComposition)
+            } label: {
+                HStack(spacing: Space.s4) {
+                    ZStack {
+                        Circle()
+                            .fill(Brand.info.opacity(0.14))
+                            .frame(width: 52, height: 52)
+                        Image(systemName: "location.north.line.fill")
+                            .font(.system(size: 23, weight: .semibold))
+                            .foregroundStyle(LinearGradient.primary)
+                    }
+                    VStack(alignment: .leading, spacing: Space.s1) {
+                        Text("PLAN OFFLINE ROAD JOURNEY")
+                            .font(EType.micro)
+                            .tracking(0.8)
+                            .foregroundStyle(Brand.info)
+                        Text("Search · truck route · guidance")
+                            .font(EType.title)
+                            .foregroundStyle(palette.textPrimary)
+                        Text("Uses a fresh precise device fix and verified installed regions. Every blocker remains visible before departure.")
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: Space.s2)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(palette.textTertiary)
+                }
+                .padding(Space.s4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(palette.bgCard)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                        .strokeBorder(palette.borderSoft)
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Plan an offline road or truck journey")
+            .accessibilityHint("Opens installed-data search, covered route calculation, and native offline guidance.")
         }
     }
 
@@ -1738,3 +1879,417 @@ private enum OfflineMapLibraryFormat {
         date.formatted(.relative(presentation: .named))
     }
 }
+
+@MainActor
+private struct OfflineNativeCoverageMapSurfaceHost: View {
+    @Environment(\.palette) private var palette
+    @ObservedObject var composition: OfflineMapProductionComposition
+    let offlineSnapshot: OfflineMapSnapshot
+    let identity: HereOfflineNativeStyleIdentity
+    @State private var retryGeneration: UInt64 = 0
+
+    #if canImport(UIKit)
+    @StateObject private var mountModel: OfflineNativeCoverageMapMountModel
+    #endif
+
+    init(
+        composition: OfflineMapProductionComposition,
+        offlineSnapshot: OfflineMapSnapshot,
+        identity: HereOfflineNativeStyleIdentity
+    ) {
+        self.composition = composition
+        self.offlineSnapshot = offlineSnapshot
+        self.identity = identity
+        #if canImport(UIKit)
+        _mountModel = StateObject(
+            wrappedValue: OfflineNativeCoverageMapMountModel(
+                composition: composition
+            )
+        )
+        #endif
+    }
+
+    var body: some View {
+        #if canImport(UIKit)
+        let isEligible = blockingReason == nil
+        let isVisible = mountModel.isRendered && isEligible
+        let effectiveAccessibilityText = blockingReason.map {
+            "Native offline map preview unavailable. \($0)"
+        } ?? mountModel.accessibilityText
+        ZStack {
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .fill(palette.bgSecondary)
+
+            if let nativeView = mountModel.nativeView {
+                OfflineNativeCoverageUIView(nativeView: nativeView)
+                    .opacity(isVisible ? 1 : 0)
+                    .allowsHitTesting(isVisible)
+            }
+
+            if !mountModel.isRendered || !isEligible {
+                opaqueUnavailableState(
+                    detail: blockingReason ?? mountModel.presentationText,
+                    canRetry: isEligible && mountModel.canRetry
+                )
+            }
+
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(palette.borderStrong)
+                .allowsHitTesting(false)
+        }
+        .frame(minHeight: 220)
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        .accessibilityElement(children: isVisible ? .contain : .combine)
+        .accessibilityLabel(effectiveAccessibilityText)
+        .task(id: mountRequest) {
+            mountModel.reconcile(
+                identity: identity,
+                blockingReason: blockingReason,
+                surfaceSnapshot: composition.mapSurfaceSnapshot,
+                retryGeneration: retryGeneration
+            )
+        }
+        .onDisappear {
+            mountModel.unmount()
+        }
+        #else
+        opaqueUnavailableState(
+            detail: "Native offline rendering is unavailable on this platform. The verified region register remains the coverage source of truth.",
+            canRetry: false
+        )
+        .frame(minHeight: 180)
+        #endif
+    }
+
+    private var blockingReason: String? {
+        guard offlineSnapshot.connectivityPolicy == .radioSilent,
+              offlineSnapshot.radioSilenceState == .enforced else {
+            return "Enable Radio Silent and complete its device check before opening the native offline preview."
+        }
+        guard composition.installedCoverageTrustAvailable else {
+            return composition.installedCoverageFailure == nil
+                ? "This app version is awaiting approved coverage verification."
+                : "Installed coverage could not be verified for this app version."
+        }
+        guard offlineSnapshot.installedRegionsState.isCurrent else {
+            return "Installed coverage must be freshly verified before the native preview can open."
+        }
+        guard offlineSnapshot.installedRegions.contains(where: { $0.state.isUsableCoverage }) else {
+            return "Download and verify at least one usable region before opening the native offline preview."
+        }
+        guard offlineSnapshot.availableCapabilities.contains(.detailedRendering) else {
+            return "This app version has not proven native offline rendering capability."
+        }
+        return nil
+    }
+
+    #if canImport(UIKit)
+    private var mountRequest: OfflineNativeCoverageMountRequest {
+        .init(
+            identity: identity,
+            blockingReason: blockingReason,
+            surfaceRevision: composition.mapSurfaceSnapshotRevision,
+            leaseRevision: composition.mapSurfaceLeaseRevision,
+            retryGeneration: retryGeneration
+        )
+    }
+    #endif
+
+    private func opaqueUnavailableState(
+        detail: String,
+        canRetry: Bool = false
+    ) -> some View {
+        VStack(spacing: Space.s3) {
+            ZStack {
+                Image(systemName: "map.fill")
+                    .font(.system(size: 42, weight: .regular))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Image(systemName: "lock.shield.fill")
+                    .font(.system(size: 21, weight: .bold))
+                    .foregroundStyle(Brand.warning)
+                    .offset(x: 24, y: 18)
+            }
+            Text("Native offline map gated")
+                .font(EType.title)
+                .foregroundStyle(palette.textPrimary)
+            Text(detail)
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, Space.s5)
+            if canRetry {
+                Button {
+                    retryGeneration &+= 1
+                } label: {
+                    Label("Retry native preview", systemImage: "arrow.clockwise")
+                        .font(EType.caption.weight(.semibold))
+                        .frame(minHeight: 44)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Brand.info)
+                .accessibilityHint("Rechecks the approved local style and radio-silent renderer.")
+            }
+        }
+    }
+}
+
+#if canImport(UIKit)
+private struct OfflineNativeCoverageMountRequest: Hashable {
+    let identity: HereOfflineNativeStyleIdentity
+    let blockingReason: String?
+    let surfaceRevision: UInt64
+    let leaseRevision: UInt64
+    let retryGeneration: UInt64
+}
+
+@MainActor
+private final class OfflineNativeCoverageMapMountModel: ObservableObject {
+    @Published private(set) var nativeView: UIView?
+    @Published private(set) var isRendered = false
+    @Published private(set) var canRetry = false
+    @Published private(set) var presentationText =
+        "Checking the approved local style and radio-silent renderer."
+    @Published private(set) var accessibilityText =
+        "Native offline map preview is being checked."
+
+    private let composition: OfflineMapProductionComposition
+    private let ownerToken = UUID()
+    private var mountedIdentity: HereOfflineNativeStyleIdentity?
+    private var ownsSurface = false
+    private var lastFailedIdentity: HereOfflineNativeStyleIdentity?
+    private var lastFailedRetryGeneration: UInt64?
+
+    init(composition: OfflineMapProductionComposition) {
+        self.composition = composition
+    }
+
+    func reconcile(
+        identity: HereOfflineNativeStyleIdentity,
+        blockingReason: String?,
+        surfaceSnapshot: HereOfflineMapSurfaceSnapshot,
+        retryGeneration: UInt64
+    ) {
+        if let blockingReason {
+            releaseOwnedSurface()
+            lastFailedIdentity = nil
+            lastFailedRetryGeneration = nil
+            canRetry = false
+            presentationText = blockingReason
+            accessibilityText = "Native offline map preview unavailable. \(blockingReason)"
+            return
+        }
+
+        let leaseStatus = composition.mapSurfaceLeaseStatus(for: ownerToken)
+        if ownsSurface, leaseStatus != .ownedByCaller {
+            let lostIdentity = mountedIdentity ?? identity
+            resetLocalMountState()
+            if case .opaqueUnavailable = surfaceSnapshot.status {
+                recordFailedAttempt(
+                    identity: lostIdentity,
+                    retryGeneration: retryGeneration
+                )
+                consume(surfaceSnapshot)
+                return
+            }
+        }
+
+        if ownsSurface, leaseStatus == .ownedByCaller {
+            if mountedIdentity == identity, nativeView != nil {
+                consume(surfaceSnapshot)
+                return
+            }
+            releaseOwnedSurface()
+        }
+
+        if composition.mapSurfaceLeaseStatus(for: ownerToken) == .ownedByAnotherSurface {
+            resetLocalMountState()
+            canRetry = false
+            presentationText =
+                "Another native offline map is active. This preview will retry when that map closes."
+            accessibilityText =
+                "Native offline map preview is waiting for another map surface to close."
+            return
+        }
+
+        if lastFailedIdentity == identity,
+           lastFailedRetryGeneration == retryGeneration {
+            consume(surfaceSnapshot)
+            canRetry = true
+            return
+        }
+
+        resetLocalMountState()
+        canRetry = false
+
+        guard let candidate = composition.prepareMapSurface(
+            identity: identity,
+            ownerToken: ownerToken
+        ) else {
+            if composition.mapSurfaceLeaseStatus(for: ownerToken) == .ownedByAnotherSurface {
+                presentationText =
+                    "Another native offline map is active. This preview will retry when that map closes."
+                accessibilityText =
+                    "Native offline map preview is waiting for another map surface to close."
+                return
+            }
+            recordFailedAttempt(
+                identity: identity,
+                retryGeneration: retryGeneration
+            )
+            consume(composition.mapSurfaceSnapshot)
+            return
+        }
+        guard let view = candidate as? UIView else {
+            composition.clearMapSurface(ownerToken: ownerToken)
+            recordFailedAttempt(
+                identity: identity,
+                retryGeneration: retryGeneration
+            )
+            presentationText = "The native offline preview is unavailable in this app version."
+            accessibilityText = "Native offline map preview is unavailable in this app version."
+            return
+        }
+
+        ownsSurface = true
+        mountedIdentity = identity
+        nativeView = view
+        lastFailedIdentity = nil
+        lastFailedRetryGeneration = nil
+        consume(composition.mapSurfaceSnapshot)
+    }
+
+    func unmount() {
+        releaseOwnedSurface()
+        canRetry = false
+        presentationText = "The native offline preview is closed."
+        accessibilityText = "Native offline map preview is closed."
+    }
+
+    private func releaseOwnedSurface() {
+        let shouldClear = ownsSurface
+        resetLocalMountState()
+        if shouldClear { composition.clearMapSurface(ownerToken: ownerToken) }
+    }
+
+    private func resetLocalMountState() {
+        ownsSurface = false
+        mountedIdentity = nil
+        nativeView = nil
+        isRendered = false
+    }
+
+    private func recordFailedAttempt(
+        identity: HereOfflineNativeStyleIdentity,
+        retryGeneration: UInt64
+    ) {
+        lastFailedIdentity = identity
+        lastFailedRetryGeneration = retryGeneration
+        canRetry = true
+    }
+
+    private func consume(_ snapshot: HereOfflineMapSurfaceSnapshot) {
+        switch snapshot.status {
+        case .rendered:
+            isRendered = true
+            canRetry = false
+            presentationText = "The native offline map is rendered from the approved local style."
+            accessibilityText = snapshot.accessibilityText
+        case .validating:
+            isRendered = false
+            canRetry = false
+            presentationText = "Validating the approved local map style."
+            accessibilityText = "Validating the approved native offline map style."
+        case .loading:
+            isRendered = false
+            canRetry = false
+            presentationText = "Loading the native offline map without a network fallback."
+            accessibilityText = "Loading the native offline map without a network fallback."
+        case .opaqueUnavailable(let failure):
+            isRendered = false
+            canRetry = true
+            presentationText = userMessage(for: failure.code)
+            accessibilityText = "Native offline map preview unavailable. \(presentationText)"
+        }
+    }
+
+    private func userMessage(
+        for code: HereOfflineMapSurfaceFailureCode
+    ) -> String {
+        switch code {
+        case .notPrepared:
+            return "The native offline preview is not active. Retry after the device check completes."
+        case .missingFramework, .runtimeUnavailable, .runtimeLeaseUnavailable:
+            return "Native offline maps are unavailable in this app version."
+        case .radioSilenceNotEnforced:
+            return "Radio Silent must be confirmed before the native offline map can open."
+        case .styleIsNotLocal, .styleMissing, .styleFormatUnsupported,
+             .styleIdentityMismatch, .styleHashInvalid, .styleHashMismatch,
+             .hashingUnavailable, .styleManifestMissing, .styleManifestInvalid,
+             .styleManifestUnapproved, .styleManifestEntryUnavailable,
+             .styleAssetOutsideBundle:
+            return "The approved local map appearance could not be verified in this build."
+        case .nativeStyleLoadFailed:
+            return "The native offline map could not open the approved local appearance."
+        }
+    }
+}
+
+private struct OfflineNativeCoverageUIView: UIViewRepresentable {
+    let nativeView: UIView
+
+    func makeUIView(context: Context) -> OfflineNativeCoverageContainerUIView {
+        let container = OfflineNativeCoverageContainerUIView()
+        container.mount(nativeView)
+        return container
+    }
+
+    func updateUIView(
+        _ uiView: OfflineNativeCoverageContainerUIView,
+        context: Context
+    ) {
+        uiView.mount(nativeView)
+    }
+
+    static func dismantleUIView(
+        _ uiView: OfflineNativeCoverageContainerUIView,
+        coordinator: Void
+    ) {
+        uiView.unmount()
+    }
+}
+
+private final class OfflineNativeCoverageContainerUIView: UIView {
+    private weak var mountedView: UIView?
+    private var mountedConstraints: [NSLayoutConstraint] = []
+
+    func mount(_ view: UIView) {
+        guard mountedView !== view || view.superview !== self else { return }
+        NSLayoutConstraint.deactivate(mountedConstraints)
+        mountedConstraints = []
+        if let mountedView, mountedView.superview === self {
+            mountedView.removeFromSuperview()
+        }
+        view.removeFromSuperview()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(view)
+        mountedConstraints = [
+            view.leadingAnchor.constraint(equalTo: leadingAnchor),
+            view.trailingAnchor.constraint(equalTo: trailingAnchor),
+            view.topAnchor.constraint(equalTo: topAnchor),
+            view.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ]
+        NSLayoutConstraint.activate(mountedConstraints)
+        mountedView = view
+    }
+
+    func unmount() {
+        NSLayoutConstraint.deactivate(mountedConstraints)
+        mountedConstraints = []
+        if let mountedView, mountedView.superview === self {
+            mountedView.removeFromSuperview()
+        }
+        mountedView = nil
+    }
+}
+#endif

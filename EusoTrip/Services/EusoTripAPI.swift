@@ -358,9 +358,18 @@ final class EusoTripAPI: ObservableObject {
     /// terminal UNAUTHORIZED — surface it, don't retry.
     private var isRefreshing = false
 
+    /// Fail-closed app-wide transport gate owned by
+    /// `AppRadioSilenceCoordinator`. This is set synchronously before any
+    /// producer is canceled, so a re-entrant task cannot start a fresh request
+    /// during the transition into a protected offline journey.
+    private(set) var isAppRadioSilenceEnforced = false
+
     /// Single-flight wrapper around `sessionRefreshHandler`. All 401-driven
     /// callers funnel through here so only one refresh runs at a time.
     private func refreshSessionOnce() async throws -> Bool {
+        guard !isAppRadioSilenceEnforced else {
+            throw AppRadioSilenceTransportError.enforced
+        }
         // Check the shared task before the recursion guard. Once the first
         // caller enters its handler `isRefreshing` is true; checking that
         // flag first made every sibling 401 skip the in-flight rotation and
@@ -379,11 +388,16 @@ final class EusoTripAPI: ObservableObject {
         return try await task.value
     }
 
-    /// Underlying URLSession (swap for tests).  Wired to HTTPCookieStorage.shared
+    /// Underlying URLSession (swap for tests). Wired to HTTPCookieStorage.shared
     /// so the JWT cookie set by auth.login persists across requests.
-    /// Cache is explicitly disabled — see comment below.
-    lazy var session: URLSession = {
-        let config = URLSessionConfiguration.default
+    ///
+    /// The transport uses an ephemeral configuration even though auth cookies
+    /// are explicitly shared. Build 201 crashed in CFNetwork's cache-loading
+    /// path while ERG detail work was being canceled and restarted. A private,
+    /// cacheless session keeps API task lifecycle independent from the process-
+    /// wide URLCache used by unrelated image/weather requests.
+    nonisolated private static func makeSession() -> URLSession {
+        let config = URLSessionConfiguration.ephemeral
         config.httpCookieStorage = HTTPCookieStorage.shared
         config.httpCookieAcceptPolicy = .always
         config.httpShouldSetCookies = true
@@ -402,21 +416,16 @@ final class EusoTripAPI: ObservableObject {
         config.timeoutIntervalForRequest = 22
         config.timeoutIntervalForResource = 120
         config.waitsForConnectivity = false
-        // Disable URLCache app-wide. tRPC responses are stateful by
-        // nature (signed-in user / load detail / wallet) and must
-        // never be served from cache. Earlier crashes / "Failed
-        // query" panics from a pre-migration deploy left poisoned
-        // entries in URLCache that kept getting replayed even after
-        // the server was patched, until app reinstall. .none drops
-        // every response straight to disk and out.
+        // tRPC responses are tenant- and session-scoped. Never admit them to a
+        // memory/disk cache and never mutate URLCache.shared from this client:
+        // clearing the global cache while another URLSession is reading it
+        // recreates the cross-session lifecycle coupling this transport avoids.
         config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         config.urlCache = nil
-        // Also clear any pre-existing cache from prior builds — the
-        // poisoned-entry path is a one-time-on-install problem so we
-        // only need to flush once per launch.
-        URLCache.shared.removeAllCachedResponses()
         return URLSession(configuration: config)
-    }()
+    }
+
+    lazy var session: URLSession = Self.makeSession()
 
     private let encoder: JSONEncoder = {
         let e = JSONEncoder()
@@ -435,6 +444,22 @@ final class EusoTripAPI: ObservableObject {
     func configure(baseURL: URL, authToken: String? = nil) {
         self.baseURL = baseURL
         self.authToken = authToken
+    }
+
+    /// Close/open the app transport gate. Closing also invalidates the current
+    /// private session, which cancels requests already in flight; a new
+    /// cacheless session is installed immediately but cannot be used until the
+    /// gate is reopened. No request URL, token, or response detail is logged.
+    func setAppRadioSilenceEnforced(_ enforced: Bool) {
+        guard isAppRadioSilenceEnforced != enforced else { return }
+        isAppRadioSilenceEnforced = enforced
+        guard enforced else { return }
+
+        inFlightRefresh?.cancel()
+        inFlightRefresh = nil
+        isRefreshing = false
+        session.invalidateAndCancel()
+        session = Self.makeSession()
     }
 
     /// Hard-reset all stored cookies for the backend host.  Used on logout.
@@ -1612,13 +1637,23 @@ final class EusoTripAPI: ObservableObject {
         _ path: String,
         input: Input
     ) async throws -> Output {
+        let payload = TRPCInputEnvelope(json: input)
+        let body = try encoder.encode(payload)
+
+        // During a protected offline journey, enqueue only the existing
+        // idempotent allowlist locally. Everything else fails before a URL or
+        // URLSession task is created. Outbox replay is separately suspended.
+        if isAppRadioSilenceEnforced {
+            if Self.enqueueIfOfflineEligible(path: path, body: body) {
+                throw EusoTripAPIError.queuedForOfflineReplay
+            }
+            throw AppRadioSilenceTransportError.enforced
+        }
+
         guard let baseURL else { throw EusoTripAPIError.notConfigured }
         let url = baseURL
             .appendingPathComponent("api/trpc")
             .appendingPathComponent(path)
-
-        let payload = TRPCInputEnvelope(json: input)
-        let body = try encoder.encode(payload)
 
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
@@ -1643,7 +1678,8 @@ final class EusoTripAPI: ObservableObject {
             // never routed here (the eligibility table is path-gated). The
             // already-encoded `{"json": …}` body carries the exact payload
             // we need to reconstruct the QueuedAction.
-            if OfflineQueue.isNetworkUnreachable(error),
+            if (OfflineQueue.isNetworkUnreachable(error)
+                    || error is AppRadioSilenceTransportError),
                Self.enqueueIfOfflineEligible(path: path, body: body) {
                 throw EusoTripAPIError.queuedForOfflineReplay
             }
@@ -1851,14 +1887,31 @@ final class EusoTripAPI: ObservableObject {
     /// prevents a response that raced dismissal from reaching a dead surface.
     private func transportData(for original: URLRequest) async throws -> (Data, URLResponse) {
         try Task.checkCancellation()
+        guard !isAppRadioSilenceEnforced else {
+            throw AppRadioSilenceTransportError.enforced
+        }
 
         var request = original
         request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         request.setValue("no-store, no-cache", forHTTPHeaderField: "Cache-Control")
         request.setValue("no-cache", forHTTPHeaderField: "Pragma")
 
-        let response = try await session.data(for: request)
+        let response: (Data, URLResponse)
+        do {
+            response = try await session.data(for: request)
+        } catch {
+            // Session invalidation is how acquire() cancels in-flight work.
+            // Normalize that race to the policy error so callers/outbox never
+            // mistake it for a terminal server rejection.
+            if isAppRadioSilenceEnforced {
+                throw AppRadioSilenceTransportError.enforced
+            }
+            throw error
+        }
         try Task.checkCancellation()
+        guard !isAppRadioSilenceEnforced else {
+            throw AppRadioSilenceTransportError.enforced
+        }
         return response
     }
 
@@ -1943,7 +1996,7 @@ final class EusoTripAPI: ObservableObject {
         _ req: URLRequest,
         allowRefreshRetry: Bool = true
     ) async throws -> Output {
-        let (respData, resp) = try await session.data(for: req)
+        let (respData, resp) = try await transportData(for: req)
         guard let http = resp as? HTTPURLResponse else {
             throw EusoTripAPIError.httpStatus(0, "No HTTP response")
         }
