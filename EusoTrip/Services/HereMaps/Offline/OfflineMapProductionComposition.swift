@@ -7,9 +7,24 @@
 //  server-canonical route.plan packages.
 //
 
+import Combine
 import CoreLocation
 import CryptoKit
 import Foundation
+
+#if os(iOS) && canImport(AVFoundation)
+@preconcurrency import AVFoundation
+#endif
+
+#if canImport(UIKit)
+@preconcurrency import UIKit
+#endif
+
+enum OfflineMapApplicationPhase: Equatable, Sendable {
+    case active
+    case inactive
+    case background
+}
 
 enum OfflineMapSurfaceLeaseStatus: Equatable, Sendable {
     case available
@@ -78,6 +93,10 @@ final class OfflineMapProductionComposition: ObservableObject {
 
     typealias StopNavigationOperation = () async -> Void
 
+    typealias NavigationAudioInterruptionOperation = (
+        _ interruption: OfflineNavigationAudioInterruption
+    ) async -> Void
+
     typealias CanonicalRouteIngestOperation = (
         _ encodedEnvelope: Data,
         _ expectedScope: CanonicalRouteScope,
@@ -114,6 +133,7 @@ final class OfflineMapProductionComposition: ObservableObject {
     private let startNavigationOperation: StartNavigationOperation
     private let feedLocationOperation: FeedLocationOperation
     private let stopNavigationOperation: StopNavigationOperation
+    private let navigationAudioInterruptionOperation: NavigationAudioInterruptionOperation
     private let canonicalRouteStore: CanonicalRoutePackageStore?
     private let canonicalRouteIngestOperation: CanonicalRouteIngestOperation
     private let canonicalRoutePurgeOperation: CanonicalRoutePurgeOperation
@@ -129,6 +149,11 @@ final class OfflineMapProductionComposition: ObservableObject {
     private var coveragePreparationTask: Task<(Bool, String?), Never>?
     private var pendingPrincipalTransitionCount = 0
     private var principalTransitionGeneration = UUID()
+    private var audioInterruptionCancellable: AnyCancellable?
+    private var applicationBackgroundCancellable: AnyCancellable?
+    private var applicationForegroundCancellable: AnyCancellable?
+    private var backgroundPausedTransferID: UUID?
+    private var applicationPhase: OfflineMapApplicationPhase = .active
 
     private init(
         owner: OfflineMapCompositionOwner,
@@ -138,6 +163,7 @@ final class OfflineMapProductionComposition: ObservableObject {
         startNavigationOperation: @escaping StartNavigationOperation,
         feedLocationOperation: @escaping FeedLocationOperation,
         stopNavigationOperation: @escaping StopNavigationOperation,
+        navigationAudioInterruptionOperation: @escaping NavigationAudioInterruptionOperation,
         canonicalRouteStore: CanonicalRoutePackageStore?,
         canonicalRouteIngestOperation: @escaping CanonicalRouteIngestOperation,
         canonicalRoutePurgeOperation: @escaping CanonicalRoutePurgeOperation,
@@ -158,6 +184,7 @@ final class OfflineMapProductionComposition: ObservableObject {
         self.startNavigationOperation = startNavigationOperation
         self.feedLocationOperation = feedLocationOperation
         self.stopNavigationOperation = stopNavigationOperation
+        self.navigationAudioInterruptionOperation = navigationAudioInterruptionOperation
         self.canonicalRouteStore = canonicalRouteStore
         self.canonicalRouteIngestOperation = canonicalRouteIngestOperation
         self.canonicalRoutePurgeOperation = canonicalRoutePurgeOperation
@@ -306,6 +333,10 @@ final class OfflineMapProductionComposition: ObservableObject {
             let localRoutePurgeOperation: LocalRoutePurgeOperation = {
                 await engine.purgeRetainedLocalRoutes()
             }
+            let navigationAudioInterruptionOperation: NavigationAudioInterruptionOperation = {
+                interruption in
+                await navigationSession.handleAudioInterruption(interruption)
+            }
 
             let canonicalRoot = try canonicalRouteRoot(
                 fileManager: fileManager
@@ -373,6 +404,7 @@ final class OfflineMapProductionComposition: ObservableObject {
                 startNavigationOperation: startNavigationOperation,
                 feedLocationOperation: feedLocationOperation,
                 stopNavigationOperation: stopNavigationOperation,
+                navigationAudioInterruptionOperation: navigationAudioInterruptionOperation,
                 canonicalRouteStore: canonicalRouteStore,
                 canonicalRouteIngestOperation: canonicalRouteIngestOperation,
                 canonicalRoutePurgeOperation: canonicalRoutePurgeOperation,
@@ -387,6 +419,59 @@ final class OfflineMapProductionComposition: ObservableObject {
             )
             shared = composition
             installationFailure = nil
+
+            #if os(iOS) && canImport(AVFoundation)
+            composition.audioInterruptionCancellable = NotificationCenter.default
+                .publisher(for: AVAudioSession.interruptionNotification)
+                .receive(on: RunLoop.main)
+                .sink { [weak composition] notification in
+                    guard let rawType = notification.userInfo?[
+                        AVAudioSessionInterruptionTypeKey
+                    ] as? UInt,
+                    let type = AVAudioSession.InterruptionType(rawValue: rawType) else {
+                        return
+                    }
+                    let interruption: OfflineNavigationAudioInterruption
+                    switch type {
+                    case .began:
+                        interruption = .began
+                    case .ended:
+                        let rawOptions = notification.userInfo?[
+                            AVAudioSessionInterruptionOptionKey
+                        ] as? UInt ?? 0
+                        let options = AVAudioSession.InterruptionOptions(
+                            rawValue: rawOptions
+                        )
+                        interruption = .ended(
+                            shouldResume: options.contains(.shouldResume)
+                        )
+                    @unknown default:
+                        return
+                    }
+                    Task { @MainActor [weak composition] in
+                        await composition?.handleAudioInterruption(interruption)
+                    }
+                }
+            #endif
+
+            #if canImport(UIKit)
+            composition.applicationBackgroundCancellable = NotificationCenter.default
+                .publisher(for: UIApplication.didEnterBackgroundNotification)
+                .receive(on: RunLoop.main)
+                .sink { [weak composition] _ in
+                    Task { @MainActor [weak composition] in
+                        await composition?.handleApplicationPhase(.background)
+                    }
+                }
+            composition.applicationForegroundCancellable = NotificationCenter.default
+                .publisher(for: UIApplication.willEnterForegroundNotification)
+                .receive(on: RunLoop.main)
+                .sink { [weak composition] _ in
+                    Task { @MainActor [weak composition] in
+                        await composition?.handleApplicationPhase(.active)
+                    }
+                }
+            #endif
         } catch {
             installationFailure =
                 "Offline maps could not install the release-approved device policy."
@@ -527,6 +612,61 @@ final class OfflineMapProductionComposition: ObservableObject {
 
     func stopNavigation() async {
         await stopNavigationAndLocationSource()
+    }
+
+    func handleAudioInterruption(
+        _ interruption: OfflineNavigationAudioInterruption
+    ) async {
+        await navigationAudioInterruptionOperation(interruption)
+    }
+
+    /// Connected map maintenance is not a background task. Navigation remains
+    /// active under the app's location/audio modes, while an in-flight region
+    /// download or catalog update is paused and resumed only if this boundary
+    /// can still identify the exact same native operation.
+    func handleApplicationPhase(_ phase: OfflineMapApplicationPhase) async {
+        applicationPhase = phase
+        switch phase {
+        case .inactive:
+            return
+        case .background:
+            guard backgroundPausedTransferID == nil,
+                  let operation = owner.snapshot.activeOperation,
+                  operation.phase == .running,
+                  (operation.kind == .downloadRegions
+                    || operation.kind == .updatePersistentMap) else {
+                return
+            }
+            do {
+                try await owner.coordinator.pauseActiveTransfer()
+                guard owner.snapshot.activeOperation?.id == operation.id,
+                      owner.snapshot.activeOperation?.phase == .paused else {
+                    return
+                }
+                guard applicationPhase == .background else {
+                    try? await owner.coordinator.resumeActiveTransfer()
+                    if applicationPhase == .background {
+                        await handleApplicationPhase(.background)
+                    }
+                    return
+                }
+                backgroundPausedTransferID = operation.id
+            } catch {
+                backgroundPausedTransferID = nil
+            }
+        case .active:
+            guard let operationID = backgroundPausedTransferID else { return }
+            backgroundPausedTransferID = nil
+            guard let operation = owner.snapshot.activeOperation,
+                  operation.id == operationID,
+                  operation.phase == .paused else {
+                return
+            }
+            try? await owner.coordinator.resumeActiveTransfer()
+            if applicationPhase == .background {
+                await handleApplicationPhase(.background)
+            }
+        }
     }
 
     func ingestCanonicalRoutePlan(

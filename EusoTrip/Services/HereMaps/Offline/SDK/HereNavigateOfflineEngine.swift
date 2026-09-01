@@ -228,15 +228,14 @@ private struct HerePersistedRegionNameCatalog: Codable {
 
 private final class HereDownloadProgressBridge: DownloadRegionsStatusListener, @unchecked Sendable {
     private static let controlCallbackTimeout: TimeInterval = 15
+    private static let completionInactivityTimeout: TimeInterval = 120
 
     private let lock = NSLock()
     private let progress: OfflineMapProgressHandler
     private let expectedRegionIDs: Set<String>
-    private var completion: CheckedContinuation<Void, Error>?
-    private var pauseCompletion: CheckedContinuation<Void, Error>?
-    private var resumeCompletion: CheckedContinuation<Void, Error>?
-    private var pauseWaiterID: UUID?
-    private var resumeWaiterID: UUID?
+    private let completionWatchdog: HereFiniteCallbackWatchdog<Void>
+    private var pauseWatchdog: HereFiniteCallbackWatchdog<Void>?
+    private var resumeWatchdog: HereFiniteCallbackWatchdog<Void>?
     private var pendingPauseResult: Result<Void, Error>?
     private var pendingResume = false
     private var terminalResult: Result<Void, Error>?
@@ -247,80 +246,82 @@ private final class HereDownloadProgressBridge: DownloadRegionsStatusListener, @
     ) {
         self.expectedRegionIDs = expectedRegionIDs
         self.progress = progress
+        self.completionWatchdog = HereFiniteCallbackWatchdog(
+            timeout: Self.completionInactivityTimeout,
+            timeoutFailure: {
+                HereNavigateOfflineAdapterError.operation(
+                    .downloadFailed,
+                    "HERE map download stopped reporting progress before completion.",
+                    recovery: "Check connectivity and storage, then retry the selected regions."
+                )
+            }
+        )
     }
 
-    func installCompletion(_ continuation: CheckedContinuation<Void, Error>) {
-        lock.lock()
-        if let terminalResult {
-            lock.unlock()
-            continuation.resume(with: terminalResult)
-            return
+    func waitForCompletion(
+        interruptNativeOperation: @escaping () -> Void
+    ) async throws {
+        do {
+            try await completionWatchdog.wait(
+                interruptNativeOperation: interruptNativeOperation
+            )
+        } catch {
+            finish(.failure(error))
+            throw error
         }
-        guard completion == nil else {
-            lock.unlock()
-            continuation.resume(throwing: Self.duplicateCompletionError)
-            return
-        }
-        completion = continuation
-        lock.unlock()
     }
 
     func waitForPause() async throws {
-        try await withCheckedThrowingContinuation { continuation in
-            lock.lock()
-            if let terminalResult {
-                lock.unlock()
-                continuation.resume(with: terminalResult)
-                return
-            }
-            if let result = pendingPauseResult {
-                pendingPauseResult = nil
-                lock.unlock()
-                continuation.resume(with: result)
-                return
-            }
-            guard pauseCompletion == nil else {
-                lock.unlock()
-                continuation.resume(
-                    throwing: Self.concurrentControlError(command: "pause")
-                )
-                return
-            }
-            let waiterID = UUID()
-            pauseCompletion = continuation
-            pauseWaiterID = waiterID
+        lock.lock()
+        if let terminalResult {
             lock.unlock()
-            schedulePauseTimeout(waiterID: waiterID)
+            try terminalResult.get()
+            return
         }
+        if let result = pendingPauseResult {
+            pendingPauseResult = nil
+            lock.unlock()
+            try result.get()
+            return
+        }
+        guard pauseWatchdog == nil else {
+            lock.unlock()
+            throw Self.concurrentControlError(command: "pause")
+        }
+        let watchdog = HereFiniteCallbackWatchdog<Void>(
+            timeout: Self.controlCallbackTimeout,
+            timeoutFailure: { Self.callbackTimeoutError(command: "pause") }
+        )
+        pauseWatchdog = watchdog
+        lock.unlock()
+        defer { clearPauseWatchdog(watchdog) }
+        try await watchdog.wait()
     }
 
     func waitForResume() async throws {
-        try await withCheckedThrowingContinuation { continuation in
-            lock.lock()
-            if let terminalResult {
-                lock.unlock()
-                continuation.resume(with: terminalResult)
-                return
-            }
-            if pendingResume {
-                pendingResume = false
-                lock.unlock()
-                continuation.resume()
-                return
-            }
-            guard resumeCompletion == nil else {
-                lock.unlock()
-                continuation.resume(
-                    throwing: Self.concurrentControlError(command: "resume")
-                )
-                return
-            }
-            let waiterID = UUID()
-            resumeCompletion = continuation
-            resumeWaiterID = waiterID
+        lock.lock()
+        if let terminalResult {
             lock.unlock()
-            scheduleResumeTimeout(waiterID: waiterID)
+            try terminalResult.get()
+            return
         }
+        if pendingResume {
+            pendingResume = false
+            lock.unlock()
+            return
+        }
+        guard resumeWatchdog == nil else {
+            lock.unlock()
+            throw Self.concurrentControlError(command: "resume")
+        }
+        let watchdog = HereFiniteCallbackWatchdog<Void>(
+            timeout: Self.controlCallbackTimeout,
+            timeoutFailure: { Self.callbackTimeoutError(command: "resume") }
+        )
+        resumeWatchdog = watchdog
+        lock.unlock()
+        defer { clearResumeWatchdog(watchdog) }
+        try await watchdog.wait()
     }
 
     func onProgress(region: RegionId, percentage: Int32) {
@@ -330,6 +331,7 @@ private final class HereDownloadProgressBridge: DownloadRegionsStatusListener, @
                 regionID: regionID,
                 detail: "Downloading one installed HERE region: \(min(max(percentage, 0), 100)) percent."
               ) else { return }
+        completionWatchdog.heartbeat()
         progress(update)
     }
 
@@ -366,14 +368,14 @@ private final class HereDownloadProgressBridge: DownloadRegionsStatusListener, @
         let result: Result<Void, Error> = .success(())
         lock.lock()
         let shouldReport = terminalResult == nil
-        let continuation = pauseCompletion
-        pauseCompletion = nil
-        pauseWaiterID = nil
+        let watchdog = pauseWatchdog
+        pauseWatchdog = nil
         pendingResume = false
-        if continuation == nil, terminalResult == nil, pendingPauseResult == nil {
+        if watchdog == nil, terminalResult == nil, pendingPauseResult == nil {
             pendingPauseResult = result
         }
         lock.unlock()
+        completionWatchdog.suspendTimeout()
         if shouldReport,
            let update = try? OfflineMapTransferProgress(
                detail: error == nil
@@ -383,20 +385,20 @@ private final class HereDownloadProgressBridge: DownloadRegionsStatusListener, @
            ) {
             progress(update)
         }
-        continuation?.resume(with: result)
+        watchdog?.resolve(result)
     }
 
     func onResume() {
         lock.lock()
         let shouldReport = terminalResult == nil
-        let continuation = resumeCompletion
-        resumeCompletion = nil
-        resumeWaiterID = nil
+        let watchdog = resumeWatchdog
+        resumeWatchdog = nil
         pendingPauseResult = nil
-        if continuation == nil, terminalResult == nil {
+        if watchdog == nil, terminalResult == nil {
             pendingResume = true
         }
         lock.unlock()
+        completionWatchdog.resumeTimeout()
         if shouldReport,
            let update = try? OfflineMapTransferProgress(
                detail: "HERE resumed the map download.",
@@ -404,7 +406,7 @@ private final class HereDownloadProgressBridge: DownloadRegionsStatusListener, @
            ) {
             progress(update)
         }
-        continuation?.resume()
+        watchdog?.succeed(())
     }
 
     func resolveCancellation() {
@@ -418,68 +420,36 @@ private final class HereDownloadProgressBridge: DownloadRegionsStatusListener, @
             return
         }
         terminalResult = result
-        let continuation = completion
-        completion = nil
-        let pause = pauseCompletion
-        pauseCompletion = nil
-        pauseWaiterID = nil
-        let resume = resumeCompletion
-        resumeCompletion = nil
-        resumeWaiterID = nil
+        let pause = pauseWatchdog
+        pauseWatchdog = nil
+        let resume = resumeWatchdog
+        resumeWatchdog = nil
         pendingPauseResult = nil
         pendingResume = false
         lock.unlock()
-        continuation?.resume(with: result)
-        pause?.resume(with: result)
-        resume?.resume(with: result)
+        completionWatchdog.resolve(result)
+        pause?.resolve(result)
+        resume?.resolve(result)
     }
 
-    private func schedulePauseTimeout(waiterID: UUID) {
-        DispatchQueue.global(qos: .utility).asyncAfter(
-            deadline: .now() + Self.controlCallbackTimeout
-        ) { [weak self] in
-            self?.expirePauseWaiter(waiterID)
-        }
-    }
-
-    private func expirePauseWaiter(_ waiterID: UUID) {
+    private func clearPauseWatchdog(
+        _ watchdog: HereFiniteCallbackWatchdog<Void>
+    ) {
         lock.lock()
-        guard pauseWaiterID == waiterID,
-              terminalResult == nil,
-              let continuation = pauseCompletion else {
-            lock.unlock()
-            return
+        if pauseWatchdog === watchdog {
+            pauseWatchdog = nil
         }
-        pauseCompletion = nil
-        pauseWaiterID = nil
         lock.unlock()
-        continuation.resume(
-            throwing: Self.callbackTimeoutError(command: "pause")
-        )
     }
 
-    private func scheduleResumeTimeout(waiterID: UUID) {
-        DispatchQueue.global(qos: .utility).asyncAfter(
-            deadline: .now() + Self.controlCallbackTimeout
-        ) { [weak self] in
-            self?.expireResumeWaiter(waiterID)
-        }
-    }
-
-    private func expireResumeWaiter(_ waiterID: UUID) {
+    private func clearResumeWatchdog(
+        _ watchdog: HereFiniteCallbackWatchdog<Void>
+    ) {
         lock.lock()
-        guard resumeWaiterID == waiterID,
-              terminalResult == nil,
-              let continuation = resumeCompletion else {
-            lock.unlock()
-            return
+        if resumeWatchdog === watchdog {
+            resumeWatchdog = nil
         }
-        resumeCompletion = nil
-        resumeWaiterID = nil
         lock.unlock()
-        continuation.resume(
-            throwing: Self.callbackTimeoutError(command: "resume")
-        )
     }
 
     private static func concurrentControlError(
@@ -502,26 +472,19 @@ private final class HereDownloadProgressBridge: DownloadRegionsStatusListener, @
         )
     }
 
-    private static let duplicateCompletionError: HereNavigateOfflineAdapterError =
-        HereNavigateOfflineAdapterError.operation(
-            .transferControlUnavailable,
-            "HERE map download completion is already being observed.",
-            recovery: "Wait for the active download to finish or cancel it before retrying."
-        )
 }
 
 private final class HereCatalogUpdateProgressBridge: CatalogUpdateProgressListener, @unchecked Sendable {
     private static let controlCallbackTimeout: TimeInterval = 15
+    private static let completionInactivityTimeout: TimeInterval = 120
 
     private let lock = NSLock()
     private let catalogIndex: Int
     private let catalogCount: Int
     private let progress: OfflineMapProgressHandler
-    private var completion: CheckedContinuation<Void, Error>?
-    private var pauseCompletion: CheckedContinuation<Void, Error>?
-    private var resumeCompletion: CheckedContinuation<Void, Error>?
-    private var pauseWaiterID: UUID?
-    private var resumeWaiterID: UUID?
+    private let completionWatchdog: HereFiniteCallbackWatchdog<Void>
+    private var pauseWatchdog: HereFiniteCallbackWatchdog<Void>?
+    private var resumeWatchdog: HereFiniteCallbackWatchdog<Void>?
     private var pendingPauseResult: Result<Void, Error>?
     private var pendingResume = false
     private var terminalResult: Result<Void, Error>?
@@ -530,80 +493,82 @@ private final class HereCatalogUpdateProgressBridge: CatalogUpdateProgressListen
         self.catalogIndex = catalogIndex
         self.catalogCount = max(catalogCount, 1)
         self.progress = progress
+        self.completionWatchdog = HereFiniteCallbackWatchdog(
+            timeout: Self.completionInactivityTimeout,
+            timeoutFailure: {
+                HereNavigateOfflineAdapterError.operation(
+                    .updateFailed,
+                    "HERE map update stopped reporting progress before completion.",
+                    recovery: "Check connectivity and storage, then retry the persistent map update."
+                )
+            }
+        )
     }
 
-    func installCompletion(_ continuation: CheckedContinuation<Void, Error>) {
-        lock.lock()
-        if let terminalResult {
-            lock.unlock()
-            continuation.resume(with: terminalResult)
-            return
+    func waitForCompletion(
+        interruptNativeOperation: @escaping () -> Void
+    ) async throws {
+        do {
+            try await completionWatchdog.wait(
+                interruptNativeOperation: interruptNativeOperation
+            )
+        } catch {
+            finish(.failure(error))
+            throw error
         }
-        guard completion == nil else {
-            lock.unlock()
-            continuation.resume(throwing: Self.duplicateCompletionError)
-            return
-        }
-        completion = continuation
-        lock.unlock()
     }
 
     func waitForPause() async throws {
-        try await withCheckedThrowingContinuation { continuation in
-            lock.lock()
-            if let terminalResult {
-                lock.unlock()
-                continuation.resume(with: terminalResult)
-                return
-            }
-            if let result = pendingPauseResult {
-                pendingPauseResult = nil
-                lock.unlock()
-                continuation.resume(with: result)
-                return
-            }
-            guard pauseCompletion == nil else {
-                lock.unlock()
-                continuation.resume(
-                    throwing: Self.concurrentControlError(command: "pause")
-                )
-                return
-            }
-            let waiterID = UUID()
-            pauseCompletion = continuation
-            pauseWaiterID = waiterID
+        lock.lock()
+        if let terminalResult {
             lock.unlock()
-            schedulePauseTimeout(waiterID: waiterID)
+            try terminalResult.get()
+            return
         }
+        if let result = pendingPauseResult {
+            pendingPauseResult = nil
+            lock.unlock()
+            try result.get()
+            return
+        }
+        guard pauseWatchdog == nil else {
+            lock.unlock()
+            throw Self.concurrentControlError(command: "pause")
+        }
+        let watchdog = HereFiniteCallbackWatchdog<Void>(
+            timeout: Self.controlCallbackTimeout,
+            timeoutFailure: { Self.callbackTimeoutError(command: "pause") }
+        )
+        pauseWatchdog = watchdog
+        lock.unlock()
+        defer { clearPauseWatchdog(watchdog) }
+        try await watchdog.wait()
     }
 
     func waitForResume() async throws {
-        try await withCheckedThrowingContinuation { continuation in
-            lock.lock()
-            if let terminalResult {
-                lock.unlock()
-                continuation.resume(with: terminalResult)
-                return
-            }
-            if pendingResume {
-                pendingResume = false
-                lock.unlock()
-                continuation.resume()
-                return
-            }
-            guard resumeCompletion == nil else {
-                lock.unlock()
-                continuation.resume(
-                    throwing: Self.concurrentControlError(command: "resume")
-                )
-                return
-            }
-            let waiterID = UUID()
-            resumeCompletion = continuation
-            resumeWaiterID = waiterID
+        lock.lock()
+        if let terminalResult {
             lock.unlock()
-            scheduleResumeTimeout(waiterID: waiterID)
+            try terminalResult.get()
+            return
         }
+        if pendingResume {
+            pendingResume = false
+            lock.unlock()
+            return
+        }
+        guard resumeWatchdog == nil else {
+            lock.unlock()
+            throw Self.concurrentControlError(command: "resume")
+        }
+        let watchdog = HereFiniteCallbackWatchdog<Void>(
+            timeout: Self.controlCallbackTimeout,
+            timeoutFailure: { Self.callbackTimeoutError(command: "resume") }
+        )
+        resumeWatchdog = watchdog
+        lock.unlock()
+        defer { clearResumeWatchdog(watchdog) }
+        try await watchdog.wait()
     }
 
     func onProgress(region: RegionId, percentage: Int32) {
@@ -612,6 +577,7 @@ private final class HereCatalogUpdateProgressBridge: CatalogUpdateProgressListen
             regionID: regionID,
             detail: "Updating HERE map catalog \(catalogIndex + 1) of \(catalogCount), current region \(min(max(percentage, 0), 100)) percent."
         ) else { return }
+        completionWatchdog.heartbeat()
         progress(update)
     }
 
@@ -638,14 +604,14 @@ private final class HereCatalogUpdateProgressBridge: CatalogUpdateProgressListen
         let result: Result<Void, Error> = .success(())
         lock.lock()
         let shouldReport = terminalResult == nil
-        let continuation = pauseCompletion
-        pauseCompletion = nil
-        pauseWaiterID = nil
+        let watchdog = pauseWatchdog
+        pauseWatchdog = nil
         pendingResume = false
-        if continuation == nil, terminalResult == nil, pendingPauseResult == nil {
+        if watchdog == nil, terminalResult == nil, pendingPauseResult == nil {
             pendingPauseResult = result
         }
         lock.unlock()
+        completionWatchdog.suspendTimeout()
         if shouldReport,
            let update = try? OfflineMapTransferProgress(
                detail: error == nil
@@ -655,20 +621,20 @@ private final class HereCatalogUpdateProgressBridge: CatalogUpdateProgressListen
            ) {
             progress(update)
         }
-        continuation?.resume(with: result)
+        watchdog?.resolve(result)
     }
 
     func onResume() {
         lock.lock()
         let shouldReport = terminalResult == nil
-        let continuation = resumeCompletion
-        resumeCompletion = nil
-        resumeWaiterID = nil
+        let watchdog = resumeWatchdog
+        resumeWatchdog = nil
         pendingPauseResult = nil
-        if continuation == nil, terminalResult == nil {
+        if watchdog == nil, terminalResult == nil {
             pendingResume = true
         }
         lock.unlock()
+        completionWatchdog.resumeTimeout()
         if shouldReport,
            let update = try? OfflineMapTransferProgress(
                detail: "HERE resumed the persistent map update.",
@@ -676,7 +642,7 @@ private final class HereCatalogUpdateProgressBridge: CatalogUpdateProgressListen
            ) {
             progress(update)
         }
-        continuation?.resume()
+        watchdog?.succeed(())
     }
 
     func resolveCancellation() {
@@ -690,68 +656,36 @@ private final class HereCatalogUpdateProgressBridge: CatalogUpdateProgressListen
             return
         }
         terminalResult = result
-        let continuation = completion
-        completion = nil
-        let pause = pauseCompletion
-        pauseCompletion = nil
-        pauseWaiterID = nil
-        let resume = resumeCompletion
-        resumeCompletion = nil
-        resumeWaiterID = nil
+        let pause = pauseWatchdog
+        pauseWatchdog = nil
+        let resume = resumeWatchdog
+        resumeWatchdog = nil
         pendingPauseResult = nil
         pendingResume = false
         lock.unlock()
-        continuation?.resume(with: result)
-        pause?.resume(with: result)
-        resume?.resume(with: result)
+        completionWatchdog.resolve(result)
+        pause?.resolve(result)
+        resume?.resolve(result)
     }
 
-    private func schedulePauseTimeout(waiterID: UUID) {
-        DispatchQueue.global(qos: .utility).asyncAfter(
-            deadline: .now() + Self.controlCallbackTimeout
-        ) { [weak self] in
-            self?.expirePauseWaiter(waiterID)
-        }
-    }
-
-    private func expirePauseWaiter(_ waiterID: UUID) {
+    private func clearPauseWatchdog(
+        _ watchdog: HereFiniteCallbackWatchdog<Void>
+    ) {
         lock.lock()
-        guard pauseWaiterID == waiterID,
-              terminalResult == nil,
-              let continuation = pauseCompletion else {
-            lock.unlock()
-            return
+        if pauseWatchdog === watchdog {
+            pauseWatchdog = nil
         }
-        pauseCompletion = nil
-        pauseWaiterID = nil
         lock.unlock()
-        continuation.resume(
-            throwing: Self.callbackTimeoutError(command: "pause")
-        )
     }
 
-    private func scheduleResumeTimeout(waiterID: UUID) {
-        DispatchQueue.global(qos: .utility).asyncAfter(
-            deadline: .now() + Self.controlCallbackTimeout
-        ) { [weak self] in
-            self?.expireResumeWaiter(waiterID)
-        }
-    }
-
-    private func expireResumeWaiter(_ waiterID: UUID) {
+    private func clearResumeWatchdog(
+        _ watchdog: HereFiniteCallbackWatchdog<Void>
+    ) {
         lock.lock()
-        guard resumeWaiterID == waiterID,
-              terminalResult == nil,
-              let continuation = resumeCompletion else {
-            lock.unlock()
-            return
+        if resumeWatchdog === watchdog {
+            resumeWatchdog = nil
         }
-        resumeCompletion = nil
-        resumeWaiterID = nil
         lock.unlock()
-        continuation.resume(
-            throwing: Self.callbackTimeoutError(command: "resume")
-        )
     }
 
     private static func concurrentControlError(
@@ -774,12 +708,6 @@ private final class HereCatalogUpdateProgressBridge: CatalogUpdateProgressListen
         )
     }
 
-    private static let duplicateCompletionError: HereNavigateOfflineAdapterError =
-        HereNavigateOfflineAdapterError.operation(
-            .transferControlUnavailable,
-            "HERE map update completion is already being observed.",
-            recovery: "Wait for the active update to finish or cancel it before retrying."
-        )
 }
 
 actor HereNavigateOfflineEngine: OfflineMapEngine, HEREInstalledRegionInventoryProviding {
@@ -985,20 +913,31 @@ actor HereNavigateOfflineEngine: OfflineMapEngine, HEREInstalledRegionInventoryP
     func downloadableRegions() async throws -> [OfflineMapDownloadableRegion] {
         try requireConnectedCatalogAccess()
         let downloader = try await requireMapDownloader()
-        let regions: [Region] = try await withCheckedThrowingContinuation { continuation in
-            _ = downloader.getDownloadableRegions(languageCode: .enUs) { error, regions in
-                guard error == nil, let regions else {
-                    continuation.resume(
-                        throwing: HereNavigateOfflineAdapterError.operation(
-                            .catalogUnavailable,
-                            "HERE could not load the downloadable region catalog.",
-                            recovery: "Reconnect and retry the region catalog."
-                        )
-                    )
-                    return
-                }
-                continuation.resume(returning: regions)
+        let watchdog = HereFiniteCallbackWatchdog<[Region]>(
+            timeout: 30,
+            timeoutFailure: {
+                HereNavigateOfflineAdapterError.operation(
+                    .catalogUnavailable,
+                    "HERE did not return the downloadable region catalog in time.",
+                    recovery: "Reconnect and retry the region catalog."
+                )
             }
+        )
+        let catalogTask = downloader.getDownloadableRegions(languageCode: .enUs) { error, regions in
+            guard error == nil, let regions else {
+                watchdog.fail(
+                    HereNavigateOfflineAdapterError.operation(
+                        .catalogUnavailable,
+                        "HERE could not load the downloadable region catalog.",
+                        recovery: "Reconnect and retry the region catalog."
+                    )
+                )
+                return
+            }
+            watchdog.succeed(regions)
+        }
+        let regions = try await watchdog.wait {
+            catalogTask.cancel()
         }
 
         downloadableRegionCache.removeAll(keepingCapacity: true)
@@ -1204,12 +1143,13 @@ actor HereNavigateOfflineEngine: OfflineMapEngine, HEREInstalledRegionInventoryP
             activeDownloadTask = nil
             activeDownloadBridge = nil
         }
-        try await withCheckedThrowingContinuation { continuation in
-            bridge.installCompletion(continuation)
-            activeDownloadTask = downloader.downloadRegions(
-                regions: nativeIDs,
-                statusListener: bridge
-            )
+        let task = downloader.downloadRegions(
+            regions: nativeIDs,
+            statusListener: bridge
+        )
+        activeDownloadTask = task
+        try await bridge.waitForCompletion {
+            task.cancel()
         }
     }
 
@@ -1253,23 +1193,32 @@ actor HereNavigateOfflineEngine: OfflineMapEngine, HEREInstalledRegionInventoryP
             return native
         }
         emitProgress(progress, fraction: 0, detail: "Preparing installed map deletion.")
-        try await withCheckedThrowingContinuation { continuation in
-            downloader.deleteRegions(regions: nativeIDs) { error, deleted in
-                let requestedIDs = Set(nativeIDs.map(\.id))
-                let deletedIDs = Set((deleted ?? []).map(\.id))
-                guard error == nil, requestedIDs == deletedIDs else {
-                    continuation.resume(
-                        throwing: HereNavigateOfflineAdapterError.operation(
-                            .deleteFailed,
-                            "HERE could not delete the selected installed regions.",
-                            recovery: "Finish any active transfer, then retry the deletion."
-                        )
-                    )
-                    return
-                }
-                continuation.resume()
+        let watchdog = HereFiniteCallbackWatchdog<Void>(
+            timeout: 60,
+            timeoutFailure: {
+                HereNavigateOfflineAdapterError.operation(
+                    .deleteFailed,
+                    "HERE did not confirm installed-region deletion in time.",
+                    recovery: "Refresh installed maps before deciding whether to retry the deletion."
+                )
             }
+        )
+        downloader.deleteRegions(regions: nativeIDs) { error, deleted in
+            let requestedIDs = Set(nativeIDs.map(\.id))
+            let deletedIDs = Set((deleted ?? []).map(\.id))
+            guard error == nil, requestedIDs == deletedIDs else {
+                watchdog.fail(
+                    HereNavigateOfflineAdapterError.operation(
+                        .deleteFailed,
+                        "HERE could not delete the selected installed regions.",
+                        recovery: "Finish any active transfer, then retry the deletion."
+                    )
+                )
+                return
+            }
+            watchdog.succeed(())
         }
+        try await watchdog.wait()
         emitProgress(progress, fraction: 1, detail: "Installed map deletion complete.")
     }
 
@@ -1293,21 +1242,30 @@ actor HereNavigateOfflineEngine: OfflineMapEngine, HEREInstalledRegionInventoryP
             )
         }
         emitProgress(progress, fraction: 0, detail: "Repairing persistent HERE map data.")
-        try await withCheckedThrowingContinuation { continuation in
-            downloader.repairPersistentMap { error in
-                guard error == nil else {
-                    continuation.resume(
-                        throwing: HereNavigateOfflineAdapterError.operation(
-                            .repairFailed,
-                            "HERE could not repair the persistent map.",
-                            recovery: "Review the persistent-map state and retry the recommended recovery."
-                        )
-                    )
-                    return
-                }
-                continuation.resume()
+        let watchdog = HereFiniteCallbackWatchdog<Void>(
+            timeout: 120,
+            timeoutFailure: {
+                HereNavigateOfflineAdapterError.operation(
+                    .repairFailed,
+                    "HERE did not confirm persistent-map repair in time.",
+                    recovery: "Keep the affected maps unavailable, restart the runtime, and recheck persistent-map health."
+                )
             }
+        )
+        downloader.repairPersistentMap { error in
+            guard error == nil else {
+                watchdog.fail(
+                    HereNavigateOfflineAdapterError.operation(
+                        .repairFailed,
+                        "HERE could not repair the persistent map.",
+                        recovery: "Review the persistent-map state and retry the recommended recovery."
+                    )
+                )
+                return
+            }
+            watchdog.succeed(())
         }
+        try await watchdog.wait()
 
         // HERE documents the initial persistent-map status as immutable for an
         // engine lifetime. A successful callback is not proof of health until a
@@ -1362,12 +1320,13 @@ actor HereNavigateOfflineEngine: OfflineMapEngine, HEREInstalledRegionInventoryP
                 activeUpdateTask = nil
                 activeUpdateBridge = nil
             }
-            try await withCheckedThrowingContinuation { continuation in
-                bridge.installCompletion(continuation)
-                activeUpdateTask = updater.updateCatalog(
-                    catalogInfo: info,
-                    completion: bridge
-                )
+            let task = updater.updateCatalog(
+                catalogInfo: info,
+                completion: bridge
+            )
+            activeUpdateTask = task
+            try await bridge.waitForCompletion {
+                task.cancel()
             }
         }
         emitProgress(progress, fraction: 1, detail: "Persistent map update complete.")
@@ -1453,23 +1412,31 @@ actor HereNavigateOfflineEngine: OfflineMapEngine, HEREInstalledRegionInventoryP
             languageCode: .enUs,
             maxItems: maximumItems
         )
-        let places: [Place] = try await withCheckedThrowingContinuation { continuation in
-            _ = searchEngine.searchByText(
-                textQuery,
-                options: options
-            ) { error, places in
-                guard error == nil, let places else {
-                    continuation.resume(
-                        throwing: HereNavigateOfflineAdapterError.operation(
-                            .searchFailed,
-                            "HERE could not complete the device-local search.",
-                            recovery: "Verify the signed installed region and offline-search layer, then retry."
-                        )
-                    )
-                    return
-                }
-                continuation.resume(returning: places)
+        let watchdog = HereFiniteCallbackWatchdog<[Place]>(
+            timeout: 20,
+            timeoutFailure: {
+                HereNavigateOfflineAdapterError.operation(
+                    .searchFailed,
+                    "HERE local installed-map search did not return in time.",
+                    recovery: "Verify the search-area installation and retry."
+                )
             }
+        )
+        let searchTask = searchEngine.searchByText(textQuery, options: options) { error, places in
+            guard error == nil, let places else {
+                watchdog.fail(
+                    HereNavigateOfflineAdapterError.operation(
+                        .searchFailed,
+                        "HERE could not complete the local installed-map search.",
+                        recovery: "Install or repair the search-area map region and retry."
+                    )
+                )
+                return
+            }
+            watchdog.succeed(places)
+        }
+        let places = try await watchdog.wait {
+            searchTask.cancel()
         }
 
         var results: [OfflineSearchResult] = []
@@ -1555,23 +1522,34 @@ actor HereNavigateOfflineEngine: OfflineMapEngine, HEREInstalledRegionInventoryP
             Waypoint(coordinates: nativeCoordinate($0.coordinate))
         }
         let options = try routingOptions(for: request)
-        let nativeRoutes: [Route] = try await withCheckedThrowingContinuation { continuation in
-            _ = routingEngine.calculateRoute(
-                with: nativeWaypoints,
-                options: options
-            ) { error, routes in
-                guard error == nil, let routes, !routes.isEmpty else {
-                    continuation.resume(
-                        throwing: HereNavigateOfflineAdapterError.operation(
-                            .routingFailed,
-                            "HERE could not calculate a device-local road route.",
-                            recovery: "Verify complete signed corridor coverage and the offline-routing layer, then retry."
-                        )
-                    )
-                    return
-                }
-                continuation.resume(returning: routes)
+        let watchdog = HereFiniteCallbackWatchdog<[Route]>(
+            timeout: 30,
+            timeoutFailure: {
+                HereNavigateOfflineAdapterError.operation(
+                    .routingFailed,
+                    "HERE local installed-map routing did not return in time.",
+                    recovery: "Verify the complete road corridor and retry the route calculation."
+                )
             }
+        )
+        let routingTask = routingEngine.calculateRoute(
+            with: nativeWaypoints,
+            options: options
+        ) { error, routes in
+            guard error == nil, let routes, !routes.isEmpty else {
+                watchdog.fail(
+                    HereNavigateOfflineAdapterError.operation(
+                        .routingFailed,
+                        "HERE could not calculate a local installed-map route.",
+                        recovery: "Install or repair the complete road corridor and retry."
+                    )
+                )
+                return
+            }
+            watchdog.succeed(routes)
+        }
+        let nativeRoutes = try await watchdog.wait {
+            routingTask.cancel()
         }
 
         var admitted: [(
@@ -1705,9 +1683,18 @@ actor HereNavigateOfflineEngine: OfflineMapEngine, HEREInstalledRegionInventoryP
                 recovery: "Restart offline maps."
             )
         }
-        let downloader: MapDownloader? = await withCheckedContinuation { continuation in
-            MapDownloader.fromEngineAsync(nativeEngine) { continuation.resume(returning: $0) }
-        }
+        let watchdog = HereFiniteCallbackWatchdog<MapDownloader?>(
+            timeout: 15,
+            timeoutFailure: {
+                HereNavigateOfflineAdapterError.operation(
+                    .lifecycleUnavailable,
+                    "HERE map lifecycle services did not initialize in time.",
+                    recovery: "Verify the Navigate entitlement and restart offline maps."
+                )
+            }
+        )
+        MapDownloader.fromEngineAsync(nativeEngine) { watchdog.succeed($0) }
+        let downloader = try await watchdog.wait()
         guard let downloader else {
             throw HereNavigateOfflineAdapterError.operation(
                 .lifecycleUnavailable,
@@ -1728,9 +1715,18 @@ actor HereNavigateOfflineEngine: OfflineMapEngine, HEREInstalledRegionInventoryP
                 recovery: "Restart offline maps."
             )
         }
-        let updater: MapUpdater? = await withCheckedContinuation { continuation in
-            MapUpdater.fromEngineAsync(nativeEngine) { continuation.resume(returning: $0) }
-        }
+        let watchdog = HereFiniteCallbackWatchdog<MapUpdater?>(
+            timeout: 15,
+            timeoutFailure: {
+                HereNavigateOfflineAdapterError.operation(
+                    .lifecycleUnavailable,
+                    "HERE map update services did not initialize in time.",
+                    recovery: "Verify the Navigate entitlement and restart offline maps."
+                )
+            }
+        )
+        MapUpdater.fromEngineAsync(nativeEngine) { watchdog.succeed($0) }
+        let updater = try await watchdog.wait()
         guard let updater else {
             throw HereNavigateOfflineAdapterError.operation(
                 .lifecycleUnavailable,
@@ -1776,20 +1772,31 @@ actor HereNavigateOfflineEngine: OfflineMapEngine, HEREInstalledRegionInventoryP
 
     private func catalogUpdateInfo() async throws -> [CatalogUpdateInfo] {
         let updater = try await requireMapUpdater()
-        return try await withCheckedThrowingContinuation { continuation in
-            _ = updater.retrieveCatalogsUpdateInfo { error, infos in
-                guard error == nil, let infos else {
-                    continuation.resume(
-                        throwing: HereNavigateOfflineAdapterError.operation(
-                            .updateFailed,
-                            "HERE could not inspect persistent map updates.",
-                            recovery: "Reconnect and retry the update check."
-                        )
-                    )
-                    return
-                }
-                continuation.resume(returning: infos)
+        let watchdog = HereFiniteCallbackWatchdog<[CatalogUpdateInfo]>(
+            timeout: 30,
+            timeoutFailure: {
+                HereNavigateOfflineAdapterError.operation(
+                    .updateFailed,
+                    "HERE persistent-map update inspection did not return in time.",
+                    recovery: "Reconnect and retry the update check."
+                )
             }
+        )
+        let inspectionTask = updater.retrieveCatalogsUpdateInfo { error, infos in
+            guard error == nil, let infos else {
+                watchdog.fail(
+                    HereNavigateOfflineAdapterError.operation(
+                        .updateFailed,
+                        "HERE could not inspect persistent map updates.",
+                        recovery: "Reconnect and retry the update check."
+                    )
+                )
+                return
+            }
+            watchdog.succeed(infos)
+        }
+        return try await watchdog.wait {
+            inspectionTask.cancel()
         }
     }
 

@@ -102,6 +102,7 @@ enum HereOfflineMapSurfaceFailureCode: String, Codable, Hashable, Sendable {
     case styleHashMismatch
     case hashingUnavailable
     case nativeStyleLoadFailed
+    case nativeStyleLoadTimedOut
     case styleManifestMissing
     case styleManifestInvalid
     case styleManifestUnapproved
@@ -382,6 +383,7 @@ final class HereNavigateOfflineMapSurface {
 
     #if canImport(heresdk)
     private var nativeMapView: AnyObject?
+    private var nativeSceneLoadTask: Task<Void, Never>?
     private var loadGeneration = UUID()
     private var runtimeRenderingLeaseID: UUID?
     #endif
@@ -461,6 +463,8 @@ final class HereNavigateOfflineMapSurface {
 
     private func replaceWithOpaqueFailure(_ failure: HereOfflineMapSurfaceFailure) {
         #if canImport(heresdk)
+        nativeSceneLoadTask?.cancel()
+        nativeSceneLoadTask = nil
         releaseRuntimeRenderingLease()
         (nativeMapView as? MapView)?.isHidden = true
         nativeMapView = nil
@@ -489,6 +493,8 @@ private extension HereNavigateOfflineMapSurface {
     ) -> AnyObject? {
         // Immediately discard any previously rendered scene. A bad new style
         // can never leave an old layer visible as if it matched the new state.
+        nativeSceneLoadTask?.cancel()
+        nativeSceneLoadTask = nil
         releaseRuntimeRenderingLease()
         (nativeMapView as? MapView)?.isHidden = true
         nativeMapView = nil
@@ -557,28 +563,61 @@ private extension HereNavigateOfflineMapSurface {
             changedAt: Date()
         )
 
-        // This is the sole map-scene load in this boundary. A stock-scheme
-        // fallback is forbidden; an opaque unavailable state is intentional.
-        mapView.mapScene.loadScene(fromFile: validatedPath) { [weak self, weak mapView] error in
-            Task { @MainActor in
-                guard let self, let mapView, self.loadGeneration == generation else { return }
-                guard error == nil else {
-                    self.replaceWithOpaqueFailure(
-                        .init(
-                            code: .nativeStyleLoadFailed,
-                            message: "HERE rejected the approved local native map style.",
-                            recovery: "Supply a HERE-native JSON/ZIP style built for the licensed SDK version."
-                        )
-                    )
-                    return
-                }
+        let watchdog = HereFiniteCallbackWatchdog<Void>(
+            timeout: 20,
+            timeoutFailure: {
+                HereOfflineMapSurfaceFailure(
+                    code: .nativeStyleLoadTimedOut,
+                    message: "HERE did not finish loading the approved local native map style.",
+                    recovery: "Close the map, verify the licensed SDK and style asset, then retry."
+                )
+            }
+        )
+        nativeSceneLoadTask = Task { @MainActor [weak self, weak mapView] in
+            do {
+                try await watchdog.wait()
+                guard let self,
+                      let mapView,
+                      self.loadGeneration == generation else { return }
+                self.nativeSceneLoadTask = nil
                 mapView.isHidden = false
                 self.snapshot = HereOfflineMapSurfaceSnapshot(
                     status: .rendered(configuration: configuration),
                     accessibilityText: self.renderedAccessibilityText(configuration),
                     changedAt: Date()
                 )
+            } catch is CancellationError {
+                return
+            } catch let failure as HereOfflineMapSurfaceFailure {
+                guard let self, self.loadGeneration == generation else { return }
+                self.nativeSceneLoadTask = nil
+                self.replaceWithOpaqueFailure(failure)
+            } catch {
+                guard let self, self.loadGeneration == generation else { return }
+                self.nativeSceneLoadTask = nil
+                self.replaceWithOpaqueFailure(
+                    .init(
+                        code: .nativeStyleLoadFailed,
+                        message: "HERE could not complete the approved local native map style load.",
+                        recovery: "Supply a HERE-native JSON/ZIP style built for the licensed SDK version."
+                    )
+                )
             }
+        }
+        // This is the sole map-scene load in this boundary. A stock-scheme
+        // fallback is forbidden; an opaque unavailable state is intentional.
+        mapView.mapScene.loadScene(fromFile: validatedPath) { error in
+            guard error == nil else {
+                watchdog.fail(
+                    HereOfflineMapSurfaceFailure(
+                        code: .nativeStyleLoadFailed,
+                        message: "HERE rejected the approved local native map style.",
+                        recovery: "Supply a HERE-native JSON/ZIP style built for the licensed SDK version."
+                    )
+                )
+                return
+            }
+            watchdog.succeed(())
         }
         return mapView
     }
