@@ -135,7 +135,7 @@ private struct RailYardMapBody: View {
             }
         }
         .task { await reload() }
-        .refreshable { await reload() }
+        .eusoRefreshable { await reload() }
     }
 
     // MARK: - Selected yard
@@ -149,7 +149,7 @@ private struct RailYardMapBody: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("✦  RAIL ENGINEER · YARD MAP")
+                EusoTripEyebrow(verbatim: "RAIL ENGINEER · YARD MAP")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer(minLength: 8)
@@ -219,10 +219,7 @@ private struct RailYardMapBody: View {
 
     /// Yards with REAL coordinates (lat/lng present, not null-island).
     private var mappableYards: [RailYardRow] {
-        yards.filter { y in
-            guard let la = y.coordinates?.lat, let lo = y.coordinates?.lng else { return false }
-            return !(la == 0 && lo == 0)
-        }
+        yards.filter { yardFix(for: $0) != nil }
     }
 
     @ViewBuilder
@@ -243,22 +240,23 @@ private struct RailYardMapBody: View {
                 }
                 .padding(.bottom, Space.s3)
 
-                BespokeMapCanvas(
+                HereVectorMapView(
                     center: mapCenter,
                     zoom: mapZoom,
                     interactive: true,
                     tilt: 0,
-                    isDark: colorScheme == .dark,
                     layers: [
-                        .adZones(mapped.map(yardFootprint(for:))),
-                        .markers(mapped.map { y in
-                            HereMarker(
-                                at: HereLatLng(y.coordinates?.lat ?? 0, y.coordinates?.lng ?? 0),
+                        .adZones(mapped.compactMap { yardFootprint(for: $0) }),
+                        .markers(mapped.compactMap { y in
+                            guard let fix = yardFix(for: y) else { return nil }
+                            return HereMarker(
+                                at: fix,
                                 kind: .pickup,
                                 label: y.name,
                                 id: String(y.id))
                         })
                     ],
+                    mapModeContext: .primary(.rail),
                     onSelectMarker: { markerId in
                         guard let id = Int(markerId) else { return }
                         withAnimation(.easeInOut(duration: 0.18)) { selectedYardId = id }
@@ -280,11 +278,11 @@ private struct RailYardMapBody: View {
     }
 
     private var mapCenter: HereLatLng {
-        let mapped = mappableYards
-        guard !mapped.isEmpty else { return HereLatLng(39.5, -98.35) }
-        let lat = mapped.reduce(0.0) { $0 + ($1.coordinates?.lat ?? 0) } / Double(mapped.count)
-        let lng = mapped.reduce(0.0) { $0 + ($1.coordinates?.lng ?? 0) } / Double(mapped.count)
-        return HereLatLng(lat, lng)
+        let fixes = mappableYards.compactMap { yardFix(for: $0) }
+        guard !fixes.isEmpty else { return HereLatLng(39.5, -98.35) }
+        let latitude = fixes.map(\.lat).reduce(0, +) / Double(fixes.count)
+        let longitude = fixes.map(\.lng).reduce(0, +) / Double(fixes.count)
+        return HereLatLng(latitude, longitude)
     }
 
     private var mapZoom: Int { mappableYards.count <= 1 ? 14 : 9 }
@@ -292,9 +290,10 @@ private struct RailYardMapBody: View {
     /// Small ~250 m square footprint centered on the yard's real coordinate —
     /// the catalog projects a point, not a ring, so we draw an honest footprint
     /// box (selected yard reads brighter).
-    private func yardFootprint(for y: RailYardRow) -> HerePolygon {
-        let lat = y.coordinates?.lat ?? 0
-        let lng = y.coordinates?.lng ?? 0
+    private func yardFootprint(for y: RailYardRow) -> HerePolygon? {
+        guard let fix = yardFix(for: y) else { return nil }
+        let lat = fix.lat
+        let lng = fix.lng
         let dLat = 0.0022
         let dLng = 0.0022 / max(cos(lat * .pi / 180), 0.2)
         let ring = [
@@ -309,6 +308,14 @@ private struct RailYardMapBody: View {
             fillHex: "#1473FF",
             opacity: isSelected ? 0.30 : 0.16,
             label: y.name)
+    }
+
+    private func yardFix(for yard: RailYardRow) -> HereLatLng? {
+        guard let coordinate = LatLongParser.validatedCoordinate(
+            latitude: yard.coordinates?.lat,
+            longitude: yard.coordinates?.lng
+        ) else { return nil }
+        return HereLatLng(coordinate.latitude, coordinate.longitude)
     }
 
     // MARK: - Track occupancy card (tile grid + totals + per-track detail)

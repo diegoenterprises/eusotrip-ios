@@ -2,23 +2,16 @@
 //  HereMapsConfig.swift
 //  EusoTrip — Central config for HERE Maps Platform integration
 //
-//  REST APIs (Routing v8, Matrix v8, Geocoding v7, Tile v3, Isoline v8,
-//  Traffic v7) authenticate via OAuth 2.0 client-credentials — a Bearer
-//  token exchanged from an OAuth1.0a-HMAC-SHA256 signed request to
-//  HERE's `/oauth2/token` endpoint. See `HEREAuthService.swift`.
+//  REST APIs (Routing, Matrix, Geocoding, Traffic, Weather, Parking, EV)
+//  are accessed through authenticated EusoTrip backend procedures. HERE
+//  OAuth credentials never enter the iOS bundle.
 //
 //  Xcconfig (e.g. `EusoTrip.xcconfig`, git-ignored):
-//      HERE_ACCESS_KEY_ID      = ...
-//      HERE_ACCESS_KEY_SECRET  = ...
-//      HERE_TOKEN_ENDPOINT_URL = https://account.api.here.com/oauth2/token
-//      HERE_CLIENT_ID          = ...
-//      HERE_USER_ID            = ...
-//      HERE_JS_API_KEY         = ...   (Maps JS SDK only — Hot Zones heatmap)
+//      HERE_JS_API_KEY         = ...   (Maps JS SDK basemap only)
 //
 //  Info.plist (populated from xcconfig at build time via
 //  `INFOPLIST_KEY_HERE*`):
-//      HEREAccessKeyId, HEREAccessKeySecret, HERETokenEndpointURL,
-//      HEREClientId, HEREUserId, HEREJSApiKey
+//      HEREJSApiKey
 //
 //  Legacy: the previous HERE Platform apiKey was
 //      // REDACTED — rotated 2026-04-22
@@ -27,21 +20,11 @@
 //  ─────────────────────────────────────────────────────────────────────
 //  ENTERPRISE SEAM (HERE basic → enterprise migration)
 //
-//  HERE is moving this account from the basic/public tier to a dedicated
-//  enterprise tier. When their team hands over the enterprise endpoints +
-//  keys, the swap is a SINGLE, OBVIOUS change — see `HereTier` and the
-//  `ENTERPRISE SWAP` blocks below:
-//    1. Flip `activeTier` from `.basic` to `.enterprise`.
-//    2. Fill `enterpriseHosts` with the per-service enterprise hosts HERE
-//       provides (routing / matrix / geocoding / tiles / isoline / traffic).
-//    3. Drop the enterprise credentials into the SAME xcconfig keys below —
-//       no new symbols, no code change. (If enterprise mints tokens from a
-//       different `/oauth2/token` host, that already flows through the
-//       existing `HERE_TOKEN_ENDPOINT_URL` xcconfig value.)
-//  Until all three are done, leave `activeTier = .basic`: every accessor
-//  resolves to today's public hosts, so behavior is unchanged. NO fake or
-//  placeholder enterprise credentials are staged — the enterprise host map
-//  ships empty and falls back to the basic hosts.
+//  HERE REST tier, endpoint, and credential changes belong to the EusoTrip
+//  backend. The iOS app never accepts those secrets or calls those services
+//  directly. `HereTier` remains only as local pacing/presentation metadata;
+//  the referrer-restricted Maps JS key is the sole online HERE credential in
+//  the app bundle.
 //  ─────────────────────────────────────────────────────────────────────
 //
 //  Powered by ESANG AI™.
@@ -51,9 +34,8 @@ import Foundation
 
 /// HERE Platform service tier. The account is migrating basic → enterprise;
 /// this is the single switch that selects which set of host endpoints the
-/// REST clients hit. Credentials are read from the SAME xcconfig/Info.plist
-/// keys regardless of tier (see `HereMapsConfig`'s readers) — only the host
-/// endpoints differ, so swapping tiers never touches the OAuth flow.
+/// backend HERE clients hit. The iOS target uses this only to tune its local
+/// request pacing and JS basemap presentation.
 enum HereTier {
     /// Public `*.hereapi.com` hosts on the basic plan. Current production.
     case basic
@@ -81,20 +63,10 @@ enum HereMapsConfig {
 
     // MARK: - Info.plist keys
 
-    /// OAuth1.0a consumer key id used to sign the `/oauth2/token` request.
-    static let accessKeyIdPlistKey     = "HEREAccessKeyId"
-    /// OAuth1.0a consumer secret — participates in the HMAC-SHA256 signing key.
-    static let accessKeySecretPlistKey = "HEREAccessKeySecret"
-    /// Full token endpoint URL, e.g. `https://account.api.here.com/oauth2/token`.
-    static let tokenEndpointURLPlistKey = "HERETokenEndpointURL"
-    /// Informational HERE client identifier (not used in signing).
-    static let clientIdPlistKey        = "HEREClientId"
-    /// Informational HERE user identifier (not used in signing).
-    static let userIdPlistKey          = "HEREUserId"
-    /// HERE Maps JS 3.1 apiKey — used ONLY by the Hot Zones heatmap
-    /// WebView. The JS SDK does not accept OAuth Bearer tokens, so this
-    /// is a separate, JS-scoped credential.
+    /// HERE Maps JS 3.2 apiKey used by the shared labeled basemap renderer.
+    /// This key must be restricted to the trusted referrer below.
     static let jsApiKeyPlistKey        = "HEREJSApiKey"
+    static let customStylesEnabledPlistKey = "HERECustomMapStylesEnabled"
 
     /// Origin presented as the WKWebView document `baseURL` when hosting
     /// the HERE Maps JS SDK. This becomes the HTTP `Referer` on every
@@ -184,29 +156,16 @@ enum HereMapsConfig {
     /// Traffic API v7 — incidents + flow overlays.
     static var trafficBaseURL: URL { URL(string: "https://\(host(for: .traffic))/v7")! }
 
-    /// Maps Tile API v3 (raster PNG). Authenticated via `Authorization: Bearer`
-    /// on the request (not a query param) — see `HereTileOverlay.swift`.
+    /// Maps Tile API v3 host retained for diagnostics. Production iOS basemaps
+    /// render through HERE Maps JS with the referrer-restricted JS key.
     ///
-    /// Example rendered:
-    ///   https://maps.hereapi.com/v3/base/mc/12/1204/1540/512/png?style=explore.day&ppi=400
+    /// Exact diagnostic shape (the dimensions are query parameters, not path
+    /// segments):
+    ///   https://maps.hereapi.com/v3/base/mc/12/1204/1540/png?style=explore.day&size=512&ppi=200&lang=en
     static var tileBaseHost: String { host(for: .tile) }
     static let tileBasePath = "/v3/base/mc"
 
-    // MARK: - Info.plist readers (ENTERPRISE SWAP point #3 — credentials)
-
-    /// All HERE credentials are read from Info.plist (populated from the
-    /// git-ignored xcconfig at build time), regardless of tier.
-    ///
-    /// ENTERPRISE SWAP: when HERE issues the enterprise OAuth credentials,
-    /// replace the values of the SAME xcconfig keys — no symbols change here:
-    ///   HERE_ACCESS_KEY_ID      → `accessKeyIdPlistKey`     (HEREAccessKeyId)
-    ///   HERE_ACCESS_KEY_SECRET  → `accessKeySecretPlistKey` (HEREAccessKeySecret)
-    ///   HERE_TOKEN_ENDPOINT_URL → `tokenEndpointURLPlistKey` (only if the
-    ///                             enterprise token host differs from
-    ///                             account.api.here.com/oauth2/token)
-    ///   HERE_JS_API_KEY         → `jsApiKeyPlistKey` (Maps JS SDK / Hot Zones)
-    /// No enterprise credential values are committed — the xcconfig is the
-    /// single source of truth and stays git-ignored (honest vendor seam).
+    // MARK: - Info.plist reader (Maps JS key only)
 
     /// Reads a string from Info.plist, rejecting empty strings and
     /// unsubstituted `$(...)` placeholders (which indicate the xcconfig
@@ -218,46 +177,26 @@ enum HereMapsConfig {
         return raw
     }
 
-    static var accessKeyId: String?     { plistString(accessKeyIdPlistKey) }
-    static var accessKeySecret: String? { plistString(accessKeySecretPlistKey) }
-    static var clientId: String?        { plistString(clientIdPlistKey) }
-    static var userId: String?          { plistString(userIdPlistKey) }
-
-    /// Defaults to HERE's production token endpoint if the xcconfig was
-    /// skipped — lets the app keep booting in dev without failing loudly.
-    static var tokenEndpointURL: URL? {
-        if let raw = plistString(tokenEndpointURLPlistKey),
-           let url = URL(string: raw) {
-            return url
-        }
-        return URL(string: "https://account.api.here.com/oauth2/token")
-    }
-
-    /// Maps JS SDK apiKey (Hot Zones heatmap). Nil when the JS key
-    /// hasn't been provisioned yet — callers should render the existing
-    /// "no credentials" placeholder.
+    /// Maps JS SDK apiKey for every native map surface. Nil when the key has
+    /// not been provisioned; callers render the generic unavailable state.
     static var jsApiKey: String? { plistString(jsApiKeyPlistKey) }
 
-    // MARK: - Bearer token (REST APIs)
-
-    /// Returns a valid HERE OAuth Bearer token, exchanging / refreshing
-    /// as needed. Callers should pass the result into
-    /// `Authorization: Bearer <token>` on every REST request.
-    ///
-    /// Throws `HereMapsError.missingAPIKey` if the xcconfig wasn't
-    /// wired, or `HereMapsError.http` / `.providerError` on network
-    /// failures against `/oauth2/token`.
-    static func requireBearerToken() async throws -> String {
-        try await HEREAuthService.shared.currentToken()
+    /// Release flag for the 18 mode/family/theme Style Editor archives.
+    /// Disabled builds use the matching HERE family/theme openly; custom load
+    /// failure is still shown as degraded. Enable only after archive, runtime,
+    /// visual, and contrast gates.
+    static var customMapStylesEnabled: Bool {
+        if let value = Bundle.main.object(
+            forInfoDictionaryKey: customStylesEnabledPlistKey
+        ) as? Bool {
+            return value
+        }
+        guard let raw = plistString(customStylesEnabledPlistKey)?.lowercased() else {
+            return false
+        }
+        return ["1", "true", "yes"].contains(raw)
     }
 
-    /// True iff the OAuth credentials needed to mint a Bearer token are
-    /// present in Info.plist. Sync — safe to call from SwiftUI
-    /// `updateUIView` before deciding whether to attach the HERE tile
-    /// overlay.
-    static var hasBearerCredentials: Bool {
-        accessKeyId != nil && accessKeySecret != nil && tokenEndpointURL != nil
-    }
 }
 
 // MARK: - Errors
@@ -341,9 +280,8 @@ enum HereMapsError: Error, LocalizedError {
 ///
 /// 2026-06-09 — ENTERPRISE: `explore.night` and `logistics.night`
 /// verified 200 over Bearer on the upgraded account (the basic-tier
-/// 403s are history). Dark register renders HERE's real night raster;
-/// the 403-adaptive `nightStyleAvailable` gate stays as a safety net
-/// in case entitlements ever regress.
+/// 403s are history). The shared Maps JS renderer consumes this compact
+/// style type when legacy `HereMapView` call sites provide an override.
 ///
 /// Dark-register feel comes from a SwiftUI tint overlay on the
 /// MKMapView host (see `HereMapView.applyDarkOverlay(...)`) —
@@ -352,14 +290,6 @@ enum HereMapsError: Error, LocalizedError {
 /// "explore" family is general-purpose — HERE also offers
 /// lite.day, topo.day, logistics.day, satellite.day, etc.
 ///
-/// 2026-05-10: With OAuth Bearer auth in place (vs. the prior apikey
-/// query param), the HERE plan tier now serves `explore.night` for
-/// dark mode without a 403. If a future plan-tier change re-blocks
-/// `*.night`, `HereTileOverlay.loadTile(...)` already retries via the
-/// transparent-PNG fallback so the muted Apple basemap shows through
-/// gracefully — `nightStyleAvailable` flips false on the first 403
-/// and subsequent tiles request `.day` with the renderer's blue-slate
-/// tint applied on top.
 enum HereTileStyle {
     case dark
     case light
@@ -367,9 +297,7 @@ enum HereTileStyle {
     /// HERE `style=` query param. Light → `explore.day` (cream roads,
     /// blue water, green parks — the look we want to mirror Apple
     /// Maps Standard from the founder's reference screenshot). Dark →
-    /// `explore.night` first; the runtime fallback in
-    /// `HereTileOverlay.loadTile` swaps to `explore.day` if HERE
-    /// denies the night tier.
+    /// `explore.night` for the dark register.
     var rawValue: String {
         switch self {
         case .light: return "explore.day"
@@ -389,11 +317,8 @@ enum HereTileStyle {
         self == .dark && HereTileStyle.nightStyleAvailable
     }
 
-    /// Process-wide flag flipped by `HereTileOverlay` the first time
-    /// HERE returns 403 on an `explore.night` tile — once the tier
-    /// rejects night once, every subsequent dark tile uses `.day` +
-    /// brand tint instead. Stays true (night-available) until that
-    /// 403 is observed.
+    /// Retained for compatibility with legacy style callers. The Maps JS
+    /// renderer handles provider errors without exposing REST credentials.
     nonisolated(unsafe) static var nightStyleAvailable: Bool = true
 
     /// HERE Raster Tile v3 now accepts ONLY 100 / 200 / 400 — the older

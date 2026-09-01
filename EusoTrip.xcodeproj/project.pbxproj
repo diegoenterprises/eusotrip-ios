@@ -43,13 +43,11 @@
 		A12E1A1C0010CE0FF13B0001 /* TurnByTurnNavigator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF13B0002 /* TurnByTurnNavigator.swift */; };
 		A12E1A1C0010CE0FF100000B /* HereGeocodingClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF100000C /* HereGeocodingClient.swift */; };
 		A12E1A1C0010CE0FF100000D /* HereMatrixClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF100000E /* HereMatrixClient.swift */; };
-		A12E1A1C0010CE0FF100000F /* HereTileOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000010 /* HereTileOverlay.swift */; };
 		A12E1A1C0010CE0FF1000011 /* HereMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000012 /* HereMapView.swift */; };
 		A12E1A1C0010CE0FF1000017 /* EusoAddressField.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000018 /* EusoAddressField.swift */; };
 		A12E1A1C0010CE0FF1000019 /* EusoHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF100001A /* EusoHeader.swift */; };
 		A12E1A1C0010CE0FF100001B /* EusoBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF100001C /* EusoBadge.swift */; };
 		A12E1A1C0010CE0FF100001D /* LatLongParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF100001E /* LatLongParser.swift */; };
-		A12E1A1C0010CE0FF1000021 /* HEREAuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000016 /* HEREAuthService.swift */; };
 		A12E1A1C0010CE0FF1000031 /* EusoEmptyState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000032 /* EusoEmptyState.swift */; };
 		A12E1A1C0010CE0FF1000033 /* MockDataGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000034 /* MockDataGuard.swift */; };
 		A12E1A1C0010CE0FF1000035 /* DynamicStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000036 /* DynamicStore.swift */; };
@@ -92,7 +90,6 @@
 		A1C242E22B722C1015AFBEF1 /* LoginViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A106400EADABFEE26276F8E8 /* LoginViewModel.swift */; };
 		A1D061193673EC398AB67E44 /* 017_PickupBolSigning.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1F1968282989372CA735A10 /* 017_PickupBolSigning.swift */; };
 		A1D4E2D6D079F0A6924FACD1 /* 002_CreateAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A4741520D5DE7A968DABA8 /* 002_CreateAccount.swift */; };
-		A1DMC0001000000000000001 /* HereBearerFetch.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1DMC0001000000000000002 /* HereBearerFetch.swift */; };
 		A1DMC0001000000000000003 /* HereFuelPricesClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1DMC0001000000000000004 /* HereFuelPricesClient.swift */; };
 		A1DMC0001000000000000005 /* HereWeatherClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1DMC0001000000000000006 /* HereWeatherClient.swift */; };
 		A1DMC0001000000000000007 /* HereTrafficClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1DMC0001000000000000008 /* HereTrafficClient.swift */; };
@@ -116,6 +113,10 @@
 		A1HADO0001000000000000A1 /* HereAddOns.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1HADO0001000000000000A2 /* HereAddOns.swift */; };
 		A1HHB00001000000000000A1 /* HereHaulBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1HHB00001000000000000A2 /* HereHaulBridge.swift */; };
 		A1HMWV0001000000000000A1 /* HereMapWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1HMWV0001000000000000A2 /* HereMapWebView.swift */; };
+		A1HMSR0001000000000000A1 /* EusoTripMapStyleRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1HMSR0001000000000000A2 /* EusoTripMapStyleRegistry.swift */; };
+		A1LOP00001000000000000A1 /* LiveOperationsClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1LOP00001000000000000A2 /* LiveOperationsClient.swift */; };
+		A1LON00001000000000000A1 /* LiveOperationsNearbyStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1LON00001000000000000A2 /* LiveOperationsNearbyStore.swift */; };
+		C4A9E7B86D2F41A0B5C3D901 /* CanonicalRoutePlanClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4A9E7B86D2F41A0B5C3D902 /* CanonicalRoutePlanClient.swift */; };
 		A1RLIM0001000000000000A1 /* HereRateLimiter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1RLIM0001000000000000A2 /* HereRateLimiter.swift */; };
 		A21A9C7F5E4D3B2A1C9876AA /* 021_AtReceiverGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A21A9C7F5E4D3B2A1C9876BB /* 021_AtReceiverGate.swift */; };
 		A22A9C7F5E4D3B2A1C9876CC /* 022_DockAssigned.swift in Sources */ = {isa = PBXBuildFile; fileRef = A22A9C7F5E4D3B2A1C9876DD /* 022_DockAssigned.swift */; };
@@ -1388,10 +1389,8 @@
 		A12E1A1C0010CE0FF13B0002 /* TurnByTurnNavigator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TurnByTurnNavigator.swift; sourceTree = "<group>"; };
 		A12E1A1C0010CE0FF100000C /* HereGeocodingClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereGeocodingClient.swift; sourceTree = "<group>"; };
 		A12E1A1C0010CE0FF100000E /* HereMatrixClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereMatrixClient.swift; sourceTree = "<group>"; };
-		A12E1A1C0010CE0FF1000010 /* HereTileOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereTileOverlay.swift; sourceTree = "<group>"; };
 		A12E1A1C0010CE0FF1000012 /* HereMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereMapView.swift; sourceTree = "<group>"; };
 		A12E1A1C0010CE0FF1000015 /* EusoTrip.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = EusoTrip.xcconfig; sourceTree = "<group>"; };
-		A12E1A1C0010CE0FF1000016 /* HEREAuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HEREAuthService.swift; sourceTree = "<group>"; };
 		A12E1A1C0010CE0FF1000018 /* EusoAddressField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EusoAddressField.swift; sourceTree = "<group>"; };
 		A12E1A1C0010CE0FF100001A /* EusoHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EusoHeader.swift; sourceTree = "<group>"; };
 		A12E1A1C0010CE0FF100001C /* EusoBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EusoBadge.swift; sourceTree = "<group>"; };
@@ -1432,7 +1431,6 @@
 		A1D3CC244FE3B63DFF710117 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		A1D507CFE4BE8224D0EF83E2 /* ForgotPasswordViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForgotPasswordViewModel.swift; sourceTree = "<group>"; };
 		A1D98E53AF24D307F0593138 /* RegistrationViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegistrationViewModel.swift; sourceTree = "<group>"; };
-		A1DMC0001000000000000002 /* HereBearerFetch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereBearerFetch.swift; sourceTree = "<group>"; };
 		A1DMC0001000000000000004 /* HereFuelPricesClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereFuelPricesClient.swift; sourceTree = "<group>"; };
 		A1DMC0001000000000000006 /* HereWeatherClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereWeatherClient.swift; sourceTree = "<group>"; };
 		A1DMC0001000000000000008 /* HereTrafficClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereTrafficClient.swift; sourceTree = "<group>"; };
@@ -1442,6 +1440,10 @@
 		A1DMC0001000000000000010 /* HereTrafficAnalyticsClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereTrafficAnalyticsClient.swift; sourceTree = "<group>"; };
 		A1DMC0001000000000000021 /* DriverLocationResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriverLocationResolver.swift; sourceTree = "<group>"; };
 		A1DMC0001000000000000023 /* HereWeatherAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereWeatherAdapter.swift; sourceTree = "<group>"; };
+		A1HMSR0001000000000000A2 /* EusoTripMapStyleRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EusoTripMapStyleRegistry.swift; sourceTree = "<group>"; };
+		A1LOP00001000000000000A2 /* LiveOperationsClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveOperationsClient.swift; sourceTree = "<group>"; };
+		A1LON00001000000000000A2 /* LiveOperationsNearbyStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveOperationsNearbyStore.swift; sourceTree = "<group>"; };
+		C4A9E7B86D2F41A0B5C3D902 /* CanonicalRoutePlanClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanonicalRoutePlanClient.swift; sourceTree = "<group>"; };
 		A1E7D7E296A5602D08D57F92 /* Glass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Glass.swift; sourceTree = "<group>"; };
 		A1EF89B1CAB8863EE1308360 /* DriverHomeViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriverHomeViewModel.swift; sourceTree = "<group>"; };
 		A1F1000000000000000004AA /* intro_dark.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = intro_dark.json; sourceTree = "<group>"; };
@@ -3591,6 +3593,10 @@
 			children = (
 				A12E1A1C0010CE0FF1000002 /* HereMapsConfig.swift */,
 				A1HMWV0001000000000000A2 /* HereMapWebView.swift */,
+				A1HMSR0001000000000000A2 /* EusoTripMapStyleRegistry.swift */,
+				A1LOP00001000000000000A2 /* LiveOperationsClient.swift */,
+				A1LON00001000000000000A2 /* LiveOperationsNearbyStore.swift */,
+				C4A9E7B86D2F41A0B5C3D902 /* CanonicalRoutePlanClient.swift */,
 				A1HADO0001000000000000A2 /* HereAddOns.swift */,
 				A1HHB00001000000000000A2 /* HereHaulBridge.swift */,
 				A12E1A1C0010CE0FF1000004 /* TruckProfile.swift */,
@@ -3601,9 +3607,6 @@
 				A12E1A1C0010CE0FF100000C /* HereGeocodingClient.swift */,
 				LCGCSTORE0010CE0FF1A1B2C4 /* LifecycleGeocodeStore.swift */,
 				A12E1A1C0010CE0FF100000E /* HereMatrixClient.swift */,
-				A12E1A1C0010CE0FF1000010 /* HereTileOverlay.swift */,
-				A12E1A1C0010CE0FF1000016 /* HEREAuthService.swift */,
-				A1DMC0001000000000000002 /* HereBearerFetch.swift */,
 				A1DMC0001000000000000004 /* HereFuelPricesClient.swift */,
 				A1DMC0001000000000000006 /* HereWeatherClient.swift */,
 				A1DMC0001000000000000008 /* HereTrafficClient.swift */,
@@ -4722,6 +4725,10 @@
 				A1F100000000000000000BAA /* IntroSplash.swift in Sources */,
 				A12E1A1C0010CE0FF1000001 /* HereMapsConfig.swift in Sources */,
 				A1HMWV0001000000000000A1 /* HereMapWebView.swift in Sources */,
+				A1HMSR0001000000000000A1 /* EusoTripMapStyleRegistry.swift in Sources */,
+				A1LOP00001000000000000A1 /* LiveOperationsClient.swift in Sources */,
+				A1LON00001000000000000A1 /* LiveOperationsNearbyStore.swift in Sources */,
+				C4A9E7B86D2F41A0B5C3D901 /* CanonicalRoutePlanClient.swift in Sources */,
 				A1HADO0001000000000000A1 /* HereAddOns.swift in Sources */,
 				A1HHB00001000000000000A1 /* HereHaulBridge.swift in Sources */,
 				A12E1A1C0010CE0FF1000003 /* TruckProfile.swift in Sources */,
@@ -4732,7 +4739,6 @@
 				A12E1A1C0010CE0FF100000B /* HereGeocodingClient.swift in Sources */,
 				LCGCSTORE0010CE0FF1A1B2C3 /* LifecycleGeocodeStore.swift in Sources */,
 				A12E1A1C0010CE0FF100000D /* HereMatrixClient.swift in Sources */,
-				A12E1A1C0010CE0FF100000F /* HereTileOverlay.swift in Sources */,
 				A12E1A1C0010CE0FF1000011 /* HereMapView.swift in Sources */,
 				KITRADGBUILD1 /* Charts/RadialFillGauge.swift in Sources */,
 				KITSCRDBUILD1 /* Charts/ScorecardRadar.swift in Sources */,
@@ -5042,8 +5048,6 @@
 				GSPD00010CE0FF10000011A1 /* GradientSignaturePad.swift in Sources */,
 				AVSB00010CE0FF10000011A1 /* AIVisualScanButton.swift in Sources */,
 				MSGS00010CE0FF10000011A1 /* MessagesScreen.swift in Sources */,
-				A12E1A1C0010CE0FF1000021 /* HEREAuthService.swift in Sources */,
-				A1DMC0001000000000000001 /* HereBearerFetch.swift in Sources */,
 				A1RLIM0001000000000000A1 /* HereRateLimiter.swift in Sources */,
 				A1DMC0001000000000000003 /* HereFuelPricesClient.swift in Sources */,
 				A1DMC0001000000000000005 /* HereWeatherClient.swift in Sources */,
@@ -5994,12 +5998,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = EusoTrip/Info.plist;
-				INFOPLIST_KEY_HEREAccessKeyId = "$(HERE_ACCESS_KEY_ID)";
-				INFOPLIST_KEY_HEREAccessKeySecret = "$(HERE_ACCESS_KEY_SECRET)";
-				INFOPLIST_KEY_HEREClientId = "$(HERE_CLIENT_ID)";
 				INFOPLIST_KEY_HEREJSApiKey = "$(HERE_JS_API_KEY)";
-				INFOPLIST_KEY_HERETokenEndpointURL = "$(HERE_TOKEN_ENDPOINT_URL)";
-				INFOPLIST_KEY_HEREUserId = "$(HERE_USER_ID)";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "EusoTrip uses your location to show route weather, traffic, and nearby loads, and to automatically advance your trip screens when you arrive at pickup or delivery.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "EusoTrip uses the microphone for ESANG voice commands so you can talk to your copilot hands-free.";
 				INFOPLIST_KEY_NSMotionUsageDescription = "EusoTrip uses motion data to auto-detect when you start and stop driving so your HOS clock and trip screens advance without a tap.";
@@ -6038,12 +6037,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = EusoTrip/Info.plist;
-				INFOPLIST_KEY_HEREAccessKeyId = "$(HERE_ACCESS_KEY_ID)";
-				INFOPLIST_KEY_HEREAccessKeySecret = "$(HERE_ACCESS_KEY_SECRET)";
-				INFOPLIST_KEY_HEREClientId = "$(HERE_CLIENT_ID)";
 				INFOPLIST_KEY_HEREJSApiKey = "$(HERE_JS_API_KEY)";
-				INFOPLIST_KEY_HERETokenEndpointURL = "$(HERE_TOKEN_ENDPOINT_URL)";
-				INFOPLIST_KEY_HEREUserId = "$(HERE_USER_ID)";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "EusoTrip uses your location to show route weather, traffic, and nearby loads, and to automatically advance your trip screens when you arrive at pickup or delivery.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "EusoTrip uses the microphone for ESANG voice commands so you can talk to your copilot hands-free.";
 				INFOPLIST_KEY_NSMotionUsageDescription = "EusoTrip uses motion data to auto-detect when you start and stop driving so your HOS clock and trip screens advance without a tap.";

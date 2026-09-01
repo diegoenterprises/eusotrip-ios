@@ -8337,73 +8337,54 @@ struct GamificationAPI {
 
     // MARK: HERE outcome intake
 
-    struct HereOutcomeCorridor: Encodable, Hashable {
-        let corridor: String
-        let kilometres: Double
-    }
-
     struct HereEngagementOutcome: Encodable, Hashable {
         let sourceId: String
         let kind: String
-        let title: String?
-        let xp: Int?
-        let points: Int?
-        let reason: String?
     }
 
     struct HereOutcomeInput: Encodable {
-        let newStates: [String]?
-        let newMetros: [String]?
-        let corridors: [HereOutcomeCorridor]?
-        let poiVisitsByCategory: [String: Int]?
-        let evSessions: Int?
-        let evDelivery: Bool?
-        let adZoneKm: Double?
-        let isaClean: Bool?
-        let safetyScore: Double?
-        let routeDeviationPct: Double?
-        let geofenceArrivalOnTime: Bool?
-        let engagement: HereEngagementOutcome?
+        let clientEventId: String
+        let loadId: Int?
+        let engagement: HereEngagementOutcome
+    }
+
+    struct HereOutcomeSource: Decodable, Hashable {
+        let id: String
+        let kind: String
+        let provider: String
+        let title: String?
+    }
+
+    struct HereOutcomeReward: Decodable, Hashable {
+        let standingXp: Int
+        let haulMiles: Int
+        let cashState: String
+        let policyVersion: String
     }
 
     struct HereOutcomeResponse: Decodable {
         let success: Bool
         let acceptedAt: String?
-        let statsRecorded: Bool?
-        let badgesAwarded: [String]?
-        let engagementCredited: Bool?
-        let eventsFired: Int?
+        let accepted: Bool
+        let status: String
+        let reasonCode: String
+        let message: String
+        let source: HereOutcomeSource
+        let reward: HereOutcomeReward
+        let replayed: Bool
     }
 
     @discardableResult
     func recordHereDeliveryOutcome(
-        newStates: [String]? = nil,
-        newMetros: [String]? = nil,
-        corridors: [HereOutcomeCorridor]? = nil,
-        poiVisitsByCategory: [String: Int]? = nil,
-        evSessions: Int? = nil,
-        evDelivery: Bool? = nil,
-        adZoneKm: Double? = nil,
-        isaClean: Bool? = nil,
-        safetyScore: Double? = nil,
-        routeDeviationPct: Double? = nil,
-        geofenceArrivalOnTime: Bool? = nil,
-        engagement: HereEngagementOutcome? = nil
+        clientEventId: UUID = UUID(),
+        loadId: Int?,
+        engagement: HereEngagementOutcome
     ) async throws -> HereOutcomeResponse {
         try await api.mutation(
             "gamification.recordHereDeliveryOutcome",
             input: HereOutcomeInput(
-                newStates: newStates,
-                newMetros: newMetros,
-                corridors: corridors,
-                poiVisitsByCategory: poiVisitsByCategory,
-                evSessions: evSessions,
-                evDelivery: evDelivery,
-                adZoneKm: adZoneKm,
-                isaClean: isaClean,
-                safetyScore: safetyScore,
-                routeDeviationPct: routeDeviationPct,
-                geofenceArrivalOnTime: geofenceArrivalOnTime,
+                clientEventId: clientEventId.uuidString.lowercased(),
+                loadId: loadId,
                 engagement: engagement
             )
         )

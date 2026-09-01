@@ -1,22 +1,12 @@
 //
 //  HereSafetyCamerasClient.swift
-//  EusoTrip — REST client for HERE Safety Cameras.
+//  EusoTrip — authenticated backend client for HERE Safety Cameras.
 //
-//  Endpoint:
-//      GET https://browse.search.hereapi.com/v1/browse
-//      with categories=900-9300-0001 (Speed Camera / Safety Camera)
+//  The backend attempts HERE Safety Cameras API v2 first. When that
+//  separately licensed live feed is unavailable, it falls back to the
+//  current Map Attributes v8 SAFETY_ALERTS layer for real static cameras.
 //
-//  HERE has not provisioned the Safety Cameras data product on this
-//  account yet. Browse category probes for 900-9300-0001 return an
-//  honest empty set on the live enterprise key, so this client keeps
-//  the stable query shape and lets the add-on layer fail soft rather
-//  than fabricating camera pins.
-//
-//  Required params:
-//      at=<lat>,<lng>  OR  in=corridor:<flexible-polyline>;w=<meters>
-//      categories=900-9300-0001
-//
-//  Auth: Bearer via HereBearerFetch.
+//  Provider credentials and entitlement checks stay on the EusoTrip server.
 //
 //  Powered by ESANG AI™.
 //
@@ -41,6 +31,8 @@ struct HereSafetyCameraItem: Decodable, Identifiable, Hashable {
     let speedLimit: Double?
     /// "speed" | "red_light" | "speed_red_light" | "section" | "mobile"
     let cameraType: String?
+    let source: String?
+    let liveFeedEntitled: Bool?
 }
 
 struct HereSafetyCamerasResponse: Decodable {
@@ -50,44 +42,83 @@ struct HereSafetyCamerasResponse: Decodable {
 final class HereSafetyCamerasClient {
     static let shared = HereSafetyCamerasClient()
 
-    private let session: URLSession
-    private let decoder = JSONDecoder()
-
-    /// HERE category id for Speed Camera / Safety Camera POIs.
-    ///
-    /// 2026-06-09 reality check (live-probed ATL / DC / CDMX / London):
-    /// Browse has NO populated safety-camera POI category — this id
-    /// returns `{"items":[]}` everywhere, and the 900-9300 family is
-    /// unrelated POIs. Cameras ship in HERE's dedicated Safety Cameras
-    /// data product (separate entitlement), not Places. Until that
-    /// product is wired, this layer stays honestly empty (the add-on
-    /// fail-soft hides the pins + chip rather than faking them).
-    static let categoryIdSafetyCamera = "900-9300-0001"
-
     init(session: URLSession = .shared) {
-        self.session = session
+        _ = session
     }
 
-    /// Safety cameras near a point. Default radius via the Browse
-    /// `at` proximity with limit 40 is enough to cover a 30-mile
-    /// ahead cone at highway speeds.
+    /// Safety cameras near a point, with live-feed entitlement and static
+    /// Map Attributes coverage resolved by the authenticated backend.
     func camerasNearby(
         center: CLLocationCoordinate2D,
         limit: Int = 40
     ) async throws -> [HereSafetyCameraItem] {
-        var comps = URLComponents(string: "https://browse.search.hereapi.com/v1/browse")!
-        comps.queryItems = [
-            URLQueryItem(name: "at", value: "\(center.latitude),\(center.longitude)"),
-            URLQueryItem(name: "categories", value: Self.categoryIdSafetyCamera),
-            URLQueryItem(name: "limit", value: String(limit)),
-        ]
-        guard let url = comps.url else { throw HereMapsError.badURL }
-
-        let data = try await HereBearerFetch.data(for: url, session: session)
-        do {
-            return try decoder.decode(HereSafetyCamerasResponse.self, from: data).items
-        } catch {
-            throw HereMapsError.decoding(String(describing: error))
+        guard let coordinate = LatLongParser.validatedCoordinate(
+            latitude: center.latitude,
+            longitude: center.longitude
+        ) else {
+            throw HereMapsError.providerError("Location is unavailable.")
         }
+        let result: BackendResult = try await EusoTripAPI.shared.query(
+            "hereMaps.safetyCamerasAtResult",
+            input: BackendRequest(
+                at: BackendCoord(lat: coordinate.latitude, lng: coordinate.longitude),
+                radiusMeters: 30_000
+            )
+        )
+        guard result.available else {
+            throw HereMapsError.providerError(
+                result.error ?? "HERE safety camera coverage is unavailable."
+            )
+        }
+        return Array(result.data.prefix(min(200, max(1, limit)))).compactMap { row in
+            guard let position = LatLongParser.validatedCoordinate(
+                latitude: row.lat,
+                longitude: row.lng
+            ) else { return nil }
+            return HereSafetyCameraItem(
+                id: row.id,
+                title: row.roadName ?? "Safety camera",
+                address: nil,
+                position: HerePosition(
+                    latitude: position.latitude,
+                    longitude: position.longitude
+                ),
+                distance: row.distanceMeters,
+                categories: nil,
+                speedLimit: row.speedLimitMph,
+                cameraType: row.type,
+                source: row.source,
+                liveFeedEntitled: result.liveFeedEntitled
+            )
+        }
+    }
+
+    private struct BackendCoord: Encodable {
+        let lat: Double
+        let lng: Double
+    }
+
+    private struct BackendRequest: Encodable {
+        let at: BackendCoord
+        let radiusMeters: Int
+    }
+
+    private struct BackendCamera: Decodable {
+        let id: String
+        let type: String
+        let lat: Double
+        let lng: Double
+        let speedLimitMph: Double?
+        let distanceMeters: Int?
+        let roadName: String?
+        let source: String?
+    }
+
+    private struct BackendResult: Decodable {
+        let available: Bool
+        let data: [BackendCamera]
+        let error: String?
+        let coverage: String
+        let liveFeedEntitled: Bool?
     }
 }

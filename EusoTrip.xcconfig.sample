@@ -11,20 +11,20 @@
 // initialize HERE SDK Navigate and provides no persistent offline maps.
 HERE_JS_API_KEY         = REPLACE_WITH_HERE_JS_API_KEY
 
-// ---- Existing online HERE REST client ----------------------------------
-// These values remain local while the online routing/geocoding clients are
-// migrated behind the EusoTrip server. Never commit or print real values.
-HERE_ACCESS_KEY_ID      = REPLACE_WITH_HERE_OAUTH_ACCESS_KEY_ID
-HERE_ACCESS_KEY_SECRET  = REPLACE_WITH_HERE_OAUTH_ACCESS_KEY_SECRET
-HERE_CLIENT_ID          = REPLACE_WITH_HERE_CLIENT_ID
-HERE_USER_ID            = REPLACE_WITH_HERE_USER_ID
-
 // ---- HERE SDK Navigate mobile credentials -------------------------------
 // Provision these only after the registered application has Navigate access.
 // They are intentionally separate from backend OAuth and Maps JS credentials.
 // EusoTrip.xcconfig is gitignored; never commit or print real values.
 HERE_SDK_ACCESS_KEY_ID      = REPLACE_WITH_NAVIGATE_ACCESS_KEY_ID
 HERE_SDK_ACCESS_KEY_SECRET  = REPLACE_WITH_NAVIGATE_ACCESS_KEY_SECRET
+
+// ---- Signed server-canonical Rail/Vessel route.plan trust -------------
+// The public key is not secret, but it is release-pinned. Its key ID, issuer,
+// and audience must exactly match the authenticated route.plan envelope.
+EUSOTRIP_ROUTE_PLAN_ISSUER             = REPLACE_WITH_ROUTE_PLAN_ISSUER
+EUSOTRIP_ROUTE_PLAN_AUDIENCE           = REPLACE_WITH_ROUTE_PLAN_AUDIENCE
+EUSOTRIP_ROUTE_PLAN_KEY_ID             = REPLACE_WITH_ROUTE_PLAN_KEY_ID
+EUSOTRIP_ROUTE_PLAN_PUBLIC_KEY_BASE64  = REPLACE_WITH_ED25519_PUBLIC_KEY_BASE64
 
 // Custom map archives remain fail-closed until artifact hash, runtime,
 // multi-zoom, theme, and accessibility review gates all pass.

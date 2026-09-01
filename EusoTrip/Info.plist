@@ -149,18 +149,6 @@
 		     EusoTripApp+WatchBridge registers a handler for it. -->
 		<string>com.eusotrip.esang.activate</string>
 	</array>
-	<!-- Online HERE REST credentials resolve from the gitignored local
-	     configuration. No credential value is tracked in this plist. -->
-	<key>HEREAccessKeyId</key>
-	<string>$(HERE_ACCESS_KEY_ID)</string>
-	<key>HEREAccessKeySecret</key>
-	<string>$(HERE_ACCESS_KEY_SECRET)</string>
-	<key>HEREClientId</key>
-	<string>$(HERE_CLIENT_ID)</string>
-	<key>HEREUserId</key>
-	<string>$(HERE_USER_ID)</string>
-	<key>HERETokenEndpointURL</key>
-	<string>https://account.api.here.com/oauth2/token</string>
 	<!-- Referrer-restricted Maps JS key. This powers the online WKWebView map
 	     only and cannot initialize HERE SDK Navigate. -->
 	<key>HEREJSApiKey</key>
@@ -172,5 +160,13 @@
 	<string>$(HERE_SDK_ACCESS_KEY_ID)</string>
 	<key>HERESDKAccessKeySecret</key>
 	<string>$(HERE_SDK_ACCESS_KEY_SECRET)</string>
+	<key>EusoRoutePlanIssuer</key>
+	<string>$(EUSOTRIP_ROUTE_PLAN_ISSUER)</string>
+	<key>EusoRoutePlanAudience</key>
+	<string>$(EUSOTRIP_ROUTE_PLAN_AUDIENCE)</string>
+	<key>EusoRoutePlanKeyID</key>
+	<string>$(EUSOTRIP_ROUTE_PLAN_KEY_ID)</string>
+	<key>EusoRoutePlanPublicKey</key>
+	<string>$(EUSOTRIP_ROUTE_PLAN_PUBLIC_KEY_BASE64)</string>
 </dict>
 </plist>

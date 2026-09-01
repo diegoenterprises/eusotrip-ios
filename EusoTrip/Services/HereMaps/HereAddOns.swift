@@ -14,9 +14,9 @@
 //   • EVERY pin is tappable — each carries a stable `id` and a
 //     `HereAddOnDetail`. Tapping surfaces a branded detail card. There is
 //     no such thing as a "dead" / non-tappable pin.
-//   • Every fetch fails *soft* — a down add-on hides its pins, it never
-//     blanks the map ("no fake data": when HERE can't answer, that layer
-//     simply isn't there).
+//   • Every fetch fails *soft* — a down add-on never blanks the map. A
+//     provider/configuration failure emits an explicit unavailable chip;
+//     a successful empty response remains an honest empty layer.
 //
 //  Add-on → source:
 //     .fuel          → HereFuelPricesClient        → .fuel pins (+ cheapest-diesel chip)
@@ -105,6 +105,9 @@ enum HereMarkerStyle {
     static func glyph(_ k: HereMarker.Kind) -> String {
         switch k {
         case .truck: return "T"
+        case .rail: return "R"
+        case .vessel: return "V"
+        case .cluster: return "#"
         case .pickup: return "P"
         case .delivery: return "D"
         case .stop: return "S"
@@ -130,6 +133,9 @@ enum HereMarkerStyle {
     static func color(_ k: HereMarker.Kind) -> String {
         switch k {
         case .truck: return "#1473FF"      // live puck — eusoPrimary head
+        case .rail: return "#813FF5"       // mode-distinct rail glyph; silhouette is primary
+        case .vessel: return "#1473FF"     // mode-distinct hull; silhouette is primary
+        case .cluster: return "#813FF5"    // counted double-ring cluster
         case .pickup: return "#1473FF"     // origin disc = white + eusoDiagonal core (222/003)
         case .delivery: return "#BE01FF"   // dest disc core — eusoDiagonal tail (222/013)
         case .stop: return "#607D8B"       // idle slate (536 idle pin)
@@ -149,6 +155,9 @@ enum HereMarkerStyle {
     static func title(_ k: HereMarker.Kind) -> String {
         switch k {
         case .truck: return "Vehicle"
+        case .rail: return "Rail consist"
+        case .vessel: return "Vessel"
+        case .cluster: return "Observation cluster"
         case .pickup: return "Pickup"
         case .delivery: return "Delivery"
         case .stop: return "Stop"
@@ -192,6 +201,14 @@ public final class HereAddOnsModel: ObservableObject {
         var chip: HereAddOnLegendItem? = nil
     }
 
+    private struct BackendCapabilityStatus: Decodable, Sendable {
+        let products: Products
+
+        struct Products: Decodable, Sendable {
+            let isa: Bool
+        }
+    }
+
     nonisolated private static func unavailableChip(
         glyph: String,
         colorHex: String,
@@ -214,6 +231,14 @@ public final class HereAddOnsModel: ObservableObject {
         isLoading = true
         defer { isLoading = false }
 
+        guard center.isUsableCoordinate else {
+            layers = []
+            legend = []
+            details = [:]
+            return
+        }
+
+        let usableRoute = route.filter(\.isUsableCoordinate)
         let coord = CLLocationCoordinate2D(latitude: center.lat, longitude: center.lng)
 
         // Independent fetches, concurrent. Explicit AddOnFetch type so the
@@ -239,7 +264,7 @@ public final class HereAddOnsModel: ObservableObject {
                 ? Self.fetchDiscover(center, "weigh station", .weigh, categoryIds: HereDiscoverCategories.weighStations)
                 : AddOnFetch()
         async let adZones: AddOnFetch =
-            enabled.contains(.adZones)       ? Self.fetchAdZones(center, route)               : AddOnFetch()
+            enabled.contains(.adZones)       ? Self.fetchAdZones(center, usableRoute)         : AddOnFetch()
         async let isa: AddOnFetch =
             enabled.contains(.isa)           ? Self.fetchISA(center)                          : AddOnFetch()
 
@@ -257,10 +282,14 @@ public final class HereAddOnsModel: ObservableObject {
         var allTrafficSegments: [HereTrafficSegment] = []
 
         for p in parts {
-            allMarkers.append(contentsOf: p.markers)
-            allPolys.append(contentsOf: p.polygons)
-            allTrafficSegments.append(contentsOf: p.trafficSegments)
-            for d in p.details { newDetails[d.id] = d }
+            allMarkers.append(contentsOf: p.markers.filter(\.at.isUsableCoordinate))
+            allPolys.append(contentsOf: p.polygons.filter {
+                $0.ring.filter(\.isUsableCoordinate).count >= 3
+            })
+            allTrafficSegments.append(contentsOf: p.trafficSegments.filter {
+                $0.polyline.filter(\.isUsableCoordinate).count >= 2
+            })
+            for d in p.details where d.at.isUsableCoordinate { newDetails[d.id] = d }
             if let chip = p.chip { newLegend.append(chip) }
         }
 
@@ -271,7 +300,7 @@ public final class HereAddOnsModel: ObservableObject {
         // Missions — caller-supplied geo pins, get ids + details too.
         if enabled.contains(.missions), !missionPins.isEmpty {
             var mp: [HereMarker] = []
-            for (i, m) in missionPins.enumerated() {
+            for (i, m) in missionPins.filter(\.at.isUsableCoordinate).enumerated() {
                 let id = (m.id?.isEmpty == false) ? m.id! : "mission:\(i)"
                 mp.append(HereMarker(at: m.at, kind: .mission, label: m.label, id: id))
                 newDetails[id] = HereAddOnDetail(
@@ -300,9 +329,10 @@ public final class HereAddOnsModel: ObservableObject {
         do {
             let stations = try await HereFuelPricesClient.shared.nearby(center: coord, radiusMeters: radius)
             for s in stations {
+                guard let position = s.position.coordinate else { continue }
                 let id = "fuel:\(s.id)"
                 let name = s.brand ?? s.name ?? "Fuel stop"
-                let at = HereLatLng(s.position.latitude, s.position.longitude)
+                let at = HereLatLng(position.latitude, position.longitude)
                 let priceTxt = s.cheapestDieselPrice.map { "\($0.currency) \(String(format: "%.2f", $0.price))/gal diesel" }
                 let label = s.cheapestDieselPrice.map { "\(name) · \($0.currency) \(String(format: "%.2f", $0.price))" } ?? name
                 var subs: [String] = []
@@ -329,14 +359,26 @@ public final class HereAddOnsModel: ObservableObject {
         do {
             let items = try await HereEVClient.shared.chargingStations(near: coord, limit: 30)
             for item in items {
-                guard let pos = item.position else { continue }
+                guard let position = item.position?.coordinate else { continue }
                 let id = "ev:\(item.id)"
-                let at = HereLatLng(pos.latitude, pos.longitude)
+                let at = HereLatLng(position)
                 let kw = item.chargingStation?.connectors?.compactMap { $0.maxPowerLevel }.max()
                 let conns = item.chargingStation?.totalNumberOfConnectors
                 var subs: [String] = []
+                if item.liveDetails?.availabilityKnown == true,
+                   let available = item.liveDetails?.availableConnectorCount {
+                    if let total = item.liveDetails?.totalConnectorCount {
+                        subs.append("\(available)/\(total) available")
+                    } else {
+                        subs.append("\(available) available")
+                    }
+                }
                 if let kw { subs.append("\(Int(kw)) kW max") }
                 if let conns { subs.append("\(conns) connectors") }
+                if let price = item.liveDetails?.price,
+                   let perKwh = price.perKwh {
+                    subs.append("\(price.currency) \(String(format: "%.2f", perKwh))/kWh")
+                }
                 if subs.isEmpty, let a = item.address?.label { subs.append(a) }
                 let label = kw.map { "\(item.title) · \(Int($0)) kW" } ?? item.title
                 out.markers.append(HereMarker(at: at, kind: .charger, label: label, id: id))
@@ -361,10 +403,17 @@ public final class HereAddOnsModel: ObservableObject {
             guard let obs = place.observations?.current else { return out }
             let at = HereLatLng(coord.latitude, coord.longitude)
             let desc = obs.description ?? "Current conditions"
-            let chip: String = obs.temperatureFahrenheit.map { "\(Int($0.rounded()))°F · \(desc)" } ?? desc
+            // Destination Weather returns the selected unit in `temperature`
+            // and `windSpeed`; it does not duplicate those values into the
+            // Fahrenheit/MPH aliases in the live v3 payload. Prefer explicit
+            // aliases when present, then use the imperial values requested by
+            // HereWeatherClient so a healthy report never loses its numbers.
+            let temperatureF = obs.temperatureFahrenheit ?? obs.temperature
+            let windMph = obs.windSpeedMph ?? obs.windSpeed
+            let chip: String = temperatureF.map { "\(Int($0.rounded()))°F · \(desc)" } ?? desc
             var subs: [String] = [desc]
             if let h = obs.humidity { subs.append("\(Int(h))% humidity") }
-            if let w = obs.windSpeedMph { subs.append("wind \(Int(w)) mph") }
+            if let w = windMph { subs.append("wind \(Int(w)) mph") }
             let id = "wx:center"
             out.markers.append(HereMarker(at: at, kind: .weather, label: chip, id: id))
             out.details.append(HereAddOnDetail(
@@ -385,12 +434,17 @@ public final class HereAddOnsModel: ObservableObject {
             outer: for result in flows {
                 guard let severity = Self.trafficSeverity(for: result.currentFlow) else { continue }
                 for link in result.location?.shape?.links ?? [] {
-                    let pts = (link.points ?? []).filter {
-                        $0.lat.isFinite && $0.lng.isFinite && !($0.lat == 0 && $0.lng == 0)
+                    let rawPoints: [HerePoint] = link.points ?? []
+                    let pts: [HereLatLng] = rawPoints.compactMap { point -> HereLatLng? in
+                        guard let coordinate = LatLongParser.validatedCoordinate(
+                            latitude: point.lat,
+                            longitude: point.lng
+                        ) else { return nil }
+                        return HereLatLng(coordinate)
                     }
                     guard pts.count >= 2 else { continue }
                     out.trafficSegments.append(HereTrafficSegment(
-                        polyline: pts.map { HereLatLng($0.lat, $0.lng) },
+                        polyline: pts,
                         severity: severity
                     ))
                     if out.trafficSegments.count >= 60 { break outer }
@@ -403,9 +457,13 @@ public final class HereAddOnsModel: ObservableObject {
         do {
             let incidents = try await HereTrafficClient.shared.incidents(near: coord)
             for (idx, inc) in incidents.enumerated() {
-                guard let pt = inc.location?.shape?.links?.first?.points?.first else { continue }
+                guard let pt = inc.location?.shape?.links?.first?.points?.first,
+                      let coordinate = LatLongParser.validatedCoordinate(
+                          latitude: pt.lat,
+                          longitude: pt.lng
+                      ) else { continue }
                 let id = "alert:\(idx):\(inc.id)"
-                let at = HereLatLng(pt.lat, pt.lng)
+                let at = HereLatLng(coordinate)
                 let title = (inc.incidentDetails?.type?.replacingOccurrences(of: "_", with: " ").capitalized) ?? "Incident"
                 let subtitle = inc.incidentDetails?.summary ?? inc.incidentDetails?.description
                 out.markers.append(HereMarker(at: at, kind: .alert, label: subtitle ?? title, id: id))
@@ -458,13 +516,30 @@ public final class HereAddOnsModel: ObservableObject {
         do {
             let items = try await HereParkingClient.shared.parkingNearby(center: coord, limit: 30)
             for item in items {
-                guard let pos = item.position else { continue }
+                guard let position = item.position?.coordinate else { continue }
                 let id = "parking:\(item.id)"
-                let at = HereLatLng(pos.latitude, pos.longitude)
+                let at = HereLatLng(position)
+                var subs: [String] = []
+                if let available = item.parking?.truckAvailableSpaces ?? item.parking?.availableSpaces {
+                    if let total = item.parking?.truckSpaces ?? item.parking?.totalSpaces {
+                        subs.append("\(available)/\(total) spaces")
+                    } else {
+                        subs.append("\(available) spaces open")
+                    }
+                }
+                if item.parking?.freeParking == true {
+                    subs.append("Free parking")
+                } else if let price = item.parking?.prices?.first,
+                          let amount = price.amount,
+                          let currency = price.currency {
+                    subs.append("\(currency) \(String(format: "%.2f", amount))/hr")
+                }
+                if item.parking?.secureParking == true { subs.append("Secure") }
+                if let address = item.address?.label, !address.isEmpty { subs.append(address) }
                 out.markers.append(HereMarker(at: at, kind: .parking, label: item.title, id: id))
                 out.details.append(HereAddOnDetail(
                     id: id, kind: .parking, title: item.title,
-                    subtitle: item.address?.label ?? "Truck parking",
+                    subtitle: subs.isEmpty ? "Truck parking" : subs.joined(separator: " · "),
                     glyph: "P", colorHex: HereMarkerStyle.color(.parking), at: at))
             }
             if !out.markers.isEmpty {
@@ -481,12 +556,12 @@ public final class HereAddOnsModel: ObservableObject {
         do {
             let items = try await HereSafetyCamerasClient.shared.camerasNearby(center: coord, limit: 40)
             for item in items {
-                guard let pos = item.position else { continue }
+                guard let position = item.position?.coordinate else { continue }
                 let id = "camera:\(item.id)"
-                let at = HereLatLng(pos.latitude, pos.longitude)
+                let at = HereLatLng(position)
                 var subs: [String] = []
                 if let t = item.cameraType { subs.append(t.replacingOccurrences(of: "_", with: " ").capitalized) }
-                if let sl = item.speedLimit { subs.append("\(Int(sl)) limit") }
+                if let sl = item.speedLimit { subs.append("\(Int(sl)) mph limit") }
                 out.markers.append(HereMarker(at: at, kind: .camera, label: item.title, id: id))
                 out.details.append(HereAddOnDetail(
                     id: id, kind: .camera, title: item.title,
@@ -534,9 +609,12 @@ public final class HereAddOnsModel: ObservableObject {
                 )
             }
             for place in places {
-                guard let lat = place.lat, let lng = place.lng else { continue }
+                guard let coordinate = LatLongParser.validatedCoordinate(
+                    latitude: place.lat,
+                    longitude: place.lng
+                ) else { continue }
                 let id = "\(kind.rawValue):\(place.id)"
-                let at = HereLatLng(lat, lng)
+                let at = HereLatLng(coordinate.latitude, coordinate.longitude)
                 let title = place.title ?? HereMarkerStyle.title(kind)
                 var subs: [String] = []
                 if let c = place.category { subs.append(c) }
@@ -583,20 +661,30 @@ public final class HereAddOnsModel: ObservableObject {
             }
             for z in zones {
                 guard let poly = z.polygon, poly.count > 2 else { continue }
-                let ring = poly.map { HereLatLng($0.lat, $0.lng) }
+                let ring = poly.compactMap { point -> HereLatLng? in
+                    guard let coordinate = LatLongParser.validatedCoordinate(
+                        latitude: point.lat,
+                        longitude: point.lng
+                    ) else { return nil }
+                    return HereLatLng(coordinate.latitude, coordinate.longitude)
+                }
+                guard ring.count > 2 else { continue }
                 out.polygons.append(HerePolygon(ring: ring, fillHex: HereMarkerStyle.color(.adZone), opacity: 0.18, label: z.name))
                 let cLat = ring.map { $0.lat }.reduce(0, +) / Double(ring.count)
                 let cLng = ring.map { $0.lng }.reduce(0, +) / Double(ring.count)
-                let at = HereLatLng(cLat, cLng)
+                guard let centroid = LatLongParser.validatedCoordinate(
+                    latitude: cLat,
+                    longitude: cLng
+                ) else { continue }
+                let at = HereLatLng(centroid.latitude, centroid.longitude)
                 let id = "adzone:\(z.id)"
                 let title = z.name ?? "Sponsored zone"
                 var subs: [String] = []
-                if let lvl = z.saeLevel { subs.append("SAE L\(lvl)") }
                 if let c = z.conditions, !c.isEmpty { subs.append(c.joined(separator: ", ")) }
                 out.markers.append(HereMarker(at: at, kind: .adZone, label: title, id: id))
                 out.details.append(HereAddOnDetail(
                     id: id, kind: .adZone, title: title,
-                    subtitle: subs.isEmpty ? "Sponsored / SAE-ODD zone" : subs.joined(separator: " · "),
+                    subtitle: subs.isEmpty ? "EusoTrip sponsored zone" : subs.joined(separator: " · "),
                     glyph: "$", colorHex: HereMarkerStyle.color(.adZone), at: at))
             }
             if !out.polygons.isEmpty {
@@ -614,6 +702,16 @@ public final class HereAddOnsModel: ObservableObject {
     nonisolated private static func fetchISA(_ center: HereLatLng) async -> AddOnFetch {
         var out = AddOnFetch()
         do {
+            let status: BackendCapabilityStatus = try await EusoTripAPI.shared.queryNoInput(
+                "hereMaps.status"
+            )
+            guard status.products.isa else {
+                return unavailableChip(
+                    glyph: "L",
+                    colorHex: "#FFA726",
+                    label: "Speed limit"
+                )
+            }
             // RATE-LIMIT GATE: backend-proxied HERE call — pace it through the
             // shared limiter so the fan-out doesn't fire it simultaneously.
             let isa = try await HereRateLimiter.shared.withSlot {
@@ -661,6 +759,8 @@ public final class HereAddOnsModel: ObservableObject {
 /// marker the caller gave an explicit id) routes through `onSelectMarker`
 /// instead. Optional first-person tilt + ticker + legend.
 public struct HereLiveMapView: View {
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
+
     let center: HereLatLng
     let zoom: Int
     let interactive: Bool
@@ -677,6 +777,11 @@ public struct HereLiveMapView: View {
     /// (alongside a `.heatmap(points:)` baseLayer) to light up the continuous
     /// blue→red demand field under the tappable zone pins.
     let styleHint: BespokeMapStyleHint
+    let activeJob: Bool
+    let mapModeContext: EusoTripMapModeContext
+    let showsMapFamilyControl: Bool
+    let liveOperationsStatus: HereLiveOperationsStatus?
+    let endpointLabelToggle: Bool
     let onSelectMarker: ((String) -> Void)?
 
     @StateObject private var model = HereAddOnsModel()
@@ -694,6 +799,11 @@ public struct HereLiveMapView: View {
         showLegend: Bool = false,
         showTicker: Bool = true,
         styleHint: BespokeMapStyleHint = .auto,
+        activeJob: Bool = false,
+        mapModeContext: EusoTripMapModeContext = .unknown,
+        showsMapFamilyControl: Bool = true,
+        liveOperationsStatus: HereLiveOperationsStatus? = nil,
+        endpointLabelToggle: Bool = false,
         onSelectMarker: ((String) -> Void)? = nil
     ) {
         self.center = center
@@ -707,6 +817,11 @@ public struct HereLiveMapView: View {
         self.showLegend = showLegend
         self.showTicker = showTicker
         self.styleHint = styleHint
+        self.activeJob = activeJob
+        self.mapModeContext = mapModeContext
+        self.showsMapFamilyControl = showsMapFamilyControl
+        self.liveOperationsStatus = liveOperationsStatus
+        self.endpointLabelToggle = endpointLabelToggle
         self.onSelectMarker = onSelectMarker
     }
 
@@ -722,6 +837,11 @@ public struct HereLiveMapView: View {
                 tilt: firstPerson ? 55 : 0,
                 layers: base.layers + model.layers,
                 styleHint: styleHint,
+                activeJob: activeJob,
+                mapModeContext: mapModeContext,
+                showsMapFamilyControl: showsMapFamilyControl,
+                liveOperationsStatus: liveOperationsStatus,
+                endpointLabelToggle: endpointLabelToggle,
                 onSelectMarker: { id in
                     // A caller-actionable pin (e.g. a load on the board) →
                     // route to the caller. Everything else → detail card.
@@ -761,7 +881,12 @@ public struct HereLiveMapView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .animation(.spring(response: 0.32, dampingFraction: 0.85), value: selectedDetail)
+        .animation(
+            accessibilityReduceMotion
+                ? nil
+                : .spring(response: 0.32, dampingFraction: 0.85),
+            value: selectedDetail
+        )
         .task(id: reloadKey) {
             // DEBOUNCE: the HERE add-on fan-out is 10 concurrent REST calls.
             // A live GPS feed pushes a new `center` on every fix, and even with
@@ -772,8 +897,42 @@ public struct HereLiveMapView: View {
             // issue the fan-out. A cancelled sleep throws → we bail silently.
             do { try await Task.sleep(nanoseconds: 350_000_000) } catch { return }
             guard !Task.isCancelled else { return }
-            await model.load(center: center, route: route, enabled: addOns, missionPins: missionPins)
+            guard let addOnCenter else { return }
+            await model.load(
+                center: addOnCenter,
+                route: route,
+                enabled: addOns,
+                missionPins: missionPins
+            )
         }
+    }
+
+    /// Add-ons need a real geographic anchor. If a partial payload omitted
+    /// the requested camera, recover from real route or marker geometry;
+    /// otherwise do not call a location provider at all.
+    private var addOnCenter: HereLatLng? {
+        if center.isUsableCoordinate { return center }
+        if let point = route.first(where: \.isUsableCoordinate) { return point }
+        for layer in baseLayers {
+            switch layer {
+            case .heatmap(let points), .route(let points, _), .eusoRoute(let points, _, _),
+                 .observationTrail(let points, _):
+                if let point = points.first(where: \.isUsableCoordinate) { return point }
+            case .markers(let markers), .missionPins(let markers):
+                if let point = markers.map(\.at).first(where: \.isUsableCoordinate) { return point }
+            case .adZones(let polygons):
+                if let point = polygons.lazy.flatMap(\.ring).first(where: \.isUsableCoordinate) {
+                    return point
+                }
+            case .geofenceRing(let center, _, _, _):
+                if center.isUsableCoordinate { return center }
+            case .trafficFlow(let segments):
+                if let point = segments.lazy.flatMap(\.polyline).first(where: \.isUsableCoordinate) {
+                    return point
+                }
+            }
+        }
+        return nil
     }
 
     /// Grid cell (degrees) the live anchor is snapped to before keying the
@@ -788,6 +947,9 @@ public struct HereLiveMapView: View {
     /// moves a few meters keeps the SAME key (no re-fetch); only crossing a
     /// cell boundary — or a real add-on/route/pin change — re-keys.
     private var reloadKey: String {
+        guard let center = addOnCenter else {
+            return "invalid|\(addOns.rawValue)|\(route.count)|\(missionPins.count)|\(firstPerson)"
+        }
         let cell = Self.reloadGridCell
         let snapLat = (center.lat / cell).rounded() * cell
         let snapLng = (center.lng / cell).rounded() * cell
@@ -805,7 +967,7 @@ public struct HereLiveMapView: View {
         for layer in baseLayers {
             if case .markers(let ms) = layer {
                 var newMs: [HereMarker] = []
-                for (i, m) in ms.enumerated() {
+                for (i, m) in ms.filter(\.at.isUsableCoordinate).enumerated() {
                     let hadID = (m.id?.isEmpty == false)
                     let id = hadID ? m.id! : "pin:\(m.kind.rawValue):\(i)"
                     newMs.append(HereMarker(at: m.at, kind: m.kind, label: m.label, id: id))
@@ -834,6 +996,7 @@ public struct HereAddOnDetailCard: View {
     let onClose: () -> Void
 
     @State private var claimMsg: String?
+    @State private var claimConfirmed = false
     @State private var claiming = false
 
     public init(detail: HereAddOnDetail, onClose: @escaping () -> Void) {
@@ -878,24 +1041,29 @@ public struct HereAddOnDetailCard: View {
                 .accessibilityLabel("Close")
             }
 
-            // Monetization → The Haul: sponsored zones + affiliate amenities
-            // pay XP + Haul points. Informational pins (weather/alert/camera)
-            // show no CTA.
+            // The client requests a server verification; it never chooses the
+            // award. Informational pins (weather/alert/camera) show no CTA.
             if HereHaulBridge.isRewardable(detail.kind) {
                 Button {
-                    guard !claiming, claimMsg == nil else { return }
+                    guard !claiming, !claimConfirmed else { return }
                     claiming = true
                     Task {
-                        let msg = await HereHaulBridge.shared.engage(detail)
-                        claimMsg = msg
+                        let result = await HereHaulBridge.shared.engage(detail)
+                        claimMsg = result.message
+                        claimConfirmed = result.accepted
                         claiming = false
                     }
                 } label: {
                     HStack(spacing: 6) {
-                        Image(systemName: claimMsg == nil ? "bolt.fill" : "checkmark.seal.fill")
-                            .font(.system(size: 12, weight: .bold))
-                        Text(claimMsg ?? "Claim in The Haul")
+                        if claiming {
+                            ProgressView().tint(.white)
+                        } else {
+                            Image(systemName: claimConfirmed ? "checkmark.seal.fill" : "location.circle.fill")
+                                .font(.system(size: 12, weight: .bold))
+                        }
+                        Text(claimMsg ?? "Check in with The Haul")
                             .font(.system(size: 13, weight: .semibold))
+                            .lineLimit(2)
                     }
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
@@ -907,7 +1075,7 @@ public struct HereAddOnDetailCard: View {
                         in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
                 .buttonStyle(.plain)
-                .disabled(claimMsg != nil || claiming)
+                .disabled(claimConfirmed || claiming)
             }
         }
         .padding(14)

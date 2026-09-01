@@ -179,7 +179,7 @@ struct TerminalHome: View {
             .padding(.top, 8)
         }
         .task { await refreshAll() }
-        .refreshable { await refreshAll() }
+        .eusoRefreshable { await refreshAll() }
         .screenTileRoot()
         // 701_TerminalGateQueue sheet — opened by tapping the
         // "View queue →" CTA on the active-movements section header.
@@ -236,7 +236,7 @@ struct TerminalHome: View {
     // MARK: - Header
     //
     // Bespoke hero — matches the gold-standard Driver-010 idiom: a
-    // gradient eyebrow chip ("✦ TERMINAL · DASHBOARD") with the
+    // branded eyebrow row (EusoTrip mark + "TERMINAL · DASHBOARD") with the
     // time-of-day · context caps trailing on the right (per the SVG
     // header motif, sparkle glyph used exactly once per surface), then
     // the identity headline rendered in the brand gradient so the
@@ -250,7 +250,7 @@ struct TerminalHome: View {
             // time-of-day · live-count, mirroring the Dark-SVG header
             // and the Driver-010 / Shipper-200 idiom.
             HStack {
-                Text("✦ TERMINAL · DASHBOARD")
+                EusoTripEyebrow(verbatim: "TERMINAL · DASHBOARD")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer(minLength: Space.s2)
@@ -504,10 +504,7 @@ struct TerminalHome: View {
     /// Yards with REAL server-projected coordinates (lat/lng ≠ 0,0).
     /// Null-island guard — never render a fabricated pin.
     private var mappableYards: [TerminalYardLocation700] {
-        yardLocations.filter { y in
-            guard let la = y.lat, let lo = y.lng else { return false }
-            return !(la == 0 && lo == 0)
-        }
+        yardLocations.filter { yardFix(for: $0) != nil }
     }
 
     @ViewBuilder
@@ -551,22 +548,23 @@ struct TerminalHome: View {
 
     private var facilityLocatorMap: some View {
         let yards = mappableYards
-        return BespokeMapCanvas(
+        return HereVectorMapView(
             center: yardMapCenter,
             zoom: yardMapZoom,
             interactive: true,
             tilt: 0,
-            isDark: colorScheme == .dark,
             layers: [
-                .adZones(yards.map(yardFootprint(for:))),
-                .markers(yards.map { y in
-                    HereMarker(
-                        at: HereLatLng(y.lat ?? 0, y.lng ?? 0),
+                .adZones(yards.compactMap { yardFootprint(for: $0) }),
+                .markers(yards.compactMap { y in
+                    guard let fix = yardFix(for: y) else { return nil }
+                    return HereMarker(
+                        at: fix,
                         kind: .pickup,
                         label: y.name.flatMap { $0.isEmpty ? nil : $0 } ?? "Yard",
                         id: y.id)
                 })
             ],
+            mapModeContext: .intermodal(activeSegment: nil),
             onSelectMarker: { yardId in
                 withAnimation(.easeInOut(duration: 0.18)) {
                     selectedYardId = yardId
@@ -597,11 +595,11 @@ struct TerminalHome: View {
     /// The CONUS fallback (39.5, -98.35) is the only acceptable coordinate
     /// literal and is never reached while `mappableYards` is non-empty.
     private var yardMapCenter: HereLatLng {
-        let yards = mappableYards
-        guard !yards.isEmpty else { return HereLatLng(39.5, -98.35) }
-        let lat = yards.reduce(0.0) { $0 + ($1.lat ?? 0) } / Double(yards.count)
-        let lng = yards.reduce(0.0) { $0 + ($1.lng ?? 0) } / Double(yards.count)
-        return HereLatLng(lat, lng)
+        let fixes = mappableYards.compactMap { yardFix(for: $0) }
+        guard !fixes.isEmpty else { return HereLatLng(39.5, -98.35) }
+        let latitude = fixes.map(\.lat).reduce(0, +) / Double(fixes.count)
+        let longitude = fixes.map(\.lng).reduce(0, +) / Double(fixes.count)
+        return HereLatLng(latitude, longitude)
     }
 
     /// Tight framing for a single yard; wider when the network spans out.
@@ -611,9 +609,10 @@ struct TerminalHome: View {
     /// server projects a point, not a GeoJSON ring, so we draw a square
     /// footprint around the true location. Mirrors the `.adZones` contract
     /// used by Driver 022's `yardLayoutPolygons` + Rail 628.
-    private func yardFootprint(for y: TerminalYardLocation700) -> HerePolygon {
-        let lat = y.lat ?? 0
-        let lng = y.lng ?? 0
+    private func yardFootprint(for y: TerminalYardLocation700) -> HerePolygon? {
+        guard let fix = yardFix(for: y) else { return nil }
+        let lat = fix.lat
+        let lng = fix.lng
         let dLat = 0.0022
         let dLng = 0.0022 / max(cos(lat * .pi / 180), 0.2)
         let ring = [
@@ -628,6 +627,14 @@ struct TerminalHome: View {
             fillHex: "#1473FF",
             opacity: isSelected ? 0.30 : 0.16,
             label: y.name.flatMap { $0.isEmpty ? nil : $0 })
+    }
+
+    private func yardFix(for yard: TerminalYardLocation700) -> HereLatLng? {
+        guard let coordinate = LatLongParser.validatedCoordinate(
+            latitude: yard.lat,
+            longitude: yard.lng
+        ) else { return nil }
+        return HereLatLng(coordinate.latitude, coordinate.longitude)
     }
 
     // MARK: - Attention strip
@@ -1018,13 +1025,11 @@ struct TerminalHomeScreen: View {
 }
 
 private func terminalNavLeading_700() -> [NavSlot] {
-    [NavSlot(label: "Home",      systemImage: "house.fill",      isCurrent: true),
-     NavSlot(label: "Movements", systemImage: "shippingbox.fill", isCurrent: false)]
+    TerminalNavRoute.leading(current: .home)
 }
 
 private func terminalNavTrailing_700() -> [NavSlot] {
-    [NavSlot(label: "Yard", systemImage: "map",    isCurrent: false),
-     NavSlot(label: "Me",   systemImage: "person", isCurrent: false)]
+    TerminalNavRoute.trailing(current: .home)
 }
 
 // MARK: - Previews
