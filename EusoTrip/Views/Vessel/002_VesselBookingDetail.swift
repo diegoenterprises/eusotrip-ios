@@ -163,10 +163,18 @@ private struct VesselShipmentDetail002: Decodable {
     let bols: [VesselBOL002]?
 }
 
+private enum OfflineVesselRouteState002 {
+    case idle
+    case securing
+    case ready(validUntil: Date?)
+    case unavailable(String)
+}
+
 // MARK: - Body
 
 private struct VesselBookingDetailBody: View {
     @Environment(\.palette) private var palette
+    @EnvironmentObject private var session: EusoTripSession
     let shipmentId: Int
 
     @State private var detail: VesselShipmentDetail002? = nil
@@ -175,6 +183,9 @@ private struct VesselBookingDetailBody: View {
     /// Action surface ("Track live" · "Documents") writes here on failure —
     /// never silently swallowed.
     @State private var actionError: String? = nil
+    @State private var offlineRouteState: OfflineVesselRouteState002 = .idle
+    @State private var offlineCanonicalRoute: CanonicalRoutePackage? = nil
+    @State private var loadGeneration = UUID()
 
     // Milestone track — SVG nodes in order, mapped to the REAL vessel_shipments
     // status enum.
@@ -211,6 +222,8 @@ private struct VesselBookingDetailBody: View {
 
                     if loading {
                         loadingState
+                    } else if let offlineCanonicalRoute, detail == nil {
+                        offlineFallback(offlineCanonicalRoute)
                     } else if let err = loadError {
                         LifecycleCard(accentDanger: true) {
                             Text(err).font(EType.caption).foregroundStyle(Brand.danger)
@@ -221,6 +234,7 @@ private struct VesselBookingDetailBody: View {
                                        subtitle: "This booking is no longer available or you don't have access to it.")
                     } else {
                         voyageCard
+                        offlineRouteCard
                         milestoneSection
                         containerRoster
                         demurrageMeter
@@ -234,7 +248,91 @@ private struct VesselBookingDetailBody: View {
             .padding(.horizontal, Space.s5)
         }
         .task { await load() }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
+        .onChange(of: session.user) { _, _ in
+            loadGeneration = UUID()
+            offlineCanonicalRoute = nil
+            offlineRouteState = .idle
+        }
+    }
+
+    private var offlineRouteCard: some View {
+        let title: String
+        let detail: String
+        let symbol: String
+        let color: Color
+
+        switch offlineRouteState {
+        case .idle:
+            title = "Offline voyage not secured"
+            detail = "Load this booking online to verify and save its signed vessel itinerary."
+            symbol = "arrow.down.circle"
+            color = palette.textTertiary
+        case .securing:
+            title = "Securing offline voyage"
+            detail = "Verifying the server-signed itinerary for this account and booking."
+            symbol = "arrow.triangle.2.circlepath"
+            color = Brand.info
+        case .ready(let validUntil):
+            title = "Signed voyage saved on this device"
+            if let validUntil {
+                let formatter = DateFormatter()
+                formatter.dateStyle = .medium
+                formatter.timeStyle = .short
+                detail = "Available offline until \(formatter.string(from: validUntil)); freshness is rechecked before use."
+            } else {
+                detail = "Available offline; signature, account scope, and freshness are rechecked before use."
+            }
+            symbol = "checkmark.shield.fill"
+            color = Brand.success
+        case .unavailable(let message):
+            title = "Offline voyage unavailable"
+            detail = message
+            symbol = "exclamationmark.shield.fill"
+            color = Brand.warning
+        }
+
+        return HStack(alignment: .top, spacing: Space.s3) {
+            Image(systemName: symbol)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(color)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 13, weight: .heavy))
+                    .foregroundStyle(color)
+                Text(detail)
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(Space.s3)
+        .background(color.opacity(0.07))
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(color.opacity(0.24))
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    private func offlineFallback(_ package: CanonicalRoutePackage) -> some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            LifecycleCard {
+                HStack(alignment: .top, spacing: Space.s2) {
+                    Image(systemName: "wifi.slash")
+                        .foregroundStyle(Brand.warning)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Live vessel data unavailable")
+                            .font(EType.bodyStrong)
+                            .foregroundStyle(palette.textPrimary)
+                        Text("Showing the last fresh server-signed voyage saved for this account and booking.")
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textSecondary)
+                    }
+                }
+            }
+            CanonicalOfflineRouteItineraryView(package: package)
+        }
     }
 
     // MARK: - Top bar  (SVG: back chevron · y=72 eyebrow · y=116 booking# + status pill · y=138 subline)
@@ -734,7 +832,23 @@ private struct VesselBookingDetailBody: View {
     // MARK: - Load (single real endpoint; do/catch — never try?)
 
     private func load() async {
+        let generation = UUID()
+        loadGeneration = generation
+        detail = nil
+        offlineCanonicalRoute = nil
+        offlineRouteState = .idle
         loading = true; loadError = nil
+        guard shipmentId > 0 else {
+            detail = nil
+            offlineRouteState = .idle
+            loading = false
+            NotificationCenter.default.post(
+                name: .eusoVesselShipperNavSwap,
+                object: nil,
+                userInfo: ["screenId": "Vesl011"]
+            )
+            return
+        }
         struct DetailIn: Encodable { let id: Int }
         do {
             // getVesselShipmentDetail (EXISTS :234) returns the row + bols +
@@ -746,11 +860,138 @@ private struct VesselBookingDetailBody: View {
             let d: VesselShipmentDetail002? =
                 try await EusoTripAPI.shared.query("vesselShipments.getVesselShipmentDetail",
                                                    input: DetailIn(id: shipmentId))
+            guard loadGeneration == generation else { return }
+            guard let d else {
+                self.detail = nil
+                offlineRouteState = .idle
+                loading = false
+                NotificationCenter.default.post(
+                    name: .eusoVesselShipperNavSwap,
+                    object: nil,
+                    userInfo: ["screenId": "Vesl011"]
+                )
+                return
+            }
+            guard d.id == shipmentId else {
+                self.detail = nil
+                offlineRouteState = .idle
+                loadError = "The server returned a different booking. Nothing was cached."
+                loading = false
+                return
+            }
             self.detail = d
+            loading = false
+            await secureOfflineRoute(shipmentId: d.id, generation: generation)
+            return
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            guard loadGeneration == generation else { return }
+            loadError = error.eusoUserCopy
+            _ = await restoreOfflineRoute(
+                shipmentId: shipmentId,
+                generation: generation
+            )
         }
         loading = false
+    }
+
+    private func secureOfflineRoute(shipmentId: Int, generation: UUID) async {
+        guard loadGeneration == generation else { return }
+        guard let authenticatedUser = session.user else {
+            offlineRouteState = .unavailable(
+                "Sign in while online to secure this voyage for offline use."
+            )
+            return
+        }
+        guard let composition = OfflineMapProductionComposition.shared else {
+            offlineRouteState = .unavailable(
+                "Offline route storage is unavailable in this app build."
+            )
+            return
+        }
+
+        offlineRouteState = .securing
+        do {
+            let delivery = try await CanonicalRoutePlanClient().download(
+                subject: .vesselShipment(Int64(shipmentId)),
+                authenticatedUser: authenticatedUser
+            )
+            guard loadGeneration == generation else { return }
+            guard session.user?.id == authenticatedUser.id,
+                  session.user?.companyId == authenticatedUser.companyId else {
+                offlineRouteState = .unavailable(
+                    "The signed-in account changed before this voyage could be saved."
+                )
+                return
+            }
+            let package = try await composition.ingestCanonicalRoutePlan(
+                encodedEnvelope: delivery.encodedEnvelope,
+                expectedScope: delivery.expectedScope,
+                receivedAt: delivery.receivedAt
+            )
+            guard loadGeneration == generation else { return }
+            guard session.user?.id == authenticatedUser.id,
+                  session.user?.companyId == authenticatedUser.companyId else {
+                offlineRouteState = .unavailable(
+                    "The signed-in account changed before this voyage could be saved."
+                )
+                return
+            }
+            offlineCanonicalRoute = package
+            offlineRouteState = .ready(validUntil: package.validUntil)
+        } catch {
+            guard loadGeneration == generation else { return }
+            if await restoreOfflineRoute(
+                shipmentId: shipmentId,
+                generation: generation
+            ) {
+                return
+            }
+            offlineRouteState = .unavailable(
+                composition.canonicalRouteFailure
+                    ?? "The signed voyage could not be verified and was not saved."
+            )
+        }
+    }
+
+    private func restoreOfflineRoute(
+        shipmentId: Int,
+        generation: UUID
+    ) async -> Bool {
+        guard loadGeneration == generation,
+              let authenticatedUser = session.user,
+              let composition = OfflineMapProductionComposition.shared else {
+            return false
+        }
+        do {
+            let package = try await CanonicalRouteOfflineReader(
+                composition: composition
+            ).freshPackage(
+                subject: .vesselShipment(Int64(shipmentId)),
+                authenticatedUser: authenticatedUser
+            )
+            guard loadGeneration == generation,
+                  session.user?.id == authenticatedUser.id,
+                  session.user?.companyId == authenticatedUser.companyId else {
+                return false
+            }
+            offlineCanonicalRoute = package
+            offlineRouteState = .ready(validUntil: package.validUntil)
+            return true
+        } catch let error as CanonicalRouteOfflineReadError {
+            guard loadGeneration == generation else { return false }
+            offlineCanonicalRoute = nil
+            offlineRouteState = .unavailable(
+                error.errorDescription ?? "The saved voyage is unavailable."
+            )
+            return false
+        } catch {
+            guard loadGeneration == generation else { return false }
+            offlineCanonicalRoute = nil
+            offlineRouteState = .unavailable(
+                "The saved voyage could not be verified for offline use."
+            )
+            return false
+        }
     }
 
     // MARK: - Actions (do/catch · actionError on failure)

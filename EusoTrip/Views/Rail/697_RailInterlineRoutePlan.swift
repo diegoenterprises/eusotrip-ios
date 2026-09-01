@@ -86,6 +86,7 @@ private struct RailInterlineRoutePlanBody: View {
     @State private var toast: String? = nil
     @State private var toastTask: Task<Void, Never>? = nil
     @State private var offlineRoutePackageState: OfflineRoutePackageState697 = .idle
+    @State private var offlineCanonicalRoute: CanonicalRoutePackage? = nil
     @State private var routeLoadGeneration = UUID()
 
     // Road-colored spine palette (distinct rail hues; recolors at each interchange).
@@ -114,8 +115,6 @@ private struct RailInterlineRoutePlanBody: View {
                 shipmentField
                 if loading {
                     LifecycleCard { Text("Laying out interline routing…").font(EType.caption).foregroundStyle(palette.textSecondary) }
-                } else if let err = loadError {
-                    LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) }
                 } else if let p = plan {
                     routeHeader(p)
                     offlineRoutePackageCard
@@ -135,6 +134,10 @@ private struct RailInterlineRoutePlanBody: View {
                         isLoading: !ptcComplete || submitting
                     )
                     rerouteButton
+                } else if let offlineCanonicalRoute {
+                    offlineFallback(offlineCanonicalRoute)
+                } else if let err = loadError {
+                    LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) }
                 } else {
                     LifecycleCard { Text("Enter a shipment ID above to lay out its interline routing across roads and interchanges.").font(EType.caption).foregroundStyle(palette.textSecondary) }
                 }
@@ -146,7 +149,12 @@ private struct RailInterlineRoutePlanBody: View {
             if shipmentIdText.isEmpty && initialShipmentId > 0 { shipmentIdText = "\(initialShipmentId)" }
             await load()
         }
-        .refreshable { await load() }
+        .eusoRefreshable { await load() }
+        .onChange(of: session.user) { _, _ in
+            routeLoadGeneration = UUID()
+            offlineCanonicalRoute = nil
+            offlineRoutePackageState = .idle
+        }
         .overlay(alignment: .bottom) { toastView }
     }
 
@@ -268,6 +276,26 @@ private struct RailInterlineRoutePlanBody: View {
                 .strokeBorder(color.opacity(0.24))
         )
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    private func offlineFallback(_ package: CanonicalRoutePackage) -> some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            LifecycleCard {
+                HStack(alignment: .top, spacing: Space.s2) {
+                    Image(systemName: "wifi.slash")
+                        .foregroundStyle(Brand.warning)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Live rail data unavailable")
+                            .font(EType.bodyStrong)
+                            .foregroundStyle(palette.textPrimary)
+                        Text("Showing the last fresh server-signed route saved for this account and shipment.")
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textSecondary)
+                    }
+                }
+            }
+            CanonicalOfflineRouteItineraryView(package: package)
+        }
     }
 
     // MARK: Confirmed banner
@@ -530,10 +558,14 @@ private struct RailInterlineRoutePlanBody: View {
         guard id > 0 else {
             plan = nil
             loadError = nil
+            offlineCanonicalRoute = nil
             offlineRoutePackageState = .idle
             loading = false
             return
         }
+        plan = nil
+        offlineCanonicalRoute = nil
+        offlineRoutePackageState = .idle
         loading = true; loadError = nil
         struct In: Encodable { let shipmentId: Int }
         do {
@@ -558,8 +590,16 @@ private struct RailInterlineRoutePlanBody: View {
             return
         } catch {
             guard routeLoadGeneration == generation else { return }
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
-            offlineRoutePackageState = .idle
+            let liveError = (error as? EusoTripAPIError)?.errorDescription
+                ?? error.localizedDescription
+            if await restoreOfflineCanonicalRoute(
+                shipmentId: id,
+                generation: generation
+            ) {
+                loadError = liveError
+            } else {
+                loadError = liveError
+            }
         }
         loading = false
     }
@@ -612,13 +652,61 @@ private struct RailInterlineRoutePlanBody: View {
                 )
                 return
             }
+            offlineCanonicalRoute = package
             offlineRoutePackageState = .ready(validUntil: package.validUntil)
         } catch {
             guard routeLoadGeneration == generation else { return }
+            if await restoreOfflineCanonicalRoute(
+                shipmentId: shipmentId,
+                generation: generation
+            ) {
+                return
+            }
             offlineRoutePackageState = .unavailable(
                 composition.canonicalRouteFailure
                     ?? "The signed route could not be verified and was not saved."
             )
+        }
+    }
+
+    private func restoreOfflineCanonicalRoute(
+        shipmentId: Int,
+        generation: UUID
+    ) async -> Bool {
+        guard routeLoadGeneration == generation,
+              let authenticatedUser = session.user,
+              let composition = OfflineMapProductionComposition.shared else {
+            return false
+        }
+        do {
+            let package = try await CanonicalRouteOfflineReader(
+                composition: composition
+            ).freshPackage(
+                subject: .railShipment(Int64(shipmentId)),
+                authenticatedUser: authenticatedUser
+            )
+            guard routeLoadGeneration == generation,
+                  session.user?.id == authenticatedUser.id,
+                  session.user?.companyId == authenticatedUser.companyId else {
+                return false
+            }
+            offlineCanonicalRoute = package
+            offlineRoutePackageState = .ready(validUntil: package.validUntil)
+            return true
+        } catch let error as CanonicalRouteOfflineReadError {
+            guard routeLoadGeneration == generation else { return false }
+            offlineCanonicalRoute = nil
+            offlineRoutePackageState = .unavailable(
+                error.errorDescription ?? "The saved route is unavailable."
+            )
+            return false
+        } catch {
+            guard routeLoadGeneration == generation else { return false }
+            offlineCanonicalRoute = nil
+            offlineRoutePackageState = .unavailable(
+                "The saved route could not be verified for offline use."
+            )
+            return false
         }
     }
 
