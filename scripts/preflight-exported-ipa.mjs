@@ -271,7 +271,24 @@ export function preflightExportedIPAFile(file) {
   ) {
     fail("IPA path must be one regular file");
   }
-  return inspectExportedIPA(fs.readFileSync(absoluteFile));
+  const descriptor = fs.openSync(
+    absoluteFile,
+    fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW,
+  );
+  try {
+    const opened = fs.fstatSync(descriptor);
+    if (!opened.isFile() || opened.dev !== metadata.dev || opened.ino !== metadata.ino) {
+      fail("IPA changed while it was opened");
+    }
+    const archive = fs.readFileSync(descriptor);
+    const final = fs.fstatSync(descriptor);
+    if (final.size !== opened.size || final.mtimeMs !== opened.mtimeMs || final.ctimeMs !== opened.ctimeMs) {
+      fail("IPA changed while it was read");
+    }
+    return inspectExportedIPA(archive);
+  } finally {
+    fs.closeSync(descriptor);
+  }
 }
 
 const isMain = process.argv[1] &&

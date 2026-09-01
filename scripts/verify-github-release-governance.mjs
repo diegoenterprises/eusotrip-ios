@@ -153,7 +153,7 @@ export async function verifyGitHubReleaseGovernance({
   const checks = await githubJSON(fetchImpl, token, checkQuery);
   const successful = (checks.check_runs ?? []).filter(check =>
     check.name === requiredCheck && check.status === "completed" && check.conclusion === "success" &&
-    check.app?.slug === "github-actions");
+    check.app?.slug === "github-actions" && check.app?.id === appBoundRequiredCheck.app_id);
   if (successful.length !== 1 || successful[0].head_sha !== commit) {
     throw new Error("The exact release commit does not have one successful required HERE check");
   }
@@ -169,12 +169,43 @@ export async function verifyGitHubReleaseGovernance({
       environmentData.deployment_branch_policy?.custom_branch_policies !== false) {
     throw new Error("Release environment lacks independent reviewers or protected-branch-only deployment");
   }
+  const deploymentsQuery = new URL(
+    `/repos/${encodedRepository}/deployments`,
+    GITHUB_ORIGIN,
+  );
+  deploymentsQuery.searchParams.set("sha", commit);
+  deploymentsQuery.searchParams.set("environment", environment);
+  deploymentsQuery.searchParams.set("per_page", "100");
+  const deployments = await githubJSON(fetchImpl, token, deploymentsQuery);
+  const exactDeployments = (Array.isArray(deployments) ? deployments : []).filter(deployment =>
+    Number.isSafeInteger(deployment.id) && deployment.id > 0 &&
+    deployment.sha === commit && deployment.ref === branch &&
+    deployment.environment === environment && deployment.transient_environment !== true &&
+    Number.isFinite(Date.parse(deployment.created_at ?? "")));
+  if (exactDeployments.length < 1) {
+    throw new Error("Exact commit lacks a reviewed GitHub release-environment deployment");
+  }
+  exactDeployments.sort((left, right) =>
+    Date.parse(right.created_at ?? "") - Date.parse(left.created_at ?? ""));
+  const deployment = exactDeployments[0];
+  const statuses = await githubJSON(
+    fetchImpl,
+    token,
+    `/repos/${encodedRepository}/deployments/${deployment.id}/statuses?per_page=100`,
+  );
+  const latestStatus = Array.isArray(statuses) ? statuses[0] : null;
+  if (!latestStatus || !Number.isSafeInteger(latestStatus.id) || latestStatus.id <= 0 ||
+      latestStatus.state !== "success" || latestStatus.environment !== environment) {
+    throw new Error("Reviewed GitHub release-environment deployment is not successful");
+  }
   return {
     repository,
     branch,
     commit,
     requiredCheck,
     environment,
+    deploymentId: deployment.id,
+    deploymentStatusId: latestStatus.id,
   };
 }
 
@@ -185,7 +216,7 @@ async function main() {
   const commit = argument("commit");
   const requiredCheck = argument("required-check");
   const environment = argument("environment");
-  await verifyGitHubReleaseGovernance({
+  const result = await verifyGitHubReleaseGovernance({
     token,
     repository,
     branch,
@@ -193,7 +224,11 @@ async function main() {
     requiredCheck,
     environment,
   });
-  console.log("GitHub release governance is enforced for the exact commit.");
+  if (process.argv.includes("--json")) {
+    console.log(JSON.stringify(result));
+  } else {
+    console.log("GitHub release governance and reviewed environment deployment are enforced for the exact commit.");
+  }
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
