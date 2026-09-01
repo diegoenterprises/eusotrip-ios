@@ -855,7 +855,13 @@ actor CanonicalRoutePackageStore {
     }
 
     func purgeAllCachedRoutes() throws {
-        trustedClock.invalidateAll()
+        do {
+            try trustedClock.invalidateAll()
+        } catch {
+            throw CanonicalRouteStoreError.persistenceFailed(
+                "Trusted canonical-route time could not be cleared."
+            )
+        }
         let directory = canonicalRoutesDirectory
         guard fileManager.fileExists(atPath: directory.path) else { return }
         do {
