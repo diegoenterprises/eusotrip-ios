@@ -704,7 +704,7 @@ private struct TrailerPoolBoardBody_549: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("\u{2726} DISPATCHER · TRAILER POOL")
+                EusoTripEyebrow(verbatim: "DISPATCHER · TRAILER POOL")
                     .font(.system(size: 9, weight: .heavy)).kerning(1.0).foregroundStyle(LinearGradient.primary)
                 Spacer()
                 Text(vm.poolCaption)

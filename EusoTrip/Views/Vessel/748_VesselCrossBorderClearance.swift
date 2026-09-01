@@ -120,7 +120,7 @@ private struct VesselCrossBorderClearanceBody748: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
-                Text("\u{2726} VESSEL OPERATOR · CLEARANCE")
+                EusoTripEyebrow(verbatim: "VESSEL OPERATOR · CLEARANCE")
                     .font(.system(size: 9, weight: .heavy)).kerning(1.0).foregroundStyle(LinearGradient.primary)
                 Spacer()
                 Text("USLGB · CBP ACE").font(.system(size: 9, weight: .heavy, design: .monospaced)).kerning(0.4)

@@ -460,7 +460,7 @@ struct EscortHighSecurityConvoyES25: View {
 
     private var eyebrowRow: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("✦ ESCORT · HIGH-SECURITY CONVOY")
+            EusoTripEyebrow(verbatim: "ESCORT · HIGH-SECURITY CONVOY")
                 .font(.system(size: 9, weight: .heavy))
                 .kerning(1.0)
                 .foregroundStyle(LinearGradient(colors: [Brand.blue, Brand.magenta],

@@ -358,7 +358,7 @@ struct EscortVehicleRegistryES30: View {
 
     private var eyebrowRow: some View {
         HStack {
-            Text("✦ ESCORT · VEHICLE & EQUIPMENT REGISTRY")
+            EusoTripEyebrow(verbatim: "ESCORT · VEHICLE & EQUIPMENT REGISTRY")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient(colors: [Brand.blue, Brand.magenta],
                                                 startPoint: .leading, endPoint: .trailing))

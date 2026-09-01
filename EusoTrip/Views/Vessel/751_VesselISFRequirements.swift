@@ -135,7 +135,7 @@ private struct VesselISFRequirementsBody751: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
-                Text("\u{2726} VESSEL OPERATOR · ADVANCE FILING")
+                EusoTripEyebrow(verbatim: "VESSEL OPERATOR · ADVANCE FILING")
                     .font(.system(size: 9, weight: .heavy)).kerning(1.0).foregroundStyle(LinearGradient.primary)
                 Spacer()
                 Text("CBP · 19 CFR 149").font(.system(size: 9, weight: .heavy, design: .monospaced)).kerning(0.4)

@@ -130,7 +130,7 @@ private struct VesselTradeLaneDocumentsBody749: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
-                Text("\u{2726} VESSEL OPERATOR · TRADE DOCS")
+                EusoTripEyebrow(verbatim: "VESSEL OPERATOR · TRADE DOCS")
                     .font(.system(size: 9, weight: .heavy)).kerning(1.0).foregroundStyle(LinearGradient.primary)
                 Spacer()
                 Text(vm?.direction ?? "US IMPORT").font(.system(size: 9, weight: .heavy, design: .monospaced)).kerning(0.4)

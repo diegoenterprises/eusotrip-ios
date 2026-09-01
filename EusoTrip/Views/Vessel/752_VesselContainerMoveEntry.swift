@@ -118,7 +118,7 @@ private struct VesselContainerMoveEntryBody752: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
-                Text("\u{2726} VESSEL OPERATOR · CONTAINER MOVE")
+                EusoTripEyebrow(verbatim: "VESSEL OPERATOR · CONTAINER MOVE")
                     .font(.system(size: 9, weight: .heavy)).kerning(1.0).foregroundStyle(LinearGradient.primary)
                 Spacer()
                 Text("USLGB · PIER J").font(.system(size: 9, weight: .heavy, design: .monospaced)).kerning(1.0)

@@ -122,7 +122,7 @@ private struct VesselCrossBorderPortsBody750: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
-                Text("\u{2726} VESSEL OPERATOR · PORTS OF ENTRY")
+                EusoTripEyebrow(verbatim: "VESSEL OPERATOR · PORTS OF ENTRY")
                     .font(.system(size: 9, weight: .heavy)).kerning(1.0).foregroundStyle(LinearGradient.primary)
                 Spacer()
                 Text("CBP · CBSA").font(.system(size: 9, weight: .heavy, design: .monospaced)).kerning(0.4)

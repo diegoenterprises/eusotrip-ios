@@ -365,7 +365,7 @@ struct EscortNotificationsAlerts: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
-                Text("✦ ESCORT · NOTIFICATIONS & ALERTS")
+                EusoTripEyebrow(verbatim: "ESCORT · NOTIFICATIONS & ALERTS")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer(minLength: 8)

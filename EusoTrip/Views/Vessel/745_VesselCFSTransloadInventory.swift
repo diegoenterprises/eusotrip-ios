@@ -141,7 +141,7 @@ private struct VesselCFSTransloadInventoryBody745: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
-                Text("\u{2726} VESSEL OPERATOR · CFS INVENTORY")
+                EusoTripEyebrow(verbatim: "VESSEL OPERATOR · CFS INVENTORY")
                     .font(.system(size: 9, weight: .heavy)).kerning(1.0).foregroundStyle(LinearGradient.primary)
                 Spacer()
                 Text("USLGB CFS").font(.system(size: 9, weight: .heavy, design: .monospaced)).kerning(1.0)

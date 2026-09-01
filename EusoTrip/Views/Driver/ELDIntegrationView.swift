@@ -53,14 +53,19 @@ struct ELDIntegrationView: View {
 
     var body: some View {
         NavigationStack {
-            ConnectedAppsBody(
-                includedCategories: ["operational_eld"],
-                surfaceTitle: "ELD + fleet telemetry",
-                surfaceSummary: "Authorize the provider account that already owns your fleet data. EusoTrip activates it only after credentials, entitlement, health, and first synchronization are verified.",
-                showsJourney: true,
-                showsAdaptation: false,
-                showsTokens: false
-            )
+            ScrollView(.vertical, showsIndicators: false) {
+                TileStack(alignment: .leading, spacing: Space.s4) {
+                    statusCard
+                    symbioticNotice
+                    providerGridCard
+                    apiKeyCard
+                    complianceFooter
+                }
+                .padding(.horizontal, Space.s5)
+                .padding(.top, Space.s4)
+                .padding(.bottom, Space.s6)
+            }
+            .background(palette.bgPrimary.ignoresSafeArea())
             .navigationTitle("ELD Integration")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -69,6 +74,9 @@ struct ELDIntegrationView: View {
                         .fontWeight(.semibold)
                 }
             }
+            .task { await store.bootstrap() }
+            .eusoRefreshable { await store.refresh() }
+            .overlay(alignment: .top) { bannerOverlay }
         }
         // Outer screen-surface fade so the whole sheet lands with the
         // EusoTrip uniform feel on top of the per-card stagger.
