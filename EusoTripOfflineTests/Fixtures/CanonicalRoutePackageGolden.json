@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "generatedBy": {
+    "backendCommit": "9ed38a69",
+    "implementation": "frontend/server/services/routing/offlineRoutePackage.ts:createOfflineRoutePackageSigner"
+  },
+  "publicKeyB64": "6kpsY+KcUgq+9VB7Ey7F+ZVHdq6+vnuSQh7qaRRG0iw=",
+  "cases": [
+    {
+      "name": "rail-shipment",
+      "subject": {
+        "type": "rail_shipment",
+        "id": 41
+      },
+      "scope": {
+        "tenantID": "71",
+        "userID": "7",
+        "loadID": "rail_shipment:41"
+      },
+      "mode": "rail",
+      "envelope": {
+        "keyID": "offline-route-2026-09-a",
+        "algorithm": "ed25519",
+        "payload": "eyJhdWRpZW5jZSI6ImNvbS5ldXNvcm9uZS5ldXNvdHJpcC5pb3MiLCJnZW5lcmF0ZWRBdCI6IjIwMjYtMDgtMzFUMjA6MDA6MDAuMDAwWiIsImluc3RydWN0aW9ucyI6W3siY29vcmRpbmF0ZSI6eyJsYXRpdHVkZSI6NDEuNSwibG9uZ2l0dWRlIjotODd9LCJzZXF1ZW5jZSI6MCwidGV4dCI6IkNvbnRpbnVlIG9uIHRoZSByZWxlYXNlZCBjb3JyaWRvciJ9XSwiaXNzdWVkQXQiOiIyMDI2LTA5LTAxVDAwOjAwOjAwLjAwMFoiLCJpc3N1ZXIiOiJodHRwczovL2FwaS5ldXNvdHJpcC5jb20vcm91dGUiLCJtb2RlIjoicmFpbCIsInJvdXRlSUQiOiIwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAxMDEiLCJzY2hlbWFWZXJzaW9uIjoyLCJzY29wZSI6eyJsb2FkSUQiOiJyYWlsX3NoaXBtZW50OjQxIiwidGVuYW50SUQiOiI3MSIsInVzZXJJRCI6IjcifSwic2VnbWVudHMiOlt7ImNvb3JkaW5hdGVzIjpbeyJsYXRpdHVkZSI6NDEuODc4MSwibG9uZ2l0dWRlIjotODcuNjI5OH0seyJsYXRpdHVkZSI6NDEuNSwibG9uZ2l0dWRlIjotODd9XSwiaWQiOiIwOjA6Y2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjYyIsIm1vZGUiOiJyYWlsIiwic2VxdWVuY2UiOjB9LHsiY29vcmRpbmF0ZXMiOlt7ImxhdGl0dWRlIjo0MS41LCJsb25naXR1ZGUiOi04N30seyJsYXRpdHVkZSI6MzkuNzY4NCwibG9uZ2l0dWRlIjotODYuMTU4MX1dLCJpZCI6IjA6MTpjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjIiwibW9kZSI6InJhaWwiLCJzZXF1ZW5jZSI6MX1dLCJzZXJ2ZXJSZXZpc2lvbiI6IjEwMjo2MDI6MzphYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhIiwic3VtbWFyeSI6eyJkaXN0YW5jZU1ldGVycyI6MTAwLCJkdXJhdGlvblNlY29uZHMiOjc1fSwidmFsaWRVbnRpbCI6IjIwMjYtMDktMDhUMDA6MDA6MDAuMDAwWiJ9",
+        "signature": "jzaU+DVmLQ8z1EIlgcyZQh7jojc1/WeY2RAk9tZj+6YwJrna68BTO08GwCCa+5DqqCP5O2jx8OyBj9ejig4vDw=="
+      }
+    },
+    {
+      "name": "vessel-shipment",
+      "subject": {
+        "type": "vessel_shipment",
+        "id": 19
+      },
+      "scope": {
+        "tenantID": "71",
+        "userID": "7",
+        "loadID": "vessel_shipment:19"
+      },
+      "mode": "vessel",
+      "envelope": {
+        "keyID": "offline-route-2026-09-a",
+        "algorithm": "ed25519",
+        "payload": "eyJhdWRpZW5jZSI6ImNvbS5ldXNvcm9uZS5ldXNvdHJpcC5pb3MiLCJnZW5lcmF0ZWRBdCI6IjIwMjYtMDgtMzFUMjA6MDA6MDAuMDAwWiIsImluc3RydWN0aW9ucyI6W3siY29vcmRpbmF0ZSI6eyJsYXRpdHVkZSI6NDEuNSwibG9uZ2l0dWRlIjotODd9LCJzZXF1ZW5jZSI6MCwidGV4dCI6IkNvbnRpbnVlIG9uIHRoZSByZWxlYXNlZCBjb3JyaWRvciJ9XSwiaXNzdWVkQXQiOiIyMDI2LTA5LTAxVDAwOjAwOjAwLjAwMFoiLCJpc3N1ZXIiOiJodHRwczovL2FwaS5ldXNvdHJpcC5jb20vcm91dGUiLCJtb2RlIjoidmVzc2VsIiwicm91dGVJRCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDEwMSIsInNjaGVtYVZlcnNpb24iOjIsInNjb3BlIjp7ImxvYWRJRCI6InZlc3NlbF9zaGlwbWVudDoxOSIsInRlbmFudElEIjoiNzEiLCJ1c2VySUQiOiI3In0sInNlZ21lbnRzIjpbeyJjb29yZGluYXRlcyI6W3sibGF0aXR1ZGUiOjQxLjg3ODEsImxvbmdpdHVkZSI6LTg3LjYyOTh9LHsibGF0aXR1ZGUiOjQxLjUsImxvbmdpdHVkZSI6LTg3fV0sImlkIjoiMDowOmNjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2MiLCJtb2RlIjoidmVzc2VsIiwic2VxdWVuY2UiOjB9LHsiY29vcmRpbmF0ZXMiOlt7ImxhdGl0dWRlIjo0MS41LCJsb25naXR1ZGUiOi04N30seyJsYXRpdHVkZSI6MzkuNzY4NCwibG9uZ2l0dWRlIjotODYuMTU4MX1dLCJpZCI6IjA6MTpjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjIiwibW9kZSI6InZlc3NlbCIsInNlcXVlbmNlIjoxfV0sInNlcnZlclJldmlzaW9uIjoiMTAyOjYwMjozOmFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWEiLCJzdW1tYXJ5Ijp7ImRpc3RhbmNlTWV0ZXJzIjoxMDAsImR1cmF0aW9uU2Vjb25kcyI6NzV9LCJ2YWxpZFVudGlsIjoiMjAyNi0wOS0wOFQwMDowMDowMC4wMDBaIn0=",
+        "signature": "hrYunCna1kKIJxnlDXx4Cp7pBCju3nt+ggIfZsC8zLxT1ElZ9nxeKpsJYzyQDBf6Egd7DadyEZCxljKjlZHjAA=="
+      }
+    },
+    {
+      "name": "vessel-voyage",
+      "subject": {
+        "type": "vessel_voyage",
+        "id": 23
+      },
+      "scope": {
+        "tenantID": "71",
+        "userID": "7",
+        "loadID": "vessel_voyage:23"
+      },
+      "mode": "vessel",
+      "envelope": {
+        "keyID": "offline-route-2026-09-a",
+        "algorithm": "ed25519",
+        "payload": "eyJhdWRpZW5jZSI6ImNvbS5ldXNvcm9uZS5ldXNvdHJpcC5pb3MiLCJnZW5lcmF0ZWRBdCI6IjIwMjYtMDgtMzFUMjA6MDA6MDAuMDAwWiIsImluc3RydWN0aW9ucyI6W3siY29vcmRpbmF0ZSI6eyJsYXRpdHVkZSI6NDEuNSwibG9uZ2l0dWRlIjotODd9LCJzZXF1ZW5jZSI6MCwidGV4dCI6IkNvbnRpbnVlIG9uIHRoZSByZWxlYXNlZCBjb3JyaWRvciJ9XSwiaXNzdWVkQXQiOiIyMDI2LTA5LTAxVDAwOjAwOjAwLjAwMFoiLCJpc3N1ZXIiOiJodHRwczovL2FwaS5ldXNvdHJpcC5jb20vcm91dGUiLCJtb2RlIjoidmVzc2VsIiwicm91dGVJRCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDEwMSIsInNjaGVtYVZlcnNpb24iOjIsInNjb3BlIjp7ImxvYWRJRCI6InZlc3NlbF92b3lhZ2U6MjMiLCJ0ZW5hbnRJRCI6IjcxIiwidXNlcklEIjoiNyJ9LCJzZWdtZW50cyI6W3siY29vcmRpbmF0ZXMiOlt7ImxhdGl0dWRlIjo0MS44NzgxLCJsb25naXR1ZGUiOi04Ny42Mjk4fSx7ImxhdGl0dWRlIjo0MS41LCJsb25naXR1ZGUiOi04N31dLCJpZCI6IjA6MDpjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjIiwibW9kZSI6InZlc3NlbCIsInNlcXVlbmNlIjowfSx7ImNvb3JkaW5hdGVzIjpbeyJsYXRpdHVkZSI6NDEuNSwibG9uZ2l0dWRlIjotODd9LHsibGF0aXR1ZGUiOjM5Ljc2ODQsImxvbmdpdHVkZSI6LTg2LjE1ODF9XSwiaWQiOiIwOjE6Y2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjYyIsIm1vZGUiOiJ2ZXNzZWwiLCJzZXF1ZW5jZSI6MX1dLCJzZXJ2ZXJSZXZpc2lvbiI6IjEwMjo2MDI6MzphYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhIiwic3VtbWFyeSI6eyJkaXN0YW5jZU1ldGVycyI6MTAwLCJkdXJhdGlvblNlY29uZHMiOjc1fSwidmFsaWRVbnRpbCI6IjIwMjYtMDktMDhUMDA6MDA6MDAuMDAwWiJ9",
+        "signature": "yLRROKKXCd/K8hCmwcRfwxx6KO2Yj70C2950lJmdbyRE8I24eniiSibWZRd98nBff/pPPZuSb84CDay6AVjBCw=="
+      }
+    }
+  ]
+}
