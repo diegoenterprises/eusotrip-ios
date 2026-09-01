@@ -182,6 +182,15 @@ function createBaselineFixture() {
     "scripts/release-ladder-status.test.mjs",
     "scripts/asc-build-status.mjs",
     "scripts/asc-build-status.test.mjs",
+    "scripts/asc-latest-build.mjs",
+    "scripts/asc-latest-build.test.mjs",
+    "scripts/verify-release-config-attestation.mjs",
+    "scripts/verify-release-config-attestation.test.mjs",
+    "scripts/verify-here-offline-device-acceptance.mjs",
+    "scripts/verify-here-offline-device-acceptance.test.mjs",
+    "scripts/verify-github-release-governance.mjs",
+    "scripts/verify-github-release-governance.test.mjs",
+    ".github/workflows/here-offline-source-contract.yml",
   ]) {
     copyRepositoryEntry(relativePath, fixture);
   }
