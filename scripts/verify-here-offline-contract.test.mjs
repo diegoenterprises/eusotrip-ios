@@ -15,6 +15,10 @@ const sdkManifestRelativePath =
   "EusoTrip/Services/HereMaps/Offline/HERE_SDK_SUPPLY_CHAIN.json";
 const styleManifestRelativePath =
   "EusoTrip/Services/HereMaps/Offline/HERE_NATIVE_STYLE_SUPPLY_CHAIN.json";
+const coverageTrustRelativePath =
+  "EusoTrip/Services/HereMaps/Offline/HERE_INSTALLED_COVERAGE_TRUST.json";
+const coverageManifestRelativePath =
+  "EusoTrip/Services/HereMaps/Offline/HERE_INSTALLED_COVERAGE_MANIFEST.json";
 const credentialAttestationRelativePath =
   "security/HERE_CREDENTIAL_REMEDIATION.json";
 const survivingIncidentRelativePath = "mapping_audit/risks.md";
@@ -155,10 +159,47 @@ function createBaselineFixture() {
   for (const relativePath of [
     verifierRelativePath,
     "EusoTrip/Services/HereMaps/Offline",
+    "EusoTrip/Services/HereMaps/HereMapWebView.swift",
+    "EusoTrip/Views/Components/AppRadioSilenceAsyncImage.swift",
     "EusoTrip/Views/Maps/Offline",
     "EusoTrip/EusoTripApp.swift",
     "EusoTrip/Views/Catalyst/311_CatalystSettings.swift",
-    "EusoTrip/Services/HereMaps/HereMapWebView.swift",
+    "EusoTrip/Views/Rail/697_RailInterlineRoutePlan.swift",
+    "EusoTrip/Views/Vessel/002_VesselBookingDetail.swift",
+    "EusoTrip/Views/Driver/022_DockAssigned.swift",
+    "EusoTrip/Views/Driver/035_EnRouteDrive.swift",
+    "EusoTripOfflineTests/SignedInstalledCoverageResolverTests.swift",
+    "EusoTripOfflineTests/AppRadioSilenceLeaseStateTests.swift",
+    "EusoTripOfflineTests/HereFiniteCallbackWatchdogTests.swift",
+    "EusoTripOfflineTests/HereNavigationInterruptionBoundaryTests.swift",
+    "EusoTripOfflineTests/OfflineMapSurfaceLeaseStateTests.swift",
+    "EusoTrip/Services/EusoTripAPI.swift",
+    "EusoTrip/Services/PushService.swift",
+    "EusoTrip/Features/Wallet/EusoTripAPI+Wallet.swift",
+    "EusoTrip/Services/WeatherService.swift",
+    "EusoTrip/Services/NewsOGImageCache.swift",
+    "EusoTrip/Services/PTChannelManager.swift",
+    "EusoTrip/Services/WatchAuthBridge.swift",
+    "EusoTrip/Services/EusoTripApp+WatchBridge.swift",
+    "EusoTrip/Services/AppAttestClient.swift",
+    "EusoTrip/Services/AppleAuthProvider.swift",
+    "EusoTrip/Services/EusoWalletApplePayProvider.swift",
+    "EusoTrip/Services/EusoWalletPassService.swift",
+    "EusoTrip/Services/ShipperAppIntents.swift",
+    "EusoTrip/Services/RealtimeService.swift",
+    "EusoTrip/Services/DriverGPSPushService.swift",
+    "EusoTrip/Services/HOSClockService.swift",
+    "EusoTrip/Services/ReminderSyncService.swift",
+    "EusoTrip/Services/OfflineQueue.swift",
+    "EusoTrip/Services/GeofenceService.swift",
+    "EusoTrip Pulse Watch App/Services/AppRadioSilenceWatchState.swift",
+    "EusoTrip Pulse Watch App/Services/AppRadioSilenceWatchPolicy.swift",
+    "EusoTrip Pulse Watch App/WatchConnectivityManager.swift",
+    "EusoTrip Pulse Watch App/EusoTripWatchApp.swift",
+    "EusoTrip Pulse Watch App/EsangClient.swift",
+    "EusoTrip Pulse Watch App/Services/OfflineQueue.swift",
+    "EusoTrip Pulse Watch App/WatchAudioRecorder.swift",
+    "EusoTrip Pulse Watch AppTests/AppRadioSilenceWatchStateTests.swift",
     "EusoTrip/Info.plist",
     "EusoTrip.xcconfig.sample",
     "EusoTripTests/HereMaps/HEREAuthServiceTests.swift",
@@ -194,6 +235,7 @@ function createBaselineFixture() {
     "scripts/verify-github-release-governance.test.mjs",
     "scripts/verify-reachable-here-credential-history.mjs",
     "scripts/verify-reachable-here-credential-history.test.mjs",
+    "scripts/verify-canonical-route-trusted-clock.swift",
     ".github/workflows/here-offline-source-contract.yml",
   ]) {
     copyRepositoryEntry(relativePath, fixture);
@@ -352,6 +394,105 @@ function installApprovedCredentialAttestation(
   return { scannedCommit, scannedTree };
 }
 
+function isoSeconds(milliseconds) {
+  return new Date(Math.floor(milliseconds / 1_000) * 1_000)
+    .toISOString()
+    .replace(".000Z", "Z");
+}
+
+function installApprovedCoverageManifest(
+  fixture,
+  { mutatePayload = null } = {},
+) {
+  const now = Date.now();
+  const catalogVersion = "here-catalog-regression-2026-09";
+  const rightsID = "here-rights-regression-2026-09";
+  const issuer = "https://coverage.eusotrip.test";
+  const audience = "com.app.eusotrip";
+  const rightsHolder = "HERE Global B.V.";
+  const keyID = "here-coverage-regression-key";
+  const payload = {
+    schemaVersion: 1,
+    issuer,
+    audience,
+    manifestID: "here-coverage-regression-manifest",
+    sequence: 1,
+    issuedAt: isoSeconds(now - 60_000),
+    validFrom: isoSeconds(now - 3_600_000),
+    validUntil: isoSeconds(now + 7 * 24 * 60 * 60 * 1_000),
+    catalogVersion,
+    source: {
+      vendor: "HERE",
+      product: "HERE_SDK_NAVIGATE_IOS",
+      sdkVersion: "4.27.2.0",
+      rightsID,
+      rightsHolder,
+      rightsValidFrom: isoSeconds(now - 24 * 60 * 60 * 1_000),
+      rightsValidUntil: isoSeconds(now + 30 * 24 * 60 * 60 * 1_000),
+    },
+    regions: [
+      {
+        regionID: "here:region:regression",
+        catalogVersion,
+        status: "active",
+        validFrom: isoSeconds(now - 1_800_000),
+        validUntil: isoSeconds(now + 6 * 24 * 60 * 60 * 1_000),
+        rightsID,
+        boundary: {
+          polygons: [
+            {
+              exterior: {
+                coordinates: [
+                  { latitude: 0, longitude: 0 },
+                  { latitude: 0, longitude: 10 },
+                  { latitude: 10, longitude: 10 },
+                  { latitude: 10, longitude: 0 },
+                  { latitude: 0, longitude: 0 },
+                ],
+              },
+              holes: [],
+            },
+          ],
+        },
+      },
+    ],
+  };
+  mutatePayload?.(payload);
+  const { publicKey, privateKey } = crypto.generateKeyPairSync("ed25519");
+  const publicKeyDER = publicKey.export({ format: "der", type: "spki" });
+  assert.equal(publicKeyDER.subarray(0, -32).toString("hex"), "302a300506032b6570032100");
+  const rawPublicKey = publicKeyDER.subarray(-32);
+  const payloadBytes = Buffer.from(JSON.stringify(payload), "utf8");
+  const envelope = {
+    keyID,
+    algorithm: "ed25519",
+    payload: payloadBytes.toString("base64"),
+    signature: crypto.sign(null, payloadBytes, privateKey).toString("base64"),
+  };
+  const trust = {
+    schemaVersion: 1,
+    status: "approved",
+    issuer,
+    audience,
+    expectedSDKVersion: "4.27.2.0",
+    expectedRightsHolder: rightsHolder,
+    verificationKeyID: keyID,
+    ed25519PublicKeyBase64: rawPublicKey.toString("base64"),
+    initialSignedManifestResource: path.basename(coverageManifestRelativePath),
+    routeCorridorHalfWidthMeters: 75,
+    approvedBy: "coverage-regression-approver",
+    approvedAt: isoSeconds(now - 30_000),
+  };
+  writeJSON(absolute(fixture, coverageManifestRelativePath), envelope);
+  writeJSON(absolute(fixture, coverageTrustRelativePath), trust);
+  commitFixturePaths(
+    fixture,
+    [coverageManifestRelativePath, coverageTrustRelativePath],
+    "approved synthetic signed coverage fixture",
+  );
+  return { envelope, payload, trust };
+}
+
 function createMaliciousArchive(fixture, kind) {
   const manifest = readJSON(absolute(fixture, sdkManifestRelativePath));
   const archivePath = absolute(fixture, manifest.archiveRelativePath);
@@ -462,6 +603,10 @@ function prepareBuiltAppStyles(fixture) {
   fs.copyFileSync(
     manifestPath,
     path.join(appPath, path.basename(styleManifestRelativePath)),
+  );
+  fs.copyFileSync(
+    absolute(fixture, coverageTrustRelativePath),
+    path.join(appPath, path.basename(coverageTrustRelativePath)),
   );
   return { appPath, manifest };
 }
@@ -580,6 +725,19 @@ assert.equal(
   `minimal baseline must satisfy the source verifier\n${combinedOutput(baselineResult)}`,
 );
 console.log("ok - minimal source-contract baseline");
+
+const approvedCoverageBaseline = cloneFixture(
+  baseline,
+  "valid approved signed coverage baseline",
+);
+installApprovedCoverageManifest(approvedCoverageBaseline);
+const approvedCoverageBaselineResult = runVerifier(approvedCoverageBaseline);
+assert.equal(
+  approvedCoverageBaselineResult.status,
+  0,
+  `valid approved signed coverage must satisfy the source verifier\n${combinedOutput(approvedCoverageBaselineResult)}`,
+);
+console.log("ok - valid approved signed coverage baseline");
 
 const cases = [
   {
@@ -734,6 +892,729 @@ const cases = [
     forbidden: ["at JSON.parse", "verify-here-offline-contract.mjs:"],
     mutate(fixture) {
       writeFile(absolute(fixture, styleManifestRelativePath), "{\n");
+    },
+  },
+  {
+    name: "malformed installed-coverage trust document is sanitized",
+    expected: "EusoTrip/Services/HereMaps/Offline/HERE_INSTALLED_COVERAGE_TRUST.json: invalid installed-coverage trust document (SyntaxError)",
+    forbidden: ["at JSON.parse", "verify-here-offline-contract.mjs:"],
+    mutate(fixture) {
+      writeFile(absolute(fixture, coverageTrustRelativePath), "{\n");
+    },
+  },
+  {
+    name: "installed-coverage manifest resource cannot traverse the bundle",
+    expected: "EusoTrip/Services/HereMaps/Offline/HERE_INSTALLED_COVERAGE_TRUST.json: invalid installed-coverage trust document (AssertionError)",
+    forbidden: ["at createBaselineFixture", "verify-here-offline-contract.mjs:"],
+    mutate(fixture) {
+      const trust = readJSON(absolute(fixture, coverageTrustRelativePath));
+      trust.initialSignedManifestResource = "../../outside-coverage.json";
+      writeJSON(absolute(fixture, coverageTrustRelativePath), trust);
+    },
+  },
+  {
+    name: "approved installed-coverage manifest requires a valid Ed25519 signature",
+    expected: "approved signed installed-region coverage manifest failed Ed25519, pinned-claim, validity, or geometry verification",
+    mutate(fixture) {
+      installApprovedCoverageManifest(fixture);
+      const manifestPath = absolute(fixture, coverageManifestRelativePath);
+      const envelope = readJSON(manifestPath);
+      const signature = Buffer.from(envelope.signature, "base64");
+      signature[0] ^= 0x01;
+      envelope.signature = signature.toString("base64");
+      writeJSON(manifestPath, envelope);
+    },
+  },
+  {
+    name: "approved installed-coverage manifest pins signed issuer claims",
+    expected: "approved signed installed-region coverage manifest failed Ed25519, pinned-claim, validity, or geometry verification",
+    mutate(fixture) {
+      installApprovedCoverageManifest(fixture, {
+        mutatePayload(payload) {
+          payload.issuer = "https://untrusted-coverage.example.invalid";
+        },
+      });
+    },
+  },
+  {
+    name: "approved installed-coverage manifest pins the signed payload schema",
+    expected: "approved signed installed-region coverage manifest failed Ed25519, pinned-claim, validity, or geometry verification",
+    mutate(fixture) {
+      installApprovedCoverageManifest(fixture, {
+        mutatePayload(payload) {
+          payload.schemaVersion = 2;
+        },
+      });
+    },
+  },
+  {
+    name: "approved installed-coverage manifest must be currently valid",
+    expected: "approved signed installed-region coverage manifest failed Ed25519, pinned-claim, validity, or geometry verification",
+    mutate(fixture) {
+      installApprovedCoverageManifest(fixture, {
+        mutatePayload(payload) {
+          const now = Date.now();
+          payload.issuedAt = isoSeconds(now - 24 * 60 * 60 * 1_000);
+          payload.validFrom = isoSeconds(now - 2 * 24 * 60 * 60 * 1_000);
+          payload.validUntil = isoSeconds(now - 10 * 60 * 1_000);
+          payload.source.rightsValidFrom = isoSeconds(now - 3 * 24 * 60 * 60 * 1_000);
+          payload.source.rightsValidUntil = isoSeconds(now - 10 * 60 * 1_000);
+          payload.regions[0].validFrom = isoSeconds(now - 24 * 60 * 60 * 1_000);
+          payload.regions[0].validUntil = isoSeconds(now - 10 * 60 * 1_000);
+        },
+      });
+    },
+  },
+  {
+    name: "approved installed-coverage manifest rejects invalid signed geometry",
+    expected: "approved signed installed-region coverage manifest failed Ed25519, pinned-claim, validity, or geometry verification",
+    mutate(fixture) {
+      installApprovedCoverageManifest(fixture, {
+        mutatePayload(payload) {
+          payload.regions[0].boundary.polygons[0].exterior.coordinates.pop();
+        },
+      });
+    },
+  },
+  {
+    name: "approved installed-coverage manifest must remain committed unchanged",
+    expected: "release blocker: approved signed installed-region coverage manifest is not committed unchanged in HEAD",
+    mutate(fixture) {
+      installApprovedCoverageManifest(fixture);
+      fs.appendFileSync(absolute(fixture, coverageManifestRelativePath), "\n");
+      this.arguments = ["--release"];
+    },
+  },
+  {
+    name: "production road journey cannot omit its local search caller",
+    expected: "EusoTrip/Views/Maps/Offline/OfflineRoadJourneyView.swift: missing \"composition.searchOffline(\"",
+    mutate(fixture) {
+      const file = absolute(
+        fixture,
+        "EusoTrip/Views/Maps/Offline/OfflineRoadJourneyView.swift",
+      );
+      writeFile(
+        file,
+        fs.readFileSync(file, "utf8").replace(
+          "composition.searchOffline(",
+          "composition.searchUnavailableForMutationTest(",
+        ),
+      );
+    },
+  },
+  {
+    name: "installed-coverage trusted-time verifier cannot be removed",
+    expected: "EusoTripOfflineTests/SignedInstalledCoverageResolverTests.swift: missing \"Signed installed-coverage trusted-time verification passed: 5 cases\"",
+    mutate(fixture) {
+      const file = absolute(
+        fixture,
+        "EusoTripOfflineTests/SignedInstalledCoverageResolverTests.swift",
+      );
+      writeFile(
+        file,
+        fs.readFileSync(file, "utf8").replace(
+          "Signed installed-coverage trusted-time verification passed: 5 cases",
+          "coverage verification removed by mutation test",
+        ),
+      );
+    },
+  },
+  {
+    name: "canonical trusted-clock harness cannot print success without running cases",
+    expected: "canonical route trusted-clock source harness main no longer executes all five cases before reporting success",
+    mutate(fixture) {
+      const file = absolute(fixture, "scripts/verify-canonical-route-trusted-clock.swift");
+      const source = fs.readFileSync(file, "utf8");
+      writeFile(
+        file,
+        source.replace(
+          [
+            "        try verifySameBootRelaunch()",
+            "        try verifyRebootFailsClosed()",
+            "        try verifyUptimeRollbackFailsClosed()",
+            "        try verifyMalformedPersistenceFailsClosed()",
+            "        try verifyInvalidationPreventsReuse()",
+          ].join("\n"),
+          "        // Mutation fixture intentionally skips every case.",
+        ),
+      );
+    },
+  },
+  {
+    name: "coverage trusted-time harness cannot print success without running cases",
+    expected: "signed installed-coverage trusted-time source harness main no longer executes all five cases before reporting success",
+    mutate(fixture) {
+      const file = absolute(
+        fixture,
+        "EusoTripOfflineTests/SignedInstalledCoverageResolverTests.swift",
+      );
+      const source = fs.readFileSync(file, "utf8");
+      writeFile(
+        file,
+        source.replace(
+          [
+            "        try await verifySameBootRelaunch()",
+            "        try await verifyRebootFailsClosed()",
+            "        try await verifyUptimeRollbackFailsClosed()",
+            "        try await verifyAnchorTamperFailsClosed()",
+            "        try await verifyExpiryCannotBeRevivedByWallClockRollback()",
+          ].join("\n"),
+          "        // Mutation fixture intentionally skips every case.",
+        ),
+      );
+    },
+  },
+  {
+    name: "lease XCTest names cannot hide empty test bodies",
+    expected: "EusoTripOfflineTests/OfflineMapSurfaceLeaseStateTests.swift: testSecondWindowCannotEnterWhileFirstOwnsSurface no longer exercises the lease transition with meaningful assertions",
+    mutate(fixture) {
+      writeFile(
+        absolute(fixture, "EusoTripOfflineTests/OfflineMapSurfaceLeaseStateTests.swift"),
+        [
+          "import XCTest",
+          "@testable import EusoTrip",
+          "final class OfflineMapSurfaceLeaseStateTests: XCTestCase {",
+          "    func testSecondWindowCannotEnterWhileFirstOwnsSurface() {}",
+          "    func testSameOwnerReservationIsIdempotentDuringLoading() {}",
+          "    func testReleaseHandsSurfaceToWaitingWindow() {}",
+          "    func testOpaqueFailureForceReleaseWakesWaiters() {}",
+          "}",
+          "",
+        ].join("\n"),
+      );
+    },
+  },
+  {
+    name: "source CI cannot omit installed-coverage trusted-time verification",
+    expected: "release blocker: committed source-only HERE CI does not compile tests and inspect every public incident-relevant ref",
+    mutate(fixture) {
+      const file = absolute(
+        fixture,
+        ".github/workflows/here-offline-source-contract.yml",
+      );
+      writeFile(
+        file,
+        fs.readFileSync(file, "utf8").replaceAll(
+          "SIGNED_COVERAGE_SOURCE_VERIFICATION",
+          "COVERAGE_VERIFICATION_REMOVED",
+        ),
+      );
+      this.arguments = ["--release"];
+    },
+  },
+  {
+    name: "source CI must execute the compiled coverage clock binary",
+    expected: "release blocker: committed source-only HERE CI does not compile tests and inspect every public incident-relevant ref",
+    mutate(fixture) {
+      const file = absolute(
+        fixture,
+        ".github/workflows/here-offline-source-contract.yml",
+      );
+      writeFile(
+        file,
+        fs.readFileSync(file, "utf8").replace(
+          '          "$coverage_clock_binary"\n',
+          "          : # compiled coverage clock binary invocation removed\n",
+        ),
+      );
+      this.arguments = ["--release"];
+    },
+  },
+  {
+    name: "TestFlight preflight cannot omit installed-coverage trusted-time verification",
+    expected: "release blocker: TestFlight automation can upload before the final exported app passes HERE production and offline release gates",
+    mutate(fixture) {
+      const file = absolute(fixture, deployScriptRelativePath);
+      writeFile(
+        file,
+        fs.readFileSync(file, "utf8").replaceAll(
+          "SIGNED_COVERAGE_SOURCE_VERIFICATION",
+          "COVERAGE_VERIFICATION_REMOVED",
+        ),
+      );
+      this.arguments = ["--release"];
+    },
+  },
+  {
+    name: "TestFlight preflight must execute the compiled canonical clock binary",
+    expected: "release blocker: TestFlight automation can upload before the final exported app passes HERE production and offline release gates",
+    mutate(fixture) {
+      const file = absolute(fixture, deployScriptRelativePath);
+      writeFile(
+        file,
+        fs.readFileSync(file, "utf8").replace(
+          '"$TRUSTED_CLOCK_VERIFY_BINARY"\n',
+          ": # compiled canonical clock binary invocation removed\n",
+        ),
+      );
+      this.arguments = ["--release"];
+    },
+  },
+  {
+    name: "canonical route download cannot omit signed payload validation",
+    expected: "canonical route download no longer validates the signed payload against the authenticated principal scope and freight mode",
+    mutate(fixture) {
+      const file = absolute(
+        fixture,
+        "EusoTrip/Services/HereMaps/Offline/Core/CanonicalRoutePlanClient.swift",
+      );
+      writeFile(
+        file,
+        fs.readFileSync(file, "utf8").replace(
+          "Self.validateSignedPayload(",
+          "Self.acceptUncheckedPayloadForMutation(",
+        ),
+      );
+    },
+  },
+  {
+    name: "truck route calculation cannot replace explicit constraints with nil",
+    expected: "offline road/truck routing no longer binds explicit constraints, fresh origin, selected destination, and input generation",
+    mutate(fixture) {
+      const file = absolute(
+        fixture,
+        "EusoTrip/Views/Maps/Offline/OfflineRoadJourneyView.swift",
+      );
+      writeFile(
+        file,
+        fs.readFileSync(file, "utf8").replace(
+          "truckConstraints: constraints",
+          "truckConstraints: nil",
+        ),
+      );
+    },
+  },
+  {
+    name: "Rail signed download cannot omit an authenticated account recheck",
+    expected: "Rail offline route caller no longer preserves account rechecks around signed download, ingest, and restore",
+    mutate(fixture) {
+      const file = absolute(
+        fixture,
+        "EusoTrip/Views/Rail/697_RailInterlineRoutePlan.swift",
+      );
+      writeFile(
+        file,
+        fs.readFileSync(file, "utf8").replace(
+          "session.user?.id == authenticatedUser.id",
+          'session.user?.id == "mutation-user"',
+        ),
+      );
+    },
+  },
+  {
+    name: "app radio-silence harness cannot print success without lease transitions",
+    expected: "app radio-silence source harness main no longer exercises lease ownership and atomic phone-mirror restart/corruption semantics before completion",
+    mutate(fixture) {
+      const file = absolute(
+        fixture,
+        "EusoTripOfflineTests/AppRadioSilenceLeaseStateTests.swift",
+      );
+      const source = fs.readFileSync(file, "utf8");
+      writeFile(
+        file,
+        source.replace(
+          /(@main\s+enum AppRadioSilenceLeaseStateSourceVerification\s*\{\s*static func main\(\)\s*\{)[\s\S]*?(\n\s*\}\s*\}\s*#endif)/,
+          '$1\n        print("mutation reports success without verification")$2',
+        ),
+      );
+    },
+  },
+  {
+    name: "app radio-silence XCTest names cannot hide empty bodies",
+    expected: "EusoTripOfflineTests/AppRadioSilenceLeaseStateTests.swift: XCTest bodies no longer assert reference-counted and idempotent lease ownership",
+    mutate(fixture) {
+      const file = absolute(
+        fixture,
+        "EusoTripOfflineTests/AppRadioSilenceLeaseStateTests.swift",
+      );
+      const source = fs.readFileSync(file, "utf8");
+      writeFile(
+        file,
+        source.replace(
+          /func testFirstAndNestedLeasesRequireFinalRelease\(\)\s*\{[\s\S]*?\n\s*\}\n\n\s*func testDuplicate/,
+          "func testFirstAndNestedLeasesRequireFinalRelease() {}\n\n    func testDuplicate",
+        ),
+      );
+    },
+  },
+  {
+    name: "source CI must execute the compiled app radio-silence binary",
+    expected: "release blocker: committed source-only HERE CI does not compile tests and inspect every public incident-relevant ref",
+    mutate(fixture) {
+      const file = absolute(
+        fixture,
+        ".github/workflows/here-offline-source-contract.yml",
+      );
+      writeFile(
+        file,
+        fs.readFileSync(file, "utf8").replace(
+          '          "$app_radio_silence_binary"\n',
+          "          : # compiled app radio-silence binary invocation removed\n",
+        ),
+      );
+      this.arguments = ["--release"];
+    },
+  },
+  {
+    name: "TestFlight preflight must execute the compiled app radio-silence binary",
+    expected: "release blocker: TestFlight automation can upload before the final exported app passes HERE production and offline release gates",
+    mutate(fixture) {
+      const file = absolute(fixture, deployScriptRelativePath);
+      writeFile(
+        file,
+        fs.readFileSync(file, "utf8").replace(
+          '"$APP_RADIO_SILENCE_VERIFY_BINARY"\n',
+          ": # compiled app radio-silence binary invocation removed\n",
+        ),
+      );
+      this.arguments = ["--release"];
+    },
+  },
+  {
+    name: "radio-silence acquisition cannot omit a required producer suspension",
+    expected: "app radio-silence acquisition no longer retries durable ENFORCED propagation on every lease, withholds readiness on failure, and closes all in-process transports on the first lease",
+    mutate(fixture) {
+      const file = absolute(
+        fixture,
+        "EusoTrip/Services/HereMaps/Offline/Core/AppRadioSilenceCoordinator.swift",
+      );
+      writeFile(
+        file,
+        fs.readFileSync(file, "utf8").replace(
+          "HOSClockService.shared.suspendForAppRadioSilence()",
+          "_ = HOSClockService.shared",
+        ),
+      );
+    },
+  },
+  {
+    name: "Driver offline journey cannot omit dismissal lease release",
+    expected: "Driver offline journey no longer acquires before presentation and releases its app radio-silence lease on every controlled dismissal path",
+    mutate(fixture) {
+      const file = absolute(
+        fixture,
+        "EusoTrip/Views/Driver/035_EnRouteDrive.swift",
+      );
+      writeFile(
+        file,
+        fs.readFileSync(file, "utf8").replace(
+          "onDismiss: releaseAppRadioSilenceLease",
+          "onDismiss: {}",
+        ),
+      );
+    },
+  },
+  {
+    name: "API radio-silence gate cannot preserve in-flight URLSession work",
+    expected: "EusoTripAPI radio-silence boundary no longer combines the in-process/app-group gate or invalidates and pre/post-gates every main and auxiliary URLSession transport",
+    mutate(fixture) {
+      const file = absolute(fixture, "EusoTrip/Services/EusoTripAPI.swift");
+      writeFile(
+        file,
+        fs.readFileSync(file, "utf8").replace(
+          "session.invalidateAndCancel()",
+          "session.finishTasksAndInvalidate()",
+        ),
+      );
+    },
+  },
+  {
+    name: "online HERE WebView cannot weaken the active radio-silence guard",
+    expected: "HereMapWebView no longer synchronously stops and blanks active JS maps, guards make/update while enforced, and rebuilds on both policy edges",
+    mutate(fixture) {
+      const file = absolute(
+        fixture,
+        "EusoTrip/Services/HereMaps/HereMapWebView.swift",
+      );
+      writeFile(
+        file,
+        fs.readFileSync(file, "utf8").replace(
+          "guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else {",
+          "guard EusoTripAPI.shared.isAppRadioSilenceEnforced else {",
+        ),
+      );
+    },
+  },
+  {
+    name: "finite callback watchdog cannot accept a second terminal result",
+    expected: "HERE finite callback watchdog no longer guarantees a bounded, cancellation-aware, exactly-once terminal result with harmless late callbacks",
+    mutate(fixture) {
+      const file = absolute(
+        fixture,
+        "EusoTrip/Services/HereMaps/Offline/SDK/HereFiniteCallbackWatchdog.swift",
+      );
+      writeFile(
+        file,
+        fs.readFileSync(file, "utf8").replace(
+          "guard terminalResult == nil else {",
+          "guard terminalResult != nil else {",
+        ),
+      );
+    },
+  },
+  {
+    name: "finite callback watchdog cancellation must interrupt native work",
+    expected: "HERE finite callback watchdog no longer guarantees a bounded, cancellation-aware, exactly-once terminal result with harmless late callbacks",
+    mutate(fixture) {
+      const file = absolute(
+        fixture,
+        "EusoTrip/Services/HereMaps/Offline/SDK/HereFiniteCallbackWatchdog.swift",
+      );
+      writeFile(
+        file,
+        fs.readFileSync(file, "utf8").replace(
+          "self?.interrupt()",
+          "_ = self",
+        ),
+      );
+    },
+  },
+  {
+    name: "finite callback timeout XCTest cannot be empty",
+    expected: "EusoTripOfflineTests/HereFiniteCallbackWatchdogTests.swift: testTimeoutInterruptsNativeOperationAndRejectsLateCallback no longer proves its finite callback boundary with meaningful operations and assertions",
+    mutate(fixture) {
+      const file = absolute(
+        fixture,
+        "EusoTripOfflineTests/HereFiniteCallbackWatchdogTests.swift",
+      );
+      const source = fs.readFileSync(file, "utf8");
+      writeFile(
+        file,
+        source.replace(
+          /func testTimeoutInterruptsNativeOperationAndRejectsLateCallback\(\) async\s*\{[\s\S]*?\n\s*\}\n\n\s*func testTaskCancellation/,
+          "func testTimeoutInterruptsNativeOperationAndRejectsLateCallback() async {}\n\n    func testTaskCancellation",
+        ),
+      );
+    },
+  },
+  {
+    name: "offline search callback must cancel its native task",
+    expected: "HERE offline search and route calculation no longer bound native one-shot callbacks with typed timeouts, native cancellation, and late-result rejection",
+    mutate(fixture) {
+      const file = absolute(
+        fixture,
+        "EusoTrip/Services/HereMaps/Offline/SDK/HereNavigateOfflineEngine.swift",
+      );
+      writeFile(
+        file,
+        fs.readFileSync(file, "utf8").replace(
+          "searchTask.cancel()",
+          "_ = searchTask",
+        ),
+      );
+    },
+  },
+  {
+    name: "map-transfer progress must heartbeat the inactivity watchdog",
+    expected: "HERE download and catalog-update bridges no longer heartbeat finite completion waits, suspend inactivity while paused, bound control callbacks, and cancel native work exactly through the owned bridge",
+    mutate(fixture) {
+      const file = absolute(
+        fixture,
+        "EusoTrip/Services/HereMaps/Offline/SDK/HereNavigateOfflineEngine.swift",
+      );
+      writeFile(
+        file,
+        fs.readFileSync(file, "utf8").replace(
+          "completionWatchdog.heartbeat()",
+          "_ = completionWatchdog",
+        ),
+      );
+    },
+  },
+  {
+    name: "paused map transfer must suspend completion inactivity timeout",
+    expected: "HERE download and catalog-update bridges no longer heartbeat finite completion waits, suspend inactivity while paused, bound control callbacks, and cancel native work exactly through the owned bridge",
+    mutate(fixture) {
+      const file = absolute(
+        fixture,
+        "EusoTrip/Services/HereMaps/Offline/SDK/HereNavigateOfflineEngine.swift",
+      );
+      writeFile(
+        file,
+        fs.readFileSync(file, "utf8").replace(
+          "completionWatchdog.suspendTimeout()",
+          "completionWatchdog.resumeTimeout()",
+        ),
+      );
+    },
+  },
+  {
+    name: "audio interruption resume requires a not-before fresh fix",
+    expected: "HERE navigation interruption boundary no longer mutes native callbacks until the system authorizes resume and a not-before fresh location is accepted",
+    mutate(fixture) {
+      const file = absolute(
+        fixture,
+        "EusoTrip/Services/HereMaps/Offline/SDK/HereNavigateNavigationSession.swift",
+      );
+      writeFile(
+        file,
+        fs.readFileSync(file, "utf8").replace(
+          "observedAt >= notBefore else { return false }",
+          "observedAt < notBefore else { return false }",
+        ),
+      );
+    },
+  },
+  {
+    name: "audio interruption must mute prepared voice output",
+    expected: "HERE navigation audio interruption handling no longer cancels reroute, removes delegates, mutes voice, and requires generation-bound audio recovery before awaiting a fresh fix",
+    mutate(fixture) {
+      const file = absolute(
+        fixture,
+        "EusoTrip/Services/HereMaps/Offline/SDK/HereNavigateNavigationSession.swift",
+      );
+      writeFile(
+        file,
+        fs.readFileSync(file, "utf8").replace(
+          [
+            "            if let navigator {",
+            "                invalidateNativeDelegates(on: navigator)",
+            "            }",
+            "            await stopPreparedVoiceOutput()",
+          ].join("\n"),
+          [
+            "            if let navigator {",
+            "                invalidateNativeDelegates(on: navigator)",
+            "            }",
+            "            // mutation leaves prepared voice output active",
+          ].join("\n"),
+        ),
+      );
+    },
+  },
+  {
+    name: "background resume must match the operation paused by this owner",
+    expected: "offline production background handling no longer pauses only an owned running transfer and resumes only the same paused operation after a foreground edge",
+    mutate(fixture) {
+      const file = absolute(
+        fixture,
+        "EusoTrip/Services/HereMaps/Offline/OfflineMapProductionComposition.swift",
+      );
+      writeFile(
+        file,
+        fs.readFileSync(file, "utf8").replace(
+          "operation.id == operationID",
+          "operation.id != operationID",
+        ),
+      );
+    },
+  },
+  {
+    name: "native route projection cannot omit local HERE provenance",
+    expected: "HERE native journey projection no longer enforces mutually exclusive verified local-road/server-canonical Rail-or-Vessel geometry or renders route and live location with follow camera",
+    mutate(fixture) {
+      const file = absolute(
+        fixture,
+        "EusoTrip/Services/HereMaps/Offline/SDK/HereNavigateOfflineMapSurface.swift",
+      );
+      writeFile(
+        file,
+        fs.readFileSync(file, "utf8").replace(
+          "route.provenance == .hereOfflineLocal",
+          "route.provenance == .serverCanonical",
+        ),
+      );
+    },
+  },
+  {
+    name: "server-canonical projection requires every segment mode to match",
+    expected: "HERE native journey projection no longer enforces mutually exclusive verified local-road/server-canonical Rail-or-Vessel geometry or renders route and live location with follow camera",
+    mutate(fixture) {
+      const file = absolute(
+        fixture,
+        "EusoTrip/Services/HereMaps/Offline/SDK/HereNavigateOfflineMapSurface.swift",
+      );
+      writeFile(
+        file,
+        fs.readFileSync(file, "utf8").replace(
+          "route.segments.allSatisfy({ $0.mode == route.mode })",
+          "!route.segments.isEmpty",
+        ),
+      );
+    },
+  },
+  {
+    name: "native style cannot reveal before pending journey projection applies",
+    expected: "HERE native map-style loading no longer has a finite callback boundary or atomically applies pending journey projection before revealing the rendered scene",
+    mutate(fixture) {
+      const file = absolute(
+        fixture,
+        "EusoTrip/Services/HereMaps/Offline/SDK/HereNavigateOfflineMapSurface.swift",
+      );
+      writeFile(
+        file,
+        fs.readFileSync(file, "utf8").replace(
+          "try self.applyJourneyProjection(self.journeyProjection)",
+          "_ = self.journeyProjection",
+        ),
+      );
+    },
+  },
+  {
+    name: "opaque native map failure must remove journey artifacts",
+    expected: "HERE native map clear and opaque failure no longer remove projection artifacts before discarding the native surface",
+    mutate(fixture) {
+      const file = absolute(
+        fixture,
+        "EusoTrip/Services/HereMaps/Offline/SDK/HereNavigateOfflineMapSurface.swift",
+      );
+      writeFile(
+        file,
+        fs.readFileSync(file, "utf8").replace(
+          [
+            "        nativeSceneLoadTask?.cancel()",
+            "        nativeSceneLoadTask = nil",
+            "        removeNativeJourneyProjection()",
+            "        releaseRuntimeRenderingLease()",
+          ].join("\n"),
+          [
+            "        nativeSceneLoadTask?.cancel()",
+            "        nativeSceneLoadTask = nil",
+            "        releaseRuntimeRenderingLease()",
+          ].join("\n"),
+        ),
+      );
+    },
+  },
+  {
+    name: "native map host lease cannot start before native radio silence",
+    expected: "reusable native map host no longer keeps lease ownership opt-in, restricts nested acquisition to an already enforced radio-silent snapshot, and blocks rendering until app/native enforcement are proven",
+    mutate(fixture) {
+      const file = absolute(
+        fixture,
+        "EusoTrip/Views/Maps/Offline/OfflineMapLibraryView.swift",
+      );
+      writeFile(
+        file,
+        fs.readFileSync(file, "utf8").replace(
+          [
+            "    private var appRadioSilenceEligibility: Bool {",
+            "        acquiresAppRadioSilenceLease",
+            "            && offlineSnapshot.connectivityPolicy == .radioSilent",
+            "            && offlineSnapshot.radioSilenceState == .enforced",
+          ].join("\n"),
+          [
+            "    private var appRadioSilenceEligibility: Bool {",
+            "        acquiresAppRadioSilenceLease",
+            "            && offlineSnapshot.connectivityPolicy == .radioSilent",
+            "            && offlineSnapshot.radioSilenceState != .enforced",
+          ].join("\n"),
+        ),
+      );
+    },
+  },
+  {
+    name: "passive canonical fallback cannot own app radio silence",
+    expected: "EusoTrip/Views/Maps/Offline/CanonicalOfflineRouteItineraryView.swift: forbidden \"AppRadioSilenceCoordinator\"",
+    mutate(fixture) {
+      const file = absolute(
+        fixture,
+        "EusoTrip/Views/Maps/Offline/CanonicalOfflineRouteItineraryView.swift",
+      );
+      writeFile(
+        file,
+        `${fs.readFileSync(file, "utf8")}\nprivate let mutationLeaseOwner = AppRadioSilenceCoordinator.shared\n`,
+      );
     },
   },
   {
@@ -981,6 +1862,14 @@ const cases = [
     expected: "release blocker: HERE native-style supply-chain manifest is not committed unchanged in HEAD",
     mutate(fixture) {
       fs.appendFileSync(absolute(fixture, styleManifestRelativePath), "\n");
+      this.arguments = ["--release"];
+    },
+  },
+  {
+    name: "dirty installed-coverage trust document in release mode",
+    expected: "release blocker: HERE signed installed-coverage trust document is not committed unchanged in HEAD",
+    mutate(fixture) {
+      fs.appendFileSync(absolute(fixture, coverageTrustRelativePath), "\n");
       this.arguments = ["--release"];
     },
   },
@@ -1390,7 +2279,7 @@ try {
     );
     console.log(`ok - ${testCase.name}`);
   }
-  console.log(`HERE offline verifier regression harness passed: ${cases.length + 1} cases.`);
+  console.log(`HERE offline verifier regression harness passed: ${cases.length + 2} cases.`);
 } finally {
   fs.rmSync(temporaryRoot, { recursive: true, force: true });
 }

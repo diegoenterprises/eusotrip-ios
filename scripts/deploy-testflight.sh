@@ -369,6 +369,41 @@ node "${PROJECT_ROOT}/scripts/verify-here-offline-device-acceptance.test.mjs"
 node "${PROJECT_ROOT}/scripts/verify-github-release-governance.test.mjs"
 node "${PROJECT_ROOT}/scripts/verify-here-offline-contract.test.mjs"
 node "${PROJECT_ROOT}/scripts/verify-here-offline-contract.mjs"
+TRUSTED_CLOCK_VERIFY_BINARY="${RELEASE_ROOT}/canonical-route-trusted-clock-verify"
+swiftc -swift-version 5 -parse-as-library \
+  "${PROJECT_ROOT}/EusoTrip/Services/HereMaps/Offline/Core/OfflineMapModels.swift" \
+  "${PROJECT_ROOT}/EusoTrip/Services/HereMaps/Offline/Core/OfflineRouteModels.swift" \
+  "${PROJECT_ROOT}/EusoTrip/Services/HereMaps/Offline/Core/CanonicalRouteTrustedClock.swift" \
+  "${PROJECT_ROOT}/EusoTrip/Services/HereMaps/Offline/Core/CanonicalRoutePackageStore.swift" \
+  "${PROJECT_ROOT}/scripts/verify-canonical-route-trusted-clock.swift" \
+  -o "$TRUSTED_CLOCK_VERIFY_BINARY"
+"$TRUSTED_CLOCK_VERIFY_BINARY"
+COVERAGE_CLOCK_VERIFY_BINARY="${RELEASE_ROOT}/signed-coverage-trusted-time-verify"
+swiftc -DSIGNED_COVERAGE_SOURCE_VERIFICATION \
+  -warnings-as-errors -strict-concurrency=complete -warn-concurrency \
+  -parse-as-library -module-name EusoTrip \
+  "${PROJECT_ROOT}/EusoTrip/Services/HereMaps/Offline/Core/OfflineMapModels.swift" \
+  "${PROJECT_ROOT}/EusoTrip/Services/HereMaps/Offline/Core/OfflineRouteModels.swift" \
+  "${PROJECT_ROOT}/EusoTrip/Services/HereMaps/Offline/Core/SignedInstalledCoverageResolver.swift" \
+  "${PROJECT_ROOT}/EusoTripOfflineTests/SignedInstalledCoverageResolverTests.swift" \
+  -o "$COVERAGE_CLOCK_VERIFY_BINARY"
+"$COVERAGE_CLOCK_VERIFY_BINARY"
+APP_RADIO_SILENCE_VERIFY_BINARY="${RELEASE_ROOT}/app-radio-silence-lease-verify"
+swiftc -DAPP_RADIO_SILENCE_SOURCE_VERIFICATION \
+  -warnings-as-errors -strict-concurrency=complete -warn-concurrency \
+  -parse-as-library -module-name EusoTrip \
+  "${PROJECT_ROOT}/EusoTrip/Services/HereMaps/Offline/Core/AppRadioSilenceLeaseState.swift" \
+  "${PROJECT_ROOT}/EusoTripOfflineTests/AppRadioSilenceLeaseStateTests.swift" \
+  -o "$APP_RADIO_SILENCE_VERIFY_BINARY"
+"$APP_RADIO_SILENCE_VERIFY_BINARY"
+WATCH_RADIO_SILENCE_VERIFY_BINARY="${RELEASE_ROOT}/app-radio-silence-watch-state-verify"
+swiftc -DAPP_RADIO_SILENCE_WATCH_SOURCE_VERIFICATION \
+  -warnings-as-errors -strict-concurrency=complete -warn-concurrency \
+  -parse-as-library -module-name EusoTripPulseWatchApp \
+  "${PROJECT_ROOT}/EusoTrip Pulse Watch App/Services/AppRadioSilenceWatchState.swift" \
+  "${PROJECT_ROOT}/EusoTrip Pulse Watch AppTests/AppRadioSilenceWatchStateTests.swift" \
+  -o "$WATCH_RADIO_SILENCE_VERIFY_BINARY"
+"$WATCH_RADIO_SILENCE_VERIFY_BINARY"
 trap - ERR
 
 if [[ -n "${OFFLINE_TEST_DESTINATION:-}" ]]; then

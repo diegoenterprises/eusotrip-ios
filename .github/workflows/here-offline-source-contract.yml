@@ -3,6 +3,12 @@ name: HERE Offline Source Contract
 on:
   pull_request:
     paths:
+      # The app-radio-silence boundary spans API, realtime, WebKit, helpers,
+      # role callers, and the paired Watch process. Any Swift change can add a
+      # transport sink, so PR enforcement must not be limited to Offline/.
+      - "EusoTrip/**/*.swift"
+      - "EusoTrip Pulse Watch App/**/*.swift"
+      - "EusoTrip Pulse Watch AppTests/**/*.swift"
       - "EusoTrip/Services/HereMaps/Offline/**"
       - "EusoTrip/Views/Maps/Offline/**"
       - "EusoTripOfflineTests/**"
@@ -97,6 +103,41 @@ jobs:
           node scripts/verify-here-offline-contract.test.mjs
           node scripts/here-production-gate.mjs
           node scripts/verify-here-offline-contract.mjs
+          trusted_clock_binary="$RUNNER_TEMP/canonical-route-trusted-clock-verify"
+          swiftc -swift-version 5 -parse-as-library \
+            EusoTrip/Services/HereMaps/Offline/Core/OfflineMapModels.swift \
+            EusoTrip/Services/HereMaps/Offline/Core/OfflineRouteModels.swift \
+            EusoTrip/Services/HereMaps/Offline/Core/CanonicalRouteTrustedClock.swift \
+            EusoTrip/Services/HereMaps/Offline/Core/CanonicalRoutePackageStore.swift \
+            scripts/verify-canonical-route-trusted-clock.swift \
+            -o "$trusted_clock_binary"
+          "$trusted_clock_binary"
+          coverage_clock_binary="$RUNNER_TEMP/signed-coverage-trusted-time-verify"
+          swiftc -DSIGNED_COVERAGE_SOURCE_VERIFICATION \
+            -warnings-as-errors -strict-concurrency=complete -warn-concurrency \
+            -parse-as-library -module-name EusoTrip \
+            EusoTrip/Services/HereMaps/Offline/Core/OfflineMapModels.swift \
+            EusoTrip/Services/HereMaps/Offline/Core/OfflineRouteModels.swift \
+            EusoTrip/Services/HereMaps/Offline/Core/SignedInstalledCoverageResolver.swift \
+            EusoTripOfflineTests/SignedInstalledCoverageResolverTests.swift \
+            -o "$coverage_clock_binary"
+          "$coverage_clock_binary"
+          app_radio_silence_binary="$RUNNER_TEMP/app-radio-silence-lease-verify"
+          swiftc -DAPP_RADIO_SILENCE_SOURCE_VERIFICATION \
+            -warnings-as-errors -strict-concurrency=complete -warn-concurrency \
+            -parse-as-library -module-name EusoTrip \
+            EusoTrip/Services/HereMaps/Offline/Core/AppRadioSilenceLeaseState.swift \
+            EusoTripOfflineTests/AppRadioSilenceLeaseStateTests.swift \
+            -o "$app_radio_silence_binary"
+          "$app_radio_silence_binary"
+          watch_radio_silence_binary="$RUNNER_TEMP/app-radio-silence-watch-state-verify"
+          swiftc -DAPP_RADIO_SILENCE_WATCH_SOURCE_VERIFICATION \
+            -warnings-as-errors -strict-concurrency=complete -warn-concurrency \
+            -parse-as-library -module-name EusoTripPulseWatchApp \
+            "EusoTrip Pulse Watch App/Services/AppRadioSilenceWatchState.swift" \
+            "EusoTrip Pulse Watch AppTests/AppRadioSilenceWatchStateTests.swift" \
+            -o "$watch_radio_silence_binary"
+          "$watch_radio_silence_binary"
 
       - name: Compile the offline test bundle without launching Simulator
         shell: bash
