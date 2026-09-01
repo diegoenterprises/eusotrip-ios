@@ -126,6 +126,37 @@ enum LatLongParser {
         return CLLocationCoordinate2D(latitude: lat, longitude: lng)
     }
 
+    /// Builds a coordinate only when both values are present, finite, and
+    /// inside the legal WGS-84 latitude/longitude ranges. This is the shared
+    /// boundary for API rows where coordinates arrive as separate optionals;
+    /// callers must keep rendering an unknown-location state when it returns
+    /// `nil` rather than substituting the real-world point at 0,0.
+    static func validatedCoordinate(
+        latitude: Double?,
+        longitude: Double?
+    ) -> CLLocationCoordinate2D? {
+        guard let latitude, let longitude,
+              latitude.isFinite, longitude.isFinite,
+              abs(latitude) <= 90, abs(longitude) <= 180 else {
+            return nil
+        }
+        let coordinate = CLLocationCoordinate2D(
+            latitude: latitude,
+            longitude: longitude
+        )
+        return CLLocationCoordinate2DIsValid(coordinate) ? coordinate : nil
+    }
+
+    /// Stable human-readable evidence string for an already validated point.
+    static func displayString(_ coordinate: CLLocationCoordinate2D) -> String {
+        String(
+            format: "%.5f, %.5f",
+            locale: Locale(identifier: "en_US_POSIX"),
+            coordinate.latitude,
+            coordinate.longitude
+        )
+    }
+
     // MARK: Internals
 
     /// Swap Unicode minus (U+2212), en-dash, em-dash, and non-breaking space
