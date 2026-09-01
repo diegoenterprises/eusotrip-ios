@@ -18,6 +18,8 @@ const styleManifestRelativePath =
 const credentialAttestationRelativePath =
   "security/HERE_CREDENTIAL_REMEDIATION.json";
 const survivingIncidentRelativePath = "mapping_audit/risks.md";
+const deployScriptRelativePath = "scripts/deploy-testflight.sh";
+const exportOptionsRelativePath = "scripts/exportOptions.testflight.plist";
 
 const temporaryRoot = fs.mkdtempSync(
   path.join(os.tmpdir(), "eusotrip-here-verifier-tests-"),
@@ -46,6 +48,33 @@ function readJSON(file) {
 
 function sha256(file) {
   return crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+}
+
+function canonicalTreeHash(directory) {
+  const hash = crypto.createHash("sha256");
+  const rootMetadata = fs.lstatSync(directory, { bigint: true });
+  const mode = metadata => (Number(metadata.mode) & 0o7777).toString(8).padStart(4, "0");
+  const entries = [];
+  const visit = current => {
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const entryPath = path.join(current, entry.name);
+      entries.push(entryPath);
+      if (entry.isDirectory()) visit(entryPath);
+    }
+  };
+  visit(directory);
+  hash.update(`R\0${mode(rootMetadata)}\0`);
+  for (const entryPath of entries.sort((left, right) => left.localeCompare(right))) {
+    const relativePath = path.relative(directory, entryPath).split(path.sep).join("/");
+    const metadata = fs.lstatSync(entryPath, { bigint: true });
+    if (metadata.isDirectory()) {
+      hash.update(`D\0${relativePath}\0${mode(metadata)}\0`);
+    } else if (metadata.isFile()) {
+      hash.update(`F\0${relativePath}\0${mode(metadata)}\0${metadata.size}\0`);
+      hash.update(fs.readFileSync(entryPath));
+    }
+  }
+  return hash.digest("hex");
 }
 
 function run(command, arguments_, options = {}) {
@@ -140,6 +169,19 @@ function createBaselineFixture() {
     credentialAttestationRelativePath,
     projectRelativePath,
     "EusoTrip.xcodeproj/xcshareddata/xcschemes/EusoTrip.xcscheme",
+    deployScriptRelativePath,
+    exportOptionsRelativePath,
+    "scripts/preflight-exported-ipa.mjs",
+    "scripts/preflight-exported-ipa.test.mjs",
+    "scripts/select-available-ios-simulator.mjs",
+    "scripts/select-available-ios-simulator.test.mjs",
+    "scripts/here-production-gate.mjs",
+    "scripts/hash-release-artifact.mjs",
+    "scripts/hash-release-artifact.test.mjs",
+    "scripts/release-ladder-status.mjs",
+    "scripts/release-ladder-status.test.mjs",
+    "scripts/asc-build-status.mjs",
+    "scripts/asc-build-status.test.mjs",
   ]) {
     copyRepositoryEntry(relativePath, fixture);
   }
@@ -519,6 +561,144 @@ assert.equal(
 console.log("ok - minimal source-contract baseline");
 
 const cases = [
+  {
+    name: "committed trusted input cannot be an external symbolic link",
+    expected: "security/HERE_CREDENTIAL_REMEDIATION.json: repository input must be a regular non-symlink file within the repository root",
+    forbidden: ["external-attestation-canary-must-not-be-read"],
+    mutate(fixture) {
+      const outside = path.join(
+        temporaryRoot,
+        "external-attestation-canary.json",
+      );
+      writeFile(outside, "external-attestation-canary-must-not-be-read\n");
+      const attestation = absolute(fixture, credentialAttestationRelativePath);
+      fs.rmSync(attestation, { force: true });
+      fs.symlinkSync(outside, attestation);
+      commitFixturePaths(
+        fixture,
+        [credentialAttestationRelativePath],
+        "synthetic committed external attestation symlink",
+      );
+    },
+  },
+  {
+    name: "native style cannot be an out-of-root symbolic link",
+    expected: "approved HERE-native style must be a regular non-symlink file within the repository root",
+    forbidden: ["external-style-canary-must-not-be-hashed"],
+    mutate(fixture) {
+      const manifest = readJSON(absolute(fixture, styleManifestRelativePath));
+      const stylePath = absolute(fixture, manifest.entries[0].relativePath);
+      const outside = path.join(temporaryRoot, "external-style-canary.zip");
+      writeFile(outside, "external-style-canary-must-not-be-hashed\n");
+      ensureParent(stylePath);
+      fs.rmSync(stylePath, { force: true });
+      fs.symlinkSync(outside, stylePath);
+    },
+  },
+  {
+    name: "offline source enumeration rejects symbolic links",
+    expected: "repository source tree entry must be a regular non-symlink file within the repository root",
+    forbidden: ["external-source-canary-must-not-be-compiled"],
+    mutate(fixture) {
+      const sourceRelativePath =
+        "EusoTrip/Services/HereMaps/Offline/Core/OfflineNavigationModels.swift";
+      const sourcePath = absolute(fixture, sourceRelativePath);
+      const outside = path.join(temporaryRoot, "external-source-canary.swift");
+      writeFile(outside, "external-source-canary-must-not-be-compiled\n");
+      fs.rmSync(sourcePath, { force: true });
+      fs.symlinkSync(outside, sourcePath);
+    },
+  },
+  {
+    name: "release entrypoint executable mode is sealed",
+    expected: "scripts/deploy-testflight.sh: release entrypoint must retain an executable POSIX mode",
+    mutate(fixture) {
+      fs.chmodSync(absolute(fixture, deployScriptRelativePath), 0o644);
+    },
+  },
+  {
+    name: "XCFramework canonical tree hash includes executable mode",
+    expected: "Vendor/HERE/heresdk.xcframework: canonical tree SHA-256 does not match the approved manifest",
+    mutate(fixture) {
+      const { frameworkPath } = prepareXCFramework(fixture);
+      mutateManifest(fixture, manifest => {
+        manifest.frameworkTreeSHA256 = canonicalTreeHash(frameworkPath);
+      });
+      fs.chmodSync(
+        path.join(frameworkPath, "ios-arm64", "heresdk.framework", "heresdk"),
+        0o755,
+      );
+    },
+  },
+  {
+    name: "TestFlight export destination cannot upload implicitly",
+    expected: "release blocker: TestFlight automation can upload before the final exported app passes HERE production and offline release gates",
+    mutate(fixture) {
+      const file = absolute(fixture, exportOptionsRelativePath);
+      writeFile(file, fs.readFileSync(file, "utf8").replace(
+        "<string>export</string>",
+        "<string>upload</string>",
+      ));
+      this.arguments = ["--release"];
+    },
+  },
+  {
+    name: "exported app cannot bypass the final release gate",
+    expected: "release blocker: TestFlight automation can upload before the final exported app passes HERE production and offline release gates",
+    mutate(fixture) {
+      const file = absolute(fixture, deployScriptRelativePath);
+      writeFile(file, fs.readFileSync(file, "utf8").replace(
+        '--built-app="${EXPORTED_APP_PATH}"',
+        '--built-app="${ARCHIVED_APP_PATH}"',
+      ));
+      this.arguments = ["--release"];
+    },
+  },
+  {
+    name: "TestFlight automation has one explicit upload",
+    expected: "release blocker: TestFlight automation can upload before the final exported app passes HERE production and offline release gates",
+    mutate(fixture) {
+      const file = absolute(fixture, deployScriptRelativePath);
+      fs.appendFileSync(file, "\nxcrun altool \\\n  --upload-app \\\n  --file synthetic.ipa\n");
+      this.arguments = ["--release"];
+    },
+  },
+  {
+    name: "upload cannot move before exported product verification",
+    expected: "release blocker: TestFlight automation can upload before the final exported app passes HERE production and offline release gates",
+    mutate(fixture) {
+      const file = absolute(fixture, deployScriptRelativePath);
+      const source = fs.readFileSync(file, "utf8");
+      const uploadStart = source.indexOf("trap 'mark_failed_step upload' ERR");
+      const uploadEnd = source.indexOf('LADDER_UPLOADED="pass"', uploadStart);
+      const gateStart = source.indexOf("trap 'mark_failed_step offline_contract' ERR", source.indexOf("EXPORTED_APP_PATH="));
+      assert.ok(uploadStart >= 0 && uploadEnd > uploadStart && gateStart >= 0 && gateStart < uploadStart);
+      const uploadBlock = source.slice(uploadStart, uploadEnd);
+      const withoutUpload = source.slice(0, uploadStart) + source.slice(uploadEnd);
+      writeFile(file, withoutUpload.slice(0, gateStart) + uploadBlock + withoutUpload.slice(gateStart));
+      this.arguments = ["--release"];
+    },
+  },
+  {
+    name: "malformed export options are sanitized",
+    expected: "scripts/exportOptions.testflight.plist: plist could not be parsed safely",
+    forbidden: ["at parsePlist", "verify-here-offline-contract.mjs:"],
+    mutate(fixture) {
+      writeFile(absolute(fixture, exportOptionsRelativePath), "not a plist\n");
+    },
+  },
+  {
+    name: "release automation cannot omit offline XCTest",
+    expected: "release blocker: TestFlight automation can upload before the final exported app passes HERE production and offline release gates",
+    mutate(fixture) {
+      const file = absolute(fixture, deployScriptRelativePath);
+      writeFile(file, fs.readFileSync(file, "utf8").replace(
+        "-only-testing:EusoTripOfflineTests",
+        "-only-testing:EusoTripTests",
+      ));
+      this.arguments = ["--release"];
+    },
+  },
   {
     name: "malformed SDK manifest is sanitized",
     expected: "EusoTrip/Services/HereMaps/Offline/HERE_SDK_SUPPLY_CHAIN.json: invalid supply-chain manifest (SyntaxError)",
