@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "status": "awaiting_signed_catalog",
+  "issuer": "",
+  "audience": "",
+  "expectedSDKVersion": "4.27.2.0",
+  "expectedRightsHolder": "",
+  "verificationKeyID": "",
+  "ed25519PublicKeyBase64": "",
+  "initialSignedManifestResource": "HERE_INSTALLED_COVERAGE_MANIFEST.json",
+  "routeCorridorHalfWidthMeters": 75,
+  "approvedBy": "",
+  "approvedAt": "1970-01-01T00:00:00Z"
+}

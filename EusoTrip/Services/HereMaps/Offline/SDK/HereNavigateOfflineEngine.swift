@@ -202,6 +202,10 @@ actor HereNativeRouteStore {
         routes[id] = route
     }
 
+    func remove(id: String) {
+        routes.removeValue(forKey: id)
+    }
+
     func removeAll() {
         routes.removeAll()
     }
@@ -778,7 +782,7 @@ private final class HereCatalogUpdateProgressBridge: CatalogUpdateProgressListen
         )
 }
 
-actor HereNavigateOfflineEngine: OfflineMapEngine {
+actor HereNavigateOfflineEngine: OfflineMapEngine, HEREInstalledRegionInventoryProviding {
     static let shared = HereNavigateOfflineEngine()
 
     private let routeStore: HereNativeRouteStore
@@ -811,13 +815,21 @@ actor HereNavigateOfflineEngine: OfflineMapEngine {
 
     func makeNavigationSession(
         locationPolicy: HereNavigationLocationAcceptancePolicy = .production,
-        voicePolicy: HereNavigationVoicePolicy = .requiredEnglishUS
+        voicePolicy: HereNavigationVoicePolicy = .requiredEnglishUS,
+        coverageResolver: (any OfflineInstalledCoverageResolving)? = nil,
+        routeCorridorHalfWidthMeters: Double = 75
     ) -> HereNavigateNavigationSession {
         HereNavigateNavigationSession(
             routeStore: routeStore,
             locationPolicy: locationPolicy,
-            voicePolicy: voicePolicy
+            voicePolicy: voicePolicy,
+            coverageResolver: coverageResolver,
+            routeCorridorHalfWidthMeters: routeCorridorHalfWidthMeters
         )
+    }
+
+    func purgeRetainedLocalRoutes() async {
+        await routeStore.removeAll()
     }
 
     func inspect(
@@ -840,13 +852,32 @@ actor HereNavigateOfflineEngine: OfflineMapEngine {
                 capabilities.insert(.offlineVectorRendering)
                 capabilities.insert(.detailedRendering)
             }
-            // HERE 4.27 can calculate/search locally, but its iOS results do not
-            // identify the installed RegionId that supplied the data, and
-            // Navigator exposes no installed-region boundary event. Offline
-            // search may also consume cache data. Until EusoTrip has independent
-            // signed coverage geometry, do not advertise search, road/truck
-            // routing, text guidance, or voice guidance as installed-coverage
-            // capabilities. Their direct entry points fail closed below.
+            if let coverage = HereNavigateInstalledCoverageAuthority.shared
+                .currentInstallation() {
+                let runtimeVersion = SDKBuildInformation.sdkVersion().versionName
+                guard runtimeVersion == coverage.expectedSDKVersion else {
+                    throw HereNavigateOfflineAdapterError.operation(
+                        .invalidSDKData,
+                        "The installed HERE framework version does not match signed coverage trust.",
+                        recovery: "Install the exact release-approved HERE SDK and matching signed coverage catalog.",
+                        isRecoverable: false
+                    )
+                }
+                capabilities.formUnion([
+                    .offlineSearch,
+                    .offlineRoadRouting,
+                    .offlineTruckRouting,
+                ])
+                if HereNavigateNavigationSession.canInitializeNativeGuidance() {
+                    capabilities.insert(.offlineGuidance)
+                }
+                let voiceAvailable = await MainActor.run {
+                    HereNavigateNavigationSession.canInitializeOfflineVoiceGuidance()
+                }
+                if voiceAvailable {
+                    capabilities.insert(.offlineVoiceGuidance)
+                }
+            }
 
             // Missing optional/required parity capabilities are represented by
             // absent bits. The coordinator can then remain usable in `.limited`
@@ -1049,6 +1080,43 @@ actor HereNavigateOfflineEngine: OfflineMapEngine {
                 lastVerifiedAt: retainedCatalogCheckedAt
             )
         }
+    }
+
+    func currentHEREInstalledRegionInventory() async throws
+        -> HEREInstalledRegionInventory {
+        let downloader = try await requireMapDownloader()
+        let updater = try await requireMapUpdater()
+        let nativeRegions: [InstalledRegion]
+        do {
+            nativeRegions = try downloader.getInstalledRegions()
+        } catch {
+            throw SignedInstalledCoverageError.invalidInventory(
+                "HERE could not read its native installed-region inventory."
+            )
+        }
+        guard let version = (try? updater.getCurrentMapVersion()
+            .stringRepresentation(separator: "."))
+            .flatMap(sanitizedRegionName) else {
+            throw SignedInstalledCoverageError.invalidInventory(
+                "HERE did not provide the installed map catalog version."
+            )
+        }
+        var observed = Set<String>()
+        var usable = Set<OfflineMapRegionID>()
+        for region in nativeRegions {
+            guard observed.insert(region.regionId.id).inserted else {
+                throw SignedInstalledCoverageError.invalidInventory(
+                    "HERE returned duplicate native installed-region identifiers."
+                )
+            }
+            guard region.status == .installed else { continue }
+            usable.insert(try OfflineMapRegionID(region.regionId.id))
+        }
+        return try HEREInstalledRegionInventory(
+            catalogVersion: HEREOfflineCatalogVersion(version),
+            usableRegionIDs: usable,
+            observedAt: Date()
+        )
     }
 
     func storageSnapshot() async throws -> OfflineMapStorageSnapshot {
@@ -1360,16 +1428,210 @@ actor HereNavigateOfflineEngine: OfflineMapEngine {
     }
 
     func searchOffline(_ request: OfflineSearchRequest) async throws -> OfflineSearchResponse {
-        _ = request
-        try requireInstalledCoverageEvidence()
+        try requireAppliedPolicy()
+        let coverageInstallation = try requireInstalledCoverageInstallation()
+        let centerResolution = try await coverageInstallation.resolver
+            .resolveInstalledCoverage(for: .point(request.center))
+        let centerEvidence = try HereNavigateCoverageAdmission
+            .requireCompleteEvidence(
+                centerResolution,
+                expectedCoordinateCount: 1,
+                expectedGeometryKind: .point
+            )
+
+        let searchEngine = try requireOfflineSearchEngine()
+        let queryArea = TextQuery.Area(
+            areaCenter: nativeCoordinate(request.center)
+        )
+        let textQuery = TextQuery(request.text, area: queryArea)
+        guard let maximumItems = Int32(exactly: request.maximumResultCount) else {
+            throw OfflineMapCoreError.invalidInput(
+                "Offline search result count exceeds HERE's supported range."
+            )
+        }
+        let options = SearchOptions(
+            languageCode: .enUs,
+            maxItems: maximumItems
+        )
+        let places: [Place] = try await withCheckedThrowingContinuation { continuation in
+            _ = searchEngine.searchByText(
+                textQuery,
+                options: options
+            ) { error, places in
+                guard error == nil, let places else {
+                    continuation.resume(
+                        throwing: HereNavigateOfflineAdapterError.operation(
+                            .searchFailed,
+                            "HERE could not complete the device-local search.",
+                            recovery: "Verify the signed installed region and offline-search layer, then retry."
+                        )
+                    )
+                    return
+                }
+                continuation.resume(returning: places)
+            }
+        }
+
+        var results: [OfflineSearchResult] = []
+        var admittedEvidence = [centerEvidence]
+        for (index, place) in places.prefix(request.maximumResultCount).enumerated() {
+            guard let nativeCoordinates = place.geoCoordinates else {
+                throw HereNavigateOfflineAdapterError.operation(
+                    .invalidSDKData,
+                    "HERE returned a local search result without coordinates.",
+                    recovery: "Repair installed map data before retrying local search."
+                )
+            }
+            let coordinate = try OfflineGeoCoordinate(
+                latitude: nativeCoordinates.latitude,
+                longitude: nativeCoordinates.longitude
+            )
+            let resolution = try await coverageInstallation.resolver
+                .resolveInstalledCoverage(for: .point(coordinate))
+            guard let resultEvidence = resolution.classification.evidence else {
+                // HERE may rank a global/cache result even for a centered
+                // query. Excluding it is safe; returning it as installed data
+                // would not be.
+                continue
+            }
+            _ = try HereNavigateCoverageAdmission.requireCompleteEvidence(
+                resolution,
+                expectedCoordinateCount: 1,
+                expectedGeometryKind: .point
+            )
+            admittedEvidence.append(resultEvidence)
+            guard let regionID = resultEvidence.regionIDs.sorted(by: {
+                $0.rawValue < $1.rawValue
+            }).first else {
+                throw HereNavigateOfflineAdapterError.operation(
+                    .coverageUnverified,
+                    "HERE search coverage did not identify an installed region.",
+                    recovery: "Reinstall the signed coverage catalog and native HERE region."
+                )
+            }
+            results.append(
+                try OfflineSearchResult(
+                    id: offlineSearchResultID(
+                        index: index,
+                        coordinate: coordinate
+                    ),
+                    title: place.title,
+                    address: place.address.addressText,
+                    coordinate: coordinate,
+                    categories: [],
+                    regionID: regionID
+                )
+            )
+        }
+        let responseEvidence = try HereNavigateCoverageAdmission.unionEvidence(
+            admittedEvidence
+        )
+        return try OfflineSearchResponse(
+            results: results,
+            coverage: responseEvidence
+        )
     }
 
     func calculateOfflineRoute(_ request: OfflineRouteRequest) async throws -> OfflineRouteResponse {
         guard request.mode.supportsHEREOfflineCalculation else {
             throw OfflineMapCoreError.unsupportedLocalRouting(request.mode)
         }
-        _ = request
-        try requireInstalledCoverageEvidence()
+        try requireAppliedPolicy()
+        let coverageInstallation = try requireInstalledCoverageInstallation()
+        let requestedCorridor = try OfflineCoverageRequestGeometry.routeCorridor(
+            coordinates: request.waypoints.map(\.coordinate),
+            halfWidthMeters: coverageInstallation.routeCorridorHalfWidthMeters
+        )
+        let requestedResolution = try await coverageInstallation.resolver
+            .resolveInstalledCoverage(for: requestedCorridor)
+        _ = try HereNavigateCoverageAdmission.requireCompleteEvidence(
+            requestedResolution,
+            expectedCoordinateCount: request.waypoints.count,
+            expectedGeometryKind: .routeCorridor
+        )
+
+        let routingEngine = try requireOfflineRoutingEngine()
+        let nativeWaypoints = request.waypoints.map {
+            Waypoint(coordinates: nativeCoordinate($0.coordinate))
+        }
+        let options = try routingOptions(for: request)
+        let nativeRoutes: [Route] = try await withCheckedThrowingContinuation { continuation in
+            _ = routingEngine.calculateRoute(
+                with: nativeWaypoints,
+                options: options
+            ) { error, routes in
+                guard error == nil, let routes, !routes.isEmpty else {
+                    continuation.resume(
+                        throwing: HereNavigateOfflineAdapterError.operation(
+                            .routingFailed,
+                            "HERE could not calculate a device-local road route.",
+                            recovery: "Verify complete signed corridor coverage and the offline-routing layer, then retry."
+                        )
+                    )
+                    return
+                }
+                continuation.resume(returning: routes)
+            }
+        }
+
+        var admitted: [(
+            model: OfflineLocalRoute,
+            native: HereNativeRouteBox,
+            evidence: OfflineInstalledCoverageEvidence
+        )] = []
+        for (index, nativeRoute) in nativeRoutes.enumerated() {
+            let coordinates = try routeCoordinates(nativeRoute)
+            let corridor = try OfflineCoverageRequestGeometry.routeCorridor(
+                coordinates: coordinates,
+                halfWidthMeters: coverageInstallation.routeCorridorHalfWidthMeters
+            )
+            let resolution = try await coverageInstallation.resolver
+                .resolveInstalledCoverage(for: corridor)
+            guard resolution.classification.evidence != nil else {
+                continue
+            }
+            let evidence = try HereNavigateCoverageAdmission
+                .requireCompleteEvidence(
+                    resolution,
+                    expectedCoordinateCount: coordinates.count,
+                    expectedGeometryKind: .routeCorridor
+                )
+            let routeID = "\(request.id.uuidString.lowercased())-\(index)"
+            admitted.append(
+                (
+                    model: try mapRoute(
+                        nativeRoute,
+                        routeID: routeID,
+                        mode: request.mode,
+                        coverage: evidence
+                    ),
+                    native: HereNativeRouteBox(
+                        route: nativeRoute,
+                        mode: request.mode
+                    ),
+                    evidence: evidence
+                )
+            )
+        }
+        guard !admitted.isEmpty else {
+            throw HereNavigateOfflineAdapterError.operation(
+                .coverageUnverified,
+                "No calculated HERE route remained completely inside signed installed-region coverage.",
+                recovery: "Install every region covering the route corridor or choose a destination within current coverage."
+            )
+        }
+        let responseEvidence = try HereNavigateCoverageAdmission.unionEvidence(
+            admitted.map(\.evidence)
+        )
+        let response = try OfflineRouteResponse(
+            requestID: request.id,
+            routes: admitted.map(\.model),
+            coverage: responseEvidence
+        )
+        for value in admitted {
+            await routeStore.store(value.native, id: value.model.id)
+        }
+        return response
     }
 
     private func requireAppliedPolicy() throws {
@@ -1421,12 +1683,17 @@ actor HereNavigateOfflineEngine: OfflineMapEngine {
         }
     }
 
-    private func requireInstalledCoverageEvidence<T>() throws -> T {
-        throw HereNavigateOfflineAdapterError.operation(
-            .coverageUnverified,
-            "HERE cannot attribute this local result to verified installed-region coverage.",
-            recovery: "Add release-validated installed-region geometry and boundary evidence before enabling local search, routing, or guidance."
-        )
+    private func requireInstalledCoverageInstallation() throws
+        -> HereNavigateInstalledCoverageInstallation {
+        guard let installation = HereNavigateInstalledCoverageAuthority.shared
+            .currentInstallation() else {
+            throw HereNavigateOfflineAdapterError.operation(
+                .coverageUnverified,
+                "Signed HERE installed-region coverage is not installed for this process.",
+                recovery: "Bundle and approve the signed coverage catalog matching the native HERE inventory."
+            )
+        }
+        return installation
     }
 
     private func requireMapDownloader() async throws -> MapDownloader {
@@ -1778,6 +2045,36 @@ actor HereNavigateOfflineEngine: OfflineMapEngine {
         )
     }
 
+    private func routeCoordinates(
+        _ route: Route
+    ) throws -> [OfflineGeoCoordinate] {
+        let coordinates = try route.sections.flatMap { section in
+            try section.geometry.vertices.map { value in
+                try OfflineGeoCoordinate(
+                    latitude: value.latitude,
+                    longitude: value.longitude
+                )
+            }
+        }
+        guard coordinates.count >= 2 else {
+            throw HereNavigateOfflineAdapterError.operation(
+                .invalidSDKData,
+                "HERE returned a local route without usable corridor geometry.",
+                recovery: "Repair installed map data before retrying the route."
+            )
+        }
+        return coordinates
+    }
+
+    private func offlineSearchResultID(
+        index: Int,
+        coordinate: OfflineGeoCoordinate
+    ) -> String {
+        let latitude = coordinate.latitude.bitPattern
+        let longitude = coordinate.longitude.bitPattern
+        return "here-offline-\(latitude)-\(longitude)-\(index)"
+    }
+
     private func nativeCoordinate(_ coordinate: OfflineGeoCoordinate) -> GeoCoordinates {
         GeoCoordinates(latitude: coordinate.latitude, longitude: coordinate.longitude)
     }
@@ -2007,20 +2304,26 @@ actor HereNavigateOfflineEngine: OfflineMapEngine {
 
 #else
 
-actor HereNavigateOfflineEngine: OfflineMapEngine {
+actor HereNavigateOfflineEngine: OfflineMapEngine, HEREInstalledRegionInventoryProviding {
     static let shared = HereNavigateOfflineEngine()
 
     init() {}
 
     func makeNavigationSession(
         locationPolicy: HereNavigationLocationAcceptancePolicy = .production,
-        voicePolicy: HereNavigationVoicePolicy = .requiredEnglishUS
+        voicePolicy: HereNavigationVoicePolicy = .requiredEnglishUS,
+        coverageResolver: (any OfflineInstalledCoverageResolving)? = nil,
+        routeCorridorHalfWidthMeters: Double = 75
     ) -> HereNavigateNavigationSession {
         HereNavigateNavigationSession(
             locationPolicy: locationPolicy,
-            voicePolicy: voicePolicy
+            voicePolicy: voicePolicy,
+            coverageResolver: coverageResolver,
+            routeCorridorHalfWidthMeters: routeCorridorHalfWidthMeters
         )
     }
+
+    func purgeRetainedLocalRoutes() async {}
 
     func inspect(
         connectivityPolicy: OfflineMapConnectivityPolicy
@@ -2057,6 +2360,11 @@ actor HereNavigateOfflineEngine: OfflineMapEngine {
     }
 
     func installedRegions() async throws -> [OfflineMapInstalledRegion] {
+        throw HereNavigateOfflineAdapterError.missingFramework
+    }
+
+    func currentHEREInstalledRegionInventory() async throws
+        -> HEREInstalledRegionInventory {
         throw HereNavigateOfflineAdapterError.missingFramework
     }
 
@@ -2179,18 +2487,24 @@ enum OfflineMapComposition {
 
     static func makeNavigationSession(
         locationPolicy: HereNavigationLocationAcceptancePolicy = .production,
-        voicePolicy: HereNavigationVoicePolicy = .requiredEnglishUS
+        voicePolicy: HereNavigationVoicePolicy = .requiredEnglishUS,
+        coverageResolver: (any OfflineInstalledCoverageResolving)? = nil,
+        routeCorridorHalfWidthMeters: Double = 75
     ) -> HereNavigateNavigationSession {
         #if canImport(heresdk)
         HereNavigateNavigationSession(
             routeStore: .shared,
             locationPolicy: locationPolicy,
-            voicePolicy: voicePolicy
+            voicePolicy: voicePolicy,
+            coverageResolver: coverageResolver,
+            routeCorridorHalfWidthMeters: routeCorridorHalfWidthMeters
         )
         #else
         HereNavigateNavigationSession(
             locationPolicy: locationPolicy,
-            voicePolicy: voicePolicy
+            voicePolicy: voicePolicy,
+            coverageResolver: coverageResolver,
+            routeCorridorHalfWidthMeters: routeCorridorHalfWidthMeters
         )
         #endif
     }

@@ -7,8 +7,8 @@
 //  server-canonical route.plan packages.
 //
 
-import Combine
 import CoreLocation
+import CryptoKit
 import Foundation
 
 @MainActor
@@ -44,8 +44,9 @@ final class OfflineMapProductionComposition: ObservableObject {
     ) async throws -> CanonicalRoutePackage
 
     typealias CanonicalRoutePurgeOperation = () async throws -> Void
+    typealias LocalRoutePurgeOperation = () async -> Void
 
-    private static let principalMarkerKey = "offlineMaps.canonicalRoutePrincipal.v1"
+    private static let principalMarkerKey = "offlineMaps.canonicalRoutePrincipal.v2"
     private static let canonicalRouteDirectoryName = "canonical-routes-v1"
 
     private(set) static var shared: OfflineMapProductionComposition?
@@ -59,6 +60,8 @@ final class OfflineMapProductionComposition: ObservableObject {
     @Published private(set) var lastNavigationFailure: OfflineNavigationFailure?
     @Published private(set) var canonicalRouteTrustAvailable: Bool
     @Published private(set) var canonicalRouteFailure: String?
+    @Published private(set) var installedCoverageTrustAvailable: Bool
+    @Published private(set) var installedCoverageFailure: String?
 
     private let searchOperation: SearchOperation
     private let routeOperation: RouteOperation
@@ -68,8 +71,18 @@ final class OfflineMapProductionComposition: ObservableObject {
     private let canonicalRouteStore: CanonicalRoutePackageStore?
     private let canonicalRouteIngestOperation: CanonicalRouteIngestOperation
     private let canonicalRoutePurgeOperation: CanonicalRoutePurgeOperation
+    private let localRoutePurgeOperation: LocalRoutePurgeOperation
     private let principalDefaults: UserDefaults
-    private var locationCancellable: AnyCancellable?
+    private let locationSource: HereNavigationLocationSource
+    private let navigationEventSequencer = OfflineNavigationEventSequencer()
+    private let principalTransitionSerializer = OfflineMapPrincipalTransitionSerializer()
+    private var mapSurfaceOwnerToken: UUID?
+    private let installedCoverageResolver: SignedInstalledCoverageResolver?
+    private let installedCoverageInstallation: HereNavigateInstalledCoverageInstallation?
+    private let initialSignedCoverageManifest: OfflineCoverageSignedEnvelope?
+    private var coveragePreparationTask: Task<(Bool, String?), Never>?
+    private var pendingPrincipalTransitionCount = 0
+    private var principalTransitionGeneration = UUID()
 
     private init(
         owner: OfflineMapCompositionOwner,
@@ -82,7 +95,13 @@ final class OfflineMapProductionComposition: ObservableObject {
         canonicalRouteStore: CanonicalRoutePackageStore?,
         canonicalRouteIngestOperation: @escaping CanonicalRouteIngestOperation,
         canonicalRoutePurgeOperation: @escaping CanonicalRoutePurgeOperation,
+        localRoutePurgeOperation: @escaping LocalRoutePurgeOperation,
         canonicalRouteFailure: String?,
+        installedCoverageResolver: SignedInstalledCoverageResolver?,
+        installedCoverageInstallation: HereNavigateInstalledCoverageInstallation?,
+        initialSignedCoverageManifest: OfflineCoverageSignedEnvelope?,
+        installedCoverageFailure: String?,
+        locationSource: HereNavigationLocationSource,
         principalDefaults: UserDefaults
     ) {
         self.owner = owner
@@ -95,14 +114,21 @@ final class OfflineMapProductionComposition: ObservableObject {
         self.canonicalRouteStore = canonicalRouteStore
         self.canonicalRouteIngestOperation = canonicalRouteIngestOperation
         self.canonicalRoutePurgeOperation = canonicalRoutePurgeOperation
+        self.localRoutePurgeOperation = localRoutePurgeOperation
         self.canonicalRouteFailure = canonicalRouteFailure
         canonicalRouteTrustAvailable = canonicalRouteStore != nil
+        self.installedCoverageResolver = installedCoverageResolver
+        self.installedCoverageInstallation = installedCoverageInstallation
+        self.initialSignedCoverageManifest = initialSignedCoverageManifest
+        self.installedCoverageFailure = installedCoverageFailure
+        installedCoverageTrustAvailable = false
+        self.locationSource = locationSource
         self.principalDefaults = principalDefaults
     }
 
     /// Installs exactly one process-wide owner before any route or Settings
     /// surface can request HERE state. Missing signing trust blocks only the
-    /// Rail/Vessel cache; it never weakens road/truck or fabricates authority.
+    /// affected capability; it never fabricates route or coverage authority.
     static func install(
         bundle: Bundle = .main,
         fileManager: FileManager = .default,
@@ -115,6 +141,47 @@ final class OfflineMapProductionComposition: ObservableObject {
                 minimumPostOperationFreeBytes: 3 * 1_024 * 1_024 * 1_024,
                 updateStagingBytesPerInstalledByte: nil
             )
+            let engine = HereNavigateOfflineEngine.shared
+
+            var installedCoverageResolver: SignedInstalledCoverageResolver?
+            var installedCoverageInstallation: HereNavigateInstalledCoverageInstallation?
+            var initialSignedCoverageManifest: OfflineCoverageSignedEnvelope?
+            var installedCoverageFailure: String?
+            do {
+                if let trust = try HereNavigateInstalledCoverageTrustConfiguration.load(
+                    bundle: bundle
+                ) {
+                    let verifier = try HEREOfflineCoverageManifestVerifier(
+                        expectedIssuer: trust.issuer,
+                        expectedAudience: trust.audience,
+                        expectedSDKVersion: trust.expectedSDKVersion,
+                        expectedRightsHolder: trust.expectedRightsHolder,
+                        keys: [trust.verificationKey]
+                    )
+                    let runtimePaths = try HereSDKRuntimePaths(fileManager: fileManager)
+                    try runtimePaths.prepare(fileManager: fileManager)
+                    let resolver = try SignedInstalledCoverageResolver(
+                        rootDirectory: runtimePaths.root,
+                        verifier: verifier,
+                        inventoryProvider: engine
+                    )
+                    let installation = try HereNavigateInstalledCoverageInstallation(
+                        resolver: resolver,
+                        expectedSDKVersion: trust.expectedSDKVersion,
+                        routeCorridorHalfWidthMeters: trust.routeCorridorHalfWidthMeters
+                    )
+                    installedCoverageResolver = resolver
+                    installedCoverageInstallation = installation
+                    initialSignedCoverageManifest = trust.initialSignedManifest
+                } else {
+                    installedCoverageFailure =
+                        "Signed installed-region coverage awaits an approved release catalog."
+                }
+            } catch {
+                installedCoverageFailure =
+                    "Signed installed-region coverage trust is invalid in this build."
+            }
+
             let owner = OfflineMapComposition.makeOwner(
                 storagePolicy: storagePolicy,
                 connectivityPolicy: .radioSilent,
@@ -126,9 +193,11 @@ final class OfflineMapProductionComposition: ObservableObject {
             )
             let navigationSession = OfflineMapComposition.makeNavigationSession(
                 locationPolicy: .production,
-                voicePolicy: voicePolicy
+                voicePolicy: voicePolicy,
+                coverageResolver: installedCoverageResolver,
+                routeCorridorHalfWidthMeters: installedCoverageInstallation?
+                    .routeCorridorHalfWidthMeters ?? 75
             )
-            let engine = HereNavigateOfflineEngine.shared
 
             let searchOperation: SearchOperation = { text, center, maximumResultCount in
                 let request = try OfflineSearchRequest(
@@ -136,7 +205,7 @@ final class OfflineMapProductionComposition: ObservableObject {
                     center: center,
                     maximumResultCount: maximumResultCount
                 )
-                return try await engine.searchOffline(request)
+                return try await owner.coordinator.searchOffline(request)
             }
             let routeOperation: RouteOperation = {
                 waypoints, mode, truckConstraints, departureTime in
@@ -146,7 +215,7 @@ final class OfflineMapProductionComposition: ObservableObject {
                     truckConstraints: truckConstraints,
                     departureTime: departureTime
                 )
-                return try await engine.calculateOfflineRoute(request)
+                return try await owner.coordinator.calculateOfflineRoute(request)
             }
             let startNavigationOperation: StartNavigationOperation = { route, downstream in
                 try await navigationSession.start(route: route) { event in
@@ -183,6 +252,9 @@ final class OfflineMapProductionComposition: ObservableObject {
             }
             let stopNavigationOperation: StopNavigationOperation = {
                 await navigationSession.stop()
+            }
+            let localRoutePurgeOperation: LocalRoutePurgeOperation = {
+                await engine.purgeRetainedLocalRoutes()
             }
 
             let canonicalRoot = try canonicalRouteRoot(
@@ -254,39 +326,17 @@ final class OfflineMapProductionComposition: ObservableObject {
                 canonicalRouteStore: canonicalRouteStore,
                 canonicalRouteIngestOperation: canonicalRouteIngestOperation,
                 canonicalRoutePurgeOperation: canonicalRoutePurgeOperation,
+                localRoutePurgeOperation: localRoutePurgeOperation,
                 canonicalRouteFailure: canonicalRouteFailure,
+                installedCoverageResolver: installedCoverageResolver,
+                installedCoverageInstallation: installedCoverageInstallation,
+                initialSignedCoverageManifest: initialSignedCoverageManifest,
+                installedCoverageFailure: installedCoverageFailure,
+                locationSource: HereNavigationLocationSource(),
                 principalDefaults: principalDefaults
             )
             shared = composition
             installationFailure = nil
-
-            composition.locationCancellable = DriverLocationResolver.shared.$lastLocation
-                .compactMap { $0 }
-                .receive(on: RunLoop.main)
-                .sink { [weak composition] location in
-                    guard let composition, composition.acceptsDeviceLocations else { return }
-                    let sourceInformation = location.sourceInformation
-                    let provenance: OfflineLocationProvenance
-                    if sourceInformation?.isSimulatedBySoftware == true {
-                        provenance = .simulated
-                    } else if sourceInformation?.isProducedByAccessory == true {
-                        provenance = .externalGNSS
-                    } else {
-                        provenance = .deviceFusedLocation
-                    }
-                    let fix = OfflineProductionLocationFix(
-                        latitude: location.coordinate.latitude,
-                        longitude: location.coordinate.longitude,
-                        timestamp: location.timestamp,
-                        horizontalAccuracyMeters: location.horizontalAccuracy,
-                        speedMetersPerSecond: location.speed >= 0 ? location.speed : nil,
-                        courseDegrees: location.course >= 0 ? location.course : nil,
-                        provenance: provenance
-                    )
-                    Task { @MainActor [weak composition] in
-                        await composition?.acceptDeviceLocation(fix)
-                    }
-                }
         } catch {
             installationFailure =
                 "Offline maps could not install the release-approved device policy."
@@ -294,6 +344,7 @@ final class OfflineMapProductionComposition: ObservableObject {
     }
 
     func prepare() async {
+        await prepareInstalledCoverageAuthority()
         await owner.coordinator.prepare()
     }
 
@@ -311,12 +362,28 @@ final class OfflineMapProductionComposition: ObservableObject {
 
     func prepareMapSurface(
         identity: HereOfflineNativeStyleIdentity,
+        ownerToken: UUID,
         bundle: Bundle = .main
     ) -> AnyObject? {
-        mapSurface.prepare(identity: identity, bundle: bundle)
+        guard mapSurfaceOwnerToken == nil || mapSurfaceOwnerToken == ownerToken else {
+            return nil
+        }
+        guard let nativeView = mapSurface.prepare(
+            identity: identity,
+            bundle: bundle
+        ) else {
+            if mapSurfaceOwnerToken == ownerToken {
+                mapSurfaceOwnerToken = nil
+            }
+            return nil
+        }
+        mapSurfaceOwnerToken = ownerToken
+        return nativeView
     }
 
-    func clearMapSurface() {
+    func clearMapSurface(ownerToken: UUID) {
+        guard mapSurfaceOwnerToken == ownerToken else { return }
+        mapSurfaceOwnerToken = nil
         mapSurface.clear()
     }
 
@@ -325,7 +392,9 @@ final class OfflineMapProductionComposition: ObservableObject {
         center: OfflineGeoCoordinate,
         maximumResultCount: Int = 20
     ) async throws -> OfflineSearchResponse {
-        try await searchOperation(text, center, maximumResultCount)
+        try await withStablePrincipal { [searchOperation] in
+            try await searchOperation(text, center, maximumResultCount)
+        }
     }
 
     func calculateOfflineRoute(
@@ -334,30 +403,65 @@ final class OfflineMapProductionComposition: ObservableObject {
         truckConstraints: OfflineTruckConstraints? = nil,
         departureTime: Date? = nil
     ) async throws -> OfflineRouteResponse {
-        try await routeOperation(
-            waypoints,
-            mode,
-            truckConstraints,
-            departureTime
-        )
+        try await withStablePrincipal { [routeOperation] in
+            try await routeOperation(
+                waypoints,
+                mode,
+                truckConstraints,
+                departureTime
+            )
+        }
     }
 
     func startNavigation(route: OfflineLocalRoute) async throws {
         lastNavigationFailure = nil
         do {
-            try await startNavigationOperation(route) { [weak self] event in
-                Task { @MainActor in
-                    self?.acceptNavigationEvent(event)
+            try await withStablePrincipal { [weak self] in
+                guard let self else {
+                    throw OfflineMapProductionError.principalTransitionInProgress
+                }
+                let eventSequencer = self.navigationEventSequencer
+                try await self.startNavigationOperation(route) { [weak self] event in
+                    let shouldSchedule = eventSequencer.enqueue(event)
+                    guard shouldSchedule else { return }
+                    Task { @MainActor [weak self] in
+                        self?.drainNavigationEvents()
+                    }
+                }
+                self.drainNavigationEvents()
+                do {
+                    try self.locationSource.start(
+                        onLocation: { [weak self] fix in
+                            Task { @MainActor [weak self] in
+                                await self?.acceptDeviceLocation(fix)
+                            }
+                        },
+                        onFailure: { [weak self] failure in
+                            self?.acceptLocationSourceFailure(failure)
+                        }
+                    )
+                } catch {
+                    await self.stopNavigationOperation()
+                    throw error
                 }
             }
         } catch let failure as OfflineNavigationFailure {
+            lastNavigationFailure = failure
+            throw failure
+        } catch {
+            let failure = OfflineNavigationFailure(
+                code: .nativeGuidanceUnavailable,
+                message: "Offline guidance could not start during the account transition.",
+                recovery: "Wait for account activation and complete signed coverage preparation, then retry.",
+                isRecoverable: true
+            )
             lastNavigationFailure = failure
             throw failure
         }
     }
 
     func stopNavigation() async {
-        await stopNavigationOperation()
+        await stopNavigationAndLocationSource()
     }
 
     func ingestCanonicalRoutePlan(
@@ -366,11 +470,14 @@ final class OfflineMapProductionComposition: ObservableObject {
         receivedAt: Date
     ) async throws -> CanonicalRoutePackage {
         do {
-            let package = try await canonicalRouteIngestOperation(
-                encodedEnvelope,
-                expectedScope,
-                receivedAt
-            )
+            let package = try await withStablePrincipal {
+                [canonicalRouteIngestOperation] in
+                try await canonicalRouteIngestOperation(
+                    encodedEnvelope,
+                    expectedScope,
+                    receivedAt
+                )
+            }
             canonicalRouteFailure = nil
             return package
         } catch {
@@ -384,13 +491,15 @@ final class OfflineMapProductionComposition: ObservableObject {
         scope: CanonicalRouteScope,
         freshnessPolicy: CanonicalRouteFreshnessPolicy
     ) async throws -> CanonicalRouteObservation {
-        guard let canonicalRouteStore else {
-            throw OfflineMapProductionError.canonicalRouteTrustUnavailable
+        try await withStablePrincipal { [canonicalRouteStore] in
+            guard let canonicalRouteStore else {
+                throw OfflineMapProductionError.canonicalRouteTrustUnavailable
+            }
+            return try await canonicalRouteStore.observe(
+                scope: scope,
+                policy: freshnessPolicy
+            )
         }
-        return try await canonicalRouteStore.observe(
-            scope: scope,
-            policy: freshnessPolicy
-        )
     }
 
     /// Purges signed route geometry only when the effective tenant/user scope
@@ -398,12 +507,88 @@ final class OfflineMapProductionComposition: ObservableObject {
     /// coverage, while sign-out and account switching remove it before reuse.
     func activatePrincipal(tenantID: String?, userID: String?) async {
         let nextMarker = Self.principalMarker(tenantID: tenantID, userID: userID)
+        if pendingPrincipalTransitionCount == 0,
+           let nextMarker,
+           principalDefaults.string(forKey: Self.principalMarkerKey) == nextMarker {
+            return
+        }
+        principalTransitionGeneration = UUID()
+        pendingPrincipalTransitionCount += 1
+        defer { pendingPrincipalTransitionCount -= 1 }
+        await principalTransitionSerializer.run { [weak self] in
+            await self?.performPrincipalTransition(to: nextMarker)
+        }
+    }
+
+    private func prepareInstalledCoverageAuthority() async {
+        guard let installedCoverageResolver,
+              let installedCoverageInstallation,
+              let initialSignedCoverageManifest else {
+            installedCoverageTrustAvailable = false
+            return
+        }
+        let task: Task<(Bool, String?), Never>
+        if let coveragePreparationTask {
+            task = coveragePreparationTask
+        } else {
+            task = Task {
+                do {
+                    _ = try await installedCoverageResolver.installSignedManifest(
+                        initialSignedCoverageManifest
+                    )
+                    try HereNavigateInstalledCoverageAuthority.shared.installOnce(
+                        installedCoverageInstallation
+                    )
+                    return (true, nil)
+                } catch {
+                    return (
+                        false,
+                        "Signed installed-region coverage could not be verified and installed."
+                    )
+                }
+            }
+            coveragePreparationTask = task
+        }
+        let result = await task.value
+        installedCoverageTrustAvailable = result.0
+        installedCoverageFailure = result.1
+        if !result.0 {
+            coveragePreparationTask = nil
+        }
+    }
+
+    private func withStablePrincipal<Value: Sendable>(
+        _ operation: @escaping @MainActor @Sendable () async throws -> Value
+    ) async throws -> Value {
+        let generation = principalTransitionGeneration
+        guard pendingPrincipalTransitionCount == 0 else {
+            throw OfflineMapProductionError.principalTransitionInProgress
+        }
+        let value = try await principalTransitionSerializer.run { [weak self] in
+            guard let self,
+                  self.pendingPrincipalTransitionCount == 0,
+                  self.principalTransitionGeneration == generation else {
+                throw OfflineMapProductionError.principalTransitionInProgress
+            }
+            return try await operation()
+        }
+        guard pendingPrincipalTransitionCount == 0,
+              principalTransitionGeneration == generation else {
+            throw OfflineMapProductionError.principalTransitionInProgress
+        }
+        return value
+    }
+
+    private func performPrincipalTransition(to nextMarker: String?) async {
         let previousMarker = principalDefaults.string(
             forKey: Self.principalMarkerKey
         )
-        guard previousMarker != nextMarker else { return }
+        // Signed-out activation always purges. An absent/corrupt marker must
+        // never be interpreted as proof that an on-disk route is unscoped.
+        guard previousMarker != nextMarker || nextMarker == nil else { return }
 
         await releaseRuntimeConsumers()
+        await localRoutePurgeOperation()
         do {
             try await canonicalRoutePurgeOperation()
             canonicalRouteFailure = canonicalRouteStore == nil
@@ -416,7 +601,7 @@ final class OfflineMapProductionComposition: ObservableObject {
             }
         } catch {
             canonicalRouteFailure =
-                "Cached canonical routes could not be cleared for the account transition."
+                "Cached local and canonical routes could not be cleared for the account transition."
         }
     }
 
@@ -445,6 +630,19 @@ final class OfflineMapProductionComposition: ObservableObject {
         }
     }
 
+    private func acceptLocationSourceFailure(_ failure: OfflineNavigationFailure) {
+        lastNavigationFailure = failure
+        Task { @MainActor [weak self] in
+            await self?.stopNavigation()
+        }
+    }
+
+    private func drainNavigationEvents() {
+        for event in navigationEventSequencer.drain() {
+            acceptNavigationEvent(event)
+        }
+    }
+
     private func acceptNavigationEvent(_ event: OfflineNavigationEvent) {
         switch event {
         case .stateChanged(let state):
@@ -452,17 +650,32 @@ final class OfflineMapProductionComposition: ObservableObject {
             if case .navigating(_, let coverage) = state {
                 navigationCoverage = coverage
             }
+            switch state {
+            case .arrived, .stopped, .failed:
+                locationSource.stop()
+            case .idle, .starting, .navigating, .paused, .offRoute, .rerouting:
+                break
+            }
         case .coverageChanged(let coverage):
             navigationCoverage = coverage
         case .inputRejected(let failure), .rerouteFailed(let failure):
             lastNavigationFailure = failure
-        case .maneuver, .deviationDetected, .arrived:
+        case .arrived:
+            locationSource.stop()
+        case .maneuver, .deviationDetected:
             break
         }
     }
 
-    private func releaseRuntimeConsumers() async {
+    private func stopNavigationAndLocationSource() async {
+        locationSource.stop()
         await stopNavigationOperation()
+        drainNavigationEvents()
+    }
+
+    private func releaseRuntimeConsumers() async {
+        await stopNavigationAndLocationSource()
+        mapSurfaceOwnerToken = nil
         mapSurface.clear()
     }
 
@@ -485,7 +698,12 @@ final class OfflineMapProductionComposition: ObservableObject {
               !tenantID.isEmpty,
               let userID = userID?.trimmingCharacters(in: .whitespacesAndNewlines),
               !userID.isEmpty else { return nil }
-        return "\(tenantID)|\(userID)"
+        let scope = Data(
+            "\(tenantID.utf8.count):\(tenantID)\(userID.utf8.count):\(userID)".utf8
+        )
+        return SHA256.hash(data: scope).map {
+            String(format: "%02x", $0)
+        }.joined()
     }
 }
 
@@ -497,6 +715,75 @@ struct OfflineProductionLocationFix: Sendable {
     let speedMetersPerSecond: Double?
     let courseDegrees: Double?
     let provenance: OfflineLocationProvenance
+}
+
+/// HERE callbacks can arrive on SDK-owned queues. One scheduled MainActor
+/// drain preserves the actor session's emission order without letting each
+/// callback manufacture an independently racing UI task.
+final class OfflineNavigationEventSequencer: @unchecked Sendable {
+    private let lock = NSLock()
+    private var events: [(UInt64, OfflineNavigationEvent)] = []
+    private var nextSequence: UInt64 = 0
+    private var drainScheduled = false
+
+    func enqueue(_ event: OfflineNavigationEvent) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        nextSequence &+= 1
+        events.append((nextSequence, event))
+        guard !drainScheduled else { return false }
+        drainScheduled = true
+        return true
+    }
+
+    func drain() -> [OfflineNavigationEvent] {
+        lock.lock()
+        defer { lock.unlock() }
+        let drained = events.sorted { $0.0 < $1.0 }.map { $0.1 }
+        events.removeAll(keepingCapacity: true)
+        drainScheduled = false
+        return drained
+    }
+}
+
+/// Serializes account-scoped route reads/writes with principal transitions.
+/// Actor isolation by itself is reentrant at every await, so an explicit FIFO
+/// permit is required to keep an old-principal route from landing after purge.
+actor OfflineMapPrincipalTransitionSerializer {
+    private var permitHeld = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func run<Value: Sendable>(
+        _ operation: @escaping @MainActor @Sendable () async throws -> Value
+    ) async rethrows -> Value {
+        await acquire()
+        do {
+            let value = try await operation()
+            release()
+            return value
+        } catch {
+            release()
+            throw error
+        }
+    }
+
+    private func acquire() async {
+        guard permitHeld else {
+            permitHeld = true
+            return
+        }
+        await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+        }
+    }
+
+    private func release() {
+        guard !waiters.isEmpty else {
+            permitHeld = false
+            return
+        }
+        waiters.removeFirst().resume()
+    }
 }
 
 private struct OfflineCanonicalRouteTrustConfiguration {
@@ -544,4 +831,5 @@ private enum OfflineMapProductionError: Error {
     case canonicalRouteTrustUnavailable
     case canonicalRouteTrustInvalid
     case canonicalRouteEnvelopeInvalid
+    case principalTransitionInProgress
 }

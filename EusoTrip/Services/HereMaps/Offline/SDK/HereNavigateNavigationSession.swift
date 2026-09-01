@@ -13,11 +13,13 @@ struct HereNavigationLocationAcceptancePolicy: Equatable, Sendable {
     let allowsSimulatedLocations: Bool
     let maximumSampleAge: TimeInterval
     let maximumFutureClockSkew: TimeInterval
+    let maximumHorizontalAccuracyMeters: Double
 
     static let production = Self(
         allowsSimulatedLocations: false,
         maximumSampleAge: 30,
-        maximumFutureClockSkew: 5
+        maximumFutureClockSkew: 5,
+        maximumHorizontalAccuracyMeters: 65
     )
 
     #if DEBUG
@@ -26,18 +28,25 @@ struct HereNavigationLocationAcceptancePolicy: Equatable, Sendable {
     static let simulatorTesting = Self(
         allowsSimulatedLocations: true,
         maximumSampleAge: 300,
-        maximumFutureClockSkew: 300
+        maximumFutureClockSkew: 300,
+        maximumHorizontalAccuracyMeters: 500
     )
     #endif
 
     private init(
         allowsSimulatedLocations: Bool,
         maximumSampleAge: TimeInterval,
-        maximumFutureClockSkew: TimeInterval
+        maximumFutureClockSkew: TimeInterval,
+        maximumHorizontalAccuracyMeters: Double
     ) {
         self.allowsSimulatedLocations = allowsSimulatedLocations
         self.maximumSampleAge = maximumSampleAge
         self.maximumFutureClockSkew = maximumFutureClockSkew
+        self.maximumHorizontalAccuracyMeters = maximumHorizontalAccuracyMeters
+    }
+
+    func acceptsHorizontalAccuracy(_ value: Double) -> Bool {
+        value.isFinite && value >= 0 && value <= maximumHorizontalAccuracyMeters
     }
 }
 
@@ -148,7 +157,9 @@ struct HereNavigationTimestampBoundary: Sendable {
         guard locationPolicy.maximumSampleAge.isFinite,
               locationPolicy.maximumSampleAge >= 0,
               locationPolicy.maximumFutureClockSkew.isFinite,
-              locationPolicy.maximumFutureClockSkew >= 0 else {
+              locationPolicy.maximumFutureClockSkew >= 0,
+              locationPolicy.maximumHorizontalAccuracyMeters.isFinite,
+              locationPolicy.maximumHorizontalAccuracyMeters > 0 else {
             throw Self.locationFailure(
                 message: "The navigation timestamp policy is invalid.",
                 recovery: "Restore the release-approved navigation timing policy."
@@ -516,15 +527,13 @@ private final class HereNavigationDelegateBridge:
 actor HereNavigateNavigationSession: OfflineNavigationSessionProviding {
     private static let deviationThresholdMeters = 50.0
     private static let deviationSampleThreshold = 3
-    /// HERE 4.27's Navigator does not expose installed RegionId attribution or
-    /// an installed-map boundary callback. This stays false until EusoTrip can
-    /// bind the native route/location stream to validated local region geometry.
-    private static var hasInstalledCoverageBoundaryEvidence: Bool { false }
 
     private let routeStore: HereNativeRouteStore
     private let navigator: Navigator?
     private let locationPolicy: HereNavigationLocationAcceptancePolicy
     private let voicePolicy: HereNavigationVoicePolicy
+    private let coverageResolver: (any OfflineInstalledCoverageResolving)?
+    private let routeCorridorHalfWidthMeters: Double
     private var timestampBoundary: HereNavigationTimestampBoundary
     #if canImport(AVFoundation)
     private var voiceOutput: HereOfflineVoiceOutputBox?
@@ -549,15 +558,23 @@ actor HereNavigateNavigationSession: OfflineNavigationSessionProviding {
     private var rerouteInFlight = false
     private var rerouteGeneration: UUID?
     private var pausedForRejectedLocation = false
+    private var lastCoveredEvidence: OfflineInstalledCoverageEvidence?
+    private var currentCoverage: OfflineNavigationCoverage = .unknown
+    private var sessionGeneration: UUID?
+    private var locationResolutionGeneration: UUID?
 
     init(
         routeStore: HereNativeRouteStore = .shared,
         locationPolicy: HereNavigationLocationAcceptancePolicy = .production,
-        voicePolicy: HereNavigationVoicePolicy = .requiredEnglishUS
+        voicePolicy: HereNavigationVoicePolicy = .requiredEnglishUS,
+        coverageResolver: (any OfflineInstalledCoverageResolving)? = nil,
+        routeCorridorHalfWidthMeters: Double = 75
     ) {
         self.routeStore = routeStore
         self.locationPolicy = locationPolicy
         self.voicePolicy = voicePolicy
+        self.coverageResolver = coverageResolver
+        self.routeCorridorHalfWidthMeters = routeCorridorHalfWidthMeters
         self.timestampBoundary = HereNavigationTimestampBoundary(
             locationPolicy: locationPolicy
         )
@@ -594,6 +611,10 @@ actor HereNavigateNavigationSession: OfflineNavigationSessionProviding {
             )
         }
         self.eventHandler = eventHandler
+        let startGeneration = UUID()
+        sessionGeneration = startGeneration
+        locationResolutionGeneration = nil
+        transition(.starting(routeID: route.id))
         guard route.mode == .road || route.mode == .truck else {
             try failAndThrow(
                 routeID: route.id,
@@ -610,14 +631,22 @@ actor HereNavigateNavigationSession: OfflineNavigationSessionProviding {
                 recovery: "Calculate a new road or truck route from installed HERE map data."
             )
         }
-        guard Self.hasInstalledCoverageBoundaryEvidence else {
+        let startingCoverage: OfflineNavigationCoverage
+        do {
+            startingCoverage = try await resolveRouteCoverage(
+                coordinates: route.sections.flatMap(\.coordinates),
+                expectedEvidence: route.coverage
+            )
+        } catch {
+            try requireCurrentStart(startGeneration, routeID: route.id)
             try failAndThrow(
                 routeID: route.id,
                 code: .mapCoverageMissing,
-                message: "HERE cannot prove installed-region coverage and boundary behavior for this guidance session.",
-                recovery: "Add release-validated installed-region geometry before enabling native freight guidance."
+                message: "The complete guidance corridor is not covered by current signed installed-region evidence.",
+                recovery: "Install the signed catalog and every native HERE region covering this road route before departure."
             )
         }
+        try requireCurrentStart(startGeneration, routeID: route.id)
         guard SDKNativeEngine.sharedInstance?.isOfflineMode == true else {
             try failAndThrow(
                 routeID: route.id,
@@ -634,7 +663,9 @@ actor HereNavigateNavigationSession: OfflineNavigationSessionProviding {
                 recovery: "Verify the Navigate entitlement and restart offline maps."
             )
         }
-        guard let nativeRoute = await routeStore.route(for: route.id),
+        let retainedNativeRoute = await routeStore.route(for: route.id)
+        try requireCurrentStart(startGeneration, routeID: route.id)
+        guard let nativeRoute = retainedNativeRoute,
               nativeRoute.mode == route.mode else {
             try failAndThrow(
                 routeID: route.id,
@@ -670,6 +701,7 @@ actor HereNavigateNavigationSession: OfflineNavigationSessionProviding {
                 )
                     .map { HereOfflineVoiceOutputBox(output: $0) }
             }
+            try requireCurrentStart(startGeneration, routeID: route.id)
             guard let output else {
                 try failAndThrow(
                     routeID: route.id,
@@ -684,12 +716,24 @@ actor HereNavigateNavigationSession: OfflineNavigationSessionProviding {
                     try output.output.prepareAudibleOutput(sessionID: sessionID)
                 }
             } catch {
+                await MainActor.run {
+                    output.output.stop(sessionID: sessionID)
+                }
+                try requireCurrentStart(startGeneration, routeID: route.id)
                 try failAndThrow(
                     routeID: route.id,
                     code: .nativeGuidanceUnavailable,
                     message: "Offline voice guidance could not prepare an audible system output.",
                     recovery: "Select an audio route, raise the device volume, and retry before departure."
                 )
+            }
+            do {
+                try requireCurrentStart(startGeneration, routeID: route.id)
+            } catch {
+                await MainActor.run {
+                    output.output.stop(sessionID: sessionID)
+                }
+                throw error
             }
             voiceOutput = output
             voiceSessionID = sessionID
@@ -716,12 +760,23 @@ actor HereNavigateNavigationSession: OfflineNavigationSessionProviding {
             }
         } catch {
             await stopPreparedVoiceOutput()
+            try requireCurrentStart(startGeneration, routeID: route.id)
             try failAndThrow(
                 routeID: route.id,
                 code: .nativeGuidanceUnavailable,
                 message: "HERE native guidance could not acquire the shared radio-silent runtime.",
                 recovery: "Finish connected map maintenance, then prepare the shared engine in radio-silent mode."
             )
+        }
+        do {
+            try requireCurrentStart(startGeneration, routeID: route.id)
+        } catch {
+            await MainActor.run {
+                HereNavigateRuntimeSupervisor.shared
+                    .releaseNavigationLease(leaseID)
+            }
+            await stopPreparedVoiceOutput()
+            throw error
         }
         runtimeLeaseID = leaseID
 
@@ -734,8 +789,9 @@ actor HereNavigateNavigationSession: OfflineNavigationSessionProviding {
         rerouteInFlight = false
         rerouteGeneration = nil
         pausedForRejectedLocation = false
+        lastCoveredEvidence = coverageEvidence(from: startingCoverage)
+        currentCoverage = startingCoverage
         timestampBoundary.reset()
-        transition(.starting(routeID: route.id))
 
         installNativeDelegates(on: navigator)
 
@@ -746,9 +802,8 @@ actor HereNavigateNavigationSession: OfflineNavigationSessionProviding {
         navigator.maneuverNotificationOptions = notificationOptions
         navigator.route = nativeRoute.route
 
-        // HERE does not expose installed-region attribution for navigator state.
-        transition(.navigating(routeID: route.id, coverage: .unknown))
-        eventHandler(.coverageChanged(.unknown))
+        transition(.navigating(routeID: route.id, coverage: startingCoverage))
+        eventHandler(.coverageChanged(startingCoverage))
     }
 
     private func installNativeDelegates(on navigator: Navigator) {
@@ -826,6 +881,18 @@ actor HereNavigateNavigationSession: OfflineNavigationSessionProviding {
             pauseForRejectedInput(failure, routeID: routeID)
             throw failure
         }
+        guard locationPolicy.acceptsHorizontalAccuracy(
+            location.horizontalAccuracyMeters
+        ) else {
+            let failure = OfflineNavigationFailure(
+                code: .locationRejected,
+                message: "The current GNSS fix is not accurate enough for freight guidance.",
+                recovery: "Wait for a fix within \(Int(locationPolicy.maximumHorizontalAccuracyMeters)) meters before resuming.",
+                isRecoverable: true
+            )
+            pauseForRejectedInput(failure, routeID: routeID)
+            throw failure
+        }
         do {
             try timestampBoundary.acceptDeviceLocation(
                 timestamp: location.timestamp
@@ -844,6 +911,54 @@ actor HereNavigateNavigationSession: OfflineNavigationSessionProviding {
             throw failure
         }
 
+        let resolutionGeneration = UUID()
+        locationResolutionGeneration = resolutionGeneration
+        let expectedSessionGeneration = sessionGeneration
+        let resolvedCoverage: OfflineNavigationCoverage?
+        do {
+            resolvedCoverage = try await resolvePointCoverage(
+                coordinate: location.coordinate
+            )
+        } catch {
+            resolvedCoverage = nil
+        }
+        guard locationResolutionGeneration == resolutionGeneration,
+              sessionGeneration == expectedSessionGeneration,
+              activeRouteID == routeID,
+              isActive else {
+            throw Self.supersededLocationFailure
+        }
+        locationResolutionGeneration = nil
+        guard let locationCoverage = resolvedCoverage else {
+            let failure = OfflineNavigationFailure(
+                code: .mapCoverageMissing,
+                message: "The current GNSS fix could not be verified inside signed installed HERE coverage.",
+                recovery: "Stop safely and install the signed native region covering the current road.",
+                isRecoverable: true
+            )
+            pauseForRejectedInput(failure, routeID: routeID)
+            throw failure
+        }
+        if case .outsideInstalledCoverage = locationCoverage {
+            currentCoverage = .outsideInstalledCoverage(
+                lastCovered: lastCoveredEvidence
+            )
+            eventHandler?(.coverageChanged(currentCoverage))
+            let failure = OfflineNavigationFailure(
+                code: .mapCoverageMissing,
+                message: "The current GNSS fix is outside signed installed HERE coverage.",
+                recovery: "Stop safely at the last covered road and install the missing region.",
+                isRecoverable: true
+            )
+            pauseForRejectedInput(failure, routeID: routeID)
+            throw failure
+        }
+        lastCoveredEvidence = coverageEvidence(from: locationCoverage)
+        if locationCoverage != currentCoverage {
+            currentCoverage = locationCoverage
+            eventHandler?(.coverageChanged(locationCoverage))
+        }
+
         var nativeLocation = Location(
             coordinates: GeoCoordinates(
                 latitude: location.coordinate.latitude,
@@ -857,7 +972,7 @@ actor HereNavigateNavigationSession: OfflineNavigationSessionProviding {
         navigator.onLocationUpdated(nativeLocation)
         if pausedForRejectedLocation {
             pausedForRejectedLocation = false
-            transition(.navigating(routeID: routeID, coverage: .unknown))
+            transition(.navigating(routeID: routeID, coverage: currentCoverage))
         }
     }
 
@@ -871,8 +986,128 @@ actor HereNavigateNavigationSession: OfflineNavigationSessionProviding {
         eventHandler?(.inputRejected(failure))
     }
 
+    private func requireCurrentStart(
+        _ generation: UUID,
+        routeID: String
+    ) throws {
+        guard sessionGeneration == generation,
+              state == .starting(routeID: routeID) else {
+            throw OfflineNavigationFailure(
+                code: .nativeGuidanceUnavailable,
+                message: "Offline guidance start was canceled before native admission completed.",
+                recovery: "Retry after the current stop or account transition finishes.",
+                isRecoverable: true
+            )
+        }
+    }
+
+    private static let supersededLocationFailure = OfflineNavigationFailure(
+        code: .locationRejected,
+        message: "A newer guidance location superseded this sample.",
+        recovery: "Continue with the newest GNSS fix.",
+        isRecoverable: true
+    )
+
+    private func resolveRouteCoverage(
+        coordinates: [OfflineGeoCoordinate],
+        expectedEvidence: OfflineInstalledCoverageEvidence? = nil
+    ) async throws -> OfflineNavigationCoverage {
+        guard let coverageResolver else {
+            throw HereNavigateOfflineAdapterError.operation(
+                .coverageUnverified,
+                "Signed installed-region coverage is unavailable for native guidance.",
+                recovery: "Install the approved signed HERE coverage catalog before departure."
+            )
+        }
+        let geometry = try OfflineCoverageRequestGeometry.routeCorridor(
+            coordinates: coordinates,
+            halfWidthMeters: routeCorridorHalfWidthMeters
+        )
+        let resolution = try await coverageResolver.resolveInstalledCoverage(
+            for: geometry
+        )
+        if let expectedEvidence {
+            return try HereNavigateCoverageAdmission.requireCurrentRouteEvidence(
+                resolution,
+                contains: expectedEvidence,
+                expectedCoordinateCount: coordinates.count,
+                expectedGeometryKind: .routeCorridor
+            )
+        }
+        _ = try HereNavigateCoverageAdmission.requireCompleteEvidence(
+            resolution,
+            expectedCoordinateCount: coordinates.count,
+            expectedGeometryKind: .routeCorridor
+        )
+        return HereNavigateCoverageAdmission.navigationCoverage(
+            from: resolution.classification
+        )
+    }
+
+    private func resolvePointCoverage(
+        coordinate: OfflineGeoCoordinate
+    ) async throws -> OfflineNavigationCoverage {
+        guard let coverageResolver else {
+            throw HereNavigateOfflineAdapterError.operation(
+                .coverageUnverified,
+                "Signed installed-region coverage is unavailable for native guidance.",
+                recovery: "Install the approved signed HERE coverage catalog before departure."
+            )
+        }
+        let resolution = try await coverageResolver.resolveInstalledCoverage(
+            for: .gnssSample(coordinate)
+        )
+        if resolution.classification.evidence != nil {
+            _ = try HereNavigateCoverageAdmission.requireCompleteEvidence(
+                resolution,
+                expectedCoordinateCount: 1,
+                expectedGeometryKind: .gnssSample
+            )
+        }
+        return HereNavigateCoverageAdmission.navigationCoverage(
+            from: resolution.classification
+        )
+    }
+
+    private func coverageEvidence(
+        from coverage: OfflineNavigationCoverage
+    ) -> OfflineInstalledCoverageEvidence? {
+        switch coverage {
+        case .verified(let evidence), .approachingBoundary(let evidence, _):
+            return evidence
+        case .outsideInstalledCoverage(let lastCovered):
+            return lastCovered
+        case .unknown:
+            return nil
+        }
+    }
+
+    private func routeCoordinates(
+        _ route: Route
+    ) throws -> [OfflineGeoCoordinate] {
+        let coordinates = try route.sections.flatMap { section in
+            try section.geometry.vertices.map { coordinate in
+                try OfflineGeoCoordinate(
+                    latitude: coordinate.latitude,
+                    longitude: coordinate.longitude
+                )
+            }
+        }
+        guard coordinates.count >= 2 else {
+            throw HereNavigateOfflineAdapterError.operation(
+                .invalidSDKData,
+                "HERE returned a reroute without usable corridor geometry.",
+                recovery: "Keep the current covered route and retry from a safe stop."
+            )
+        }
+        return coordinates
+    }
+
     func stop() async {
         let routeID = activeRouteID
+        sessionGeneration = nil
+        locationResolutionGeneration = nil
+        rerouteGeneration = nil
         await detachNativeGuidance()
         activeRouteID = nil
         activeMode = nil
@@ -880,6 +1115,8 @@ actor HereNavigateNavigationSession: OfflineNavigationSessionProviding {
         rerouteGeneration = nil
         deviationSamples = 0
         pausedForRejectedLocation = false
+        lastCoveredEvidence = nil
+        currentCoverage = .unknown
         timestampBoundary.reset()
         transition(.stopped(routeID: routeID, stoppedAt: Date()))
         eventHandler = nil
@@ -1049,28 +1286,71 @@ actor HereNavigateNavigationSession: OfflineNavigationSessionProviding {
             }
         }
 
+        let admittedResult: Result<(Route, OfflineNavigationCoverage), OfflineNavigationFailure>
+        switch result {
+        case .success(let route):
+            do {
+                let coverage = try await resolveRouteCoverage(
+                    coordinates: routeCoordinates(route)
+                )
+                admittedResult = .success((route, coverage))
+            } catch {
+                admittedResult = .failure(
+                    OfflineNavigationFailure(
+                        code: .mapCoverageMissing,
+                        message: "HERE's return-to-route corridor leaves signed installed-region coverage.",
+                        recovery: "Remain stopped at the last covered road and install the missing native region.",
+                        isRecoverable: true
+                    )
+                )
+            }
+        case .failure(let failure):
+            admittedResult = .failure(failure)
+        }
+
         guard rerouteGeneration == generation else { return }
-        rerouteInFlight = false
-        rerouteGeneration = nil
         guard commitBoundary.permitsCommit(
             activeRouteID: activeRouteID,
             currentDelegateGeneration: delegateGeneration,
             state: state,
             pausedForRejectedLocation: pausedForRejectedLocation
-        ) else { return }
-        switch result {
-        case .success(let newRoute):
-            invalidateNativeDelegates(on: navigator)
-            navigator.route = newRoute
-            installNativeDelegates(on: navigator)
-            deviationSamples = 0
-            transition(.navigating(routeID: routeID, coverage: .unknown))
-            eventHandler?(.coverageChanged(.unknown))
+        ) else {
+            if rerouteGeneration == generation {
+                rerouteInFlight = false
+                rerouteGeneration = nil
+            }
+            return
+        }
+        switch admittedResult {
+        case .success(let value):
+            let (newRoute, coverage) = value
             await routeStore.replace(
                 HereNativeRouteBox(route: newRoute, mode: mode),
                 id: routeID
             )
+            guard rerouteGeneration == generation,
+                  commitBoundary.permitsCommit(
+                    activeRouteID: activeRouteID,
+                    currentDelegateGeneration: delegateGeneration,
+                    state: state,
+                    pausedForRejectedLocation: pausedForRejectedLocation
+                  ) else {
+                await routeStore.remove(id: routeID)
+                return
+            }
+            rerouteInFlight = false
+            rerouteGeneration = nil
+            invalidateNativeDelegates(on: navigator)
+            navigator.route = newRoute
+            installNativeDelegates(on: navigator)
+            deviationSamples = 0
+            currentCoverage = coverage
+            lastCoveredEvidence = coverageEvidence(from: coverage)
+            transition(.navigating(routeID: routeID, coverage: coverage))
+            eventHandler?(.coverageChanged(coverage))
         case .failure(let failure):
+            rerouteInFlight = false
+            rerouteGeneration = nil
             transition(.paused(routeID: routeID, reason: failure.message))
             eventHandler?(.rerouteFailed(failure))
         }
@@ -1082,6 +1362,9 @@ actor HereNavigateNavigationSession: OfflineNavigationSessionProviding {
         let date = Date()
         transition(.arrived(routeID: routeID, arrivedAt: date))
         eventHandler?(.arrived(date))
+        sessionGeneration = nil
+        locationResolutionGeneration = nil
+        rerouteGeneration = nil
         await detachNativeGuidance()
         activeRouteID = nil
         activeMode = nil
@@ -1089,6 +1372,8 @@ actor HereNavigateNavigationSession: OfflineNavigationSessionProviding {
         rerouteGeneration = nil
         deviationSamples = 0
         pausedForRejectedLocation = false
+        lastCoveredEvidence = nil
+        currentCoverage = .unknown
         timestampBoundary.reset()
         eventHandler = nil
     }
@@ -1154,8 +1439,12 @@ actor HereNavigateNavigationSession: OfflineNavigationSessionProviding {
         routingEngine = nil
         rerouteInFlight = false
         rerouteGeneration = nil
+        sessionGeneration = nil
+        locationResolutionGeneration = nil
         deviationSamples = 0
         pausedForRejectedLocation = false
+        lastCoveredEvidence = nil
+        currentCoverage = .unknown
         timestampBoundary.reset()
         throw failure
     }
@@ -1168,10 +1457,14 @@ actor HereNavigateNavigationSession: OfflineNavigationSessionProviding {
 
     init(
         locationPolicy: HereNavigationLocationAcceptancePolicy = .production,
-        voicePolicy: HereNavigationVoicePolicy = .requiredEnglishUS
+        voicePolicy: HereNavigationVoicePolicy = .requiredEnglishUS,
+        coverageResolver: (any OfflineInstalledCoverageResolving)? = nil,
+        routeCorridorHalfWidthMeters: Double = 75
     ) {
         _ = locationPolicy
         _ = voicePolicy
+        _ = coverageResolver
+        _ = routeCorridorHalfWidthMeters
     }
 
     static func canInitializeNativeGuidance() -> Bool { false }
