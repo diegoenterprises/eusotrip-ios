@@ -1,0 +1,1189 @@
+//
+//  OfflineMapProductionComposition.swift
+//  EusoTrip
+//
+//  App-owned wiring for HERE Navigate offline maps. Road and truck may use
+//  verified local HERE coverage; Rail and Vessel remain bound to signed,
+//  server-canonical route.plan packages.
+//
+
+import Combine
+import CoreLocation
+import CryptoKit
+import Foundation
+
+#if os(iOS) && canImport(AVFoundation)
+@preconcurrency import AVFoundation
+#endif
+
+#if canImport(UIKit)
+@preconcurrency import UIKit
+#endif
+
+enum OfflineMapApplicationPhase: Equatable, Sendable {
+    case active
+    case inactive
+    case background
+}
+
+enum OfflineMapSurfaceLeaseStatus: Equatable, Sendable {
+    case available
+    case ownedByCaller
+    case ownedByAnotherSurface
+}
+
+struct OfflineMapSurfaceLeaseState: Equatable, Sendable {
+    private(set) var ownerToken: UUID?
+    private(set) var revision: UInt64 = 0
+
+    mutating func reserve(for token: UUID) -> Bool {
+        guard ownerToken == nil || ownerToken == token else { return false }
+        if ownerToken != token {
+            ownerToken = token
+            revision = revision &+ 1
+        }
+        return true
+    }
+
+    @discardableResult
+    mutating func release(for token: UUID) -> Bool {
+        guard ownerToken == token else { return false }
+        ownerToken = nil
+        revision = revision &+ 1
+        return true
+    }
+
+    @discardableResult
+    mutating func forceRelease() -> Bool {
+        guard ownerToken != nil else { return false }
+        ownerToken = nil
+        revision = revision &+ 1
+        return true
+    }
+
+    func status(for token: UUID) -> OfflineMapSurfaceLeaseStatus {
+        guard let ownerToken else { return .available }
+        return ownerToken == token ? .ownedByCaller : .ownedByAnotherSurface
+    }
+}
+
+@MainActor
+final class OfflineMapProductionComposition: ObservableObject {
+    typealias SearchOperation = (
+        _ text: String,
+        _ center: OfflineGeoCoordinate,
+        _ maximumResultCount: Int
+    ) async throws -> OfflineSearchResponse
+
+    typealias RouteOperation = (
+        _ waypoints: [OfflineRouteWaypoint],
+        _ mode: OfflineRouteMode,
+        _ truckConstraints: OfflineTruckConstraints?,
+        _ departureTime: Date?
+    ) async throws -> OfflineRouteResponse
+
+    typealias StartNavigationOperation = (
+        _ route: OfflineLocalRoute,
+        _ eventHandler: @escaping OfflineNavigationEventHandler
+    ) async throws -> Void
+
+    typealias FeedLocationOperation = (
+        _ fix: OfflineProductionLocationFix
+    ) async throws -> Void
+
+    typealias StopNavigationOperation = () async -> Void
+
+    typealias NavigationAudioInterruptionOperation = (
+        _ interruption: OfflineNavigationAudioInterruption
+    ) async -> Void
+
+    typealias CanonicalRouteIngestOperation = (
+        _ encodedEnvelope: Data,
+        _ expectedScope: CanonicalRouteScope,
+        _ receivedAt: Date
+    ) async throws -> CanonicalRoutePackage
+
+    typealias CanonicalRoutePurgeOperation = () async throws -> Void
+    typealias LocalRoutePurgeOperation = () async -> Void
+
+    private static let principalMarkerKey = "offlineMaps.canonicalRoutePrincipal.v2"
+    private static let canonicalRouteDirectoryName = "canonical-routes-v1"
+
+    private(set) static var shared: OfflineMapProductionComposition?
+    private(set) static var installationFailure: String?
+
+    let owner: OfflineMapCompositionOwner
+    let mapSurface: HereNavigateOfflineMapSurface
+
+    @Published private(set) var navigationState: OfflineNavigationSessionState = .idle
+    @Published private(set) var navigationCoverage: OfflineNavigationCoverage = .unknown
+    @Published private(set) var navigationRoute: OfflineLocalRoute?
+    @Published private(set) var currentNavigationManeuver: OfflineNavigationManeuverEvent?
+    @Published private(set) var lastNavigationDeviation: OfflineNavigationDeviation?
+    @Published private(set) var lastNavigationFailure: OfflineNavigationFailure?
+    @Published private(set) var canonicalRouteTrustAvailable: Bool
+    @Published private(set) var canonicalRouteFailure: String?
+    @Published private(set) var installedCoverageTrustAvailable: Bool
+    @Published private(set) var installedCoverageFailure: String?
+    @Published private(set) var mapSurfaceSnapshot: HereOfflineMapSurfaceSnapshot
+    @Published private(set) var mapSurfaceLeaseRevision: UInt64 = 0
+    @Published private(set) var mapSurfaceSnapshotRevision: UInt64 = 0
+
+    private let searchOperation: SearchOperation
+    private let routeOperation: RouteOperation
+    private let startNavigationOperation: StartNavigationOperation
+    private let feedLocationOperation: FeedLocationOperation
+    private let stopNavigationOperation: StopNavigationOperation
+    private let navigationAudioInterruptionOperation: NavigationAudioInterruptionOperation
+    private let canonicalRouteStore: CanonicalRoutePackageStore?
+    private let canonicalRouteIngestOperation: CanonicalRouteIngestOperation
+    private let canonicalRoutePurgeOperation: CanonicalRoutePurgeOperation
+    private let localRoutePurgeOperation: LocalRoutePurgeOperation
+    private let principalDefaults: UserDefaults
+    private let locationSource: HereNavigationLocationSource
+    private let navigationEventSequencer = OfflineNavigationEventSequencer()
+    private let principalTransitionSerializer = OfflineMapPrincipalTransitionSerializer()
+    private var mapSurfaceLeaseState = OfflineMapSurfaceLeaseState()
+    private var navigationRouteProjectionAuthority =
+        OfflineNavigationRouteProjectionAuthority()
+    private var projectionHandoffRejectedRouteID: String?
+    private let installedCoverageResolver: SignedInstalledCoverageResolver?
+    private let installedCoverageInstallation: HereNavigateInstalledCoverageInstallation?
+    private let initialSignedCoverageManifest: OfflineCoverageSignedEnvelope?
+    private var coveragePreparationTask: Task<(Bool, String?), Never>?
+    private var pendingPrincipalTransitionCount = 0
+    private var principalTransitionGeneration = UUID()
+    private var audioInterruptionCancellable: AnyCancellable?
+    private var applicationBackgroundCancellable: AnyCancellable?
+    private var applicationForegroundCancellable: AnyCancellable?
+    private var backgroundPausedTransferID: UUID?
+    private var applicationPhase: OfflineMapApplicationPhase = .active
+
+    private init(
+        owner: OfflineMapCompositionOwner,
+        mapSurface: HereNavigateOfflineMapSurface,
+        searchOperation: @escaping SearchOperation,
+        routeOperation: @escaping RouteOperation,
+        startNavigationOperation: @escaping StartNavigationOperation,
+        feedLocationOperation: @escaping FeedLocationOperation,
+        stopNavigationOperation: @escaping StopNavigationOperation,
+        navigationAudioInterruptionOperation: @escaping NavigationAudioInterruptionOperation,
+        canonicalRouteStore: CanonicalRoutePackageStore?,
+        canonicalRouteIngestOperation: @escaping CanonicalRouteIngestOperation,
+        canonicalRoutePurgeOperation: @escaping CanonicalRoutePurgeOperation,
+        localRoutePurgeOperation: @escaping LocalRoutePurgeOperation,
+        canonicalRouteFailure: String?,
+        installedCoverageResolver: SignedInstalledCoverageResolver?,
+        installedCoverageInstallation: HereNavigateInstalledCoverageInstallation?,
+        initialSignedCoverageManifest: OfflineCoverageSignedEnvelope?,
+        installedCoverageFailure: String?,
+        locationSource: HereNavigationLocationSource,
+        principalDefaults: UserDefaults
+    ) {
+        self.owner = owner
+        self.mapSurface = mapSurface
+        mapSurfaceSnapshot = mapSurface.snapshot
+        self.searchOperation = searchOperation
+        self.routeOperation = routeOperation
+        self.startNavigationOperation = startNavigationOperation
+        self.feedLocationOperation = feedLocationOperation
+        self.stopNavigationOperation = stopNavigationOperation
+        self.navigationAudioInterruptionOperation = navigationAudioInterruptionOperation
+        self.canonicalRouteStore = canonicalRouteStore
+        self.canonicalRouteIngestOperation = canonicalRouteIngestOperation
+        self.canonicalRoutePurgeOperation = canonicalRoutePurgeOperation
+        self.localRoutePurgeOperation = localRoutePurgeOperation
+        self.canonicalRouteFailure = canonicalRouteFailure
+        canonicalRouteTrustAvailable = canonicalRouteStore != nil
+        self.installedCoverageResolver = installedCoverageResolver
+        self.installedCoverageInstallation = installedCoverageInstallation
+        self.initialSignedCoverageManifest = initialSignedCoverageManifest
+        self.installedCoverageFailure = installedCoverageFailure
+        installedCoverageTrustAvailable = false
+        self.locationSource = locationSource
+        self.principalDefaults = principalDefaults
+        mapSurface.onSnapshotChange = { [weak self] snapshot in
+            self?.receiveMapSurfaceSnapshot(snapshot)
+        }
+    }
+
+    /// Installs exactly one process-wide owner before any route or Settings
+    /// surface can request HERE state. Missing signing trust blocks only the
+    /// affected capability; it never fabricates route or coverage authority.
+    static func install(
+        bundle: Bundle = .main,
+        fileManager: FileManager = .default,
+        principalDefaults: UserDefaults = .standard
+    ) {
+        guard shared == nil else { return }
+
+        do {
+            let storagePolicy = try OfflineMapStoragePolicy(
+                minimumPostOperationFreeBytes: 3 * 1_024 * 1_024 * 1_024,
+                updateStagingBytesPerInstalledByte: nil
+            )
+            let engine = HereNavigateOfflineEngine.shared
+
+            var installedCoverageResolver: SignedInstalledCoverageResolver?
+            var installedCoverageInstallation: HereNavigateInstalledCoverageInstallation?
+            var initialSignedCoverageManifest: OfflineCoverageSignedEnvelope?
+            var installedCoverageFailure: String?
+            do {
+                if let trust = try HereNavigateInstalledCoverageTrustConfiguration.load(
+                    bundle: bundle
+                ) {
+                    let verifier = try HEREOfflineCoverageManifestVerifier(
+                        expectedIssuer: trust.issuer,
+                        expectedAudience: trust.audience,
+                        expectedSDKVersion: trust.expectedSDKVersion,
+                        expectedRightsHolder: trust.expectedRightsHolder,
+                        keys: [trust.verificationKey]
+                    )
+                    let runtimePaths = try HereSDKRuntimePaths(fileManager: fileManager)
+                    try runtimePaths.prepare(fileManager: fileManager)
+                    let resolver = try SignedInstalledCoverageResolver(
+                        rootDirectory: runtimePaths.root,
+                        verifier: verifier,
+                        inventoryProvider: engine
+                    )
+                    let installation = try HereNavigateInstalledCoverageInstallation(
+                        resolver: resolver,
+                        expectedSDKVersion: trust.expectedSDKVersion,
+                        routeCorridorHalfWidthMeters: trust.routeCorridorHalfWidthMeters
+                    )
+                    installedCoverageResolver = resolver
+                    installedCoverageInstallation = installation
+                    initialSignedCoverageManifest = trust.initialSignedManifest
+                } else {
+                    installedCoverageFailure =
+                        "Signed installed-region coverage awaits an approved release catalog."
+                }
+            } catch {
+                installedCoverageFailure =
+                    "Signed installed-region coverage trust is invalid in this build."
+            }
+
+            let owner = OfflineMapComposition.makeOwner(
+                storagePolicy: storagePolicy,
+                connectivityPolicy: .radioSilent,
+                requiredCapabilities: .fullRoadFreightParity
+            )
+            let mapSurface = HereNavigateOfflineMapSurface()
+            let voicePolicy = try HereNavigationVoicePolicy(
+                requiredLocaleIdentifier: "en-US"
+            )
+            let navigationSession = OfflineMapComposition.makeNavigationSession(
+                locationPolicy: .production,
+                voicePolicy: voicePolicy,
+                coverageResolver: installedCoverageResolver,
+                routeCorridorHalfWidthMeters: installedCoverageInstallation?
+                    .routeCorridorHalfWidthMeters ?? 75
+            )
+
+            let searchOperation: SearchOperation = { text, center, maximumResultCount in
+                let request = try OfflineSearchRequest(
+                    text: text,
+                    center: center,
+                    maximumResultCount: maximumResultCount
+                )
+                return try await owner.coordinator.searchOffline(request)
+            }
+            let routeOperation: RouteOperation = {
+                waypoints, mode, truckConstraints, departureTime in
+                let request = try OfflineRouteRequest(
+                    waypoints: waypoints,
+                    mode: mode,
+                    truckConstraints: truckConstraints,
+                    departureTime: departureTime
+                )
+                return try await owner.coordinator.calculateOfflineRoute(request)
+            }
+            let startNavigationOperation: StartNavigationOperation = { route, downstream in
+                try await navigationSession.start(route: route) { event in
+                    switch event {
+                    case .coverageChanged(let coverage):
+                        if case .outsideInstalledCoverage(let lastCovered) = coverage {
+                            downstream(
+                                .coverageChanged(
+                                    .outsideInstalledCoverage(lastCovered: lastCovered)
+                                )
+                            )
+                        } else {
+                            downstream(.coverageChanged(coverage))
+                        }
+                    default:
+                        downstream(event)
+                    }
+                }
+            }
+            let feedLocationOperation: FeedLocationOperation = { fix in
+                let coordinate = try OfflineGeoCoordinate(
+                    latitude: fix.latitude,
+                    longitude: fix.longitude
+                )
+                let sample = try OfflineDeviceLocationSample(
+                    coordinate: coordinate,
+                    timestamp: fix.timestamp,
+                    horizontalAccuracyMeters: fix.horizontalAccuracyMeters,
+                    speedMetersPerSecond: fix.speedMetersPerSecond,
+                    courseDegrees: fix.courseDegrees,
+                    provenance: fix.provenance
+                )
+                try await navigationSession.feed(location: sample)
+            }
+            let stopNavigationOperation: StopNavigationOperation = {
+                await navigationSession.stop()
+            }
+            let localRoutePurgeOperation: LocalRoutePurgeOperation = {
+                await engine.purgeRetainedLocalRoutes()
+            }
+            let navigationAudioInterruptionOperation: NavigationAudioInterruptionOperation = {
+                interruption in
+                await navigationSession.handleAudioInterruption(interruption)
+            }
+
+            let canonicalRoot = try canonicalRouteRoot(
+                fileManager: fileManager
+            )
+            var canonicalRouteStore: CanonicalRoutePackageStore?
+            var canonicalRouteFailure: String?
+            do {
+                if let trust = try OfflineCanonicalRouteTrustConfiguration.load(
+                    bundle: bundle
+                ) {
+                    let verifier = try CanonicalRoutePlanVerifier(
+                        expectedIssuer: trust.issuer,
+                        expectedAudience: trust.audience,
+                        keys: [trust.verificationKey]
+                    )
+                    canonicalRouteStore = try CanonicalRoutePackageStore(
+                        rootDirectory: canonicalRoot,
+                        verifier: verifier
+                    )
+                } else {
+                    canonicalRouteFailure =
+                        "Signed offline Rail and Vessel routes await the release-pinned route trust key."
+                }
+            } catch {
+                canonicalRouteFailure =
+                    "Signed offline Rail and Vessel route trust is invalid in this build."
+            }
+
+            let retainedRouteStore = canonicalRouteStore
+            let canonicalRouteIngestOperation: CanonicalRouteIngestOperation = {
+                encodedEnvelope, expectedScope, receivedAt in
+                guard let retainedRouteStore else {
+                    throw OfflineMapProductionError.canonicalRouteTrustUnavailable
+                }
+                let decoder = JSONDecoder()
+                let envelope: CanonicalRouteSignedEnvelope
+                do {
+                    envelope = try decoder.decode(
+                        CanonicalRouteSignedEnvelope.self,
+                        from: encodedEnvelope
+                    )
+                } catch {
+                    throw OfflineMapProductionError.canonicalRouteEnvelopeInvalid
+                }
+                return try await retainedRouteStore.store(
+                    signedEnvelope: envelope,
+                    expectedScope: expectedScope,
+                    receivedAt: receivedAt
+                )
+            }
+            let canonicalRoutePurgeOperation: CanonicalRoutePurgeOperation = {
+                if let retainedRouteStore {
+                    try await retainedRouteStore.purgeAllCachedRoutes()
+                    return
+                }
+                guard fileManager.fileExists(atPath: canonicalRoot.path) else { return }
+                try fileManager.removeItem(at: canonicalRoot)
+            }
+
+            let composition = OfflineMapProductionComposition(
+                owner: owner,
+                mapSurface: mapSurface,
+                searchOperation: searchOperation,
+                routeOperation: routeOperation,
+                startNavigationOperation: startNavigationOperation,
+                feedLocationOperation: feedLocationOperation,
+                stopNavigationOperation: stopNavigationOperation,
+                navigationAudioInterruptionOperation: navigationAudioInterruptionOperation,
+                canonicalRouteStore: canonicalRouteStore,
+                canonicalRouteIngestOperation: canonicalRouteIngestOperation,
+                canonicalRoutePurgeOperation: canonicalRoutePurgeOperation,
+                localRoutePurgeOperation: localRoutePurgeOperation,
+                canonicalRouteFailure: canonicalRouteFailure,
+                installedCoverageResolver: installedCoverageResolver,
+                installedCoverageInstallation: installedCoverageInstallation,
+                initialSignedCoverageManifest: initialSignedCoverageManifest,
+                installedCoverageFailure: installedCoverageFailure,
+                locationSource: HereNavigationLocationSource(),
+                principalDefaults: principalDefaults
+            )
+            shared = composition
+            installationFailure = nil
+
+            #if os(iOS) && canImport(AVFoundation)
+            composition.audioInterruptionCancellable = NotificationCenter.default
+                .publisher(for: AVAudioSession.interruptionNotification)
+                .receive(on: RunLoop.main)
+                .sink { [weak composition] notification in
+                    guard let rawType = notification.userInfo?[
+                        AVAudioSessionInterruptionTypeKey
+                    ] as? UInt,
+                    let type = AVAudioSession.InterruptionType(rawValue: rawType) else {
+                        return
+                    }
+                    let interruption: OfflineNavigationAudioInterruption
+                    switch type {
+                    case .began:
+                        interruption = .began
+                    case .ended:
+                        let rawOptions = notification.userInfo?[
+                            AVAudioSessionInterruptionOptionKey
+                        ] as? UInt ?? 0
+                        let options = AVAudioSession.InterruptionOptions(
+                            rawValue: rawOptions
+                        )
+                        interruption = .ended(
+                            shouldResume: options.contains(.shouldResume)
+                        )
+                    @unknown default:
+                        return
+                    }
+                    Task { @MainActor [weak composition] in
+                        await composition?.handleAudioInterruption(interruption)
+                    }
+                }
+            #endif
+
+            #if canImport(UIKit)
+            composition.applicationBackgroundCancellable = NotificationCenter.default
+                .publisher(for: UIApplication.didEnterBackgroundNotification)
+                .receive(on: RunLoop.main)
+                .sink { [weak composition] _ in
+                    Task { @MainActor [weak composition] in
+                        await composition?.handleApplicationPhase(.background)
+                    }
+                }
+            composition.applicationForegroundCancellable = NotificationCenter.default
+                .publisher(for: UIApplication.willEnterForegroundNotification)
+                .receive(on: RunLoop.main)
+                .sink { [weak composition] _ in
+                    Task { @MainActor [weak composition] in
+                        await composition?.handleApplicationPhase(.active)
+                    }
+                }
+            #endif
+        } catch {
+            installationFailure =
+                "Offline maps could not install the release-approved device policy."
+        }
+    }
+
+    func prepare() async {
+        await prepareInstalledCoverageAuthority()
+        await owner.coordinator.prepare()
+    }
+
+    func setConnectivityPolicy(_ policy: OfflineMapConnectivityPolicy) async throws {
+        if owner.snapshot.connectivityPolicy != policy {
+            await releaseRuntimeConsumers()
+        }
+        try await owner.coordinator.setConnectivityPolicy(policy)
+    }
+
+    func repairPersistentMap() async throws {
+        await releaseRuntimeConsumers()
+        try await owner.coordinator.repairPersistentMap()
+    }
+
+    func prepareMapSurface(
+        identity: HereOfflineNativeStyleIdentity,
+        ownerToken: UUID,
+        bundle: Bundle = .main
+    ) -> AnyObject? {
+        let snapshot = owner.snapshot
+        guard snapshot.connectivityPolicy == .radioSilent,
+              snapshot.radioSilenceState == .enforced,
+              appRadioSilenceIsProven,
+              installedCoverageTrustAvailable,
+              snapshot.installedRegionsState.isCurrent,
+              snapshot.installedRegions.contains(where: { $0.state.isUsableCoverage }),
+              snapshot.availableCapabilities.contains(.detailedRendering) else {
+            return nil
+        }
+        guard mapSurfaceLeaseState.reserve(for: ownerToken) else { return nil }
+        publishMapSurfaceLeaseRevision()
+        guard let nativeView = mapSurface.prepare(
+            identity: identity,
+            bundle: bundle
+        ) else {
+            if mapSurfaceLeaseState.release(for: ownerToken) {
+                publishMapSurfaceLeaseRevision()
+            }
+            return nil
+        }
+        return nativeView
+    }
+
+    func clearMapSurface(ownerToken: UUID) {
+        guard mapSurfaceLeaseState.release(for: ownerToken) else { return }
+        publishMapSurfaceLeaseRevision()
+        mapSurface.clear()
+    }
+
+    func mapSurfaceLeaseStatus(
+        for ownerToken: UUID
+    ) -> OfflineMapSurfaceLeaseStatus {
+        mapSurfaceLeaseState.status(for: ownerToken)
+    }
+
+    func setMapJourneyProjection(
+        _ projection: HereOfflineMapJourneyProjection
+    ) {
+        if projection.route?.id == projectionHandoffRejectedRouteID {
+            mapSurface.reconcileHostJourneyProjection(
+                .init(
+                    route: nil,
+                    canonicalRoute: nil,
+                    position: projection.position,
+                    followsPosition: false
+                )
+            )
+            return
+        }
+        let navigationOwnsRoute = acceptsDeviceLocations
+            && navigationRouteProjectionAuthority.route != nil
+        let route = navigationRouteProjectionAuthority.resolveHostRoute(
+            projection.route,
+            navigationIsActive: navigationOwnsRoute
+        )
+        mapSurface.reconcileHostJourneyProjection(
+            .init(
+                route: route,
+                canonicalRoute: navigationOwnsRoute
+                    ? nil
+                    : projection.canonicalRoute,
+                position: projection.position,
+                followsPosition: projection.followsPosition
+            )
+        )
+    }
+
+    func searchOffline(
+        text: String,
+        center: OfflineGeoCoordinate,
+        maximumResultCount: Int = 20
+    ) async throws -> OfflineSearchResponse {
+        try requireAppRadioSilence()
+        try await withStablePrincipal { [searchOperation] in
+            try await searchOperation(text, center, maximumResultCount)
+        }
+    }
+
+    func calculateOfflineRoute(
+        waypoints: [OfflineRouteWaypoint],
+        mode: OfflineRouteMode,
+        truckConstraints: OfflineTruckConstraints? = nil,
+        departureTime: Date? = nil
+    ) async throws -> OfflineRouteResponse {
+        try requireAppRadioSilence()
+        try await withStablePrincipal { [routeOperation] in
+            try await routeOperation(
+                waypoints,
+                mode,
+                truckConstraints,
+                departureTime
+            )
+        }
+    }
+
+    func startNavigation(route: OfflineLocalRoute) async throws {
+        currentNavigationManeuver = nil
+        lastNavigationDeviation = nil
+        lastNavigationFailure = nil
+        projectionHandoffRejectedRouteID = nil
+        do {
+            try requireAppRadioSilence()
+            try await withStablePrincipal { [weak self] in
+                guard let self else {
+                    throw OfflineMapProductionError.principalTransitionInProgress
+                }
+                let eventSequencer = self.navigationEventSequencer
+                try await self.startNavigationOperation(route) { [weak self] event in
+                    let shouldSchedule = eventSequencer.enqueue(event)
+                    guard shouldSchedule else { return }
+                    Task { @MainActor [weak self] in
+                        self?.drainNavigationEvents()
+                    }
+                }
+                self.navigationRouteProjectionAuthority.begin(route)
+                self.navigationRoute = route
+                self.mapSurface.setJourneyRoute(route)
+                self.drainNavigationEvents()
+                do {
+                    try self.locationSource.start(
+                        onLocation: { [weak self] fix in
+                            Task { @MainActor [weak self] in
+                                await self?.acceptDeviceLocation(fix)
+                            }
+                        },
+                        onFailure: { [weak self] failure in
+                            self?.acceptLocationSourceFailure(failure)
+                        }
+                    )
+                } catch {
+                    await self.stopNavigationOperation()
+                    throw error
+                }
+            }
+        } catch let failure as OfflineNavigationFailure {
+            lastNavigationFailure = failure
+            throw failure
+        } catch {
+            let failure = OfflineNavigationFailure(
+                code: .nativeGuidanceUnavailable,
+                message: "Offline guidance could not start during the account transition.",
+                recovery: "Wait for account activation and complete signed coverage preparation, then retry.",
+                isRecoverable: true
+            )
+            lastNavigationFailure = failure
+            throw failure
+        }
+    }
+
+    func stopNavigation() async {
+        await stopNavigationAndLocationSource()
+    }
+
+    func handleAudioInterruption(
+        _ interruption: OfflineNavigationAudioInterruption
+    ) async {
+        await navigationAudioInterruptionOperation(interruption)
+    }
+
+    /// Connected map maintenance is not a background task. Navigation remains
+    /// active under the app's location/audio modes, while an in-flight region
+    /// download or catalog update is paused and resumed only if this boundary
+    /// can still identify the exact same native operation.
+    func handleApplicationPhase(_ phase: OfflineMapApplicationPhase) async {
+        applicationPhase = phase
+        switch phase {
+        case .inactive:
+            return
+        case .background:
+            guard backgroundPausedTransferID == nil,
+                  let operation = owner.snapshot.activeOperation,
+                  operation.phase == .running,
+                  (operation.kind == .downloadRegions
+                    || operation.kind == .updatePersistentMap) else {
+                return
+            }
+            do {
+                try await owner.coordinator.pauseActiveTransfer()
+                guard owner.snapshot.activeOperation?.id == operation.id,
+                      owner.snapshot.activeOperation?.phase == .paused else {
+                    return
+                }
+                guard applicationPhase == .background else {
+                    try? await owner.coordinator.resumeActiveTransfer()
+                    if applicationPhase == .background {
+                        await handleApplicationPhase(.background)
+                    }
+                    return
+                }
+                backgroundPausedTransferID = operation.id
+            } catch {
+                backgroundPausedTransferID = nil
+            }
+        case .active:
+            guard let operationID = backgroundPausedTransferID else { return }
+            backgroundPausedTransferID = nil
+            guard let operation = owner.snapshot.activeOperation,
+                  operation.id == operationID,
+                  operation.phase == .paused else {
+                return
+            }
+            try? await owner.coordinator.resumeActiveTransfer()
+            if applicationPhase == .background {
+                await handleApplicationPhase(.background)
+            }
+        }
+    }
+
+    func ingestCanonicalRoutePlan(
+        encodedEnvelope: Data,
+        expectedScope: CanonicalRouteScope,
+        receivedAt: Date
+    ) async throws -> CanonicalRoutePackage {
+        do {
+            let package = try await withStablePrincipal {
+                [canonicalRouteIngestOperation] in
+                try await canonicalRouteIngestOperation(
+                    encodedEnvelope,
+                    expectedScope,
+                    receivedAt
+                )
+            }
+            canonicalRouteFailure = nil
+            return package
+        } catch {
+            canonicalRouteFailure =
+                "The signed canonical route could not be verified for this account and load."
+            throw error
+        }
+    }
+
+    func observeCanonicalRoute(
+        scope: CanonicalRouteScope,
+        freshnessPolicy: CanonicalRouteFreshnessPolicy
+    ) async throws -> CanonicalRouteObservation {
+        try await withStablePrincipal { [canonicalRouteStore] in
+            guard let canonicalRouteStore else {
+                throw OfflineMapProductionError.canonicalRouteTrustUnavailable
+            }
+            return try await canonicalRouteStore.observe(
+                scope: scope,
+                policy: freshnessPolicy
+            )
+        }
+    }
+
+    /// Purges signed route geometry only when the effective tenant/user scope
+    /// changes. Relaunching as the same principal preserves legitimate offline
+    /// coverage, while sign-out and account switching remove it before reuse.
+    func activatePrincipal(tenantID: String?, userID: String?) async {
+        let nextMarker = Self.principalMarker(tenantID: tenantID, userID: userID)
+        if pendingPrincipalTransitionCount == 0,
+           let nextMarker,
+           principalDefaults.string(forKey: Self.principalMarkerKey) == nextMarker {
+            return
+        }
+        principalTransitionGeneration = UUID()
+        pendingPrincipalTransitionCount += 1
+        defer { pendingPrincipalTransitionCount -= 1 }
+        await principalTransitionSerializer.run { [weak self] in
+            await self?.performPrincipalTransition(to: nextMarker)
+        }
+    }
+
+    private func prepareInstalledCoverageAuthority() async {
+        guard let installedCoverageResolver,
+              let installedCoverageInstallation,
+              let initialSignedCoverageManifest else {
+            installedCoverageTrustAvailable = false
+            return
+        }
+        let task: Task<(Bool, String?), Never>
+        if let coveragePreparationTask {
+            task = coveragePreparationTask
+        } else {
+            task = Task {
+                do {
+                    _ = try await installedCoverageResolver.installSignedManifest(
+                        initialSignedCoverageManifest
+                    )
+                    try HereNavigateInstalledCoverageAuthority.shared.installOnce(
+                        installedCoverageInstallation
+                    )
+                    return (true, nil)
+                } catch {
+                    return (
+                        false,
+                        "Signed installed-region coverage could not be verified and installed."
+                    )
+                }
+            }
+            coveragePreparationTask = task
+        }
+        let result = await task.value
+        installedCoverageTrustAvailable = result.0
+        installedCoverageFailure = result.1
+        if !result.0 {
+            coveragePreparationTask = nil
+        }
+    }
+
+    private func withStablePrincipal<Value: Sendable>(
+        _ operation: @escaping @MainActor @Sendable () async throws -> Value
+    ) async throws -> Value {
+        let generation = principalTransitionGeneration
+        guard pendingPrincipalTransitionCount == 0 else {
+            throw OfflineMapProductionError.principalTransitionInProgress
+        }
+        let value = try await principalTransitionSerializer.run { [weak self] in
+            guard let self,
+                  self.pendingPrincipalTransitionCount == 0,
+                  self.principalTransitionGeneration == generation else {
+                throw OfflineMapProductionError.principalTransitionInProgress
+            }
+            return try await operation()
+        }
+        guard pendingPrincipalTransitionCount == 0,
+              principalTransitionGeneration == generation else {
+            throw OfflineMapProductionError.principalTransitionInProgress
+        }
+        return value
+    }
+
+    private func performPrincipalTransition(to nextMarker: String?) async {
+        let previousMarker = principalDefaults.string(
+            forKey: Self.principalMarkerKey
+        )
+        // Signed-out activation always purges. An absent/corrupt marker must
+        // never be interpreted as proof that an on-disk route is unscoped.
+        guard previousMarker != nextMarker || nextMarker == nil else { return }
+
+        await releaseRuntimeConsumers()
+        await localRoutePurgeOperation()
+        do {
+            try await canonicalRoutePurgeOperation()
+            canonicalRouteFailure = canonicalRouteStore == nil
+                ? canonicalRouteFailure
+                : nil
+            if let nextMarker {
+                principalDefaults.set(nextMarker, forKey: Self.principalMarkerKey)
+            } else {
+                principalDefaults.removeObject(forKey: Self.principalMarkerKey)
+            }
+        } catch {
+            canonicalRouteFailure =
+                "Cached local and canonical routes could not be cleared for the account transition."
+        }
+    }
+
+    private var acceptsDeviceLocations: Bool {
+        switch navigationState {
+        case .starting, .navigating, .paused, .offRoute, .rerouting:
+            return true
+        case .idle, .arrived, .stopped, .failed:
+            return false
+        }
+    }
+
+    private func acceptDeviceLocation(_ fix: OfflineProductionLocationFix) async {
+        guard acceptsDeviceLocations else { return }
+        guard appRadioSilenceIsProven else {
+            let failure = OfflineNavigationFailure(
+                code: .nativeGuidanceUnavailable,
+                message: "App-wide Radio Silent enforcement was lost during offline guidance.",
+                recovery: "Stop safely and reopen the offline journey after durable Radio Silent verification succeeds.",
+                isRecoverable: true
+            )
+            lastNavigationFailure = failure
+            await stopNavigationAndLocationSource()
+            return
+        }
+        do {
+            let coordinate = try OfflineGeoCoordinate(
+                latitude: fix.latitude,
+                longitude: fix.longitude
+            )
+            let projectedPosition = try HereOfflineMapJourneyPosition(
+                coordinate: coordinate,
+                timestamp: fix.timestamp,
+                horizontalAccuracyMeters: fix.horizontalAccuracyMeters,
+                speedMetersPerSecond: fix.speedMetersPerSecond,
+                bearingDegrees: fix.courseDegrees
+            )
+            try await feedLocationOperation(fix)
+            mapSurface.updateLivePosition(
+                projectedPosition,
+                followsPosition: true
+            )
+        } catch let failure as OfflineNavigationFailure {
+            lastNavigationFailure = failure
+        } catch {
+            lastNavigationFailure = OfflineNavigationFailure(
+                code: .locationRejected,
+                message: "The current device location could not enter offline guidance.",
+                recovery: "Wait for a fresh location fix and retry.",
+                isRecoverable: true
+            )
+        }
+    }
+
+    private func acceptLocationSourceFailure(_ failure: OfflineNavigationFailure) {
+        lastNavigationFailure = failure
+        Task { @MainActor [weak self] in
+            await self?.stopNavigation()
+        }
+    }
+
+    private func drainNavigationEvents() {
+        for event in navigationEventSequencer.drain() {
+            acceptNavigationEvent(event)
+        }
+    }
+
+    private func acceptNavigationEvent(_ event: OfflineNavigationEvent) {
+        switch event {
+        case .stateChanged(let state):
+            if case .navigating(let routeID, _) = state,
+               projectionHandoffRejectedRouteID == routeID {
+                return
+            }
+            navigationState = state
+            if case .navigating(_, let coverage) = state {
+                navigationCoverage = coverage
+            }
+            switch state {
+            case .arrived, .stopped, .failed:
+                locationSource.stop()
+                currentNavigationManeuver = nil
+                lastNavigationDeviation = nil
+            case .navigating:
+                lastNavigationDeviation = nil
+            case .idle, .starting, .paused, .offRoute, .rerouting:
+                break
+            }
+        case .maneuver(let maneuver):
+            currentNavigationManeuver = maneuver
+        case .coverageChanged(let coverage):
+            navigationCoverage = coverage
+        case .routeReplaced(let replacement):
+            guard navigationRouteProjectionAuthority.accept(replacement) else {
+                let failure = OfflineNavigationFailure(
+                    code: .offlineRerouteFailed,
+                    message: "The replacement route could not take ownership of the active offline map.",
+                    recovery: "Stop safely and restart guidance from the last verified route.",
+                    isRecoverable: true
+                )
+                projectionHandoffRejectedRouteID = replacement.replacingRouteID
+                lastNavigationFailure = failure
+                navigationRouteProjectionAuthority.clear()
+                navigationRoute = nil
+                navigationState = .failed(
+                    routeID: replacement.replacingRouteID,
+                    failure: failure
+                )
+                locationSource.stop()
+                mapSurface.setJourneyRoute(nil)
+                Task { @MainActor [weak self] in
+                    await self?.stopNavigationAndLocationSource()
+                }
+                return
+            }
+            projectionHandoffRejectedRouteID = nil
+            navigationRoute = replacement.route
+            // Event sequencing guarantees this synchronous projection update
+            // happens before the following `.navigating` state is published.
+            mapSurface.setJourneyRoute(replacement.route)
+        case .inputRejected(let failure), .rerouteFailed(let failure):
+            lastNavigationFailure = failure
+        case .deviationDetected(let deviation):
+            lastNavigationDeviation = deviation
+        case .arrived:
+            locationSource.stop()
+            currentNavigationManeuver = nil
+        }
+    }
+
+    private func stopNavigationAndLocationSource() async {
+        locationSource.stop()
+        await stopNavigationOperation()
+        mapSurface.clearLivePosition()
+        drainNavigationEvents()
+        currentNavigationManeuver = nil
+        lastNavigationDeviation = nil
+    }
+
+    private func releaseRuntimeConsumers() async {
+        await stopNavigationAndLocationSource()
+        navigationRouteProjectionAuthority.clear()
+        navigationRoute = nil
+        projectionHandoffRejectedRouteID = nil
+        if mapSurfaceLeaseState.forceRelease() {
+            publishMapSurfaceLeaseRevision()
+        }
+        mapSurface.clear()
+    }
+
+    private var appRadioSilenceIsProven: Bool {
+        AppRadioSilenceCoordinator.shared.isEnforced
+            && AppRadioSilenceSharedState.isEnforced
+    }
+
+    private func requireAppRadioSilence() throws {
+        guard appRadioSilenceIsProven else {
+            throw OfflineMapCoreError.notReady([
+                OfflineMapReadinessBlocker(
+                    code: .radioSilenceNotEnforced,
+                    message: "App-wide Radio Silent enforcement is not durably proven.",
+                    recovery: "Close and reopen the offline journey after the app-group enforcement marker is available."
+                ),
+            ])
+        }
+    }
+
+    private func receiveMapSurfaceSnapshot(
+        _ snapshot: HereOfflineMapSurfaceSnapshot
+    ) {
+        mapSurfaceSnapshot = snapshot
+        mapSurfaceSnapshotRevision = mapSurfaceSnapshotRevision &+ 1
+        if case .opaqueUnavailable = snapshot.status,
+           mapSurfaceLeaseState.forceRelease() {
+            publishMapSurfaceLeaseRevision()
+        }
+    }
+
+    private func publishMapSurfaceLeaseRevision() {
+        mapSurfaceLeaseRevision = mapSurfaceLeaseState.revision
+    }
+
+    private static func canonicalRouteRoot(
+        fileManager: FileManager
+    ) throws -> URL {
+        let paths = try HereSDKRuntimePaths(fileManager: fileManager)
+        try paths.prepare(fileManager: fileManager)
+        return paths.root.appendingPathComponent(
+            canonicalRouteDirectoryName,
+            isDirectory: true
+        )
+    }
+
+    private static func principalMarker(
+        tenantID: String?,
+        userID: String?
+    ) -> String? {
+        guard let tenantID = tenantID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !tenantID.isEmpty,
+              let userID = userID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !userID.isEmpty else { return nil }
+        let scope = Data(
+            "\(tenantID.utf8.count):\(tenantID)\(userID.utf8.count):\(userID)".utf8
+        )
+        return SHA256.hash(data: scope).map {
+            String(format: "%02x", $0)
+        }.joined()
+    }
+}
+
+struct OfflineProductionLocationFix: Sendable {
+    let latitude: Double
+    let longitude: Double
+    let timestamp: Date
+    let horizontalAccuracyMeters: Double
+    let speedMetersPerSecond: Double?
+    let courseDegrees: Double?
+    let provenance: OfflineLocationProvenance
+}
+
+/// HERE callbacks can arrive on SDK-owned queues. One scheduled MainActor
+/// drain preserves the actor session's emission order without letting each
+/// callback manufacture an independently racing UI task.
+final class OfflineNavigationEventSequencer: @unchecked Sendable {
+    private let lock = NSLock()
+    private var events: [(UInt64, OfflineNavigationEvent)] = []
+    private var nextSequence: UInt64 = 0
+    private var drainScheduled = false
+
+    func enqueue(_ event: OfflineNavigationEvent) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        nextSequence &+= 1
+        events.append((nextSequence, event))
+        guard !drainScheduled else { return false }
+        drainScheduled = true
+        return true
+    }
+
+    func drain() -> [OfflineNavigationEvent] {
+        lock.lock()
+        defer { lock.unlock() }
+        let drained = events.sorted { $0.0 < $1.0 }.map { $0.1 }
+        events.removeAll(keepingCapacity: true)
+        drainScheduled = false
+        return drained
+    }
+}
+
+/// Serializes account-scoped route reads/writes with principal transitions.
+/// Actor isolation by itself is reentrant at every await, so an explicit FIFO
+/// permit is required to keep an old-principal route from landing after purge.
+actor OfflineMapPrincipalTransitionSerializer {
+    private var permitHeld = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func run<Value: Sendable>(
+        _ operation: @escaping @MainActor @Sendable () async throws -> Value
+    ) async rethrows -> Value {
+        await acquire()
+        do {
+            let value = try await operation()
+            release()
+            return value
+        } catch {
+            release()
+            throw error
+        }
+    }
+
+    private func acquire() async {
+        guard permitHeld else {
+            permitHeld = true
+            return
+        }
+        await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+        }
+    }
+
+    private func release() {
+        guard !waiters.isEmpty else {
+            permitHeld = false
+            return
+        }
+        waiters.removeFirst().resume()
+    }
+}
+
+private struct OfflineCanonicalRouteTrustConfiguration {
+    let issuer: String
+    let audience: String
+    let verificationKey: CanonicalRouteVerificationKey
+
+    static func load(bundle: Bundle) throws -> Self? {
+        let issuer = value(for: "EusoRoutePlanIssuer", bundle: bundle)
+        let audience = value(for: "EusoRoutePlanAudience", bundle: bundle)
+        let keyID = value(for: "EusoRoutePlanKeyID", bundle: bundle)
+        let publicKey = value(for: "EusoRoutePlanPublicKey", bundle: bundle)
+        let values = [issuer, audience, keyID, publicKey]
+        guard values.contains(where: { $0 != nil }) else { return nil }
+        guard let issuer, let audience, let keyID, let publicKey,
+              let keyData = Data(base64Encoded: publicKey) else {
+            throw OfflineMapProductionError.canonicalRouteTrustInvalid
+        }
+        return try Self(
+            issuer: issuer,
+            audience: audience,
+            verificationKey: CanonicalRouteVerificationKey(
+                keyID: keyID,
+                ed25519RawRepresentation: keyData
+            )
+        )
+    }
+
+    private static func value(for key: String, bundle: Bundle) -> String? {
+        guard let raw = bundle.object(forInfoDictionaryKey: key) as? String else {
+            return nil
+        }
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalized = value.uppercased()
+        guard !value.isEmpty,
+              !value.hasPrefix("$("),
+              !normalized.hasPrefix("REPLACE_WITH_"),
+              normalized != "CHANGEME",
+              normalized != "CHANGE_ME" else { return nil }
+        return value
+    }
+}
+
+private enum OfflineMapProductionError: Error {
+    case canonicalRouteTrustUnavailable
+    case canonicalRouteTrustInvalid
+    case canonicalRouteEnvelopeInvalid
+    case principalTransitionInProgress
+}

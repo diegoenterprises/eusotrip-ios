@@ -431,6 +431,7 @@
 		D1A11111111111111111ECM1 /* 602_EscortCorridorMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111ECM2 /* 602_EscortCorridorMap.swift */; };
 		D1A11111111111111111EH01 /* 600_EscortHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111EH02 /* 600_EscortHome.swift */; };
 		D1A11111111111111111EISAF01 /* EusoInAppSafari.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111EISAF02 /* EusoInAppSafari.swift */; };
+		A9F001202609010000000001 /* AppRadioSilenceAsyncImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F001202609010000000002 /* AppRadioSilenceAsyncImage.swift */; };
 		D1A11111111111111111ENC1 /* EscortNavController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111ENC2 /* EscortNavController.swift */; };
 		D1A11111111111111111EV01 /* HereEVStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111EV02 /* HereEVStrip.swift */; };
 		D1A11111111111111111HG01 /* DriverHomeGlances.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111HG02 /* DriverHomeGlances.swift */; };
@@ -1355,6 +1356,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		0FF1A2026083100000000009 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A1000000000000000000AAAA /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A1000000000000000000AAB0;
+			remoteInfo = EusoTrip;
+		};
 		EE000000000000000000A0E1 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = A1000000000000000000AAAA /* Project object */;
@@ -1415,6 +1423,7 @@
 		A82500000000000000000002 /* PricedRouteQuoteAuthorityPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PricedRouteQuoteAuthorityPanel.swift; sourceTree = "<group>"; };
 		A82500000000000000000003 /* PricedRouteRateSheetAuthorityPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PricedRouteRateSheetAuthorityPanel.swift; sourceTree = "<group>"; };
 		A82500000000000000000004 /* ModeAssetAvailabilityAuthorityPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModeAssetAvailabilityAuthorityPanel.swift; sourceTree = "<group>"; };
+		0FF1A2026083100000000004 /* EusoTripOfflineTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = EusoTripOfflineTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		VWRIT202608140000000002 /* EusoTripAPI+VesselWrites.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "EusoTripAPI+VesselWrites.swift"; sourceTree = "<group>"; };
 		VWRIT202608140000000004 /* 822_VesselWriteCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 822_VesselWriteCenter.swift; sourceTree = "<group>"; };
 		WFLY20260814000000000002 /* ScopedAsyncFlightRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScopedAsyncFlightRegistry.swift; sourceTree = "<group>"; };
@@ -1795,6 +1804,7 @@
 		D1A11111111111111111ECM2 /* 602_EscortCorridorMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 602_EscortCorridorMap.swift; path = EusoTrip/Views/Escort/602_EscortCorridorMap.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111EH02 /* 600_EscortHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 600_EscortHome.swift; path = EusoTrip/Views/Escort/600_EscortHome.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111EISAF02 /* EusoInAppSafari.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EusoInAppSafari.swift; path = EusoTrip/Views/Components/EusoInAppSafari.swift; sourceTree = SOURCE_ROOT; };
+		A9F001202609010000000002 /* AppRadioSilenceAsyncImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppRadioSilenceAsyncImage.swift; path = EusoTrip/Views/Components/AppRadioSilenceAsyncImage.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111ENC2 /* EscortNavController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EscortNavController.swift; path = EusoTrip/Views/Escort/EscortNavController.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111EV02 /* HereEVStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereEVStrip.swift; sourceTree = "<group>"; };
 		D1A11111111111111111HG02 /* DriverHomeGlances.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriverHomeGlances.swift; sourceTree = "<group>"; };
@@ -2763,13 +2773,34 @@
 		FEEDF0000000000000017000 /* EscortOfflineCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EscortOfflineCache.swift; path = EusoTrip/Views/Escort/EscortOfflineCache.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
+	/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		0FF1A202608310000000000E /* Exceptions for "Offline HERE Services" folder in "EusoTrip" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				HERE_SDK_SUPPLY_CHAIN.json,
+				README.md,
+			);
+			target = A1000000000000000000AAB0 /* EusoTrip */;
+		};
+	/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		0FF1A2026083100000000001 /* Offline HERE Services */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (0FF1A202608310000000000E /* Exceptions for "Offline HERE Services" folder in "EusoTrip" target */, ); explicitFileTypes = {}; explicitFolders = (); path = EusoTrip/Services/HereMaps/Offline; sourceTree = "<group>"; };
+		0FF1A2026083100000000002 /* Offline HERE Views */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = EusoTrip/Views/Maps/Offline; sourceTree = "<group>"; };
+		0FF1A2026083100000000003 /* EusoTripOfflineTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = EusoTripOfflineTests; sourceTree = "<group>"; };
 		FDCA0D072F96F83E0057AC19 /* EusoTrip Pulse Watch App */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = "EusoTrip Pulse Watch App"; sourceTree = "<group>"; };
 		FDCA0D152F96F83F0057AC19 /* EusoTrip Pulse Watch AppTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = "EusoTrip Pulse Watch AppTests"; sourceTree = "<group>"; };
 		FDCA0D1F2F96F83F0057AC19 /* EusoTrip Pulse Watch AppUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = "EusoTrip Pulse Watch AppUITests"; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		0FF1A2026083100000000007 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		A1000000000000000000AAAD /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -2815,6 +2846,9 @@
 			children = (
 				A12E1A1C0010CE0FF1000015 /* EusoTrip.xcconfig */,
 				A1000000000000000000AAB8 /* EusoTrip */,
+				0FF1A2026083100000000001 /* Offline HERE Services */,
+				0FF1A2026083100000000002 /* Offline HERE Views */,
+				0FF1A2026083100000000003 /* EusoTripOfflineTests */,
 				FDCA0D072F96F83E0057AC19 /* EusoTrip Pulse Watch App */,
 				FDCA0D152F96F83F0057AC19 /* EusoTrip Pulse Watch AppTests */,
 				FDCA0D1F2F96F83F0057AC19 /* EusoTrip Pulse Watch AppUITests */,
@@ -2828,6 +2862,7 @@
 			isa = PBXGroup;
 			children = (
 				A1000000000000000000AAB1 /* EusoTrip.app */,
+				0FF1A2026083100000000004 /* EusoTripOfflineTests.xctest */,
 				FDCA0D062F96F83E0057AC19 /* EusoTrip Pulse Watch App.app */,
 				FDCA0D122F96F83F0057AC19 /* EusoTrip Pulse Watch AppTests.xctest */,
 				FDCA0D1C2F96F83F0057AC19 /* EusoTrip Pulse Watch AppUITests.xctest */,
@@ -3088,6 +3123,7 @@
 				D1A11111111111111111SC02 /* 204_ShipperPostLoad.swift */,
 				D1A11111111111111111DCRD02 /* 204_DocumentClassifierSheet.swift */,
 				D1A11111111111111111EISAF02 /* EusoInAppSafari.swift */,
+				A9F001202609010000000002 /* AppRadioSilenceAsyncImage.swift */,
 				D1A11111111111111111SD02 /* 205_ShipperLoadDetail.swift */,
 				D1A11111111111111111CCC2 /* ShipperLoadCycleView.swift */,
 				D2120000000000000021CU /* 212_ShipperControlTower.swift */,
@@ -4364,6 +4400,29 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		0FF1A2026083100000000005 /* EusoTripOfflineTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0FF1A202608310000000000D /* Build configuration list for PBXNativeTarget "EusoTripOfflineTests" */;
+			buildPhases = (
+				0FF1A2026083100000000006 /* Sources */,
+				0FF1A2026083100000000007 /* Frameworks */,
+				0FF1A2026083100000000008 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				0FF1A202608310000000000A /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				0FF1A2026083100000000003 /* EusoTripOfflineTests */,
+			);
+			name = EusoTripOfflineTests;
+			packageProductDependencies = (
+			);
+			productName = EusoTripOfflineTests;
+			productReference = 0FF1A2026083100000000004 /* EusoTripOfflineTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		A1000000000000000000AAB0 /* EusoTrip */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = A1000000000000000000AAB3 /* Build configuration list for PBXNativeTarget "EusoTrip" */;
@@ -4379,6 +4438,10 @@
 			dependencies = (
 				FDCA0D252F96F83F0057AC19 /* PBXTargetDependency */,
 				EE000000000000000000A0E2 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				0FF1A2026083100000000001 /* Offline HERE Services */,
+				0FF1A2026083100000000002 /* Offline HERE Views */,
 			);
 			name = EusoTrip;
 			packageProductDependencies = (
@@ -4483,6 +4546,10 @@
 				LastSwiftUpdateCheck = 2640;
 				LastUpgradeCheck = 2700;
 				TargetAttributes = {
+					0FF1A2026083100000000005 = {
+						CreatedOnToolsVersion = 16.0;
+						TestTargetID = A1000000000000000000AAB0;
+					};
 					A1000000000000000000AAB0 = {
 						CreatedOnToolsVersion = 16.0;
 					};
@@ -4521,6 +4588,7 @@
 			projectRoot = "";
 			targets = (
 				A1000000000000000000AAB0 /* EusoTrip */,
+				0FF1A2026083100000000005 /* EusoTripOfflineTests */,
 				FDCA0D052F96F83E0057AC19 /* EusoTrip Pulse Watch App */,
 				FDCA0D112F96F83F0057AC19 /* EusoTrip Pulse Watch AppTests */,
 				FDCA0D1B2F96F83F0057AC19 /* EusoTrip Pulse Watch AppUITests */,
@@ -4530,6 +4598,13 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		0FF1A2026083100000000008 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		A1000000000000000000AAAE /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -4598,6 +4673,13 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		0FF1A2026083100000000006 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		A1000000000000000000AAAF /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -5326,6 +5408,7 @@
 				D1A11111111111111111SC01 /* 204_ShipperPostLoad.swift in Sources */,
 				D1A11111111111111111DCRD01 /* 204_DocumentClassifierSheet.swift in Sources */,
 				D1A11111111111111111EISAF01 /* EusoInAppSafari.swift in Sources */,
+				A9F001202609010000000001 /* AppRadioSilenceAsyncImage.swift in Sources */,
 				D1A11111111111111111SD01 /* 205_ShipperLoadDetail.swift in Sources */,
 				D1A11111111111111111CCC1 /* ShipperLoadCycleView.swift in Sources */,
 				FD97CECD2FC1D7C70016DF5F /* 551_RailShipments.swift in Sources */,
@@ -5969,6 +6052,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		0FF1A202608310000000000A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A1000000000000000000AAB0 /* EusoTrip */;
+			targetProxy = 0FF1A2026083100000000009 /* PBXContainerItemProxy */;
+		};
 		EE000000000000000000A0E2 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = EE000000000000000000A0E0 /* EusoTripiOSWidgets */;
@@ -5992,6 +6080,58 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		0FF1A202608310000000000B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 850;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.app.eusotrip.EusoTripOfflineTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/EusoTrip.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/EusoTrip";
+			};
+			name = Debug;
+		};
+		0FF1A202608310000000000C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 850;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.app.eusotrip.EusoTripOfflineTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/EusoTrip.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/EusoTrip";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 		A1000000000000000000AAB4 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = A12E1A1C0010CE0FF1000015 /* EusoTrip.xcconfig */;
@@ -6417,6 +6557,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		0FF1A202608310000000000D /* Build configuration list for PBXNativeTarget "EusoTripOfflineTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0FF1A202608310000000000B /* Debug */,
+				0FF1A202608310000000000C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		A1000000000000000000AAB2 /* Build configuration list for PBXProject "EusoTrip" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

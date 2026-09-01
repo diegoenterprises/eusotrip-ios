@@ -33,7 +33,12 @@ final class NewsOGImageCache: ObservableObject {
     /// In-flight lookups — keyed by the article URL absolute string.
     /// Dedupes concurrent requests for the same URL (two rows of the
     /// same article rendered side-by-side).
-    private var inflight: [String: Task<URL?, Never>] = [:]
+    private struct Inflight {
+        let id: UUID
+        let task: Task<URL?, Never>
+    }
+    private var inflight: [String: Inflight] = [:]
+    private var isRadioSilenceSuspended = false
 
     /// Resolved image URLs we've either fetched or failed on.
     /// Published so SwiftUI views re-render once a URL lands.
@@ -56,16 +61,36 @@ final class NewsOGImageCache: ObservableObject {
     func image(for articleURL: URL) -> URL? {
         let key = articleURL.absoluteString
         if let existing = resolved[key] { return existing }
+        guard !isRadioSilenceSuspended else { return nil }
         if inflight[key] != nil { return nil }
-        inflight[key] = Task { @MainActor [weak self] in
+        let flightID = UUID()
+        let task = Task { @MainActor [weak self] in
             let url = await Self.fetch(from: articleURL)
             guard let self else { return url }
+            defer {
+                if self.inflight[key]?.id == flightID {
+                    self.inflight.removeValue(forKey: key)
+                }
+            }
+            guard !Task.isCancelled, !self.isRadioSilenceSuspended else { return nil }
             self.resolved[key] = url
-            self.inflight.removeValue(forKey: key)
             self.persist()
             return url
         }
+        inflight[key] = Inflight(id: flightID, task: task)
         return nil
+    }
+
+    func suspendForAppRadioSilence() {
+        guard !isRadioSilenceSuspended else { return }
+        isRadioSilenceSuspended = true
+        let tasks = inflight.values.map(\.task)
+        inflight.removeAll()
+        for task in tasks { task.cancel() }
+    }
+
+    func resumeAfterAppRadioSilence() {
+        isRadioSilenceSuspended = false
     }
 
     // MARK: - Fetch
@@ -83,7 +108,8 @@ final class NewsOGImageCache: ObservableObject {
         )
         req.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
         do {
-            let (data, resp) = try await URLSession.shared.data(for: req)
+            let (data, resp) = try await EusoTripAPI.shared
+                .appRadioSilenceGatedData(for: req)
             guard (resp as? HTTPURLResponse)?.statusCode ?? 500 < 400 else { return nil }
             // Most publishers put og:image well within the first 64 KiB.
             let window = data.prefix(65_536)

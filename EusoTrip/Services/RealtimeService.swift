@@ -67,6 +67,8 @@ final class RealtimeService: ObservableObject {
     /// burst of board frames collapses into one notification post — see
     /// `postDispatchBoardUpdate(event:info:)`.
     private var boardUpdateCoalesceTask: Task<Void, Never>?
+    private var wantsConnection = false
+    private var isRadioSilenceSuspended = false
 
     private let session: URLSession = {
         let cfg = URLSessionConfiguration.default
@@ -84,6 +86,14 @@ final class RealtimeService: ObservableObject {
     // MARK: Lifecycle
 
     func connect() {
+        wantsConnection = true
+        guard !isRadioSilenceSuspended,
+              !EusoTripAPI.shared.isAppRadioSilenceEnforced else { return }
+        beginConnectionIfNeeded()
+    }
+
+    private func beginConnectionIfNeeded() {
+        guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else { return }
         guard connectTask == nil else { return }
         connectTask = Task { [weak self] in
             await self?.runConnectionLoop()
@@ -91,20 +101,52 @@ final class RealtimeService: ObservableObject {
     }
 
     func disconnect() {
+        wantsConnection = false
+        wantsHaulLobby = false
+        tearDownConnection(reason: "signed out")
+    }
+
+    func suspendForAppRadioSilence() {
+        guard !isRadioSilenceSuspended else { return }
+        isRadioSilenceSuspended = true
+        tearDownConnection(reason: "radio silence")
+    }
+
+    func resumeAfterAppRadioSilence() {
+        guard isRadioSilenceSuspended else { return }
+        isRadioSilenceSuspended = false
+        guard wantsConnection,
+              !EusoTripAPI.shared.isAppRadioSilenceEnforced else { return }
+        beginConnectionIfNeeded()
+    }
+
+    /// A background-only cold launch may record connection intent while the
+    /// app-group marker is still ENFORCED. The first real foreground release
+    /// calls this boundary so that intent can start only after RELEASE is
+    /// durable; no background wake clears the policy itself.
+    func resumeAfterFirstForegroundRadioSilenceRelease() {
+        guard !isRadioSilenceSuspended,
+              !EusoTripAPI.shared.isAppRadioSilenceEnforced,
+              wantsConnection else { return }
+        beginConnectionIfNeeded()
+    }
+
+    private func tearDownConnection(reason: String) {
         connectTask?.cancel()
         connectTask = nil
         boardUpdateCoalesceTask?.cancel()
         boardUpdateCoalesceTask = nil
         task?.cancel(with: .goingAway, reason: nil)
         task = nil
-        wantsHaulLobby = false
-        phase = .disconnected(reason: "signed out")
+        phase = .disconnected(reason: reason)
     }
 
     // MARK: Connection loop — reconnects with exponential backoff.
 
     private func runConnectionLoop() async {
-        while !Task.isCancelled {
+        while !Task.isCancelled,
+              !isRadioSilenceSuspended,
+              !EusoTripAPI.shared.isAppRadioSilenceEnforced {
             do {
                 try await openOnce()
                 try await readLoop()
@@ -125,6 +167,10 @@ final class RealtimeService: ObservableObject {
     }
 
     private func openOnce() async throws {
+        guard !isRadioSilenceSuspended,
+              !EusoTripAPI.shared.isAppRadioSilenceEnforced else {
+            throw AppRadioSilenceTransportError.enforced
+        }
         phase = .connecting
         guard let baseURL = EusoTripAPI.shared.baseURL else {
             throw EusoTripAPIError.notConfigured
@@ -153,16 +199,31 @@ final class RealtimeService: ObservableObject {
         }
         let ws = session.webSocketTask(with: req)
         task = ws
+        guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else {
+            task = nil
+            ws.cancel(with: .goingAway, reason: nil)
+            throw AppRadioSilenceTransportError.enforced
+        }
         ws.resume()
 
         // Socket.IO v4 handshake: the server sends "0{sid,...}" first,
         // then we emit "40" to register with the default namespace.
         _ = try await ws.receive() // consume engine.io OPEN frame
+        guard !Task.isCancelled,
+              !isRadioSilenceSuspended,
+              !EusoTripAPI.shared.isAppRadioSilenceEnforced else {
+            ws.cancel(with: .goingAway, reason: nil)
+            throw CancellationError()
+        }
         try await ws.send(.string("40"))
+        guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else {
+            ws.cancel(with: .goingAway, reason: nil)
+            throw AppRadioSilenceTransportError.enforced
+        }
         phase = .connected
         retryAttempt = 0
         #if DEBUG
-        print("[Realtime] connected · \(url.absoluteString)")
+        print("[Realtime] connected")
         #endif
         // Subscribe to the global marketplace channel so every load a
         // shipper posts on web fans out to this client's load board in
@@ -177,8 +238,13 @@ final class RealtimeService: ObservableObject {
 
     private func readLoop() async throws {
         guard let ws = task else { return }
-        while !Task.isCancelled {
+        while !Task.isCancelled,
+              !EusoTripAPI.shared.isAppRadioSilenceEnforced {
             let message = try await ws.receive()
+            guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else {
+                ws.cancel(with: .goingAway, reason: nil)
+                throw AppRadioSilenceTransportError.enforced
+            }
             switch message {
             case .string(let s):
                 handleFrame(s)
@@ -193,9 +259,13 @@ final class RealtimeService: ObservableObject {
     // MARK: Frame parsing
 
     private func handleFrame(_ raw: String) {
+        guard !EusoTripAPI.shared.isAppRadioSilenceEnforced else {
+            tearDownConnection(reason: "radio silence")
+            return
+        }
         // Engine.IO ping → reply with "3".
         if raw == "2" {
-            Task { try? await task?.send(.string("3")) }
+            sendFrame("3")
             return
         }
         // Socket.IO EVENT frames start with "42" — the payload is a
@@ -730,12 +800,12 @@ final class RealtimeService: ObservableObject {
     /// extra granularity (e.g. convoy detail).
     func joinLoad(_ loadId: Int) {
         let frame = "42[\"load:join\",\"\(loadId)\"]"
-        Task { try? await task?.send(.string(frame)) }
+        sendFrame(frame)
     }
 
     func leaveLoad(_ loadId: Int) {
         let frame = "42[\"load:leave\",\"\(loadId)\"]"
-        Task { try? await task?.send(.string(frame)) }
+        sendFrame(frame)
     }
 
     /// Join a per-conversation broadcast room so `message:new` events
@@ -748,14 +818,14 @@ final class RealtimeService: ObservableObject {
         let sanitized = conversationId
             .replacingOccurrences(of: "\"", with: "")
         let frame = "42[\"conversation:join\",\"\(sanitized)\"]"
-        Task { try? await task?.send(.string(frame)) }
+        sendFrame(frame)
     }
 
     func leaveConversation(_ conversationId: String) {
         let sanitized = conversationId
             .replacingOccurrences(of: "\"", with: "")
         let frame = "42[\"conversation:leave\",\"\(sanitized)\"]"
-        Task { try? await task?.send(.string(frame)) }
+        sendFrame(frame)
     }
 
     /// Join the shipment room after the server verifies shipper/carrier
@@ -763,12 +833,12 @@ final class RealtimeService: ObservableObject {
     /// event during rollout, but new clients use the canonical event name.
     func joinRailShipment(_ shipmentId: Int) {
         let frame = "42[\"rail:shipment:join\",\"\(shipmentId)\"]"
-        Task { try? await task?.send(.string(frame)) }
+        sendFrame(frame)
     }
 
     func leaveRailShipment(_ shipmentId: Int) {
         let frame = "42[\"rail:shipment:leave\",\"\(shipmentId)\"]"
-        Task { try? await task?.send(.string(frame)) }
+        sendFrame(frame)
     }
 
     /// Join the global marketplace channel so this client receives every
@@ -778,12 +848,26 @@ final class RealtimeService: ObservableObject {
     /// time when shippers post new loads on web.
     func joinMarketplace() {
         let frame = "42[\"channel:join\",\"marketplace\"]"
-        Task { try? await task?.send(.string(frame)) }
+        sendFrame(frame)
     }
 
     func leaveMarketplace() {
         let frame = "42[\"channel:leave\",\"marketplace\"]"
-        Task { try? await task?.send(.string(frame)) }
+        sendFrame(frame)
+    }
+
+    private func sendFrame(_ frame: String) {
+        guard !isRadioSilenceSuspended,
+              !EusoTripAPI.shared.isAppRadioSilenceEnforced,
+              let task else { return }
+        Task { [weak self, weak task] in
+            guard let self,
+                  let task,
+                  !Task.isCancelled,
+                  !self.isRadioSilenceSuspended,
+                  !EusoTripAPI.shared.isAppRadioSilenceEnforced else { return }
+            try? await task.send(.string(frame))
+        }
     }
 
     func joinHaulLobby() {
@@ -794,12 +878,12 @@ final class RealtimeService: ObservableObject {
     func leaveHaulLobby() {
         wantsHaulLobby = false
         let frame = "42[\"haul:lobby:leave\"]"
-        Task { try? await task?.send(.string(frame)) }
+        sendFrame(frame)
     }
 
     private func sendHaulLobbyJoin() {
         let frame = "42[\"haul:lobby:join\"]"
-        Task { try? await task?.send(.string(frame)) }
+        sendFrame(frame)
     }
 
     /// Post the dispatch-board wake on a trailing edge.

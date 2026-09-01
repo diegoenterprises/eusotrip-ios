@@ -72,6 +72,8 @@ final class HOSClockService: ObservableObject {
     private var warnedThisCycle: Bool = false
 
     private var pollTask: Task<Void, Never>?
+    private var wantsPolling = false
+    private var isRadioSilenceSuspended = false
 
     // MARK: Binding
 
@@ -87,6 +89,12 @@ final class HOSClockService: ObservableObject {
     /// Begin polling. Idempotent — calling while already running is a
     /// no-op.
     func start() {
+        wantsPolling = true
+        guard !isRadioSilenceSuspended else { return }
+        beginPollingIfNeeded()
+    }
+
+    private func beginPollingIfNeeded() {
         guard pollTask == nil else { return }
         pollTask = Task { [weak self] in
             await self?.runPollLoop()
@@ -95,6 +103,24 @@ final class HOSClockService: ObservableObject {
 
     /// Cancel the polling loop and remove any prior-session HOS observation.
     func stop() {
+        wantsPolling = false
+        cancelPolling()
+    }
+
+    func suspendForAppRadioSilence() {
+        guard !isRadioSilenceSuspended else { return }
+        isRadioSilenceSuspended = true
+        cancelPolling()
+    }
+
+    func resumeAfterAppRadioSilence() {
+        guard isRadioSilenceSuspended else { return }
+        isRadioSilenceSuspended = false
+        guard wantsPolling else { return }
+        beginPollingIfNeeded()
+    }
+
+    private func cancelPolling() {
         pollTask?.cancel()
         pollTask = nil
         status = nil
@@ -108,7 +134,7 @@ final class HOSClockService: ObservableObject {
     private func runPollLoop() async {
         // Immediate fetch + spaced subsequent fetches. A transport failure is
         // recorded separately; old evidence is never relabeled as current.
-        while !Task.isCancelled {
+        while !Task.isCancelled, !isRadioSilenceSuspended {
             await pollOnce()
             let ns = UInt64(pollInterval * 1_000_000_000)
             try? await Task.sleep(nanoseconds: ns)
@@ -116,13 +142,19 @@ final class HOSClockService: ObservableObject {
     }
 
     private func pollOnce() async {
+        guard !isRadioSilenceSuspended, !Task.isCancelled else { return }
         do {
             let fresh = try await EusoTripAPI.shared.hos.getStatus()
+            guard !isRadioSilenceSuspended, !Task.isCancelled else { return }
             self.status = fresh
             self.lastSuccessfulPollAt = Date()
             self.lastRefreshError = nil
             evaluate(status: fresh)
             pushToWatch(fresh)
+        } catch is CancellationError {
+            return
+        } catch is AppRadioSilenceTransportError {
+            return
         } catch {
             lastRefreshError = "HOS evidence could not refresh. Existing values retain their recorded freshness."
             #if DEBUG

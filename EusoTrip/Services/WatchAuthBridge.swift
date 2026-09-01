@@ -18,13 +18,44 @@ import WatchConnectivity
 final class WatchAuthBridge: NSObject {
     static let shared = WatchAuthBridge()
 
+    private static let radioSilenceSnapshotDefaultsKey =
+        "watch_app_radio_silence_phone_snapshot_v2"
+    private static let radioSilenceRevisionDefaultsKey =
+        "watch_app_radio_silence_revision_v1"
+    private static let radioSilenceEnforcedDefaultsKey =
+        "watch_app_radio_silence_enforced_v1"
+    private static let radioSilenceEpochDefaultsKey =
+        "watch_app_radio_silence_epoch_v1"
+    private let defaults: UserDefaults
+    private var appRadioSilenceState: AppRadioSilencePhoneMirrorState
+
     private var session: WCSession? {
         guard WCSession.isSupported() else { return nil }
         return WCSession.default
     }
 
-    private override init() {
+    private init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        appRadioSilenceState = AppRadioSilencePhoneMirrorPersistence
+            .restoreForProcessRestart(
+                snapshotData: defaults.data(
+                    forKey: Self.radioSilenceSnapshotDefaultsKey
+                ),
+                legacy: .init(
+                    isEnforced: defaults.object(
+                        forKey: Self.radioSilenceEnforcedDefaultsKey
+                    ) as? Bool,
+                    revision: (defaults.object(
+                        forKey: Self.radioSilenceRevisionDefaultsKey
+                    ) as? NSNumber)?.intValue,
+                    epoch: defaults.string(
+                        forKey: Self.radioSilenceEpochDefaultsKey
+                    )
+                ),
+                sharedStateIsEnforced: AppRadioSilenceSharedState.isEnforced
+            )
         super.init()
+        persistAppRadioSilenceState()
         activate()
     }
 
@@ -35,6 +66,10 @@ final class WatchAuthBridge: NSObject {
         }
         if session.activationState != .activated {
             session.activate()
+        } else {
+            // Another WCSession user (for example the convoy bridge) may have
+            // activated the singleton before this bridge was initialized.
+            republishAppRadioSilencePolicy()
         }
     }
 
@@ -66,6 +101,38 @@ final class WatchAuthBridge: NSObject {
         guard let session else { return }
         mergedContext[channel] = payload
         try? session.updateApplicationContext(mergedContext)
+    }
+
+    /// Mirror the phone's bounded offline-journey policy into the watch's
+    /// separate process. The fixed payload carries no lease reason, token,
+    /// credential, route, or user identifier. applicationContext provides the
+    /// durable latest state; sendMessage accelerates delivery when reachable.
+    func setAppRadioSilenceEnforced(_ enforced: Bool) {
+        let previous = appRadioSilenceState
+        appRadioSilenceState.setEnforced(enforced)
+        if appRadioSilenceState != previous {
+            persistAppRadioSilenceState()
+        }
+        republishAppRadioSilencePolicy()
+    }
+
+    private func persistAppRadioSilenceState() {
+        guard let data = try? AppRadioSilencePhoneMirrorPersistence.encode(
+            appRadioSilenceState
+        ) else { return }
+        defaults.set(data, forKey: Self.radioSilenceSnapshotDefaultsKey)
+    }
+
+    func republishAppRadioSilencePolicy() {
+        let payload: [String: Any] = [
+            "op": "app.radioSilence",
+            "enforced": appRadioSilenceState.isEnforced,
+            "revision": appRadioSilenceState.revision,
+            "epoch": appRadioSilenceState.epoch,
+        ]
+        publishContext(channel: "radioSilence", payload: payload)
+        guard let session, session.isReachable else { return }
+        session.sendMessage(payload, replyHandler: nil) { _ in }
     }
 
     /// Public getter so WatchCommandHandler can answer `auth.request`.
@@ -491,6 +558,7 @@ private final class SessionDelegate: NSObject, WCSessionDelegate {
         // reachability flap or wrist poll.
         guard activationState == .activated else { return }
         Task { @MainActor in
+            WatchAuthBridge.shared.republishAppRadioSilencePolicy()
             WatchAuthBridge.shared.republishAuth(
                 fallbackToken: EusoTripAPI.shared.authToken
             )
@@ -504,6 +572,7 @@ private final class SessionDelegate: NSObject, WCSessionDelegate {
     func sessionWatchStateDidChange(_ session: WCSession) {
         guard session.isPaired, session.isWatchAppInstalled else { return }
         Task { @MainActor in
+            WatchAuthBridge.shared.republishAppRadioSilencePolicy()
             WatchAuthBridge.shared.republishAuth(
                 fallbackToken: EusoTripAPI.shared.authToken
             )
@@ -528,6 +597,7 @@ private final class SessionDelegate: NSObject, WCSessionDelegate {
     func sessionReachabilityDidChange(_ session: WCSession) {
         guard session.isReachable else { return }
         Task { @MainActor in
+            WatchAuthBridge.shared.republishAppRadioSilencePolicy()
             WatchAuthBridge.shared.republishAuth(
                 fallbackToken: EusoTripAPI.shared.authToken
             )

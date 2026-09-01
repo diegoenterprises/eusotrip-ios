@@ -494,7 +494,10 @@ final class ReminderSyncService: ObservableObject {
 
     private var isActive = false
     private var isSyncing = false
+    private var isRadioSilenceSuspended = false
+    private var syncGeneration = 0
     private var pollTask: Task<Void, Never>?
+    private var syncTask: Task<Void, Never>?
     private var observers: [NSObjectProtocol] = []
 
     private init() {}
@@ -506,7 +509,13 @@ final class ReminderSyncService: ObservableObject {
         guard !isActive else { return }
         isActive = true
         installForegroundObserver()
-        Task { await sync(trigger: "signin", force: true) }
+        guard !isRadioSilenceSuspended else { return }
+        scheduleSync(trigger: "signin", force: true)
+        startPollingIfNeeded()
+    }
+
+    private func startPollingIfNeeded() {
+        guard pollTask == nil, isActive, !isRadioSilenceSuspended else { return }
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
                 // The Task inherits this @MainActor context, so reading the
@@ -514,8 +523,22 @@ final class ReminderSyncService: ObservableObject {
                 let interval = self?.pollInterval ?? 1800
                 try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
                 if Task.isCancelled { return }
-                await self?.sync(trigger: "poll")
+                self?.scheduleSync(trigger: "poll")
             }
+        }
+    }
+
+    private func scheduleSync(trigger: String, force: Bool = false) {
+        guard isActive, !isRadioSilenceSuspended, syncTask == nil else { return }
+        let generation = syncGeneration
+        syncTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                if self.syncGeneration == generation {
+                    self.syncTask = nil
+                }
+            }
+            await self.sync(trigger: trigger, force: force)
         }
     }
 
@@ -528,9 +551,31 @@ final class ReminderSyncService: ObservableObject {
     /// sync reconciles them.
     func stop() {
         isActive = false
+        cancelNetworkWork()
+        lastOutcome = .signedOut
+    }
+
+    func suspendForAppRadioSilence() {
+        guard !isRadioSilenceSuspended else { return }
+        isRadioSilenceSuspended = true
+        cancelNetworkWork()
+    }
+
+    func resumeAfterAppRadioSilence() {
+        guard isRadioSilenceSuspended else { return }
+        isRadioSilenceSuspended = false
+        guard isActive else { return }
+        scheduleSync(trigger: "radio-silence-release", force: true)
+        startPollingIfNeeded()
+    }
+
+    private func cancelNetworkWork() {
+        syncGeneration &+= 1
         pollTask?.cancel()
         pollTask = nil
-        lastOutcome = .signedOut
+        syncTask?.cancel()
+        syncTask = nil
+        isSyncing = false
     }
 
     private func installForegroundObserver() {
@@ -541,7 +586,7 @@ final class ReminderSyncService: ObservableObject {
             object: nil, queue: .main
         ) { _ in
             Task { @MainActor in
-                await ReminderSyncService.shared.sync(trigger: "foreground")
+                ReminderSyncService.shared.scheduleSync(trigger: "foreground")
             }
         }
         observers.append(token)
@@ -552,15 +597,15 @@ final class ReminderSyncService: ObservableObject {
     /// hint that something moved, so reconcile — throttled, and a no-op when
     /// signed out.
     func handleRemotePush() {
-        guard isActive else { return }
-        Task { await sync(trigger: "push") }
+        scheduleSync(trigger: "push")
     }
 
     // MARK: Sync
 
     func sync(trigger: String, force: Bool = false) async {
-        guard isActive else { return }
+        guard isActive, !isRadioSilenceSuspended, !Task.isCancelled else { return }
         guard !isSyncing else { return }
+        let generation = syncGeneration
         if !force, let last = lastAttemptAt, Date().timeIntervalSince(last) < minimumInterval {
             return
         }
@@ -569,6 +614,9 @@ final class ReminderSyncService: ObservableObject {
         // ReminderScheduler refuses to schedule under it. Say so rather than
         // burning a request and reporting success over nothing.
         let settings = await UNUserNotificationCenter.current().notificationSettings()
+        guard generation == syncGeneration,
+              !isRadioSilenceSuspended,
+              !Task.isCancelled else { return }
         guard settings.authorizationStatus == .authorized else {
             lastOutcome = .notAuthorized
             return
@@ -576,7 +624,11 @@ final class ReminderSyncService: ObservableObject {
 
         isSyncing = true
         lastAttemptAt = Date()
-        defer { isSyncing = false }
+        defer {
+            if generation == syncGeneration {
+                isSyncing = false
+            }
+        }
 
         let response: UpcomingDeadlinesResponse
         do {
@@ -584,6 +636,10 @@ final class ReminderSyncService: ObservableObject {
                 horizonDays: horizonDays,
                 overdueLookbackHours: overdueLookbackHours
             )
+        } catch is CancellationError {
+            return
+        } catch is AppRadioSilenceTransportError {
+            return
         } catch {
             // The whole point of the contract: a failed read changes nothing.
             lastOutcome = .failed(error.localizedDescription)
@@ -591,7 +647,14 @@ final class ReminderSyncService: ObservableObject {
             return
         }
 
+        guard generation == syncGeneration,
+              !isRadioSilenceSuspended,
+              !Task.isCancelled else { return }
+
         let ledger = await currentLedger()
+        guard generation == syncGeneration,
+              !isRadioSilenceSuspended,
+              !Task.isCancelled else { return }
         let plan = ReminderSyncPlan.make(
             response: response, ledger: ledger, now: Date(), budget: scheduleBudget
         )

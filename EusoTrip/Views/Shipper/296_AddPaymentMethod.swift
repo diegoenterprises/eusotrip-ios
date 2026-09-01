@@ -122,12 +122,16 @@ private struct StripeSecureSafariView: UIViewControllerRepresentable {
         let cfg = SFSafariViewController.Configuration()
         cfg.entersReaderIfAvailable = false
         cfg.barCollapsingEnabled = true
-        let vc = SFSafariViewController(url: url, configuration: cfg)
+        let vc = SFSafariViewController(
+            url: AppRadioSilenceDirectTransportController.shared.gatedRemoteURL(url),
+            configuration: cfg
+        )
         // Tint chrome to brand magenta so the in-app browser reads
         // as part of EusoTrip, not a generic Safari sheet.
         vc.preferredBarTintColor = nil
         vc.preferredControlTintColor = UIColor(Brand.magenta)
         vc.dismissButtonStyle = .done
+        AppRadioSilenceDirectTransportController.shared.track(safariController: vc)
         return vc
     }
     func updateUIViewController(_ uiViewController: SFSafariViewController, context: Context) {}

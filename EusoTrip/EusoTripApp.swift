@@ -30,6 +30,9 @@ struct EusoTripApp: App {
     /// Guarded with `#if canImport(UIKit)` so the same struct still
     /// compiles for the watchOS target (which doesn't ship UIKit).
     init() {
+        // Install the single process-wide HERE owner before any role surface,
+        // route workflow, or Settings sheet can request offline state.
+        OfflineMapProductionComposition.install()
         #if canImport(UIKit)
         UIScrollView.appearance().keyboardDismissMode = .interactive
         // Tap-anywhere-outside-the-keyboard dismissal (founder bug
@@ -179,6 +182,12 @@ struct EusoTripApp: App {
                 } else {
                     WeatherService.shared.deactivateContext()
                 }
+                Task {
+                    await OfflineMapProductionComposition.shared?.activatePrincipal(
+                        tenantID: user?.companyId,
+                        userID: user?.id
+                    )
+                }
             }
             .onChange(of: scenePhase) { oldPhase, newPhase in
                 AppCrashDiagnosticsReporter.shared.recordSurface("scene.\(newPhase)")
@@ -279,6 +288,10 @@ struct EusoTripApp: App {
                 } else {
                     WeatherService.shared.deactivateContext()
                 }
+                await OfflineMapProductionComposition.shared?.activatePrincipal(
+                    tenantID: session.user?.companyId,
+                    userID: session.user?.id
+                )
                 // Proactively trigger the iOS "Allow EusoTrip to use
                 // your location?" prompt at app launch. WeatherService
                 // also requests it lazily on first fetch, but that
@@ -371,6 +384,18 @@ struct EusoTripApp: App {
             }
             // Deep link: eusotrip://reset?token=<uuid>
             .onOpenURL { handleDeepLink($0) }
+            // SwiftUI Link/openURL can otherwise hand an HTTP URL to Safari
+            // from a still-mounted surface behind the offline desk. Keep
+            // user-controlled telephony/mail/system schemes available; only
+            // app-initiated web navigation is part of this transport gate.
+            .environment(\.openURL, OpenURLAction { url in
+                let scheme = url.scheme?.lowercased()
+                if (scheme == "http" || scheme == "https"),
+                   EusoTripAPI.shared.isAppRadioSilenceEnforced {
+                    return .discarded
+                }
+                return .systemAction(url)
+            })
         }
     }
 

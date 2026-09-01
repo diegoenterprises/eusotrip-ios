@@ -385,7 +385,7 @@ struct ShipperLoadDetail: View {
         } else if let urlString,
                   let url = URL(string: urlString),
                   url.scheme == "https" {
-            AsyncImage(url: url) { phase in
+            AppRadioSilenceAsyncImage(url: url) { phase in
                 switch phase {
                 case .success(let image):
                     image.resizable().scaledToFit()

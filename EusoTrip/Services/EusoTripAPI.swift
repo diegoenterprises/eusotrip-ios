@@ -367,9 +367,26 @@ final class EusoTripAPI: ObservableObject {
     /// terminal UNAUTHORIZED — surface it, don't retry.
     private var isRefreshing = false
 
+    /// Fail-closed app-wide transport gate owned by
+    /// `AppRadioSilenceCoordinator`. This is set synchronously before any
+    /// producer is canceled, so a re-entrant task cannot start a fresh request
+    /// during the transition into a protected offline journey.
+    private var isAppRadioSilenceEnforcedInProcess = false
+
+    /// The in-process coordinator is authoritative for cancellation. The
+    /// atomic app-group marker extends the same preflight to App Intents and
+    /// any other app-owned process that constructs this client independently.
+    /// Missing/corrupt shared state decodes as enforced.
+    var isAppRadioSilenceEnforced: Bool {
+        isAppRadioSilenceEnforcedInProcess
+            || AppRadioSilenceSharedState.isEnforced
+    }
+    private var appRadioSilenceAuxiliarySessions: [UUID: URLSession] = [:]
+
     /// Single-flight wrapper around `sessionRefreshHandler`. All 401-driven
     /// callers funnel through here so only one refresh runs at a time.
     private func refreshSessionOnce() async throws -> Bool {
+        guard !isAppRadioSilenceEnforced else { return false }
         // Check the shared task before the recursion guard. Once the first
         // caller enters its handler `isRefreshing` is true; checking that
         // flag first made every sibling 401 skip the in-flight rotation and
@@ -396,7 +413,7 @@ final class EusoTripAPI: ObservableObject {
     /// path while ERG detail work was being canceled and restarted. A private,
     /// cacheless session keeps API task lifecycle independent from the process-
     /// wide URLCache used by unrelated image/weather requests.
-    lazy var session: URLSession = {
+    nonisolated private static func makeSession() -> URLSession {
         let config = URLSessionConfiguration.ephemeral
         config.httpCookieStorage = HTTPCookieStorage.shared
         config.httpCookieAcceptPolicy = .always
@@ -423,7 +440,24 @@ final class EusoTripAPI: ObservableObject {
         config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         config.urlCache = nil
         return URLSession(configuration: config)
-    }()
+    }
+
+    /// Cookie-free session for third-party and compatibility transports that
+    /// cannot use the authenticated API session. Every instance is registered
+    /// below before it starts so the first radio-silence lease can cancel it.
+    nonisolated private static func makeAuxiliarySession() -> URLSession {
+        let config = URLSessionConfiguration.ephemeral
+        config.httpCookieStorage = nil
+        config.httpShouldSetCookies = false
+        config.urlCache = nil
+        config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        config.timeoutIntervalForRequest = 22
+        config.timeoutIntervalForResource = 60
+        config.waitsForConnectivity = false
+        return URLSession(configuration: config)
+    }
+
+    lazy var session: URLSession = Self.makeSession()
 
     private let encoder: JSONEncoder = {
         let e = JSONEncoder()
@@ -442,6 +476,88 @@ final class EusoTripAPI: ObservableObject {
     func configure(baseURL: URL, authToken: String? = nil) {
         self.baseURL = baseURL
         self.authToken = authToken
+    }
+
+    /// Close/open the app transport gate. Closing also invalidates the current
+    /// private session, which cancels requests already in flight; a new
+    /// cacheless session is installed immediately but cannot be used until the
+    /// gate is reopened. No request URL, token, or response detail is logged.
+    func setAppRadioSilenceEnforced(_ enforced: Bool) {
+        guard isAppRadioSilenceEnforcedInProcess != enforced else { return }
+        isAppRadioSilenceEnforcedInProcess = enforced
+        guard enforced else { return }
+
+        inFlightRefresh?.cancel()
+        inFlightRefresh = nil
+        isRefreshing = false
+        session.invalidateAndCancel()
+        session = Self.makeSession()
+
+        let auxiliary = Array(appRadioSilenceAuxiliarySessions.values)
+        appRadioSilenceAuxiliarySessions.removeAll()
+        for session in auxiliary {
+            session.invalidateAndCancel()
+        }
+    }
+
+    /// Synchronous main-actor preflight for non-URLSession providers such as
+    /// WeatherKit and for custom streaming transports.
+    func requireAppRadioSilenceTransportAllowed() throws {
+        guard !isAppRadioSilenceEnforced else {
+            throw AppRadioSilenceTransportError.enforced
+        }
+    }
+
+    /// Register a custom session before its first task starts. Used by the
+    /// no-redirect Wallet pass stream; acquire() invalidates every registered
+    /// session after closing the gate.
+    @discardableResult
+    func registerAppRadioSilenceAuxiliarySession(_ auxiliarySession: URLSession) throws -> UUID {
+        try requireAppRadioSilenceTransportAllowed()
+        let id = UUID()
+        appRadioSilenceAuxiliarySessions[id] = auxiliarySession
+        return id
+    }
+
+    func unregisterAppRadioSilenceAuxiliarySession(_ id: UUID) {
+        appRadioSilenceAuxiliarySessions[id] = nil
+    }
+
+    /// Cancellation-aware entry point for every app transport that must not
+    /// share authenticated cookies (NWS, Stripe, article metadata, wrist
+    /// relays). It creates and registers a private session synchronously before
+    /// starting, then performs a postflight gate check before returning bytes.
+    func appRadioSilenceGatedData(
+        for original: URLRequest
+    ) async throws -> (Data, URLResponse) {
+        try Task.checkCancellation()
+        try requireAppRadioSilenceTransportAllowed()
+
+        var request = original
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        request.setValue("no-store, no-cache", forHTTPHeaderField: "Cache-Control")
+        request.setValue("no-cache", forHTTPHeaderField: "Pragma")
+
+        let auxiliarySession = Self.makeAuxiliarySession()
+        let registration = try registerAppRadioSilenceAuxiliarySession(auxiliarySession)
+        defer {
+            unregisterAppRadioSilenceAuxiliarySession(registration)
+            auxiliarySession.invalidateAndCancel()
+        }
+
+        let response: (Data, URLResponse)
+        do {
+            response = try await auxiliarySession.data(for: request)
+        } catch {
+            if isAppRadioSilenceEnforced {
+                throw AppRadioSilenceTransportError.enforced
+            }
+            throw error
+        }
+
+        try Task.checkCancellation()
+        try requireAppRadioSilenceTransportAllowed()
+        return response
     }
 
     /// Hard-reset all stored cookies for the backend host.  Used on logout.
@@ -1730,13 +1846,23 @@ final class EusoTripAPI: ObservableObject {
         _ path: String,
         input: Input
     ) async throws -> Output {
+        let payload = TRPCInputEnvelope(json: input)
+        let body = try encoder.encode(payload)
+
+        // During a protected offline journey, enqueue only the existing
+        // idempotent allowlist locally. Everything else fails before a URL or
+        // URLSession task is created. Outbox replay is separately suspended.
+        if isAppRadioSilenceEnforced {
+            if try Self.enqueueIfOfflineEligible(path: path, body: body) {
+                throw EusoTripAPIError.queuedForOfflineReplay
+            }
+            throw AppRadioSilenceTransportError.enforced
+        }
+
         guard let baseURL else { throw EusoTripAPIError.notConfigured }
         let url = baseURL
             .appendingPathComponent("api/trpc")
             .appendingPathComponent(path)
-
-        let payload = TRPCInputEnvelope(json: input)
-        let body = try encoder.encode(payload)
 
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
@@ -1761,7 +1887,8 @@ final class EusoTripAPI: ObservableObject {
             // never routed here (the eligibility table is path-gated). The
             // already-encoded `{"json": …}` body carries the exact payload
             // we need to reconstruct the QueuedAction.
-            if OfflineQueue.isNetworkUnreachable(error),
+            if (OfflineQueue.isNetworkUnreachable(error)
+                    || error is AppRadioSilenceTransportError),
                try Self.enqueueIfOfflineEligible(path: path, body: body) {
                 throw EusoTripAPIError.queuedForOfflineReplay
             }
@@ -2138,14 +2265,31 @@ final class EusoTripAPI: ObservableObject {
     /// prevents a response that raced dismissal from reaching a dead surface.
     private func transportData(for original: URLRequest) async throws -> (Data, URLResponse) {
         try Task.checkCancellation()
+        guard !isAppRadioSilenceEnforced else {
+            throw AppRadioSilenceTransportError.enforced
+        }
 
         var request = original
         request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         request.setValue("no-store, no-cache", forHTTPHeaderField: "Cache-Control")
         request.setValue("no-cache", forHTTPHeaderField: "Pragma")
 
-        let response = try await session.data(for: request)
+        let response: (Data, URLResponse)
+        do {
+            response = try await session.data(for: request)
+        } catch {
+            // Session invalidation is how acquire() cancels in-flight work.
+            // Normalize that race to the policy error so callers/outbox never
+            // mistake it for a terminal server rejection.
+            if isAppRadioSilenceEnforced {
+                throw AppRadioSilenceTransportError.enforced
+            }
+            throw error
+        }
         try Task.checkCancellation()
+        guard !isAppRadioSilenceEnforced else {
+            throw AppRadioSilenceTransportError.enforced
+        }
         return response
     }
 

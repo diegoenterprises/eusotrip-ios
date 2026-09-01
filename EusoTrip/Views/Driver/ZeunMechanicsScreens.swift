@@ -1870,9 +1870,13 @@ private struct ZeunInAppSafari: UIViewControllerRepresentable {
         let cfg = SFSafariViewController.Configuration()
         cfg.entersReaderIfAvailable = false
         cfg.barCollapsingEnabled = true
-        let vc = SFSafariViewController(url: url, configuration: cfg)
+        let vc = SFSafariViewController(
+            url: AppRadioSilenceDirectTransportController.shared.gatedRemoteURL(url),
+            configuration: cfg
+        )
         vc.dismissButtonStyle = .done
         vc.preferredControlTintColor = UIColor(Brand.magenta)
+        AppRadioSilenceDirectTransportController.shared.track(safariController: vc)
         return vc
     }
     func updateUIViewController(_ uiViewController: SFSafariViewController, context: Context) {}

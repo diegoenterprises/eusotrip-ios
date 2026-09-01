@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "status": "pending",
+  "source": "protected_secret_store",
+  "incidentID": "HERE-2026-08-31-01",
+  "configGenerationID": null,
+  "appleTeamID": "665Z3ZBZS2",
+  "releaseXcconfigSHA256": null,
+  "routePlanIssuer": null,
+  "routePlanAudience": null,
+  "routePlanKeyID": null,
+  "routePlanPublicKeySHA256": null,
+  "credentialClasses": [
+    "here_maps_js_api_key",
+    "here_sdk_navigate_access_key_id",
+    "here_sdk_navigate_access_key_secret"
+  ],
+  "credentialsRotatedAt": null,
+  "generatedAt": null,
+  "generatedBy": null,
+  "approvedAt": null,
+  "expiresAt": null,
+  "approvedBy": null,
+  "containsDedicatedNavigateCredentials": false,
+  "containsNoIncidentCredentialMaterial": false
+}

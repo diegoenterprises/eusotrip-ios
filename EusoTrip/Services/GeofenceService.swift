@@ -80,6 +80,9 @@ final class GeofenceService: NSObject, ObservableObject,
     /// when both fire; cleared per-region on EXIT so a re-entry posts again.
     private var postedEnterIds: Set<String> = []
     private var didConfigureBackground = false
+    private var isRadioSilenceSuspended = false
+    private var serverFenceResolutionTask: Task<Void, Never>?
+    private var serverFenceEventTasks: [UUID: Task<Void, Never>] = [:]
 
     override init() {
         super.init()
@@ -119,11 +122,20 @@ final class GeofenceService: NSObject, ObservableObject,
         registerApproachRegions(for: load)   // immediate UI fallback (entry-only)
 
         // Upgrade to server-fence-backed regions (id + EXIT + posting).
-        Task { await resolveAndRegisterServerFences(for: load) }
+        scheduleServerFenceResolution(for: load)
 
         #if DEBUG
         print("[Geofence] monitoring load \(load.id) · approach regions up, resolving server fences")
         #endif
+    }
+
+    private func scheduleServerFenceResolution(for load: Load) {
+        guard !isRadioSilenceSuspended else { return }
+        serverFenceResolutionTask?.cancel()
+        serverFenceResolutionTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.resolveAndRegisterServerFences(for: load)
+        }
     }
 
     /// Wide (~2 mi) entry-only regions that fire the UI approach TripEvents.
@@ -181,7 +193,9 @@ final class GeofenceService: NSObject, ObservableObject,
     /// accumulate duplicate rows.
     @MainActor
     private func resolveAndRegisterServerFences(for load: Load) async {
-        guard monitoredLoadId == load.id else { return }
+        guard !isRadioSilenceSuspended,
+              !Task.isCancelled,
+              monitoredLoadId == load.id else { return }
         let gf = EusoTripAPI.shared.trackingGeofences
 
         // Facility coordinates (nil when the load carries no real coord).
@@ -212,7 +226,9 @@ final class GeofenceService: NSObject, ObservableObject,
         }
 
         var resolved = await resolve()
-        guard monitoredLoadId == load.id else { return }
+        guard !isRadioSilenceSuspended,
+              !Task.isCancelled,
+              monitoredLoadId == load.id else { return }
 
         // If a needed facility has no fence yet, create the load's fences once
         // (ownership-gated + idempotent server-side; requires BOTH coords) and
@@ -224,9 +240,13 @@ final class GeofenceService: NSObject, ObservableObject,
                 loadId: load.id,
                 pickupLat: p.lat, pickupLng: p.lng, pickupFacilityName: nil,
                 deliveryLat: d.lat, deliveryLng: d.lng, deliveryFacilityName: nil)
-            guard monitoredLoadId == load.id else { return }
+            guard !isRadioSilenceSuspended,
+                  !Task.isCancelled,
+                  monitoredLoadId == load.id else { return }
             resolved = await resolve()
-            guard monitoredLoadId == load.id else { return }
+            guard !isRadioSilenceSuspended,
+                  !Task.isCancelled,
+                  monitoredLoadId == load.id else { return }
         }
 
         if let f = resolved.pickup { registerServerRegion(f, kind: "pickup", loadId: load.id) }
@@ -281,7 +301,28 @@ final class GeofenceService: NSObject, ObservableObject,
                                  action: String, at coord: CLLocationCoordinate2D) {
         let ts = ISO8601DateFormatter().string(from: Date())
         let type = kind == "delivery" ? "DELIVERY_FACILITY" : "PICKUP_FACILITY"
-        Task {
+
+        func enqueueLocally() {
+            OfflineQueue.shared.enqueueGeofenceEvent(
+                geofenceId: geofenceId,
+                action: action,
+                lat: coord.latitude,
+                lng: coord.longitude,
+                timestamp: ts,
+                loadId: loadId,
+                geofenceType: type
+            )
+        }
+
+        guard !isRadioSilenceSuspended else {
+            enqueueLocally()
+            return
+        }
+
+        let taskId = UUID()
+        serverFenceEventTasks[taskId] = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.serverFenceEventTasks[taskId] = nil }
             do {
                 try await EusoTripAPI.shared.trackingGeofences.postGeofenceEvent(
                     geofenceId: geofenceId, action: action,
@@ -292,6 +333,10 @@ final class GeofenceService: NSObject, ObservableObject,
                 #if DEBUG
                 print("[Geofence] \(action) queued for offline replay · fence \(geofenceId)")
                 #endif
+            } catch is CancellationError {
+                enqueueLocally()
+            } catch is AppRadioSilenceTransportError {
+                enqueueLocally()
             } catch {
                 #if DEBUG
                 print("[Geofence] \(action) post failed · fence \(geofenceId) · \(error.localizedDescription)")
@@ -303,6 +348,8 @@ final class GeofenceService: NSObject, ObservableObject,
     /// Stop monitoring every registered region. Called on sign-out or
     /// when a trip completes and the next load hasn't been bound yet.
     func clearAll() {
+        serverFenceResolutionTask?.cancel()
+        serverFenceResolutionTask = nil
         for region in manager.monitoredRegions {
             manager.stopMonitoring(for: region)
         }
@@ -310,6 +357,27 @@ final class GeofenceService: NSObject, ObservableObject,
         monitoredLoad = nil
         serverRegionIds.removeAll()
         postedEnterIds.removeAll()
+    }
+
+    /// Keep Core Location region monitoring alive for local trip transitions,
+    /// but stop all app-owned fence resolution and event transports. Crossings
+    /// during the lease are persisted directly to the durable outbox.
+    func suspendForAppRadioSilence() {
+        guard !isRadioSilenceSuspended else { return }
+        isRadioSilenceSuspended = true
+        serverFenceResolutionTask?.cancel()
+        serverFenceResolutionTask = nil
+        let tasks = Array(serverFenceEventTasks.values)
+        serverFenceEventTasks.removeAll()
+        for task in tasks { task.cancel() }
+    }
+
+    func resumeAfterAppRadioSilence() {
+        guard isRadioSilenceSuspended else { return }
+        isRadioSilenceSuspended = false
+        if let load = monitoredLoad {
+            scheduleServerFenceResolution(for: load)
+        }
     }
 
     // MARK: Auth helpers
@@ -357,7 +425,7 @@ final class GeofenceService: NSObject, ObservableObject,
                 // same-identifier regions, so this is idempotent.
                 if let load = self.monitoredLoad {
                     self.registerApproachRegions(for: load)
-                    Task { await self.resolveAndRegisterServerFences(for: load) }
+                    self.scheduleServerFenceResolution(for: load)
                 }
             case .denied, .restricted:
                 self.phase = .denied

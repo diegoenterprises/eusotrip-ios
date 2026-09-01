@@ -43,9 +43,9 @@ final class HEREAuthServiceTests: XCTestCase {
     }
 
     func test_percentEncode_hereSecretSurvivesRoundTrip() {
-        // The real credentials include `-` and `_` which are unreserved;
+        // The non-secret fixture includes `-` and `_`, which are unreserved;
         // everything else should re-encode deterministically.
-        let secret = "tu2LygcYLwnqBsPV0sgZ_PfFbZBquNoBrcwcKbaxJuGZIK48APnmLycnYKULfdLVcvBvz9tOpAbWoqIWcxtlNA"
+        let secret = "fixture-secret_with-unreserved-characters"
         XCTAssertEqual(HEREAuthService.percentEncode(secret), secret)
     }
 

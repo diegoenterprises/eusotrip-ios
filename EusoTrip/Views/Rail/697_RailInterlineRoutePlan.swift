@@ -63,11 +63,19 @@ private struct ConfirmResult697: Decodable {
 
 private enum NodeKind697 { case origin, interchange, destination }
 
+private enum OfflineRoutePackageState697 {
+    case idle
+    case securing
+    case ready(validUntil: Date?)
+    case unavailable(String)
+}
+
 // MARK: - Body
 
 private struct RailInterlineRoutePlanBody: View {
     let initialShipmentId: Int
     @Environment(\.palette) private var palette
+    @EnvironmentObject private var session: EusoTripSession
 
     @State private var plan: RoutePlan697? = nil
     @State private var loading = true
@@ -77,6 +85,9 @@ private struct RailInterlineRoutePlanBody: View {
     @State private var rerouting = false
     @State private var toast: String? = nil
     @State private var toastTask: Task<Void, Never>? = nil
+    @State private var offlineRoutePackageState: OfflineRoutePackageState697 = .idle
+    @State private var offlineCanonicalRoute: CanonicalRoutePackage? = nil
+    @State private var routeLoadGeneration = UUID()
 
     // Road-colored spine palette (distinct rail hues; recolors at each interchange).
     private static let roadColors: [Color] = [
@@ -104,10 +115,9 @@ private struct RailInterlineRoutePlanBody: View {
                 shipmentField
                 if loading {
                     LifecycleCard { Text("Laying out interline routing…").font(EType.caption).foregroundStyle(palette.textSecondary) }
-                } else if let err = loadError {
-                    LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) }
                 } else if let p = plan {
                     routeHeader(p)
+                    offlineRoutePackageCard
                     if p.confirmed { confirmedBanner(p) }
                     summaryStrip(p)
                     if p.legs.isEmpty {
@@ -124,6 +134,10 @@ private struct RailInterlineRoutePlanBody: View {
                         isLoading: !ptcComplete || submitting
                     )
                     rerouteButton
+                } else if let offlineCanonicalRoute {
+                    offlineFallback(offlineCanonicalRoute)
+                } else if let err = loadError {
+                    LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) }
                 } else {
                     LifecycleCard { Text("Enter a shipment ID above to lay out its interline routing across roads and interchanges.").font(EType.caption).foregroundStyle(palette.textSecondary) }
                 }
@@ -136,6 +150,11 @@ private struct RailInterlineRoutePlanBody: View {
             await load()
         }
         .eusoRefreshable { await load() }
+        .onChange(of: session.user) { _, _ in
+            routeLoadGeneration = UUID()
+            offlineCanonicalRoute = nil
+            offlineRoutePackageState = .idle
+        }
         .overlay(alignment: .bottom) { toastView }
     }
 
@@ -197,6 +216,85 @@ private struct RailInterlineRoutePlanBody: View {
                 if interchanges > 0 { tag("\(interchanges) interchange\(interchanges == 1 ? "" : "s")", Brand.warning) }
                 if ptcComplete { tag("PTC ✓", Brand.success) } else { tag("PTC pend", Brand.warning) }
             }
+        }
+    }
+
+    private var offlineRoutePackageCard: some View {
+        let title: String
+        let detail: String
+        let symbol: String
+        let color: Color
+
+        switch offlineRoutePackageState {
+        case .idle:
+            title = "Offline route not secured"
+            detail = "Load this shipment online to verify and save its signed rail itinerary."
+            symbol = "arrow.down.circle"
+            color = palette.textTertiary
+        case .securing:
+            title = "Securing offline route"
+            detail = "Verifying the server-signed itinerary for this account and shipment."
+            symbol = "arrow.triangle.2.circlepath"
+            color = Brand.info
+        case .ready(let validUntil):
+            title = "Signed route saved on this device"
+            if let validUntil {
+                let formatter = DateFormatter()
+                formatter.dateStyle = .medium
+                formatter.timeStyle = .short
+                detail = "Available offline until \(formatter.string(from: validUntil)); freshness is rechecked before use."
+            } else {
+                detail = "Available offline; signature, account scope, and freshness are rechecked before use."
+            }
+            symbol = "checkmark.shield.fill"
+            color = Brand.success
+        case .unavailable(let message):
+            title = "Offline route unavailable"
+            detail = message
+            symbol = "exclamationmark.shield.fill"
+            color = Brand.warning
+        }
+
+        return HStack(alignment: .top, spacing: Space.s3) {
+            Image(systemName: symbol)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(color)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 13, weight: .heavy))
+                    .foregroundStyle(color)
+                Text(detail)
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(Space.s3)
+        .background(color.opacity(0.07))
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(color.opacity(0.24))
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    private func offlineFallback(_ package: CanonicalRoutePackage) -> some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            LifecycleCard {
+                HStack(alignment: .top, spacing: Space.s2) {
+                    Image(systemName: "wifi.slash")
+                        .foregroundStyle(Brand.warning)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Live rail data unavailable")
+                            .font(EType.bodyStrong)
+                            .foregroundStyle(palette.textPrimary)
+                        Text("Showing the last fresh server-signed route saved for this account and shipment.")
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textSecondary)
+                    }
+                }
+            }
+            CanonicalOfflineRouteItineraryView(package: package)
         }
     }
 
@@ -454,16 +552,162 @@ private struct RailInterlineRoutePlanBody: View {
     // MARK: Data
 
     private func load() async {
+        let generation = UUID()
+        routeLoadGeneration = generation
         let id = enteredId
-        guard id > 0 else { plan = nil; loadError = nil; loading = false; return }
+        guard id > 0 else {
+            plan = nil
+            loadError = nil
+            offlineCanonicalRoute = nil
+            offlineRoutePackageState = .idle
+            loading = false
+            return
+        }
+        plan = nil
+        offlineCanonicalRoute = nil
+        offlineRoutePackageState = .idle
         loading = true; loadError = nil
         struct In: Encodable { let shipmentId: Int }
         do {
-            self.plan = try await EusoTripAPI.shared.query("railShipments.getRoutePlan", input: In(shipmentId: id))
+            let loaded: RoutePlan697 = try await EusoTripAPI.shared.query(
+                "railShipments.getRoutePlan",
+                input: In(shipmentId: id)
+            )
+            guard routeLoadGeneration == generation else { return }
+            guard loaded.shipmentId == id else {
+                plan = nil
+                loadError = "The server returned a route for a different shipment. Nothing was cached."
+                offlineRoutePackageState = .idle
+                loading = false
+                return
+            }
+            self.plan = loaded
+            loading = false
+            await secureOfflineCanonicalRoute(
+                shipmentId: loaded.shipmentId,
+                generation: generation
+            )
+            return
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            guard routeLoadGeneration == generation else { return }
+            let liveError = (error as? EusoTripAPIError)?.errorDescription
+                ?? error.localizedDescription
+            if await restoreOfflineCanonicalRoute(
+                shipmentId: id,
+                generation: generation
+            ) {
+                loadError = liveError
+            } else {
+                loadError = liveError
+            }
         }
         loading = false
+    }
+
+    private func secureOfflineCanonicalRoute(shipmentId: Int, generation: UUID) async {
+        guard routeLoadGeneration == generation else { return }
+        guard shipmentId > 0 else {
+            offlineRoutePackageState = .unavailable(
+                "The server did not provide an authoritative shipment identifier."
+            )
+            return
+        }
+        guard let authenticatedUser = session.user else {
+            offlineRoutePackageState = .unavailable(
+                "Sign in while online to secure this route for offline use."
+            )
+            return
+        }
+        guard let composition = OfflineMapProductionComposition.shared else {
+            offlineRoutePackageState = .unavailable(
+                "Offline route storage is unavailable in this app build."
+            )
+            return
+        }
+
+        offlineRoutePackageState = .securing
+        do {
+            let delivery = try await CanonicalRoutePlanClient().download(
+                subject: .railShipment(Int64(shipmentId)),
+                authenticatedUser: authenticatedUser
+            )
+            guard routeLoadGeneration == generation else { return }
+            guard session.user?.id == authenticatedUser.id,
+                  session.user?.companyId == authenticatedUser.companyId else {
+                offlineRoutePackageState = .unavailable(
+                    "The signed-in account changed before this route could be saved."
+                )
+                return
+            }
+            let package = try await composition.ingestCanonicalRoutePlan(
+                encodedEnvelope: delivery.encodedEnvelope,
+                expectedScope: delivery.expectedScope,
+                receivedAt: delivery.receivedAt
+            )
+            guard routeLoadGeneration == generation else { return }
+            guard session.user?.id == authenticatedUser.id,
+                  session.user?.companyId == authenticatedUser.companyId else {
+                offlineRoutePackageState = .unavailable(
+                    "The signed-in account changed before this route could be saved."
+                )
+                return
+            }
+            offlineCanonicalRoute = package
+            offlineRoutePackageState = .ready(validUntil: package.validUntil)
+        } catch {
+            guard routeLoadGeneration == generation else { return }
+            if await restoreOfflineCanonicalRoute(
+                shipmentId: shipmentId,
+                generation: generation
+            ) {
+                return
+            }
+            offlineRoutePackageState = .unavailable(
+                composition.canonicalRouteFailure
+                    ?? "The signed route could not be verified and was not saved."
+            )
+        }
+    }
+
+    private func restoreOfflineCanonicalRoute(
+        shipmentId: Int,
+        generation: UUID
+    ) async -> Bool {
+        guard routeLoadGeneration == generation,
+              let authenticatedUser = session.user,
+              let composition = OfflineMapProductionComposition.shared else {
+            return false
+        }
+        do {
+            let package = try await CanonicalRouteOfflineReader(
+                composition: composition
+            ).freshPackage(
+                subject: .railShipment(Int64(shipmentId)),
+                authenticatedUser: authenticatedUser
+            )
+            guard routeLoadGeneration == generation,
+                  session.user?.id == authenticatedUser.id,
+                  session.user?.companyId == authenticatedUser.companyId else {
+                return false
+            }
+            offlineCanonicalRoute = package
+            offlineRoutePackageState = .ready(validUntil: package.validUntil)
+            return true
+        } catch let error as CanonicalRouteOfflineReadError {
+            guard routeLoadGeneration == generation else { return false }
+            offlineCanonicalRoute = nil
+            offlineRoutePackageState = .unavailable(
+                error.errorDescription ?? "The saved route is unavailable."
+            )
+            return false
+        } catch {
+            guard routeLoadGeneration == generation else { return false }
+            offlineCanonicalRoute = nil
+            offlineRoutePackageState = .unavailable(
+                "The saved route could not be verified for offline use."
+            )
+            return false
+        }
     }
 
     private func confirm() async {
@@ -503,7 +747,16 @@ private struct RailInterlineRoutePlanBody: View {
                 "railShipments.requestReroute",
                 input: In(shipmentId: p.shipmentId)
             )
+            guard res.shipmentId == p.shipmentId else {
+                rerouting = false
+                flashToast("Reroute returned the wrong shipment")
+                return
+            }
+            routeLoadGeneration = UUID()
             plan?.legs = res.legs
+            offlineRoutePackageState = .unavailable(
+                "This reroute is only a preview. Confirm it online before it can replace the signed offline route."
+            )
             rerouting = false
             flashToast("Routing re-solved · \(res.legs.count) leg\(res.legs.count == 1 ? "" : "s")")
         } catch {

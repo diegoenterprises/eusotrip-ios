@@ -54,7 +54,7 @@ function base64url(value) {
     .replace(/=+$/, '');
 }
 
-export function validateKeyConfiguration({ keyId, issuerId, privateKeyPath }) {
+function validateKeyIdentity({ keyId, issuerId, privateKeyPath }) {
   if (!/^[A-Z0-9]{10}$/.test(keyId)) {
     throw new Error('ASC_API_KEY_ID must be a 10-character uppercase alphanumeric key ID');
   }
@@ -65,17 +65,48 @@ export function validateKeyConfiguration({ keyId, issuerId, privateKeyPath }) {
   if (path.basename(privateKeyPath) !== expectedName) {
     throw new Error(`ASC_API_KEY_PATH must end in ${expectedName}`);
   }
-  const stat = fs.statSync(privateKeyPath, { throwIfNoEntry: false });
-  if (!stat?.isFile()) throw new Error('ASC_API_KEY_PATH must reference a readable file');
-  fs.accessSync(privateKeyPath, fs.constants.R_OK);
-  if ((stat.mode & 0o077) !== 0) {
-    throw new Error('ASC_API_KEY_PATH permissions must be 0600 or stricter');
-  }
 }
 
-export function mintToken({ keyId, issuerId, privateKeyPath }, nowMs = Date.now()) {
-  validateKeyConfiguration({ keyId, issuerId, privateKeyPath });
-  const privateKey = crypto.createPrivateKey(fs.readFileSync(privateKeyPath, 'utf8'));
+function loadValidatedPrivateKey(configuration) {
+  validateKeyIdentity(configuration);
+  const { privateKeyPath } = configuration;
+  const metadata = fs.lstatSync(privateKeyPath, { throwIfNoEntry: false });
+  if (!metadata?.isFile() || metadata.isSymbolicLink()) {
+    throw new Error('ASC_API_KEY_PATH must reference a regular non-symlink file');
+  }
+  const currentUserID = typeof process.getuid === 'function' ? process.getuid() : null;
+  if (currentUserID != null && metadata.uid !== currentUserID) {
+    throw new Error('ASC_API_KEY_PATH must be owned by the release user');
+  }
+  if ((metadata.mode & 0o077) !== 0) {
+    throw new Error('ASC_API_KEY_PATH permissions must be 0600 or stricter');
+  }
+  if (metadata.size > 64 * 1024) throw new Error('ASC_API_KEY_PATH exceeds 64 KiB');
+
+  const descriptor = fs.openSync(
+    privateKeyPath,
+    fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW,
+  );
+  let pem;
+  try {
+    const opened = fs.fstatSync(descriptor);
+    if (!opened.isFile() || opened.dev !== metadata.dev || opened.ino !== metadata.ino) {
+      throw new Error('ASC_API_KEY_PATH changed while it was opened');
+    }
+    pem = fs.readFileSync(descriptor, 'utf8');
+    const final = fs.fstatSync(descriptor);
+    if (
+      final.size !== opened.size ||
+      final.mtimeMs !== opened.mtimeMs ||
+      final.ctimeMs !== opened.ctimeMs
+    ) {
+      throw new Error('ASC_API_KEY_PATH changed while it was read');
+    }
+  } finally {
+    fs.closeSync(descriptor);
+  }
+
+  const privateKey = crypto.createPrivateKey(pem);
   if (privateKey.asymmetricKeyType !== 'ec') {
     throw new Error('ASC_API_KEY_PATH must contain an EC private key');
   }
@@ -83,6 +114,15 @@ export function mintToken({ keyId, issuerId, privateKeyPath }, nowMs = Date.now(
   if (namedCurve && !['prime256v1', 'P-256'].includes(namedCurve)) {
     throw new Error('ASC_API_KEY_PATH must use the P-256 curve');
   }
+  return privateKey;
+}
+
+export function validateKeyConfiguration(configuration) {
+  loadValidatedPrivateKey(configuration);
+}
+
+export function mintToken({ keyId, issuerId, privateKeyPath }, nowMs = Date.now()) {
+  const privateKey = loadValidatedPrivateKey({ keyId, issuerId, privateKeyPath });
 
   const now = Math.floor(nowMs / 1000);
   const header = base64url(JSON.stringify({ alg: 'ES256', kid: keyId, typ: 'JWT' }));
@@ -131,7 +171,7 @@ async function readLimitedText(response) {
 
 const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
-async function fetchJSON(fetchImpl, token, inputUrl, maxAttempts = 4) {
+export async function fetchJSON(fetchImpl, token, inputUrl, maxAttempts = 4) {
   const url = new URL(inputUrl, ASC_ORIGIN);
   if (url.origin !== ASC_ORIGIN) throw new Error('Refusing non-App-Store-Connect pagination URL');
 

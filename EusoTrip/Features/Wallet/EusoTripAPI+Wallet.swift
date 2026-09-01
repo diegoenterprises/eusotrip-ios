@@ -175,6 +175,7 @@ extension EusoTripAPI {
     /// attached only to the exact configured EusoTrip origin.
     func fetchBoundedWalletPassData(_ url: URL,
                                     maxBytes: Int = 12 * 1_024 * 1_024) async throws -> Data {
+        try requireAppRadioSilenceTransportAllowed()
         guard maxBytes > 0,
               url.scheme?.lowercased() == "https",
               url.user == nil,
@@ -214,14 +215,29 @@ extension EusoTripAPI {
         configuration.httpShouldSetCookies = false
         configuration.timeoutIntervalForRequest = 22
         configuration.timeoutIntervalForResource = 60
+        configuration.waitsForConnectivity = false
         let session = URLSession(
             configuration: configuration,
             delegate: WalletPassNoRedirectDelegate(),
             delegateQueue: nil
         )
-        defer { session.invalidateAndCancel() }
+        let registration = try registerAppRadioSilenceAuxiliarySession(session)
+        defer {
+            unregisterAppRadioSilenceAuxiliarySession(registration)
+            session.invalidateAndCancel()
+        }
 
-        let (stream, response) = try await session.bytes(for: request)
+        let stream: URLSession.AsyncBytes
+        let response: URLResponse
+        do {
+            (stream, response) = try await session.bytes(for: request)
+        } catch {
+            if isAppRadioSilenceEnforced {
+                throw AppRadioSilenceTransportError.enforced
+            }
+            throw error
+        }
+        try requireAppRadioSilenceTransportAllowed()
         guard let http = response as? HTTPURLResponse else {
             throw EusoTripAPIError.httpStatus(0, "No HTTP response")
         }
@@ -248,6 +264,8 @@ extension EusoTripAPI {
             data.reserveCapacity(min(Int(http.expectedContentLength), maxBytes))
         }
         for try await byte in stream {
+            try Task.checkCancellation()
+            try requireAppRadioSilenceTransportAllowed()
             guard data.count < maxBytes else {
                 throw EusoTripAPIError.httpStatus(http.statusCode, "Wallet pass size is invalid")
             }
@@ -256,6 +274,7 @@ extension EusoTripAPI {
         guard !data.isEmpty else {
             throw EusoTripAPIError.httpStatus(http.statusCode, "Wallet pass size is invalid")
         }
+        try requireAppRadioSilenceTransportAllowed()
         return data
     }
 }

@@ -175,6 +175,7 @@ final class OfflineQueue: ObservableObject {
     /// edge and a manual flush from stomping on each other.
     @Published private(set) var isFlushing: Bool = false
     private var scheduledRetry: Task<Void, Never>?
+    private var isRadioSilenceSuspended = false
 
     /// File-backed persistence in Application Support so queued actions
     /// survive a cold relaunch (the dead-spot → force-quit → coverage
@@ -383,11 +384,15 @@ final class OfflineQueue: ObservableObject {
     /// that case, so schedule a bounded replay instead of leaving the action
     /// parked until the next radio transition.
     func scheduleReplay(after delay: TimeInterval = 4) {
-        guard scheduledRetry == nil, OfflineReachabilityHub.shared.isOnline else { return }
+        guard !isRadioSilenceSuspended,
+              scheduledRetry == nil,
+              OfflineReachabilityHub.shared.isOnline else { return }
         let bounded = min(max(delay, 1), 60)
         scheduledRetry = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(bounded * 1_000_000_000))
-            guard let self, !Task.isCancelled else { return }
+            guard let self,
+                  !Task.isCancelled,
+                  !self.isRadioSilenceSuspended else { return }
             self.scheduledRetry = nil
             await self.flush()
             if !self.pending.isEmpty, OfflineReachabilityHub.shared.isOnline {
@@ -396,7 +401,24 @@ final class OfflineQueue: ObservableObject {
         }
     }
 
+    func suspendForAppRadioSilence() {
+        guard !isRadioSilenceSuspended else { return }
+        isRadioSilenceSuspended = true
+        scheduledRetry?.cancel()
+        scheduledRetry = nil
+    }
+
+    func resumeAfterAppRadioSilence() {
+        guard isRadioSilenceSuspended else { return }
+        isRadioSilenceSuspended = false
+        guard !pending.isEmpty, OfflineReachabilityHub.shared.isOnline else { return }
+        // A short bounded delay lets an in-flight pass canceled by acquire()
+        // unwind its `isFlushing` defer before the deterministic replay.
+        scheduleReplay(after: 1)
+    }
+
     func flush() async {
+        guard !isRadioSilenceSuspended, !Task.isCancelled else { return }
         guard !isFlushing else { return }
         guard EusoTripAPI.shared.authToken != nil else { return }
         guard !pending.isEmpty else { return }
@@ -408,6 +430,7 @@ final class OfflineQueue: ObservableObject {
         // concurrent enqueue mid-flush is picked up next pass, not now.
         let snapshot = pending.sorted { $0.enqueuedAt < $1.enqueuedAt }
         for action in snapshot {
+            guard !isRadioSilenceSuspended, !Task.isCancelled else { break }
             // Skip anything already drained by a racing pass.
             guard pending.contains(where: { $0.key == action.key }) else { continue }
             if case let .postHaulMessage(_, ownerUserId, _, _) = action {
@@ -420,6 +443,7 @@ final class OfflineQueue: ObservableObject {
             }
             do {
                 try await replay(action)
+                guard !isRadioSilenceSuspended, !Task.isCancelled else { break }
                 if case .postHaulMessage = action {
                     try discardFailedHaulDraft(key: action.key)
                     try removeDurably(key: action.key)
@@ -434,7 +458,14 @@ final class OfflineQueue: ObservableObject {
                     userInfo: ["key": action.key]
                 )
             } catch {
-                if error is OfflineQueueStorageError {
+                if isRadioSilenceSuspended
+                    || Task.isCancelled
+                    || error is CancellationError
+                    || error is AppRadioSilenceTransportError {
+                    // The policy transition is not a server decision. Retain
+                    // the original durable action and stable key unchanged.
+                    break
+                } else if error is OfflineQueueStorageError {
                     NotificationCenter.default.post(
                         name: .eusoOutboxStorageFailed,
                         object: nil,
@@ -767,6 +798,7 @@ final class OfflineQueue: ObservableObject {
     /// Infrastructure and throttling failures are continuation states, not
     /// terminal outcomes. These stay in the durable queue with the same key.
     nonisolated static func isRetryableFailure(_ error: Error) -> Bool {
+        if error is AppRadioSilenceTransportError { return true }
         if isNetworkUnreachable(error) { return true }
         guard let apiError = error as? EusoTripAPIError else { return false }
         switch apiError {

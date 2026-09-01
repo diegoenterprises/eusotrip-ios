@@ -352,6 +352,7 @@ private final class PlaidLinkWebController: UIViewController, WKScriptMessageHan
     var onSuccess: ((_ publicToken: String, _ institution: String?) -> Void)?
 
     private var webView: WKWebView!
+    private var transportRegistration: AppRadioSilenceDirectTransportController.Registration?
     /// Spinner shown until the Plaid CDN script + Link iframe settle.
     private lazy var spinner = WebHostStatusView(message: "Opening Plaid Link…")
     /// Retry/error overlay shown when the CDN load fails. Previously the
@@ -379,6 +380,8 @@ private final class PlaidLinkWebController: UIViewController, WKScriptMessageHan
         webView.backgroundColor = .black
         webView.isOpaque = false
         webView.scrollView.backgroundColor = .black
+        transportRegistration = AppRadioSilenceDirectTransportController.shared
+            .register(webView: webView, resume: { [weak self] in self?.reload() })
         view.addSubview(webView)
         webView.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
@@ -421,8 +424,16 @@ private final class PlaidLinkWebController: UIViewController, WKScriptMessageHan
     private func reload() {
         errorView.isHidden = true
         spinner.isHidden = false
-        webView.loadHTMLString(Self.html(linkToken: linkToken),
-                               baseURL: URL(string: "https://cdn.plaid.com/"))
+        let loaded = AppRadioSilenceDirectTransportController.shared.loadRemoteHTML(
+            Self.html(linkToken: linkToken),
+            baseURL: URL(string: "https://cdn.plaid.com/")!,
+            into: webView
+        )
+        if !loaded { showFailure() }
+    }
+
+    deinit {
+        AppRadioSilenceDirectTransportController.shared.unregister(transportRegistration)
     }
 
     @objc private func cancelTapped() { onExit?() }
@@ -554,6 +565,7 @@ private final class StripeCardWebController: UIViewController, WKScriptMessageHa
     var onSuccess: ((_ paymentMethodId: String) -> Void)?
 
     private var webView: WKWebView!
+    private var transportRegistration: AppRadioSilenceDirectTransportController.Registration?
     private lazy var spinner = WebHostStatusView(message: "Loading secure card form…")
     /// Retry/error overlay — same gap the Plaid host had: no `didFail`
     /// meant a stripe.js CDN failure left a blank black screen.
@@ -579,6 +591,8 @@ private final class StripeCardWebController: UIViewController, WKScriptMessageHa
         webView.backgroundColor = .black
         webView.isOpaque = false
         webView.scrollView.backgroundColor = .black
+        transportRegistration = AppRadioSilenceDirectTransportController.shared
+            .register(webView: webView, resume: { [weak self] in self?.reload() })
         view.addSubview(webView)
         webView.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
@@ -620,10 +634,16 @@ private final class StripeCardWebController: UIViewController, WKScriptMessageHa
     private func reload() {
         errorView.isHidden = true
         spinner.isHidden = false
-        webView.loadHTMLString(
+        let loaded = AppRadioSilenceDirectTransportController.shared.loadRemoteHTML(
             Self.html(clientSecret: clientSecret, publishableKey: publishableKey),
-            baseURL: URL(string: "https://js.stripe.com/")
+            baseURL: URL(string: "https://js.stripe.com/")!,
+            into: webView
         )
+        if !loaded { showFailure() }
+    }
+
+    deinit {
+        AppRadioSilenceDirectTransportController.shared.unregister(transportRegistration)
     }
 
     @objc private func cancelTapped() { onExit?() }

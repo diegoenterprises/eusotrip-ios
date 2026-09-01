@@ -47,7 +47,18 @@ private struct ImageViewerBody: View {
         guard let url = URL(string: imageUrl) else { loading = false; return }
         var req = URLRequest(url: url)
         req.timeoutInterval = 12  // app-wide no-lingering-load bound: cap the skeleton
-        if let (data, _) = try? await URLSession.shared.data(for: req),
+        if let base = EusoTripAPI.shared.baseURL,
+           let baseScheme = base.scheme?.lowercased(),
+           let requestScheme = url.scheme?.lowercased(),
+           baseScheme == requestScheme,
+           base.host?.lowercased() == url.host?.lowercased() {
+            let basePort = base.port ?? (baseScheme == "https" ? 443 : 80)
+            let requestPort = url.port ?? (requestScheme == "https" ? 443 : 80)
+            if basePort == requestPort, let token = EusoTripAPI.shared.authToken {
+                req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            }
+        }
+        if let (data, _) = try? await EusoTripAPI.shared.appRadioSilenceGatedData(for: req),
            let img = UIImage(data: data) {
             image = img
         }
