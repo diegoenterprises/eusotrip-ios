@@ -20,6 +20,309 @@ import Foundation
 import UIKit
 #endif
 
+// MARK: - Wire-token presentation
+
+/// One display boundary for backend enums and database tokens. Wire values stay
+/// unchanged; SwiftUI surfaces call this formatter before presenting them.
+/// Keeping the mapping here prevents ad-hoc underscore replacement from
+/// drifting across Truck, Rail, Vessel, document, payment, and compliance UI.
+enum EusoDisplayText {
+    private static let acronyms: [String: String] = [
+        "ais": "AIS", "bol": "BOL", "cbm": "CBM", "dot": "DOT",
+        "edi": "EDI", "eta": "ETA", "etd": "ETD", "fmcsa": "FMCSA",
+        "fra": "FRA", "hos": "HOS", "imdg": "IMDG", "isf": "ISF",
+        "pod": "POD", "ptc": "PTC", "teu": "TEU", "vgm": "VGM",
+        "ws": "Worldscale", "usd": "USD", "cad": "CAD", "mxn": "MXN",
+    ]
+
+    /// Operational meanings that cannot be recovered accurately by simply
+    /// changing capitalization. These labels are shared across roles so the
+    /// same lifecycle state never appears with conflicting copy.
+    private static let semanticTokens: [String: String] = [
+        "pending_ingate": "Awaiting gate-in",
+        "en_route_pickup": "En route to pickup",
+        "at_pickup": "At pickup",
+        "loading": "Loading",
+        "in_transit": "In transit",
+        "at_delivery": "At delivery",
+        "unloading": "Unloading",
+        "completed": "Completed",
+        "pending_review": "Pending review",
+        "awaiting_documents": "Awaiting documents",
+        "payment_pending": "Payment pending",
+    ]
+
+    private static let equipmentLabels: [String: String] = [
+        "dry_van": "Dry van",
+        "reefer": "Reefer",
+        "flatbed": "Flatbed",
+        "step_deck": "Step deck",
+        "conestoga": "Conestoga",
+        "container": "Container",
+        "tanker_hazmat": "Tanker · Hazmat",
+        "tanker_petroleum": "Tanker · Petroleum",
+        "tanker_liquid": "Tanker · Liquid bulk",
+        "tanker_gas": "Tanker · Gas",
+        "power_only": "Power only",
+        "oversized": "Oversized",
+        "lowboy": "Lowboy",
+        "hot_shot": "Hot shot",
+        "livestock_cattle_pot": "Livestock · Cattle pot",
+        "auto_carrier": "Auto carrier",
+        "pneumatic_tank": "Pneumatic dry bulk",
+        "end_dump": "End dump",
+        "water_tank": "Water tank",
+        "log_trailer": "Log trailer",
+        "curtain_side": "Curtain side",
+        "rail_tofc": "Rail · TOFC",
+        "rail_cofc": "Rail · COFC",
+        "rail_intermodal": "Rail · Intermodal",
+        "rail_tank_gas": "Rail · Tank · Gas",
+        "rail_tank_liquid": "Rail · Tank · Liquid",
+        "rail_boxcar": "Rail · Boxcar",
+        "rail_reefer_boxcar": "Rail · Reefer boxcar",
+        "rail_hopper": "Rail · Hopper",
+        "rail_centerbeam": "Rail · Centerbeam",
+        "rail_gondola": "Rail · Gondola",
+        "rail_auto_rack": "Rail · Autorack",
+        "rail_flatcar": "Rail · Flatcar",
+        "vessel_container": "Vessel · Container",
+        "vessel_bulk": "Vessel · Bulk",
+        "vessel_tanker": "Vessel · Tanker",
+        "vessel_roro": "Vessel · RoRo",
+        "vessel_lng": "Vessel · LNG",
+        "vessel_reefer_container": "Vessel · Reefer container",
+        "vessel_iso_tank": "Vessel · ISO tank",
+    ]
+
+    private static let cargoLabels: [String: String] = [
+        "general": "General freight",
+        "hazmat": "Hazmat",
+        "refrigerated": "Refrigerated",
+        "oversized": "Oversized",
+        "liquid": "Liquid bulk",
+        "gas": "Gas",
+        "chemicals": "Chemicals",
+        "petroleum": "Petroleum",
+        "livestock": "Livestock",
+        "vehicles": "Vehicles",
+        "timber": "Timber",
+        "grain": "Grain",
+        "dry_bulk": "Dry bulk",
+        "food_grade": "Food grade",
+        "water": "Water",
+        "intermodal": "Intermodal",
+        "cryogenic": "Cryogenic",
+    ]
+
+    private static let permitLabels: [String: String] = [
+        "none": "No permit",
+        "trip_permit": "Trip permit",
+        "annual_oversize": "Annual oversize",
+        "superload": "Superload",
+        "overweight_only": "Overweight-only",
+        "hazmat_route": "Hazmat route",
+    ]
+
+    private static let readinessLabels: [String: String] = [
+        "cdl_expired": "CDL expired",
+        "cdl_expiring": "CDL expiring",
+        "hazmat_expired": "Hazmat endorsement expired",
+        "hazmat_expiring": "Hazmat endorsement expiring",
+        "twic_expired": "TWIC expired",
+        "twic_expiring": "TWIC expiring",
+        "insurance_expired": "Insurance expired",
+        "insurance_expiring": "Insurance expiring",
+        "hos_out_of_hours": "HOS hours exhausted",
+        "hos_no_clock": "HOS clock unavailable",
+        "cdl_missing": "CDL not recorded",
+    ]
+
+    private static func reviewedLabel(
+        _ raw: String?,
+        from labels: [String: String]
+    ) -> String? {
+        guard let key = raw?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased(),
+              !key.isEmpty else { return nil }
+        return labels[key]
+    }
+
+    static func equipmentType(_ raw: String?) -> String? {
+        reviewedLabel(raw, from: equipmentLabels)
+    }
+
+    static func cargoType(_ raw: String?) -> String? {
+        reviewedLabel(raw, from: cargoLabels)
+    }
+
+    static func permitType(_ raw: String?) -> String? {
+        reviewedLabel(raw, from: permitLabels)
+    }
+
+    static func driverReadinessFlag(_ raw: String?) -> String? {
+        reviewedLabel(raw, from: readinessLabels)
+    }
+
+    static func weightUnit(_ raw: String?) -> String? {
+        guard let key = raw?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased(),
+              !key.isEmpty else { return nil }
+        switch key {
+        case "lb", "lbs", "pound", "pounds": return "lb"
+        case "kg", "kilogram", "kilograms": return "kg"
+        case "ton", "tons", "short_ton", "short_tons": return "short tons"
+        case "mt", "metric_ton", "metric_tons": return "metric tons"
+        case "gal", "gallon", "gallons": return "gal"
+        case "bbl", "barrel", "barrels": return "bbl"
+        case "l", "liter", "liters", "litre", "litres": return "L"
+        case "m³", "m3", "cubic_meter", "cubic_meters": return "m³"
+        case "bu", "bushel", "bushels": return "bu"
+        case "plt", "pallet", "pallets": return "pallets"
+        case "cs", "case", "cases": return "cases"
+        case "ctn", "carton", "cartons": return "cartons"
+        case "rl", "roll", "rolls": return "rolls"
+        case "bdl", "bundle", "bundles": return "bundles"
+        case "feu": return "FEU"
+        case "teu": return "TEU"
+        case "pcs", "piece", "pieces": return "pieces"
+        case "head": return "head"
+        default: return nil
+        }
+    }
+
+    static func distanceUnit(_ raw: String?) -> String? {
+        guard let key = raw?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased(),
+              !key.isEmpty else { return nil }
+        switch key {
+        case "mi", "mile", "miles": return "mi"
+        case "km", "kilometer", "kilometers", "kilometre", "kilometres": return "km"
+        case "nmi", "nm", "nautical_mile", "nautical_miles": return "nmi"
+        default: return nil
+        }
+    }
+
+    /// Human-readable label for a server enum such as `in_transit` or
+    /// `pending_review`. Empty values remain nil so callers can render their
+    /// own honest unknown state.
+    static func token(_ raw: String?) -> String? {
+        guard let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty else { return nil }
+        // Split both lowerCamel (`paymentStatus`) and acronym-leading camel
+        // (`PODPending`) before normalizing separators. SCREAMING_SNAKE stays
+        // intact and reaches the same lowercase lookup key.
+        let acronymSeparated = raw.replacingOccurrences(
+            of: "([A-Z]+)([A-Z][a-z])",
+            with: "$1_$2",
+            options: .regularExpression
+        )
+        let camelSeparated = acronymSeparated.replacingOccurrences(
+            of: "([a-z0-9])([A-Z])",
+            with: "$1_$2",
+            options: .regularExpression
+        )
+        let normalized = camelSeparated
+            .replacingOccurrences(of: "-", with: "_")
+            .replacingOccurrences(of: "\\s+", with: "_", options: .regularExpression)
+            .lowercased()
+        if let semantic = semanticTokens[normalized] { return semantic }
+
+        let words = normalized
+            .split(separator: "_", omittingEmptySubsequences: true)
+            .map(String.init)
+        guard !words.isEmpty else { return nil }
+        return words.enumerated().map { index, word in
+            if let acronym = acronyms[word] { return acronym }
+            return index == 0 ? word.capitalized : word
+        }
+        .joined(separator: " ")
+    }
+
+    /// Human commercial basis. Examples: `usd_per_mile` -> `USD per mile`,
+    /// `usd_per_car` -> `USD per railcar`, and a missing currency becomes the
+    /// explicit `Per-mile rate · currency pending` rather than a raw token.
+    static func rateBasis(
+        rateUnit: String?,
+        currency: String?,
+        worldscalePct: String?,
+        hasAmount: Bool
+    ) -> String {
+        if worldscalePct?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+            return "Worldscale basis"
+        }
+
+        let rawUnit = rateUnit?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() ?? ""
+        var tokens = rawUnit
+            .replacingOccurrences(of: "-", with: "_")
+            .split(separator: "_", omittingEmptySubsequences: true)
+            .map(String.init)
+
+        let wireCurrency: String? = {
+            guard let first = tokens.first,
+                  ["usd", "cad", "mxn"].contains(first) else { return nil }
+            tokens.removeFirst()
+            return first.uppercased()
+        }()
+        let explicitCurrency = currency?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .uppercased()
+        let resolvedCurrency = explicitCurrency?.isEmpty == false
+            ? explicitCurrency
+            : wireCurrency
+        let basisKey = tokens.joined(separator: "_")
+
+        let basis: (complete: String, pending: String)? = {
+            switch basisKey {
+            case "per_mile", "mile":
+                return ("per mile", "Per-mile rate")
+            case "per_car", "per_railcar", "car", "railcar":
+                return ("per railcar", "Per-railcar rate")
+            case "lump_sum", "lumpsum", "flat":
+                return ("lump sum", "Lump-sum rate")
+            case "per_teu", "teu":
+                return ("per TEU", "Per-TEU rate")
+            case "per_ton", "ton":
+                return ("per ton", "Per-ton rate")
+            case "per_cwt", "cwt":
+                return ("per CWT", "Per-CWT rate")
+            case "per_cbm", "cbm":
+                return ("per CBM", "Per-CBM rate")
+            case "worldscale", "worldscale_pct", "ws", "ws_pct":
+                return ("Worldscale", "Worldscale rate")
+            case "":
+                return nil
+            default:
+                let human = token(basisKey) ?? "Recorded rate"
+                return (human.lowercased(), "\(human) rate")
+            }
+        }()
+
+        if let basis, basis.complete == "Worldscale" {
+            return "Worldscale basis"
+        }
+        if let basis, let resolvedCurrency {
+            return "\(resolvedCurrency) \(basis.complete)"
+        }
+        if let basis {
+            return "\(basis.pending) · currency pending"
+        }
+        if hasAmount, let resolvedCurrency {
+            return "\(resolvedCurrency) commercial amount"
+        }
+        if hasAmount {
+            return "Commercial amount · currency pending"
+        }
+        return "Commercial terms pending"
+    }
+}
+
+
 // MARK: - Errors
 
 enum EusoTripAPIError: Error, LocalizedError {
@@ -16849,6 +17152,12 @@ struct ShipperAPI {
     struct MyLoad: Decodable, Identifiable, Hashable {
         struct LocationRef: Decodable, Hashable { let city: String; let state: String }
         struct PartyRef: Decodable, Hashable { let id: String; let name: String }
+        struct PosterRef: Decodable, Hashable {
+            let userName: String?
+            let companyName: String?
+            let companyLogo: String?
+            let profilePicture: String?
+        }
 
         let id: String
         let loadNumber: String
@@ -16859,14 +17168,19 @@ struct ShipperAPI {
         let deliveryDate: String
         let equipment: String
         let weight: Double
+        let weightUnit: String?
         let hazmat: Bool
         let hazmatClass: String?
         let product: String
         let catalyst: PartyRef?
         let driver: PartyRef?
+        /// Posting identity resolved server-side from the load owner. Company
+        /// branding is preferred; user photo and neutral initials are fallbacks.
+        let poster: PosterRef?
         // Server returns 0 when no rate is set; we project Optional so
         // the 282/285 screens (`if let r = ld.rate`) work as written.
         let rate: Double?
+        let currency: String?
         let eta: String
         let bidsReceived: Int
         let deliveredAt: String?
@@ -16899,8 +17213,8 @@ struct ShipperAPI {
         // those to non-conflicting names without explicit CodingKeys.
         enum CodingKeys: String, CodingKey {
             case id, loadNumber, status, pickupDate, deliveryDate
-            case equipment, weight, hazmat, hazmatClass, product
-            case catalyst, driver, rate, eta, bidsReceived, deliveredAt, createdAt
+            case equipment, weight, weightUnit, hazmat, hazmatClass, product
+            case catalyst, driver, poster, rate, currency, eta, bidsReceived, deliveredAt, createdAt
             case distance, miles
             case transportMode, multiVehicleCount, permitType, rateUnit, worldscalePct
             case originRef = "origin"
