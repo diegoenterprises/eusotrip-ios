@@ -175,48 +175,8 @@ struct SignInView: View {
             }
             .buttonStyle(.plain)
 
-            // Developer-only walkthrough. A fabricated bearer must never be
-            // available in TestFlight or App Store builds: mounting live role
-            // stores behind it produces a cascade of real 401 failures.
-            #if DEBUG
-            demoEntryRow
-            #endif
         }
     }
-
-    // MARK: Demo entry row
-
-    #if DEBUG
-    private var demoEntryRow: some View {
-        VStack(spacing: Space.s2) {
-            Text("Preview mode")
-                .font(EType.micro).tracking(0.8)
-                .foregroundStyle(palette.textTertiary)
-            HStack(spacing: Space.s2) {
-                demoChip(title: "Driver",  role: .driver)
-                demoChip(title: "Shipper", role: .shipper)
-                demoChip(title: "Broker",  role: .broker)
-            }
-        }
-        .padding(.top, Space.s2)
-    }
-
-    private func demoChip(title: String, role: EusoRole) -> some View {
-        Button {
-            focus = nil
-            session.signInDemo(role: role)
-        } label: {
-            Text(title)
-                .font(EType.caption)
-                .foregroundStyle(LinearGradient.diagonal)
-                .frame(maxWidth: .infinity, minHeight: 36)
-                .background(palette.bgCardSoft.opacity(0.55))
-                .overlay(Capsule().strokeBorder(palette.borderSoft))
-                .clipShape(Capsule())
-        }
-        .buttonStyle(.plain)
-    }
-    #endif
 
     // MARK: 2FA form
 

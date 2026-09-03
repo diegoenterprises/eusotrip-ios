@@ -669,55 +669,6 @@ final class EusoTripSession: ObservableObject {
         self.phase = .signedOut
     }
 
-    #if DEBUG
-    // MARK: Offline demo sign-in (developer simulator only)
-    //
-    // Wires AppRoot → SignInView → ContentView without requiring a live
-    // `auth.login` round-trip. Uses a synthetic AuthUser so downstream
-    // screens that read `session.user?.firstName` still render ("Hey,
-    // Michael"). Matches the Load.demoActive + InspectionTemplate.demoPreTrip
-    // pattern: the whole production flow has an offline fallback so the
-    // Figma-faithful walkthrough is demonstrable end-to-end.
-    //
-    func signInDemo(
-        name: String = "Michael Reyes",
-        role: EusoRole = .driver,
-        email: String = "driver.demo@eusorone.com"
-    ) {
-        // Preview mode is process-local and must never compete with a real
-        // logout or masquerade as durable authentication on the next launch.
-        guard logoutTask == nil else { return }
-        authGeneration += 1
-        recoveryUnavailable = false
-        let demoUser = AuthUser(
-            id: "demo-driver-1",
-            email: email,
-            role: role.rawValue,
-            name: name,
-            companyId: "demo-fleet-1"
-        )
-        self.user = demoUser
-        self.phase = .signedIn
-        // Never persist a fabricated credential as a user session. It cannot
-        // be renewed or validated and was one source of cold-launch auth
-        // noise in preview builds.
-        let demoToken = "demo-" + demoUser.id
-        api.authToken = demoToken
-        api.clearCookies()
-        keychain.delete(key: kAuthToken)
-        keychain.delete(key: kCachedUser)
-        keychain.delete(key: kAuthCookies)
-        keychain.delete(key: kCredentialBundle)
-        keychain.delete(key: kLegacyUnauthStrikes)
-        // Do NOT mirror the synthetic demo token to the paired Apple
-        // Watch. The wrist gates on `token != nil` and then attaches
-        // `Bearer demo-…` to REAL production HTTPS calls — every query
-        // 401s while the orb claims signed-in, which reads as "the
-        // watch is broken." A demo phone session sends an explicit
-        // clear so the wrist stays honestly on its pairing state.
-        WatchAuthBridge.shared.clear()
-    }
-    #endif
 }
 
 // MARK: - Keychain shim (minimal)

@@ -169,8 +169,8 @@ final class WatchCommandHandler: NSObject, ObservableObject {
     /// so the wrist still unblocks.
     ///
     /// Why the fallback matters: `WatchAuthBridge.cachedAuth` is only
-    /// populated after `EusoTripSession.boot()` /.signIn / .signInDemo
-    /// explicitly calls `push(...)`. On a cold phone launch the wrist
+    /// populated after `EusoTripSession.boot()` or `.signIn` explicitly calls
+    /// `push(...)`. On a cold phone launch the wrist
     /// activates + calls `requestAuthMirror` in the ~500ms window BEFORE
     /// `auth.me()` resolves — which previously answered `hasAuth: false`
     /// and left the orb stuck on "Link your iPhone" even though the
