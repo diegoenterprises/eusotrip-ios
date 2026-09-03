@@ -194,15 +194,15 @@ final class EusoWalletPassService {
         //    controller. We resolve "topmost" through the active
         //    UIWindowScene — required since iOS 13 because there can
         //    be multiple windows in the foreground.
+        guard let addVC = PKAddPassesViewController(pass: pkpass) else {
+            return .failure(message: "PassKit declined the pass — likely a duplicate or wrong device.")
+        }
         guard let presenter = topPresenter() else {
             return .failure(message: "Couldn't find a screen to add the pass to.")
         }
         guard activeAddPassController == nil,
               !EusoTripAPI.shared.isAppRadioSilenceEnforced else {
             return .failure(message: "Apple Wallet is unavailable while another protected flow is active.")
-        }
-        guard let addVC = PKAddPassesViewController(pass: pkpass) else {
-            return .failure(message: "PassKit declined the pass — likely a duplicate or wrong device.")
         }
         addVC.delegate = self
         activeAddPassController = addVC

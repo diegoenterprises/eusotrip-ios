@@ -69,6 +69,10 @@ struct EusoTripApp: App {
     /// Shared HOS observer — polls `hos.getStatus` on a slow timer and
     /// fires `TripEvent.hosLimitApproached` when drive time nears 11h.
     @StateObject private var hos = HOSClockService.shared
+    /// Authenticated weather work is partitioned by both durable identity and
+    /// this sign-in generation. The context is cleared on every non-signed-in
+    /// phase so a stale view cannot reuse another account's city or route data.
+    @State private var weatherRequestContext: WeatherRequestContext?
     /// Gates AppRoot behind the branded Lottie intro on cold launch.
     @State private var introFinished = false
     /// Local-calendar marker used to refresh visible operational evidence after
@@ -96,6 +100,7 @@ struct EusoTripApp: App {
                         .environmentObject(realtime)
                         .environmentObject(geo)
                         .environmentObject(hos)
+                        .environment(\.weatherRequestContext, weatherRequestContext)
                         .withEusoTripWatchBridge()
                         .transition(.opacity)
                 } else {
@@ -149,6 +154,7 @@ struct EusoTripApp: App {
                 }
             }
             .onChange(of: session.user) { _, user in
+                reconcileWeatherContext(user: user, phase: session.phase)
                 Task {
                     await OfflineMapProductionComposition.shared?.activatePrincipal(
                         tenantID: user?.companyId,
@@ -223,6 +229,7 @@ struct EusoTripApp: App {
                 MockDataGuard.runSelfCheck()
                 #endif
                 await session.boot()
+                reconcileWeatherContext(user: session.user, phase: session.phase)
                 await OfflineMapProductionComposition.shared?.activatePrincipal(
                     tenantID: session.user?.companyId,
                     userID: session.user?.id
@@ -266,6 +273,7 @@ struct EusoTripApp: App {
             // so the push prompt arrives at a moment the user can
             // contextualize it ("You're in. Keep me posted on loads?").
             .onChange(of: session.phase) { _, newPhase in
+                reconcileWeatherContext(user: session.user, phase: newPhase)
                 if newPhase == .signedIn {
                     Task { await push.bootstrap() }
                     realtime.connect()
@@ -294,12 +302,18 @@ struct EusoTripApp: App {
                     // calls into ConvoyPhoneBridge regardless of whether
                     // the realtime bridge has been started.
                     ConvoyPhoneBridge.shared.startRealtimeBridge()
+                    // Schedule only server-proved deadlines. Reconciliation
+                    // never removes a reminder after a failed or degraded read.
+                    ReminderSyncService.shared.start()
                 } else {
                     realtime.disconnect()
                     hos.stop()
                     geo.clearAll()
                     WatchAuthBridge.shared.stopRealtimeBridge()
                     ConvoyPhoneBridge.shared.stop()
+                    // Signing out stops network reconciliation but is not
+                    // evidence that an existing obligation disappeared.
+                    ReminderSyncService.shared.stop()
                 }
             }
             // Deep link: eusotrip://reset?token=<uuid>
@@ -317,6 +331,25 @@ struct EusoTripApp: App {
                 return .systemAction(url)
             })
         }
+    }
+
+    @MainActor
+    private func reconcileWeatherContext(
+        user: AuthUser?,
+        phase: EusoTripSession.Phase
+    ) {
+        guard phase == .signedIn, let user else {
+            guard weatherRequestContext != nil else { return }
+            weatherRequestContext = nil
+            WeatherService.shared.deactivateContext()
+            return
+        }
+
+        let identity = WeatherRequestIdentity(user: user)
+        guard weatherRequestContext?.identity != identity else { return }
+        let context = WeatherRequestContext(identity: identity, sessionEpoch: UUID())
+        weatherRequestContext = context
+        WeatherService.shared.activateContext(context)
     }
 
     private func handleDeepLink(_ url: URL) {

@@ -77,6 +77,8 @@
 		A1978D143BA29D29AC175E7B /* Glass.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1E7D7E296A5602D08D57F92 /* Glass.swift */; };
 		A1A11111111111111111API1 /* ShipperAppIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A11111111111111111API2 /* ShipperAppIntents.swift */; };
 		A1A11111111111111111F001 /* PushService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A11111111111111111F005 /* PushService.swift */; };
+		A1A11111111111111111F101 /* ReminderScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A11111111111111111F102 /* ReminderScheduler.swift */; };
+		RSYN2026081200000011A1 /* ReminderSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = RSYN2026081200000012A1 /* ReminderSyncService.swift */; };
 		A1A11111111111111111F002 /* RealtimeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A11111111111111111F006 /* RealtimeService.swift */; };
 		A1A11111111111111111F003 /* GeofenceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A11111111111111111F007 /* GeofenceService.swift */; };
 		A1A11111111111111111F004 /* HOSClockService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A11111111111111111F008 /* HOSClockService.swift */; };
@@ -225,6 +227,7 @@
 		B10E0FA2CE1A4B7E0000D113 /* 110_MeAutoAcceptRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10E0FA2CE1A4B7E0000D114 /* 110_MeAutoAcceptRules.swift */; };
 		B1A11111111111111111AA01 /* WeatherSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AA02 /* WeatherSnapshot.swift */; };
 		B1A11111111111111111AA03 /* WeatherService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AA04 /* WeatherService.swift */; };
+		WFLY20260814000000000001 /* ScopedAsyncFlightRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = WFLY20260814000000000002 /* ScopedAsyncFlightRegistry.swift */; };
 		B1A11111111111111111AA05 /* WeatherCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AA06 /* WeatherCard.swift */; };
 		B1A11111111111111111AA07 /* DriverTabPanes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AA08 /* DriverTabPanes.swift */; };
 		B1A11111111111111111AA0A /* WeatherIcons.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AA0B /* WeatherIcons.swift */; };
@@ -1413,6 +1416,8 @@
 		A192A329AC526EED829942B1 /* 012_DvirSubmitted.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 012_DvirSubmitted.swift; sourceTree = "<group>"; };
 		A1A11111111111111111API2 /* ShipperAppIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShipperAppIntents.swift; sourceTree = "<group>"; };
 		A1A11111111111111111F005 /* PushService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushService.swift; sourceTree = "<group>"; };
+		A1A11111111111111111F102 /* ReminderScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderScheduler.swift; sourceTree = "<group>"; };
+		RSYN2026081200000012A1 /* ReminderSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderSyncService.swift; sourceTree = "<group>"; };
 		A1A11111111111111111F006 /* RealtimeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeService.swift; sourceTree = "<group>"; };
 		A1A11111111111111111F007 /* GeofenceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeofenceService.swift; sourceTree = "<group>"; };
 		A1A11111111111111111F008 /* HOSClockService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HOSClockService.swift; sourceTree = "<group>"; };
@@ -1571,6 +1576,7 @@
 		B10E0FA2CE1A4B7E0000D114 /* 110_MeAutoAcceptRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 110_MeAutoAcceptRules.swift; sourceTree = "<group>"; };
 		B1A11111111111111111AA02 /* WeatherSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherSnapshot.swift; sourceTree = "<group>"; };
 		B1A11111111111111111AA04 /* WeatherService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherService.swift; sourceTree = "<group>"; };
+		WFLY20260814000000000002 /* ScopedAsyncFlightRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScopedAsyncFlightRegistry.swift; sourceTree = "<group>"; };
 		B1A11111111111111111AA06 /* WeatherCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherCard.swift; sourceTree = "<group>"; };
 		B1A11111111111111111AA08 /* DriverTabPanes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriverTabPanes.swift; sourceTree = "<group>"; };
 		B1A11111111111111111AA09 /* EusoTrip.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = EusoTrip.entitlements; sourceTree = "<group>"; };
@@ -3528,12 +3534,15 @@
 				C1A11111111111111111BA02 /* DriverProfileStore.swift */,
 				MKW1TCH11ST0000000BA02 /* MarketWatchlistStore.swift */,
 				B1A11111111111111111AA04 /* WeatherService.swift */,
+				WFLY20260814000000000002 /* ScopedAsyncFlightRegistry.swift */,
 				HEA1TH5ERV1CE0000000AA02 /* HealthService.swift */,
 				B1A21111111111111111AA02 /* AgreementPDFBuilder.swift */,
 				B1A41111111111111111AA02 /* EusoWalletPassService.swift */,
 				A1DMC0001000000000000021 /* DriverLocationResolver.swift */,
 				B1ACD2026062900000001AA02 /* AppCrashDiagnosticsReporter.swift */,
 				A1A11111111111111111F005 /* PushService.swift */,
+				A1A11111111111111111F102 /* ReminderScheduler.swift */,
+				RSYN2026081200000012A1 /* ReminderSyncService.swift */,
 				A1A11111111111111111API2 /* ShipperAppIntents.swift */,
 				A1A11111111111111111LAA2 /* ShipperLoadActivityAttributes.swift */,
 				A1A11111111111111111SHC2 /* ShipperHandoffContinuity.swift */,
@@ -5066,6 +5075,7 @@
 				A12E1A1C0010CE0FF100001D /* LatLongParser.swift in Sources */,
 				B1A11111111111111111AA01 /* WeatherSnapshot.swift in Sources */,
 				B1A11111111111111111AA03 /* WeatherService.swift in Sources */,
+				WFLY20260814000000000001 /* ScopedAsyncFlightRegistry.swift in Sources */,
 				B1A21111111111111111AA01 /* AgreementPDFBuilder.swift in Sources */,
 				B1A31111111111111111AA01 /* EusoQR.swift in Sources */,
 				B1A51111111111111111AA01 /* EusoTicketCanvas.swift in Sources */,
@@ -5723,6 +5733,8 @@
 				D1A11111111111111111ATD1 /* 803_AdminTenantDetail.swift in Sources */,
 				D1A11111111111111111LP01 /* LifecycleProductContext.swift in Sources */,
 				A1A11111111111111111F001 /* PushService.swift in Sources */,
+				A1A11111111111111111F101 /* ReminderScheduler.swift in Sources */,
+				RSYN2026081200000011A1 /* ReminderSyncService.swift in Sources */,
 				A1A11111111111111111API1 /* ShipperAppIntents.swift in Sources */,
 				A1A11111111111111111LAA1 /* ShipperLoadActivityAttributes.swift in Sources */,
 				A1A11111111111111111SHC1 /* ShipperHandoffContinuity.swift in Sources */,

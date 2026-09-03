@@ -213,6 +213,10 @@ final class PushService: NSObject, ObservableObject,
     /// Inbox tab badge on Pulse Watch. Safe to call with any payload;
     /// non-message types short-circuit.
     func handleIncomingPayload(_ userInfo: [AnyHashable: Any]) {
+        // Any push is a throttled hint to reconcile provable deadlines. The
+        // reminder service remains a no-op while signed out or radio-silent.
+        ReminderSyncService.shared.handleRemotePush()
+
         let type = (userInfo["type"] as? String)?.lowercased() ?? ""
         let isMessage = type == "message_new"
             || type == "message:new"

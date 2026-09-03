@@ -35,7 +35,6 @@ import SwiftUI
 
 struct ShipperHome: View {
     @Environment(\.palette) private var palette
-    @Environment(\.openURL) private var openURL
     @EnvironmentObject private var session: EusoTripSession
 
     @StateObject private var dashboard = ShipperDashboardStore()
@@ -64,20 +63,6 @@ struct ShipperHome: View {
     /// conversation, matching the web platform's messaging surface.
     @State private var showMessages: Bool = false
 
-    // Real weather snapshot (CoreLocation + WeatherKit → NWS → Open-Meteo
-    // cascade in WeatherService). nil → render the "Enable location"
-    // CTA when CoreLocation is .notDetermined / .denied / .restricted,
-    // or render nothing when authorized but momentarily unavailable.
-    // Per home-widget doctrine the weather card sits between the
-    // attention card and the CTA row across every role.
-    @State private var weather: WeatherSnapshot? = nil
-    /// Mirrors `DriverHomeViewModel.WeatherAvailability` — same four
-    /// states (.pending / .live / .needsLocation / .unavailable) so
-    /// the shipper home renders the same enable-location CTA the
-    /// driver home does. Founder report 2026-05-05 — "the app
-    /// doesn't ask for my location so it doesn't load the weather
-    /// widget for shipper or driver role".
-    @State private var weatherNeedsLocation: Bool = false
     /// The signed-in user's avatar photo (users.profilePicture, stored as a
     /// base64 data URL by profile.updateAvatar). Fetched on appear + on
     /// .eusoProfileUpdated; duAvatar renders it, falling back to initials.
@@ -177,88 +162,18 @@ struct ShipperHome: View {
         async let p: Void = profile.refresh()
         async let ag: Void = aggregates.refresh()
         async let av: Void = loadAvatar()
-        async let w: WeatherSnapshot? = WeatherService.shared.fetchCurrent()
-        let snap = await w
         _ = await (a, b, c, d, p, ag, av)
-        weather = snap
-        // Resolve CTA visibility from the post-fetch authorization
-        // status so the home renders an "Enable location" affordance
-        // when CoreLocation hasn't been asked yet (.notDetermined) or
-        // when the user previously denied / restricted access.
-        let status = WeatherService.shared.authorizationStatus
-        weatherNeedsLocation = (snap == nil) && (
-            status == .notDetermined ||
-            status == .denied ||
-            status == .restricted
-        )
         unread.refresh()  // EUSO-2057: kicks UnreadMessageStore -> messaging.getUnreadCount
     }
 
-    /// Live weather card driven by `WeatherService.shared.fetchCurrent()`
-    /// (WeatherKit → NWS → Open-Meteo cascade, real CoreLocation fix).
-    /// Renders nothing when the snapshot is nil — empty state per
-    /// the no-mock-data doctrine. The shared `WeatherCard` view is
-    /// the same component the driver dashboard uses, so the
-    /// time-of-day fix in the card affects every role uniformly.
+    /// Auth-scoped live weather. The shared widget owns its provider request,
+    /// cache, permission state, and retry cadence for every role home.
     @ViewBuilder
     private var weatherSection: some View {
         // Always-visible bespoke weather surface — owns its own fetch and
         // renders an honest state (data / loading / enable-location /
         // unavailable) so the widget never disappears on any role.
         HomeWeatherWidget()
-    }
-
-    /// "Enable location for live weather" CTA — same shape as the
-    /// driver home's `enableLocationCard`. Tap behavior:
-    ///   • `.notDetermined` → fire `requestPermissionIfNeeded()` and
-    ///     re-fetch after the user responds (1s debounce gives iOS
-    ///     time to record the new status before the retry).
-    ///   • `.denied` / `.restricted` → open Settings since iOS won't
-    ///     re-prompt.
-    private var shipperEnableLocationCard: some View {
-        Button {
-            let status = WeatherService.shared.authorizationStatus
-            if status == .notDetermined {
-                WeatherService.shared.requestPermissionIfNeeded()
-                Task {
-                    try? await Task.sleep(nanoseconds: 1_000_000_000)
-                    await refreshAll()
-                }
-            } else if let url = URL(string: UIApplication.openSettingsURLString) {
-                openURL(url)
-            }
-        } label: {
-            HStack(alignment: .center, spacing: Space.s3) {
-                ZStack {
-                    Circle()
-                        .fill(LinearGradient.diagonal)
-                        .frame(width: 48, height: 48)
-                    Image(systemName: "location.circle")
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(.white)
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Enable location for live weather")
-                        .font(EType.body.weight(.semibold))
-                        .foregroundStyle(palette.textPrimary)
-                    Text("Grant location access to see local conditions, visibility and route weather alerts.")
-                        .font(EType.micro)
-                        .foregroundStyle(palette.textSecondary)
-                        .multilineTextAlignment(.leading)
-                }
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(palette.textTertiary)
-            }
-            .padding(Space.s3)
-            // Bespoke EusoCard surface — iridescent blue→magenta outline
-            // + glow so the enable-location CTA reads as a first-class
-            // card matching the SVG card language (mirrors DriverHome's
-            // enableLocationCard treatment).
-            .eusoCard(radius: Radius.lg)
-        }
-        .buttonStyle(.plain)
     }
 
     // MARK: - TopBar — eyebrow + counter + greeting + DU avatar

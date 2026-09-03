@@ -213,6 +213,7 @@ private struct WeatherImpact162 {
 struct DriverWellnessFatigue_162: View {
     @Environment(\.palette) private var palette
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.weatherRequestContext) private var weatherRequestContext
 
     // Real loading + action state (honest wiring; no try?-collapse).
     @State private var risk: FatigueRisk162? = nil
@@ -1217,7 +1218,14 @@ struct DriverWellnessFatigue_162: View {
         // Driver Home dashboard reads. Best-effort: nil on denied/offline →
         // the weather factor degrades to the honest neutral, never failing the
         // wellness summary above.
-        weather = await WeatherService.shared.fetchCurrent()
+        if let weatherRequestContext {
+            weather = await WeatherService.shared.fetchCurrent(
+                scope: .device(weatherRequestContext),
+                includeLaneImpact: false
+            )
+        } else {
+            weather = nil
+        }
 
         // Live Apple-Health recovery snapshot — the phone reads the
         // Apple-Watch-synced sleep / RHR / HRV from the shared HealthKit store

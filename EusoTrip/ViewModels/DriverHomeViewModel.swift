@@ -338,72 +338,6 @@ final class DriverHomeViewModel: ObservableObject {
     func load(api: EusoTripAPI = .shared) async {
         phase = .loading
 
-        // Weather is Apple-provided (WeatherKit + CoreLocation) and is
-        // intentionally fetched out-of-band from the backend so the dashboard
-        // always shows the driver's real local conditions — even when the
-        // EusoTrip backend is unreachable or the token is expired.
-        //
-        // 75th firing (2026-04-24, eusotrip-killers hygiene + fallback C):
-        // previous code pre-seeded a fabricated snapshot AND fell back to
-        // one when `fetchCurrent()` returned nil. Both were fake data and
-        // violated the §3 "no-mock" pledge. This path now:
-        //   • leaves `weather == nil` until WeatherKit returns a live shape;
-        //   • resolves `weatherAvailability` from CLAuthorizationStatus so
-        //     the dashboard renders an honest "Enable location" CTA
-        //     (or silently omits the card) rather than fabricating a
-        //     temperature, wind, and visibility.
-        Task { [weak self] in
-            let service = WeatherService.shared
-            let snapshot = await service.fetchCurrent()
-            await MainActor.run {
-                guard let self = self else { return }
-                if let snapshot = snapshot {
-                    self.weather = snapshot
-                    self.weatherAvailability = .live
-                    // Drive the greeting location label from the same
-                    // placemark so the header and the weather card always
-                    // agree. Strip the " · approx" suffix WeatherService
-                    // adds when CoreLocation couldn't pin us down — the
-                    // header just wants a clean city.
-                    let cleaned = snapshot.city
-                        .replacingOccurrences(of: " · approx", with: "")
-                    self.lastKnownLocation = cleaned
-                } else {
-                    self.weather = nil
-                    // `fetchCurrent()` returns nil when either (a) CLAuth
-                    // is denied/restricted or (b) WeatherKit itself failed.
-                    // Read the status directly off the service to tell the
-                    // two apart so the dashboard can render a location-CTA
-                    // for (a) and silently omit for (b).
-                    switch service.authorizationStatus {
-                    case .notDetermined:
-                        // Was `.pending` (silent) — but `.pending`
-                        // hides the card entirely, which meant a
-                        // first-time install never saw any weather
-                        // affordance because the iOS prompt
-                        // sometimes races past the 8-second poll
-                        // window in `requestLocationIfNeeded()`.
-                        // Surface the same CTA we use for `.denied`
-                        // so the founder gets a tap-to-grant entry
-                        // point on first launch (founder report
-                        // 2026-05-05 — "the app doesn't ask for my
-                        // location"). The CTA's tap action calls
-                        // `WeatherService.requestPermissionIfNeeded()`
-                        // when status is still `.notDetermined`,
-                        // and falls back to opening Settings when
-                        // `.denied` / `.restricted`.
-                        self.weatherAvailability = .needsLocation
-                    case .denied, .restricted:
-                        self.weatherAvailability = .needsLocation
-                    case .authorizedWhenInUse, .authorizedAlways:
-                        self.weatherAvailability = .unavailable
-                    @unknown default:
-                        self.weatherAvailability = .unavailable
-                    }
-                }
-            }
-        }
-
         // Wallet balance is fetched out-of-band — a transient failure
         // (e.g. Plaid webhook queue drained) shouldn't collapse the whole
         // dashboard, so its error path is swallowed and the tile just
@@ -433,14 +367,8 @@ final class DriverHomeViewModel: ObservableObject {
                 }
             }
 
-            // User-direction weather policy (2026-04-24): keep
-            // WeatherKit as the default on Home, and switch to HERE
-            // Destination Weather only when there's an active /
-            // upcoming load — at which point the driver cares about
-            // route/destination conditions, not the parking spot.
-            // The WeatherKit snapshot from the top of load() is
-            // already in flight; this block overwrites it when a
-            // load is assigned and HERE returns a usable report.
+            // WeatherKit remains the ambient Home authority. HERE resolves
+            // only active-load route endpoints and risk for the lane strip.
             if self.activeLoad != nil || self.activeLoadSummary != nil {
                 Task { [weak self] in
                     await self?.refreshWeatherForUpcomingLoad()
@@ -454,24 +382,25 @@ final class DriverHomeViewModel: ObservableObject {
             self.isOffline = false
             self.phase = .loaded
         } catch EusoTripAPIError.unauthenticated {
-            // Dev bypass: live backend isn't wired or token expired. Populate
-            // a signed-out demo state for the backend-sourced cards only —
-            // weather is already live from WeatherKit above.
-            applyOfflineBackendState(reason: "Sign in required — backend preview")
+            applyOfflineBackendState(reason: "Sign in to see your loads, hours and wallet.")
         } catch {
             applyOfflineBackendState(reason: error.localizedDescription)
         }
     }
 
-    /// Pulls a fresh `WeatherSnapshot` from HERE Destination Weather
-    /// for the upcoming load's delivery coordinate (falling back to
-    /// the pickup coordinate if the delivery lat/lng is missing).
-    /// Overwrites the Home `weather` snapshot in-place when HERE
-    /// returns usable data; silently no-ops on failure so the
-    /// WeatherKit snapshot from the top of `load()` continues to
-    /// render. Called only when `activeLoad` / `activeLoadSummary`
-    /// is non-nil — matches the "route weather when a load is
-    /// active, local weather otherwise" doctrine.
+    /// Receives ambient device weather from HomeWeatherWidget, the sole
+    /// authenticated ambient provider owner on Driver Home. Route HERE data is
+    /// held independently in `laneWeather` and never blocks this callback.
+    func acceptLocalWeatherSnapshot(_ snapshot: WeatherSnapshot) {
+        if weather != snapshot { weather = snapshot }
+        weatherAvailability = .live
+        let cleaned = snapshot.city.replacingOccurrences(of: " · approx", with: "")
+        if lastKnownLocation != cleaned { lastKnownLocation = cleaned }
+    }
+
+    /// Pulls fresh HERE Destination Weather for the active load's mapped
+    /// endpoints. The result feeds only `laneWeather`; ambient Home conditions
+    /// remain owned by HomeWeatherWidget's WeatherKit chain.
     private func refreshWeatherForUpcomingLoad() async {
         guard let load = activeLoad else { return }
 
@@ -516,11 +445,21 @@ final class DriverHomeViewModel: ObservableObject {
 
         let originSnap: WeatherSnapshot? = {
             guard let place = originResolved, let pu = pickup else { return nil }
-            return WeatherSnapshot.fromHereWeather(place, city: pu.city, latitude: pu.lat)
+            return WeatherSnapshot.fromHereWeather(
+                place,
+                city: pu.city,
+                latitude: pu.lat,
+                longitude: pu.lng
+            )
         }()
         let destSnap: WeatherSnapshot? = {
             guard let place = destResolved, let del = delivery else { return nil }
-            return WeatherSnapshot.fromHereWeather(place, city: del.city, latitude: del.lat)
+            return WeatherSnapshot.fromHereWeather(
+                place,
+                city: del.city,
+                latitude: del.lat,
+                longitude: del.lng
+            )
         }()
 
         // Lane strip — both ends when available.
@@ -535,15 +474,6 @@ final class DriverHomeViewModel: ObservableObject {
         )
         self.laneWeather = lane.isEmpty ? nil : lane
 
-        // Hero snapshot policy (user direction 2026-04-24): destination
-        // weather replaces the parked-here WeatherKit snapshot while a
-        // load is active — the driver cares where the truck is going.
-        // Falls back to the pickup snapshot pre-haul, then to whatever
-        // WeatherKit already painted.
-        if let snap = destSnap ?? originSnap {
-            self.weather = snap
-            self.weatherAvailability = .live
-        }
     }
 
     /// Backend is unreachable — surface the offline state honestly

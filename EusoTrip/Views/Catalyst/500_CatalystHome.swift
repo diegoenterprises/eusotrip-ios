@@ -58,7 +58,6 @@ import SwiftUI
 
 struct CatalystHome: View {
     @Environment(\.palette) private var palette
-    @Environment(\.openURL) private var openURL
     @EnvironmentObject private var session: EusoTripSession
 
     @StateObject private var dashboard = CatalystHomeDashboardStore()
@@ -77,10 +76,6 @@ struct CatalystHome: View {
     @State private var selectedRecent: CatalystAPI.RecentMatch? = nil
     @State private var presentingAlert: CatalystAPI.LoadAlert? = nil
 
-    // Founder ask 2026-05-07: weather widget pinned to top of
-    // every role's home; attention strip collapsible.
-    @State private var weather: WeatherSnapshot? = nil
-    @State private var weatherNeedsLocation: Bool = false
     @State private var attentionExpanded: Bool = (UserDefaults.standard.object(forKey: "catalyst.home.attentionExpanded") as? Bool) ?? true
 
     // ── Home-widget customization — uses shared HomeWidgetGrid. ──
@@ -185,66 +180,7 @@ struct CatalystHome: View {
         async let b: Void = alerts.refresh()
         async let c: Void = matches.refresh()
         async let d: Void = recent.refresh()
-        async let w: WeatherSnapshot? = WeatherService.shared.fetchCurrent()
-        let snap = await w
         _ = await (a, b, c, d)
-        weather = snap
-        let status = WeatherService.shared.authorizationStatus
-        weatherNeedsLocation = (snap == nil) && (
-            status == .notDetermined ||
-            status == .denied ||
-            status == .restricted
-        )
-    }
-
-    /// Live weather card — same WeatherCard component used by Driver
-    /// 010 + Shipper 200. Empty when WeatherKit hasn't returned yet
-    /// AND CoreLocation is authorized (transient state); shows the
-    /// "Enable location" CTA when authorization is missing.
-    @ViewBuilder
-    private var weatherSection: some View {
-        // Always-visible bespoke weather surface — owns its own fetch and
-        // renders an honest state (data / loading / enable-location /
-        // unavailable) so the widget never disappears on any role.
-        HomeWeatherWidget()
-    }
-
-    private var catalystEnableLocationCard: some View {
-        Button {
-            let status = WeatherService.shared.authorizationStatus
-            if status == .notDetermined {
-                WeatherService.shared.requestPermissionIfNeeded()
-            } else if let url = URL(string: UIApplication.openSettingsURLString) {
-                openURL(url)
-            }
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "location.fill")
-                    .font(.system(size: 14, weight: .heavy))
-                    .foregroundStyle(.white)
-                    .frame(width: 36, height: 36)
-                    .background(Circle().fill(LinearGradient.diagonal))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Enable location for live weather")
-                        .font(EType.bodyStrong)
-                        .foregroundStyle(palette.textPrimary)
-                    Text("Powers the dispatch decisions ESANG surfaces in your morning brief.")
-                        .font(EType.caption)
-                        .foregroundStyle(palette.textSecondary)
-                        .lineLimit(2)
-                }
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .heavy))
-                    .foregroundStyle(palette.textTertiary)
-            }
-            .padding(Space.s3)
-            // Bespoke EusoCard surface — iridescent outline + glow so the
-            // enable-location CTA reads as a first-class card, matching
-            // the SVG card language (was flat bgCard + strokeBorder).
-            .eusoCard(radius: Radius.lg)
-        }
-        .buttonStyle(.plain)
     }
 
     /// Wraps the existing `attentionStrip` in a graceful collapsible

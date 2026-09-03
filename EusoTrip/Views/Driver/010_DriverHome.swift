@@ -171,7 +171,7 @@ struct DriverHome: View {
                         weather: {
                             AnyView(HomeWeatherWidget(
                                 lane: vm.laneWeather,
-                                preferredSnapshot: vm.weather
+                                onSnapshot: { vm.acceptLocalWeatherSnapshot($0) }
                             ))
                         },
                         render: { id in driverHomeRender(id) }

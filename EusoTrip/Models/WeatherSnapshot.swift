@@ -2,12 +2,11 @@
 //  WeatherSnapshot.swift
 //  EusoTrip — Freight-grade weather payload for the home dashboards.
 //
-//  Wire-plan authority:
-//    • Apple WeatherKit (primary, on-device)
-//    • api.weather.gov (NWS ground-truth fallback, US)
-//    • Open-Meteo (keyless last resort, non-US)
-//    • HERE Destination Weather v3 (route/lane weather when a load is
-//      active) — shapes mirror server/services/here/destinationWeather.ts
+//  Provider authority:
+//    • Apple WeatherKit for current/location/hourly/daily/alerts/solar data.
+//    • Server-normalized OpenWeather only as a visibly attributed failover.
+//    • HERE Destination Weather v3 for route/lane weather when a load is
+//      active — shapes mirror server/services/here/destinationWeather.ts
 //      (observation · forecastHourly · forecast7days · alerts).
 //
 //  Level-100 doctrine (2026-06-11): every value is live or em-dash.
@@ -21,7 +20,7 @@ import SwiftUI
 // Level-100 / always-on doctrine (2026-06-19): the home weather widget
 // must NEVER show "unavailable". The whole snapshot graph is `Codable`
 // so the last-good REAL reading can be persisted to disk (UserDefaults
-// JSON) and survive a cold relaunch — see `WeatherService.cachedSnapshot`.
+// JSON) and survive a cold relaunch — see `WeatherService.cachedSnapshot(for:)`.
 // Codability is render-fidelity-preserving (hourly + daily + alerts +
 // lane impact all round-trip); the computed `Color` helpers on the enums
 // are unaffected (computed props aren't encoded). Nothing fabricated:
@@ -73,7 +72,8 @@ struct WeatherSnapshot: Hashable, Codable {
     var alert: ActiveAlert? = nil
 
     /// Per-load ETA-risk segments for the LANE IMPACT panel — populated
-    /// by `weather.laneImpact` (Apple WeatherKit `/v4/route`, time-aware).
+    /// by `weather.laneImpact` (HERE route weather at ETA, with an explicitly
+    /// attributed WeatherKit fallback).
     /// Nil/empty → the panel collapses (between loads, Enterprise route
     /// tier absent, or the call returned no data). Never seeded.
     var laneImpact: [LaneImpactSegment]? = nil
@@ -98,6 +98,12 @@ struct WeatherSnapshot: Hashable, Codable {
     /// CLLocation. Drives the sun/moon arc angle, season, and hemisphere.
     var latitude: Double? = nil
 
+    /// Longitude of the observation point (-180…+180 deg). Kept with
+    /// latitude so a cached observation can still resolve the current solar
+    /// state from the actual coordinate after its provider timestamp ages.
+    /// This is location geometry, never a device-clock approximation.
+    var longitude: Double? = nil
+
     /// IANA timezone identifier ("America/Chicago", "Europe/London") for
     /// the observation point. From the CLPlacemark's timeZone (or server).
     /// Drives local-time computation for the day-part split.
@@ -105,7 +111,8 @@ struct WeatherSnapshot: Hashable, Codable {
 
     /// Sunrise at this location/day. Extracted from the server daily strip
     /// (or NWS period boundaries). Drives the honest day/night + dawn/dusk
-    /// transitions. Nil → the helpers fall back to an hour gate.
+    /// transitions. Nil → the helpers use coordinate solar elevation, then
+    /// the observation timezone only when coordinate geometry is absent.
     var sunriseAt: Date? = nil
 
     /// Sunset at this location/day. Pairs with `sunriseAt`.
@@ -114,7 +121,7 @@ struct WeatherSnapshot: Hashable, Codable {
     /// Explicit night flag when an upstream source states it (e.g. a
     /// WeatherKit symbol that carries `.fill` night variants, or a server
     /// `isDaytime: false`). Honest override; when nil, `isNight` derives
-    /// from sunrise/sunset → hour gate.
+    /// from sunrise/sunset → coordinate → observation-timezone fallback.
     var isNightHint: Bool? = nil
     /// "5h · light rain · pickup window" — the driver-actionable forecast line.
     let nextAlert: String?
@@ -160,6 +167,11 @@ struct WeatherSnapshot: Hashable, Codable {
         /// mapper infers from `symbol` when this is unset so the legacy
         /// paths still render a real glyph.
         var weatherCode: Int = 0
+
+        /// Provider-authored daylight state for this exact forecast hour.
+        /// WeatherKit/NWS populate it directly. Other providers leave it nil
+        /// and the card resolves the hour from coordinate + sun window.
+        var isDaylightHint: Bool? = nil
 
         var id: Date { date }
 
@@ -268,6 +280,27 @@ struct WeatherSnapshot: Hashable, Codable {
         let headline: String?
         /// When the bulletin expires — nil when open-ended/unknown.
         let endsAt: Date?
+        /// Reporting agency required for official-alert attribution.
+        let source: String?
+        /// Provider-issued detail page. WeatherKit requires this to remain
+        /// tappable wherever its alert is presented.
+        let detailsURL: URL?
+
+        init(
+            event: String,
+            severity: AlertSeverity,
+            headline: String?,
+            endsAt: Date?,
+            source: String? = nil,
+            detailsURL: URL? = nil
+        ) {
+            self.event = event
+            self.severity = severity
+            self.headline = headline
+            self.endsAt = endsAt
+            self.source = source
+            self.detailsURL = detailsURL
+        }
 
         var id: String { "\(event)-\(endsAt?.timeIntervalSince1970 ?? 0)" }
 
@@ -381,9 +414,19 @@ struct WeatherSnapshot: Hashable, Codable {
         case openWeather  // server byLatLon "openweather" degraded envelope
         case unknown
 
-        /// HERE Destination Weather (lane points). HERE never appears in
-        /// user-facing copy — attribution reads the branded network name.
+        /// HERE Destination Weather (route and lane points).
         case here
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.singleValueContainer()
+            let rawValue = try? container.decode(String.self)
+            self = rawValue.flatMap(Self.init(rawValue:)) ?? .unknown
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.singleValueContainer()
+            try container.encode(rawValue)
+        }
 
         /// The attribution string shown on the expanded card's source
         /// line. Apple WeatherKit is the v2 backbone; every other provider
@@ -395,8 +438,8 @@ struct WeatherSnapshot: Hashable, Codable {
             case .nws:        return "NWS"
             case .openMeteo:  return "Open-Meteo"
             case .openWeather: return "OpenWeather"
-            case .here:       return "EusoTrip Network"
-            case .unknown:    return "live source"
+            case .here:       return "HERE route weather"
+            case .unknown:    return "source unavailable"
             }
         }
     }
@@ -410,6 +453,22 @@ struct WeatherSnapshot: Hashable, Codable {
         let severity: AlertSeverity
         /// When the bulletin expires — nil → open-ended/unknown.
         let until: Date?
+        let source: String?
+        let detailsURL: URL?
+
+        init(
+            title: String,
+            severity: AlertSeverity,
+            until: Date?,
+            source: String? = nil,
+            detailsURL: URL? = nil
+        ) {
+            self.title = title
+            self.severity = severity
+            self.until = until
+            self.source = source
+            self.detailsURL = detailsURL
+        }
 
         /// "until 7 PM" or nil.
         var untilDisplay: String? {
@@ -435,8 +494,8 @@ struct WeatherSnapshot: Hashable, Codable {
         }
     }
 
-    /// Coarse ETA-risk tier for a lane segment. Apple WeatherKit `/v4/route`
-    /// worst-case → tier server-side; the client only renders it.
+    /// Coarse ETA-risk tier for a lane segment. The selected route-weather
+    /// provider's worst case becomes the tier server-side; the client renders it.
     ///
     /// §3 contract vocabulary is `none|watch|elevated|severe`. The legacy
     /// case was `.clear`; the server emits `"none"` (and "clear" for the
@@ -484,22 +543,63 @@ struct WeatherSnapshot: Hashable, Codable {
         }
     }
 
-    /// §3 `drivers: { field, value }[]` — one mode-specific metric tile.
+    /// §3 `drivers: { field, value, available, unavailableReason }[]` — one
+    /// mode-specific metric tile.
     /// Tri-modal worst-case fields (truck PRECIP/CROSSWIND/VISIBILITY ·
     /// rail YARD VIS/CROSSWIND/STREAMFLOW · vessel SIG WAVE/GUST @ BERTH/
-    /// VISIBILITY). `value` is the formatted live reading or "—" when the
-    /// Apple WeatherKit field was absent — never fabricated.
+    /// VISIBILITY). A missing provider field is explicitly unavailable; it is
+    /// never represented as a fabricated reading or an ambiguous dash.
     struct Driver: Hashable, Codable, Identifiable {
         /// "CROSSWIND" / "SIG WAVE" / "STREAMFLOW".
         let field: String
-        /// "31 mph" / "2.4 m" / "Rising" / "—".
+        /// "31 mph" / "2.4 m" / "Rising" when available.
         let value: String
+        let available: Bool
+        let unavailableReason: String?
 
         var id: String { field }
+
+        var displayValue: String {
+            guard available else { return "Unavailable" }
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? "Unavailable" : trimmed
+        }
+
+        init(field: String,
+             value: String,
+             available: Bool = true,
+             unavailableReason: String? = nil) {
+            self.field = field
+            self.value = value
+            self.available = available
+            self.unavailableReason = unavailableReason
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case field, value, available, unavailableReason
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            field = try container.decode(String.self, forKey: .field)
+            value = try container.decodeIfPresent(String.self, forKey: .value) ?? ""
+            let legacyMissing = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            available = try container.decodeIfPresent(Bool.self, forKey: .available)
+                ?? !(legacyMissing == "—" || legacyMissing == "-")
+            unavailableReason = try container.decodeIfPresent(String.self, forKey: .unavailableReason)
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(field, forKey: .field)
+            try container.encode(value, forKey: .value)
+            try container.encode(available, forKey: .available)
+            try container.encodeIfPresent(unavailableReason, forKey: .unavailableReason)
+        }
     }
 
-    /// §3 `recommendation: { text, action, protects }` — ESang's one
-    /// actionable suggestion, server-authored from the route reduction.
+    /// §3 `recommendation: { text, action, protects }` — deterministic
+    /// operational guidance produced by the route-weather policy reducer.
     /// `action` is the highlighted verb-phrase ("Move pickup to 1:30 PM"),
     /// `protects` the outcome it preserves ("the Dallas appointment").
     struct Recommendation: Hashable, Codable {
@@ -516,14 +616,14 @@ struct WeatherSnapshot: Hashable, Codable {
     /// (`loadId · mode · riskTier · headline · peakLeg{label,time} ·
     /// drivers[]{field,value} · recommendation{text,action,protects} ·
     /// source · computedAt`). Every field is server-derived from the live
-    /// `/v4/route` reduction (worst-case precip / gust / visibility per
+    /// HERE-primary route reduction (worst-case precip / gust / visibility per
     /// leg) → never invented client-side.
     ///
     /// The `route` / `pickupTime` / `etaDelayMin` / `esangSuggestion`
     /// fields are EusoTrip render helpers retained alongside the contract
     /// (the route-cell diagram needs the lane string + pickup; the
     /// collapsed strip needs the compact delay). When the server supplies
-    /// the structured §3 form the diagram + ESang panel read from it;
+    /// the structured §3 form the diagram + operational-guidance panel read it;
     /// when only the legacy flat form arrives they degrade through these.
     struct LaneImpactSegment: Hashable, Codable, Identifiable {
         // ── §3 contract fields ──────────────────────────────────────
@@ -538,14 +638,16 @@ struct WeatherSnapshot: Hashable, Codable {
         /// §3 `peakLeg: { label, time } | null` — the worst leg + its
         /// time. Drives the danger-band position + "4 PM CELL" label.
         let peakLeg: PeakLeg?
-        /// §3 `drivers` — the 3 mode-specific metric tiles. Each value is
-        /// a live worst-case reading or "—". Empty → tiles collapse.
+        /// §3 `drivers` — the 3 mode-specific metric tiles. Each value is a
+        /// live worst-case reading or explicitly unavailable. Empty → tiles collapse.
         let drivers: [Driver]
-        /// §3 `recommendation: { text, action, protects }`. Nil → the
-        /// ESang orb line collapses.
+        /// §3 deterministic operational guidance. Nil → the guidance row collapses.
         let recommendation: Recommendation?
         /// §3 `computedAt` — when the route reduction ran. Nil → omitted.
         let computedAt: Date?
+        /// Provider that actually produced the route samples (`here` primary,
+        /// `weatherkit` fallback). Optional preserves older persisted snapshots.
+        var source: String? = nil
 
         // ── EusoTrip render helpers (alongside the contract) ─────────
         /// "Austin → Dallas · I-35" — the lane string the route-cell
@@ -561,6 +663,17 @@ struct WeatherSnapshot: Hashable, Codable {
         let esangSuggestion: String?
 
         var id: String { loadId }
+
+        var routeWeatherAttribution: String {
+            switch source?.lowercased() {
+            case "here", "here_route_weather":
+                return "HERE ROUTE WEATHER"
+            case "weatherkit", "weatherkit_route_fallback":
+                return "APPLE WEATHERKIT FALLBACK"
+            default:
+                return "ROUTE WEATHER SOURCE UNAVAILABLE"
+            }
+        }
 
         /// The risk readout shown in the route footer — the §3 `headline`
         /// when present, else the derived ETA-delay form.
@@ -712,7 +825,13 @@ struct WeatherSnapshot: Hashable, Codable {
     var heroAlert: ActiveAlert? {
         if let alert { return alert }
         guard let top = topAlert else { return nil }
-        return ActiveAlert(title: top.event, severity: top.severity, until: top.endsAt)
+        return ActiveAlert(
+            title: top.event,
+            severity: top.severity,
+            until: top.endsAt,
+            source: top.source,
+            detailsURL: top.detailsURL
+        )
     }
 
     /// The v2 attribution line:
@@ -819,33 +938,81 @@ struct WeatherSnapshot: Hashable, Codable {
     // observedAt) via the pure helpers at file scope so the engine, a unit
     // test, and a SwiftUI preview all compute identically. Nothing is
     // fabricated: when an input is nil the helper falls back honestly
-    // (hour gate for day/night, northern hemisphere for season).
+    // (coordinate/timezone fallback for day/night, northern hemisphere for season).
 
-    /// The clock instant the scene is anchored to — the real observation
-    /// time when known, else now. Centralised so every helper agrees.
-    var clockReference: Date { observedAt ?? Date() }
+    /// Observation age remains anchored to the provider timestamp. Visual
+    /// solar state deliberately does not: a cached 3 PM payload must become a
+    /// night scene after sunset while still saying it was observed hours ago.
+    var observationClockReference: Date { observedAt ?? Date() }
 
-    /// True when the location is currently in night. Honest priority:
-    ///   1. an explicit upstream night hint (`isNightHint`),
-    ///   2. the real sunrise/sunset window,
-    ///   3. an hour gate (≥ 20:00 or < 06:00 local) as last resort.
-    /// Never fabricates daylight — a missing sun pair degrades to the gate.
-    var isNight: Bool {
-        if let hint = isNightHint { return hint }
-        let now = clockReference
-        if let rise = sunriseAt, let set = sunsetAt {
-            return !(now >= rise && now < set)
+    /// Backwards-compatible scene clock. It now means the current display
+    /// instant, never the cached provider instant.
+    var clockReference: Date { Date() }
+
+    enum SolarState: String, Hashable, Codable {
+        case daylight
+        case night
+        case unknown
+
+        var isDaylight: Bool? {
+            switch self {
+            case .daylight: return true
+            case .night: return false
+            case .unknown: return nil
+            }
         }
-        var cal = Calendar.current
-        if let tz = timezoneId, let zone = TimeZone(identifier: tz) {
-            cal.timeZone = zone
-        }
-        let h = cal.component(.hour, from: now)
-        return h >= 20 || h < 6
     }
 
-    /// Convenience inverse used by the palette selector.
-    var isDaytime: Bool { !isNight }
+    /// One canonical local solar-state decision for the current-condition
+    /// background and glyph. Provider hints are trusted only while the
+    /// observation is fresh; after that, the current instant is recomputed
+    /// from the real sun pair or coordinate. The final timezone fallback is
+    /// location-local. A missing location timezone returns `.unknown` rather
+    /// than silently using the device clock for a destination elsewhere.
+    func displaySolarState(at displayDate: Date = Date()) -> SolarState {
+        let hintIsFresh = observedAt.map {
+            abs(displayDate.timeIntervalSince($0)) <= 20 * 60
+        } ?? false
+        if hintIsFresh, let isNightHint {
+            return isNightHint ? .night : .daylight
+        }
+        return solarState(at: displayDate)
+    }
+
+    /// Solar state for an arbitrary forecast instant. `explicitDaylight` is
+    /// the hour's own WeatherKit/NWS flag, never the current card's state.
+    func solarState(
+        at date: Date,
+        explicitDaylight: Bool? = nil
+    ) -> SolarState {
+        if let explicitDaylight {
+            return explicitDaylight ? .daylight : .night
+        }
+        if let window = projectedSunWindow(for: date) {
+            return (date >= window.rise && date < window.set) ? .daylight : .night
+        }
+        if let latitude, let longitude,
+           latitude.isFinite, longitude.isFinite,
+           (-90...90).contains(latitude), (-180...180).contains(longitude) {
+            return Self.solarElevationDegrees(
+                at: date,
+                latitude: latitude,
+                longitude: longitude
+            ) > -0.833 ? .daylight : .night
+        }
+        guard let timezoneId, let zone = TimeZone(identifier: timezoneId) else {
+            return .unknown
+        }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = zone
+        let hour = calendar.component(.hour, from: date)
+        return (6..<20).contains(hour) ? .daylight : .night
+    }
+
+    /// Compatibility booleans. Unknown is neither day nor night, which keeps
+    /// celestial art neutral instead of inventing a sun or moon.
+    var isNight: Bool { displaySolarState() == .night }
+    var isDaytime: Bool { displaySolarState() == .daylight }
 
     /// Hemisphere from latitude. Defaults to northern when latitude is
     /// absent (the safe majority assumption — never blocks the scene).
@@ -856,25 +1023,69 @@ struct WeatherSnapshot: Hashable, Codable {
 
     /// Meteorological season for the observation, hemisphere-aware.
     var season: Season {
-        WeatherSnapshot.seasonFor(date: clockReference, latitude: latitude)
+        WeatherSnapshot.seasonFor(date: Date(), latitude: latitude)
     }
 
     /// Fine-grained part of the local day the scene should render
     /// (dawn / morning / noon / afternoon / dusk / night). Honest: built
-    /// from the real sun pair when present, else the hour gate.
+    /// from the real sun pair when present, else coordinate/timezone solar state.
     var dayPart: DayPart {
-        WeatherSnapshot.dayPartFor(
-            date: clockReference,
-            sunrise: sunriseAt,
-            sunset: sunsetAt,
-            timezoneId: timezoneId
-        )
+        dayPart(at: Date())
     }
 
     /// Moon illumination + phase name (0…1). Derived purely from the
     /// observation date against the astronomical new-moon epoch.
     var moonPhase: MoonPhase {
-        WeatherSnapshot.computeMoonPhase(date: clockReference)
+        WeatherSnapshot.computeMoonPhase(date: Date())
+    }
+
+    func dayPart(at date: Date) -> DayPart {
+        let window = projectedSunWindow(for: date)
+        return WeatherSnapshot.dayPartFor(
+            date: date,
+            sunrise: window?.rise,
+            sunset: window?.set,
+            timezoneId: timezoneId
+        )
+    }
+
+    func season(at date: Date) -> Season {
+        WeatherSnapshot.seasonFor(date: date, latitude: latitude)
+    }
+
+    func moonPhase(at date: Date) -> MoonPhase {
+        WeatherSnapshot.computeMoonPhase(date: date)
+    }
+
+    private func projectedSunWindow(for date: Date) -> (rise: Date, set: Date)? {
+        guard let sunriseAt, let sunsetAt, sunsetAt > sunriseAt else { return nil }
+        var calendar = Calendar(identifier: .gregorian)
+        if let timezoneId, let zone = TimeZone(identifier: timezoneId) {
+            calendar.timeZone = zone
+        } else {
+            // Absolute provider instants still give an honest window for the
+            // observation day, but projecting them to another local day
+            // without a timezone would invent the date boundary.
+            if calendar.isDate(date, inSameDayAs: sunriseAt) {
+                return (sunriseAt, sunsetAt)
+            }
+            return nil
+        }
+
+        let targetDay = calendar.dateComponents([.era, .year, .month, .day], from: date)
+        let riseClock = calendar.dateComponents([.hour, .minute, .second], from: sunriseAt)
+        let setClock = calendar.dateComponents([.hour, .minute, .second], from: sunsetAt)
+        func projected(_ clock: DateComponents) -> Date? {
+            var components = targetDay
+            components.hour = clock.hour
+            components.minute = clock.minute
+            components.second = clock.second
+            return calendar.date(from: components)
+        }
+        guard let rise = projected(riseClock), let set = projected(setClock), set > rise else {
+            return nil
+        }
+        return (rise, set)
     }
 
     // MARK: - Sky-engine value types
@@ -940,6 +1151,55 @@ struct WeatherSnapshot: Hashable, Codable {
         return MoonPhase(illumination: illumination, fraction: fraction, name: name)
     }
 
+    /// Approximate apparent solar elevation using the observation coordinate
+    /// and UTC instant. This NOAA-style calculation needs no device timezone,
+    /// making it the trustworthy fallback for destination weather when a
+    /// provider omitted sunrise/sunset or the cached sun pair is from an old
+    /// date. The -0.833 degree threshold accounts for refraction at the
+    /// visible horizon.
+    static func solarElevationDegrees(
+        at date: Date,
+        latitude: Double,
+        longitude: Double
+    ) -> Double {
+        func normalized(_ degrees: Double) -> Double {
+            let value = degrees.truncatingRemainder(dividingBy: 360)
+            return value < 0 ? value + 360 : value
+        }
+        func radians(_ degrees: Double) -> Double { degrees * .pi / 180 }
+        func degrees(_ radians: Double) -> Double { radians * 180 / .pi }
+
+        let julianDate = date.timeIntervalSince1970 / 86_400 + 2_440_587.5
+        let days = julianDate - 2_451_545.0
+        let meanLongitude = normalized(280.460 + 0.985_647_4 * days)
+        let meanAnomaly = normalized(357.528 + 0.985_600_3 * days)
+        let eclipticLongitude = normalized(
+            meanLongitude
+                + 1.915 * sin(radians(meanAnomaly))
+                + 0.020 * sin(radians(2 * meanAnomaly))
+        )
+        let obliquity = 23.439 - 0.000_000_4 * days
+        let rightAscension = normalized(degrees(atan2(
+            cos(radians(obliquity)) * sin(radians(eclipticLongitude)),
+            cos(radians(eclipticLongitude))
+        )))
+        let declination = asin(
+            sin(radians(obliquity)) * sin(radians(eclipticLongitude))
+        )
+        let greenwichSidereal = normalized(
+            280.460_618_37 + 360.985_647_366_29 * (julianDate - 2_451_545.0)
+        )
+        var hourAngle = normalized(greenwichSidereal + longitude - rightAscension)
+        if hourAngle > 180 { hourAngle -= 360 }
+
+        let lat = radians(latitude)
+        let elevation = asin(
+            sin(lat) * sin(declination)
+                + cos(lat) * cos(declination) * cos(radians(hourAngle))
+        )
+        return degrees(elevation)
+    }
+
     /// Meteorological season for a date, hemisphere-aware. A nil latitude
     /// assumes the northern hemisphere (safe default — never blocks).
     static func seasonFor(date: Date, latitude: Double?) -> Season {
@@ -987,11 +1247,13 @@ struct WeatherSnapshot: Hashable, Codable {
             if date < duskEnd          { return .dusk }
             return .night
         }
-        // Hour-gate fallback in the location's timezone (or device local).
-        var cal = Calendar.current
-        if let tz = timezoneId, let zone = TimeZone(identifier: tz) {
-            cal.timeZone = zone
+        // Hour-gate fallback only in the observation location's timezone.
+        // Device-local time is not evidence for destination weather.
+        guard let timezoneId, let zone = TimeZone(identifier: timezoneId) else {
+            return .noon
         }
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = zone
         let h = cal.component(.hour, from: date)
         switch h {
         case 5..<7:   return .dawn
@@ -1107,7 +1369,7 @@ struct LaneWeather: Hashable {
     }
 }
 
-// No demo fixtures — weather is always sourced live (WeatherKit → NWS →
-// Open-Meteo for the driver's position; HERE Destination Weather for the
-// active load's lane). The card simply hides when no service can produce
-// a snapshot (permission denied, offline, etc.).
+// No runtime demo fixtures — ambient weather is WeatherKit-first with an
+// attributed server fallback; HERE Destination Weather owns an active load's
+// lane. The card keeps last-good provider data or reports the actionable
+// unavailable state when no authoritative service can answer.

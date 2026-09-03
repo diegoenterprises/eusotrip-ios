@@ -49,17 +49,12 @@ import SwiftUI
 
 struct CarrierHome: View {
     @Environment(\.palette) private var palette
-    @Environment(\.openURL) private var openURL
     @EnvironmentObject private var session: EusoTripSession
 
     @StateObject private var dashboard = CarrierHomeDashboardStore()
     @StateObject private var alerts    = CarrierAlertsStore()
     @StateObject private var active    = CarrierActiveLoadsStore()
     @StateObject private var recent    = CarrierRecentLoadsStore()
-
-    // Founder ask 2026-05-07: weather pinned top.
-    @State private var weather: WeatherSnapshot? = nil
-    @State private var weatherNeedsLocation: Bool = false
 
     // ── Home-widget customization — uses shared HomeWidgetGrid. ──
     private let widgetLayoutKey = "carrier.home.widgetOrder"
@@ -85,7 +80,7 @@ struct CarrierHome: View {
                 header
                 HomeWidgetGrid(
                     canonicalOrder: carrierCanonicalOrder,
-                    role: "CATALYST",
+                    role: "CARRIER",
                     storageKey: widgetLayoutKey,
                     render: { id in carrierHomeRender(id) }
                 )
@@ -104,63 +99,7 @@ struct CarrierHome: View {
         async let b: Void = alerts.refresh()
         async let c: Void = active.refresh()
         async let d: Void = recent.refresh()
-        async let w: WeatherSnapshot? = WeatherService.shared.fetchCurrent()
-        let snap = await w
         _ = await (a, b, c, d)
-        weather = snap
-        let status = WeatherService.shared.authorizationStatus
-        weatherNeedsLocation = (snap == nil) && (
-            status == .notDetermined ||
-            status == .denied ||
-            status == .restricted
-        )
-    }
-
-    @ViewBuilder
-    private var weatherSection: some View {
-        // Always-visible bespoke weather surface — owns its own fetch and
-        // renders an honest state (data / loading / enable-location /
-        // unavailable) so the widget never disappears. Founder 2026-06-14:
-        // weather must show on every role home.
-        HomeWeatherWidget()
-    }
-
-    private var carrierEnableLocationCard: some View {
-        Button {
-            let status = WeatherService.shared.authorizationStatus
-            if status == .notDetermined {
-                WeatherService.shared.requestPermissionIfNeeded()
-            } else if let url = URL(string: UIApplication.openSettingsURLString) {
-                openURL(url)
-            }
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "location.fill")
-                    .font(.system(size: 14, weight: .heavy))
-                    .foregroundStyle(.white)
-                    .frame(width: 36, height: 36)
-                    .background(Circle().fill(LinearGradient.diagonal))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Enable location for live weather")
-                        .font(EType.bodyStrong)
-                        .foregroundStyle(palette.textPrimary)
-                    Text("Powers ESANG dispatch decisions in your morning brief.")
-                        .font(EType.caption)
-                        .foregroundStyle(palette.textSecondary)
-                        .lineLimit(2)
-                }
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .heavy))
-                    .foregroundStyle(palette.textTertiary)
-            }
-            .padding(Space.s3)
-            // Bespoke EusoCard surface — iridescent rim + glow so the
-            // enable-location CTA reads as a first-class card, matching
-            // the SVG card language instead of a flat bordered box.
-            .eusoCard(radius: Radius.lg)
-        }
-        .buttonStyle(.plain)
     }
 
     // MARK: - Header
