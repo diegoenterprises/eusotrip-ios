@@ -21,14 +21,8 @@ struct ELDConnectScreen: View {
             ELDIntegrationView()
         } nav: {
             BottomNav(
-                leading: [
-                    NavSlot(label: "Home",   systemImage: "house.fill",        isCurrent: false),
-                    NavSlot(label: "Trips",  systemImage: "shippingbox.fill",  isCurrent: false),
-                ],
-                trailing: [
-                    NavSlot(label: "My Loads", systemImage: "shippingbox.fill",  isCurrent: false),
-                    NavSlot(label: "Me",     systemImage: "person.fill",       isCurrent: true),
-                ],
+                leading: RoleNav.driverLeading(current: .none),
+                trailing: RoleNav.driverTrailing(current: .me),
                 orbState: .idle
             )
         }
