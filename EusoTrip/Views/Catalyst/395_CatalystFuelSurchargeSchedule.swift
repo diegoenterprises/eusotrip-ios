@@ -104,6 +104,7 @@ private struct FuelSurchargeBody_395: View {
     @State private var scheduleActionError: String? = nil
     @State private var showScheduleEditor: Bool = false
     @State private var savingSchedule: Bool = false
+    @State private var pendingCreateRequest: CreateScheduleInput_395? = nil
     @State private var draftScheduleName: String = ""
     @State private var draftPaddKey: String? = nil
     @State private var draftBasePrice: String = ""
@@ -568,12 +569,13 @@ private struct FuelSurchargeBody_395: View {
         let surchargeAmount: Double
     }
     private struct LookupInput_395: Encodable { let scheduleId: Int? }
-    private struct TableEntryInput_395: Encodable {
+    private struct TableEntryInput_395: Encodable, Equatable {
         let fuelPriceMin: Double
         let fuelPriceMax: Double
         let surchargeAmount: Double
     }
-    private struct CreateScheduleInput_395: Encodable {
+    private struct CreateScheduleInput_395: Encodable, Equatable {
+        var requestKey: String
         let scheduleName: String
         let method: String
         let paddRegion: String
@@ -821,18 +823,25 @@ private struct FuelSurchargeBody_395: View {
         scheduleActionMessage = nil
         defer { savingSchedule = false }
         do {
+            var request = CreateScheduleInput_395(
+                requestKey: pendingCreateRequest?.requestKey ?? UUID().uuidString,
+                scheduleName: trim_395(draftScheduleName),
+                method: "table",
+                paddRegion: draftPaddKey,
+                fuelType: "diesel",
+                updateFrequency: "weekly",
+                basePrice: Double(trim_395(draftBasePrice)),
+                tableEntries: entries
+            )
+            if let prior = pendingCreateRequest, prior != request {
+                request.requestKey = UUID().uuidString
+            }
+            pendingCreateRequest = request
             let out: CreateScheduleOut_395 = try await EusoTripAPI.shared.mutation(
                 "fscEngine.createSchedule",
-                input: CreateScheduleInput_395(
-                    scheduleName: trim_395(draftScheduleName),
-                    method: "table",
-                    paddRegion: draftPaddKey,
-                    fuelType: "diesel",
-                    updateFrequency: "weekly",
-                    basePrice: Double(trim_395(draftBasePrice)),
-                    tableEntries: entries
-                )
+                input: request
             )
+            pendingCreateRequest = nil
             showScheduleEditor = false
             scheduleActionMessage = "Created \(out.scheduleName) · \(out.status.uppercased())."
             await loadAll()

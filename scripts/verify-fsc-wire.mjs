@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 
 const sourcePath = fileURLToPath(new URL('../EusoTrip/Views/Catalyst/395_CatalystFuelSurchargeSchedule.swift', import.meta.url));
 const source = readFileSync(sourcePath, 'utf8');
-const names = ['FuelSource_395', 'ContractDiesel_395', 'MatchedBracket_395', 'PreviewWire_395'];
+const names = ['FuelSource_395', 'ContractDiesel_395', 'MatchedBracket_395', 'PreviewWire_395', 'TableEntryInput_395', 'CreateScheduleInput_395'];
 const declarations = names.map(name => {
   const start = source.indexOf(`    private struct ${name}:`);
   assert.ok(start >= 0, `Missing ${name}`);
@@ -22,6 +22,8 @@ assert.match(source, /let active = row\.id == matchedId/);
 assert.match(source, /PreviewInput_395\(scheduleId: schedule\.id\)/);
 assert.match(source, /fuelType: "diesel"/);
 assert.match(source, /fuelExpiredThrough = max\(fuelExpiredThrough, deadline\)\s+loadGeneration = UUID\(\)/);
+assert.match(source, /requestKey: pendingCreateRequest\?\.requestKey \?\? UUID\(\)\.uuidString/);
+assert.match(source, /pendingCreateRequest = request\s+let out: CreateScheduleOut_395/);
 const program = `import Foundation
 ${declarations}
 let now = ISO8601DateFormatter().date(from: "2026-09-04T12:00:00Z")!
@@ -51,7 +53,15 @@ for (key, value) in [("sources", [] as Any), ("region", "PADD3" as Any), ("nextR
     let invalid = try decode(payload)
     precondition(invalid.fuel?.isUsable(for: "2", now: now) == false)
 }
-print("10 FSC decoder/evidence assertions passed (source-extracted Swift, not a SwiftUI build)")
+let request = CreateScheduleInput_395(requestKey: "3d35ed55-7e73-4f31-80f6-9551a551030a", scheduleName: "Owned diesel",
+  method: "table", paddRegion: "2", fuelType: "diesel", updateFrequency: "weekly", basePrice: nil,
+  tableEntries: [TableEntryInput_395(fuelPriceMin: 5, fuelPriceMax: 6, surchargeAmount: 0.1555)])
+let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as! [String: Any]
+precondition(encoded["requestKey"] as? String == request.requestKey)
+precondition(request == request)
+var changed = request; changed.requestKey = UUID().uuidString
+precondition(changed != request)
+print("13 FSC decoder/evidence/write-wire assertions passed (source-extracted Swift, not a SwiftUI build)")
 `;
 const directory = mkdtempSync(join(tmpdir(), 'eusotrip-fsc-wire-'));
 try {
