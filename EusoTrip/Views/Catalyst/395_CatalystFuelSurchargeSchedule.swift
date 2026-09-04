@@ -2,46 +2,21 @@
 //  395_CatalystFuelSurchargeSchedule.swift
 //  EusoTrip — Catalyst · Fuel Surcharge Schedule (carrier back-office pricing band).
 //
-//  Verbatim iOS-house port of the canonical bespoke wireframe:
+//  Original composition references:
 //    03 Catalyst/Code/395_CatalystFuelSurchargeSchedule.swift
 //    03 Catalyst/Dark-SVG/395 Catalyst Fuel Surcharge Schedule.svg
 //
-//  Moment: Michael Eusorone (Eusotrans LLC owner-op · USDOT 3 194 882 ·
-//  MC-820 144 · Belle Plaine IA) opens his fuel-surcharge program from
-//  the Wallet tab. The signature body is an FSC STEP LADDER — a diesel-
-//  index gauge hero (PADD-3 Gulf Coast EIA) feeding a stepped bracket
-//  table where each diesel $/gal band escalates to its own ¢/mi
-//  surcharge; the bracket holding the live PADD-3 price is lit gradient
-//  with a NOW marker and the bars step outward row by row as a literal
-//  staircase. Table rows omit lifecycle dots (Foundation Contract §5).
+//  The regional EIA gauge and persisted per-mile ladder distinguish the
+//  current observation from the contract's configured rates. Missing or
+//  expired evidence leaves the ladder visible without a current marker.
 //  Web peer: /catalyst/wallet/fsc.
 //
-//  Server wiring (line-confirmed on disk this fire):
-//    • index gauge (PADD-3 $/gal · natl avg · week-of · week Δ)
-//        → rateSheet.getCurrentDiesel(padd:)   — EXISTS (EusoTripAPI
-//          RateSheetAPI). Returns price / padd / reportDate / source /
-//          change1w. Hydrates the hero over the seed; honest em-dash on
-//          failure. (Web peer fuelSurchargeIndex.currentDieselIndex
-//          fuelSurchargeIndex.ts:56 maps to this iOS-shaped wrapper.)
-//    • active schedule + method  → fscEngine.getSchedules (fscEngine.ts:27)   — not on iOS yet
-//    • bracket-ladder rows       → fscEngine.getSchedulePreview (fscEngine.ts:233) — not on iOS yet
-//      (fsc_lookup_table: fuelPriceMin / fuelPriceMax / surchargeAmount)
-//    • applied-now ¢/mi          → fscEngine.calculateFSC (fscEngine.ts:97)  — not on iOS yet
-//    • week Δ + trend            → fscEngine.getFSCHistory (fscEngine.ts:333) — not on iOS yet
-//    • attached-lanes count      → fscEngine.attachToContract (fscEngine.ts:300) — not on iOS yet
-//    • "Refresh PADD prices" CTA → fscEngine.updatePaddPrices (fscEngine.ts:172, mutation) — not on iOS yet
-//    • "Edit table" CTA          → fscEngine.createSchedule (fscEngine.ts:49, mutation) — not on iOS yet
-//  RBAC: isolatedApprovedProcedure carrier-scope (fscEngine.ts:16)
-//        + requireAccess DISPATCH/CATALYST resource INVOICE on writes (fscEngine.ts:71).
-//  transportMode = truck · PADD region 3 Gulf Coast · currency USD.
-//
-//  ZERO-FALLBACK (2026-06-09 · audit M4): the hero hydrates from the live
-//  PADD-3 index, schedule identity/method/base-peg/surcharge-now hydrate
-//  from fscEngine.getSchedules (+ getSchedulePreview band lookup for table
-//  schedules), and everything without a live source (the per-band ladder
-//  rows of fsc_lookup_table, attached-lane count, FSC-billed rollup) is an
-//  honest em-dash / EusoEmptyState. WIRE-GAP: fscEngine exposes no read for
-//  the lookup-table rows — needed before the staircase can ever render.
+//  Source contract: fscEngine.getSchedules selects an active diesel schedule;
+//  getSchedulePreview returns its exact per-mile/percentage rate, current
+//  regional EIA evidence and selected bracket ID. getLookupTable supplies
+//  the ladder. A cached schedule price is never treated as an observation.
+//  updatePaddPrices and createSchedule are persisted online actions. Counts
+//  and billed rollups without a server projection remain unavailable.
 //
 //  Bottom nav (Catalyst variant): HOME · DISPATCH · [orb] · WALLET · ME (WALLET current).
 //
@@ -91,9 +66,11 @@ private struct FscBracket_395: Identifiable {
 
 private struct FuelSurchargeBody_395: View {
     @Environment(\.palette) private var palette
+    @Environment(\.scenePhase) private var scenePhase
 
-    // Index gauge — em-dash until rateSheet.getCurrentDiesel answers. No seeds.
-    @State private var paddRegion: String   = "PADD 3 GULF COAST"
+    // Regional evidence comes from the selected schedule, not a separate index.
+    @State private var paddRegion: String   = "PADD unavailable"
+    @State private var selectedPaddKey: String? = nil
     @State private var weekLabel: String    = "—"
     @State private var scheduleId: String   = "—"
     @State private var dieselPrice: String  = "—"
@@ -109,6 +86,11 @@ private struct FuelSurchargeBody_395: View {
     @State private var brackets: [FscBracket_395] = []
     @State private var activeScheduleId: Int? = nil
     @State private var liveDieselValue: Double? = nil
+    @State private var loadGeneration = UUID()
+    @State private var fuelValidUntil: Date? = nil
+    @State private var fuelExpiredThrough = Date.distantPast
+    @State private var fuelSourceURL: URL? = nil
+    @State private var usesEIAForRate = false
 
     // Footer · attached lanes — no live source (pricebook fscIncluded rollup
     // unexposed) → em-dash, never invented.
@@ -123,6 +105,7 @@ private struct FuelSurchargeBody_395: View {
     @State private var showScheduleEditor: Bool = false
     @State private var savingSchedule: Bool = false
     @State private var draftScheduleName: String = ""
+    @State private var draftPaddKey: String? = nil
     @State private var draftBasePrice: String = ""
     @State private var draftBandWidth: String = "0.25"
     @State private var draftBandCount: Int = 8
@@ -147,6 +130,32 @@ private struct FuelSurchargeBody_395: View {
             }
         }
         .task { await loadAll() }
+        .task(id: fuelValidUntil) {
+            guard let deadline = fuelValidUntil else { return }
+            do {
+                while deadline > Date() {
+                    try await Task.sleep(for: .seconds(min(deadline.timeIntervalSinceNow, 60)))
+                }
+                guard !Task.isCancelled else { return }
+                fuelExpiredThrough = max(fuelExpiredThrough, deadline)
+                loadGeneration = UUID()
+                refreshing = false
+                dieselPrice = "—"
+                liveDieselValue = nil
+                nationalLine = "Observation expired"
+                gaugeFraction = 0
+                fuelSourceURL = nil
+                if usesEIAForRate {
+                    appliedSurcharge = "—"
+                    highlightBracket_395(id: nil)
+                }
+                scheduleActionError = "The EIA observation expired. Refresh the schedule."
+            } catch { /* The view or observation changed. */ }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { Task { await loadAll() } }
+        }
+        .onDisappear { loadGeneration = UUID() }
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
             Task { await loadAll() }
         }
@@ -164,7 +173,7 @@ private struct FuelSurchargeBody_395: View {
                     Image(systemName: "sparkles")
                         .font(.system(size: 9, weight: .heavy))
                         .foregroundStyle(LinearGradient.primary)
-                    Text("CATALYST · FUEL SURCHARGE · PADD 3")
+                    Text("CATALYST · FUEL SURCHARGE")
                         .font(EType.micro).tracking(1.0)
                         .foregroundStyle(LinearGradient.primary)
                 }
@@ -193,7 +202,7 @@ private struct FuelSurchargeBody_395: View {
         .padding(.bottom, Space.s3)
     }
 
-    // MARK: - Hero · PADD-3 diesel index gauge
+    // MARK: - Hero · Regional diesel index gauge
 
     private var heroCard_395: some View {
         ZStack {
@@ -215,7 +224,13 @@ private struct FuelSurchargeBody_395: View {
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(palette.textSecondary)
                     }
-                    indexGauge_395
+                    if liveDieselValue != nil {
+                        indexGauge_395
+                    } else {
+                        Text("Current EIA unavailable")
+                            .font(EType.micro)
+                            .foregroundStyle(palette.textSecondary)
+                    }
                 }
                 Spacer(minLength: Space.s2)
                 VStack(alignment: .trailing, spacing: 4) {
@@ -230,14 +245,20 @@ private struct FuelSurchargeBody_395: View {
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(palette.textSecondary)
                     }
-                    Text(nationalLine)
-                        .font(.system(size: 10).monospacedDigit())
-                        .foregroundStyle(Brand.success)
+                    if let fuelSourceURL {
+                        Link(nationalLine, destination: fuelSourceURL)
+                            .font(EType.mono(.micro))
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        Text(nationalLine)
+                            .font(EType.mono(.micro))
+                            .foregroundStyle(palette.textSecondary)
+                    }
                 }
             }
             .padding(Space.s4)
         }
-        .frame(height: 108)
+        .frame(minHeight: 108)
     }
 
     private var indexGauge_395: some View {
@@ -275,7 +296,7 @@ private struct FuelSurchargeBody_395: View {
     private var ladderSection_395: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack {
-                Text("SURCHARGE TABLE · ¢/MI BY DIESEL $/GAL")
+                Text("RATE/MI · DIESEL USD/GAL")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
@@ -467,7 +488,7 @@ private struct FuelSurchargeBody_395: View {
         }
     }
 
-    // MARK: - Network (live: getCurrentDiesel + fscEngine.getSchedules/getSchedulePreview)
+    // MARK: - Network
 
     private struct FscScheduleWire_395: Decodable {
         let id: Int
@@ -483,13 +504,49 @@ private struct FuelSurchargeBody_395: View {
         let isActive: Int?
     }
     private struct FscSchedulesWire_395: Decodable { let schedules: [FscScheduleWire_395] }
-    private struct SchedulesInput_395: Encodable { let isActive: Bool }
-    private struct PreviewInput_395: Encodable { let scheduleId: Int; let paddPrice: Double? }
+    private struct SchedulesInput_395: Encodable { let isActive: Bool; let fuelType: String }
+    private struct PreviewInput_395: Encodable { let scheduleId: Int }
+    private struct FuelSource_395: Decodable {
+        let provider: String
+        let url: String
+        let scopeKey: String
+    }
+    private struct ContractDiesel_395: Decodable {
+        let price: Double
+        let period: String
+        let region: String
+        let change1w: Double?
+        let freshnessSec: Double
+        let nextReleaseAt: String
+        let sources: [FuelSource_395]
+        var deadline: Date? {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let date = formatter.date(from: nextReleaseAt) { return date }
+            formatter.formatOptions = [.withInternetDateTime]
+            return formatter.date(from: nextReleaseAt)
+        }
+        var sourceURL: URL? {
+            guard let source = sources.first(where: { $0.provider == "EIA" && $0.scopeKey == region }),
+                  let url = URL(string: source.url), url.scheme == "https",
+                  ["eia.gov", "www.eia.gov"].contains(url.host ?? "") else { return nil }
+            return url
+        }
+        func isUsable(for padd: String?, now: Date = Date()) -> Bool {
+            price.isFinite && price > 0 && price <= 999.999 && freshnessSec.isFinite &&
+                freshnessSec >= 0 && freshnessSec < 1e12 && sourceURL != nil &&
+                region == "PADD\(padd ?? "")" && (deadline.map { $0 > now } ?? false)
+        }
+    }
+    private struct MatchedBracket_395: Decodable { let id: Int? }
     private struct PreviewWire_395: Decodable {
         let fsc: Double
+        let fscUnit: String
         let method: String
-        let paddPrice: Double
-        let basePrice: Double
+        let paddPrice: Double?
+        let basePrice: Double?
+        let fuel: ContractDiesel_395?
+        let matchedBracket: MatchedBracket_395?
     }
     private struct LookupWire_395: Decodable {
         let schedule: LookupSchedule_395?
@@ -535,35 +592,39 @@ private struct FuelSurchargeBody_395: View {
     }
 
     private func loadAll() async {
+        let generation = UUID()
+        loadGeneration = generation
         refreshing = true
-        defer { refreshing = false }
-
-        // 1. Live PADD-3 Gulf Coast diesel index → hero gauge + national line.
-        var livePadd: Double? = nil
-        do {
-            let diesel = try await EusoTripAPI.shared.rateSheet.getCurrentDiesel(padd: "3")
-            applyDiesel_395(diesel)
-            livePadd = diesel.price
-            liveDieselValue = diesel.price
-        } catch {
-            scheduleActionError = "Diesel index sync failed. \(error.eusoUserCopy)"
-        }
-
-        // 2. Live schedule header → identity + method + base peg + surcharge-now.
+        defer { if loadGeneration == generation { refreshing = false } }
+        activeScheduleId = nil
+        selectedPaddKey = nil
+        liveDieselValue = nil
+        fuelValidUntil = nil
+        fuelSourceURL = nil
+        usesEIAForRate = false
+        dieselPrice = "—"
+        appliedSurcharge = "—"
+        basePegLabel = "—"
+        paddRegion = "PADD unavailable"
+        weekLabel = "—"
+        nationalLine = "—"
+        gaugeFraction = 0
+        brackets = []
+        scheduleId = "—"
+        methodLabel = "—"
+        scheduleActionError = nil
         do {
             scheduleLoadNote = nil
             let wire: FscSchedulesWire_395 = try await EusoTripAPI.shared.query(
-                "fscEngine.getSchedules", input: SchedulesInput_395(isActive: true))
-            guard let schedule = wire.schedules.first else {
-                activeScheduleId = nil
-                scheduleId = "—"
-                methodLabel = "—"
-                appliedSurcharge = "—"
-                brackets = []
-                scheduleLoadNote = "No FSC schedule on file. Create a table schedule here to persist your ladder."
+                "fscEngine.getSchedules", input: SchedulesInput_395(isActive: true, fuelType: "diesel"))
+            guard loadGeneration == generation else { return }
+            guard let schedule = wire.schedules.first(where: { $0.fuelType?.lowercased() == "diesel" }) else {
+                scheduleLoadNote = "No active diesel schedule on file."
                 return
             }
             activeScheduleId = schedule.id
+            selectedPaddKey = schedule.paddRegion
+            paddRegion = "PADD \(schedule.paddRegion)"
             scheduleId = schedule.scheduleName.uppercased()
             let freq = (schedule.updateFrequency ?? "weekly").uppercased()
             methodLabel = "\(schedule.method.uppercased()) · \(freq)"
@@ -571,73 +632,83 @@ private struct FuelSurchargeBody_395: View {
                 basePegLabel = String(format: "$%.2f base peg", base)
             }
 
-            switch schedule.method {
-            case "cpm":
-                // fsc = miles × rate / 100 → per-mile surcharge = rate / 100.
-                if let rate = schedule.cpmRate.flatMap(Double.init) {
-                    appliedSurcharge = String(format: "$%.2f", rate / 100.0)
-                    surchargeUnit = "/mi"
-                }
-            case "percentage":
-                if let pct = schedule.percentageRate.flatMap(Double.init) {
-                    appliedSurcharge = String(format: "%.1f", pct)
-                    surchargeUnit = "% of linehaul"
-                }
-            case "table":
-                // Real band lookup against the live PADD price.
-                do {
-                    let preview: PreviewWire_395 = try await EusoTripAPI.shared.query(
-                        "fscEngine.getSchedulePreview",
-                        input: PreviewInput_395(scheduleId: schedule.id, paddPrice: livePadd)
-                    )
-                    if preview.fsc > 0 {
-                        appliedSurcharge = String(format: "$%.2f", preview.fsc)
-                        surchargeUnit = "/mi"
-                    }
-                } catch {
-                    scheduleActionError = "FSC preview sync failed. \(error.eusoUserCopy)"
-                }
-                await loadLookupTable_395(scheduleId: schedule.id, livePadd: livePadd)
-            default:
-                brackets = []
-                scheduleLoadNote = "This active FSC schedule uses \(schedule.method.uppercased()); bracket rows apply to table schedules."
-                break
+            if schedule.method == "table" {
+                await loadLookupTable_395(scheduleId: schedule.id, matchedId: nil, generation: generation)
+                guard loadGeneration == generation else { return }
+            }
+
+            let preview: PreviewWire_395 = try await EusoTripAPI.shared.query(
+                "fscEngine.getSchedulePreview", input: PreviewInput_395(scheduleId: schedule.id))
+            guard loadGeneration == generation else { return }
+            guard preview.fsc.isFinite, preview.fsc >= 0,
+                  preview.method == schedule.method,
+                  preview.fscUnit == (schedule.method == "percentage" ? "percent" : "per_mile") else {
+                scheduleActionError = "The surcharge rate could not be verified."
+                return
+            }
+            let fuel = preview.fuel.flatMap { evidence in
+                evidence.isUsable(for: selectedPaddKey) && (evidence.deadline.map { $0 > fuelExpiredThrough } ?? false) ? evidence : nil
+            }
+            usesEIAForRate = schedule.method == "table"
+            guard !usesEIAForRate || fuel != nil else {
+                scheduleActionError = "A current regional EIA observation is required for this schedule."
+                return
+            }
+            appliedSurcharge = String(format: "%.4f", preview.fsc)
+            surchargeUnit = preview.fscUnit == "percent" ? "% of linehaul" : "/mi"
+            if let fuel {
+                applyDiesel_395(fuel)
+            } else {
+                scheduleActionError = "Current regional diesel observation unavailable. Fixed contract rate shown."
+            }
+            if schedule.method == "table" {
+                highlightBracket_395(id: preview.matchedBracket?.id)
             }
         } catch {
+            guard loadGeneration == generation else { return }
             scheduleLoadNote = "Couldn't reach the FSC engine. Retry from this screen."
             scheduleActionError = error.eusoUserCopy
         }
     }
 
-    private func loadLookupTable_395(scheduleId: Int, livePadd: Double?) async {
+    private func loadLookupTable_395(scheduleId: Int, matchedId: Int?, generation: UUID) async {
         do {
             let lookup: LookupWire_395 = try await EusoTripAPI.shared.query(
                 "fscEngine.getLookupTable",
                 input: LookupInput_395(scheduleId: scheduleId)
             )
-            brackets = mapLookupBrackets_395(lookup.brackets, livePadd: livePadd)
+            guard loadGeneration == generation else { return }
+            brackets = mapLookupBrackets_395(lookup.brackets, matchedId: matchedId)
             if brackets.isEmpty {
                 scheduleLoadNote = "Schedule \(lookup.schedule?.scheduleName ?? self.scheduleId) has no bracket rows yet. Add a table schedule here."
             } else {
                 scheduleLoadNote = nil
             }
         } catch {
+            guard loadGeneration == generation else { return }
             brackets = []
             scheduleLoadNote = "Couldn't load FSC bracket rows. \(error.eusoUserCopy)"
         }
     }
 
-    private func mapLookupBrackets_395(_ rows: [LookupBracket_395], livePadd: Double?) -> [FscBracket_395] {
+    private func mapLookupBrackets_395(_ rows: [LookupBracket_395], matchedId: Int?) -> [FscBracket_395] {
         let maxSurcharge = max(rows.map(\.surchargeAmount).max() ?? 0, 0.01)
         return rows.map { row in
-            let active = livePadd.map { $0 >= row.fuelPriceMin && $0 <= row.fuelPriceMax } ?? false
+            let active = row.id == matchedId
             return FscBracket_395(
                 id: "\(row.id)",
                 range: "\(formatPrice_395(row.fuelPriceMin)) – \(formatPrice_395(row.fuelPriceMax))",
-                surcharge: formatPrice_395(row.surchargeAmount),
-                barFraction: min(1.0, max(0.08, row.surchargeAmount / maxSurcharge)),
+                surcharge: String(format: "%.4f", row.surchargeAmount),
+                barFraction: min(1.0, max(0, row.surchargeAmount / maxSurcharge)),
                 active: active
             )
+        }
+    }
+
+    private func highlightBracket_395(id: Int?) {
+        brackets = brackets.map { row in
+            FscBracket_395(id: row.id, range: row.range, surcharge: row.surcharge,
+                barFraction: row.barFraction, active: id.map { String($0) == row.id } ?? false)
         }
     }
 
@@ -659,9 +730,9 @@ private struct FuelSurchargeBody_395: View {
     private func openScheduleEditor_395() {
         scheduleActionError = nil
         scheduleActionMessage = nil
-        let base = liveDieselValue ?? 3.50
-        draftScheduleName = "PADD 3 table \(shortDate_395(Date().ISO8601Format()))"
-        draftBasePrice = String(format: "%.2f", base)
+        draftScheduleName = "Diesel table \(shortDate_395(Date().ISO8601Format()))"
+        draftPaddKey = selectedPaddKey
+        draftBasePrice = liveDieselValue.map { String(format: "%.3f", $0) } ?? ""
         draftBandWidth = "0.25"
         draftBandCount = 8
         draftStepSurcharge = "0.05"
@@ -673,6 +744,12 @@ private struct FuelSurchargeBody_395: View {
             Form {
                 Section("Schedule") {
                     TextField("Schedule name", text: $draftScheduleName)
+                    Picker("Region", selection: $draftPaddKey) {
+                        Text("Select region").tag(String?.none)
+                        ForEach(["1A", "1B", "1C", "2", "3", "4", "5"], id: \.self) { region in
+                            Text("PADD \(region)").tag(Optional(region))
+                        }
+                    }
                     TextField("Base diesel price", text: $draftBasePrice)
                         .keyboardType(.decimalPad)
                     TextField("Band width", text: $draftBandWidth)
@@ -708,7 +785,7 @@ private struct FuelSurchargeBody_395: View {
                     Button(savingSchedule ? "Saving..." : "Create") {
                         Task { await createSchedule_395() }
                     }
-                    .disabled(savingSchedule || trim_395(draftScheduleName).isEmpty || buildDraftTableEntries_395().isEmpty)
+                    .disabled(savingSchedule || draftPaddKey == nil || trim_395(draftScheduleName).isEmpty || buildDraftTableEntries_395().isEmpty)
                 }
             }
         }
@@ -716,9 +793,9 @@ private struct FuelSurchargeBody_395: View {
 
     private func buildDraftTableEntries_395() -> [TableEntryInput_395] {
         guard draftBandCount > 0,
-              let base = Double(trim_395(draftBasePrice)),
-              let width = Double(trim_395(draftBandWidth)), width > 0,
-              let surchargeStep = Double(trim_395(draftStepSurcharge)), surchargeStep >= 0 else { return [] }
+              let base = Double(trim_395(draftBasePrice)), base.isFinite, base > 0,
+              let width = Double(trim_395(draftBandWidth)), width.isFinite, width > 0,
+              let surchargeStep = Double(trim_395(draftStepSurcharge)), surchargeStep.isFinite, surchargeStep >= 0 else { return [] }
         let start = max(0, base - (width * 2))
         return (0..<draftBandCount).map { index in
             let priceMin = start + (Double(index) * width)
@@ -734,7 +811,7 @@ private struct FuelSurchargeBody_395: View {
 
     private func createSchedule_395() async {
         let entries = buildDraftTableEntries_395()
-        guard !entries.isEmpty else {
+        guard !entries.isEmpty, let draftPaddKey else {
             scheduleActionError = "Enter a base price, band width, and surcharge step."
             return
         }
@@ -749,7 +826,7 @@ private struct FuelSurchargeBody_395: View {
                 input: CreateScheduleInput_395(
                     scheduleName: trim_395(draftScheduleName),
                     method: "table",
-                    paddRegion: "3",
+                    paddRegion: draftPaddKey,
                     fuelType: "diesel",
                     updateFrequency: "weekly",
                     basePrice: Double(trim_395(draftBasePrice)),
@@ -768,34 +845,23 @@ private struct FuelSurchargeBody_395: View {
         value.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private func applyDiesel_395(_ d: RateSheetAPI.CurrentDiesel) {
-        // Price → "$3.75"
-        dieselPrice = formatPrice_395(d.price)
-        // Gauge over a fixed $2.00–$6.00 display axis (axis bounds are
+    private func applyDiesel_395(_ d: ContractDiesel_395) {
+        guard d.isUsable(for: selectedPaddKey) else { return }
+        liveDieselValue = d.price
+        fuelValidUntil = d.deadline
+        fuelSourceURL = d.sourceURL
+        dieselPrice = String(format: "$%.3f", d.price)
+        // Gauge over a fixed $2.00–$7.00 display axis (axis bounds are
         // presentation, labeled honestly — the marker is the live price).
-        let axisLow = 2.00, axisHigh = 6.00
+        let axisLow = 2.00, axisHigh = 7.00
         ceilingLabel = formatPrice_395(axisHigh)
         let frac = (d.price - axisLow) / (axisHigh - axisLow)
         gaugeFraction = min(1.0, max(0.0, frac))
-        // PADD label (server echoes "3" / "PADD 3" / region name).
-        if let p = d.padd, !p.isEmpty {
-            paddRegion = p.uppercased().contains("PADD") ? p.uppercased() : "PADD \(p) GULF COAST"
+        weekLabel = "EIA \(shortDate_395(d.period))"
+        nationalLine = "\(Int(d.freshnessSec / 3600))h observation age"
+        if let change = d.change1w {
+            nationalLine += String(format: " · %+.3f/gal wk", change)
         }
-        // Week-of label from the EIA report date + source provenance.
-        if let rd = d.reportDate, !rd.isEmpty {
-            weekLabel = "EIA \(shortDate_395(rd))"
-        } else if d.source == "EIA" {
-            weekLabel = "EIA LIVE"
-        }
-        // National line: live price + honest week-over-week Δ when present.
-        nationalLine = nationalLine_395(price: d.price, change1w: d.change1w)
-    }
-
-    private func nationalLine_395(price: Double, change1w: Double?) -> String {
-        let base = "natl \(formatPrice_395(price))"
-        guard let w = change1w, w != 0 else { return "\(base) · flat wk" }
-        let sign = w > 0 ? "+" : "-"
-        return "\(base) · \(sign)\(formatPrice_395(abs(w))) wk"
     }
 
     private func formatPrice_395(_ value: Double) -> String {
