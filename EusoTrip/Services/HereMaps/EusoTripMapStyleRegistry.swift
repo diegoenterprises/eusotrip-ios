@@ -148,12 +148,13 @@ public enum EusoTripMapFamilyPreference {
 
 /// Transaction state for a user-requested cartography family change.
 ///
-/// `activeFamily` is the only family the UI may mark selected or persist.
+/// `activeFamily` may be marked selected only when `hasCommittedFamily` is true.
 /// A request remains pending until the embedded renderer confirms that
 /// `map.setBaseLayer` completed. Stale callbacks are ignored so a fast second
 /// choice cannot be overwritten by a slower first archive.
 public struct EusoTripMapFamilyTransitionState: Hashable, Sendable {
     public private(set) var activeFamily: EusoTripMapFamily
+    public private(set) var hasCommittedFamily: Bool
     public private(set) var pendingFamily: EusoTripMapFamily?
     public private(set) var failedFamily: EusoTripMapFamily?
     public private(set) var failureMessage: String?
@@ -161,10 +162,17 @@ public struct EusoTripMapFamilyTransitionState: Hashable, Sendable {
 
     public init(activeFamily: EusoTripMapFamily) {
         self.activeFamily = activeFamily
+        self.hasCommittedFamily = true
         self.pendingFamily = nil
         self.failedFamily = nil
         self.failureMessage = nil
         self.latestRequestID = 0
+    }
+
+    public init(initialFamily: EusoTripMapFamily) {
+        self.init(activeFamily: initialFamily)
+        self.hasCommittedFamily = false
+        self.pendingFamily = initialFamily
     }
 
     /// Starts (or retries) a family transition and supersedes any older one.
@@ -185,6 +193,7 @@ public struct EusoTripMapFamilyTransitionState: Hashable, Sendable {
     ) -> Bool {
         guard requestID == latestRequestID, pendingFamily == family else { return false }
         activeFamily = family
+        hasCommittedFamily = true
         pendingFamily = nil
         failedFamily = nil
         failureMessage = nil
@@ -196,22 +205,47 @@ public struct EusoTripMapFamilyTransitionState: Hashable, Sendable {
     public mutating func fail(
         _ family: EusoTripMapFamily,
         requestID: Int,
-        message: String
+        message: String,
+        retainsActiveMap: Bool = true
     ) -> Bool {
         guard requestID == latestRequestID, pendingFamily == family else { return false }
         pendingFamily = nil
+        hasCommittedFamily = hasCommittedFamily && retainsActiveMap
         failedFamily = family
         let normalized = message.trimmingCharacters(in: .whitespacesAndNewlines)
         failureMessage = normalized.isEmpty ? "Map family could not be prepared." : normalized
         return true
     }
 
-    /// Adopts a caller or persistence change only when no request is in flight.
-    public mutating func synchronizeActive(_ family: EusoTripMapFamily) {
-        guard pendingFamily == nil else { return }
-        activeFamily = family
+    /// Another screen's preference is a request, not proof about this renderer.
+    public mutating func synchronizePreference(_ family: EusoTripMapFamily) {
+        guard pendingFamily != family,
+              pendingFamily != nil || family != activeFamily || !hasCommittedFamily else { return }
+        request(family)
+    }
+
+    /// Renderer-only changes (theme, mode, recovery) share the current user
+    /// intent, but carry their own authoritative retained-family snapshot.
+    @discardableResult
+    public mutating func rendererBegan(
+        _ family: EusoTripMapFamily,
+        requestID: Int,
+        retainedFamily: EusoTripMapFamily?
+    ) -> Bool {
+        guard requestID == latestRequestID,
+              pendingFamily == nil || pendingFamily == family else { return false }
+        if let retainedFamily { activeFamily = retainedFamily }
+        hasCommittedFamily = retainedFamily != nil
+        pendingFamily = family
         failedFamily = nil
         failureMessage = nil
+        return true
+    }
+
+    public mutating func restartRenderer() {
+        let family = pendingFamily ?? activeFamily
+        hasCommittedFamily = false
+        request(family)
     }
 }
 
