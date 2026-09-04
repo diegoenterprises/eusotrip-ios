@@ -146,6 +146,75 @@ public enum EusoTripMapFamilyPreference {
     }
 }
 
+/// Transaction state for a user-requested cartography family change.
+///
+/// `activeFamily` is the only family the UI may mark selected or persist.
+/// A request remains pending until the embedded renderer confirms that
+/// `map.setBaseLayer` completed. Stale callbacks are ignored so a fast second
+/// choice cannot be overwritten by a slower first archive.
+public struct EusoTripMapFamilyTransitionState: Hashable, Sendable {
+    public private(set) var activeFamily: EusoTripMapFamily
+    public private(set) var pendingFamily: EusoTripMapFamily?
+    public private(set) var failedFamily: EusoTripMapFamily?
+    public private(set) var failureMessage: String?
+    public private(set) var latestRequestID: Int
+
+    public init(activeFamily: EusoTripMapFamily) {
+        self.activeFamily = activeFamily
+        self.pendingFamily = nil
+        self.failedFamily = nil
+        self.failureMessage = nil
+        self.latestRequestID = 0
+    }
+
+    /// Starts (or retries) a family transition and supersedes any older one.
+    @discardableResult
+    public mutating func request(_ family: EusoTripMapFamily) -> Int {
+        latestRequestID &+= 1
+        pendingFamily = family
+        failedFamily = nil
+        failureMessage = nil
+        return latestRequestID
+    }
+
+    /// Commits only the latest matching request.
+    @discardableResult
+    public mutating func commit(
+        _ family: EusoTripMapFamily,
+        requestID: Int
+    ) -> Bool {
+        guard requestID == latestRequestID, pendingFamily == family else { return false }
+        activeFamily = family
+        pendingFamily = nil
+        failedFamily = nil
+        failureMessage = nil
+        return true
+    }
+
+    /// Fails only the latest matching request while preserving the active map.
+    @discardableResult
+    public mutating func fail(
+        _ family: EusoTripMapFamily,
+        requestID: Int,
+        message: String
+    ) -> Bool {
+        guard requestID == latestRequestID, pendingFamily == family else { return false }
+        pendingFamily = nil
+        failedFamily = family
+        let normalized = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        failureMessage = normalized.isEmpty ? "Map family could not be prepared." : normalized
+        return true
+    }
+
+    /// Adopts a caller or persistence change only when no request is in flight.
+    public mutating func synchronizeActive(_ family: EusoTripMapFamily) {
+        guard pendingFamily == nil else { return }
+        activeFamily = family
+        failedFamily = nil
+        failureMessage = nil
+    }
+}
+
 public enum EusoTripMapVisualReviewState: String, Codable, Hashable, Sendable {
     case pending, blocked, approved
 }

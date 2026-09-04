@@ -298,6 +298,17 @@ public enum HereMapLayer: Hashable {
     case trafficFlow([HereTrafficSegment])
 }
 
+private struct EusoTripMapStyleTransitionEvent: Sendable {
+    enum Phase: String, Sendable {
+        case pending, committed, failed
+    }
+
+    let phase: Phase
+    let family: EusoTripMapFamily
+    let requestID: Int
+    let message: String?
+}
+
 // MARK: - SwiftUI entry point
 
 /// The live labeled HERE map every surface should use. Its public name is
@@ -317,6 +328,7 @@ public struct HereVectorMapView: View {
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @AppStorage(EusoTripMapFamilyPreference.storageKey)
     private var persistedMapFamilyRawValue = ""
+    @State private var mapFamilyTransition: EusoTripMapFamilyTransitionState?
     @State private var appRadioSilenceRevision: UInt64 = 0
 
     let center: HereLatLng
@@ -378,13 +390,15 @@ public struct HereVectorMapView: View {
                     interactive: interactive,
                     tilt: tilt,
                     isDark: colorScheme == .dark,
-                    mapFamily: mapFamilyResolution.family,
-                    familySelectionSource: mapFamilyResolution.source,
+                    mapFamily: renderedMapFamily,
+                    familySelectionSource: renderedFamilySelectionSource,
+                    styleRequestID: renderedStyleRequestID,
                     mapModeContext: mapModeContext,
                     reducedMotion: accessibilityReduceMotion,
                     layers: layers,
                     endpointLabelToggle: endpointLabelToggle,
-                    onSelectMarker: onSelectMarker
+                    onSelectMarker: onSelectMarker,
+                    onStyleTransition: handleStyleTransition
                 )
                 #else
                 BespokeMapCanvas(
@@ -402,7 +416,13 @@ public struct HereVectorMapView: View {
 
             VStack(alignment: .trailing, spacing: 8) {
                 if interactive, showsMapFamilyControl, mapFamily == nil {
-                    EusoTripMapFamilyMenu(selection: mapFamilyBinding)
+                    EusoTripMapFamilyMenu(
+                        activeFamily: mapFamilyResolution.family,
+                        pendingFamily: mapFamilyTransition?.pendingFamily,
+                        failedFamily: mapFamilyTransition?.failedFamily,
+                        failureMessage: mapFamilyTransition?.failureMessage,
+                        onRequest: requestMapFamily
+                    )
                 }
                 if !routeStateSummaries.isEmpty {
                     EusoTripRouteStateControl(routes: routeStateSummaries)
@@ -430,9 +450,7 @@ public struct HereVectorMapView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Freight map")
-        .accessibilityValue(
-            "\(mapFamilyResolution.family.displayName), \(mapModeAccessibilityValue)"
-        )
+        .accessibilityValue(mapAccessibilityValue)
         // Recreate the renderer on both policy edges. The engage notification
         // first stops and blanks the live WebView synchronously; its new
         // identity can only build an empty local document while the lease is
@@ -448,6 +466,11 @@ public struct HereVectorMapView: View {
         ) { _ in
             appRadioSilenceRevision &+= 1
         }
+        .onChange(of: baselineMapFamilyResolution.family) { _, family in
+            guard mapFamily == nil, var transition = mapFamilyTransition else { return }
+            transition.synchronizeActive(family)
+            mapFamilyTransition = transition
+        }
     }
 
     private var surfaceDefaultMapFamily: EusoTripMapFamily {
@@ -458,7 +481,7 @@ public struct HereVectorMapView: View {
         }
     }
 
-    private var mapFamilyResolution: EusoTripMapFamilyResolution {
+    private var baselineMapFamilyResolution: EusoTripMapFamilyResolution {
         EusoTripMapFamilyPreference.resolve(
             explicitFamily: mapFamily,
             persistedRawValue: persistedMapFamilyRawValue,
@@ -467,11 +490,63 @@ public struct HereVectorMapView: View {
         )
     }
 
-    private var mapFamilyBinding: Binding<EusoTripMapFamily> {
-        Binding(
-            get: { mapFamilyResolution.family },
-            set: { persistedMapFamilyRawValue = $0.rawValue }
-        )
+    /// The family proven active by the renderer. A pending menu choice cannot
+    /// change this value or its persisted preference.
+    private var mapFamilyResolution: EusoTripMapFamilyResolution {
+        guard mapFamily == nil, let transition = mapFamilyTransition else {
+            return baselineMapFamilyResolution
+        }
+        return .init(family: transition.activeFamily, source: .manualPreference)
+    }
+
+    private var renderedMapFamily: EusoTripMapFamily {
+        guard mapFamily == nil else { return mapFamilyResolution.family }
+        return mapFamilyTransition?.pendingFamily ?? mapFamilyResolution.family
+    }
+
+    private var renderedFamilySelectionSource: EusoTripMapFamilySelectionSource {
+        mapFamilyTransition == nil ? mapFamilyResolution.source : .manualPreference
+    }
+
+    private var renderedStyleRequestID: Int {
+        mapFamilyTransition?.latestRequestID ?? 0
+    }
+
+    private var mapAccessibilityValue: String {
+        var value = "\(mapFamilyResolution.family.displayName) active, \(mapModeAccessibilityValue)"
+        if let pending = mapFamilyTransition?.pendingFamily {
+            value += ". Loading \(pending.displayName)"
+        } else if let failed = mapFamilyTransition?.failedFamily {
+            value += ". \(failed.displayName) did not load; retry available"
+        }
+        return value
+    }
+
+    private func requestMapFamily(_ family: EusoTripMapFamily) {
+        var transition = mapFamilyTransition
+            ?? EusoTripMapFamilyTransitionState(activeFamily: baselineMapFamilyResolution.family)
+        transition.request(family)
+        mapFamilyTransition = transition
+    }
+
+    private func handleStyleTransition(_ event: EusoTripMapStyleTransitionEvent) {
+        guard mapFamily == nil else { return }
+        var transition = mapFamilyTransition
+            ?? EusoTripMapFamilyTransitionState(activeFamily: baselineMapFamilyResolution.family)
+        switch event.phase {
+        case .pending:
+            break
+        case .committed:
+            guard transition.commit(event.family, requestID: event.requestID) else { return }
+            persistedMapFamilyRawValue = event.family.rawValue
+        case .failed:
+            guard transition.fail(
+                event.family,
+                requestID: event.requestID,
+                message: event.message ?? "Map family could not be prepared."
+            ) else { return }
+        }
+        mapFamilyTransition = transition
     }
 
     /// Prefer the caller's real camera, then the first usable layer point.
@@ -559,26 +634,58 @@ private struct EusoTripRouteStateSummary: Identifiable {
 }
 
 private struct EusoTripMapFamilyMenu: View {
-    @Binding var selection: EusoTripMapFamily
+    let activeFamily: EusoTripMapFamily
+    let pendingFamily: EusoTripMapFamily?
+    let failedFamily: EusoTripMapFamily?
+    let failureMessage: String?
+    let onRequest: (EusoTripMapFamily) -> Void
 
     var body: some View {
         Menu {
             ForEach(EusoTripMapFamily.allCases) { family in
                 Button {
-                    selection = family
+                    onRequest(family)
                 } label: {
                     Label(
-                        family == selection ? "\(family.displayName), selected" : family.displayName,
-                        systemImage: family == selection ? "checkmark.circle.fill" : icon(for: family)
+                        menuLabel(for: family),
+                        systemImage: menuIcon(for: family)
                     )
+                }
+                .disabled(family == activeFamily && pendingFamily == nil && failedFamily == nil)
+            }
+            if let failedFamily {
+                Section("Map style") {
+                    if let failureMessage, !failureMessage.isEmpty {
+                        Label(failureMessage, systemImage: "exclamationmark.triangle")
+                    }
+                    Button {
+                        onRequest(failedFamily)
+                    } label: {
+                        Label("Retry \(failedFamily.displayName)", systemImage: "arrow.clockwise")
+                    }
                 }
             }
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: icon(for: selection))
+                Image(systemName: icon(for: activeFamily))
                     .font(.system(size: 14, weight: .bold))
-                Text(selection.displayName)
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(activeFamily.displayName)
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                    if let pendingFamily {
+                        Text("Loading \(pendingFamily.displayName)")
+                            .font(.system(size: 8, weight: .bold, design: .rounded))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                if pendingFamily != nil {
+                    ProgressView()
+                        .controlSize(.mini)
+                } else if failedFamily != nil {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.orange)
+                }
                 Image(systemName: "chevron.down")
                     .font(.system(size: 9, weight: .heavy))
             }
@@ -598,8 +705,30 @@ private struct EusoTripMapFamilyMenu: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Map family")
-        .accessibilityValue(selection.displayName)
+        .accessibilityValue(accessibilityValue)
         .accessibilityHint("Choose Operational, Navigation, or Terrain")
+    }
+
+    private var accessibilityValue: String {
+        if let pendingFamily {
+            return "\(activeFamily.displayName) active. Loading \(pendingFamily.displayName)"
+        }
+        if let failedFamily {
+            return "\(activeFamily.displayName) active. \(failedFamily.displayName) retry available"
+        }
+        return "\(activeFamily.displayName) active"
+    }
+
+    private func menuLabel(for family: EusoTripMapFamily) -> String {
+        if family == activeFamily { return "\(family.displayName), active" }
+        if family == pendingFamily { return "\(family.displayName), loading" }
+        return family.displayName
+    }
+
+    private func menuIcon(for family: EusoTripMapFamily) -> String {
+        if family == activeFamily { return "checkmark.circle.fill" }
+        if family == pendingFamily { return "hourglass" }
+        return icon(for: family)
     }
 
     private func icon(for family: EusoTripMapFamily) -> String {
@@ -885,20 +1014,24 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
     let isDark: Bool
     let mapFamily: EusoTripMapFamily
     let familySelectionSource: EusoTripMapFamilySelectionSource
+    let styleRequestID: Int
     let mapModeContext: EusoTripMapModeContext
     let reducedMotion: Bool
     let layers: [HereMapLayer]
     let endpointLabelToggle: Bool
     let onSelectMarker: ((String) -> Void)?
+    let onStyleTransition: (EusoTripMapStyleTransitionEvent) -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeUIView(context: Context) -> WKWebView {
         context.coordinator.onSelectMarker = onSelectMarker
+        context.coordinator.onStyleTransition = onStyleTransition
         let userContent = WKUserContentController()
         userContent.add(context.coordinator, name: "hzLog")
         userContent.add(context.coordinator, name: "mapReady")
         userContent.add(context.coordinator, name: "markerTap")
+        userContent.add(context.coordinator, name: "mapStyleTransition")
 
         let config = WKWebViewConfiguration()
         config.allowsInlineMediaPlayback = true
@@ -918,11 +1051,12 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
         let customStylesRequested = HereMapsConfig.customMapStylesEnabled
         let customStylesEnabled = customStylesRequested
             && (resolution.descriptor?.isProductionEligible == true)
-        context.coordinator.lastStyleKey = Self.styleKey(
+        context.coordinator.activeStyleKey = Self.styleKey(
             resolution: resolution,
             customStylesEnabled: customStylesEnabled,
             mapModeContext: mapModeContext
         )
+        context.coordinator.lastHandledStyleRequestID = styleRequestID
         context.coordinator.lastCameraKey = Self.cameraKey(
             center: center, zoom: zoom, tilt: tilt)
 
@@ -933,7 +1067,8 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
                 customStylesEnabled: customStylesEnabled,
                 customStylesRequested: customStylesRequested,
                 familySelectionSource: familySelectionSource,
-                mapModeContext: mapModeContext
+                mapModeContext: mapModeContext,
+                requestID: styleRequestID
             ),
             interactive: interactive,
             centerLat: center.lat,
@@ -960,6 +1095,7 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
             return
         }
         context.coordinator.onSelectMarker = onSelectMarker
+        context.coordinator.onStyleTransition = onStyleTransition
         let resolution = EusoTripMapStyleRegistry.resolve(
             context: mapModeContext,
             family: mapFamily,
@@ -973,14 +1109,24 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
             customStylesEnabled: customStylesEnabled,
             mapModeContext: mapModeContext
         )
-        if context.coordinator.lastStyleKey != styleKey {
-            context.coordinator.lastStyleKey = styleKey
+        let matchesPending = context.coordinator.pendingStyleKey == styleKey
+            && context.coordinator.pendingStyleRequestID == styleRequestID
+        let isNewUserRequest = styleRequestID > context.coordinator.lastHandledStyleRequestID
+        if !matchesPending,
+           context.coordinator.activeStyleKey != styleKey || isNewUserRequest {
+            context.coordinator.pendingStyleKey = styleKey
+            context.coordinator.pendingStyleRequestID = styleRequestID
+            context.coordinator.lastHandledStyleRequestID = max(
+                context.coordinator.lastHandledStyleRequestID,
+                styleRequestID
+            )
             let configuration = Self.styleConfigurationJSON(
                 resolution: resolution,
                 customStylesEnabled: customStylesEnabled,
                 customStylesRequested: customStylesRequested,
                 familySelectionSource: familySelectionSource,
-                mapModeContext: mapModeContext
+                mapModeContext: mapModeContext,
+                requestID: styleRequestID
             )
             let styleJS = "window.__setMapStyle && window.__setMapStyle(\(configuration));"
             context.coordinator.pendingStyleJS = styleJS
@@ -1017,9 +1163,7 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
         webView.navigationDelegate = nil
         webView.uiDelegate = nil
         coordinator.webView = nil
-        coordinator.mapReady = false
-        coordinator.pendingCameraJS = nil
-        coordinator.pendingLayerJSON = "{}"
+        coordinator.resetRendererState(clearCallbacks: true)
     }
 
     // MARK: Coordinator
@@ -1027,12 +1171,16 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
     final class Coordinator: NSObject, WKScriptMessageHandler {
         weak var webView: WKWebView?
         var mapReady = false
-        var lastStyleKey: String?
+        var activeStyleKey: String?
+        var pendingStyleKey: String?
+        var pendingStyleRequestID: Int?
+        var lastHandledStyleRequestID = 0
         var pendingStyleJS: String?
         var lastCameraKey: String?
         var pendingCameraJS: String?
         var pendingLayerJSON = "{}"
         var onSelectMarker: ((String) -> Void)?
+        var onStyleTransition: ((EusoTripMapStyleTransitionEvent) -> Void)?
 
         override init() {
             super.init()
@@ -1053,14 +1201,44 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
         }
 
         func disposeForAppRadioSilence() {
-            guard let webView else { return }
+            guard let webView else {
+                resetRendererState(clearCallbacks: true)
+                return
+            }
             webView.stopLoading()
             webView.configuration.userContentController.removeAllScriptMessageHandlers()
+            webView.navigationDelegate = nil
+            webView.uiDelegate = nil
             webView.loadHTMLString("", baseURL: nil)
+            self.webView = nil
             mapReady = false
+            activeStyleKey = nil
+            pendingStyleKey = nil
+            pendingStyleRequestID = nil
+            lastHandledStyleRequestID = 0
+            pendingStyleJS = nil
+            lastCameraKey = nil
             pendingCameraJS = nil
             pendingLayerJSON = "{}"
             onSelectMarker = nil
+            onStyleTransition = nil
+        }
+
+        func resetRendererState(clearCallbacks: Bool) {
+            webView = nil
+            mapReady = false
+            activeStyleKey = nil
+            pendingStyleKey = nil
+            pendingStyleRequestID = nil
+            lastHandledStyleRequestID = 0
+            pendingStyleJS = nil
+            lastCameraKey = nil
+            pendingCameraJS = nil
+            pendingLayerJSON = "{}"
+            if clearCallbacks {
+                onSelectMarker = nil
+                onStyleTransition = nil
+            }
         }
 
         func userContentController(_ uc: WKUserContentController, didReceive message: WKScriptMessage) {
@@ -1077,6 +1255,39 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
             case "markerTap":
                 if let id = message.body as? String, !id.isEmpty {
                     onSelectMarker?(id)
+                }
+            case "mapStyleTransition":
+                guard
+                    let body = message.body as? [String: Any],
+                    let phaseRaw = body["phase"] as? String,
+                    let phase = EusoTripMapStyleTransitionEvent.Phase(rawValue: phaseRaw),
+                    let familyRaw = body["family"] as? String,
+                    let family = EusoTripMapFamily(rawValue: familyRaw)
+                else { return }
+                let requestID = (body["requestID"] as? NSNumber)?.intValue ?? 0
+                let event = EusoTripMapStyleTransitionEvent(
+                    phase: phase,
+                    family: family,
+                    requestID: requestID,
+                    message: body["message"] as? String
+                )
+                if event.requestID == pendingStyleRequestID {
+                    switch event.phase {
+                    case .pending:
+                        break
+                    case .committed:
+                        activeStyleKey = pendingStyleKey
+                        pendingStyleKey = nil
+                        pendingStyleRequestID = nil
+                        pendingStyleJS = nil
+                    case .failed:
+                        pendingStyleKey = nil
+                        pendingStyleRequestID = nil
+                        pendingStyleJS = nil
+                    }
+                }
+                DispatchQueue.main.async { [weak self] in
+                    self?.onStyleTransition?(event)
                 }
             case "hzLog":
                 #if DEBUG
@@ -1098,7 +1309,14 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
     ) -> String {
         let selection = resolution.descriptor?.id
             ?? "unavailable.\(resolution.unavailableReason?.rawValue ?? "unknown")"
-        return "\(selection):\(mapModeContext.sourceTransportMode.rawValue):\(customStylesEnabled ? "custom" : "standard")"
+        let foundation = resolution.foundation
+        return [
+            selection,
+            foundation.family.rawValue,
+            foundation.theme.rawValue,
+            mapModeContext.sourceTransportMode.rawValue,
+            customStylesEnabled ? "custom" : "standard",
+        ].joined(separator: ":")
     }
 
     private static func styleConfigurationJSON(
@@ -1106,7 +1324,8 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
         customStylesEnabled: Bool,
         customStylesRequested: Bool,
         familySelectionSource: EusoTripMapFamilySelectionSource,
-        mapModeContext: EusoTripMapModeContext
+        mapModeContext: EusoTripMapModeContext,
+        requestID: Int
     ) -> String {
         let origin = HereMapsConfig.jsTrustedReferrerOrigin
             .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
@@ -1125,6 +1344,7 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
             "familySelectionSource": familySelectionSource.rawValue,
             "customStylesRequested": customStylesRequested,
             "customStylesEnabled": customStylesEnabled,
+            "requestID": requestID,
             "resolutionState": descriptor == nil ? "unavailable" : "resolved",
             "visualReviewState": descriptor?.visualReviewState.rawValue
                 ?? EusoTripMapIdentityContract.visualReviewState.rawValue,
@@ -1285,8 +1505,10 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
         html,body,#map{margin:0;padding:0;width:100%;height:100%;background:#0b0b0f;position:relative}
         #style-status{display:none;position:absolute;right:8px;bottom:8px;z-index:4;max-width:260px;padding:8px 10px;border:1px solid rgba(255,255,255,.24);border-radius:12px;background:rgba(16,24,40,.88);box-shadow:0 5px 16px rgba(0,0,0,.18);color:#f5f5f7;font:600 11px -apple-system;text-align:left}
         #style-status:before{content:"";display:block;height:3px;margin:-5px -6px 6px;border-radius:999px;background:linear-gradient(90deg,#1473FF 0%,#813FF5 52%,#BE01FF 100%)}
+        #style-status.loading{display:block;border-color:rgba(129,63,245,.72)}
+        #style-status.retryable{display:block;border-style:dashed;border-color:rgba(255,174,66,.78)}
         #style-status.mode-unavailable{display:block;border-style:dashed;border-color:rgba(255,174,66,.75)}
-        #style-status.unavailable{display:flex;inset:0;right:0;bottom:0;align-items:center;justify-content:center;border-radius:0;padding:18px;background:#111318;font-size:12px}
+        #style-status.unavailable{display:flex;box-sizing:border-box;inset:0;right:0;bottom:0;width:auto;max-width:none;align-items:center;justify-content:center;border-radius:0;padding:18px;background:#111318;font-size:12px}
         .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
         </style>
         <script src="https://js.api.here.com/v3/3.2.8.0/mapsjs-core.js"></script>
@@ -1302,6 +1524,7 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
           var styleGeneration = 0;
           var currentSelection = null;
           var pendingSelection = null;
+          var hasCommittedStyle = false;
           var endpointLabelToggle = \(endpointLabelToggle ? "true" : "false");
           var reducedMotion = \(reducedMotion ? "true" : "false");
           var cameraTilt = \(tilt);
@@ -1310,11 +1533,55 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
           // path fails on a provider-contract change far more often than on a
           // dead network, and telling someone with working signal to check
           // their connection sends them to debug the wrong thing.
-          function setStyleState(state){
+          function familyName(cfg){
+            var raw=String((cfg&&cfg.family)||"");
+            return raw ? raw.charAt(0).toUpperCase()+raw.slice(1) : "Selected";
+          }
+          function safeStyleFailureMessage(reason,cfg){
+            var raw="";
+            try{
+              raw=String(reason&&reason.message ? reason.message : (reason||""));
+            }catch(e){}
+            var name=familyName(cfg);
+            if(raw.indexOf("must end in .tar.gz")>=0){
+              return name+" map export is not in the required HERE archive format.";
+            }
+            if(raw.indexOf("did not become READY")>=0){
+              return name+" map did not become ready. Retry when HERE is available.";
+            }
+            if(raw.indexOf("Unsupported map family")>=0 || raw.indexOf("Unsupported matching fallback")>=0){
+              return name+" is not available for this map.";
+            }
+            if(raw.indexOf("did not commit")>=0){
+              return name+" map was not committed. "+familyName(styleConfiguration)+" remains active.";
+            }
+            return hasCommittedStyle
+              ? name+" map could not be prepared. "+familyName(styleConfiguration)+" remains active."
+              : name+" map could not be prepared.";
+          }
+          function notifyStyleTransition(phase,cfg,message){
+            try{
+              window.webkit.messageHandlers.mapStyleTransition.postMessage({
+                phase:String(phase),
+                family:String((cfg&&cfg.family)||""),
+                requestID:Number((cfg&&cfg.requestID)||0),
+                message:message ? String(message) : ""
+              });
+            }catch(e){}
+          }
+          function setStyleState(state,cfg){
             var el=document.getElementById("style-status");
             if(!el) return;
             el.className="";
-            if(state==="fallback"){
+            if(state==="loading"){
+              el.style.display="block";
+              el.className="loading";
+              el.textContent="Loading "+familyName(cfg)+" map...";
+            }else if(state==="failed"){
+              el.style.display="block";
+              el.className="retryable";
+              el.textContent=familyName(cfg)+" did not load. "+familyName(styleConfiguration)+" remains active. Retry from the map menu.";
+            }else if(state==="fallback"){
               el.style.display="block";
               el.textContent="Standard map · custom styling unavailable";
             }else if(state==="standard"){
@@ -1406,7 +1673,9 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
           function createSelection(cfg,generation,onReady,onFailure){
             var current=null, disposed=false, selection=null;
             function fail(reason){
-              if(!disposed){ onFailure(selection,reason); }
+              Promise.resolve().then(function(){
+                if(!disposed){ onFailure(selection,reason); }
+              });
             }
             function startFallback(reason){
               if(disposed) return;
@@ -1479,16 +1748,23 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
                 if(prepared!==currentSelection || prepared.generation!==styleGeneration) return;
                 try{
                   if(map && prepared.layer){ map.setBaseLayer(prepared.layer); }
-                  setStyleState(state);
+                  if(map && map.getBaseLayer && map.getBaseLayer()!==prepared.layer){
+                    throw new Error("HERE did not commit the requested base layer");
+                  }
+                  hasCommittedStyle=true;
+                  setStyleState(state,styleConfiguration);
+                  notifyStyleTransition("committed",styleConfiguration,"");
                 }catch(err){
                   log("initial style commit "+err);
                   setStyleState("unavailable");
+                  notifyStyleTransition("failed",styleConfiguration,safeStyleFailureMessage(err,styleConfiguration));
                 }
               },
               function(failed,reason){
                 if(failed!==currentSelection || failed.generation!==styleGeneration) return;
                 log("initial style failed "+reason);
                 setStyleState("unavailable");
+                notifyStyleTransition("failed",styleConfiguration,safeStyleFailureMessage(reason,styleConfiguration));
               }
             );
             if(!selection.layer){ setStyleState("unavailable"); return; }
@@ -1512,7 +1788,8 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
                 styleGeneration += 1;
                 var requestedGeneration=styleGeneration;
                 if(pendingSelection){ pendingSelection.dispose(); pendingSelection=null; }
-                setStyleState("loading");
+                setStyleState("loading",cfg);
+                notifyStyleTransition("pending",cfg,"");
                 var next = createSelection(
                   cfg,
                   requestedGeneration,
@@ -1524,16 +1801,22 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
                     var previous=currentSelection;
                     try{
                       map.setBaseLayer(prepared.layer);
+                      if(map.getBaseLayer && map.getBaseLayer()!==prepared.layer){
+                        throw new Error("HERE did not commit the requested base layer");
+                      }
                       currentSelection=prepared;
                       pendingSelection=null;
                       styleConfiguration=cfg;
-                      setStyleState(state);
+                      hasCommittedStyle=true;
+                      setStyleState(state,cfg);
+                      notifyStyleTransition("committed",cfg,"");
                       if(previous) previous.dispose();
                     }catch(err){
                       log("style commit "+err);
                       prepared.dispose();
                       pendingSelection=null;
-                      setStyleState(previous?"stale":"unavailable");
+                      setStyleState(hasCommittedStyle ? "failed" : "unavailable",cfg);
+                      notifyStyleTransition("failed",cfg,safeStyleFailureMessage(err,cfg));
                     }
                   },
                   function(failed,reason){
@@ -1544,18 +1827,15 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
                     log("style prepare failed "+reason);
                     failed.dispose();
                     pendingSelection=null;
-                    setStyleState(currentSelection?"stale":"unavailable");
+                    setStyleState(hasCommittedStyle ? "failed" : "unavailable",cfg);
+                    notifyStyleTransition("failed",cfg,safeStyleFailureMessage(reason,cfg));
                   }
                 );
                 pendingSelection=next;
-                if(!next.layer){
-                  next.dispose();
-                  pendingSelection=null;
-                  setStyleState(currentSelection?"stale":"unavailable");
-                }
               }catch(e){
                 log("setMapStyle "+e);
-                setStyleState(currentSelection?"stale":"unavailable");
+                setStyleState(hasCommittedStyle ? "failed" : "unavailable",cfg);
+                notifyStyleTransition("failed",cfg,safeStyleFailureMessage(e,cfg));
               }
             };
 
